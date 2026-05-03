@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
@@ -263,6 +264,13 @@ class SupabaseTimesheetStorage {
 
   // ---- HR auth / company mapping -------------------------------------------
 
+  /// Origin users actually load (e.g. https://kaisyncworkforce-app.vercel.app/).
+  /// Must appear under Supabase → Authentication → URL Configuration → Redirect URLs.
+  static String? get _authEmailRedirectTo {
+    if (!kIsWeb) return null;
+    return '${Uri.base.origin}/';
+  }
+
   static Future<void> signInHr({
     required String email,
     required String password,
@@ -280,6 +288,7 @@ class SupabaseTimesheetStorage {
     await _client.auth.signInWithOtp(
       email: email.trim().toLowerCase(),
       shouldCreateUser: true,
+      emailRedirectTo: _authEmailRedirectTo,
     );
   }
 
@@ -305,6 +314,7 @@ class SupabaseTimesheetStorage {
       type: OtpType.email,
       email: email.trim().toLowerCase(),
       token: token,
+      redirectTo: _authEmailRedirectTo,
     );
   }
 
@@ -9947,6 +9957,7 @@ class SupabaseTimesheetStorage {
     await _client.auth.signInWithOtp(
       email: email.trim().toLowerCase(),
       shouldCreateUser: true,
+      emailRedirectTo: _authEmailRedirectTo,
     );
   }
 
@@ -9962,6 +9973,7 @@ class SupabaseTimesheetStorage {
       type: OtpType.email,
       email: email.trim().toLowerCase(),
       token: token,
+      redirectTo: _authEmailRedirectTo,
     );
     return getEmployeeCompaniesForCurrentUser();
   }

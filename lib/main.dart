@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -35,6 +36,11 @@ void main() {
       await Supabase.initialize(
         url: SupabaseConfig.url,
         anonKey: SupabaseConfig.anonKey,
+        // PKCE + SharedPreferences on web often breaks email OTP on hosted origins;
+        // implicit flow avoids code-verifier mismatch while OTP is still typed manually.
+        authOptions: FlutterAuthClientOptions(
+          authFlowType: kIsWeb ? AuthFlowType.implicit : AuthFlowType.pkce,
+        ),
       );
       runApp(const TimesheetApp());
     },
