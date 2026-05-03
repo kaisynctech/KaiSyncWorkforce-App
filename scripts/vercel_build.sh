@@ -14,6 +14,10 @@ tar -xf /tmp/flutter-sdk.tar.xz -C "${INSTALL_DIR}"
 
 export PATH="${INSTALL_DIR}/flutter/bin:${PATH}"
 
+# Extracted Flutter SDK is a git checkout; Vercel runs as root → Git's "dubious ownership"
+# guard exits 128 unless the SDK dir is marked safe (see git help safe.directory).
+git config --global --add safe.directory "${INSTALL_DIR}/flutter"
+
 flutter --version
 flutter config --no-analytics --enable-web
 flutter pub get
