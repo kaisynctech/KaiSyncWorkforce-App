@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en-ZA">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="KaiSync Workforce — field operations on Supabase: jobs, scheduling, attendance, payroll, paperless forms, property management, assets, contractors, and BI-ready reporting. One app, modular per company. Based in South Africa, remote-friendly.">
+    <meta name="keywords" content="workforce management software, field service app, timesheets, employee scheduling, payroll approvals, property management software, attendance tracking, contractor management, Supabase, South Africa">
+    <meta name="author" content="KaiSync Workforce">
+    <meta name="robots" content="index, follow">
+    <meta name="theme-color" content="#020617">
+    <link rel="canonical" href="https://kaisyncworkforce.vercel.app/">
+    <title>KaiSync Workforce — Field operations & HR platform</title>
+
+    <meta property="og:title" content="KaiSync Workforce — Field operations & HR platform">
+    <meta property="og:description" content="Jobs, shifts, punches, payroll, paperless forms, property layers, assets, contractors — one modular platform for operations-led teams.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://kaisyncworkforce.vercel.app/">
+    <meta property="og:locale" content="en_ZA">
+
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="KaiSync Workforce — Field operations & HR platform">
+    <meta name="twitter:description" content="Modular workforce software: scheduling, attendance, payroll approvals, property management, and BI-ready reporting.">
+
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "Organization",
+          "name": "KaiSync Workforce",
+          "url": "https://kaisyncworkforce.vercel.app/",
+          "description": "Workforce and field operations platform — jobs, scheduling, attendance, payroll, paperless workflows, property management, and reporting.",
+          "email": "kaisynctech@gmail.com",
+          "areaServed": { "@type": "Country", "name": "South Africa" }
+        },
+        {
+          "@type": "SoftwareApplication",
+          "name": "KaiSync Workforce",
+          "url": "https://kaisyncworkforce.vercel.app/",
+          "applicationCategory": "BusinessApplication",
+          "operatingSystem": "Web, Windows, Android",
+          "description": "Multi-tenant workforce and operations app with modular features per company.",
+          "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD", "description": "Contact for trial and commercial plans" }
+        }
+      ]
+    }
+    </script>
+</head>
+<body>
+    <nav class="navbar" id="navbar">
+        <div class="container nav-inner">
+            <a href="#top" class="logo-wrap">
+                <img src="assets/logo.png" alt="KaiSync" class="logo-img" onerror="this.style.display='none'">
+                <span class="logo-text">KaiSync Workforce</span>
+            </a>
+            <ul class="nav-menu" id="navMenu">
+                <li><a href="#top" class="nav-link active">Home</a></li>
+                <li><a href="#features" class="nav-link">Features</a></li>
+                <li><a href="#feature-list" class="nav-link">Feature List</a></li>
+                <li><a href="#pricing" class="nav-link">Pricing</a></li>
+                <li><a href="#trust" class="nav-link">Clients</a></li>
+                <li><a href="#voices" class="nav-link">Stories</a></li>
+                <li><a href="#about" class="nav-link">About</a></li>
+                <li><a href="#contact" class="nav-link">Contact</a></li>
+                <li><a href="download.html" class="nav-link">Download app</a></li>
+            </ul>
+            <a href="download.html" class="btn btn-nav">Download app</a>
+            <button class="hamburger" id="hamburger" aria-label="Menu">
+                <span></span><span></span><span></span>
+            </button>
+        </div>
+    </nav>
+
+    <main id="top">
+        <section class="hero">
+            <div class="container hero-inner">
+                <div class="hero-content">
+                    <p class="hero-eyebrow">WORKFORCE · OPERATIONS · CASHFLOW CLARITY</p>
+                    <h1 class="hero-title">
+                        Stop running your business in chaos.
+                        <span class="gradient-text">Run it in KaiSync.</span>
+                    </h1>
+                    <p class="hero-subtitle">
+                        KaiSync gives you one premium operating system for jobs, clients, timesheets, overtime, payments, reports, and field accountability.
+                        No more scattered chats, spreadsheets, and missed follow-ups.
+                    </p>
+                    <div class="hero-buttons">
+                        <a href="#download" class="btn btn-primary">Start Free Trial Now</a>
+                        <a href="download.html" class="btn btn-secondary">Download app</a>
+                    </div>
+                    <p class="hero-industries">
+                        <strong>Built for teams and solo operators.</strong> If you manage people, jobs, clients, or even just yourself,
+                        KaiSync helps you look professional, stay accountable, and get paid faster.
+                    </p>
+                </div>
+                <div class="hero-media">
+                    <div class="hero-abstract">
+                        <div class="hero-abstract-inner">
+                            <img src="assets/logo.png" alt="KaiSync Workforce" class="hero-logo" onerror="this.style.opacity='0'">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="trust" class="trust-band" aria-labelledby="trust-heading">
+            <div class="container">
+                <div class="trust-band-inner">
+                    <div class="trust-band-copy">
+                        <p id="trust-heading" class="trust-kicker">Teams who run on clarity</p>
+                        <h2 class="trust-title">Built for companies that cannot afford operational blind spots</h2>
+                        <p class="trust-lede">
+                            From facility and estate portfolios to contractor-heavy field teams, KaiSync Workforce keeps jobs, people, and payments aligned — so leadership sees reality, not reconstructed spreadsheets.
+                        </p>
+                    </div>
+                    <div class="trust-marquee" aria-hidden="true">
+                        <div class="trust-marquee-track">
+                            <span class="trust-pill">Facility operations</span>
+                            <span class="trust-pill">Residential estates</span>
+                            <span class="trust-pill">Managing agents</span>
+                            <span class="trust-pill">Field maintenance</span>
+                            <span class="trust-pill">Contractor networks</span>
+                            <span class="trust-pill">Growing SMB teams</span>
+                            <span class="trust-pill">Facility operations</span>
+                            <span class="trust-pill">Residential estates</span>
+                            <span class="trust-pill">Managing agents</span>
+                            <span class="trust-pill">Field maintenance</span>
+                            <span class="trust-pill">Contractor networks</span>
+                            <span class="trust-pill">Growing SMB teams</span>
+                        </div>
+                    </div>
+                    <ul class="trust-logo-grid" aria-label="Partner or client logo placeholders — swap with your images">
+                        <li class="trust-logo-slot"><span class="trust-logo-monogram" aria-hidden="true">01</span><span class="trust-logo-caption">Your logo</span></li>
+                        <li class="trust-logo-slot"><span class="trust-logo-monogram" aria-hidden="true">02</span><span class="trust-logo-caption">Your logo</span></li>
+                        <li class="trust-logo-slot"><span class="trust-logo-monogram" aria-hidden="true">03</span><span class="trust-logo-caption">Your logo</span></li>
+                        <li class="trust-logo-slot"><span class="trust-logo-monogram" aria-hidden="true">04</span><span class="trust-logo-caption">Your logo</span></li>
+                        <li class="trust-logo-slot"><span class="trust-logo-monogram" aria-hidden="true">05</span><span class="trust-logo-caption">Your logo</span></li>
+                        <li class="trust-logo-slot trust-logo-slot--cta"><span class="trust-logo-caption trust-logo-caption--strong">Your company here</span><span class="trust-logo-hint">Replace slots with PNG/SVG logos in markup</span></li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section id="features" class="services">
+            <div class="container">
+                <div class="section-header">
+                    <p class="section-eyebrow">WHAT THE APP DOES TODAY</p>
+                    <h2 class="section-title section-title-large">Modular workforce & field operations</h2>
+                    <p class="section-desc">
+                        Companies enable modules they need — ticketing, scheduling, payroll, paperless, compliance,
+                        contractors, property management, asset compliance, and external reporting — without maintaining separate products.
+                    </p>
+                </div>
+                <div class="services-grid">
+                    <article class="service-card">
+                        <div class="service-card-link">
+                            <h3><span class="service-icon-wrap"><span class="service-icon">📋</span></span>Jobs & job cards</h3>
+                            <p>Create and track work in the field with photos, signatures, costs, and status — tied to clients and sites.</p>
+                        </div>
+                    </article>
+                    <article class="service-card">
+                        <div class="service-card-link">
+                            <h3><span class="service-icon-wrap"><span class="service-icon">📅</span></span>Scheduling & shifts</h3>
+                            <p>Plan recurring shifts and assignments so crews know where to be and HR sees coverage.</p>
+                        </div>
+                    </article>
+                    <article class="service-card">
+                        <div class="service-card-link">
+                            <h3><span class="service-icon-wrap"><span class="service-icon">🕒</span></span>Attendance & punches</h3>
+                            <p>Clock in/out with location-backed punches; HR dashboards for attendance and attendance exports.</p>
+                        </div>
+                    </article>
+                    <article class="service-card">
+                        <div class="service-card-link">
+                            <h3><span class="service-icon-wrap"><span class="service-icon">💰</span></span>Payroll & payment approvals</h3>
+                            <p>Salary and hourly models, payment approval flows, and visibility into what’s owed versus paid.</p>
+                        </div>
+                    </article>
+                    <article class="service-card">
+                        <div class="service-card-link">
+                            <h3><span class="service-icon-wrap"><span class="service-icon">📄</span></span>Paperless ops</h3>
+                            <p>Form templates, submissions, and signatures — replace loose paperwork with an audit-friendly trail.</p>
+                        </div>
+                    </article>
+                    <article class="service-card">
+                        <div class="service-card-link">
+                            <h3><span class="service-icon-wrap"><span class="service-icon">🏢</span></span>Property management</h3>
+                            <p>Sites, units, and residents for estates and managing-agent workflows — alongside jobs and assets.</p>
+                        </div>
+                    </article>
+                    <article class="service-card">
+                        <div class="service-card-link">
+                            <h3><span class="service-icon-wrap"><span class="service-icon">🔧</span></span>Assets & compliance</h3>
+                            <p>Asset register with inspections and certificates — geysers, lifts, fire panels, and similar registers.</p>
+                        </div>
+                    </article>
+                    <article class="service-card">
+                        <div class="service-card-link">
+                            <h3><span class="service-icon-wrap"><span class="service-icon">🤝</span></span>Contractors & workers</h3>
+                            <p>Employees, contractors, and subcontractors in one worker model; invites and multi-company access for providers.</p>
+                        </div>
+                    </article>
+                    <article class="service-card">
+                        <div class="service-card-link">
+                            <h3><span class="service-icon-wrap"><span class="service-icon">📈</span></span>Reporting & BI hooks</h3>
+                            <p>SQL views for enriched jobs, maintenance, costs, contractors, and residents — connect Power BI or Metabase directly.</p>
+                        </div>
+                    </article>
+                </div>
+            </div>
+        </section>
+
+        <section class="cta-wide">
+            <div class="container">
+                <div class="cta-wide-inner">
+                    <p class="section-eyebrow">FOR SOLO OPERATORS</p>
+                    <h2 class="section-title">Working alone? KaiSync is your unfair advantage.</h2>
+                    <p class="section-desc">
+                        Stop relying on memory and WhatsApp threads. Track your clients, assign jobs to yourself, log proof of work, monitor time spent,
+                        and know exactly what to invoice and collect.
+                    </p>
+                    <div class="cta-wide-actions">
+                        <a href="#download" class="btn btn-primary">Try It as a Solo Pro</a>
+                        <a href="contact.html" class="btn btn-secondary">See Solo Setup</a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="feature-list" class="about">
+            <div class="container">
+                <p class="section-eyebrow about-eyebrow">Feature List</p>
+                <div class="about-inner">
+                    <div class="about-content">
+                        <h2 class="section-title">Powerful features that attract serious clients</h2>
+                        <p class="about-desc">
+                            KaiSync helps you look professional, deliver proof of work, and run operations with confidence.
+                            These are the features clients and teams care about most.
+                        </p>
+                        <div class="about-stats">
+                            <div class="stat"><span class="stat-num">9</span><span class="stat-label">Toggle modules</span></div>
+                            <div class="stat"><span class="stat-num">Live</span><span class="stat-label">Shifts & punches</span></div>
+                            <div class="stat"><span class="stat-num">BI</span><span class="stat-label">SQL views</span></div>
+                        </div>
+                        <a href="#download" class="btn btn-primary">Launch Workspace</a>
+                    </div>
+                    <div class="about-visual">
+                        <div class="about-card">
+                            <span class="about-card-line"></span>
+                            <p>Messaging between HR and teams, incidents, inventory where enabled, leave workflows, My PA task patterns — alongside jobs, attendance, payroll, and property layers.</p>
+                            <p class="about-card-industries">Secure multi-tenant backend on Supabase; HR self-registration with email OTP; workers use web, Windows, or mobile builds.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="about" class="about">
+            <div class="container">
+                <p class="section-eyebrow about-eyebrow">About KaiSync</p>
+                <div class="about-inner">
+                    <div class="about-content">
+                        <h2 class="section-title">Built for real operations, not generic task apps</h2>
+                        <p class="about-desc">
+                            KaiSync was designed from actual field and service business workflows.
+                            We focus on accountability, proof of work, financial clarity, and premium execution.
+                            Whether you run a team or work alone, the goal is the same: operate professionally and grow faster.
+                        </p>
+                        <div class="about-stats">
+                            <div class="stat"><span class="stat-num">1</span><span class="stat-label">Unified platform</span></div>
+                            <div class="stat"><span class="stat-num">4</span><span class="stat-label">Role experiences</span></div>
+                            <div class="stat"><span class="stat-num">9</span><span class="stat-label">Module flags</span></div>
+                        </div>
+                    </div>
+                    <div class="about-visual">
+                        <div class="about-card">
+                            <span class="about-card-line"></span>
+                            <p>HR/Admin, Employee, Contractor, and Client visibility in one connected system.</p>
+                            <p class="about-card-industries">Created to help businesses deliver better service and build stronger trust.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="services">
+            <div class="container">
+                <div class="section-header">
+                    <p class="section-eyebrow">WHY CLIENTS CHOOSE KAI SYNC</p>
+                    <h2 class="section-title">You look more professional from day one</h2>
+                    <p class="section-desc">KaiSync helps you win trust and repeat business with cleaner operations and visible proof.</p>
+                </div>
+                <div class="services-grid">
+                    <article class="service-card">
+                        <div class="service-card-link">
+                            <h3><span class="service-icon-wrap"><span class="service-icon">✅</span></span>Proof of service delivery</h3>
+                            <p>Show exactly who arrived, when they arrived, and where they signed in or out.</p>
+                        </div>
+                    </article>
+                    <article class="service-card">
+                        <div class="service-card-link">
+                            <h3><span class="service-icon-wrap"><span class="service-icon">⚡</span></span>Faster decisions and payments</h3>
+                            <p>Clear job records and client visibility reduce back-and-forth and unblock approvals.</p>
+                        </div>
+                    </article>
+                    <article class="service-card">
+                        <div class="service-card-link">
+                            <h3><span class="service-icon-wrap"><span class="service-icon">🧠</span></span>Smarter business control</h3>
+                            <p>Understand overtime pressure, operational bottlenecks, and cashflow risks before they hurt growth.</p>
+                        </div>
+                    </article>
+                </div>
+            </div>
+        </section>
+
+        <section id="voices" class="voices-section">
+            <div class="container">
+                <div class="section-header">
+                    <p class="section-eyebrow">FROM THE FIELD</p>
+                    <h2 class="section-title section-title-large">What operators notice first</h2>
+                    <p class="section-desc">
+                        Paraphrased themes from early adopters — replace with named quotes and headshots when you publish case studies.
+                    </p>
+                </div>
+                <div class="voices-grid">
+                    <blockquote class="voice-card">
+                        <div class="voice-stars" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+                        <p class="voice-quote">“One place for shifts and payment approvals — far less noise in WhatsApp and fewer ‘did they work?’ disputes.”</p>
+                        <footer class="voice-meta">
+                            <span class="voice-name">Operations lead</span>
+                            <span class="voice-role">Services company · South Africa</span>
+                        </footer>
+                    </blockquote>
+                    <blockquote class="voice-card voice-card--accent">
+                        <div class="voice-stars" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+                        <p class="voice-quote">“Having residents and units beside job cards changed how we brief contractors and report upstream.”</p>
+                        <footer class="voice-meta">
+                            <span class="voice-name">Portfolio administrator</span>
+                            <span class="voice-role">Residential portfolio</span>
+                        </footer>
+                    </blockquote>
+                    <blockquote class="voice-card">
+                        <div class="voice-stars" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+                        <p class="voice-quote">“Contractors see only their scope; HR sees the whole picture. Permissions finally match how we actually work.”</p>
+                        <footer class="voice-meta">
+                            <span class="voice-name">HR manager</span>
+                            <span class="voice-role">Multi-site employer</span>
+                        </footer>
+                    </blockquote>
+                </div>
+            </div>
+        </section>
+
+        <section id="pricing" class="testimonials">
+            <div class="container">
+                <div class="testimonials-inner">
+                    <div class="testimonial-intro section-header">
+                        <p class="section-eyebrow">PLANS</p>
+                        <h2 class="section-title">Simple options for every stage</h2>
+                        <p>Start with a free trial, then scale to team and enterprise setups as your operation grows.</p>
+                    </div>
+                    <div class="testimonial-carousel">
+                        <div class="testimonial-track">
+                            <article class="testimonial-card">
+                                <p class="testimonial-quote">Starter setup for solo users and small teams getting operational structure in place.</p>
+                                <div class="testimonial-meta">
+                                    <span class="testimonial-name">Starter</span>
+                                    <span class="testimonial-role">Free trial</span>
+                                    <span class="testimonial-pill">Quick setup</span>
+                                </div>
+                            </article>
+                            <article class="testimonial-card">
+                                <p class="testimonial-quote">Growth plan for active field companies managing clients, jobs, and workforce at scale.</p>
+                                <div class="testimonial-meta">
+                                    <span class="testimonial-name">Growth</span>
+                                    <span class="testimonial-role">Team plan</span>
+                                    <span class="testimonial-pill">Most popular</span>
+                                </div>
+                            </article>
+                            <article class="testimonial-card">
+                                <p class="testimonial-quote">Enterprise implementation with advanced controls, onboarding support, and custom rollout.</p>
+                                <div class="testimonial-meta">
+                                    <span class="testimonial-name">Enterprise</span>
+                                    <span class="testimonial-role">Custom</span>
+                                    <span class="testimonial-pill">Full deployment</span>
+                                </div>
+                            </article>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="download" class="cta-wide">
+            <div class="container">
+                <div class="cta-wide-inner">
+                    <p class="section-eyebrow">READY TO START</p>
+                    <h2 class="section-title">Turn your operations into a competitive advantage</h2>
+                    <p class="section-desc">Start now and move from reactive chaos to controlled, professional execution.</p>
+                    <div class="cta-wide-actions">
+                        <a href="#contact" class="btn btn-primary">Book a demo</a>
+                        <a href="download.html" class="btn btn-secondary">Download app</a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="contact" class="contact">
+            <div class="container">
+                <p class="section-eyebrow contact-eyebrow">CONTACT</p>
+                <div class="contact-inner">
+                    <div class="contact-info">
+                        <h2 class="section-title">Tell us about your workflow</h2>
+                        <p class="contact-desc">We will help you set up the right KaiSync modules for your team, branch setup, and business model.</p>
+                        <div class="contact-details">
+                            <div class="contact-item">
+                                <span class="contact-icon">📧</span>
+                                <div><strong>Email</strong><br>kaisynctech@gmail.com</div>
+                            </div>
+                            <div class="contact-item">
+                                <span class="contact-icon">📍</span>
+                                <div><strong>Region</strong><br>South Africa · Remote friendly</div>
+                            </div>
+                        </div>
+                    </div>
+                    <form class="contact-form" id="contactForm">
+                        <div class="form-group"><input id="name" type="text" placeholder="Your name" required></div>
+                        <div class="form-group"><input id="email" type="email" placeholder="Email address" required></div>
+                        <div class="form-group"><textarea id="message" placeholder="What do you want to manage in KaiSync?" rows="5" required></textarea></div>
+                        <button class="btn btn-primary btn-block" type="submit">Send request</button>
+                    </form>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <div class="container footer-top">
+            <div class="footer-col footer-brand">
+                <a href="#top" class="footer-logo">
+                    <img src="assets/logo.png" alt="" class="footer-logo-img" width="36" height="36" onerror="this.style.display='none'">
+                    <span class="footer-brand-name">KaiSync Workforce</span>
+                </a>
+                <p class="footer-tagline">Modular field operations — jobs, people, payroll, and proof in one structured platform.</p>
+            </div>
+            <div class="footer-col">
+                <h3 class="footer-heading">Product</h3>
+                <ul class="footer-list">
+                    <li><a href="#features">Features</a></li>
+                    <li><a href="#feature-list">Capability overview</a></li>
+                    <li><a href="#pricing">Plans</a></li>
+                    <li><a href="download.html">Download app</a></li>
+                    <li><a href="#voices">Stories</a></li>
+                </ul>
+            </div>
+            <div class="footer-col">
+                <h3 class="footer-heading">Company</h3>
+                <ul class="footer-list">
+                    <li><a href="#trust">Clients</a></li>
+                    <li><a href="#about">About</a></li>
+                    <li><a href="about.html">About (page)</a></li>
+                    <li><a href="#contact">Contact</a></li>
+                    <li><a href="contact.html">Contact (page)</a></li>
+                </ul>
+            </div>
+            <div class="footer-col">
+                <h3 class="footer-heading">Connect</h3>
+                <ul class="footer-list footer-contact">
+                    <li><a href="mailto:kaisynctech@gmail.com">kaisynctech@gmail.com</a></li>
+                    <li><span>South Africa · Remote-friendly GMT+2</span></li>
+                    <li><a href="https://kaisync-app.vercel.app/" target="_blank" rel="noopener noreferrer">Web app</a></li>
+                    <li><a href="https://github.com/kaisynctech/KaiSync-App/releases/latest" target="_blank" rel="noopener noreferrer">Releases</a></li>
+                </ul>
+            </div>
+        </div>
+        <div class="container footer-bottom">
+            <p>© 2026 KaiSync Workforce. All rights reserved.</p>
+            <p class="footer-legal">Enterprise-ready data model on Supabase · Modular product flags per company · Swap placeholder logos and stories when your marketing assets are ready.</p>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
