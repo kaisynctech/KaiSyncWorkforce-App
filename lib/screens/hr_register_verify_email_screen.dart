@@ -12,21 +12,15 @@ import '../widgets/app_feedback.dart';
 import '../widgets/load_error_panel.dart';
 import 'hr_registration_success_screen.dart';
 
-/// Second step of HR self-registration: enter email OTP (no magic links).
+/// HR registration step 2: verify email (OTP or existing session), then company / owner details.
 class HrRegisterVerifyEmailScreen extends StatefulWidget {
   final String email;
   final String password;
-  final String companyName;
-  final String ownerFirstName;
-  final String ownerLastName;
 
   const HrRegisterVerifyEmailScreen({
     super.key,
     required this.email,
     required this.password,
-    required this.companyName,
-    required this.ownerFirstName,
-    required this.ownerLastName,
   });
 
   @override
@@ -36,6 +30,9 @@ class HrRegisterVerifyEmailScreen extends StatefulWidget {
 
 class _HrRegisterVerifyEmailScreenState extends State<HrRegisterVerifyEmailScreen> {
   final _otpCtrl = TextEditingController();
+  final _companyCtrl = TextEditingController();
+  final _ownerFirstCtrl = TextEditingController();
+  final _ownerLastCtrl = TextEditingController();
 
   bool _loading = false;
   bool _sendingCode = false;
@@ -43,6 +40,9 @@ class _HrRegisterVerifyEmailScreenState extends State<HrRegisterVerifyEmailScree
   @override
   void dispose() {
     _otpCtrl.dispose();
+    _companyCtrl.dispose();
+    _ownerFirstCtrl.dispose();
+    _ownerLastCtrl.dispose();
     super.dispose();
   }
 
@@ -70,8 +70,19 @@ class _HrRegisterVerifyEmailScreenState extends State<HrRegisterVerifyEmailScree
     final alreadySignedInAsSelf =
         user?.email?.trim().toLowerCase() == normalizedEmail;
 
+    final companyName = _companyCtrl.text.trim();
+    final ownerFirst = _ownerFirstCtrl.text.trim();
+
     if (!alreadySignedInAsSelf && code.isEmpty) {
       showInfoSnack(context, 'Enter the verification code from your email.');
+      return;
+    }
+    if (companyName.isEmpty) {
+      showInfoSnack(context, 'Enter your company name.');
+      return;
+    }
+    if (ownerFirst.isEmpty) {
+      showInfoSnack(context, 'Enter your first name.');
       return;
     }
 
@@ -120,9 +131,9 @@ class _HrRegisterVerifyEmailScreenState extends State<HrRegisterVerifyEmailScree
 
       try {
         final result = await SupabaseTimesheetStorage.registerCompanySelfService(
-          companyName: widget.companyName,
-          ownerFirstName: widget.ownerFirstName,
-          ownerLastName: widget.ownerLastName,
+          companyName: companyName,
+          ownerFirstName: ownerFirst,
+          ownerLastName: _ownerLastCtrl.text.trim(),
         );
 
         await HrSelfRegisterDraft.clear();
@@ -148,6 +159,14 @@ class _HrRegisterVerifyEmailScreenState extends State<HrRegisterVerifyEmailScree
           ),
         );
       } catch (e) {
+        await HrSelfRegisterDraft.save(
+          HrSelfRegisterDraft(
+            email: widget.email,
+            companyName: companyName,
+            ownerFirstName: ownerFirst,
+            ownerLastName: _ownerLastCtrl.text.trim(),
+          ),
+        );
         AppTelemetry.logError(
           screen: 'hr_register_verify_email_screen',
           action: 'register_company_self_service',
@@ -179,7 +198,7 @@ class _HrRegisterVerifyEmailScreenState extends State<HrRegisterVerifyEmailScree
         foregroundColor: const Color(0xFF111827),
         elevation: 0,
         title: Text(
-          'Verify email',
+          'Complete registration',
           style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
         ),
       ),
@@ -201,7 +220,7 @@ class _HrRegisterVerifyEmailScreenState extends State<HrRegisterVerifyEmailScree
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
-                      'Enter verification code',
+                      'Verify your email',
                       style: GoogleFonts.poppins(
                         color: const Color(0xFF111827),
                         fontSize: 18,
@@ -211,7 +230,7 @@ class _HrRegisterVerifyEmailScreenState extends State<HrRegisterVerifyEmailScree
                     const SizedBox(height: 8),
                     Text(
                       'We sent a code to ${widget.email.trim()}.\n'
-                      'Paste it below — no link required.',
+                      'Paste it below or use the link in the email.',
                       style: GoogleFonts.poppins(
                         color: const Color(0xFF6B7280),
                         fontSize: 13,
@@ -222,8 +241,7 @@ class _HrRegisterVerifyEmailScreenState extends State<HrRegisterVerifyEmailScree
                       controller: _otpCtrl,
                       keyboardType: TextInputType.number,
                       autofillHints: const [AutofillHints.oneTimeCode],
-                      textInputAction: TextInputAction.done,
-                      onSubmitted: (_) => _loading ? null : _verifyAndCreateCompany(),
+                      textInputAction: TextInputAction.next,
                       decoration: const InputDecoration(
                         labelText: 'Verification code',
                         hintText: 'Code from email',
@@ -243,7 +261,53 @@ class _HrRegisterVerifyEmailScreenState extends State<HrRegisterVerifyEmailScree
                         ),
                       ),
                     ),
+                    const SizedBox(height: 20),
+                    Divider(height: 1, color: Colors.grey.shade300),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Business details',
+                      style: GoogleFonts.poppins(
+                        color: const Color(0xFF111827),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Enter these now — they create your company and owner profile once verification succeeds.',
+                      style: GoogleFonts.poppins(
+                        color: const Color(0xFF6B7280),
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: _companyCtrl,
+                      autofillHints: const [AutofillHints.organizationName],
+                      textInputAction: TextInputAction.next,
+                      decoration: const InputDecoration(labelText: 'Company name'),
+                    ),
                     const SizedBox(height: 12),
+                    TextField(
+                      controller: _ownerFirstCtrl,
+                      autofillHints: const [AutofillHints.givenName],
+                      textInputAction: TextInputAction.next,
+                      decoration: const InputDecoration(
+                        labelText: 'Your first name',
+                        hintText: 'Company owner / HR employee record',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _ownerLastCtrl,
+                      autofillHints: const [AutofillHints.familyName],
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) => _loading ? null : _verifyAndCreateCompany(),
+                      decoration: const InputDecoration(
+                        labelText: 'Your last name (optional)',
+                      ),
+                    ),
+                    const SizedBox(height: 18),
                     SizedBox(
                       height: 50,
                       child: ElevatedButton(

@@ -19,9 +19,6 @@ class HrRegisterScreen extends StatefulWidget {
 }
 
 class _HrRegisterScreenState extends State<HrRegisterScreen> {
-  final _companyCtrl = TextEditingController();
-  final _ownerFirstCtrl = TextEditingController();
-  final _ownerLastCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
@@ -32,30 +29,19 @@ class _HrRegisterScreenState extends State<HrRegisterScreen> {
 
   @override
   void dispose() {
-    _companyCtrl.dispose();
-    _ownerFirstCtrl.dispose();
-    _ownerLastCtrl.dispose();
     _emailCtrl.dispose();
     _passwordCtrl.dispose();
     _confirmCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _register() async {
-    final companyName = _companyCtrl.text.trim();
+  Future<void> _sendVerificationCode() async {
     final email = _emailCtrl.text.trim();
     final password = _passwordCtrl.text;
     final confirm = _confirmCtrl.text;
 
-    if (companyName.isEmpty ||
-        email.isEmpty ||
-        password.isEmpty ||
-        confirm.isEmpty ||
-        _ownerFirstCtrl.text.trim().isEmpty) {
-      showInfoSnack(
-        context,
-        'Fill in HR email, password, company name, and your first name.',
-      );
+    if (email.isEmpty || password.isEmpty || confirm.isEmpty) {
+      showInfoSnack(context, 'Enter your HR admin email and password.');
       return;
     }
     if (password.length < 6) {
@@ -73,25 +59,22 @@ class _HrRegisterScreenState extends State<HrRegisterScreen> {
       await HrSelfRegisterDraft.save(
         HrSelfRegisterDraft(
           email: email,
-          companyName: companyName,
-          ownerFirstName: _ownerFirstCtrl.text.trim(),
-          ownerLastName: _ownerLastCtrl.text.trim(),
+          companyName: '',
+          ownerFirstName: '',
+          ownerLastName: '',
         ),
       );
       await SupabaseTimesheetStorage.sendHrRegistrationEmailOtp(email: email);
       if (!mounted) return;
       showInfoSnack(
         context,
-        'Enter the verification code we emailed you — no link needed.',
+        'Enter the verification code we emailed you — then add your company details.',
       );
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => HrRegisterVerifyEmailScreen(
             email: email,
             password: password,
-            companyName: companyName,
-            ownerFirstName: _ownerFirstCtrl.text.trim(),
-            ownerLastName: _ownerLastCtrl.text.trim(),
           ),
         ),
       );
@@ -156,9 +139,9 @@ class _HrRegisterScreenState extends State<HrRegisterScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Sign-in email and password first. Add your business details once — '
-                      'after you verify the code we email you, your owner employee profile '
-                      'is created with the same email (no second form when you log in). '
+                      'Start by confirming your HR admin email and password. '
+                      'After you verify the code we send you, you\'ll enter your company name '
+                      'and your name — then your owner employee profile is created with the same email. '
                       'Company codes are assigned automatically (01, 02, 03…).',
                       style: GoogleFonts.poppins(color: const Color(0xFF6B7280), fontSize: 12),
                     ),
@@ -195,7 +178,8 @@ class _HrRegisterScreenState extends State<HrRegisterScreen> {
                             controller: _confirmCtrl,
                             obscureText: _obscureConfirm,
                             autofillHints: const [AutofillHints.newPassword],
-                            textInputAction: TextInputAction.next,
+                            textInputAction: TextInputAction.done,
+                            onSubmitted: (_) => _loading ? null : _sendVerificationCode(),
                             decoration: InputDecoration(
                               labelText: 'Confirm password',
                               suffixIcon: IconButton(
@@ -207,38 +191,11 @@ class _HrRegisterScreenState extends State<HrRegisterScreen> {
                         ],
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: _companyCtrl,
-                      autofillHints: const [AutofillHints.organizationName],
-                      textInputAction: TextInputAction.next,
-                      decoration: const InputDecoration(labelText: 'Company name'),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _ownerFirstCtrl,
-                      autofillHints: const [AutofillHints.givenName],
-                      textInputAction: TextInputAction.next,
-                      decoration: const InputDecoration(
-                        labelText: 'Your first name',
-                        hintText: 'Company owner / HR employee record',
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _ownerLastCtrl,
-                      autofillHints: const [AutofillHints.familyName],
-                      textInputAction: TextInputAction.done,
-                      onSubmitted: (_) => _loading ? null : _register(),
-                      decoration: const InputDecoration(
-                        labelText: 'Your last name (optional)',
-                      ),
-                    ),
                     const SizedBox(height: 18),
                     SizedBox(
                       height: 50,
                       child: ElevatedButton(
-                        onPressed: _loading ? null : _register,
+                        onPressed: _loading ? null : _sendVerificationCode,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppTheme.gold,
                           foregroundColor: AppTheme.black,

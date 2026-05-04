@@ -193,6 +193,10 @@ class _HrSignInScreenState extends State<HrSignInScreen> {
       return null;
     }
 
+    if (draft.companyName.trim().isEmpty || draft.ownerFirstName.trim().isEmpty) {
+      return null;
+    }
+
     try {
       await SupabaseTimesheetStorage.registerCompanySelfService(
         companyName: draft.companyName,

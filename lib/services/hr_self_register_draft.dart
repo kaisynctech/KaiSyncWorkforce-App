@@ -2,8 +2,9 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Holds HR self-registration fields from step 1 (before OTP). Lets sign-in
-/// complete `self_register_company` without asking for the same details again.
+/// Holds HR self-registration progress. Step 1 may save email only; company /
+/// owner fields are filled on the verify screen (or restored here after a
+/// partial failure). Lets sign-in complete `self_register_company` when needed.
 class HrSelfRegisterDraft {
   static const _prefsKey = 'hr_self_register_draft_v1';
 
