@@ -10,20 +10,28 @@ import 'hr_sign_in_screen.dart';
 class HrRegistrationSuccessScreen extends StatelessWidget {
   final String email;
   final String? companyCode;
+  /// Shown after self-service registration when we know the legal/display name.
+  final String? registeredCompanyName;
   final bool awaitingEmailVerification;
 
   const HrRegistrationSuccessScreen({
     super.key,
     required this.email,
     this.companyCode,
+    this.registeredCompanyName,
     this.awaitingEmailVerification = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final hasCode = companyCode != null && companyCode!.trim().isNotEmpty;
+    final companyLabel =
+        registeredCompanyName?.trim().isNotEmpty == true
+            ? registeredCompanyName!.trim()
+            : null;
     final employeeInstruction = hasCode
-        ? 'Employees must sign in using $companyCode + employee ID.\nExample: ${companyCode}FN211956'
+        ? 'Employees sign in with company code plus their employee ID (as printed on payroll / HR records).\n'
+            'Example login pair: company code $companyCode · employee ID FN211956'
         : 'Return to registration and enter the verification code we emailed you, or use HR Sign In if you already verified.';
     final horizontalPadding = Responsive.horizontalPadding(context);
     return Scaffold(
@@ -56,7 +64,9 @@ class HrRegistrationSuccessScreen extends StatelessWidget {
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
-                            'Your business is ready',
+                            hasCode
+                                ? 'Company registered successfully'
+                                : 'Your business is ready',
                             style: GoogleFonts.poppins(
                               color: const Color(0xFF111827),
                               fontSize: 20,
@@ -66,6 +76,21 @@ class HrRegistrationSuccessScreen extends StatelessWidget {
                         ),
                       ],
                     ),
+                    if (hasCode) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        companyLabel != null
+                            ? '$companyLabel is set up on KaiSync Workforce. '
+                                'Save your company code — you will need it for worker sign-in.'
+                            : 'Save your company code below — HR uses email and password; '
+                                'workers use company code and their employee ID.',
+                        style: GoogleFonts.poppins(
+                          color: const Color(0xFF4B5563),
+                          fontSize: 13,
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 16),
                     Container(
                       padding: const EdgeInsets.all(16),

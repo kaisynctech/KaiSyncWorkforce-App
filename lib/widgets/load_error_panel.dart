@@ -95,9 +95,9 @@ String friendlyErrorMessage(Object? error, {required String fallback}) {
   }
   if (msg.contains('employees_employee_code_format_chk') ||
       (msg.contains('employee_code_format_chk') && msg.contains('employees'))) {
-    return '$fallback\nThe HR owner bootstrap row uses an employee ID format your database '
-        'did not allow (often hyphen/symbol rules). Apply the latest Supabase migration '
-        '`fix_self_register_employee_code_format.sql`, then tap Create company again.';
+    return '$fallback\nEmployee IDs must match your database rules (symbols/spacing). '
+        'Apply Supabase migrations through `20260508140000_widen_employees_employee_code_format_chk.sql` '
+        '(and earlier self-register migrations), then tap Create company again.';
   }
   if (msg.contains('storage') && (msg.contains('bucket') || msg.contains('object'))) {
     return '$fallback\nFile storage error. Please try again or contact support.';

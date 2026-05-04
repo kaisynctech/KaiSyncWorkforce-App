@@ -73,19 +73,16 @@ class _HrRegisterCompanyDetailsScreenState
           action: 'register_success',
           details: 'company_code=${result.companyCode}',
         );
-        showSuccessSnack(
-          context,
-          'Registration successful. Your company code is ${result.companyCode}.',
-        );
-        final nav = Navigator.of(context);
-        nav.popUntil((r) => r.isFirst);
-        nav.pushReplacement(
+        // Full-screen success — snackbars vanish when routes pop; avoid relying on them.
+        Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(
             builder: (_) => HrRegistrationSuccessScreen(
               email: widget.email,
               companyCode: result.companyCode,
+              registeredCompanyName: companyName,
             ),
           ),
+          (_) => false,
         );
       } catch (e) {
         await HrSelfRegisterDraft.save(
@@ -137,91 +134,117 @@ class _HrRegisterCompanyDetailsScreenState
             constraints: BoxConstraints(
               maxWidth: Responsive.contentMaxWidth(context).clamp(0, 520),
             ),
-            child: Card(
-              color: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      'Almost done',
-                      style: GoogleFonts.poppins(
-                        color: const Color(0xFF111827),
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '${widget.email.trim()} is verified. '
-                      'Add your business details — company codes are assigned automatically (01, 02, 03…).',
-                      style: GoogleFonts.poppins(
-                        color: const Color(0xFF6B7280),
-                        fontSize: 13,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    TextField(
-                      controller: _companyCtrl,
-                      autofillHints: const [AutofillHints.organizationName],
-                      textInputAction: TextInputAction.next,
-                      decoration: const InputDecoration(labelText: 'Company name'),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _ownerFirstCtrl,
-                      autofillHints: const [AutofillHints.givenName],
-                      textInputAction: TextInputAction.next,
-                      decoration: const InputDecoration(
-                        labelText: 'Your first name',
-                        hintText: 'Company owner / HR employee record',
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _ownerLastCtrl,
-                      autofillHints: const [AutofillHints.familyName],
-                      textInputAction: TextInputAction.done,
-                      onSubmitted: (_) => _loading ? null : _createCompany(),
-                      decoration: const InputDecoration(
-                        labelText: 'Your last name (optional)',
-                      ),
-                    ),
-                    const SizedBox(height: 22),
-                    SizedBox(
-                      height: 50,
-                      child: ElevatedButton(
-                        onPressed: _loading ? null : _createCompany,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppTheme.gold,
-                          foregroundColor: AppTheme.black,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Step 3 of 3 · Register your company',
+                  style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF2563EB),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'After email + verification code, this is the only screen that asks for company and owner name. '
+                  'If you ever sign in without finishing setup, HR Sign In may show the same fields in a small dialog — same step.',
+                  style: GoogleFonts.poppins(
+                    fontSize: 11,
+                    height: 1.35,
+                    color: const Color(0xFF6B7280),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Card(
+                  color: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          'Almost done',
+                          style: GoogleFonts.poppins(
+                            color: const Color(0xFF111827),
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
-                        child: _loading
-                            ? const SizedBox(
-                                width: 22,
-                                height: 22,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: AppTheme.black,
-                                ),
-                              )
-                            : Text(
-                                'Create company',
-                                style: GoogleFonts.poppins(
-                                    fontWeight: FontWeight.w700),
+                        const SizedBox(height: 8),
+                        Text(
+                          '${widget.email.trim()} is verified. '
+                          'Add your business details — company codes are assigned automatically (01, 02, 03…).',
+                          style: GoogleFonts.poppins(
+                            color: const Color(0xFF6B7280),
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        TextField(
+                          controller: _companyCtrl,
+                          autofillHints: const [AutofillHints.organizationName],
+                          textInputAction: TextInputAction.next,
+                          decoration:
+                              const InputDecoration(labelText: 'Company name'),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: _ownerFirstCtrl,
+                          autofillHints: const [AutofillHints.givenName],
+                          textInputAction: TextInputAction.next,
+                          decoration: const InputDecoration(
+                            labelText: 'Your first name',
+                            hintText: 'Company owner / HR employee record',
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: _ownerLastCtrl,
+                          autofillHints: const [AutofillHints.familyName],
+                          textInputAction: TextInputAction.done,
+                          onSubmitted: (_) =>
+                              _loading ? null : _createCompany(),
+                          decoration: const InputDecoration(
+                            labelText: 'Your last name (optional)',
+                          ),
+                        ),
+                        const SizedBox(height: 22),
+                        SizedBox(
+                          height: 50,
+                          child: ElevatedButton(
+                            onPressed: _loading ? null : _createCompany,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppTheme.gold,
+                              foregroundColor: AppTheme.black,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
                               ),
-                      ),
+                            ),
+                            child: _loading
+                                ? const SizedBox(
+                                    width: 22,
+                                    height: 22,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: AppTheme.black,
+                                    ),
+                                  )
+                                : Text(
+                                    'Create company',
+                                    style: GoogleFonts.poppins(
+                                        fontWeight: FontWeight.w700),
+                                  ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
-              ),
+              ],
             ),
           ),
         ),

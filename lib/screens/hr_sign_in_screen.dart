@@ -230,7 +230,7 @@ class _HrSignInScreenState extends State<HrSignInScreen> {
         builder: (context) {
           return AlertDialog(
           title: Text(
-            'Complete company setup',
+            'Finish company registration',
             style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
           ),
           content: Column(
@@ -239,11 +239,10 @@ class _HrSignInScreenState extends State<HrSignInScreen> {
             children: [
               Text(
                 prefill != null
-                    ? 'Almost done — confirm your company and name below '
-                        '(same details as registration). Edit if needed.'
-                    : 'Your email is verified, but no company is linked yet.\n'
-                        'Enter your company and name — you will be saved as owner with full HR access '
-                        'and an employee profile linked for attendance.',
+                    ? 'This is the same step as “Step 3 of 3 · Register your company” on the signup path — '
+                        'confirm company name and your name below (edit if needed).'
+                    : 'Your HR login works, but no company is linked yet — usually because setup was interrupted.\n'
+                        'Enter your company and name once; you become owner with full HR access and a linked employee profile.',
                 style: GoogleFonts.poppins(fontSize: 12, color: const Color(0xFF6B7280)),
               ),
               const SizedBox(height: 12),
@@ -276,7 +275,7 @@ class _HrSignInScreenState extends State<HrSignInScreen> {
                 backgroundColor: AppTheme.gold,
                 foregroundColor: AppTheme.black,
               ),
-              child: const Text('Complete setup'),
+              child: const Text('Create company'),
             ),
           ],
           );
@@ -305,10 +304,6 @@ class _HrSignInScreenState extends State<HrSignInScreen> {
         );
         await HrSelfRegisterDraft.clear();
         if (!mounted) return false;
-        showSuccessSnack(
-          context,
-          'Company setup complete. Your company code is ${result.companyCode}.',
-        );
         AppTelemetry.logInfo(
           screen: 'hr_sign_in_screen',
           action: 'company_setup_completed',
