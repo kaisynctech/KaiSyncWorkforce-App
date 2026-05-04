@@ -184,14 +184,21 @@ class HrRegistrationSuccessScreen extends StatelessWidget {
                     SizedBox(
                       height: 50,
                       child: ElevatedButton.icon(
-                        onPressed: () => Navigator.of(context).pushAndRemoveUntil(
-                          MaterialPageRoute(
-                            builder: (_) => HrSignInScreen(
-                              initialEmail: email,
+                        onPressed: () async {
+                          // Fresh password sign-in — avoid stale OTP/session confusing Auth.
+                          try {
+                            await SupabaseTimesheetStorage.signOutHr();
+                          } catch (_) {}
+                          if (!context.mounted) return;
+                          Navigator.of(context).pushAndRemoveUntil(
+                            MaterialPageRoute(
+                              builder: (_) => HrSignInScreen(
+                                initialEmail: email,
+                              ),
                             ),
-                          ),
-                          (route) => false,
-                        ),
+                            (route) => false,
+                          );
+                        },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppTheme.gold,
                           foregroundColor: AppTheme.black,

@@ -50,8 +50,13 @@ class _HrSignInScreenState extends State<HrSignInScreen> {
     setState(() => _loading = true);
     try {
       await _completeSignedInFlow();
-    } catch (e) {
-      AppTelemetry.logError(screen: 'hr_sign_in_screen', action: 'resume_session', error: e);
+    } catch (e, stack) {
+      AppTelemetry.logError(
+        screen: 'hr_sign_in_screen',
+        action: 'resume_session',
+        error: e,
+        stackTrace: stack,
+      );
       _showError(friendlyErrorMessage(e, fallback: 'Could not continue setup from your session.'));
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -66,7 +71,7 @@ class _HrSignInScreenState extends State<HrSignInScreen> {
   }
 
   Future<void> _signIn() async {
-    final email = _emailCtrl.text.trim();
+    final email = _emailCtrl.text.trim().toLowerCase();
     final password = _passwordCtrl.text;
     if (email.isEmpty || password.isEmpty) {
       _showError('Enter email and password.');
@@ -78,25 +83,64 @@ class _HrSignInScreenState extends State<HrSignInScreen> {
       TextInput.finishAutofillContext();
       await SupabaseTimesheetStorage.signInHr(email: email, password: password);
       await _completeSignedInFlow();
-      AppTelemetry.logInfo(
+    } on AuthException catch (e) {
+      AppTelemetry.logError(screen: 'hr_sign_in_screen', action: 'sign_in_auth', error: e);
+      if (!mounted) return;
+      _showError(friendlyHrPasswordSignInError(e));
+    } catch (e, stack) {
+      AppTelemetry.logError(
         screen: 'hr_sign_in_screen',
-        action: 'sign_in_success',
+        action: 'sign_in_flow',
+        error: e,
+        stackTrace: stack,
       );
-    } catch (e) {
-      AppTelemetry.logError(screen: 'hr_sign_in_screen', action: 'sign_in', error: e);
-      _showError(friendlyErrorMessage(e, fallback: 'HR sign-in failed.'));
+      if (!mounted) return;
+      final signedIn = Supabase.instance.client.auth.currentUser != null;
+      if (signedIn) {
+        await SupabaseTimesheetStorage.signOutHr();
+        _showError(
+          friendlyErrorMessage(
+            e,
+            fallback: 'Signed in, but we could not load your HR workspace. Try again.',
+          ),
+        );
+      } else {
+        _showError(friendlyErrorMessage(e, fallback: 'HR sign-in failed.'));
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
-  Future<void> _completeSignedInFlow() async {
-    final profile = await SupabaseTimesheetStorage.getCurrentHrProfile();
+  /// Returns true only after navigating to the employer dashboard.
+  Future<bool> _completeSignedInFlow() async {
+    HrUserProfile? profile;
+    try {
+      profile = await SupabaseTimesheetStorage.getCurrentHrProfile();
+    } catch (e, stack) {
+      AppTelemetry.logError(
+        screen: 'hr_sign_in_screen',
+        action: 'hr_profile_fetch',
+        error: e,
+        stackTrace: stack,
+      );
+      await SupabaseTimesheetStorage.signOutHr();
+      if (!mounted) return false;
+      _showError(
+        friendlyErrorMessage(
+          e,
+          fallback: 'Could not read your HR profile. Check database policies or try again.',
+        ),
+      );
+      return false;
+    }
+
     if (profile != null && !profile.isActive) {
       await SupabaseTimesheetStorage.signOutHr();
       _showError('Your HR account is inactive. Contact your administrator.');
-      return;
+      return false;
     }
+
     String? mappedCompanyId =
         await SupabaseTimesheetStorage.getHrMappedCompanyIdForCurrentUser();
 
@@ -117,8 +161,8 @@ class _HrSignInScreenState extends State<HrSignInScreen> {
       final created = await _promptCompleteSetup(prefill: prefill);
       if (!created) {
         await SupabaseTimesheetStorage.signOutHr();
-        setState(() => _loading = false);
-        return;
+        if (mounted) setState(() => _loading = false);
+        return false;
       }
       mappedCompanyId =
           await SupabaseTimesheetStorage.getHrMappedCompanyIdForCurrentUser();
@@ -132,12 +176,32 @@ class _HrSignInScreenState extends State<HrSignInScreen> {
         action: 'mapping_check',
         error: 'mapping_missing_after_setup',
       );
-      return;
+      return false;
     }
 
-    final companySettings = await SupabaseTimesheetStorage.getCompanySettings(
-      companyId: mappedCompanyId,
-    );
+    CompanySettings? companySettings;
+    try {
+      companySettings = await SupabaseTimesheetStorage.getCompanySettings(
+        companyId: mappedCompanyId,
+      );
+    } catch (e, stack) {
+      AppTelemetry.logError(
+        screen: 'hr_sign_in_screen',
+        action: 'company_settings_fetch',
+        error: e,
+        stackTrace: stack,
+      );
+      await SupabaseTimesheetStorage.signOutHr();
+      if (!mounted) return false;
+      _showError(
+        friendlyErrorMessage(
+          e,
+          fallback: 'Could not load company settings for your account.',
+        ),
+      );
+      return false;
+    }
+
     if (companySettings != null &&
         !companySettings.isInFreeTrial &&
         companySettings.effectivePlanCode == 'free_trial') {
@@ -146,7 +210,7 @@ class _HrSignInScreenState extends State<HrSignInScreen> {
         'Free trial ended on ${DateFormat('yyyy-MM-dd').format(companySettings.trialEndsAt)}. '
         'Please upgrade to Basic, Pro, or Premium.',
       );
-      return;
+      return false;
     }
 
     final mappedCompanyCode =
@@ -155,10 +219,10 @@ class _HrSignInScreenState extends State<HrSignInScreen> {
     if (effectiveCode.isEmpty) {
       await SupabaseTimesheetStorage.signOutHr();
       _showError('Company code is not available for this account.');
-      return;
+      return false;
     }
 
-    if (!mounted) return;
+    if (!mounted) return false;
     final timesheet = context.read<TimesheetProvider>();
     final jobProvider = context.read<JobProvider>();
     await timesheet.setCurrentEmployee(null);
@@ -166,7 +230,7 @@ class _HrSignInScreenState extends State<HrSignInScreen> {
     jobProvider.setCompanyId(mappedCompanyId);
     await timesheet.loadEmployees();
 
-    if (!mounted) return;
+    if (!mounted) return false;
     showSuccessSnack(
       context,
       companySettings != null && companySettings.isInFreeTrial
@@ -181,6 +245,7 @@ class _HrSignInScreenState extends State<HrSignInScreen> {
       action: 'sign_in_success',
       details: 'role=${profile?.role ?? 'unknown'}',
     );
+    return true;
   }
 
   /// Completes `self_register_company` using data saved during HR onboarding,

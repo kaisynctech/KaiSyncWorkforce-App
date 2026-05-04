@@ -275,7 +275,10 @@ class SupabaseTimesheetStorage {
     required String email,
     required String password,
   }) async {
-    await _client.auth.signInWithPassword(email: email, password: password);
+    await _client.auth.signInWithPassword(
+      email: email.trim().toLowerCase(),
+      password: password,
+    );
   }
 
   static Future<void> signOutHr() async {

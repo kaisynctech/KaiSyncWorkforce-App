@@ -3,6 +3,35 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:postgrest/postgrest.dart' show PostgrestException;
 import 'package:supabase_flutter/supabase_flutter.dart' show AuthException;
 
+/// Maps Supabase password sign-in failures to actionable copy (HR portal).
+String friendlyHrPasswordSignInError(AuthException e) {
+  final m = e.message.trim();
+  final lower = m.toLowerCase();
+  if (m.isEmpty) {
+    return 'Sign-in failed with no details from the server. Check your email and password, caps lock, '
+        'and use the same password you set when you finished email verification.';
+  }
+  if (lower.contains('invalid') &&
+      (lower.contains('credential') ||
+          lower.contains('password') ||
+          lower.contains('login'))) {
+    return 'Wrong email or password. Use the verified HR email and the password you chose during '
+        'registration (passwords are case-sensitive).';
+  }
+  if (lower.contains('email') && lower.contains('confirm')) {
+    return 'This email is not confirmed for password login. In Supabase → Authentication → Providers → Email, '
+        'disable “Confirm email” for testing or confirm the user in the Users table.';
+  }
+  if (lower.contains('user') &&
+      (lower.contains('not found') || lower.contains('does not exist'))) {
+    return 'No account found for this email. Register first or check for a typo in the address.';
+  }
+  if (lower.contains('too many') || lower.contains('rate limit')) {
+    return '$m Wait a few minutes and try again.';
+  }
+  return m;
+}
+
 String friendlyErrorMessage(Object? error, {required String fallback}) {
   if (error is PostgrestException) {
     final m = error.message.trim();
