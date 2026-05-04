@@ -1,8 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:postgrest/postgrest.dart' show PostgrestException;
 import 'package:supabase_flutter/supabase_flutter.dart' show AuthException;
 
 String friendlyErrorMessage(Object? error, {required String fallback}) {
+  if (error is PostgrestException) {
+    final m = error.message.trim();
+    final lower = m.toLowerCase();
+    if (lower.contains('already mapped') && lower.contains('company')) {
+      return 'This login is already linked to a company. Use “HR sign in” on the home screen — '
+          'do not register again. If you forgot your company code, contact support.';
+    }
+    if (lower.contains('must be signed in') && lower.contains('register')) {
+      return 'Your session expired before company setup finished. Sign in with HR, then try '
+          '“Create company” again (your details may be saved from last time).';
+    }
+    if (lower.contains('company name is required')) {
+      return 'Enter a company name.';
+    }
+    if (m.isNotEmpty) {
+      return m;
+    }
+    return fallback;
+  }
+
   if (error is AuthException) {
     final m = error.message.trim();
     if (m.isEmpty) return fallback;

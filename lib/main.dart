@@ -11,6 +11,7 @@ import 'theme/app_theme.dart';
 import 'providers/job_provider.dart';
 import 'providers/timesheet_provider.dart';
 import 'screens/id_entry_screen.dart';
+import 'services/auth_signed_out_navigation_guard.dart';
 import 'supabase_config.dart';
 
 void main() {
@@ -79,6 +80,9 @@ class _TimesheetAppState extends State<TimesheetApp> {
         // Only treat explicit sign-out as “leave the dashboard”.
         // Token refresh must not reset navigation (would feel like data/session loss).
         if (data.event == AuthChangeEvent.signedOut) {
+          if (AuthSignedOutNavigationGuard.suppressSignedOutNavigation) {
+            return;
+          }
           _navigatorKey.currentState?.pushAndRemoveUntil(
             MaterialPageRoute(builder: (_) => const IdEntryScreen()),
             (route) => false,

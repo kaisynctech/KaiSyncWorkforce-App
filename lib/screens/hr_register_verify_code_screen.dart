@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/app_telemetry.dart';
+import '../services/auth_signed_out_navigation_guard.dart';
 import '../services/hr_self_register_draft.dart';
 import '../services/supabase_timesheet_storage.dart';
 import '../theme/app_theme.dart';
@@ -91,24 +92,30 @@ class _HrRegisterVerifyCodeScreenState extends State<HrRegisterVerifyCodeScreen>
 
       if (!hasLiveSession) {
         // Drop zombie tokens so verifyOTP can mint a fresh session for this email.
-        await Supabase.instance.client.auth.signOut();
+        // Intentional sign-out must not trigger global nav reset (main.dart listener).
+        AuthSignedOutNavigationGuard.enter();
         try {
-          await SupabaseTimesheetStorage.verifyHrRegistrationEmailOtp(
-            email: widget.email,
-            otp: code,
-          );
-        } catch (e) {
-          AppTelemetry.logError(
-            screen: 'hr_register_verify_code_screen',
-            action: 'verify_otp',
-            error: e,
-          );
-          if (!mounted) return;
-          showErrorSnack(
-            context,
-            friendlyErrorMessage(e, fallback: 'Email verification failed.'),
-          );
-          return;
+          await Supabase.instance.client.auth.signOut();
+          try {
+            await SupabaseTimesheetStorage.verifyHrRegistrationEmailOtp(
+              email: widget.email,
+              otp: code,
+            );
+          } catch (e) {
+            AppTelemetry.logError(
+              screen: 'hr_register_verify_code_screen',
+              action: 'verify_otp',
+              error: e,
+            );
+            if (!mounted) return;
+            showErrorSnack(
+              context,
+              friendlyErrorMessage(e, fallback: 'Email verification failed.'),
+            );
+            return;
+          }
+        } finally {
+          AuthSignedOutNavigationGuard.leave();
         }
       }
 

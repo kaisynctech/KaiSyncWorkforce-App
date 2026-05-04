@@ -22,6 +22,7 @@ dependencies:
   provider: ^6.1.2
   google_fonts: ^6.2.1
   supabase_flutter: ^2.5.0
+  postgrest: ^2.6.0
   file_saver: ^0.3.1
   file_picker: ^8.1.2
   excel: ^4.0.6
