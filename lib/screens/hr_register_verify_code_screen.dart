@@ -57,14 +57,30 @@ class _HrRegisterVerifyCodeScreenState extends State<HrRegisterVerifyCodeScreen>
     }
   }
 
+  /// [currentUser] can look fine locally while the JWT is stale (user deleted in
+  /// Dashboard, wrong project, etc.). That breaks `updateUser` with:
+  /// "User from sub claim in JWT does not exist". Always validate with the server.
+  Future<bool> _serverSessionMatchesRegistrationEmail(
+    String normalizedEmail,
+  ) async {
+    try {
+      final response = await Supabase.instance.client.auth.getUser();
+      final u = response.user;
+      if (u == null) return false;
+      return u.email?.trim().toLowerCase() == normalizedEmail;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> _continueToCompanyStep() async {
     final code = _otpCtrl.text.trim();
     final normalizedEmail = widget.email.trim().toLowerCase();
-    final user = Supabase.instance.client.auth.currentUser;
-    final alreadySignedInAsSelf =
-        user?.email?.trim().toLowerCase() == normalizedEmail;
+    final hasLiveSession =
+        await _serverSessionMatchesRegistrationEmail(normalizedEmail);
 
-    if (!alreadySignedInAsSelf && code.isEmpty) {
+    if (!mounted) return;
+    if (!hasLiveSession && code.isEmpty) {
       showInfoSnack(context, 'Enter the verification code from your email.');
       return;
     }
@@ -73,7 +89,9 @@ class _HrRegisterVerifyCodeScreenState extends State<HrRegisterVerifyCodeScreen>
     try {
       TextInput.finishAutofillContext();
 
-      if (!alreadySignedInAsSelf) {
+      if (!hasLiveSession) {
+        // Drop zombie tokens so verifyOTP can mint a fresh session for this email.
+        await Supabase.instance.client.auth.signOut();
         try {
           await SupabaseTimesheetStorage.verifyHrRegistrationEmailOtp(
             email: widget.email,

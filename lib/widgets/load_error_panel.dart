@@ -24,6 +24,10 @@ String friendlyErrorMessage(Object? error, {required String fallback}) {
       return 'That verification code is wrong or has expired. Request a new code and try again '
           'with the newest one.';
     }
+    if (lower.contains('sub claim') && lower.contains('jwt')) {
+      return 'Your browser held an old or invalid login session. We cleared it — '
+          'enter the verification code again (tap Resend code if needed).';
+    }
     return m;
   }
 
