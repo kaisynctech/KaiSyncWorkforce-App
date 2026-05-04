@@ -93,6 +93,12 @@ String friendlyErrorMessage(Object? error, {required String fallback}) {
   if (msg.contains('too large') || msg.contains('payload') || msg.contains('413')) {
     return '$fallback\nThe file or data is too large. Try a smaller file.';
   }
+  if (msg.contains('employees_employee_code_format_chk') ||
+      (msg.contains('employee_code_format_chk') && msg.contains('employees'))) {
+    return '$fallback\nThe HR owner bootstrap row uses an employee ID format your database '
+        'did not allow (often hyphen/symbol rules). Apply the latest Supabase migration '
+        '`fix_self_register_employee_code_format.sql`, then tap Create company again.';
+  }
   if (msg.contains('storage') && (msg.contains('bucket') || msg.contains('object'))) {
     return '$fallback\nFile storage error. Please try again or contact support.';
   }
