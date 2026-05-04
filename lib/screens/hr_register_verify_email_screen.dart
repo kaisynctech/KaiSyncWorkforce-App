@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/app_telemetry.dart';
 import '../services/hr_self_register_draft.dart';
@@ -64,7 +65,12 @@ class _HrRegisterVerifyEmailScreenState extends State<HrRegisterVerifyEmailScree
 
   Future<void> _verifyAndCreateCompany() async {
     final code = _otpCtrl.text.trim();
-    if (code.isEmpty) {
+    final normalizedEmail = widget.email.trim().toLowerCase();
+    final user = Supabase.instance.client.auth.currentUser;
+    final alreadySignedInAsSelf =
+        user?.email?.trim().toLowerCase() == normalizedEmail;
+
+    if (!alreadySignedInAsSelf && code.isEmpty) {
       showInfoSnack(context, 'Enter the verification code from your email.');
       return;
     }
@@ -72,51 +78,92 @@ class _HrRegisterVerifyEmailScreenState extends State<HrRegisterVerifyEmailScree
     setState(() => _loading = true);
     try {
       TextInput.finishAutofillContext();
-      await SupabaseTimesheetStorage.verifyHrRegistrationEmailOtp(
-        email: widget.email,
-        otp: code,
-      );
-      await SupabaseTimesheetStorage.setHrPasswordAfterRegistration(
-        password: widget.password,
-      );
-      final result = await SupabaseTimesheetStorage.registerCompanySelfService(
-        companyName: widget.companyName,
-        ownerFirstName: widget.ownerFirstName,
-        ownerLastName: widget.ownerLastName,
-      );
-      await HrSelfRegisterDraft.clear();
 
-      if (!mounted) return;
-      AppTelemetry.logInfo(
-        screen: 'hr_register_verify_email_screen',
-        action: 'register_success',
-        details: 'company_code=${result.companyCode}',
-      );
-      showSuccessSnack(
-        context,
-        'Registration successful. Your company code is ${result.companyCode}.',
-      );
-      final nav = Navigator.of(context);
-      nav.popUntil((r) => r.isFirst);
-      nav.pushReplacement(
-        MaterialPageRoute(
-          builder: (_) => HrRegistrationSuccessScreen(
+      if (!alreadySignedInAsSelf) {
+        try {
+          await SupabaseTimesheetStorage.verifyHrRegistrationEmailOtp(
             email: widget.email,
-            companyCode: result.companyCode,
+            otp: code,
+          );
+        } catch (e) {
+          AppTelemetry.logError(
+            screen: 'hr_register_verify_email_screen',
+            action: 'verify_otp',
+            error: e,
+          );
+          if (!mounted) return;
+          showErrorSnack(
+            context,
+            friendlyErrorMessage(e, fallback: 'Email verification failed.'),
+          );
+          return;
+        }
+      }
+
+      try {
+        await SupabaseTimesheetStorage.setHrPasswordAfterRegistration(
+          password: widget.password,
+        );
+      } catch (e) {
+        AppTelemetry.logError(
+          screen: 'hr_register_verify_email_screen',
+          action: 'set_password_after_registration',
+          error: e,
+        );
+        if (!mounted) return;
+        showErrorSnack(
+          context,
+          friendlyErrorMessage(e, fallback: 'Could not save your password.'),
+        );
+        return;
+      }
+
+      try {
+        final result = await SupabaseTimesheetStorage.registerCompanySelfService(
+          companyName: widget.companyName,
+          ownerFirstName: widget.ownerFirstName,
+          ownerLastName: widget.ownerLastName,
+        );
+
+        await HrSelfRegisterDraft.clear();
+
+        if (!mounted) return;
+        AppTelemetry.logInfo(
+          screen: 'hr_register_verify_email_screen',
+          action: 'register_success',
+          details: 'company_code=${result.companyCode}',
+        );
+        showSuccessSnack(
+          context,
+          'Registration successful. Your company code is ${result.companyCode}.',
+        );
+        final nav = Navigator.of(context);
+        nav.popUntil((r) => r.isFirst);
+        nav.pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => HrRegistrationSuccessScreen(
+              email: widget.email,
+              companyCode: result.companyCode,
+            ),
           ),
-        ),
-      );
-    } catch (e) {
-      AppTelemetry.logError(
-        screen: 'hr_register_verify_email_screen',
-        action: 'verify_or_company_setup',
-        error: e,
-      );
-      if (!mounted) return;
-      showErrorSnack(
-        context,
-        friendlyErrorMessage(e, fallback: 'Verification or setup failed.'),
-      );
+        );
+      } catch (e) {
+        AppTelemetry.logError(
+          screen: 'hr_register_verify_email_screen',
+          action: 'register_company_self_service',
+          error: e,
+        );
+        if (!mounted) return;
+        showErrorSnack(
+          context,
+          friendlyErrorMessage(
+            e,
+            fallback:
+                'Company setup failed. If you already registered, sign in instead.',
+          ),
+        );
+        return;
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
