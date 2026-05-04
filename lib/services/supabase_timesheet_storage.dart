@@ -302,6 +302,31 @@ class SupabaseTimesheetStorage {
     return buf.toString();
   }
 
+  /// First-time `signInWithOtp` emails often use type **signup**; resends may use **email**.
+  /// Try signup first so pasted OTP matches Confirm signup / Magic link flows.
+  static Future<void> _verifyEmailOtpWithFallback({
+    required String email,
+    required String token,
+    String? redirectTo,
+  }) async {
+    final lower = email.trim().toLowerCase();
+    try {
+      await _client.auth.verifyOTP(
+        type: OtpType.signup,
+        email: lower,
+        token: token,
+        redirectTo: redirectTo,
+      );
+    } on AuthException {
+      await _client.auth.verifyOTP(
+        type: OtpType.email,
+        email: lower,
+        token: token,
+        redirectTo: redirectTo,
+      );
+    }
+  }
+
   static Future<void> verifyHrRegistrationEmailOtp({
     required String email,
     required String otp,
@@ -310,9 +335,8 @@ class SupabaseTimesheetStorage {
     if (token.isEmpty) {
       throw AuthException('Enter the verification code from your email.');
     }
-    await _client.auth.verifyOTP(
-      type: OtpType.email,
-      email: email.trim().toLowerCase(),
+    await _verifyEmailOtpWithFallback(
+      email: email,
       token: token,
       redirectTo: _authEmailRedirectTo,
     );
@@ -9969,9 +9993,8 @@ class SupabaseTimesheetStorage {
     if (token.isEmpty) {
       throw AuthException('Enter the verification code from your email.');
     }
-    await _client.auth.verifyOTP(
-      type: OtpType.email,
-      email: email.trim().toLowerCase(),
+    await _verifyEmailOtpWithFallback(
+      email: email,
       token: token,
       redirectTo: _authEmailRedirectTo,
     );

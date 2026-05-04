@@ -9,6 +9,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_web_plugins:
+    sdk: flutter
   geolocator: ^13.0.2
   geocoding: ^3.0.0
   image_picker: ^1.1.2
