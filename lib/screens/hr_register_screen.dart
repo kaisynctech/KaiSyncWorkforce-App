@@ -9,7 +9,7 @@ import '../theme/responsive.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/load_error_panel.dart';
 import '../services/hr_self_register_draft.dart';
-import 'hr_register_verify_email_screen.dart';
+import 'hr_register_verify_code_screen.dart';
 
 class HrRegisterScreen extends StatefulWidget {
   const HrRegisterScreen({super.key});
@@ -72,7 +72,7 @@ class _HrRegisterScreenState extends State<HrRegisterScreen> {
       );
       Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => HrRegisterVerifyEmailScreen(
+          builder: (_) => HrRegisterVerifyCodeScreen(
             email: email,
             password: password,
           ),
@@ -211,6 +211,17 @@ class _HrRegisterScreenState extends State<HrRegisterScreen> {
                                 'Continue — send verification code',
                                 style: GoogleFonts.poppins(fontWeight: FontWeight.w700),
                               ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Sending a code may create a pending sign-up for this email in Supabase '
+                      '(not verified until you complete the next steps). You can remove stale rows '
+                      'under Dashboard → Authentication → Users.',
+                      style: GoogleFonts.poppins(
+                        fontSize: 11,
+                        color: const Color(0xFF9CA3AF),
+                        height: 1.35,
                       ),
                     ),
                   ],
