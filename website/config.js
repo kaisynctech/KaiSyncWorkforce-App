@@ -10,7 +10,7 @@ window.KAIFLOW_CONFIG = {
     supportEmail: 'kaisynctech@gmail.com',
     /** Used when app_versions rows have no hosted download URLs yet. */
     fallbackDownloads: {
-        windows: 'https://github.com/kaisynctech/KaiSyncWorkforce-App/releases/latest',
-        android: 'https://github.com/kaisynctech/KaiSyncWorkforce-App/releases/latest'
+        windows: 'https://github.com/kaisynctech/KaiSyncWorkforce-App/releases/download/v1.0.0/KaiFlowSetup.exe',
+        android: 'https://github.com/kaisynctech/KaiSyncWorkforce-App/releases/download/v1.0.0/KaiFlow-v1.0.0.apk'
     }
 };

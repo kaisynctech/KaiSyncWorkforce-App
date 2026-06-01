@@ -89,14 +89,23 @@ Optional parameters:
 
 | Feature | Implementation |
 |---------|----------------|
-| Install location | `%ProgramFiles%\KaiFlow` |
+| Install location | `%ProgramFiles%\KaiFlow` (requires admin — `PrivilegesRequired=admin`) |
 | Start Menu | KaiFlow shortcut + Uninstall entry |
-| Desktop shortcut | Optional (checked by default) |
+| Desktop shortcut | Checked by default on first install (`checkedonce`) |
 | Branding | App name **KaiFlow**, publisher **KaiSync Tech** |
-| Version in filename | `KaiFlowSetup.exe` (version in file properties) |
+| Version in file properties | `1.0.0.0` via Inno `VersionInfo*` |
+| Upgrade | Same `AppId` — re-run installer to upgrade in place |
 | Launch after install | Optional post-install run |
 
 Script: `installers/KaiFlowSetup.iss`
+
+### Automated verification
+
+```powershell
+.\scripts\verify_windows_installer.ps1
+```
+
+Runs silent fresh install, upgrade, and uninstall against `C:\Program Files\KaiFlow`.
 
 ---
 
@@ -104,12 +113,13 @@ Script: `installers/KaiFlowSetup.iss`
 
 - [ ] Bump `ApplicationDisplayVersion` and `ApplicationVersion` in `.csproj`
 - [ ] Run `.\scripts\build_windows_installer.ps1`
+- [ ] Run `.\scripts\verify_windows_installer.ps1`
 - [ ] Smoke-test `KaiFlowSetup.exe` on a clean Windows VM
 - [ ] Verify Start Menu + desktop shortcut
 - [ ] Sign in as HR — dashboard loads
 - [ ] Employee code login + punch smoke test
-- [ ] Upload `KaiFlowSetup.exe` to Supabase Storage (see [release-hosting.md](./release-hosting.md))
-- [ ] Update `app_versions.download_url_windows` with public URL
+- [ ] Upload `dist/KaiFlowSetup.exe` to GitHub Release (see [release-hosting.md](./release-hosting.md))
+- [ ] Update `app_versions.download_url_windows` with GitHub Release URL
 - [ ] Verify [Download Center](https://kaisyncworkforce.vercel.app/download) button
 - [ ] Verify in-app update check opens download URL
 

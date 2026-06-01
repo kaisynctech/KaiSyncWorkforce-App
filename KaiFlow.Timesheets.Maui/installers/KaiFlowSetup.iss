@@ -17,6 +17,7 @@
 #define MyAppPublisher "KaiSync Tech"
 #define MyAppExeName "KaiFlow.Timesheets.Maui.exe"
 #define MyAppId "{{A7F3C2E1-9B4D-4F8A-8E2C-1D5A0F102026}"
+#define MyAppURL "https://www.kaisyncworkforce.com/"
 
 [Setup]
 AppId={#MyAppId}
@@ -24,9 +25,10 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion} (build {#MyAppBuild})
 AppPublisher={#MyAppPublisher}
-AppPublisherURL=https://kaisyncworkforce.vercel.app/
+AppPublisherURL={#MyAppURL}
 AppSupportURL=mailto:kaisynctech@gmail.com
-DefaultDirName={autopf}\KaiFlow
+AppUpdatesURL={#MyAppURL}download.html
+DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=no
 OutputDir=..\dist
@@ -36,13 +38,18 @@ SolidCompression=yes
 WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-PrivilegesRequired=lowest
+PrivilegesRequired=admin
+PrivilegesRequiredOverridesAllowed=dialog
 UninstallDisplayIcon={app}\{#MyAppExeName}
 VersionInfoVersion={#MyAppVersion}.0
+VersionInfoProductVersion={#MyAppVersion}.0
 VersionInfoProductName={#MyAppName}
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription=KaiFlow Workforce Platform
 VersionInfoTextVersion={#MyAppVersion} (build {#MyAppBuild})
+CloseApplications=force
+RestartApplications=yes
+MinVersion=10.0.17763
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

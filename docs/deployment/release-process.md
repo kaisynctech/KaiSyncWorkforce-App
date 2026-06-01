@@ -7,9 +7,9 @@ Standard operating procedure for publishing a KaiFlow pilot or production releas
 ## Overview
 
 ```
-Build (Windows + Android)
-    → Upload to Supabase Storage (releases bucket)
-    → Update app_versions
+Build (Windows installer + Android APK)
+    → Upload to GitHub Releases
+    → Update app_versions (download URLs)
     → Deploy website (if copy changed)
     → Verify Download Center + in-app updates
     → Monitor telemetry 48h
@@ -17,7 +17,7 @@ Build (Windows + Android)
 
 ---
 
-## Step 1 — Build Windows release
+## Step 1 — Build Windows installer
 
 ```powershell
 cd KaiFlow.Timesheets.Maui
@@ -26,13 +26,16 @@ cd KaiFlow.Timesheets.Maui
 .\scripts\build_windows_installer.ps1
 ```
 
-**Artifact:** `dist/KaiFlowSetup.exe`  
+**Artifact:** `dist/KaiFlowSetup.exe` (Inno Setup installer)  
+**Optional:** `dist/KaiFlowSetup-v{version}.exe` (versioned copy for release tagging)  
 **Doc:** [windows-installer.md](./windows-installer.md)
 
 Checklist:
 - [ ] Version/build incremented in csproj
-- [ ] Installer runs on clean VM
-- [ ] HR login + employee punch smoke test
+- [ ] `.\scripts\verify_windows_installer.ps1` passes (fresh install, upgrade, uninstall)
+- [ ] HR login + employee punch smoke test on installed app
+
+> **Do not ship** raw `publish/windows/` folders or ZIP archives to customers.
 
 ---
 
@@ -52,14 +55,14 @@ Rename output to `KaiFlow-v{version}.apk`.
 
 ---
 
-## Step 3 — Upload to Supabase Storage
+## Step 3 — Upload to GitHub Releases
 
-Upload to `releases` bucket:
+Create or update a GitHub Release (e.g. `v1.0.0`) and attach:
 
-| File | Storage path |
-|------|--------------|
-| Windows installer | `releases/windows/KaiFlowSetup.exe` |
-| Android APK | `releases/android/KaiFlow-v1.0.0.apk` |
+| File | Release asset name |
+|------|-------------------|
+| Windows installer | `KaiFlowSetup.exe` |
+| Android APK | `KaiFlow-v1.0.0.apk` |
 
 **Doc:** [release-hosting.md](./release-hosting.md)
 
@@ -68,30 +71,18 @@ Upload to `releases` bucket:
 ## Step 4 — Create or update app_versions record
 
 ```sql
-INSERT INTO public.app_versions (
-  version, build_number, release_notes, minimum_required_version,
-  download_url_windows, download_url_android,
-  is_mandatory, is_active, release_date
-) VALUES (
-  '1.0.0', 1,
-  'KaiFlow pilot release — workforce, payroll, finance, portals.',
-  '1.0.0',
-  'https://vcivtjwreybaxgtdhtou.supabase.co/storage/v1/object/public/releases/windows/KaiFlowSetup.exe',
-  'https://vcivtjwreybaxgtdhtou.supabase.co/storage/v1/object/public/releases/android/KaiFlow-v1.0.0.apk',
-  false, true, now()
-)
-ON CONFLICT (version, build_number) DO UPDATE SET
-  release_notes = EXCLUDED.release_notes,
-  download_url_windows = EXCLUDED.download_url_windows,
-  download_url_android = EXCLUDED.download_url_android,
-  is_mandatory = EXCLUDED.is_mandatory,
-  is_active = EXCLUDED.is_active,
-  release_date = EXCLUDED.release_date;
+UPDATE public.app_versions
+SET
+  download_url = 'https://github.com/kaisynctech/KaiSyncWorkforce-App/releases/download/v1.0.0/KaiFlowSetup.exe',
+  download_url_windows = 'https://github.com/kaisynctech/KaiSyncWorkforce-App/releases/download/v1.0.0/KaiFlowSetup.exe',
+  download_url_android = 'https://github.com/kaisynctech/KaiSyncWorkforce-App/releases/download/v1.0.0/KaiFlow-v1.0.0.apk',
+  release_notes = 'Pilot release — Windows installer + Android APK.',
+  release_date = now(),
+  is_active = true
+WHERE version = '1.0.0' AND build_number = 1;
 ```
 
-**Mandatory update:** set `is_mandatory = true` OR set `minimum_required_version` above old client versions.
-
-Deactivate old rows: `UPDATE app_versions SET is_active = false WHERE version < 'X';` (only one active latest is selected by RPC — newest `release_date` wins).
+**Mandatory update:** set `is_mandatory = true` OR raise `minimum_required_version` so older clients are blocked at login until updated.
 
 ---
 
@@ -104,17 +95,14 @@ Release notes appear in:
 
 Write customer-facing notes in `release_notes` column (plain text, newline-separated bullets).
 
-Optional: email pilot customers using [07-client-onboarding-pack.md](./07-client-onboarding-pack.md).
-
 ---
 
 ## Step 6 — Verify Download Center
 
-1. Open https://kaisyncworkforce.vercel.app/download
-2. Confirm **Latest Version**, **Release Date**, **Release Notes** load (not hardcoded)
-3. Click **Download for Windows** → file downloads
+1. Open https://www.kaisyncworkforce.com/download
+2. Confirm **Latest Version**, **Release Date**, **Release Notes** load
+3. Click **Download for Windows** → `KaiFlowSetup.exe` downloads (not a ZIP)
 4. Click **Download for Android** → APK downloads
-5. iOS section shows web app + Add to Home Screen instructions
 
 ---
 
@@ -126,13 +114,12 @@ Optional: email pilot customers using [07-client-onboarding-pack.md](./07-client
 2. Launch app → login screen.
 3. Expect alert: **Update Available** with **View update** / **Later**.
 4. **UpdatePage** shows installed vs latest version + release notes.
-5. **Download update** opens configured URL.
+5. **Download update** opens `KaiFlowSetup.exe` URL.
 
 ### Mandatory update
 
 1. Set `is_mandatory = true` on new `app_versions` row (test environment first).
 2. Launch old version → routed directly to **UpdatePage** (no skip).
-3. **Update later** hidden; user must download update.
 
 **Code path:** `IdEntryPage` → `AppUpdateService.CheckDetailedAsync()` → `VersionService.CheckForUpdateAsync()` → RPC `get_latest_app_version`.
 
@@ -166,4 +153,5 @@ Rollback: [03-rollback-checklist.md](./03-rollback-checklist.md)
 
 - [01-deployment-checklist.md](./01-deployment-checklist.md)
 - [02-release-checklist.md](./02-release-checklist.md)
+- [windows-installer-deployment-report.md](./windows-installer-deployment-report.md)
 - [07-client-onboarding-pack.md](./07-client-onboarding-pack.md)

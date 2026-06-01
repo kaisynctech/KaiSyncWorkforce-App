@@ -22,7 +22,7 @@ See [docs/README.md](docs/README.md) for architecture, deployment, and pilot go-
 
 | Platform | File |
 |----------|------|
-| Windows | [KaiFlow-Windows-v1.0.0.zip](https://github.com/kaisynctech/KaiSyncWorkforce-App/releases/download/v1.0.0/KaiFlow-Windows-v1.0.0.zip) |
+| Windows | [KaiFlowSetup.exe](https://github.com/kaisynctech/KaiSyncWorkforce-App/releases/download/v1.0.0/KaiFlowSetup.exe) |
 | Android | [KaiFlow-v1.0.0.apk](https://github.com/kaisynctech/KaiSyncWorkforce-App/releases/download/v1.0.0/KaiFlow-v1.0.0.apk) |
 
 ## License
