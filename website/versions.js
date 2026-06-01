@@ -106,7 +106,6 @@
 
         var winBtn = document.getElementById('dl-btn-windows');
         var androidBtn = document.getElementById('dl-btn-android');
-        var webBtn = document.getElementById('dl-btn-web');
 
         if (winBtn && winUrl) {
             winBtn.href = winUrl;
@@ -123,8 +122,6 @@
             androidBtn.classList.add('btn-disabled');
             androidBtn.setAttribute('aria-disabled', 'true');
         }
-
-        if (webBtn && cfg.webAppUrl) webBtn.href = cfg.webAppUrl;
     }
 
     async function initReleasesPage() {
@@ -160,7 +157,6 @@
                     '<div class="release-card-actions">' +
                         (pickDownloadUrl(r, 'windows') ? '<a class="btn btn-secondary btn-sm" href="' + pickDownloadUrl(r, 'windows') + '">Windows</a>' : '') +
                         (pickDownloadUrl(r, 'android') ? '<a class="btn btn-secondary btn-sm" href="' + pickDownloadUrl(r, 'android') + '">Android</a>' : '') +
-                        '<a class="btn btn-secondary btn-sm" href="' + (cfg.webAppUrl || '#') + '">Web app</a>' +
                     '</div>'
                 ) : '');
             container.appendChild(article);

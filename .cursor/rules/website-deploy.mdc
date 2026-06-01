@@ -1,0 +1,21 @@
+---
+description: Push website/ changes to GitHub after edits so Vercel auto-deploys
+globs: website/**
+alwaysApply: false
+---
+
+# Website deploy workflow
+
+The marketing site lives in `website/` and deploys via Vercel from GitHub (`main`).
+
+After completing any change under `website/`:
+
+1. Stage only website-related files (and this rule if changed): `git add website/`
+2. Commit with a clear message focused on why (e.g. copy fix, remove dead links).
+3. Push to `origin main`: `git push`
+
+Do this in the same session as the website edit unless the user explicitly says not to push.
+
+Do not commit build artifacts, secrets, or unrelated MAUI changes in the same commit unless the user asked for a combined push.
+
+Remote: https://github.com/kaisynctech/KaiSyncWorkforce-App.git
