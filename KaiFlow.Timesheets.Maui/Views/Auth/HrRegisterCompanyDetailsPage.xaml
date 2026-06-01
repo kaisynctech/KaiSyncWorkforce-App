@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Auth.HrRegisterCompanyDetailsPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Auth"
+    x:DataType="vm:HrRegisterCompanyDetailsViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="Company Details">
+
+    <ScrollView>
+        <VerticalStackLayout
+            VerticalOptions="Center"
+            HorizontalOptions="Center"
+            Padding="24"
+            Spacing="0"
+            MaximumWidthRequest="480">
+
+            <Label
+                Text="KaiSync Workforce"
+                FontFamily="PoppinsBold"
+                FontSize="22"
+                TextColor="{StaticResource TextPrimary}"
+                HorizontalOptions="Center" />
+
+            <BoxView HeightRequest="8" Color="Transparent" />
+
+            <Label
+                Text="Set up your company"
+                FontFamily="PoppinsBold"
+                FontSize="20"
+                TextColor="{StaticResource TextPrimary}"
+                HorizontalOptions="Center" />
+
+            <BoxView HeightRequest="6" Color="Transparent" />
+
+            <Label
+                Text="Your company code will be generated automatically."
+                FontFamily="PoppinsRegular"
+                FontSize="13"
+                TextColor="{StaticResource TextSecondary}"
+                HorizontalOptions="Center"
+                HorizontalTextAlignment="Center" />
+
+            <BoxView HeightRequest="28" Color="Transparent" />
+
+            <Frame
+                BackgroundColor="{StaticResource SurfaceCard}"
+                BorderColor="{StaticResource Divider}"
+                CornerRadius="24"
+                Padding="24"
+                HasShadow="False">
+                <VerticalStackLayout Spacing="16">
+
+                    <VerticalStackLayout Spacing="6">
+                        <Label Text="Company name" Style="{StaticResource LabelField}" />
+                        <Entry
+                            Placeholder="e.g. Acme Corporation"
+                            Text="{Binding CompanyName}"
+                            IsEnabled="{Binding IsNotBusy}"
+                            Style="{StaticResource DarkEntry}"
+                            ReturnType="Next" />
+                    </VerticalStackLayout>
+
+                    <VerticalStackLayout Spacing="6">
+                        <Label Text="Your first name" Style="{StaticResource LabelField}" />
+                        <Entry
+                            Placeholder="First name"
+                            Text="{Binding OwnerFirstName}"
+                            IsEnabled="{Binding IsNotBusy}"
+                            Style="{StaticResource DarkEntry}"
+                            ReturnType="Next" />
+                    </VerticalStackLayout>
+
+                    <VerticalStackLayout Spacing="6">
+                        <Label Text="Your last name (optional)" Style="{StaticResource LabelField}" />
+                        <Entry
+                            Placeholder="Last name"
+                            Text="{Binding OwnerLastName}"
+                            IsEnabled="{Binding IsNotBusy}"
+                            Style="{StaticResource DarkEntry}"
+                            ReturnType="Done" />
+                    </VerticalStackLayout>
+
+                    <VerticalStackLayout Spacing="8">
+                        <Label Text="Your role in the company" Style="{StaticResource LabelField}" />
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                            <Button
+                                Grid.Column="0"
+                                Text="Company Owner"
+                                IsEnabled="{Binding IsNotBusy}"
+                                BackgroundColor="{Binding IsOwner, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#3B82F6|#F3F4F6'}"
+                                TextColor="{Binding IsOwner, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#6B7280'}"
+                                FontFamily="PoppinsMedium"
+                                FontSize="13"
+                                CornerRadius="10"
+                                Clicked="OnOwnerRoleClicked" />
+                            <Button
+                                Grid.Column="1"
+                                Text="HR / Admin"
+                                IsEnabled="{Binding IsNotBusy}"
+                                BackgroundColor="{Binding IsHrAdmin, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#3B82F6|#F3F4F6'}"
+                                TextColor="{Binding IsHrAdmin, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#6B7280'}"
+                                FontFamily="PoppinsMedium"
+                                FontSize="13"
+                                CornerRadius="10"
+                                Clicked="OnHrAdminRoleClicked" />
+                        </Grid>
+                        <Label
+                            Text="You can assign the actual owner later from HR Settings."
+                            FontFamily="PoppinsRegular"
+                            FontSize="12"
+                            TextColor="{StaticResource TextSecondary}"
+                            IsVisible="{Binding IsHrAdmin}" />
+                    </VerticalStackLayout>
+
+                    <Label
+                        Text="{Binding ErrorMessage}"
+                        TextColor="{StaticResource Error}"
+                        FontFamily="PoppinsRegular"
+                        FontSize="13"
+                        IsVisible="{Binding ErrorMessage, Converter={StaticResource IsNotNullConverter}}" />
+
+                    <Button
+                        Text="Create company"
+                        Command="{Binding ContinueCommand}"
+                        IsEnabled="{Binding IsNotBusy}"
+                        Style="{StaticResource PrimaryButton}"
+                        HorizontalOptions="Fill" />
+
+                    <ActivityIndicator
+                        IsRunning="{Binding IsBusy}"
+                        IsVisible="{Binding IsBusy}"
+                        Color="{StaticResource Primary}"
+                        HorizontalOptions="Center" />
+
+                </VerticalStackLayout>
+            </Frame>
+
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Hr.HrApplyLeavePage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
+    x:DataType="vm:HrApplyLeaveViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="Apply Leave">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="16" Spacing="16">
+
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="LEAVE APPLICATION" Style="{StaticResource LabelSection}" />
+
+                    <!-- Employee (read-only) -->
+                    <VerticalStackLayout Spacing="6">
+                        <Label Text="Employee" Style="{StaticResource LabelField}" />
+                        <Entry Text="{Binding EmployeeName}"
+                               Style="{StaticResource DarkEntry}"
+                               IsReadOnly="True"
+                               TextColor="{StaticResource TextSecondary}" />
+                    </VerticalStackLayout>
+
+                    <!-- Leave type -->
+                    <VerticalStackLayout Spacing="6">
+                        <Label Text="Leave type" Style="{StaticResource LabelField}" />
+                        <Picker ItemsSource="{Binding LeaveTypes}"
+                                SelectedItem="{Binding LeaveType}"
+                                TextColor="{StaticResource TextPrimary}"
+                                BackgroundColor="Transparent" />
+                    </VerticalStackLayout>
+
+                    <!-- Date range -->
+                    <Grid ColumnDefinitions="*,Auto,*" ColumnSpacing="8">
+                        <VerticalStackLayout Grid.Column="0" Spacing="6">
+                            <Label Text="Start date" Style="{StaticResource LabelField}" />
+                            <DatePicker Date="{Binding StartDate}"
+                                        TextColor="{StaticResource TextPrimary}"
+                                        BackgroundColor="Transparent"
+                                        Format="dd MMM yyyy" />
+                        </VerticalStackLayout>
+                        <Label Grid.Column="1" Text="–" VerticalOptions="End" Margin="0,0,0,8"
+                               TextColor="{StaticResource TextSecondary}" />
+                        <VerticalStackLayout Grid.Column="2" Spacing="6">
+                            <Label Text="End date" Style="{StaticResource LabelField}" />
+                            <DatePicker Date="{Binding EndDate}"
+                                        TextColor="{StaticResource TextPrimary}"
+                                        BackgroundColor="Transparent"
+                                        Format="dd MMM yyyy" />
+                        </VerticalStackLayout>
+                    </Grid>
+
+                    <!-- Total days (auto-calculated) -->
+                    <Frame BackgroundColor="{StaticResource SurfaceDark}" BorderColor="Transparent"
+                           CornerRadius="8" Padding="12,8" HasShadow="False">
+                        <Label TextColor="{StaticResource Primary}" FontFamily="PoppinsMedium" FontSize="13">
+                            <Label.FormattedText>
+                                <FormattedString>
+                                    <Span Text="Total days: " TextColor="{StaticResource TextSecondary}" />
+                                    <Span Text="{Binding TotalDays, StringFormat='{0:F0}'}"
+                                          TextColor="{StaticResource Primary}" FontFamily="PoppinsSemiBold" />
+                                </FormattedString>
+                            </Label.FormattedText>
+                        </Label>
+                    </Frame>
+
+                    <!-- Reason -->
+                    <VerticalStackLayout Spacing="6">
+                        <Label Text="Reason *" Style="{StaticResource LabelField}" />
+                        <Editor Placeholder="Enter reason for leave…"
+                                Text="{Binding Reason}"
+                                HeightRequest="80"
+                                BackgroundColor="{StaticResource SurfaceDark}"
+                                TextColor="{StaticResource TextPrimary}"
+                                PlaceholderColor="{StaticResource TextSecondary}" />
+                    </VerticalStackLayout>
+                </VerticalStackLayout>
+            </Frame>
+
+            <Label Text="{Binding ErrorMessage}" TextColor="{StaticResource Error}"
+                   IsVisible="{Binding ErrorMessage, Converter={StaticResource IsNotNullConverter}}" />
+
+            <Button Text="Submit Leave Application"
+                    Command="{Binding SubmitCommand}"
+                    IsEnabled="{Binding IsNotBusy}"
+                    Style="{StaticResource PrimaryButton}" />
+
+            <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}"
+                               Color="{StaticResource Primary}" HorizontalOptions="Center" />
+
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

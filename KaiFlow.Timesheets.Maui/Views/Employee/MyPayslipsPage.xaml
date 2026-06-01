@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Employee.MyPayslipsPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Employees"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    xmlns:shared="clr-namespace:KaiFlow.Timesheets.Views.Shared"
+    x:DataType="vm:MyPayslipsViewModel"
+    x:Name="Self"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="{Binding Title}">
+
+    <Grid RowDefinitions="*">
+
+        <ScrollView>
+            <VerticalStackLayout Padding="16" Spacing="16">
+
+                <Label Text="No payslips available yet."
+                       Style="{StaticResource EmptyState}"
+                       IsVisible="{Binding Payslips.Count, Converter={StaticResource IsZeroConverter}}" />
+
+                <ScrollView Orientation="Horizontal"
+                            IsVisible="{Binding Payslips.Count, Converter={StaticResource IsNotZeroConverter}}">
+                    <VerticalStackLayout WidthRequest="720" Spacing="0">
+
+                        <!-- Summary table header -->
+                        <Frame Style="{StaticResource DataTableFrame}">
+                            <Grid ColumnDefinitions="130,95,80,85,85,85,100" Padding="12,10"
+                                  BackgroundColor="{StaticResource SurfaceElevated}">
+                                <Label Grid.Column="0" Text="Period" Style="{StaticResource DataTableHeaderLabel}" />
+                                <Label Grid.Column="1" Text="Generated" Style="{StaticResource DataTableHeaderLabel}" />
+                                <Label Grid.Column="2" Text="Status" Style="{StaticResource DataTableHeaderLabel}" />
+                                <Label Grid.Column="3" Text="Gross" Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="End" />
+                                <Label Grid.Column="4" Text="Deduct." Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="End" />
+                                <Label Grid.Column="5" Text="Net" Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="End" />
+                                <Label Grid.Column="6" Text="Action" Style="{StaticResource DataTableHeaderLabel}" />
+                            </Grid>
+                        </Frame>
+
+                        <VerticalStackLayout Spacing="0"
+                                             BindableLayout.ItemsSource="{Binding Payslips}">
+                            <BindableLayout.ItemTemplate>
+                                <DataTemplate x:DataType="models:PaymentApproval">
+                                    <VerticalStackLayout Spacing="12" Margin="0,0,0,16">
+
+                                        <!-- Summary row -->
+                                        <Grid ColumnDefinitions="130,95,80,85,85,85,100" Padding="12,10"
+                                              BackgroundColor="{StaticResource SurfaceCard}">
+                                            <Label Grid.Column="0" Text="{Binding PeriodLabel}"
+                                                   Style="{StaticResource DataTableCellLabel}" />
+                                            <Label Grid.Column="1" Text="{Binding GeneratedDisplay}"
+                                                   Style="{StaticResource DataTableCellSecondary}" />
+                                            <Label Grid.Column="2" Text="{Binding StatusRaw}"
+                                                   Style="{StaticResource DataTableCellLabel}" />
+                                            <Label Grid.Column="3" Text="{Binding GrossDisplay}"
+                                                   Style="{StaticResource DataTableCellLabel}" HorizontalTextAlignment="End" />
+                                            <Label Grid.Column="4" Text="{Binding DeductionsDisplay}"
+                                                   Style="{StaticResource DataTableCellSecondary}" HorizontalTextAlignment="End" />
+                                            <Label Grid.Column="5" Text="{Binding NetDisplay}"
+                                                   Style="{StaticResource DataTableCellLabel}" HorizontalTextAlignment="End"
+                                                   TextColor="{StaticResource Primary}" />
+                                            <Button Grid.Column="6" Text="PDF"
+                                                    Command="{Binding BindingContext.DownloadPdfCommand, Source={x:Reference Self}}"
+                                                    CommandParameter="{Binding .}"
+                                                    BackgroundColor="#DC2626" TextColor="White"
+                                                    CornerRadius="6" HeightRequest="30" FontSize="11" Padding="8,0" />
+                                        </Grid>
+                                        <BoxView Style="{StaticResource DataTableRowDivider}" />
+
+                                        <!-- Attendance summary -->
+                                        <Frame Style="{StaticResource DataTableFrame}">
+                                            <VerticalStackLayout Spacing="0">
+                                                <Grid ColumnDefinitions="*,110" Padding="12,10"
+                                                      BackgroundColor="{StaticResource SurfaceElevated}">
+                                                    <Label Grid.Column="0" Text="Item" Style="{StaticResource DataTableHeaderLabel}" />
+                                                    <Label Grid.Column="1" Text="Value" Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="End" />
+                                                </Grid>
+                                                <BoxView Style="{StaticResource DataTableRowDivider}" />
+                                                <Grid ColumnDefinitions="*,110" Padding="12,10" BackgroundColor="{StaticResource SurfaceCard}">
+                                                    <Label Grid.Column="0" Text="Days Worked" Style="{StaticResource DataTableCellSecondary}" />
+                                                    <Label Grid.Column="1" Text="{Binding WorkingDays, StringFormat='{0} day(s)'}"
+                                                           Style="{StaticResource DataTableCellLabel}" HorizontalTextAlignment="End" />
+                                                </Grid>
+                                                <BoxView Style="{StaticResource DataTableRowDivider}" />
+                                                <Grid ColumnDefinitions="*,110" Padding="12,10" BackgroundColor="{StaticResource SurfaceCard}">
+                                                    <Label Grid.Column="0" Text="Hours" Style="{StaticResource DataTableCellSecondary}" />
+                                                    <Label Grid.Column="1" Text="{Binding HoursDisplay}"
+                                                           Style="{StaticResource DataTableCellLabel}" HorizontalTextAlignment="End" />
+                                                </Grid>
+                                            </VerticalStackLayout>
+                                        </Frame>
+
+                                        <!-- Earnings -->
+                                        <Label Text="EARNINGS" Style="{StaticResource LabelSection}" Margin="0,4,0,0" />
+                                        <shared:PayrollLineItemsTableView ItemsSource="{Binding EarningsLines}"
+                                                                          EmptyMessage="No earnings breakdown." />
+
+                                        <!-- Deductions -->
+                                        <Label Text="DEDUCTIONS" Style="{StaticResource LabelSection}"
+                                               IsVisible="{Binding HasItemizedDeductions}" />
+                                        <shared:PayrollLineItemsTableView ItemsSource="{Binding DeductionLines}"
+                                                                          ShowAsDeductions="True"
+                                                                          EmptyMessage="No deductions."
+                                                                          IsVisible="{Binding HasItemizedDeductions}" />
+
+                                    </VerticalStackLayout>
+                                </DataTemplate>
+                            </BindableLayout.ItemTemplate>
+                        </VerticalStackLayout>
+
+                    </VerticalStackLayout>
+                </ScrollView>
+
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <ActivityIndicator IsRunning="{Binding IsBusy}"
+                           IsVisible="{Binding IsBusy}"
+                           Color="{StaticResource Primary}"
+                           VerticalOptions="Center" HorizontalOptions="Center" />
+    </Grid>
+</ContentPage>

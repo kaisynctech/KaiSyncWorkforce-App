@@ -1,0 +1,18 @@
+
+=== KaiFlow deploy probe (post) 2026-05-28T14:25:33.5145753+02:00 ===
+TABLE OK  time_punches 200
+TABLE OK  message_threads 200
+TABLE OK  app_messages 200
+TABLE OK  jobs 200
+TABLE OK  employees 200
+TABLE OK  leave_requests 200
+TABLE OK  inventory_items 200
+RPC employee_insert_punch => 23503 :: {"code":"23503","details":"Key (company_id)=(00000000-0000-0000-0000-000000000001) is not present in table \"companies\".","hint":null,"message":"insert or update on table \"time_p
+RPC employee_get_my_punches => 400 :: 
+RPC OK  employee_get_last_punch 200
+RPC OK  employee_get_jobs_for_employee 200
+RPC OK  employee_get_message_threads_for_worker 200
+RPC OK  employee_get_inventory_items 200
+RPC employee_get_leave_requests => 400 :: 
+RPC OK  employee_get_pa_tasks 200
+=== end ===

@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Employee.MyShiftsPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Employees"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:MyShiftsViewModel"
+    x:Name="shiftsPage"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="My Shifts">
+
+    <RefreshView Command="{Binding RefreshCommand}" IsRefreshing="{Binding IsBusy}">
+        <ScrollView>
+            <VerticalStackLayout Padding="16" Spacing="16">
+
+                <!-- Date range header -->
+                <Frame Style="{StaticResource CardFrame}" Padding="14,10">
+                    <Label
+                        Text="Next 30 days"
+                        FontFamily="PoppinsSemiBold"
+                        FontSize="13"
+                        TextColor="{StaticResource TextSecondary}" />
+                </Frame>
+
+                <!-- Empty state -->
+                <Label
+                    Text="No shifts scheduled."
+                    Style="{StaticResource EmptyState}"
+                    Margin="0,40,0,0"
+                    IsVisible="{Binding Shifts.Count, Converter={StaticResource IsZeroConverter}}" />
+
+                <!-- Shifts list -->
+                <CollectionView ItemsSource="{Binding Shifts}">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="models:CalendarEvent">
+                            <Frame Style="{StaticResource CardFrame}" Margin="0,0,0,8">
+                                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="4">
+
+                                    <!-- Title -->
+                                    <Label
+                                        Grid.Row="0" Grid.Column="0"
+                                        Text="{Binding Title}"
+                                        FontFamily="PoppinsSemiBold"
+                                        FontSize="15"
+                                        TextColor="{StaticResource TextPrimary}" />
+
+                                    <!-- Event type badge -->
+                                    <Frame
+                                        Grid.Row="0" Grid.Column="1"
+                                        BackgroundColor="{StaticResource SidebarActive}"
+                                        BorderColor="Transparent"
+                                        CornerRadius="10"
+                                        Padding="8,3"
+                                        HasShadow="False"
+                                        VerticalOptions="Center">
+                                        <Label
+                                            Text="{Binding EventType}"
+                                            FontFamily="PoppinsSemiBold"
+                                            FontSize="11"
+                                            TextColor="{StaticResource Primary}" />
+                                    </Frame>
+
+                                    <!-- Date/time -->
+                                    <Label
+                                        Grid.Row="1" Grid.ColumnSpan="2"
+                                        Text="{Binding StartTime, StringFormat='{0:ddd, dd MMM yyyy – HH:mm}'}"
+                                        FontFamily="PoppinsRegular"
+                                        FontSize="13"
+                                        TextColor="{StaticResource TextSecondary}" />
+
+                                    <!-- End time / location -->
+                                    <VerticalStackLayout Grid.Row="2" Grid.ColumnSpan="2" Spacing="2">
+                                        <Label
+                                            Text="{Binding EndTime, StringFormat='Until {0:HH:mm}'}"
+                                            FontFamily="PoppinsRegular"
+                                            FontSize="12"
+                                            TextColor="{StaticResource TextSecondary}"
+                                            IsVisible="{Binding EndTime, Converter={StaticResource IsNotNullConverter}}" />
+                                        <Label
+                                            Text="{Binding Location}"
+                                            FontFamily="PoppinsRegular"
+                                            FontSize="12"
+                                            TextColor="{StaticResource TextSecondary}"
+                                            IsVisible="{Binding Location, Converter={StaticResource IsNotNullConverter}}" />
+                                        <Label
+                                            Text="{Binding Description}"
+                                            FontFamily="PoppinsRegular"
+                                            FontSize="12"
+                                            TextColor="{StaticResource TextSecondary}"
+                                            IsVisible="{Binding Description, Converter={StaticResource IsNotNullConverter}}" />
+                                    </VerticalStackLayout>
+
+                                    <!-- RSVP buttons (row 3) -->
+                                    <HorizontalStackLayout Grid.Row="3" Grid.ColumnSpan="2" Spacing="8" Margin="0,6,0,0">
+                                        <Button Text="✓ Accept"
+                                                Command="{Binding BindingContext.AcceptShiftCommand, Source={x:Reference shiftsPage}}"
+                                                CommandParameter="{Binding .}"
+                                                FontSize="12" Padding="14,6"
+                                                CornerRadius="8"
+                                                BackgroundColor="#22C55E" TextColor="White" />
+                                        <Button Text="✗ Decline"
+                                                Command="{Binding BindingContext.DeclineShiftCommand, Source={x:Reference shiftsPage}}"
+                                                CommandParameter="{Binding .}"
+                                                FontSize="12" Padding="14,6"
+                                                CornerRadius="8"
+                                                BackgroundColor="#EF4444" TextColor="White" />
+                                    </HorizontalStackLayout>
+
+                                </Grid>
+                            </Frame>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+
+            </VerticalStackLayout>
+        </ScrollView>
+    </RefreshView>
+</ContentPage>

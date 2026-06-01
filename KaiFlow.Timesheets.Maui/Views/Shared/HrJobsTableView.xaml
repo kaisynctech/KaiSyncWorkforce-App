@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8" ?>
+
+<ContentView
+
+    x:Class="KaiFlow.Timesheets.Views.Shared.HrJobsTableView"
+
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
+
+    xmlns:kf="clr-namespace:KaiFlow.Timesheets.Controls"
+
+    xmlns:helpers="clr-namespace:KaiFlow.Timesheets.Helpers"
+
+    x:Name="Self">
+
+
+
+    <Border Stroke="{StaticResource Divider}" StrokeThickness="1" StrokeShape="RoundRectangle 12" Padding="0">
+
+        <VerticalStackLayout Spacing="0">
+
+
+
+            <kf:EmptyStateView x:Name="EmptyState"
+
+                               Glyph="🔧"
+
+                               Title="No jobs match"
+
+                               Message="Try All jobs or adjust your filters."
+
+                               IsVisible="False" />
+
+
+
+            <VerticalStackLayout x:Name="TableContent" Spacing="0" IsVisible="False">
+
+                <Grid ColumnDefinitions="72,*,88,96,88,120,100,88,72"
+
+                      ColumnSpacing="{x:Static helpers:HrJobsTableLayout.ColumnSpacing}"
+
+                      Padding="12,10" BackgroundColor="{StaticResource SurfaceElevated}">
+
+                    <Label Grid.Column="0" Text="Code" Style="{StaticResource DataTableHeaderLabel}" />
+
+                    <Label Grid.Column="1" Text="Title" Style="{StaticResource DataTableHeaderLabel}" />
+
+                    <Label Grid.Column="2" Text="Status" Style="{StaticResource DataTableHeaderLabel}" />
+
+                    <Label Grid.Column="3" Text="Client" Style="{StaticResource DataTableHeaderLabel}" />
+
+                    <Label Grid.Column="4" Text="Linked project" Style="{StaticResource DataTableHeaderLabel}" />
+
+                    <Label Grid.Column="5" Text="Assignee" Style="{StaticResource DataTableHeaderLabel}" />
+
+                    <Label Grid.Column="6" Text="Scheduled" Style="{StaticResource DataTableHeaderLabel}" />
+
+                    <Label Grid.Column="7" Text="Priority" Style="{StaticResource DataTableHeaderLabel}" />
+
+                </Grid>
+
+                <BoxView Style="{StaticResource DataTableRowDivider}" />
+
+
+
+                <VerticalStackLayout Spacing="0"
+
+                                     BindableLayout.ItemsSource="{Binding Jobs, Source={x:Reference Self}}">
+
+                    <BindableLayout.ItemTemplate>
+
+                        <DataTemplate x:DataType="vm:JobDisplay">
+
+                            <VerticalStackLayout Spacing="0">
+
+                                <Grid ColumnDefinitions="72,*,88,96,88,120,100,88,72"
+
+                                      ColumnSpacing="{x:Static helpers:HrJobsTableLayout.ColumnSpacing}"
+
+                                      Padding="12,10" Style="{StaticResource DataTableRowPadding}">
+
+                                    <Grid.GestureRecognizers>
+
+                                        <TapGestureRecognizer Command="{Binding ViewJobCommand, Source={x:Reference Self}}"
+
+                                                              CommandParameter="{Binding .}" />
+
+                                    </Grid.GestureRecognizers>
+
+                                    <Label Grid.Column="0" Text="{Binding JobCodeDisplay}"
+
+                                           Style="{StaticResource DataTableCellLabel}" TextColor="{StaticResource Primary}" />
+
+                                    <Label Grid.Column="1" Text="{Binding Job.Title}"
+
+                                           Style="{StaticResource DataTableCellLabel}" />
+
+                                    <kf:StatusChip Grid.Column="2" Text="{Binding StatusLabel}" Status="{Binding StatusChipKind}" VerticalOptions="Center" />
+
+                                    <Label Grid.Column="3" Text="{Binding ClientName}"
+
+                                           Style="{StaticResource DataTableCellSecondary}" />
+
+                                    <Button Grid.Column="4" Text="{Binding LinkedProjectName}"
+
+                                            Command="{Binding ViewLinkedProjectCommand, Source={x:Reference Self}}"
+
+                                            CommandParameter="{Binding .}"
+
+                                            Style="{StaticResource TextButton}" FontSize="12" Padding="0"
+
+                                            TextColor="{StaticResource Primary}"
+
+                                            HorizontalOptions="Start" VerticalOptions="Center" />
+
+                                    <Label Grid.Column="5" Text="{Binding AssigneeName}"
+
+                                           Style="{StaticResource DataTableCellSecondary}" />
+
+                                    <Label Grid.Column="6" Text="{Binding Job.ScheduledStart, StringFormat='{0:dd MMM yyyy}'}"
+
+                                           Style="{StaticResource DataTableCellSecondary}" />
+
+                                    <Label Grid.Column="7" Text="{Binding Job.PriorityRaw}"
+
+                                           Style="{StaticResource DataTableCellSecondary}" />
+
+                                </Grid>
+
+                                <BoxView Style="{StaticResource DataTableRowDivider}" />
+
+                            </VerticalStackLayout>
+
+                        </DataTemplate>
+
+                    </BindableLayout.ItemTemplate>
+
+                </VerticalStackLayout>
+
+            </VerticalStackLayout>
+
+        </VerticalStackLayout>
+
+    </Border>
+
+</ContentView>
+
+

@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Finance.FinanceVatPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Finance"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:FinanceVatViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="VAT">
+
+    <RefreshView Command="{Binding RefreshCommand}" IsRefreshing="{Binding IsBusy}">
+        <ScrollView>
+            <VerticalStackLayout Spacing="14" Padding="16" MaximumWidthRequest="760" HorizontalOptions="Center">
+
+                <!-- Current period calculator -->
+                <Border Padding="14" StrokeThickness="0" BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 16">
+                    <VerticalStackLayout Spacing="10">
+                        <Label Text="Current VAT period" FontSize="15" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" />
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                            <VerticalStackLayout Grid.Column="0" Spacing="0">
+                                <Label Text="From" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                                <DatePicker Date="{Binding PeriodStart}" />
+                            </VerticalStackLayout>
+                            <VerticalStackLayout Grid.Column="1" Spacing="0">
+                                <Label Text="To" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                                <DatePicker Date="{Binding PeriodEnd}" />
+                            </VerticalStackLayout>
+                        </Grid>
+
+                        <Grid ColumnDefinitions="*,Auto">
+                            <Label Text="Output VAT (on sales)" TextColor="{StaticResource TextSecondary}" />
+                            <Label Grid.Column="1" Text="{Binding OutputVat, StringFormat='R{0:N2}'}" TextColor="{StaticResource TextPrimary}" />
+                        </Grid>
+                        <Grid ColumnDefinitions="*,Auto">
+                            <Label Text="Input VAT (on purchases)" TextColor="{StaticResource TextSecondary}" />
+                            <Label Grid.Column="1" Text="{Binding InputVat, StringFormat='R{0:N2}'}" TextColor="{StaticResource TextPrimary}" />
+                        </Grid>
+                        <BoxView HeightRequest="1" Color="{StaticResource Divider}" />
+                        <Grid ColumnDefinitions="*,Auto">
+                            <Label Text="Net VAT position" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" VerticalOptions="Center" />
+                            <Label Grid.Column="1" Text="{Binding VatDue, StringFormat='R{0:N2}'}" FontAttributes="Bold" FontSize="18"
+                                   TextColor="{Binding IsRefund, Converter={StaticResource EqToStyleConverter}, ConverterParameter='True|#16A34A,#8B5CF6'}" />
+                        </Grid>
+                        <Button Text="Save / close period" Command="{Binding SavePeriodCommand}" Style="{StaticResource PrimaryButton}" />
+                    </VerticalStackLayout>
+                </Border>
+
+                <Label Text="Previous periods" FontSize="15" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" />
+                <CollectionView ItemsSource="{Binding Periods}">
+                    <CollectionView.EmptyView>
+                        <Label Text="No VAT periods saved yet." Style="{StaticResource EmptyState}" Margin="0,16" />
+                    </CollectionView.EmptyView>
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="models:FinanceVatPeriod">
+                            <Border Margin="0,0,0,8" Padding="14" StrokeThickness="0"
+                                    BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 14">
+                                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                                    <Label Grid.Row="0" Grid.Column="0" Text="{Binding PeriodLabel}" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" />
+                                    <Label Grid.Row="0" Grid.Column="1" Text="{Binding VatDueDisplay}" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" />
+                                    <Label Grid.Row="1" Grid.Column="0" Text="{Binding VatDueLabel}" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+                                    <Border Grid.Row="1" Grid.Column="1" Padding="8,2" StrokeThickness="0" BackgroundColor="{Binding StatusColor}" StrokeShape="RoundRectangle 8">
+                                        <Label Text="{Binding StatusLabel}" FontSize="11" TextColor="White" />
+                                    </Border>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+
+            </VerticalStackLayout>
+        </ScrollView>
+    </RefreshView>
+</ContentPage>

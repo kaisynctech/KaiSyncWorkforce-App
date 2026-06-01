@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Hr.HrJobsPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
+    xmlns:shared="clr-namespace:KaiFlow.Timesheets.Views.Shared"
+    xmlns:kf="clr-namespace:KaiFlow.Timesheets.Controls"
+    x:DataType="vm:HrJobsViewModel"
+    x:Name="Self"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="{Binding Title}">
+
+    <ContentPage.ToolbarItems>
+        <ToolbarItem Text="Export" Command="{Binding ExportCommand}" />
+        <ToolbarItem Text="+ Job" Command="{Binding CreateJobCommand}" />
+    </ContentPage.ToolbarItems>
+
+    <Grid RowDefinitions="Auto,Auto,Auto,*" Padding="12">
+
+        <!-- All / My scope -->
+        <Grid Grid.Row="0" ColumnDefinitions="*,*" ColumnSpacing="8" Margin="0,0,0,8">
+            <Button Grid.Column="0" Text="{Binding ScopeAllLabel}"
+                    Command="{Binding SetScopeCommand}" CommandParameter="all"
+                    CornerRadius="10" HeightRequest="36" FontSize="12"
+                    BackgroundColor="{Binding IsAllScope, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#3B82F6|#FFFFFF'}"
+                    TextColor="{Binding IsAllScope, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#6B7280'}" />
+            <Button Grid.Column="1" Text="{Binding ScopeMineLabel}"
+                    Command="{Binding SetScopeCommand}" CommandParameter="mine"
+                    CornerRadius="10" HeightRequest="36" FontSize="12"
+                    BackgroundColor="{Binding IsMyScope, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#3B82F6|#FFFFFF'}"
+                    TextColor="{Binding IsMyScope, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#6B7280'}" />
+        </Grid>
+
+        <Label Grid.Row="1" Text="{Binding ListSummary}" Style="{StaticResource Caption}"
+               TextColor="{StaticResource TextSecondary}" Margin="0,0,0,8" />
+
+        <kf:FilterToolbar Grid.Row="2" SearchText="{Binding SearchText}" SearchPlaceholder="Search code, title, client…"
+                          Margin="0,0,0,8">
+            <kf:FilterToolbar.FilterContent>
+                <VerticalStackLayout Spacing="8">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Text="Date filter" Style="{StaticResource Caption}" VerticalOptions="Center" />
+                        <Switch Grid.Column="1" IsToggled="{Binding UseDateFilter}" OnColor="{StaticResource Primary}" />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="12" IsVisible="{Binding UseDateFilter}">
+                        <DatePicker Grid.Column="0" Date="{Binding DateFrom}" TextColor="{StaticResource TextPrimary}" />
+                        <DatePicker Grid.Column="1" Date="{Binding DateTo}" TextColor="{StaticResource TextPrimary}" />
+                    </Grid>
+                    <ScrollView Orientation="Horizontal">
+                        <HorizontalStackLayout Spacing="8">
+                            <Button Text="Open" Command="{Binding SetFilterCommand}" CommandParameter="open"
+                                    CornerRadius="16" HeightRequest="32" FontSize="11" Padding="14,0"
+                                    BackgroundColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='open|#3B82F6,#FFFFFF'}"
+                                    TextColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='open|#FFFFFF,#6B7280'}" />
+                            <Button Text="All" Command="{Binding SetFilterCommand}" CommandParameter="all"
+                                    CornerRadius="16" HeightRequest="32" FontSize="11" Padding="14,0"
+                                    BackgroundColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='all|#3B82F6,#FFFFFF'}"
+                                    TextColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='all|#FFFFFF,#6B7280'}" />
+                            <Button Text="Scheduled" Command="{Binding SetFilterCommand}" CommandParameter="scheduled"
+                                    CornerRadius="16" HeightRequest="32" FontSize="11" Padding="14,0"
+                                    BackgroundColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='scheduled|#3B82F6,#FFFFFF'}"
+                                    TextColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='scheduled|#FFFFFF,#6B7280'}" />
+                            <Button Text="In progress" Command="{Binding SetFilterCommand}" CommandParameter="inProgress"
+                                    CornerRadius="16" HeightRequest="32" FontSize="11" Padding="14,0"
+                                    BackgroundColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='inProgress|#3B82F6,#FFFFFF'}"
+                                    TextColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='inProgress|#FFFFFF,#6B7280'}" />
+                            <Button Text="Completed" Command="{Binding SetFilterCommand}" CommandParameter="completed"
+                                    CornerRadius="16" HeightRequest="32" FontSize="11" Padding="14,0"
+                                    BackgroundColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='completed|#3B82F6,#FFFFFF'}"
+                                    TextColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='completed|#FFFFFF,#6B7280'}" />
+                        </HorizontalStackLayout>
+                    </ScrollView>
+                </VerticalStackLayout>
+            </kf:FilterToolbar.FilterContent>
+        </kf:FilterToolbar>
+
+        <RefreshView Grid.Row="3" Command="{Binding RefreshCommand}" IsRefreshing="{Binding IsBusy}">
+            <ScrollView Orientation="Horizontal">
+                <VerticalStackLayout WidthRequest="980" Spacing="0">
+                    <shared:HrJobsTableView Jobs="{Binding Jobs}"
+                                            ViewJobCommand="{Binding ViewJobCommand}"
+                                            ViewLinkedProjectCommand="{Binding ViewLinkedProjectCommand}" />
+                    <Grid Padding="12,10" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12"
+                          BackgroundColor="{StaticResource SurfaceElevated}">
+                        <Button Grid.Column="0" Text="Previous" Style="{StaticResource SecondaryButton}"
+                                HeightRequest="36" FontSize="12" Padding="12,0"
+                                Command="{Binding PreviousPageCommand}" IsEnabled="{Binding CanGoPrevious}" />
+                        <Label Grid.Column="1" Text="{Binding PageSummary}" Style="{StaticResource BodySmall}"
+                               HorizontalOptions="Center" VerticalOptions="Center" />
+                        <Button Grid.Column="2" Text="Next" Style="{StaticResource SecondaryButton}"
+                                HeightRequest="36" FontSize="12" Padding="12,0"
+                                Command="{Binding NextPageCommand}" IsEnabled="{Binding CanGoNext}" />
+                    </Grid>
+                </VerticalStackLayout>
+            </ScrollView>
+        </RefreshView>
+    </Grid>
+</ContentPage>

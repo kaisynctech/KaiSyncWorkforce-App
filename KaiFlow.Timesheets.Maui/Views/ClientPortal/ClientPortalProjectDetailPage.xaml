@@ -1,0 +1,258 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.ClientPortal.ClientPortalProjectDetailPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.ClientPortal"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:ClientPortalProjectDetailViewModel"
+    x:Name="Self"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="{Binding Title}">
+
+    <ContentPage.ToolbarItems>
+        <ToolbarItem Text="Main menu" Command="{Binding ExitToMainMenuCommand}" />
+    </ContentPage.ToolbarItems>
+
+    <ScrollView>
+        <VerticalStackLayout Padding="16" Spacing="16">
+
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="10">
+                    <Label Text="PROJECT OVERVIEW" Style="{StaticResource LabelSection}" />
+                    <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="8">
+                        <Label Grid.Row="0" Grid.Column="0" Text="Code" Style="{StaticResource BodySmall}" TextColor="{StaticResource TextSecondary}" />
+                        <Label Grid.Row="0" Grid.Column="1" Text="{Binding Project.ProjectCodeDisplay}" Style="{StaticResource BodyMedium}" />
+                        <Label Grid.Row="1" Grid.Column="0" Text="Status" Style="{StaticResource BodySmall}" TextColor="{StaticResource TextSecondary}" />
+                        <Label Grid.Row="1" Grid.Column="1" Text="{Binding Project.StatusLabel}" Style="{StaticResource BodyMedium}" />
+                        <Label Grid.Row="2" Grid.Column="0" Text="Work order" Style="{StaticResource BodySmall}" TextColor="{StaticResource TextSecondary}" />
+                        <Label Grid.Row="2" Grid.Column="1" Text="{Binding WorkOrderLabel}" Style="{StaticResource BodyMedium}" />
+                        <Label Grid.Row="3" Grid.Column="0" Text="Last updated" Style="{StaticResource BodySmall}" TextColor="{StaticResource TextSecondary}" />
+                        <Label Grid.Row="3" Grid.Column="1" Text="{Binding Project.LastUpdateDisplay}" Style="{StaticResource BodyMedium}" />
+                        <Label Grid.Row="4" Grid.Column="0" Text="Quote valid until" Style="{StaticResource BodySmall}" TextColor="{StaticResource TextSecondary}"
+                               IsVisible="{Binding Project.ShowQuotationValidUntil}" />
+                        <Label Grid.Row="4" Grid.Column="1" Text="{Binding Project.QuotationValidUntilDisplay}" Style="{StaticResource BodyMedium}"
+                               IsVisible="{Binding Project.ShowQuotationValidUntil}" />
+                    </Grid>
+                </VerticalStackLayout>
+            </Frame>
+
+            <Frame Style="{StaticResource CardFrame}" IsVisible="{Binding HasMilestones}">
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="KEY DATES" Style="{StaticResource LabelSection}" />
+                    <VerticalStackLayout Spacing="8">
+                        <Grid ColumnDefinitions="110,*" ColumnSpacing="8" IsVisible="{Binding Project.ShowSiteStartDate}">
+                            <Label Text="Site start" Style="{StaticResource BodySmall}" TextColor="{StaticResource TextSecondary}" />
+                            <Label Grid.Column="1" Text="{Binding Project.SiteStartDisplay}" Style="{StaticResource BodyMedium}" />
+                        </Grid>
+                        <Grid ColumnDefinitions="110,*" ColumnSpacing="8" IsVisible="{Binding Project.ShowExpectedCompletionDate}">
+                            <Label Text="Expected completion" Style="{StaticResource BodySmall}" TextColor="{StaticResource TextSecondary}" />
+                            <Label Grid.Column="1" Text="{Binding Project.ExpectedCompletionDisplay}" Style="{StaticResource BodyMedium}" />
+                        </Grid>
+                        <Grid ColumnDefinitions="110,*" ColumnSpacing="8" IsVisible="{Binding Project.ShowNextVisitDate}">
+                            <Label Text="Next visit" Style="{StaticResource BodySmall}" TextColor="{StaticResource TextSecondary}" />
+                            <Label Grid.Column="1" Text="{Binding Project.NextVisitDisplay}" Style="{StaticResource BodyMedium}" />
+                        </Grid>
+                        <Grid ColumnDefinitions="110,*" ColumnSpacing="8" IsVisible="{Binding Project.ShowExpectedCloseDate}">
+                            <Label Text="Expected close" Style="{StaticResource BodySmall}" TextColor="{StaticResource TextSecondary}" />
+                            <Label Grid.Column="1" Text="{Binding Project.ExpectedCloseDisplay}" Style="{StaticResource BodyMedium}" />
+                        </Grid>
+                    </VerticalStackLayout>
+                </VerticalStackLayout>
+            </Frame>
+
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="PROGRESS" Style="{StaticResource LabelSection}" />
+                    <ProgressBar Progress="{Binding ProgressFraction}" ProgressColor="{StaticResource Primary}" />
+                    <Label Text="{Binding Project.ProgressDisplay}" Style="{StaticResource HeadlineMedium}" HorizontalTextAlignment="Center" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <Label Text="Payments" Style="{StaticResource LabelSection}" />
+            <Frame Style="{StaticResource DataTableFrame}">
+                <Grid ColumnDefinitions="*,*,*,*" Padding="12,10" BackgroundColor="{StaticResource SurfaceElevated}">
+                    <Label Grid.Column="0" Text="Agreed" Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="End" />
+                    <Label Grid.Column="1" Text="Deposit" Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="End" />
+                    <Label Grid.Column="2" Text="Paid" Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="End" />
+                    <Label Grid.Column="3" Text="Balance" Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="End" />
+                </Grid>
+            </Frame>
+            <Frame Style="{StaticResource DataTableFrame}">
+                <Grid ColumnDefinitions="*,*,*,*" Padding="12,10" BackgroundColor="{StaticResource SurfaceCard}">
+                    <Label Grid.Column="0" Text="{Binding Project.OfferDisplay}" Style="{StaticResource DataTableCellLabel}" HorizontalTextAlignment="End" />
+                    <Label Grid.Column="1" Text="{Binding Project.DepositDisplay}" Style="{StaticResource DataTableCellLabel}" HorizontalTextAlignment="End" />
+                    <Label Grid.Column="2" Text="{Binding Project.PaidDisplay}" Style="{StaticResource DataTableCellLabel}" HorizontalTextAlignment="End" />
+                    <Label Grid.Column="3" Text="{Binding Project.BalanceDisplay}" Style="{StaticResource DataTableCellLabel}" HorizontalTextAlignment="End" />
+                </Grid>
+            </Frame>
+
+            <Frame Style="{StaticResource CardFrame}" IsVisible="{Binding HasPayments}">
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="PAYMENT HISTORY" Style="{StaticResource LabelSection}" />
+                    <Label Text="Payments recorded by your contractor. Open receipts when available." FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                    <CollectionView ItemsSource="{Binding Payments}">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="models:ProjectClientPayment">
+                                <Grid ColumnDefinitions="*,Auto,Auto" Padding="0,6">
+                                    <VerticalStackLayout>
+                                        <Label Text="{Binding AmountDisplay}" FontFamily="PoppinsSemiBold" FontSize="14" />
+                                        <Label Text="{Binding PaidAtDisplay}" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                                        <Label Text="{Binding ReferenceDisplay}" FontSize="11" TextColor="{StaticResource Primary}" />
+                                    </VerticalStackLayout>
+                                    <Button Grid.Column="2" Text="Receipt" Command="{Binding Source={x:Reference Self}, Path=OpenPaymentReceiptCommand}"
+                                            CommandParameter="{Binding .}" Style="{StaticResource OutlinedButton}" FontSize="11" HeightRequest="34" Padding="10,4"
+                                            IsVisible="{Binding HasReceipt}" />
+                                </Grid>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </VerticalStackLayout>
+            </Frame>
+
+            <Frame Style="{StaticResource CardFrame}" IsVisible="{Binding Project.HasQuotation}">
+                <VerticalStackLayout Spacing="10">
+                    <Label Text="QUOTATION" Style="{StaticResource LabelSection}" />
+                    <Label Text="{Binding Project.QuotationSentDisplay}" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                    <Label Text="{Binding QuotationIntro}" Style="{StaticResource BodyMedium}" LineBreakMode="WordWrap"
+                           IsVisible="{Binding QuotationIntro, Converter={StaticResource IsNotNullConverter}}" />
+                    <Frame Style="{StaticResource DataTableFrame}" Padding="0" IsVisible="{Binding HasQuotationLines}">
+                        <VerticalStackLayout BindableLayout.ItemsSource="{Binding QuotationLineItems}" Spacing="0">
+                            <BindableLayout.ItemTemplate>
+                                <DataTemplate x:DataType="models:ProjectQuotationLine">
+                                    <Grid ColumnDefinitions="*,Auto" Padding="12,8" BackgroundColor="{StaticResource SurfaceCard}">
+                                        <Label Text="{Binding Description}" Style="{StaticResource BodySmall}" />
+                                        <Label Grid.Column="1" Text="{Binding LineTotalDisplay}" Style="{StaticResource DataTableCellLabel}" HorizontalTextAlignment="End" />
+                                    </Grid>
+                                </DataTemplate>
+                            </BindableLayout.ItemTemplate>
+                        </VerticalStackLayout>
+                    </Frame>
+                    <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                        <Label Text="Total agreed" Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" VerticalOptions="Center" />
+                        <Label Grid.Column="1" Text="{Binding QuotationTotalDisplay}"
+                               Style="{StaticResource HeadlineMedium}" TextColor="{StaticResource Primary}" />
+                    </Grid>
+                    <Label Text="Line items are shown above; total matches the agreed project value in Payments."
+                           FontSize="11" TextColor="{StaticResource TextSecondary}" LineBreakMode="WordWrap"
+                           IsVisible="{Binding HasQuotationLines}" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="AGREEMENTS &amp; CONTRACT" Style="{StaticResource LabelSection}" />
+                    <Label Text="{Binding AgreementText}" Style="{StaticResource BodyMedium}" LineBreakMode="WordWrap" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="8">
+                    <Grid ColumnDefinitions="*,Auto,Auto">
+                        <Label Text="DOCUMENTATION" Style="{StaticResource LabelSection}" VerticalOptions="Center" />
+                        <Button Grid.Column="1" Text="Upload" Command="{Binding UploadDocumentCommand}"
+                                Style="{StaticResource PrimaryButton}" FontSize="11" HeightRequest="36" Padding="10,6" Margin="0,0,6,0" />
+                        <Button Grid.Column="2" Text="Link" Command="{Binding ShareDocumentLinkCommand}"
+                                Style="{StaticResource OutlinedButton}" FontSize="11" HeightRequest="36" Padding="10,6" />
+                    </Grid>
+                    <Label Text="Contracts, quotes, and files from your contractor appear here. You can share a document link for the team."
+                           FontSize="11" TextColor="{StaticResource TextSecondary}" LineBreakMode="WordWrap"
+                           IsVisible="{Binding HasDocuments, Converter={StaticResource InverseBoolConverter}}" />
+                    <CollectionView ItemsSource="{Binding Documents}" IsVisible="{Binding HasDocuments}">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="models:ProjectDocument">
+                                <Grid ColumnDefinitions="*,Auto" Padding="0,6">
+                                    <VerticalStackLayout>
+                                        <Label Text="{Binding DocumentName}" FontFamily="PoppinsSemiBold" FontSize="14" />
+                                        <Label Text="{Binding TypeLabel}" FontSize="11" TextColor="{StaticResource Primary}" />
+                                    </VerticalStackLayout>
+                                    <Button Grid.Column="1" Text="Open" Command="{Binding Source={x:Reference Self}, Path=OpenDocumentCommand}"
+                                            CommandParameter="{Binding .}"
+                                            Style="{StaticResource OutlinedButton}" FontSize="11" HeightRequest="34" Padding="12,4" />
+                                </Grid>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </VerticalStackLayout>
+            </Frame>
+
+            <Frame Style="{StaticResource CardFrame}" IsVisible="{Binding HasProgressPhotos}">
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="PROGRESS PHOTOS" Style="{StaticResource LabelSection}" />
+                    <Label Text="Before and after photos from work on this project." FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                    <CollectionView ItemsSource="{Binding ProgressPhotos}">
+                        <CollectionView.ItemsLayout>
+                            <LinearItemsLayout Orientation="Horizontal" ItemSpacing="8" />
+                        </CollectionView.ItemsLayout>
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="models:ClientPortalPhotoItem">
+                                <VerticalStackLayout WidthRequest="88" Spacing="4">
+                                    <Image Source="{Binding Url}" HeightRequest="72" WidthRequest="72" Aspect="AspectFill">
+                                        <Image.GestureRecognizers>
+                                            <TapGestureRecognizer Command="{Binding Source={x:Reference Self}, Path=OpenPhotoCommand}"
+                                                                CommandParameter="{Binding .}" />
+                                        </Image.GestureRecognizers>
+                                    </Image>
+                                    <Label Text="{Binding PhaseLabel}" FontSize="10" HorizontalTextAlignment="Center" TextColor="{StaticResource Primary}" />
+                                </VerticalStackLayout>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </VerticalStackLayout>
+            </Frame>
+
+            <Frame Style="{StaticResource CardFrame}" IsVisible="{Binding HasActivity}">
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="PROJECT UPDATES" Style="{StaticResource LabelSection}" />
+                    <CollectionView ItemsSource="{Binding Activity}">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="models:ClientDealUpdate">
+                                <VerticalStackLayout Padding="0,8" Spacing="4">
+                                    <Label Text="{Binding CreatedDisplay}" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                                    <Label Text="{Binding StatusChangeDisplay}" FontSize="11" TextColor="{StaticResource Primary}"
+                                           IsVisible="{Binding StatusChangeDisplay, Converter={StaticResource IsNotNullConverter}}" />
+                                    <Label Text="{Binding Body}" Style="{StaticResource BodyMedium}" LineBreakMode="WordWrap" />
+                                </VerticalStackLayout>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </VerticalStackLayout>
+            </Frame>
+
+            <Frame Style="{StaticResource CardFrame}" IsVisible="{Binding HasActivity, Converter={StaticResource InverseBoolConverter}}">
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="LATEST UPDATE" Style="{StaticResource LabelSection}" />
+                    <Label Text="{Binding UpdateText}" Style="{StaticResource BodyMedium}" LineBreakMode="WordWrap" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="ASK A QUESTION" Style="{StaticResource LabelSection}" />
+                    <Label Text="Chat with your project team in the app — no phone call needed. Replies appear here." FontSize="11" TextColor="{StaticResource TextSecondary}" LineBreakMode="WordWrap" />
+                    <CollectionView ItemsSource="{Binding Messages}" MaximumHeightRequest="240" IsVisible="{Binding HasMessages}">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="models:ClientDealMessage">
+                                <Frame Padding="10" Margin="0,4" BackgroundColor="{StaticResource SurfaceElevated}" BorderColor="Transparent" HasShadow="False">
+                                    <VerticalStackLayout Spacing="4">
+                                        <Label Text="{Binding AuthorLabel}" FontSize="11" TextColor="{StaticResource Primary}" />
+                                        <Label Text="{Binding Body}" Style="{StaticResource BodyMedium}" LineBreakMode="WordWrap" />
+                                        <Label Text="{Binding CreatedDisplay}" FontSize="10" TextColor="{StaticResource TextSecondary}" />
+                                    </VerticalStackLayout>
+                                </Frame>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                    <Editor Placeholder="Type your question or update for the team…" Text="{Binding NewMessageText, Mode=TwoWay}"
+                            AutoSize="TextChanges" MinimumHeightRequest="64" TextColor="{StaticResource TextPrimary}" />
+                    <Button Text="Send message" Command="{Binding SendMessageCommand}" Style="{StaticResource PrimaryButton}" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <Button Text="Back to projects" Command="{Binding GoBackCommand}"
+                    Style="{StaticResource OutlinedButton}" Margin="0,8,0,8" />
+            <Button Text="Main menu (HR / employee login)" Command="{Binding ExitToMainMenuCommand}"
+                    Style="{StaticResource OutlinedButton}" Margin="0,0,0,24" />
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

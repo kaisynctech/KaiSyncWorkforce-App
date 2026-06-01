@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Employee.EmployeeContractorAdminPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Employees"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:EmployeeContractorAdminViewModel"
+    x:Name="contractorPage"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="Contractor Profile">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="16" Spacing="16">
+
+            <!-- No profile state -->
+            <Frame Style="{StaticResource CardFrame}"
+                   IsVisible="{Binding HasProfile, Converter={StaticResource InverseBoolConverter}}">
+                <VerticalStackLayout Spacing="8" HorizontalOptions="Center" Padding="16">
+                    <Label Text="No Contractor Profile"
+                           Style="{StaticResource HeadlineSmall}"
+                           HorizontalOptions="Center" />
+                    <Label Text="You are not linked to any contractor company. Contact your HR manager if this is incorrect."
+                           Style="{StaticResource BodySmall}"
+                           TextColor="{StaticResource TextSecondary}"
+                           HorizontalTextAlignment="Center" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Contractor cards -->
+            <CollectionView ItemsSource="{Binding LinkedContractors}"
+                            IsVisible="{Binding HasProfile}">
+                <CollectionView.ItemTemplate>
+                    <DataTemplate x:DataType="models:Contractor">
+                        <Frame Style="{StaticResource CardFrame}" Margin="0,0,0,12">
+                            <VerticalStackLayout Spacing="10">
+
+                                <!-- Header -->
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <VerticalStackLayout Grid.Column="0" Spacing="2">
+                                        <Label Text="{Binding Name}" Style="{StaticResource HeadlineSmall}" />
+                                        <Label Text="{Binding RegistrationNumber, StringFormat='Reg: {0}'}"
+                                               Style="{StaticResource Caption}"
+                                               TextColor="{StaticResource TextSecondary}"
+                                               IsVisible="{Binding RegistrationNumber, Converter={StaticResource IsNotNullConverter}}" />
+                                    </VerticalStackLayout>
+                                    <Frame Grid.Column="1"
+                                           BackgroundColor="{Binding IsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#22C55E|#EF4444'}"
+                                           BorderColor="Transparent" CornerRadius="10" Padding="8,3" HasShadow="False"
+                                           VerticalOptions="Start">
+                                        <Label Text="{Binding IsActive, Converter={StaticResource BoolToStringConverter}, ConverterParameter='Active|Inactive'}"
+                                               FontFamily="PoppinsSemiBold" FontSize="11" TextColor="White" />
+                                    </Frame>
+                                </Grid>
+
+                                <BoxView Style="{StaticResource DividerLine}" />
+
+                                <!-- Contact details -->
+                                <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="6" ColumnSpacing="12">
+                                    <Label Grid.Row="0" Grid.Column="0" Text="Contact"
+                                           Style="{StaticResource LabelField}" VerticalOptions="Center" />
+                                    <Label Grid.Row="0" Grid.Column="1"
+                                           Text="{Binding ContactPerson, FallbackValue='—'}"
+                                           Style="{StaticResource BodyMedium}" />
+
+                                    <Label Grid.Row="1" Grid.Column="0" Text="Phone"
+                                           Style="{StaticResource LabelField}" VerticalOptions="Center"
+                                           IsVisible="{Binding Phone, Converter={StaticResource IsNotNullConverter}}" />
+                                    <Button Grid.Row="1" Grid.Column="1"
+                                            Text="{Binding Phone}"
+                                            Command="{Binding BindingContext.CallContactCommand, Source={x:Reference contractorPage}}"
+                                            CommandParameter="{Binding .}"
+                                            Style="{StaticResource TextButton}" FontSize="13"
+                                            HorizontalOptions="Start"
+                                            IsVisible="{Binding Phone, Converter={StaticResource IsNotNullConverter}}" />
+
+                                    <Label Grid.Row="2" Grid.Column="0" Text="Email"
+                                           Style="{StaticResource LabelField}" VerticalOptions="Center"
+                                           IsVisible="{Binding Email, Converter={StaticResource IsNotNullConverter}}" />
+                                    <Button Grid.Row="2" Grid.Column="1"
+                                            Text="{Binding Email}"
+                                            Command="{Binding BindingContext.EmailContactCommand, Source={x:Reference contractorPage}}"
+                                            CommandParameter="{Binding .}"
+                                            Style="{StaticResource TextButton}" FontSize="12"
+                                            HorizontalOptions="Start"
+                                            IsVisible="{Binding Email, Converter={StaticResource IsNotNullConverter}}" />
+                                </Grid>
+
+                                <!-- Address -->
+                                <VerticalStackLayout Spacing="4"
+                                                     IsVisible="{Binding Address, Converter={StaticResource IsNotNullConverter}}">
+                                    <Label Text="ADDRESS" Style="{StaticResource LabelSection}" />
+                                    <Label Text="{Binding Address}"
+                                           Style="{StaticResource BodySmall}"
+                                           TextColor="{StaticResource TextSecondary}" />
+                                </VerticalStackLayout>
+
+                                <!-- Rating -->
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12"
+                                      IsVisible="{Binding Rating, Converter={StaticResource IsNotNullConverter}}">
+                                    <Label Grid.Column="0" Text="Rating" Style="{StaticResource LabelField}" VerticalOptions="Center" />
+                                    <Label Grid.Column="1"
+                                           Text="{Binding Rating, StringFormat='{0:F1} / 5.0'}"
+                                           Style="{StaticResource BodyMedium}"
+                                           TextColor="{StaticResource Primary}" />
+                                </Grid>
+
+                                <!-- Notes -->
+                                <VerticalStackLayout Spacing="4"
+                                                     IsVisible="{Binding Notes, Converter={StaticResource IsNotNullConverter}}">
+                                    <Label Text="NOTES" Style="{StaticResource LabelSection}" />
+                                    <Label Text="{Binding Notes}"
+                                           Style="{StaticResource BodySmall}"
+                                           TextColor="{StaticResource TextSecondary}" />
+                                </VerticalStackLayout>
+
+                            </VerticalStackLayout>
+                        </Frame>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+
+            <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}"
+                               Color="{StaticResource Primary}" HorizontalOptions="Center" />
+
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

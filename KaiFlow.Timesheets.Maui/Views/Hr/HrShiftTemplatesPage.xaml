@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Hr.HrShiftTemplatesPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:HrShiftTemplatesViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="{Binding Title}">
+
+    <Grid RowDefinitions="Auto,*">
+
+        <!-- Header toolbar -->
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Padding="16,12">
+            <Label Grid.Column="0" Text="Time Templates"
+                   Style="{StaticResource HeadlineMedium}"
+                   VerticalOptions="Center" />
+            <Button Grid.Column="1" Text="+ Add Template"
+                    Command="{Binding AddTemplateCommand}"
+                    BackgroundColor="{StaticResource Primary}"
+                    TextColor="White"
+                    CornerRadius="8"
+                    FontSize="13"
+                    Padding="14,8" />
+        </Grid>
+
+        <!-- Template list -->
+        <ScrollView Grid.Row="1" Padding="16,0,16,16">
+            <VerticalStackLayout Spacing="10">
+
+                <Label Text="No time templates yet. Tap '+ Add Template' to create your first one."
+                       Style="{StaticResource BodyMedium}"
+                       TextColor="{StaticResource TextSecondary}"
+                       HorizontalOptions="Center"
+                       Margin="0,40,0,0"
+                       IsVisible="{Binding Templates.Count, Converter={StaticResource IsZeroConverter}}" />
+
+                <CollectionView ItemsSource="{Binding Templates}" SelectionMode="None">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="models:EmployeeShiftTemplate">
+                            <Frame Style="{StaticResource CardFrame}" Margin="0,0,0,6">
+                                <Grid ColumnDefinitions="*,Auto,Auto,Auto" RowDefinitions="Auto,Auto">
+
+                                    <HorizontalStackLayout Grid.Row="0" Grid.Column="0" Spacing="8" VerticalOptions="Center">
+                                        <Label Text="{Binding Name}"
+                                               Style="{StaticResource BodyLarge}"
+                                               FontAttributes="Bold"
+                                               VerticalOptions="Center" />
+                                        <Frame BackgroundColor="#DCFCE7" BorderColor="Transparent"
+                                               CornerRadius="6" Padding="6,2" HasShadow="False"
+                                               VerticalOptions="Center"
+                                               IsVisible="{Binding IsDefault}">
+                                            <Label Text="Default" FontFamily="PoppinsSemiBold" FontSize="10" TextColor="#166534" />
+                                        </Frame>
+                                    </HorizontalStackLayout>
+
+                                    <Button Grid.Row="0" Grid.Column="1"
+                                            Text="Default"
+                                            IsVisible="{Binding IsDefault, Converter={StaticResource InverseBoolConverter}}"
+                                            Command="{Binding Source={RelativeSource AncestorType={x:Type vm:HrShiftTemplatesViewModel}}, Path=SetDefaultTemplateCommand}"
+                                            CommandParameter="{Binding .}"
+                                            BackgroundColor="{StaticResource SurfaceDark}"
+                                            TextColor="{StaticResource TextSecondary}"
+                                            CornerRadius="6" FontSize="11"
+                                            Padding="8,4" HeightRequest="30" Margin="4,0" />
+
+                                    <!-- Edit button -->
+                                    <Button Grid.Row="0" Grid.Column="2"
+                                            Text="Edit"
+                                            Command="{Binding Source={RelativeSource AncestorType={x:Type vm:HrShiftTemplatesViewModel}}, Path=EditTemplateCommand}"
+                                            CommandParameter="{Binding .}"
+                                            BackgroundColor="{StaticResource SurfaceDark}"
+                                            TextColor="{StaticResource Primary}"
+                                            CornerRadius="6"
+                                            FontSize="12"
+                                            Padding="10,4"
+                                            HeightRequest="30"
+                                            Margin="4,0" />
+
+                                    <!-- Delete button -->
+                                    <Button Grid.Row="0" Grid.Column="3"
+                                            Text="Delete"
+                                            Command="{Binding Source={RelativeSource AncestorType={x:Type vm:HrShiftTemplatesViewModel}}, Path=DeleteTemplateCommand}"
+                                            CommandParameter="{Binding .}"
+                                            BackgroundColor="#FEE2E2"
+                                            TextColor="#DC2626"
+                                            CornerRadius="6"
+                                            FontSize="12"
+                                            Padding="10,4"
+                                            HeightRequest="30" />
+
+                                    <!-- Summary row -->
+                                    <Label Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="4"
+                                           Text="{Binding Summary}"
+                                           Style="{StaticResource BodySmall}"
+                                           TextColor="{StaticResource TextSecondary}"
+                                           Margin="0,4,0,0" />
+                                </Grid>
+                            </Frame>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+
+            </VerticalStackLayout>
+        </ScrollView>
+
+    </Grid>
+</ContentPage>

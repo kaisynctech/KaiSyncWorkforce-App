@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Hr.HrIncidentsPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:HrIncidentsViewModel"
+    x:Name="Self"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="{Binding Title}">
+
+    <ContentPage.ToolbarItems>
+        <ToolbarItem Text="New" Command="{Binding NewIncidentCommand}" />
+    </ContentPage.ToolbarItems>
+
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,*">
+
+        <!-- Header -->
+        <Grid Grid.Row="0" Padding="16,12" ColumnDefinitions="*,Auto"
+              BackgroundColor="{StaticResource SurfaceDark}">
+            <Label Grid.Column="0" Text="Incident Reports"
+                   Style="{StaticResource HeadlineMedium}" VerticalOptions="Center" />
+        </Grid>
+
+        <!-- Scope + Filter Bar -->
+        <ScrollView Grid.Row="1" Orientation="Horizontal" Margin="8,4">
+            <HorizontalStackLayout Padding="8,0" Spacing="8">
+                <Button Text="All" Command="{Binding SetScopeCommand}" CommandParameter="all"
+                        CornerRadius="16" HeightRequest="32" FontSize="12"
+                        BackgroundColor="{Binding Scope, Converter={StaticResource EqToStyleConverter}, ConverterParameter='all|#3B82F6,#FFFFFF'}"
+                        TextColor="{Binding Scope, Converter={StaticResource EqToStyleConverter}, ConverterParameter='all|#FFFFFF,#6B7280'}" />
+                <Button Text="Standalone" Command="{Binding SetScopeCommand}" CommandParameter="standalone"
+                        CornerRadius="16" HeightRequest="32" FontSize="12"
+                        BackgroundColor="{Binding Scope, Converter={StaticResource EqToStyleConverter}, ConverterParameter='standalone|#3B82F6,#FFFFFF'}"
+                        TextColor="{Binding Scope, Converter={StaticResource EqToStyleConverter}, ConverterParameter='standalone|#FFFFFF,#6B7280'}" />
+                <Button Text="Job-linked" Command="{Binding SetScopeCommand}" CommandParameter="job"
+                        CornerRadius="16" HeightRequest="32" FontSize="12"
+                        BackgroundColor="{Binding Scope, Converter={StaticResource EqToStyleConverter}, ConverterParameter='job|#3B82F6,#FFFFFF'}"
+                        TextColor="{Binding Scope, Converter={StaticResource EqToStyleConverter}, ConverterParameter='job|#FFFFFF,#6B7280'}" />
+            </HorizontalStackLayout>
+        </ScrollView>
+
+        <HorizontalStackLayout Grid.Row="2" Spacing="8" Padding="16,8"
+                               BackgroundColor="{StaticResource SurfaceDark}">
+            <Frame Padding="12,6"
+                   BackgroundColor="{Binding ShowOpenOnly, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#3B82F6|#E5E7EB'}"
+                   CornerRadius="16" BorderColor="Transparent">
+                <Frame.GestureRecognizers>
+                    <TapGestureRecognizer Tapped="OnShowOpenOnlyTapped" />
+                </Frame.GestureRecognizers>
+                <Label Text="Open" FontSize="13"
+                       TextColor="{Binding ShowOpenOnly, Converter={StaticResource BoolToColorConverter}, ConverterParameter='White|#6B7280'}" />
+            </Frame>
+            <Frame Padding="12,6"
+                   BackgroundColor="{Binding ShowOpenOnly, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#E5E7EB|#3B82F6'}"
+                   CornerRadius="16" BorderColor="Transparent">
+                <Frame.GestureRecognizers>
+                    <TapGestureRecognizer Tapped="OnShowAllTapped" />
+                </Frame.GestureRecognizers>
+                <Label Text="All" FontSize="13"
+                       TextColor="{Binding ShowOpenOnly, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#6B7280|White'}" />
+            </Frame>
+        </HorizontalStackLayout>
+
+        <SearchBar Grid.Row="3" Margin="16,0" Text="{Binding SearchText}" Placeholder="Search incidents..." />
+
+        <!-- Incidents List -->
+        <RefreshView Grid.Row="4"
+                     IsRefreshing="{Binding IsBusy}"
+                     Command="{Binding RefreshCommand}">
+            <CollectionView ItemsSource="{Binding Incidents}"
+                            Margin="16,8">
+                <CollectionView.EmptyView>
+                    <VerticalStackLayout VerticalOptions="Center" Spacing="12" Padding="32">
+                        <Label Text="✅" FontSize="48" HorizontalOptions="Center" />
+                        <Label Text="No incidents found" Style="{StaticResource EmptyState}" />
+                    </VerticalStackLayout>
+                </CollectionView.EmptyView>
+                <CollectionView.ItemTemplate>
+                    <DataTemplate x:DataType="vm:IncidentDisplay">
+                        <SwipeView Margin="0,4">
+                            <SwipeView.RightItems>
+                                <SwipeItems>
+                                    <SwipeItem Text="Close"
+                                               BackgroundColor="{StaticResource Primary}"
+                                               Command="{Binding BindingContext.CloseIncidentCommand, Source={x:Reference Self}}"
+                                               CommandParameter="{Binding .}" />
+                                </SwipeItems>
+                            </SwipeView.RightItems>
+                            <Frame Style="{StaticResource CardFrame}">
+                                <Frame.GestureRecognizers>
+                                    <TapGestureRecognizer
+                                        Command="{Binding BindingContext.ViewIncidentCommand, Source={x:Reference Self}}"
+                                        CommandParameter="{Binding .}" />
+                                </Frame.GestureRecognizers>
+                                <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="4">
+                                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
+                                        <Label Grid.Column="0"
+                                               Text="{Binding Report.DisplayTitle}"
+                                               Style="{StaticResource BodyLarge}"
+                                               LineBreakMode="TailTruncation"
+                                               MaxLines="2" />
+                                        <Frame Grid.Column="1"
+                                               BackgroundColor="{Binding Report.SeverityRaw, Converter={StaticResource EqToStyleConverter}, ConverterParameter='critical|#7F1D1D,high|#7C2D12,medium|#78350F,#14532D'}"
+                                               CornerRadius="10" Padding="8,3"
+                                               VerticalOptions="Start">
+                                            <Label Text="{Binding Report.SeverityRaw}"
+                                                   TextColor="White"
+                                                   FontSize="11" FontAttributes="Bold" />
+                                        </Frame>
+                                    </Grid>
+                                    <Label Grid.Row="1"
+                                           Text="{Binding ReporterName}"
+                                           Style="{StaticResource Caption}"
+                                           TextColor="{StaticResource Primary}" />
+                                    <Label Grid.Row="2"
+                                           Text="{Binding Report.CreatedAt, StringFormat='{0:dd MMM yyyy, HH:mm}'}"
+                                           Style="{StaticResource Caption}"
+                                           TextColor="{StaticResource TextSecondary}" />
+                                    <Label Grid.Row="3"
+                                           Text="{Binding Report.ResolutionNotes, StringFormat='Resolution: {0}'}"
+                                           Style="{StaticResource BodySmall}"
+                                           TextColor="{StaticResource Accent}"
+                                           IsVisible="{Binding Report.IsClosed}" />
+                                </Grid>
+                            </Frame>
+                        </SwipeView>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+        </RefreshView>
+
+        <!-- Busy Overlay -->
+        <ActivityIndicator Grid.RowSpan="5"
+                           IsRunning="{Binding IsBusy}"
+                           IsVisible="{Binding IsBusy}"
+                           Color="{StaticResource Primary}"
+                           VerticalOptions="Center" HorizontalOptions="Center" />
+    </Grid>
+</ContentPage>

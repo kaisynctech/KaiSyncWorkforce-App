@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Hr.HrActivityLogPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:HrActivityLogViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="Activity Log">
+
+    <RefreshView Command="{Binding RefreshCommand}" IsRefreshing="{Binding IsBusy}">
+        <ScrollView>
+            <VerticalStackLayout Padding="16" Spacing="20">
+
+                <!-- Recent Punches -->
+                <Label Text="RECENT CLOCK INS/OUTS" Style="{StaticResource LabelSection}" />
+                <Label
+                    Text="No recent punches."
+                    Style="{StaticResource EmptyState}"
+                    IsVisible="{Binding RecentPunches.Count, Converter={StaticResource IsZeroConverter}}" />
+                <CollectionView ItemsSource="{Binding RecentPunches}">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="vm:PunchActivity">
+                            <Frame Style="{StaticResource CardFrame}" Margin="0,0,0,6">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <VerticalStackLayout Grid.Column="0" Spacing="2">
+                                        <Label
+                                            Text="{Binding EmployeeName}"
+                                            FontFamily="PoppinsSemiBold"
+                                            FontSize="13"
+                                            TextColor="{StaticResource TextPrimary}" />
+                                        <Label
+                                            Text="{Binding DateTime, StringFormat='{0:ddd dd MMM, HH:mm}'}"
+                                            FontFamily="PoppinsRegular"
+                                            FontSize="12"
+                                            TextColor="{StaticResource TextSecondary}" />
+                                        <Label
+                                            Text="{Binding Address}"
+                                            FontFamily="PoppinsRegular"
+                                            FontSize="11"
+                                            TextColor="{StaticResource TextSecondary}"
+                                            IsVisible="{Binding Address, Converter={StaticResource IsNotNullConverter}}"
+                                            LineBreakMode="TailTruncation" />
+                                    </VerticalStackLayout>
+                                    <Frame
+                                        Grid.Column="1"
+                                        BackgroundColor="{Binding TypeLabel, Converter={StaticResource EqToStyleConverter}, ConverterParameter='Clock In|#DCFCE7,#FEE2E2'}"
+                                        BorderColor="Transparent"
+                                        CornerRadius="10" Padding="8,3" HasShadow="False"
+                                        VerticalOptions="Center">
+                                        <Label
+                                            Text="{Binding TypeLabel}"
+                                            FontFamily="PoppinsSemiBold"
+                                            FontSize="11"
+                                            TextColor="{StaticResource TextPrimary}" />
+                                    </Frame>
+                                </Grid>
+                            </Frame>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+
+                <!-- Recent Incidents -->
+                <Label Text="RECENT INCIDENTS" Style="{StaticResource LabelSection}" />
+                <Label
+                    Text="No recent incidents."
+                    Style="{StaticResource EmptyState}"
+                    IsVisible="{Binding RecentIncidents.Count, Converter={StaticResource IsZeroConverter}}" />
+                <CollectionView ItemsSource="{Binding RecentIncidents}">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="models:IncidentReport">
+                            <Frame Style="{StaticResource CardFrame}" Margin="0,0,0,6">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <VerticalStackLayout Grid.Column="0" Spacing="2">
+                                        <Label
+                                            Text="{Binding Description}"
+                                            FontFamily="PoppinsMedium"
+                                            FontSize="13"
+                                            TextColor="{StaticResource TextPrimary}"
+                                            MaxLines="2"
+                                            LineBreakMode="TailTruncation" />
+                                        <Label
+                                            Text="{Binding CreatedAt, StringFormat='{0:dd MMM yyyy}'}"
+                                            FontFamily="PoppinsRegular"
+                                            FontSize="12"
+                                            TextColor="{StaticResource TextSecondary}" />
+                                    </VerticalStackLayout>
+                                    <Frame
+                                        Grid.Column="1"
+                                        BackgroundColor="{Binding SeverityRaw, Converter={StaticResource EqToStyleConverter}, ConverterParameter='critical|#FEE2E2,high|#FEF3C7,medium|#DBEAFE,#DCFCE7'}"
+                                        BorderColor="Transparent"
+                                        CornerRadius="10" Padding="8,3" HasShadow="False"
+                                        VerticalOptions="Start">
+                                        <Label
+                                            Text="{Binding SeverityRaw}"
+                                            FontFamily="PoppinsSemiBold"
+                                            FontSize="11"
+                                            TextColor="{StaticResource TextPrimary}" />
+                                    </Frame>
+                                </Grid>
+                            </Frame>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+
+                <!-- Recent Leave Requests -->
+                <Label Text="RECENT LEAVE REQUESTS" Style="{StaticResource LabelSection}" />
+                <Label
+                    Text="No recent leave requests."
+                    Style="{StaticResource EmptyState}"
+                    IsVisible="{Binding RecentLeave.Count, Converter={StaticResource IsZeroConverter}}" />
+                <CollectionView ItemsSource="{Binding RecentLeave}">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="models:LeaveRequest">
+                            <Frame Style="{StaticResource CardFrame}" Margin="0,0,0,6">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <VerticalStackLayout Grid.Column="0" Spacing="2">
+                                        <Label
+                                            Text="{Binding LeaveType}"
+                                            FontFamily="PoppinsSemiBold"
+                                            FontSize="13"
+                                            TextColor="{StaticResource TextPrimary}" />
+                                        <Label
+                                            Text="{Binding StartDate, StringFormat='{0:dd MMM} – '}"
+                                            FontFamily="PoppinsRegular"
+                                            FontSize="12"
+                                            TextColor="{StaticResource TextSecondary}" />
+                                    </VerticalStackLayout>
+                                    <Frame
+                                        Grid.Column="1"
+                                        BackgroundColor="{Binding StatusRaw, Converter={StaticResource EqToStyleConverter}, ConverterParameter='approved|#DCFCE7,declined|#FEE2E2,#FEF3C7'}"
+                                        BorderColor="Transparent"
+                                        CornerRadius="10" Padding="8,3" HasShadow="False"
+                                        VerticalOptions="Center">
+                                        <Label
+                                            Text="{Binding StatusRaw}"
+                                            FontFamily="PoppinsSemiBold"
+                                            FontSize="11"
+                                            TextColor="{StaticResource TextPrimary}" />
+                                    </Frame>
+                                </Grid>
+                            </Frame>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+
+            </VerticalStackLayout>
+        </ScrollView>
+    </RefreshView>
+</ContentPage>

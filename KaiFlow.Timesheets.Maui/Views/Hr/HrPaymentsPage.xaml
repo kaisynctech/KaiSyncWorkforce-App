@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Hr.HrPaymentsPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
+    xmlns:kf="clr-namespace:KaiFlow.Timesheets.Controls"
+    x:DataType="vm:HrPaymentsViewModel"
+    x:Name="Self"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="Payroll">
+
+    <ContentPage.ToolbarItems>
+        <ToolbarItem Text="Settings" Command="{Binding OpenPayrollSettingsCommand}" />
+        <ToolbarItem Text="Lock" Command="{Binding LockPeriodCommand}" />
+        <ToolbarItem Text="Register" Command="{Binding ExportRegisterCommand}" />
+        <ToolbarItem Text="IRP5" Command="{Binding ExportIrp5Command}" />
+        <ToolbarItem Text="Release All" Command="{Binding BulkReleaseToEmployeesCommand}" />
+        <ToolbarItem Text="Generate" Command="{Binding GeneratePayrollCommand}" />
+        <ToolbarItem Text="Approve All" Command="{Binding BulkApproveCommand}" />
+        <ToolbarItem Text="Bank CSV" Command="{Binding ExportBankCsvCommand}" />
+        <ToolbarItem Text="Export" Command="{Binding ExportCommand}" />
+    </ContentPage.ToolbarItems>
+
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,*" Padding="12">
+
+        <!-- KPIs -->
+        <Grid Grid.Row="0" ColumnDefinitions="*,*" ColumnSpacing="12" Margin="0,0,0,12">
+            <kf:KpiCard Grid.Column="0"
+                        Title="Pending gross"
+                        Value="{Binding TotalPending, StringFormat='R{0:N0}'}"
+                        Caption="awaiting approval"
+                        Accent="{StaticResource Chart3}" />
+            <kf:KpiCard Grid.Column="1"
+                        Title="Approved gross"
+                        Value="{Binding TotalApproved, StringFormat='R{0:N0}'}"
+                        Caption="approved this period"
+                        Accent="{StaticResource Chart2}" />
+        </Grid>
+
+        <!-- Date range -->
+        <Grid Grid.Row="1" ColumnDefinitions="*,*" ColumnSpacing="12" Margin="0,0,0,8">
+            <VerticalStackLayout Grid.Column="0" Spacing="2">
+                <Label Text="From" Style="{StaticResource Caption}" />
+                <DatePicker Date="{Binding DateFrom}"
+                            TextColor="{StaticResource TextPrimary}"
+                            BackgroundColor="{StaticResource SurfaceDark}" />
+            </VerticalStackLayout>
+            <VerticalStackLayout Grid.Column="1" Spacing="2">
+                <Label Text="To" Style="{StaticResource Caption}" />
+                <DatePicker Date="{Binding DateTo}"
+                            TextColor="{StaticResource TextPrimary}"
+                            BackgroundColor="{StaticResource SurfaceDark}" />
+            </VerticalStackLayout>
+        </Grid>
+
+        <Label Grid.Row="2" Text="{Binding PayslipReleaseHint}"
+               FontSize="12" TextColor="{StaticResource Primary}"
+               IsVisible="{Binding ShowPayslipReleaseHint}" />
+
+        <Label Grid.Row="3" Text="{Binding PeriodLockLabel}"
+               FontSize="12" TextColor="{StaticResource Error}"
+               IsVisible="{Binding IsCurrentPeriodLocked}" />
+
+        <!-- Search + status filters -->
+        <kf:FilterToolbar Grid.Row="4"
+                          SearchText="{Binding SearchText}"
+                          SearchPlaceholder="Search employee…"
+                          Margin="0,0,0,12">
+            <kf:FilterToolbar.FilterContent>
+                <ScrollView Orientation="Horizontal">
+                    <HorizontalStackLayout Spacing="8">
+                        <Button Text="All" Command="{Binding SetFilterCommand}" CommandParameter="all"
+                                CornerRadius="16" HeightRequest="32" FontSize="12" Padding="14,0"
+                                BackgroundColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='all|#3B82F6,#FFFFFF'}"
+                                TextColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='all|#FFFFFF,#6B7280'}" />
+                        <Button Text="Pending" Command="{Binding SetFilterCommand}" CommandParameter="pending"
+                                CornerRadius="16" HeightRequest="32" FontSize="12" Padding="14,0"
+                                BackgroundColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='pending|#3B82F6,#FFFFFF'}"
+                                TextColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='pending|#FFFFFF,#6B7280'}" />
+                        <Button Text="Approved" Command="{Binding SetFilterCommand}" CommandParameter="approved"
+                                CornerRadius="16" HeightRequest="32" FontSize="12" Padding="14,0"
+                                BackgroundColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='approved|#3B82F6,#FFFFFF'}"
+                                TextColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='approved|#FFFFFF,#6B7280'}" />
+                        <Button Text="Paid" Command="{Binding SetFilterCommand}" CommandParameter="paid"
+                                CornerRadius="16" HeightRequest="32" FontSize="12" Padding="14,0"
+                                BackgroundColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='paid|#3B82F6,#FFFFFF'}"
+                                TextColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='paid|#FFFFFF,#6B7280'}" />
+                    </HorizontalStackLayout>
+                </ScrollView>
+            </kf:FilterToolbar.FilterContent>
+        </kf:FilterToolbar>
+
+        <!-- Payroll table -->
+        <ScrollView Grid.Row="5" Orientation="Horizontal">
+            <Grid WidthRequest="980">
+                <kf:EnterpriseTableView ItemsSource="{Binding Payments}"
+                                        PageSummary="{Binding PageSummary}"
+                                        CanGoPrevious="{Binding CanGoPrevious}"
+                                        CanGoNext="{Binding CanGoNext}"
+                                        PreviousPageCommand="{Binding PreviousPageCommand}"
+                                        NextPageCommand="{Binding NextPageCommand}"
+                                        EmptyTitle="No payment records"
+                                        EmptyMessage="Adjust the date range or generate payroll.">
+                    <kf:EnterpriseTableView.HeaderContent>
+                        <Grid ColumnDefinitions="150,120,85,85,85,90,80,100,200"
+                              Padding="12,10" BackgroundColor="{StaticResource SurfaceElevated}">
+                            <Label Grid.Column="0" Text="{Binding EmployeeHeaderLabel}" Style="{StaticResource DataTableHeaderLabel}">
+                                <Label.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding ToggleSortCommand}" CommandParameter="employee" />
+                                </Label.GestureRecognizers>
+                            </Label>
+                            <Label Grid.Column="1" Text="{Binding PeriodHeaderLabel}" Style="{StaticResource DataTableHeaderLabel}">
+                                <Label.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding ToggleSortCommand}" CommandParameter="period" />
+                                </Label.GestureRecognizers>
+                            </Label>
+                            <Label Grid.Column="2" Text="{Binding GrossHeaderLabel}" Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="End">
+                                <Label.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding ToggleSortCommand}" CommandParameter="gross" />
+                                </Label.GestureRecognizers>
+                            </Label>
+                            <Label Grid.Column="3" Text="Deduct." Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="End" />
+                            <Label Grid.Column="4" Text="{Binding NetHeaderLabel}" Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="End">
+                                <Label.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding ToggleSortCommand}" CommandParameter="net" />
+                                </Label.GestureRecognizers>
+                            </Label>
+                            <Label Grid.Column="5" Text="Hours" Style="{StaticResource DataTableHeaderLabel}" />
+                            <Label Grid.Column="6" Text="{Binding StatusHeaderLabel}" Style="{StaticResource DataTableHeaderLabel}">
+                                <Label.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding ToggleSortCommand}" CommandParameter="status" />
+                                </Label.GestureRecognizers>
+                            </Label>
+                            <Label Grid.Column="7" Text="Visible" Style="{StaticResource DataTableHeaderLabel}" />
+                            <Label Grid.Column="8" Text="Actions" Style="{StaticResource DataTableHeaderLabel}" />
+                        </Grid>
+                    </kf:EnterpriseTableView.HeaderContent>
+
+                    <kf:EnterpriseTableView.ItemTemplate>
+                        <DataTemplate x:DataType="vm:PaymentDisplay">
+                            <VerticalStackLayout Spacing="0">
+                                <Grid ColumnDefinitions="150,120,85,85,85,90,80,100,200" Padding="12,10"
+                                      BackgroundColor="{StaticResource SurfaceCard}">
+                                    <Grid.GestureRecognizers>
+                                        <TapGestureRecognizer Command="{Binding BindingContext.OpenPayslipCommand, Source={x:Reference Self}}" CommandParameter="{Binding .}" />
+                                    </Grid.GestureRecognizers>
+                                    <Label Grid.Column="0" Text="{Binding EmployeeName}"
+                                           Style="{StaticResource DataTableCellLabel}" TextColor="{StaticResource Primary}" />
+                                    <Label Grid.Column="1" Text="{Binding Payment.PeriodLabel}"
+                                           Style="{StaticResource DataTableCellSecondary}" />
+                                    <Label Grid.Column="2" Text="{Binding GrossDisplay}"
+                                           Style="{StaticResource DataTableCellLabel}" HorizontalTextAlignment="End" />
+                                    <Label Grid.Column="3" Text="{Binding DeductionsDisplay}"
+                                           Style="{StaticResource DataTableCellSecondary}" HorizontalTextAlignment="End" />
+                                    <Label Grid.Column="4" Text="{Binding NetDisplay}"
+                                           Style="{StaticResource DataTableCellLabel}" HorizontalTextAlignment="End"
+                                           TextColor="{StaticResource Primary}" />
+                                    <Label Grid.Column="5" Text="{Binding HoursDisplay}"
+                                           Style="{StaticResource DataTableCellSecondary}" />
+                                    <kf:StatusChip Grid.Column="6" Text="{Binding StatusLabel}" Status="{Binding StatusChipKind}" VerticalOptions="Center" />
+                                    <Label Grid.Column="7" Text="{Binding VisibilityLabel}"
+                                           Style="{StaticResource DataTableCellSecondary}" FontSize="11"
+                                           TextColor="{Binding IsVisibleToEmployee, Converter={StaticResource EqToStyleConverter}, ConverterParameter='True|#16A34A,#6B7280'}" />
+                                    <HorizontalStackLayout Grid.Column="8" Spacing="6" VerticalOptions="Center">
+                                        <Button Text="Open" Command="{Binding BindingContext.OpenPayslipCommand, Source={x:Reference Self}}"
+                                                CommandParameter="{Binding .}"
+                                                BackgroundColor="{StaticResource SurfaceDark}" TextColor="{StaticResource Primary}"
+                                                CornerRadius="6" HeightRequest="30" FontSize="11" Padding="8,0" />
+                                        <Button Text="Approve" Command="{Binding BindingContext.ApproveCommand, Source={x:Reference Self}}"
+                                                CommandParameter="{Binding .}"
+                                                IsVisible="{Binding Payment.StatusRaw, Converter={StaticResource EqConverter}, ConverterParameter='pending'}"
+                                                Style="{StaticResource PrimaryButton}" HeightRequest="30" FontSize="11" Padding="8,0" />
+                                        <Button Text="Show" Command="{Binding BindingContext.ReleaseToEmployeeCommand, Source={x:Reference Self}}"
+                                                CommandParameter="{Binding .}" IsVisible="{Binding CanReleaseToEmployee}"
+                                                BackgroundColor="#7C3AED" TextColor="White"
+                                                CornerRadius="6" HeightRequest="30" FontSize="11" Padding="8,0" />
+                                        <Button Text="Reject" Command="{Binding BindingContext.RejectCommand, Source={x:Reference Self}}"
+                                                CommandParameter="{Binding .}"
+                                                IsVisible="{Binding Payment.StatusRaw, Converter={StaticResource EqConverter}, ConverterParameter='pending'}"
+                                                Style="{StaticResource DangerButton}" HeightRequest="30" FontSize="11" Padding="8,0" />
+                                    </HorizontalStackLayout>
+                                </Grid>
+                                <BoxView Style="{StaticResource DataTableRowDivider}" />
+                            </VerticalStackLayout>
+                        </DataTemplate>
+                    </kf:EnterpriseTableView.ItemTemplate>
+                </kf:EnterpriseTableView>
+            </Grid>
+        </ScrollView>
+    </Grid>
+</ContentPage>

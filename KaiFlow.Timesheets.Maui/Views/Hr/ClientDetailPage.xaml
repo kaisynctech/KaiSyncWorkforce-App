@@ -1,0 +1,272 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Hr.ClientDetailPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    xmlns:controls="clr-namespace:KaiFlow.Timesheets.Views.Hr.Controls"
+    xmlns:helpers="clr-namespace:KaiFlow.Timesheets.Helpers"
+    x:DataType="vm:ClientDetailViewModel"
+    x:Name="Self"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="">
+
+    <Grid RowDefinitions="Auto,Auto,*">
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Padding="16,12,16,4" ColumnSpacing="12">
+            <Label Text="{Binding Title}" Style="{StaticResource HeadlineMedium}" VerticalOptions="Center" />
+            <Button Grid.Column="1" Text="Save" Command="{Binding SaveCommand}"
+                    BackgroundColor="{StaticResource Primary}" TextColor="White"
+                    FontFamily="PoppinsSemiBold" FontSize="16"
+                    CornerRadius="8" Padding="20,0" HeightRequest="44"
+                    MinimumWidthRequest="96" IsEnabled="{Binding IsNotBusy}" />
+        </Grid>
+
+        <!-- Tabs -->
+        <Grid Grid.Row="1" ColumnDefinitions="*,*,*" Margin="16,0,16,8" ColumnSpacing="8"
+              IsVisible="{Binding ShowRelatedTabs}">
+            <Button Grid.Column="0" Text="Information"
+                    Command="{Binding SetDetailTabCommand}" CommandParameter="info"
+                    CornerRadius="10" HeightRequest="38" FontSize="12"
+                    BackgroundColor="{Binding IsInfoTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#3B82F6|#FFFFFF'}"
+                    TextColor="{Binding IsInfoTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#6B7280'}" />
+            <Button Grid.Column="1" Text="Projects"
+                    Command="{Binding SetDetailTabCommand}" CommandParameter="projects"
+                    CornerRadius="10" HeightRequest="38" FontSize="12"
+                    BackgroundColor="{Binding IsProjectsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#3B82F6|#FFFFFF'}"
+                    TextColor="{Binding IsProjectsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#6B7280'}" />
+            <Button Grid.Column="2" Text="Jobs"
+                    Command="{Binding SetDetailTabCommand}" CommandParameter="jobs"
+                    CornerRadius="10" HeightRequest="38" FontSize="12"
+                    BackgroundColor="{Binding IsJobsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#3B82F6|#FFFFFF'}"
+                    TextColor="{Binding IsJobsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#6B7280'}" />
+        </Grid>
+
+        <ScrollView Grid.Row="2">
+            <VerticalStackLayout Padding="16,0,16,16" Spacing="16">
+
+                <Label Text="{Binding ErrorMessage}" TextColor="{StaticResource Error}"
+                       IsVisible="{Binding ErrorMessage, Converter={StaticResource IsNotNullConverter}}" FontSize="13" />
+
+                <!-- Information tab -->
+                <VerticalStackLayout Spacing="16" IsVisible="{Binding IsInfoTab}">
+                    <Frame Style="{StaticResource CardFrame}">
+                        <VerticalStackLayout Spacing="12">
+                            <Label Text="CLIENT DETAILS" Style="{StaticResource LabelSection}" />
+                            <Entry Placeholder="Client / company name *" Text="{Binding Name, Mode=TwoWay}" Style="{StaticResource DarkEntry}" />
+                            <Picker Title="Client type" ItemsSource="{Binding TypeOptions}" SelectedItem="{Binding SelectedType}"
+                                    TitleColor="{StaticResource TextSecondary}" TextColor="{StaticResource TextPrimary}" />
+                            <Entry Placeholder="Primary contact" Text="{Binding ContactPerson, Mode=TwoWay}" Style="{StaticResource DarkEntry}" />
+                            <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                                <Entry Grid.Column="0" Placeholder="Phone" Text="{Binding Phone, Mode=TwoWay}" Keyboard="Telephone" Style="{StaticResource DarkEntry}" />
+                                <Entry Grid.Column="1" Placeholder="Email" Text="{Binding Email, Mode=TwoWay}" Keyboard="Email" Style="{StaticResource DarkEntry}" />
+                            </Grid>
+                            <Entry Placeholder="Address" Text="{Binding Address, Mode=TwoWay}" Style="{StaticResource DarkEntry}" />
+                            <Editor Placeholder="Notes" Text="{Binding Notes, Mode=TwoWay}" AutoSize="TextChanges" MinimumHeightRequest="72"
+                                    TextColor="{StaticResource TextPrimary}" BackgroundColor="{StaticResource SurfaceDark}" />
+                        </VerticalStackLayout>
+                    </Frame>
+
+                    <Frame Style="{StaticResource CardFrame}">
+                        <VerticalStackLayout Spacing="12">
+                            <Label Text="CLIENT PORTAL ACCESS" Style="{StaticResource LabelSection}" />
+                            <Entry Text="{Binding CompanyCode}" IsReadOnly="True" Style="{StaticResource DarkEntry}" />
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                <Entry Text="{Binding ClientCode}" Style="{StaticResource DarkEntry}" />
+                                <Button Grid.Column="1" Text="Generate" Command="{Binding GenerateClientCodeCommand}"
+                                        BackgroundColor="{StaticResource SurfaceDark}" TextColor="{StaticResource Primary}"
+                                        CornerRadius="8" HeightRequest="44" FontSize="12" />
+                            </Grid>
+                            <Button Text="Copy portal login credentials" Command="{Binding CopyPortalCredentialsCommand}"
+                                    IsEnabled="{Binding HasClientCode}" BackgroundColor="{StaticResource SurfaceDark}"
+                                    TextColor="{StaticResource Primary}" CornerRadius="8" HeightRequest="42" FontSize="13" />
+                            <Label Text="Clients use Home → Client portal sign-in with company code + client code."
+                                   FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                        </VerticalStackLayout>
+                    </Frame>
+
+                    <VerticalStackLayout Spacing="8" IsVisible="{Binding ShowRelatedTabs}">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <Label Text="Sites" Style="{StaticResource LabelSection}" VerticalOptions="Center" />
+                            <Button Grid.Column="1" Text="+ Site" Command="{Binding AddSiteCommand}" Style="{StaticResource TextButton}" FontSize="13" />
+                        </Grid>
+                        <CollectionView ItemsSource="{Binding Sites}" HeightRequest="140" SelectionMode="None">
+                            <CollectionView.EmptyView>
+                                <Label Text="No sites." Style="{StaticResource EmptyState}" />
+                            </CollectionView.EmptyView>
+                            <CollectionView.ItemTemplate>
+                                <DataTemplate x:DataType="models:Site">
+                                    <Grid ColumnDefinitions="*,*" Padding="10" BackgroundColor="{StaticResource SurfaceCard}">
+                                        <Label Text="{Binding Name}" Style="{StaticResource DataTableCellLabel}" />
+                                        <Label Grid.Column="1" Text="{Binding Address}" Style="{StaticResource DataTableCellSecondary}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </CollectionView.ItemTemplate>
+                        </CollectionView>
+                    </VerticalStackLayout>
+                </VerticalStackLayout>
+
+                <!-- Projects tab -->
+                <VerticalStackLayout Spacing="8" IsVisible="{Binding IsProjectsTab}">
+                    <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
+                        <Label Text="Projects (CRM)" Style="{StaticResource LabelSection}" VerticalOptions="Center" />
+                        <Button Grid.Column="1" Text="Board" Command="{Binding SetProjectsViewModeCommand}" CommandParameter="board"
+                                CornerRadius="8" HeightRequest="32" FontSize="11" Padding="10,0"
+                                BackgroundColor="{Binding IsProjectsBoard, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#3B82F6|#FFFFFF'}"
+                                TextColor="{Binding IsProjectsBoard, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#6B7280'}" />
+                        <Button Grid.Column="2" Text="Table" Command="{Binding SetProjectsViewModeCommand}" CommandParameter="table"
+                                CornerRadius="8" HeightRequest="32" FontSize="11" Padding="10,0"
+                                BackgroundColor="{Binding IsProjectsTable, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#3B82F6|#FFFFFF'}"
+                                TextColor="{Binding IsProjectsTable, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#6B7280'}" />
+                        <Button Grid.Column="3" Text="+ Project" Command="{Binding AddProjectCommand}"
+                                Style="{StaticResource PrimaryButton}" FontSize="13" HeightRequest="36" Padding="14,0" />
+                    </Grid>
+
+                    <Label Text="Drag the ⋮⋮ handle between columns, or tap ⋮⋮ to pick a stage. Use 📎 to attach files."
+                           FontSize="11" TextColor="{StaticResource TextSecondary}" IsVisible="{Binding IsProjectsBoard}" />
+
+                    <!-- Kanban board -->
+                    <ScrollView Orientation="Horizontal" IsVisible="{Binding IsProjectsBoard}" HeightRequest="380">
+                        <HorizontalStackLayout BindableLayout.ItemsSource="{Binding KanbanColumns}" Spacing="8" Padding="0,2">
+                            <BindableLayout.ItemTemplate>
+                                <DataTemplate x:DataType="vm:ProjectKanbanColumn">
+                                    <controls:ProjectKanbanColumnView
+                                        OpenProjectCommand="{Binding Source={RelativeSource AncestorType={x:Type ContentPage}}, Path=BindingContext.OpenProjectCommand}"
+                                        MoveToStageCommand="{Binding Source={RelativeSource AncestorType={x:Type ContentPage}}, Path=BindingContext.MoveProjectToStageCommand}"
+                                        CreateJobCommand="{Binding Source={RelativeSource AncestorType={x:Type ContentPage}}, Path=BindingContext.CreateJobFromProjectCommand}"
+                                        AdvanceStageCommand="{Binding Source={RelativeSource AncestorType={x:Type ContentPage}}, Path=BindingContext.AdvanceProjectStageCommand}"
+                                        UploadDocumentCommand="{Binding Source={RelativeSource AncestorType={x:Type ContentPage}}, Path=BindingContext.UploadProjectDocumentCommand}" />
+                                </DataTemplate>
+                            </BindableLayout.ItemTemplate>
+                        </HorizontalStackLayout>
+                    </ScrollView>
+
+                    <ScrollView Orientation="Horizontal" IsVisible="{Binding IsProjectsTable}">
+                        <VerticalStackLayout WidthRequest="{x:Static helpers:ProjectsTableLayout.ScrollWidth}" Spacing="0">
+                            <Frame Style="{StaticResource DataTableFrame}">
+                                <Grid ColumnDefinitions="84,1,176,1,132,1,92,1,84,1,72,1,104,1,100,1,72,1,48" Style="{StaticResource DataTableRowPadding}" BackgroundColor="{StaticResource SurfaceElevated}">
+                                    <Label Grid.Column="0" Text="Code" Style="{StaticResource DataTableHeaderLabel}" />
+                                    <BoxView Grid.Column="1" Style="{StaticResource DataTableVLine}" />
+                                    <Label Grid.Column="2" Text="Project" Style="{StaticResource DataTableHeaderLabel}" />
+                                    <BoxView Grid.Column="3" Style="{StaticResource DataTableVLine}" />
+                                    <Label Grid.Column="4" Text="Status" Style="{StaticResource DataTableHeaderLabel}" />
+                                    <BoxView Grid.Column="5" Style="{StaticResource DataTableVLine}" />
+                                    <Label Grid.Column="6" Text="Offer" Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="End" Margin="0,0,6,0" />
+                                    <BoxView Grid.Column="7" Style="{StaticResource DataTableVLine}" />
+                                    <Label Grid.Column="8" Text="Paid" Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="End" Margin="0,0,6,0" />
+                                    <BoxView Grid.Column="9" Style="{StaticResource DataTableVLine}" />
+                                    <Label Grid.Column="10" Text="Progress" Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="End" Margin="0,0,10,0" />
+                                    <BoxView Grid.Column="11" Style="{StaticResource DataTableVLine}" />
+                                    <Label Grid.Column="12" Text="Balance" Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="End" Margin="0,0,8,0" />
+                                    <BoxView Grid.Column="13" Style="{StaticResource DataTableVLine}" />
+                                    <Label Grid.Column="14" Text="Jobs" Style="{StaticResource DataTableHeaderLabel}" Margin="10,0,0,0" />
+                                    <BoxView Grid.Column="15" Style="{StaticResource DataTableVLine}" />
+                                    <Label Grid.Column="16" Text="Pay" Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="Center" />
+                                    <BoxView Grid.Column="17" Style="{StaticResource DataTableVLine}" />
+                                    <Label Grid.Column="18" Text="Docs" Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="Center" />
+                                </Grid>
+                            </Frame>
+                            <CollectionView ItemsSource="{Binding ProjectRows}" SelectionMode="None" MinimumHeightRequest="120">
+                                <CollectionView.EmptyView>
+                                    <Label Text="No projects yet." Style="{StaticResource EmptyState}" Margin="0,16" />
+                                </CollectionView.EmptyView>
+                                <CollectionView.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:ProjectRowItem">
+                                        <VerticalStackLayout Spacing="0">
+                                            <Grid ColumnDefinitions="84,1,176,1,132,1,92,1,84,1,72,1,104,1,100,1,72,1,48"
+                                                  Style="{StaticResource DataTableRowPadding}" BackgroundColor="{StaticResource SurfaceCard}">
+                                                <Label Grid.Column="0" Text="{Binding ProjectCodeDisplay}" Style="{StaticResource DataTableCellLabel}">
+                                                    <Label.GestureRecognizers>
+                                                        <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type ContentPage}}, Path=BindingContext.OpenProjectCommand}" CommandParameter="{Binding Deal}" />
+                                                    </Label.GestureRecognizers>
+                                                </Label>
+                                                <BoxView Grid.Column="1" Style="{StaticResource DataTableVLine}" />
+                                                <Label Grid.Column="2" Text="{Binding Title}" Style="{StaticResource DataTableCellLabel}" TextColor="{StaticResource Primary}">
+                                                    <Label.GestureRecognizers>
+                                                        <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type ContentPage}}, Path=BindingContext.OpenProjectCommand}" CommandParameter="{Binding Deal}" />
+                                                    </Label.GestureRecognizers>
+                                                </Label>
+                                                <BoxView Grid.Column="3" Style="{StaticResource DataTableVLine}" />
+                                                <Picker Grid.Column="4" ItemsSource="{Binding StatusOptions}" SelectedItem="{Binding SelectedStatusLabel, Mode=TwoWay}"
+                                                        Style="{StaticResource DataTablePicker}" />
+                                                <BoxView Grid.Column="5" Style="{StaticResource DataTableVLine}" />
+                                                <Label Grid.Column="6" Text="{Binding OfferDisplay}" Style="{StaticResource DataTableCellMoney}" />
+                                                <BoxView Grid.Column="7" Style="{StaticResource DataTableVLine}" />
+                                                <Label Grid.Column="8" Text="{Binding PaidDisplay}" Style="{StaticResource DataTableCellMoney}" />
+                                                <BoxView Grid.Column="9" Style="{StaticResource DataTableVLine}" />
+                                                <Label Grid.Column="10" Text="{Binding ProgressDisplay}" Style="{StaticResource DataTableCellProgress}" />
+                                                <BoxView Grid.Column="11" Style="{StaticResource DataTableVLine}" />
+                                                <Label Grid.Column="12" Text="{Binding BalanceDisplay}" Style="{StaticResource DataTableCellMoney}" />
+                                                <BoxView Grid.Column="13" Style="{StaticResource DataTableVLine}" />
+                                                <Label Grid.Column="14" Text="{Binding JobCountLabel}" Style="{StaticResource DataTableCellJobs}" />
+                                                <BoxView Grid.Column="15" Style="{StaticResource DataTableVLine}" />
+                                                <Button Grid.Column="16" Text="+ Pay" FontSize="11" HeightRequest="34" Padding="8,0"
+                                                        Command="{Binding Source={RelativeSource AncestorType={x:Type ContentPage}}, Path=BindingContext.AddClientPaymentCommand}"
+                                                        CommandParameter="{Binding .}"
+                                                        BackgroundColor="{StaticResource Primary}" TextColor="White" CornerRadius="8" />
+                                                <BoxView Grid.Column="17" Style="{StaticResource DataTableVLine}" />
+                                                <Button Grid.Column="18" Text="📎" FontSize="12" WidthRequest="40" HeightRequest="34" Padding="0" CornerRadius="8"
+                                                        Command="{Binding Source={RelativeSource AncestorType={x:Type ContentPage}}, Path=BindingContext.UploadProjectDocumentCommand}"
+                                                        CommandParameter="{Binding Deal}"
+                                                        BackgroundColor="{StaticResource SurfaceElevated}" TextColor="{StaticResource TextPrimary}" />
+                                            </Grid>
+                                            <BoxView Style="{StaticResource DataTableRowDivider}" />
+                                        </VerticalStackLayout>
+                                    </DataTemplate>
+                                </CollectionView.ItemTemplate>
+                            </CollectionView>
+                        </VerticalStackLayout>
+                    </ScrollView>
+                </VerticalStackLayout>
+
+                <!-- Jobs tab -->
+                <VerticalStackLayout Spacing="8" IsVisible="{Binding IsJobsTab}">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Text="Jobs" Style="{StaticResource LabelSection}" VerticalOptions="Center" />
+                        <Button Grid.Column="1" Text="+ Job" Command="{Binding AddJobCommand}"
+                                Style="{StaticResource PrimaryButton}" FontSize="13" HeightRequest="36" Padding="14,0" />
+                    </Grid>
+                    <ScrollView Orientation="Horizontal">
+                        <VerticalStackLayout WidthRequest="900" Spacing="0">
+                            <Frame Style="{StaticResource DataTableFrame}">
+                                <Grid ColumnDefinitions="80,*,80,100,100,90" Padding="12,10" BackgroundColor="{StaticResource SurfaceElevated}">
+                                    <Label Grid.Column="0" Text="Job code" Style="{StaticResource DataTableHeaderLabel}" />
+                                    <Label Grid.Column="1" Text="Title" Style="{StaticResource DataTableHeaderLabel}" />
+                                    <Label Grid.Column="2" Text="Status" Style="{StaticResource DataTableHeaderLabel}" />
+                                    <Label Grid.Column="3" Text="Project" Style="{StaticResource DataTableHeaderLabel}" />
+                                    <Label Grid.Column="4" Text="Assignee" Style="{StaticResource DataTableHeaderLabel}" />
+                                    <Label Grid.Column="5" Text="Contractor" Style="{StaticResource DataTableHeaderLabel}" />
+                                </Grid>
+                            </Frame>
+                            <CollectionView ItemsSource="{Binding JobRows}" SelectionMode="None" MinimumHeightRequest="120">
+                                <CollectionView.EmptyView>
+                                    <Label Text="No jobs for this client." Style="{StaticResource EmptyState}" Margin="0,16" />
+                                </CollectionView.EmptyView>
+                                <CollectionView.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:ClientJobRow">
+                                        <VerticalStackLayout Spacing="0">
+                                            <Grid ColumnDefinitions="80,*,80,100,100,90" Padding="12,10" BackgroundColor="{StaticResource SurfaceCard}">
+                                                <Grid.GestureRecognizers>
+                                                    <TapGestureRecognizer Command="{Binding BindingContext.OpenJobCommand, Source={x:Reference Self}}" CommandParameter="{Binding .}" />
+                                                </Grid.GestureRecognizers>
+                                                <Label Grid.Column="0" Text="{Binding Job.JobCodeDisplay}" Style="{StaticResource DataTableCellLabel}" />
+                                                <Label Grid.Column="1" Text="{Binding Job.Title}" Style="{StaticResource DataTableCellLabel}" TextColor="{StaticResource Primary}" />
+                                                <Label Grid.Column="2" Text="{Binding Job.StatusRaw}" Style="{StaticResource DataTableCellSecondary}" />
+                                                <Label Grid.Column="3" Text="{Binding ProjectCode}" Style="{StaticResource DataTableCellSecondary}" />
+                                                <Label Grid.Column="4" Text="{Binding AssigneeName}" Style="{StaticResource DataTableCellSecondary}" />
+                                                <Label Grid.Column="5" Text="{Binding ContractorName}" Style="{StaticResource DataTableCellSecondary}" />
+                                            </Grid>
+                                            <BoxView Style="{StaticResource DataTableRowDivider}" />
+                                        </VerticalStackLayout>
+                                    </DataTemplate>
+                                </CollectionView.ItemTemplate>
+                            </CollectionView>
+                        </VerticalStackLayout>
+                    </ScrollView>
+                </VerticalStackLayout>
+
+                <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}" Color="{StaticResource Primary}" HorizontalOptions="Center" />
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
+</ContentPage>

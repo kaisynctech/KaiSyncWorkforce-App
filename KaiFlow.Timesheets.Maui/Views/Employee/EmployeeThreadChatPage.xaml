@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Employee.EmployeeThreadChatPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Employees"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:EmployeeThreadChatViewModel"
+    x:Name="Self"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="Messages">
+
+    <ContentPage.ToolbarItems>
+        <ToolbarItem Text="+" Command="{Binding NewDirectMessageCommand}" />
+    </ContentPage.ToolbarItems>
+
+    <Grid RowDefinitions="*,Auto" ColumnDefinitions="280,*">
+        <!-- Thread list with tabs -->
+        <Grid Grid.Row="0" Grid.Column="0" RowDefinitions="Auto,*"
+              BackgroundColor="{StaticResource SurfaceDark}">
+            <!-- Tab pills -->
+            <HorizontalStackLayout Grid.Row="0" Spacing="4" Padding="8,6">
+                <Button Text="Direct"
+                        Command="{Binding SetTabCommand}" CommandParameter="direct"
+                        CornerRadius="12" HeightRequest="28" FontSize="11" Padding="10,4"
+                        BackgroundColor="{Binding ActiveTab, Converter={StaticResource EqToStyleConverter}, ConverterParameter='direct|#3B82F6,#FFFFFF'}"
+                        TextColor="{Binding ActiveTab, Converter={StaticResource EqToStyleConverter}, ConverterParameter='direct|#FFFFFF,#6B7280'}" />
+                <Button Text="Teams"
+                        Command="{Binding SetTabCommand}" CommandParameter="teams"
+                        CornerRadius="12" HeightRequest="28" FontSize="11" Padding="10,4"
+                        BackgroundColor="{Binding ActiveTab, Converter={StaticResource EqToStyleConverter}, ConverterParameter='teams|#3B82F6,#FFFFFF'}"
+                        TextColor="{Binding ActiveTab, Converter={StaticResource EqToStyleConverter}, ConverterParameter='teams|#FFFFFF,#6B7280'}" />
+                <Button Text="Feed"
+                        Command="{Binding SetTabCommand}" CommandParameter="feed"
+                        CornerRadius="12" HeightRequest="28" FontSize="11" Padding="10,4"
+                        BackgroundColor="{Binding ActiveTab, Converter={StaticResource EqToStyleConverter}, ConverterParameter='feed|#3B82F6,#FFFFFF'}"
+                        TextColor="{Binding ActiveTab, Converter={StaticResource EqToStyleConverter}, ConverterParameter='feed|#FFFFFF,#6B7280'}" />
+            </HorizontalStackLayout>
+
+            <CollectionView Grid.Row="1" ItemsSource="{Binding Threads}">
+                <CollectionView.EmptyView>
+                    <Label Text="No threads." Style="{StaticResource EmptyState}" />
+                </CollectionView.EmptyView>
+                <CollectionView.ItemTemplate>
+                    <DataTemplate x:DataType="models:MessageThread">
+                        <Frame BackgroundColor="Transparent" Padding="12,8" Margin="0">
+                            <Frame.GestureRecognizers>
+                                <TapGestureRecognizer
+                                    Command="{Binding BindingContext.SelectThreadCommand, Source={x:Reference Self}}"
+                                    CommandParameter="{Binding .}" />
+                            </Frame.GestureRecognizers>
+                            <VerticalStackLayout Spacing="2">
+                                <Label Text="{Binding ListTitle}" Style="{StaticResource BodyMedium}" />
+                                <Label Text="{Binding LastMessagePreview}" Style="{StaticResource Caption}"
+                                       TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation" />
+                            </VerticalStackLayout>
+                        </Frame>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+        </Grid>
+
+        <!-- Messages -->
+        <Grid Grid.Row="0" Grid.Column="1" RowDefinitions="*,Auto">
+            <CollectionView Grid.Row="0" ItemsSource="{Binding Messages}" Margin="8">
+                <CollectionView.ItemTemplate>
+                    <DataTemplate x:DataType="models:AppMessage">
+                        <Frame Style="{StaticResource CardFrame}" Margin="4">
+                            <VerticalStackLayout Spacing="4">
+                                <Label Text="{Binding Body}" Style="{StaticResource BodyMedium}" />
+                                <Label Text="{Binding TimeDisplay}"
+                                       Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                            </VerticalStackLayout>
+                        </Frame>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+
+            <!-- Send bar -->
+            <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Padding="8" ColumnSpacing="8"
+                  BackgroundColor="{StaticResource SurfaceDark}">
+                <Entry Grid.Column="0" Placeholder="Messageâ€¦" Text="{Binding NewMessage}"
+                       Style="{StaticResource DarkEntry}" />
+                <Button Grid.Column="1" Text="Send" Command="{Binding SendCommand}"
+                        Style="{StaticResource PrimaryButton}" />
+            </Grid>
+        </Grid>
+    </Grid>
+</ContentPage>

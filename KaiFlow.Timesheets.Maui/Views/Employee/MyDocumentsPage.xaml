@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Employee.MyDocumentsPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Employees"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:MyDocumentsViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="My Documents">
+
+    <Grid RowDefinitions="*,Auto">
+
+        <ScrollView Grid.Row="0">
+            <VerticalStackLayout Padding="16" Spacing="12">
+
+                <Label Text="{Binding CompanyDocumentsSubtitle}"
+                       FontFamily="PoppinsSemiBold" FontSize="16"
+                       TextColor="{StaticResource TextPrimary}" />
+
+                <Label Text="Submit copies of your documents for HR to review. HR may also upload documents to your profile."
+                       Style="{StaticResource BodyMedium}"
+                       TextColor="{StaticResource TextSecondary}" />
+
+                <!-- Error -->
+                <Frame BackgroundColor="#FEE2E2" BorderColor="#FCA5A5" CornerRadius="10"
+                       Padding="14,10" HasShadow="False"
+                       IsVisible="{Binding ErrorMessage, Converter={StaticResource IsNotNullConverter}}">
+                    <Label Text="{Binding ErrorMessage}" TextColor="{StaticResource Error}"
+                           FontFamily="PoppinsMedium" FontSize="13" />
+                </Frame>
+
+                <!-- Empty state -->
+                <Label Text="No documents yet. Tap 'Submit Document' to add your first."
+                       Style="{StaticResource EmptyState}"
+                       IsVisible="{Binding Documents.Count, Converter={StaticResource IsZeroConverter}}" />
+
+                <!-- Document list -->
+                <VerticalStackLayout Spacing="8"
+                                     BindableLayout.ItemsSource="{Binding Documents}">
+                    <BindableLayout.ItemTemplate>
+                        <DataTemplate x:DataType="models:EmployeeDocument">
+                            <Frame Style="{StaticResource CardFrame}" Padding="14,12">
+                                <VerticalStackLayout Spacing="10">
+                                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                                        <Label Grid.Column="0" Text="{Binding TypeIcon}"
+                                               FontSize="26" VerticalOptions="Center" />
+                                        <VerticalStackLayout Grid.Column="1" Spacing="3" VerticalOptions="Center">
+                                            <Label Text="{Binding DocumentName}"
+                                                   FontFamily="PoppinsMedium" FontSize="13"
+                                                   TextColor="{StaticResource TextPrimary}" />
+                                            <HorizontalStackLayout Spacing="8">
+                                                <Label Text="{Binding TypeLabel}"
+                                                       FontFamily="Poppins" FontSize="11"
+                                                       TextColor="{StaticResource TextSecondary}" />
+                                                <Frame BackgroundColor="{Binding UploadedByRole, Converter={StaticResource EqToStyleConverter}, ConverterParameter='employee|#EFF6FF,#F0FDF4'}"
+                                                       BorderColor="Transparent" CornerRadius="6" Padding="6,2" HasShadow="False">
+                                                    <Label Text="{Binding UploadedByLabel}"
+                                                           FontFamily="PoppinsMedium" FontSize="10"
+                                                           TextColor="{Binding UploadedByRole, Converter={StaticResource EqToStyleConverter}, ConverterParameter='employee|#2563EB,#16A34A'}" />
+                                                </Frame>
+                                            </HorizontalStackLayout>
+                                            <Label Text="{Binding UploadedDateDisplay}"
+                                                   FontFamily="Poppins" FontSize="10"
+                                                   TextColor="{StaticResource TextDisabled}" />
+                                        </VerticalStackLayout>
+                                    </Grid>
+                                    <FlexLayout Wrap="Wrap" Direction="Row" JustifyContent="Start" AlignItems="Center">
+                                        <Button Text="Open"
+                                                Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MyDocumentsViewModel}}, Path=OpenDocumentCommand}"
+                                                CommandParameter="{Binding .}"
+                                                BackgroundColor="{StaticResource SurfaceElevated}"
+                                                TextColor="{StaticResource Primary}"
+                                                FontFamily="PoppinsMedium" FontSize="11"
+                                                CornerRadius="8" HeightRequest="32" Padding="12,0"
+                                                Margin="0,0,8,0" />
+                                        <Button Text="Download"
+                                                Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MyDocumentsViewModel}}, Path=DownloadDocumentCommand}"
+                                                CommandParameter="{Binding .}"
+                                                BackgroundColor="{StaticResource SurfaceElevated}"
+                                                TextColor="{StaticResource TextPrimary}"
+                                                FontFamily="PoppinsMedium" FontSize="11"
+                                                CornerRadius="8" HeightRequest="32" Padding="12,0"
+                                                Margin="0,0,8,0" />
+                                        <Button Text="Replace"
+                                                Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MyDocumentsViewModel}}, Path=ReplaceDocumentCommand}"
+                                                CommandParameter="{Binding .}"
+                                                BackgroundColor="{StaticResource Primary}"
+                                                TextColor="White"
+                                                FontFamily="PoppinsMedium" FontSize="11"
+                                                CornerRadius="8" HeightRequest="32" Padding="12,0" />
+                                    </FlexLayout>
+                                </VerticalStackLayout>
+                            </Frame>
+                        </DataTemplate>
+                    </BindableLayout.ItemTemplate>
+                </VerticalStackLayout>
+
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <!-- Submit button -->
+        <VerticalStackLayout Grid.Row="1" Padding="16,8">
+            <Button Text="+ Submit Document"
+                    Command="{Binding SubmitDocumentCommand}"
+                    BackgroundColor="{StaticResource Primary}" TextColor="White"
+                    FontFamily="PoppinsBold" FontSize="15"
+                    CornerRadius="12" HeightRequest="50" />
+        </VerticalStackLayout>
+
+        <!-- Busy overlay -->
+        <ActivityIndicator Grid.RowSpan="2"
+                           IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}"
+                           Color="{StaticResource Primary}"
+                           VerticalOptions="Center" HorizontalOptions="Center" />
+    </Grid>
+</ContentPage>

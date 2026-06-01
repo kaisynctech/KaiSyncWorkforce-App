@@ -1,0 +1,45 @@
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Build outputs
+**/bin/
+**/obj/
+**/dist/
+**/publish/
+*.apk
+*.aab
+*.msix
+*.appx
+
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+**/.secrets/
+**/*.keystore
+**/*.jks
+**/kaiflow-release.keystore
+
+# Supabase local
+**/.branches/
+**/.temp/
+
+# Vercel
+**/.vercel/
+
+# Flutter reference (legacy)
+timesheets - Copy (2)/
+
+# Logs
+*.log
+
+# NuGet
+*.nupkg

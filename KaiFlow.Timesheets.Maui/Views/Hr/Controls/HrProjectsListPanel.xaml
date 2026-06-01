@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView
+    x:Class="KaiFlow.Timesheets.Views.Hr.Controls.HrProjectsListPanel"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
+    xmlns:shared="clr-namespace:KaiFlow.Timesheets.Views.Shared"
+    x:DataType="vm:HrJobsViewModel"
+    x:Name="ProjectsHost">
+
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,*">
+        <Grid Grid.Row="0" ColumnDefinitions="*,*" Margin="24,8,24,0" ColumnSpacing="8">
+            <Button Grid.Column="0" Text="{Binding ScopeAllLabel}"
+                    Command="{Binding SetScopeCommand}" CommandParameter="all"
+                    CornerRadius="10" HeightRequest="34" FontSize="12"
+                    BackgroundColor="{Binding IsAllScope, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#3B82F6|#FFFFFF'}"
+                    TextColor="{Binding IsAllScope, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#6B7280'}" />
+            <Button Grid.Column="1" Text="{Binding ScopeMineLabel}"
+                    Command="{Binding SetScopeCommand}" CommandParameter="mine"
+                    CornerRadius="10" HeightRequest="34" FontSize="12"
+                    BackgroundColor="{Binding IsMyScope, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#3B82F6|#FFFFFF'}"
+                    TextColor="{Binding IsMyScope, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#6B7280'}" />
+        </Grid>
+
+        <Label Grid.Row="1" Text="{Binding ListSummary}" Style="{StaticResource Caption}"
+               TextColor="{StaticResource TextSecondary}" Margin="24,6,24,0" />
+
+        <SearchBar Grid.Row="2" Text="{Binding SearchText}"
+                   Placeholder="Search code, title, client…"
+                   BackgroundColor="{StaticResource SurfaceCard}"
+                   TextColor="{StaticResource TextPrimary}"
+                   PlaceholderColor="{StaticResource TextSecondary}" Margin="16,4,16,0" />
+
+        <ScrollView Grid.Row="3" Orientation="Horizontal" Margin="24,0">
+            <HorizontalStackLayout Spacing="8">
+                <Button Text="All" Command="{Binding SetProjectFilterCommand}" CommandParameter="all"
+                        CornerRadius="16" HeightRequest="30" FontSize="11"
+                        BackgroundColor="{Binding ProjectStatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='all|#3B82F6,#E5E7EB'}"
+                        TextColor="{Binding ProjectStatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='all|#FFFFFF,#374151'}" />
+                <Button Text="Draft" Command="{Binding SetProjectFilterCommand}" CommandParameter="draft"
+                        CornerRadius="16" HeightRequest="30" FontSize="11"
+                        BackgroundColor="{Binding ProjectStatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='draft|#3B82F6,#E5E7EB'}"
+                        TextColor="{Binding ProjectStatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='draft|#FFFFFF,#374151'}" />
+                <Button Text="Sent" Command="{Binding SetProjectFilterCommand}" CommandParameter="sent"
+                        CornerRadius="16" HeightRequest="30" FontSize="11"
+                        BackgroundColor="{Binding ProjectStatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='sent|#3B82F6,#E5E7EB'}"
+                        TextColor="{Binding ProjectStatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='sent|#FFFFFF,#374151'}" />
+                <Button Text="In progress" Command="{Binding SetProjectFilterCommand}" CommandParameter="in_progress"
+                        CornerRadius="16" HeightRequest="30" FontSize="11"
+                        BackgroundColor="{Binding ProjectStatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='in_progress|#3B82F6,#E5E7EB'}"
+                        TextColor="{Binding ProjectStatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='in_progress|#FFFFFF,#374151'}" />
+                <Button Text="Won" Command="{Binding SetProjectFilterCommand}" CommandParameter="won"
+                        CornerRadius="16" HeightRequest="30" FontSize="11"
+                        BackgroundColor="{Binding ProjectStatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='won|#3B82F6,#E5E7EB'}"
+                        TextColor="{Binding ProjectStatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='won|#FFFFFF,#374151'}" />
+                <Button Text="Lost" Command="{Binding SetProjectFilterCommand}" CommandParameter="lost"
+                        CornerRadius="16" HeightRequest="30" FontSize="11"
+                        BackgroundColor="{Binding ProjectStatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='lost|#3B82F6,#E5E7EB'}"
+                        TextColor="{Binding ProjectStatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='lost|#FFFFFF,#374151'}" />
+            </HorizontalStackLayout>
+        </ScrollView>
+
+        <RefreshView Grid.Row="4" Command="{Binding RefreshCommand}" IsRefreshing="{Binding IsBusy}">
+            <ScrollView Margin="24,4,24,16">
+                <shared:HrProjectsTableView Projects="{Binding Projects}"
+                                            ViewProjectCommand="{Binding ViewProjectCommand}"
+                                            AddClientPaymentCommand="{Binding AddClientPaymentCommand}" />
+            </ScrollView>
+        </RefreshView>
+    </Grid>
+</ContentView>

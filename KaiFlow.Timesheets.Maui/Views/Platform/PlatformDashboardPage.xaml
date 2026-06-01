@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Platform.PlatformDashboardPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Platform"
+    xmlns:kf="clr-namespace:KaiFlow.Timesheets.Controls"
+    xmlns:plat="clr-namespace:KaiFlow.Timesheets.Models.Platform"
+    x:DataType="vm:PlatformDashboardViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="{Binding Title}">
+
+    <Grid RowDefinitions="Auto,Auto,*" Padding="12">
+        <HorizontalStackLayout Grid.Row="0" Spacing="12" Margin="0,0,0,8">
+            <Label Text="KaiFlow Platform Admin" FontFamily="PoppinsBold" FontSize="18" TextColor="{StaticResource TextPrimary}" VerticalOptions="Center" />
+            <Button Text="← HR Console" Command="{Binding ExitToHrCommand}" Style="{StaticResource SecondaryButton}" HeightRequest="36" FontSize="12" />
+        </HorizontalStackLayout>
+
+        <ScrollView Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,12">
+            <HorizontalStackLayout Spacing="4">
+                <Button Text="Overview" Command="{Binding SelectTabCommand}" CommandParameter="overview" Style="{StaticResource TabButtonInactive}" />
+                <Button Text="Companies" Command="{Binding SelectTabCommand}" CommandParameter="companies" Style="{StaticResource TabButtonInactive}" />
+                <Button Text="Subscriptions" Command="{Binding SelectTabCommand}" CommandParameter="subscriptions" Style="{StaticResource TabButtonInactive}" />
+                <Button Text="Feedback" Command="{Binding SelectTabCommand}" CommandParameter="feedback" Style="{StaticResource TabButtonInactive}" />
+                <Button Text="Health" Command="{Binding SelectTabCommand}" CommandParameter="health" Style="{StaticResource TabButtonInactive}" />
+                <Button Text="Reports" Command="{Binding SelectTabCommand}" CommandParameter="reports" Style="{StaticResource TabButtonInactive}" />
+                <Button Text="Support" Command="{Binding SelectTabCommand}" CommandParameter="support" Style="{StaticResource TabButtonInactive}" />
+                <Button Text="Audit" Command="{Binding SelectTabCommand}" CommandParameter="audit" Style="{StaticResource TabButtonInactive}" />
+            </HorizontalStackLayout>
+        </ScrollView>
+
+        <Grid Grid.Row="2">
+            <!-- OVERVIEW -->
+            <ScrollView IsVisible="{Binding IsOverviewTab}">
+                <VerticalStackLayout Spacing="16">
+                    <kf:SectionHeader Title="Platform KPIs" Subtitle="Live cross-tenant metrics" />
+                    <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8" RowSpacing="8">
+                        <kf:KpiCard Title="Companies" Value="{Binding AdminKpis.TotalCompanies}" Accent="{StaticResource Chart1}" />
+                        <kf:KpiCard Grid.Column="1" Title="Employees" Value="{Binding AdminKpis.TotalEmployees}" Accent="{StaticResource Chart4}" />
+                        <kf:KpiCard Grid.Column="2" Title="Active today" Value="{Binding AdminKpis.ActiveUsersToday}" Accent="{StaticResource Chart2}" />
+                        <kf:KpiCard Title="MAU" Value="{Binding AdminKpis.MonthlyActiveUsers}" Accent="{StaticResource Chart3}" />
+                        <kf:KpiCard Grid.Column="1" Title="MRR" Value="{Binding AdminKpis.MonthlyRevenue, StringFormat='R{0:N0}'}" Accent="{StaticResource Chart6}" />
+                        <kf:KpiCard Grid.Column="2" Title="New (month)" Value="{Binding AdminKpis.NewCompaniesThisMonth}" Accent="{StaticResource Chart5}" />
+                        <kf:KpiCard Title="Payroll runs" Value="{Binding AdminKpis.TotalPayrollProcessed}" Accent="{StaticResource Chart2}" />
+                        <kf:KpiCard Grid.Column="1" Title="Invoices" Value="{Binding AdminKpis.TotalInvoicesGenerated}" Accent="{StaticResource Chart1}" />
+                        <kf:KpiCard Grid.Column="2" Title="Errors" Value="{Binding AdminKpis.ErrorCount}" Accent="{StaticResource Chart5}" />
+                    </Grid>
+                    <kf:KpiCard Title="Pending feedback" Value="{Binding AdminKpis.PendingFeedback}" Accent="{StaticResource Chart3}" />
+
+                    <kf:SectionHeader Title="Trends" Subtitle="Last 6–14 days" />
+                    <Label Text="Company growth" Style="{StaticResource Caption}" />
+                    <GraphicsView x:Name="CompanyGrowthChart" HeightRequest="120" />
+                    <Label Text="Revenue" Style="{StaticResource Caption}" />
+                    <GraphicsView x:Name="RevenueChart" HeightRequest="120" />
+                    <Label Text="Active users" Style="{StaticResource Caption}" />
+                    <GraphicsView x:Name="ActiveUsersChart" HeightRequest="120" />
+                    <Label Text="Errors" Style="{StaticResource Caption}" />
+                    <GraphicsView x:Name="ErrorChart" HeightRequest="120" />
+                </VerticalStackLayout>
+            </ScrollView>
+
+            <!-- COMPANIES -->
+            <ScrollView IsVisible="{Binding IsCompaniesTab}">
+                <VerticalStackLayout Spacing="12">
+                    <kf:SectionHeader Title="Customer management" Subtitle="Search, suspend, reactivate" />
+                    <SearchBar Placeholder="Search companies…" Text="{Binding CompanySearch}" />
+                    <CollectionView ItemsSource="{Binding Companies}" SelectionMode="Single" SelectedItem="{Binding SelectedCompany}">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="plat:PlatformCompanySummary">
+                                <Border Margin="0,0,0,8" Padding="12" Stroke="{StaticResource Divider}" BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 12">
+                                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
+                                        <Label Text="{Binding Name}" FontFamily="PoppinsSemiBold" FontSize="14" />
+                                        <kf:StatusChip Grid.Column="1" Text="{Binding SubscriptionStatus}" Status="info" />
+                                        <Label Grid.Row="1" Text="{Binding Code}" Style="{StaticResource Caption}" />
+                                        <Label Grid.Row="1" Grid.Column="1" Text="{Binding MonthlyCharge, StringFormat='R{0:N0}/mo'}" Style="{StaticResource Caption}" HorizontalTextAlignment="End" />
+                                        <HorizontalStackLayout Grid.Row="2" Grid.ColumnSpan="2" Spacing="8" Margin="0,8,0,0">
+                                            <Button Text="Activate" Command="{Binding Source={RelativeSource AncestorType={x:Type vm:PlatformDashboardViewModel}}, Path=ActivateCompanyCommand}" CommandParameter="{Binding .}" Style="{StaticResource SecondaryButton}" HeightRequest="32" FontSize="11" />
+                                            <Button Text="Suspend" Command="{Binding Source={RelativeSource AncestorType={x:Type vm:PlatformDashboardViewModel}}, Path=SuspendCompanyCommand}" CommandParameter="{Binding .}" Style="{StaticResource SecondaryButton}" HeightRequest="32" FontSize="11" />
+                                            <Button Text="Refresh billing" Command="{Binding Source={RelativeSource AncestorType={x:Type vm:PlatformDashboardViewModel}}, Path=RefreshBillingCommand}" CommandParameter="{Binding .}" Style="{StaticResource SecondaryButton}" HeightRequest="32" FontSize="11" />
+                                        </HorizontalStackLayout>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </VerticalStackLayout>
+            </ScrollView>
+
+            <!-- SUBSCRIPTIONS -->
+            <ScrollView IsVisible="{Binding IsSubscriptionsTab}">
+                <VerticalStackLayout Spacing="12">
+                    <kf:SectionHeader Title="Subscriptions &amp; billing" Subtitle="KaiFlow Standard — R2500 + R99/employee over 25" />
+                    <CollectionView ItemsSource="{Binding Companies}">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="plat:PlatformCompanySummary">
+                                <Border Margin="0,0,0,8" Padding="12" BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 12">
+                                    <VerticalStackLayout Spacing="4">
+                                        <Label Text="{Binding Name}" FontFamily="PoppinsSemiBold" FontSize="14" />
+                                        <Label Text="{Binding EmployeeCount, StringFormat='{0} employees'}" Style="{StaticResource Caption}" />
+                                        <Label Text="{Binding MonthlyCharge, StringFormat='Monthly charge: R{0:N2}'}" Style="{StaticResource BodyMedium}" />
+                                        <Label Text="{Binding SubscriptionStatus, StringFormat='Status: {0}'}" Style="{StaticResource Caption}" />
+                                    </VerticalStackLayout>
+                                </Border>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </VerticalStackLayout>
+            </ScrollView>
+
+            <!-- FEEDBACK -->
+            <ScrollView IsVisible="{Binding IsFeedbackTab}">
+                <VerticalStackLayout Spacing="12">
+                    <kf:SectionHeader Title="Customer feedback" Subtitle="{Binding FeedbackStats.Total, StringFormat='{0} total items'}" />
+                    <CollectionView ItemsSource="{Binding FeedbackItems}">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="plat:PlatformFeedback">
+                                <Border Margin="0,0,0,8" Padding="12" BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 12">
+                                    <VerticalStackLayout Spacing="6">
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <Label Text="{Binding Category}" FontFamily="PoppinsSemiBold" FontSize="13" />
+                                            <Label Grid.Column="1" Text="{Binding Status}" Style="{StaticResource Caption}" />
+                                        </Grid>
+                                        <Label Text="{Binding Message}" Style="{StaticResource BodySmall}" LineBreakMode="WordWrap" />
+                                        <HorizontalStackLayout Spacing="8">
+                                            <Button Text="Planned" Command="{Binding Source={RelativeSource AncestorType={x:Type vm:PlatformDashboardViewModel}}, Path=MarkFeedbackPlannedCommand}" CommandParameter="{Binding .}" Style="{StaticResource SecondaryButton}" HeightRequest="30" FontSize="11" />
+                                            <Button Text="Completed" Command="{Binding Source={RelativeSource AncestorType={x:Type vm:PlatformDashboardViewModel}}, Path=MarkFeedbackCompletedCommand}" CommandParameter="{Binding .}" Style="{StaticResource SecondaryButton}" HeightRequest="30" FontSize="11" />
+                                        </HorizontalStackLayout>
+                                    </VerticalStackLayout>
+                                </Border>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </VerticalStackLayout>
+            </ScrollView>
+
+            <!-- HEALTH -->
+            <ScrollView IsVisible="{Binding IsHealthTab}">
+                <VerticalStackLayout Spacing="12">
+                    <kf:SectionHeader Title="Customer health" Subtitle="Select a company on the Companies tab" />
+                    <Label Text="{Binding SelectedCompany.Name, StringFormat='Company: {0}'}" Style="{StaticResource BodyMedium}" />
+                    <kf:KpiCard Title="Health score" Value="{Binding SelectedHealth.Score}" Caption="{Binding SelectedHealth.Status}" Accent="{StaticResource Chart2}" />
+                    <Label Text="{Binding SelectedHealth.LastLogin, StringFormat='Last login: {0:g}'}" Style="{StaticResource Caption}" />
+                    <Label Text="{Binding SelectedHealth.ActiveUsers30d, StringFormat='Active users (30d): {0}'}" Style="{StaticResource Caption}" />
+                    <Label Text="{Binding SelectedHealth.ErrorCount30d, StringFormat='Errors (30d): {0}'}" Style="{StaticResource Caption}" />
+                    <Label Text="{Binding SelectedBilling.MonthlyCharge, StringFormat='Billing: R{0:N2}/mo'}" Style="{StaticResource Caption}" />
+                </VerticalStackLayout>
+            </ScrollView>
+
+            <!-- REPORTS -->
+            <ScrollView IsVisible="{Binding IsReportsTab}">
+                <VerticalStackLayout Spacing="16">
+                    <kf:SectionHeader Title="Platform reports" Subtitle="MRR, growth, errors, feedback" />
+                    <Button Text="Export Excel" Command="{Binding ExportReportExcelCommand}" Style="{StaticResource PrimaryButton}" />
+                    <Button Text="Export PDF" Command="{Binding ExportReportPdfCommand}" Style="{StaticResource SecondaryButton}" />
+                </VerticalStackLayout>
+            </ScrollView>
+
+            <!-- SUPPORT -->
+            <ScrollView IsVisible="{Binding IsSupportTab}">
+                <VerticalStackLayout Spacing="12">
+                    <kf:SectionHeader Title="Support notes" Subtitle="Internal customer success" />
+                    <Entry Placeholder="Support note…" Text="{Binding SupportNoteText}" />
+                    <Button Text="Add note" Command="{Binding AddSupportNoteCommand}" Style="{StaticResource PrimaryButton}" />
+                </VerticalStackLayout>
+            </ScrollView>
+
+            <!-- AUDIT -->
+            <ScrollView IsVisible="{Binding IsAuditTab}">
+                <CollectionView ItemsSource="{Binding AuditLog}">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="plat:SaasPlatformAuditEntry">
+                            <Border Margin="0,0,0,6" Padding="10" BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 8">
+                                <VerticalStackLayout>
+                                    <Label Text="{Binding Action}" FontFamily="PoppinsSemiBold" FontSize="12" />
+                                    <Label Text="{Binding CreatedAt}" Style="{StaticResource Caption}" />
+                                </VerticalStackLayout>
+                            </Border>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+            </ScrollView>
+
+            <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}" Color="{StaticResource Primary}" VerticalOptions="Center" HorizontalOptions="Center" />
+        </Grid>
+    </Grid>
+</ContentPage>

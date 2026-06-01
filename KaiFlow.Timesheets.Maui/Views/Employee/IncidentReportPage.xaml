@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Employee.IncidentReportPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Employees"
+    x:DataType="vm:IncidentReportViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="Report Incident">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="16" Spacing="16">
+
+            <Frame Style="{StaticResource CardFrame}"
+                   IsVisible="{Binding IsJobLinkedFlow}">
+                <Label Text="{Binding JobTitle, StringFormat='Linked to job: {0}'}"
+                       Style="{StaticResource BodyMedium}"
+                       TextColor="{StaticResource Primary}" />
+            </Frame>
+
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="INCIDENT DETAILS" Style="{StaticResource LabelSection}" />
+                    <VerticalStackLayout Spacing="6">
+                        <Label Text="Title (optional)" Style="{StaticResource LabelField}" />
+                        <Entry Text="{Binding Title}"
+                               Placeholder="Short summary..."
+                               Style="{StaticResource DarkEntry}" />
+                    </VerticalStackLayout>
+                    <VerticalStackLayout Spacing="6">
+                        <Label Text="Description *" Style="{StaticResource LabelField}" />
+                        <Editor Text="{Binding Description}"
+                                Placeholder="What happened?"
+                                MinimumHeightRequest="120"
+                                AutoSize="TextChanges"
+                                TextColor="{StaticResource TextPrimary}"
+                                BackgroundColor="Transparent" />
+                    </VerticalStackLayout>
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                        <VerticalStackLayout Grid.Column="0" Spacing="6">
+                            <Label Text="Severity" Style="{StaticResource LabelField}" />
+                            <Picker ItemsSource="{Binding SeverityOptions}" SelectedItem="{Binding Severity}" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Grid.Column="1" Spacing="6">
+                            <Label Text="Category" Style="{StaticResource LabelField}" />
+                            <Picker ItemsSource="{Binding CategoryOptions}" SelectedItem="{Binding Category}" />
+                        </VerticalStackLayout>
+                    </Grid>
+                    <Label Text="When it occurred" Style="{StaticResource LabelField}" />
+                    <DatePicker Date="{Binding OccurredDate}" Format="dd MMM yyyy" />
+                    <TimePicker Time="{Binding OccurredTime}" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <Frame Style="{StaticResource CardFrame}" IsVisible="{Binding ShowJobPicker}">
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="LINK TO JOB (OPTIONAL)" Style="{StaticResource LabelSection}" />
+                    <Picker ItemsSource="{Binding LinkableJobs}"
+                            SelectedItem="{Binding SelectedJob}"
+                            ItemDisplayBinding="{Binding Title}"
+                            Title="Select related job..." />
+                </VerticalStackLayout>
+            </Frame>
+
+            <Frame Style="{StaticResource CardFrame}" IsVisible="{Binding ShowJobPicker}">
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="LOCATION" Style="{StaticResource LabelSection}" />
+                    <Picker ItemsSource="{Binding Clients}" SelectedItem="{Binding SelectedClient}"
+                            ItemDisplayBinding="{Binding Name}" Title="Client (optional)" />
+                    <Picker ItemsSource="{Binding Sites}" SelectedItem="{Binding SelectedSite}"
+                            ItemDisplayBinding="{Binding Name}" Title="Site (optional)" />
+                    <Entry Text="{Binding LocationText}" Placeholder="Location notes..."
+                           Style="{StaticResource DarkEntry}" />
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Text="Capture GPS coordinates" VerticalOptions="Center"
+                               Style="{StaticResource BodyMedium}" />
+                        <Switch Grid.Column="1" IsToggled="{Binding CaptureGps}" />
+                    </Grid>
+                </VerticalStackLayout>
+            </Frame>
+
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="NOTIFICATION" Style="{StaticResource LabelSection}" />
+                    <Picker ItemsSource="{Binding Managers}" SelectedItem="{Binding SelectedManager}"
+                            ItemDisplayBinding="{Binding FullName}"
+                            Title="Notify manager/HR (optional)" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="8">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Text="PHOTOS" Style="{StaticResource LabelSection}" />
+                        <Button Grid.Column="1" Text="+ Add Photo" Command="{Binding AddPhotoCommand}"
+                                Style="{StaticResource TextButton}" />
+                    </Grid>
+                    <Label Text="{Binding Photos.Count, StringFormat='{0} photo(s) attached'}"
+                           Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <Label Text="{Binding ErrorMessage}" TextColor="{StaticResource Error}"
+                   IsVisible="{Binding ErrorMessage, Converter={StaticResource IsNotNullConverter}}" />
+
+            <Button Text="Submit Report" Command="{Binding SubmitCommand}"
+                    IsEnabled="{Binding IsNotBusy}" Style="{StaticResource PrimaryButton}" />
+
+            <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}"
+                               Color="{StaticResource Primary}" HorizontalOptions="Center" />
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

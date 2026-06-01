@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Auth.EmployeeLinkCompanyPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Auth"
+    x:DataType="vm:EmployeeLinkCompanyViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="Link to Company">
+
+    <VerticalStackLayout Padding="32" Spacing="16">
+
+        <Label Text="Link to your company"
+               Style="{StaticResource HeadlineMedium}" />
+        <Label Text="Enter the company code given to you by your employer or HR administrator."
+               Style="{StaticResource BodySmall}" TextColor="{StaticResource TextSecondary}" />
+
+        <Entry Placeholder="Company code (e.g. ACME2024)" Text="{Binding CompanyCode}"
+               Style="{StaticResource DarkEntry}" Margin="0,16,0,0" />
+
+        <Label Text="{Binding ErrorMessage}" TextColor="{StaticResource Error}"
+               IsVisible="{Binding ErrorMessage, Converter={StaticResource IsNotNullConverter}}" />
+
+        <Button Text="Link Account"
+                Command="{Binding LinkCommand}"
+                IsEnabled="{Binding IsNotBusy}"
+                Style="{StaticResource PrimaryButton}"
+                Margin="0,8,0,0" />
+
+        <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}"
+                           Color="{StaticResource Primary}" HorizontalOptions="Center" />
+
+        <Button Text="Skip for now"
+                Command="{Binding SkipCommand}"
+                Style="{StaticResource TextButton}" FontSize="13" />
+    </VerticalStackLayout>
+</ContentPage>

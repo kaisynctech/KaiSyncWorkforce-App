@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Hr.HrAssetsPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:HrAssetsViewModel"
+    x:Name="Self"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="Assets">
+
+    <ContentPage.ToolbarItems>
+        <ToolbarItem Text="+ Asset" Command="{Binding CreateAssetCommand}" />
+    </ContentPage.ToolbarItems>
+
+    <Grid RowDefinitions="Auto,*">
+        <Frame Grid.Row="0" Style="{StaticResource KpiCard}" Margin="16,8">
+            <Label Text="{Binding WarrantyExpiringSoon, StringFormat='{0} warranties expiring in 30 days'}"
+                   Style="{StaticResource BodyMedium}" TextColor="{StaticResource Accent}" />
+        </Frame>
+
+        <RefreshView Grid.Row="1" Command="{Binding RefreshCommand}" IsRefreshing="{Binding IsBusy}">
+            <CollectionView ItemsSource="{Binding Assets}" Margin="16,0">
+                <CollectionView.EmptyView>
+                    <Label Text="No assets registered." Style="{StaticResource EmptyState}" />
+                </CollectionView.EmptyView>
+                <CollectionView.ItemTemplate>
+                    <DataTemplate x:DataType="models:Asset">
+                        <SwipeView Margin="0,4">
+                            <SwipeView.RightItems>
+                                <SwipeItems>
+                                    <SwipeItem Text="Delete"
+                                               BackgroundColor="{StaticResource Error}"
+                                               Command="{Binding BindingContext.DeleteAssetCommand, Source={x:Reference Self}}"
+                                               CommandParameter="{Binding .}" />
+                                </SwipeItems>
+                            </SwipeView.RightItems>
+                            <Frame Style="{StaticResource CardFrame}">
+                                <Frame.GestureRecognizers>
+                                    <TapGestureRecognizer
+                                        Command="{Binding BindingContext.EditAssetCommand, Source={x:Reference Self}}"
+                                        CommandParameter="{Binding .}" />
+                                </Frame.GestureRecognizers>
+                                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
+                                    <Label Grid.Row="0" Grid.Column="0" Text="{Binding DisplayName}"
+                                           FontFamily="PoppinsSemiBold" FontSize="14"
+                                           TextColor="{StaticResource TextPrimary}" />
+                                    <Frame Grid.Row="0" Grid.Column="1"
+                                           BackgroundColor="{Binding StatusRaw, Converter={StaticResource EqToStyleConverter}, ConverterParameter='active|#DCFCE7,retired|#F3F4F6,#FEF3C7'}"
+                                           BorderColor="Transparent" CornerRadius="8" Padding="8,2" HasShadow="False"
+                                           HorizontalOptions="End">
+                                        <Label Text="{Binding StatusRaw}" Style="{StaticResource Caption}"
+                                               TextColor="{StaticResource TextPrimary}" />
+                                    </Frame>
+                                    <Label Grid.Row="1" Grid.Column="0"
+                                           Text="{Binding AssetType}" Style="{StaticResource Caption}"
+                                           TextColor="{StaticResource TextSecondary}" />
+                                    <Label Grid.Row="1" Grid.Column="1"
+                                           Text="{Binding SerialNumber, StringFormat='S/N: {0}'}"
+                                           Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}"
+                                           IsVisible="{Binding SerialNumber, Converter={StaticResource IsNotNullConverter}}"
+                                           HorizontalOptions="End" />
+                                    <Label Grid.Row="2" Grid.Column="0"
+                                           Text="{Binding Manufacturer}" Style="{StaticResource Caption}"
+                                           TextColor="{StaticResource TextSecondary}"
+                                           IsVisible="{Binding Manufacturer, Converter={StaticResource IsNotNullConverter}}" />
+                                    <Label Grid.Row="2" Grid.Column="1"
+                                           Text="{Binding WarrantyExpires, StringFormat='Warranty: {0:dd MMM yyyy}'}"
+                                           Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}"
+                                           IsVisible="{Binding WarrantyExpires, Converter={StaticResource IsNotNullConverter}}" />
+                                </Grid>
+                            </Frame>
+                        </SwipeView>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+        </RefreshView>
+    </Grid>
+</ContentPage>

@@ -1,0 +1,205 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Hr.HrTeamPunchPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:HrTeamPunchViewModel"
+    x:Name="Self"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="Team Clock In/Out">
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto">
+
+        <!-- Location bar -->
+        <Frame Grid.Row="0" BackgroundColor="{StaticResource SurfaceCard}"
+               BorderColor="{StaticResource Divider}" CornerRadius="0"
+               Padding="16,10" HasShadow="False">
+            <HorizontalStackLayout Spacing="8">
+                <Label Text="&#xE0C8;" FontFamily="MaterialIcons" FontSize="18"
+                       TextColor="{StaticResource Primary}" VerticalOptions="Center" />
+                <Label Text="{Binding CurrentAddress}"
+                       FontFamily="PoppinsRegular" FontSize="12"
+                       TextColor="{StaticResource TextSecondary}"
+                       VerticalOptions="Center" LineBreakMode="TailTruncation" />
+                <ActivityIndicator IsRunning="{Binding IsGettingLocation}"
+                                   IsVisible="{Binding IsGettingLocation}"
+                                   Color="{StaticResource Primary}"
+                                   WidthRequest="18" HeightRequest="18"
+                                   VerticalOptions="Center" />
+            </HorizontalStackLayout>
+        </Frame>
+
+        <!-- Team selector + controls -->
+        <Frame Grid.Row="1" Style="{StaticResource CardFrame}" Margin="16,12,16,0" Padding="14">
+            <VerticalStackLayout Spacing="10">
+
+                <!-- Team picker row -->
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                    <Frame Grid.Column="0" BackgroundColor="{StaticResource SurfaceElevated}"
+                           BorderColor="{StaticResource Divider}" CornerRadius="10"
+                           Padding="4,0" HasShadow="False">
+                        <Picker ItemsSource="{Binding Teams}"
+                                SelectedItem="{Binding SelectedTeam}"
+                                ItemDisplayBinding="{Binding Name}"
+                                Title="Select a team…"
+                                TextColor="{StaticResource TextPrimary}"
+                                TitleColor="{StaticResource TextSecondary}"
+                                BackgroundColor="Transparent" />
+                    </Frame>
+                    <Button Grid.Column="1" Text="+ Team"
+                            Command="{Binding CreateTeamCommand}"
+                            BackgroundColor="{StaticResource SurfaceElevated}"
+                            TextColor="{StaticResource Primary}"
+                            BorderColor="{StaticResource Primary}" BorderWidth="1"
+                            FontFamily="PoppinsMedium" FontSize="12"
+                            CornerRadius="10" HeightRequest="44" Padding="12,0" />
+                </Grid>
+
+                <!-- Add members + select controls -->
+                <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
+                    <Button Grid.Column="0" Text="+ Add Members"
+                            Command="{Binding AddMembersCommand}"
+                            BackgroundColor="{StaticResource SurfaceElevated}"
+                            TextColor="{StaticResource Primary}"
+                            BorderColor="{StaticResource Divider}" BorderWidth="1"
+                            FontFamily="PoppinsMedium" FontSize="12"
+                            CornerRadius="8" HeightRequest="34" Padding="10,0"
+                            HorizontalOptions="Start" />
+                    <Label Grid.Column="1"
+                           Text="{Binding SelectedCount, StringFormat='{0} selected'}"
+                           FontFamily="PoppinsRegular" FontSize="12"
+                           TextColor="{StaticResource TextSecondary}"
+                           VerticalOptions="Center"
+                           IsVisible="{Binding HasEmployees}" />
+                    <Button Grid.Column="2" Text="All"
+                            Command="{Binding SelectAllCommand}"
+                            BackgroundColor="Transparent" TextColor="{StaticResource Primary}"
+                            FontFamily="PoppinsMedium" FontSize="12" Padding="8,0"
+                            HeightRequest="32"
+                            IsVisible="{Binding HasEmployees}" />
+                    <Button Grid.Column="3" Text="None"
+                            Command="{Binding DeselectAllCommand}"
+                            BackgroundColor="Transparent" TextColor="{StaticResource TextSecondary}"
+                            FontFamily="PoppinsRegular" FontSize="12" Padding="8,0"
+                            HeightRequest="32"
+                            IsVisible="{Binding HasEmployees}" />
+                </Grid>
+
+                <!-- Include manager in team punch -->
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,2,0,0">
+                    <CheckBox Grid.Column="0"
+                              IsChecked="{Binding IncludeSelfInTeamPunch}"
+                              Color="{StaticResource Primary}"
+                              VerticalOptions="Center" />
+                    <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
+                        <Label Text="Also clock me in/out"
+                               FontFamily="PoppinsMedium" FontSize="13"
+                               TextColor="{StaticResource TextPrimary}" />
+                        <Label Text="{Binding ManagerSelfSummary}"
+                               FontFamily="PoppinsRegular" FontSize="11"
+                               TextColor="{StaticResource TextSecondary}" />
+                    </VerticalStackLayout>
+                </Grid>
+            </VerticalStackLayout>
+        </Frame>
+
+        <!-- Employee list -->
+        <CollectionView Grid.Row="2" ItemsSource="{Binding EmployeeRows}"
+                        Margin="16,8,16,0">
+            <CollectionView.EmptyView>
+                <VerticalStackLayout HorizontalOptions="Center" VerticalOptions="Center" Spacing="8" Margin="0,40">
+                    <Label Text="No employees in this team yet."
+                           Style="{StaticResource EmptyState}" />
+                    <Button Text="+ Add members to team"
+                            Command="{Binding AddMembersCommand}"
+                            Style="{StaticResource TextButton}" FontSize="13" />
+                    <Button Text="Or create a new team →"
+                            Command="{Binding CreateTeamCommand}"
+                            Style="{StaticResource TextButton}" FontSize="13" />
+                </VerticalStackLayout>
+            </CollectionView.EmptyView>
+            <CollectionView.ItemTemplate>
+                <DataTemplate x:DataType="vm:EmployeePunchRow">
+                    <Frame Style="{StaticResource CardFrame}" Margin="0,4" Padding="14,12" Opacity="{Binding RowOpacity}">
+                        <Grid ColumnDefinitions="Auto,48,*,Auto,Auto" ColumnSpacing="12">
+
+                            <!-- Checkbox -->
+                            <CheckBox Grid.Column="0"
+                                      IsChecked="{Binding IsSelected}"
+                                      IsEnabled="{Binding CanSelect}"
+                                      Color="{StaticResource Primary}"
+                                      VerticalOptions="Center" />
+
+                            <!-- Avatar -->
+                            <Frame Grid.Column="1" CornerRadius="24"
+                                   WidthRequest="44" HeightRequest="44"
+                                   BackgroundColor="{StaticResource Primary}"
+                                   Padding="0" HasShadow="False">
+                                <Label Text="{Binding Employee.Initials}"
+                                       FontFamily="PoppinsSemiBold" FontSize="15" TextColor="White"
+                                       HorizontalOptions="Center" VerticalOptions="Center" />
+                            </Frame>
+
+                            <!-- Name + position -->
+                            <VerticalStackLayout Grid.Column="2" Spacing="2" VerticalOptions="Center">
+                                <Label Text="{Binding Employee.FullName}"
+                                       FontFamily="PoppinsMedium" FontSize="14"
+                                       TextColor="{StaticResource TextPrimary}" />
+                                <Label Text="{Binding Employee.Position}"
+                                       FontFamily="PoppinsRegular" FontSize="11"
+                                       TextColor="{StaticResource TextSecondary}"
+                                       IsVisible="{Binding Employee.Position, Converter={StaticResource IsNotNullConverter}}" />
+                            </VerticalStackLayout>
+
+                            <!-- Status badge -->
+                            <VerticalStackLayout Grid.Column="3" Spacing="2" VerticalOptions="Center" HorizontalOptions="End">
+                                <Frame CornerRadius="6" Padding="6,2" HasShadow="False"
+                                       BackgroundColor="{Binding StatusBackgroundColor}"
+                                       BorderColor="Transparent">
+                                    <Label Text="{Binding StatusLabel}"
+                                           FontFamily="PoppinsSemiBold" FontSize="10"
+                                           TextColor="{Binding StatusColor}" />
+                                </Frame>
+                                <Label Text="{Binding LastPunchTime}"
+                                       FontFamily="PoppinsRegular" FontSize="10"
+                                       TextColor="{StaticResource TextSecondary}"
+                                       HorizontalOptions="Center"
+                                       IsVisible="{Binding LastPunchTime, Converter={StaticResource IsNotNullConverter}}" />
+                                <Label Text="{Binding UnavailabilityNote}"
+                                       FontFamily="PoppinsRegular" FontSize="10"
+                                       TextColor="{StaticResource TextSecondary}"
+                                       HorizontalOptions="Center"
+                                       IsVisible="{Binding UnavailabilityNote, Converter={StaticResource IsNotNullConverter}}" />
+                            </VerticalStackLayout>
+                        </Grid>
+                    </Frame>
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+        </CollectionView>
+
+        <!-- Bottom action bar -->
+        <Frame Grid.Row="3" BackgroundColor="{StaticResource SurfaceDark}"
+               BorderColor="{StaticResource Divider}" CornerRadius="0"
+               Padding="16,12" HasShadow="False">
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                <Button Grid.Column="0"
+                        Text="{Binding ClockInButtonLabel}"
+                        Command="{Binding ClockInTeamCommand}"
+                        IsEnabled="{Binding CanClockIn}"
+                        BackgroundColor="#22C55E" TextColor="White"
+                        FontFamily="PoppinsSemiBold" FontSize="14"
+                        CornerRadius="12" HeightRequest="50" />
+                <Button Grid.Column="1"
+                        Text="{Binding ClockOutButtonLabel}"
+                        Command="{Binding ClockOutTeamCommand}"
+                        IsEnabled="{Binding CanClockOut}"
+                        BackgroundColor="#EF4444" TextColor="White"
+                        FontFamily="PoppinsSemiBold" FontSize="14"
+                        CornerRadius="12" HeightRequest="50" />
+            </Grid>
+        </Frame>
+
+    </Grid>
+</ContentPage>

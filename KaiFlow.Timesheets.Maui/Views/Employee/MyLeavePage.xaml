@@ -1,0 +1,227 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Employee.MyLeavePage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Employees"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:MyLeaveViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="My Leave">
+
+    <ContentPage.ToolbarItems>
+        <ToolbarItem Text="+ Request" Command="{Binding ToggleFormCommand}" />
+    </ContentPage.ToolbarItems>
+
+    <ScrollView>
+        <VerticalStackLayout Padding="16" Spacing="16">
+
+            <!-- ── Request / Edit form ─────────────────────────────────────── -->
+            <Frame Style="{StaticResource CardFrame}" IsVisible="{Binding ShowForm}">
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="{Binding FormTitle}" Style="{StaticResource LabelSection}" />
+
+                    <!-- Leave type -->
+                    <VerticalStackLayout Spacing="6">
+                        <Label Text="Leave type" Style="{StaticResource LabelField}" />
+                        <Picker ItemsSource="{Binding LeaveTypes}"
+                                SelectedItem="{Binding LeaveType}"
+                                Title="Select leave type"
+                                TextColor="{StaticResource TextPrimary}"
+                                BackgroundColor="Transparent" />
+                    </VerticalStackLayout>
+
+                    <!-- Dates row -->
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                        <VerticalStackLayout Grid.Column="0" Spacing="6">
+                            <Label Text="Start date" Style="{StaticResource LabelField}" />
+                            <DatePicker Date="{Binding StartDate}"
+                                        TextColor="{StaticResource TextPrimary}"
+                                        BackgroundColor="Transparent"
+                                        Format="dd MMM yyyy" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Grid.Column="1" Spacing="6">
+                            <Label Text="End date" Style="{StaticResource LabelField}" />
+                            <DatePicker Date="{Binding EndDate}"
+                                        TextColor="{StaticResource TextPrimary}"
+                                        BackgroundColor="Transparent"
+                                        Format="dd MMM yyyy" />
+                        </VerticalStackLayout>
+                    </Grid>
+
+                    <!-- Reason -->
+                    <VerticalStackLayout Spacing="6">
+                        <Label Text="Reason (optional)" Style="{StaticResource LabelField}" />
+                        <Editor Text="{Binding Reason}"
+                                Placeholder="Reason for leave..."
+                                PlaceholderColor="{StaticResource TextSecondary}"
+                                TextColor="{StaticResource TextPrimary}"
+                                BackgroundColor="Transparent"
+                                MinimumHeightRequest="70"
+                                AutoSize="TextChanges" />
+                    </VerticalStackLayout>
+
+                    <!-- Supporting document -->
+                    <VerticalStackLayout Spacing="6">
+                        <Label Text="Supporting document (optional)" Style="{StaticResource LabelField}" />
+                        <Label Text="e.g. doctor's letter, medical certificate"
+                               FontFamily="Poppins" FontSize="11"
+                               TextColor="{StaticResource TextSecondary}" />
+
+                        <Button Text="Attach Document / Photo"
+                                Command="{Binding PickAttachmentCommand}"
+                                IsVisible="{Binding HasNoAttachment}"
+                                BackgroundColor="Transparent"
+                                BorderColor="{StaticResource Divider}"
+                                BorderWidth="1.5"
+                                TextColor="{StaticResource TextSecondary}"
+                                CornerRadius="8" FontFamily="PoppinsMedium" FontSize="13"
+                                HeightRequest="44" />
+
+                        <Frame IsVisible="{Binding HasAttachment}"
+                               BackgroundColor="#EFF6FF" BorderColor="#BFDBFE"
+                               CornerRadius="8" Padding="12,10" HasShadow="False">
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                                <Label Grid.Column="0" Text="📎" FontSize="18" VerticalOptions="Center" />
+                                <Label Grid.Column="1"
+                                       Text="{Binding AttachmentFileName}"
+                                       FontFamily="PoppinsMedium" FontSize="13" TextColor="#1D4ED8"
+                                       VerticalOptions="Center" LineBreakMode="TailTruncation" />
+                                <Button Grid.Column="2" Text="✕"
+                                        Command="{Binding RemoveAttachmentCommand}"
+                                        BackgroundColor="Transparent" TextColor="{StaticResource TextSecondary}"
+                                        FontSize="14" Padding="4" WidthRequest="36" HeightRequest="36" />
+                            </Grid>
+                        </Frame>
+                    </VerticalStackLayout>
+
+                    <Label Text="{Binding ErrorMessage}" TextColor="{StaticResource Error}"
+                           IsVisible="{Binding ErrorMessage, Converter={StaticResource IsNotNullConverter}}" />
+
+                    <Button Text="{Binding SubmitButtonLabel}"
+                            Command="{Binding SubmitCommand}"
+                            IsEnabled="{Binding IsNotBusy}"
+                            Style="{StaticResource PrimaryButton}" />
+
+                    <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}"
+                                       Color="{StaticResource Primary}" HorizontalOptions="Center" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- ── Leave history (pending first) ─────────────────────────── -->
+            <Label Text="LEAVE HISTORY" Style="{StaticResource LabelSection}" />
+            <Label Text="No leave requests yet." Style="{StaticResource EmptyState}"
+                   IsVisible="{Binding Requests.Count, Converter={StaticResource IsZeroConverter}}" />
+            <VerticalStackLayout Spacing="8" BindableLayout.ItemsSource="{Binding Requests}">
+                <BindableLayout.ItemTemplate>
+                    <DataTemplate x:DataType="models:LeaveRequest">
+                        <Frame Style="{StaticResource CardFrame}" Padding="14,12">
+                            <VerticalStackLayout Spacing="6">
+
+                                <!-- Top row: type + status badge -->
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                    <Label Grid.Column="0"
+                                           Text="{Binding LeaveType}"
+                                           FontFamily="PoppinsSemiBold" FontSize="14"
+                                           TextColor="{StaticResource TextPrimary}"
+                                           VerticalOptions="Center" />
+                                    <Frame Grid.Column="1"
+                                           BackgroundColor="{Binding StatusRaw, Converter={StaticResource EqToStyleConverter}, ConverterParameter='approved|#DCFCE7,declined|#FEE2E2,#FEF3C7'}"
+                                           BorderColor="Transparent" CornerRadius="10" Padding="8,3" HasShadow="False"
+                                           VerticalOptions="Center">
+                                        <Label Text="{Binding StatusRaw}"
+                                               FontFamily="PoppinsSemiBold" FontSize="11"
+                                               TextColor="{StaticResource TextPrimary}" />
+                                    </Frame>
+                                </Grid>
+
+                                <!-- Dates + total days -->
+                                <HorizontalStackLayout Spacing="4">
+                                    <Label Text="{Binding StartDate, StringFormat='{0:dd MMM yyyy}'}"
+                                           Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                                    <Label Text="–" Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                                    <Label Text="{Binding EndDate, StringFormat='{0:dd MMM yyyy}'}"
+                                           Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                                    <Label Text="{Binding TotalDays, StringFormat='· {0} day(s)'}"
+                                           Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                                </HorizontalStackLayout>
+
+                                <!-- Reason (if any) -->
+                                <Label Text="{Binding Reason}"
+                                       FontFamily="Poppins" FontSize="12" TextColor="{StaticResource TextSecondary}"
+                                       LineBreakMode="TailTruncation"
+                                       IsVisible="{Binding Reason, Converter={StaticResource IsNotNullConverter}}" />
+
+                                <!-- Attachment indicator -->
+                                <Label Text="📎 Document attached"
+                                       FontFamily="Poppins" FontSize="11" TextColor="#3B82F6"
+                                       IsVisible="{Binding AttachmentUrl, Converter={StaticResource IsNotNullConverter}}" />
+
+                                <!-- Decision note (approved/declined) -->
+                                <Label Text="{Binding DecisionNote, StringFormat='Note: {0}'}"
+                                       FontFamily="Poppins" FontSize="12" TextColor="{StaticResource TextSecondary}"
+                                       IsVisible="{Binding DecisionNote, Converter={StaticResource IsNotNullConverter}}" />
+
+                                <!-- Edit button — only for pending -->
+                                <Button Text="Edit Request"
+                                        Command="{Binding Source={RelativeSource AncestorType={x:Type vm:MyLeaveViewModel}}, Path=EditLeaveCommand}"
+                                        CommandParameter="{Binding .}"
+                                        IsVisible="{Binding IsPending}"
+                                        BackgroundColor="Transparent"
+                                        BorderColor="{StaticResource Primary}"
+                                        BorderWidth="1" TextColor="{StaticResource Primary}"
+                                        CornerRadius="8" FontFamily="PoppinsMedium" FontSize="12"
+                                        HeightRequest="36" HorizontalOptions="Start"
+                                        Padding="12,0" />
+
+                            </VerticalStackLayout>
+                        </Frame>
+                    </DataTemplate>
+                </BindableLayout.ItemTemplate>
+            </VerticalStackLayout>
+
+            <!-- ── Leave balances (bottom) ───────────────────────────────── -->
+            <Label Text="LEAVE BALANCES" Style="{StaticResource LabelSection}" Margin="0,8,0,0" />
+            <VerticalStackLayout Spacing="6" BindableLayout.ItemsSource="{Binding LeaveBalances}">
+                <BindableLayout.ItemTemplate>
+                    <DataTemplate x:DataType="models:LeaveBalance">
+                        <Frame Style="{StaticResource CardFrame}" Padding="14,12">
+                            <Grid ColumnDefinitions="6,*,Auto" ColumnSpacing="12">
+                                <BoxView Grid.Column="0"
+                                         BackgroundColor="{Binding Color, Converter={StaticResource HexToColorConverter}}"
+                                         CornerRadius="3" WidthRequest="6" />
+                                <VerticalStackLayout Grid.Column="1" Spacing="4" VerticalOptions="Center">
+                                    <Label Text="{Binding Label}"
+                                           FontFamily="PoppinsSemiBold" FontSize="13"
+                                           TextColor="{StaticResource TextPrimary}" />
+                                    <Label Text="{Binding SubText}"
+                                           FontFamily="Poppins" FontSize="11"
+                                           TextColor="{StaticResource TextSecondary}" />
+                                    <ProgressBar Progress="{Binding ProgressFraction}"
+                                                 ProgressColor="{Binding Color, Converter={StaticResource HexToColorConverter}}"
+                                                 BackgroundColor="{StaticResource SurfaceElevated}"
+                                                 HeightRequest="4" />
+                                </VerticalStackLayout>
+                                <VerticalStackLayout Grid.Column="2" VerticalOptions="Center" HorizontalOptions="End" Spacing="1">
+                                    <Label Text="{Binding SummaryText}"
+                                           FontFamily="PoppinsBold" FontSize="18"
+                                           TextColor="{Binding Color, Converter={StaticResource HexToColorConverter}}"
+                                           HorizontalOptions="End" />
+                                    <Label Text="days left"
+                                           FontFamily="Poppins" FontSize="10"
+                                           TextColor="{StaticResource TextSecondary}"
+                                           HorizontalOptions="End" />
+                                </VerticalStackLayout>
+                            </Grid>
+                        </Frame>
+                    </DataTemplate>
+                </BindableLayout.ItemTemplate>
+            </VerticalStackLayout>
+
+            <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}"
+                               Color="{StaticResource Primary}" HorizontalOptions="Center"
+                               Margin="0,8,0,24" />
+
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

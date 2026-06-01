@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Finance.FinanceCashflowPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Finance"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:FinanceCashflowViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="Cashflow">
+
+    <Grid RowDefinitions="Auto,Auto,*">
+
+        <FlexLayout Grid.Row="0" Wrap="Wrap" Padding="12,12,12,0">
+            <Border WidthRequest="160" Margin="0,0,10,10" Padding="12" StrokeThickness="0"
+                    BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 14">
+                <VerticalStackLayout Spacing="2">
+                    <Label Text="Money In" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+                    <Label Text="{Binding MoneyIn, StringFormat='R{0:N2}'}" FontSize="18" FontAttributes="Bold" TextColor="#16A34A" />
+                </VerticalStackLayout>
+            </Border>
+            <Border WidthRequest="160" Margin="0,0,10,10" Padding="12" StrokeThickness="0"
+                    BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 14">
+                <VerticalStackLayout Spacing="2">
+                    <Label Text="Money Out" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+                    <Label Text="{Binding MoneyOut, StringFormat='R{0:N2}'}" FontSize="18" FontAttributes="Bold" TextColor="#DC2626" />
+                </VerticalStackLayout>
+            </Border>
+            <Border WidthRequest="160" Margin="0,0,10,10" Padding="12" StrokeThickness="0"
+                    BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 14">
+                <VerticalStackLayout Spacing="2">
+                    <Label Text="Net Cashflow" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+                    <Label Text="{Binding NetCashflow, StringFormat='R{0:N2}'}" FontSize="18" FontAttributes="Bold" TextColor="{Binding NetCashflowColor}" />
+                </VerticalStackLayout>
+            </Border>
+        </FlexLayout>
+
+        <ScrollView Grid.Row="1" Orientation="Horizontal" Margin="12,4,12,4">
+            <HorizontalStackLayout Spacing="8">
+                <Button Text="All" FontSize="13" Padding="14,6" CornerRadius="16" Command="{Binding SelectDirectionCommand}" CommandParameter="all"
+                        BackgroundColor="{Binding DirectionFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='all|#3B82F6,#FFFFFF'}"
+                        TextColor="{Binding DirectionFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='all|#FFFFFF,#6B7280'}" />
+                <Button Text="Money In" FontSize="13" Padding="14,6" CornerRadius="16" Command="{Binding SelectDirectionCommand}" CommandParameter="in"
+                        BackgroundColor="{Binding DirectionFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='in|#3B82F6,#FFFFFF'}"
+                        TextColor="{Binding DirectionFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='in|#FFFFFF,#6B7280'}" />
+                <Button Text="Money Out" FontSize="13" Padding="14,6" CornerRadius="16" Command="{Binding SelectDirectionCommand}" CommandParameter="out"
+                        BackgroundColor="{Binding DirectionFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='out|#3B82F6,#FFFFFF'}"
+                        TextColor="{Binding DirectionFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='out|#FFFFFF,#6B7280'}" />
+            </HorizontalStackLayout>
+        </ScrollView>
+
+        <RefreshView Grid.Row="2" Command="{Binding RefreshCommand}" IsRefreshing="{Binding IsBusy}">
+            <CollectionView ItemsSource="{Binding Transactions}" Margin="12,4">
+                <CollectionView.EmptyView>
+                    <Label Text="No transactions in this period." Style="{StaticResource EmptyState}" Margin="0,24" />
+                </CollectionView.EmptyView>
+                <CollectionView.ItemTemplate>
+                    <DataTemplate x:DataType="models:FinanceTransaction">
+                        <Border Margin="0,0,0,8" Padding="14" StrokeThickness="0"
+                                BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 14">
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                                <BoxView Grid.Column="0" WidthRequest="4" Color="{Binding DirectionColor}" CornerRadius="2" />
+                                <VerticalStackLayout Grid.Column="1" Spacing="2">
+                                    <Label Text="{Binding TypeLabel}" FontAttributes="Bold" FontSize="14" TextColor="{StaticResource TextPrimary}" />
+                                    <Label Text="{Binding TransactionDateDisplay}" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+                                </VerticalStackLayout>
+                                <Label Grid.Column="2" Text="{Binding AmountDisplay}" FontAttributes="Bold" FontSize="15" TextColor="{Binding DirectionColor}" VerticalOptions="Center" />
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+        </RefreshView>
+    </Grid>
+</ContentPage>

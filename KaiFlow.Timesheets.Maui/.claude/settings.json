@@ -1,0 +1,45 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\NN\\\\Documents\\\\KaiFlow\\\\KaiFlow.Timesheets.Maui\" -Recurse -File)",
+      "Bash(Select-Object FullName)",
+      "Bash(Sort-Object)",
+      "mcp__claude_ai_Supabase__list_tables",
+      "mcp__claude_ai_Supabase__list_migrations",
+      "PowerShell(New-Item -ItemType Directory -Force \"c:\\\\Users\\\\NN\\\\Documents\\\\KaiFlow\\\\KaiFlow.Timesheets.Maui\\\\Resources\\\\AppIcon\")",
+      "PowerShell(New-Item -ItemType Directory -Force \"c:\\\\Users\\\\NN\\\\Documents\\\\KaiFlow\\\\KaiFlow.Timesheets.Maui\\\\Resources\\\\Splash\")",
+      "PowerShell(New-Item -ItemType Directory -Force \"c:\\\\Users\\\\NN\\\\Documents\\\\KaiFlow\\\\KaiFlow.Timesheets.Maui\\\\Resources\\\\Fonts\")",
+      "PowerShell(New-Item -ItemType Directory -Force \"c:\\\\Users\\\\NN\\\\Documents\\\\KaiFlow\\\\KaiFlow.Timesheets.Maui\\\\Resources\\\\Images\")",
+      "PowerShell(New-Item -ItemType Directory -Force \"c:\\\\Users\\\\NN\\\\Documents\\\\KaiFlow\\\\KaiFlow.Timesheets.Maui\\\\Resources\\\\Raw\")",
+      "PowerShell(Get-ChildItem \"c:\\\\Users\\\\NN\\\\Documents\\\\KaiFlow\\\\KaiFlow.Timesheets.Maui\\\\Resources\" -Recurse | Select-Object @{N='Path';E={$_.FullName.Replace\\('c:\\\\Users\\\\NN\\\\Documents\\\\KaiFlow\\\\KaiFlow.Timesheets.Maui\\\\Resources\\\\',''\\)}} | Sort-Object Path)",
+      "PowerShell(dotnet --version)",
+      "PowerShell(dotnet workload list 2>&1)",
+      "PowerShell(supabase projects list 2>&1)",
+      "PowerShell(supabase login 2>&1)",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\NN\\\\Documents\\\\KaiFlow\\\\KaiFlow.Timesheets.Maui\\\\timesheets - Copy \\(2\\)\\\\lib\" -Recurse | Where-Object { $_.PSIsContainer } | Select-Object FullName)",
+      "Bash(ls -la \"C:\\\\Users\\\\NN\\\\Documents\\\\KaiFlow\\\\KaiFlow.Timesheets.Maui\\\\timesheets - Copy \\(2\\)\\\\lib\\\\providers\\\\\\\\\")",
+      "Bash(ls -la \"C:\\\\Users\\\\NN\\\\Documents\\\\KaiFlow\\\\KaiFlow.Timesheets.Maui\\\\timesheets - Copy \\(2\\)\\\\lib\\\\widgets\\\\\\\\\")",
+      "PowerShell(ls \"C:\\\\Users\\\\NN\\\\Documents\\\\KaiFlow\\\\KaiFlow.Timesheets.Maui\\\\timesheets - Copy \\(2\\)\\\\lib\\\\services\\\\\")",
+      "PowerShell(ls \"C:\\\\Users\\\\NN\\\\Documents\\\\KaiFlow\\\\KaiFlow.Timesheets.Maui\\\\timesheets - Copy \\(2\\)\\\\lib\\\\services\\\\storage\\\\\")",
+      "mcp__supabase__execute_sql",
+      "Read(//c/Users/NN/.nuget/packages/supabase/1.1.1/lib/**)",
+      "PowerShell(& \"C:\\\\Users\\\\NN\\\\Documents\\\\KaiFlow\\\\KaiFlow.Timesheets.Maui\\\\bin\\\\Debug\\\\net10.0-windows10.0.19041.0\\\\win-x64\\\\KaiFlow.Timesheets.Maui.exe\" 2>&1)",
+      "Read(//c/Users/NN/Documents/KaiFlow/timesheets/lib/screens/**)",
+      "Bash(dotnet run *)",
+      "Bash(Start-Process \"c:\\\\Users\\\\NN\\\\Documents\\\\KaiFlow\\\\KaiFlow.Timesheets.Maui\\\\bin\\\\Debug\\\\net10.0-windows10.0.19041.0\\\\win-x64\\\\KaiFlow.Timesheets.Maui.exe\")",
+      "PowerShell(Start-Process \"c:\\\\Users\\\\NN\\\\Documents\\\\KaiFlow\\\\KaiFlow.Timesheets.Maui\\\\bin\\\\Debug\\\\net10.0-windows10.0.19041.0\\\\win-x64\\\\KaiFlow.Timesheets.Maui.exe\")",
+      "Bash(dotnet build *)",
+      "mcp__supabase__apply_migration",
+      "mcp__supabase__get_project_url",
+      "Read(//c/Users/NN/Documents/KaiFlow/timesheets/**)",
+      "Read(//c/Users/NN/Documents/KaiFlow/timesheets - Copy \\(2\\)/lib/services/**)",
+      "Read(//c/Users/NN/Documents/KaiFlow/timesheets - Copy \\(2\\)/lib/screens/**)",
+      "PowerShell(cd \"c:\\\\Users\\\\NN\\\\Documents\\\\KaiFlow\\\\KaiFlow.Timesheets.Maui\"; dotnet build -f net10.0-windows10.0.19041.0 2>&1 | Where-Object { $_ -match \"error|Error|warning CS|Build succeeded|Build FAILED\" } | Select-Object -Last 20)",
+      "PowerShell(\"App launched\")",
+      "PowerShell(cd \"c:\\\\Users\\\\NN\\\\Documents\\\\KaiFlow\\\\KaiFlow.Timesheets.Maui\"; $dll = \"bin\\\\Debug\\\\net10.0-windows10.0.19041.0\\\\win-x64\\\\KaiFlow.Timesheets.Maui.dll\"; Write-Host \"DLL last modified: $\\(\\(Get-Item $dll\\).LastWriteTime\\)\"; Write-Host \"Now: $\\(Get-Date\\)\")"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\NN\\.claude\\projects\\c--Users-NN-Documents-KaiFlow-KaiFlow-Timesheets-Maui"
+    ]
+  }
+}

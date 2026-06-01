@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.ContractorPortal.ContractorPortalJobDetailPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.ContractorPortal"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:ContractorPortalJobDetailViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="{Binding Title}">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="16" Spacing="14">
+
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="SITE SIGN-IN" Style="{StaticResource LabelSection}" />
+                    <Label Text="{Binding SiteStatus}" Style="{StaticResource BodyMedium}" />
+                    <Label Text="{Binding HoursOnJob}" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                    <Button Text="Sign in on site" Command="{Binding SignInOnSiteCommand}"
+                            IsVisible="{Binding IsOnThisJob, Converter={StaticResource InverseBoolConverter}}"
+                            Style="{StaticResource PrimaryButton}" />
+                    <Button Text="Sign out" Command="{Binding SignOutOnSiteCommand}"
+                            IsVisible="{Binding IsOnThisJob}" Style="{StaticResource OutlinedButton}" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="VISIT HISTORY" Style="{StaticResource LabelSection}" />
+                    <CollectionView ItemsSource="{Binding VisitHistory}" HeightRequest="100">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="models:JobSiteSession">
+                                <Label Text="{Binding HoursDisplay}" FontSize="12" />
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </VerticalStackLayout>
+            </Frame>
+
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="PHOTOS" Style="{StaticResource LabelSection}" />
+                    <Grid ColumnDefinitions="*,*">
+                        <Button Text="Before" Command="{Binding AddPhotoCommand}" CommandParameter="before" Style="{StaticResource SecondaryButton}" />
+                        <Button Grid.Column="1" Text="After" Command="{Binding AddPhotoCommand}" CommandParameter="after" Style="{StaticResource SecondaryButton}" />
+                    </Grid>
+                </VerticalStackLayout>
+            </Frame>
+
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="INCIDENT" Style="{StaticResource LabelSection}" />
+                    <Editor Text="{Binding IncidentText}" Placeholder="Describe issue..." HeightRequest="80"
+                            BackgroundColor="{StaticResource SurfaceElevated}" TextColor="{StaticResource TextPrimary}" />
+                    <Button Text="Report incident" Command="{Binding ReportIncidentCommand}" Style="{StaticResource OutlinedButton}" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="MESSAGE MANAGER" Style="{StaticResource LabelSection}" />
+                    <CollectionView ItemsSource="{Binding Messages}" HeightRequest="120">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ContractorChatLine">
+                                <VerticalStackLayout Padding="0,4">
+                                    <Label Text="{Binding Sender}" FontFamily="PoppinsSemiBold" FontSize="11" />
+                                    <Label Text="{Binding Body}" FontSize="12" />
+                                </VerticalStackLayout>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                    <Entry Placeholder="Type a message..." Text="{Binding NewMessage}" Style="{StaticResource DarkEntry}" />
+                    <Button Text="Send" Command="{Binding SendMessageCommand}" Style="{StaticResource PrimaryButton}" />
+                </VerticalStackLayout>
+            </Frame>
+
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Employee.MyPaTaskEditorPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Employees"
+    x:DataType="vm:MyPaTaskEditorViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="{Binding Title}">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="16" Spacing="12">
+            <Entry Text="{Binding TaskTitle}" Placeholder="Task title *"
+                   Style="{StaticResource DarkEntry}" TextColor="{StaticResource TextPrimary}" />
+            <Editor Text="{Binding Notes}" Placeholder="Notes" MinimumHeightRequest="80"
+                    TextColor="{StaticResource TextPrimary}" AutoSize="TextChanges" />
+            <Picker Title="Priority" ItemsSource="{Binding Priorities}" SelectedItem="{Binding Priority}" />
+            <Picker Title="Link type" ItemsSource="{Binding LinkTypes}" SelectedItem="{Binding LinkedType}" />
+            <Picker Title="Linked record" ItemsSource="{Binding LinkOptions}"
+                    SelectedItem="{Binding SelectedLink}" ItemDisplayBinding="{Binding Label}"
+                    IsVisible="{Binding ShowLinkPicker}" />
+            <Picker Title="Recurrence" ItemsSource="{Binding RecurrenceOptions}" SelectedItem="{Binding Recurrence}" />
+            <Picker Title="Delegate to" ItemsSource="{Binding Assignees}" SelectedItem="{Binding SelectedAssignee}"
+                    ItemDisplayBinding="{Binding FullName}" IsVisible="{Binding ShowAssignee}" />
+            <Label Text="{Binding ConflictWarning}" TextColor="#FCA5A5" FontSize="12"
+                   IsVisible="{Binding ConflictWarning, Converter={StaticResource IsNotNullConverter}}" />
+
+            <Button Text="{Binding DueAt, StringFormat='Due: {0:dd MMM yyyy HH:mm}', TargetNullValue='Set due date and time'}"
+                    Command="{Binding PickDueCommand}" Style="{StaticResource OutlinedButton}" />
+            <Button Text="{Binding RemindAt, StringFormat='Reminder: {0:dd MMM yyyy HH:mm}', TargetNullValue='Set reminder'}"
+                    Command="{Binding PickRemindCommand}" Style="{StaticResource OutlinedButton}" />
+
+            <VerticalStackLayout IsVisible="{Binding ShowMeetingFields}" Spacing="8">
+                <Entry Text="{Binding MeetingWith}" Placeholder="Meeting with"
+                       Style="{StaticResource DarkEntry}" TextColor="{StaticResource TextPrimary}" />
+                <Button Text="{Binding MeetingAt, StringFormat='Meeting: {0:dd MMM yyyy HH:mm}', TargetNullValue='Set meeting time'}"
+                        Command="{Binding PickMeetingCommand}" Style="{StaticResource OutlinedButton}" />
+                <Editor Text="{Binding MeetingMinutes}" Placeholder="Meeting minutes / outcomes"
+                        MinimumHeightRequest="60" TextColor="{StaticResource TextPrimary}" AutoSize="TextChanges" />
+                <Editor Text="{Binding MeetingFollowUp}" Placeholder="Follow-up plan"
+                        MinimumHeightRequest="60" TextColor="{StaticResource TextPrimary}" AutoSize="TextChanges" />
+            </VerticalStackLayout>
+
+            <Label Text="{Binding ErrorMessage}" TextColor="#FCA5A5" FontSize="12"
+                   IsVisible="{Binding ErrorMessage, Converter={StaticResource IsNotNullConverter}}" />
+            <Button Text="Save" Command="{Binding SaveCommand}" Style="{StaticResource PrimaryButton}" Margin="0,12,0,0" />
+            <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}" Color="{StaticResource Primary}" />
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

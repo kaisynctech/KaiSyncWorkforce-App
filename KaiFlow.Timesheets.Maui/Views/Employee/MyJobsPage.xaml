@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Employee.MyJobsPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Employees"
+    xmlns:shared="clr-namespace:KaiFlow.Timesheets.Views.Shared"
+    x:DataType="vm:MyJobsViewModel"
+    x:Name="Self"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="Jobs">
+
+    <ContentPage.ToolbarItems>
+        <ToolbarItem Text="+ Job" Command="{Binding CreateJobCommand}" />
+    </ContentPage.ToolbarItems>
+
+    <Grid RowDefinitions="Auto,Auto,*">
+        <ScrollView Grid.Row="0" Orientation="Horizontal" Margin="8,4">
+            <HorizontalStackLayout Padding="8,0" Spacing="8">
+                <Button Text="Assigned" Command="{Binding SetScopeCommand}" CommandParameter="assigned"
+                        CornerRadius="16" HeightRequest="32" FontSize="12"
+                        BackgroundColor="{Binding Scope, Converter={StaticResource EqToStyleConverter}, ConverterParameter='assigned|#3B82F6,#FFFFFF'}"
+                        TextColor="{Binding Scope, Converter={StaticResource EqToStyleConverter}, ConverterParameter='assigned|#FFFFFF,#6B7280'}" />
+                <Button Text="My Jobs" Command="{Binding SetScopeCommand}" CommandParameter="created"
+                        CornerRadius="16" HeightRequest="32" FontSize="12"
+                        BackgroundColor="{Binding Scope, Converter={StaticResource EqToStyleConverter}, ConverterParameter='created|#3B82F6,#FFFFFF'}"
+                        TextColor="{Binding Scope, Converter={StaticResource EqToStyleConverter}, ConverterParameter='created|#FFFFFF,#6B7280'}" />
+                <Button Text="All" Command="{Binding SetScopeCommand}" CommandParameter="all"
+                        CornerRadius="16" HeightRequest="32" FontSize="12"
+                        BackgroundColor="{Binding Scope, Converter={StaticResource EqToStyleConverter}, ConverterParameter='all|#3B82F6,#FFFFFF'}"
+                        TextColor="{Binding Scope, Converter={StaticResource EqToStyleConverter}, ConverterParameter='all|#FFFFFF,#6B7280'}" />
+            </HorizontalStackLayout>
+        </ScrollView>
+
+        <ScrollView Grid.Row="1" Orientation="Horizontal" Margin="8,0,8,4">
+            <HorizontalStackLayout Padding="8,0" Spacing="8">
+                <Button Text="Open" Command="{Binding SetStatusFilterCommand}" CommandParameter="open"
+                        CornerRadius="16" HeightRequest="28" FontSize="11"
+                        BackgroundColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='open|#3B82F6,#FFFFFF'}"
+                        TextColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='open|#FFFFFF,#6B7280'}" />
+                <Button Text="Any status" Command="{Binding SetStatusFilterCommand}" CommandParameter="all"
+                        CornerRadius="16" HeightRequest="28" FontSize="11"
+                        BackgroundColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='all|#3B82F6,#FFFFFF'}"
+                        TextColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='all|#FFFFFF,#6B7280'}" />
+                <Button Text="Scheduled" Command="{Binding SetStatusFilterCommand}" CommandParameter="scheduled"
+                        CornerRadius="16" HeightRequest="28" FontSize="11"
+                        BackgroundColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='scheduled|#3B82F6,#FFFFFF'}"
+                        TextColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='scheduled|#FFFFFF,#6B7280'}" />
+                <Button Text="In Progress" Command="{Binding SetStatusFilterCommand}" CommandParameter="inProgress"
+                        CornerRadius="16" HeightRequest="28" FontSize="11"
+                        BackgroundColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='inProgress|#3B82F6,#FFFFFF'}"
+                        TextColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='inProgress|#FFFFFF,#6B7280'}" />
+                <Button Text="Completed" Command="{Binding SetStatusFilterCommand}" CommandParameter="completed"
+                        CornerRadius="16" HeightRequest="28" FontSize="11"
+                        BackgroundColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='completed|#3B82F6,#FFFFFF'}"
+                        TextColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='completed|#FFFFFF,#6B7280'}" />
+                <Button Text="Cancelled" Command="{Binding SetStatusFilterCommand}" CommandParameter="cancelled"
+                        CornerRadius="16" HeightRequest="28" FontSize="11"
+                        BackgroundColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='cancelled|#3B82F6,#FFFFFF'}"
+                        TextColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='cancelled|#FFFFFF,#6B7280'}" />
+            </HorizontalStackLayout>
+        </ScrollView>
+
+        <RefreshView Grid.Row="2" Command="{Binding RefreshCommand}" IsRefreshing="{Binding IsBusy}">
+            <shared:EmployeeJobsTableView
+                Jobs="{Binding Jobs}"
+                OpenJobCommand="{Binding OpenJobCardCommand}"
+                EmptyMessage="{Binding EmptyMessage}"
+                Margin="8,0,8,8" />
+        </RefreshView>
+    </Grid>
+</ContentPage>

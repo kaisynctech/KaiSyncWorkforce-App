@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Finance.SupplierInvoicesPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Finance"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:SupplierInvoicesViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="Supplier Invoices">
+
+    <RefreshView Command="{Binding RefreshCommand}" IsRefreshing="{Binding IsBusy}">
+        <ScrollView>
+            <VerticalStackLayout Spacing="14" Padding="16" MaximumWidthRequest="760" HorizontalOptions="Center">
+
+                <Border Padding="14" StrokeThickness="0" BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 16">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <VerticalStackLayout Spacing="2">
+                            <Label Text="Total Payables" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+                            <Label Text="{Binding PayablesTotal, StringFormat='R{0:N2}'}" FontSize="22" FontAttributes="Bold" TextColor="#F59E0B" />
+                        </VerticalStackLayout>
+                        <Label Grid.Column="1" Text="{Binding Invoices.Count, StringFormat='{0} invoices'}" Style="{StaticResource Caption}" VerticalOptions="End" />
+                    </Grid>
+                </Border>
+
+                <!-- Quick add -->
+                <Border Padding="14" StrokeThickness="0" BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 16">
+                    <VerticalStackLayout Spacing="10">
+                        <Label Text="Capture supplier invoice" FontSize="15" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" />
+                        <Picker ItemsSource="{Binding Suppliers}" SelectedItem="{Binding SelectedSupplier}" ItemDisplayBinding="{Binding Name}" Title="Select supplier" />
+                        <Entry Text="{Binding QuickInvoiceNumber}" Placeholder="Invoice number" TextColor="{StaticResource TextPrimary}" />
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                            <VerticalStackLayout Grid.Column="0" Spacing="0">
+                                <Label Text="Amount" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                                <Entry Text="{Binding QuickAmount}" Keyboard="Numeric" TextColor="{StaticResource TextPrimary}" />
+                            </VerticalStackLayout>
+                            <VerticalStackLayout Grid.Column="1" Spacing="0">
+                                <Label Text="VAT rate" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                                <Entry Text="{Binding QuickVatRate}" Keyboard="Numeric" TextColor="{StaticResource TextPrimary}" />
+                            </VerticalStackLayout>
+                        </Grid>
+                        <Grid ColumnDefinitions="*,Auto">
+                            <Label Text="Amount includes VAT" VerticalOptions="Center" TextColor="{StaticResource TextPrimary}" />
+                            <Switch Grid.Column="1" IsToggled="{Binding QuickIsInclusive}" />
+                        </Grid>
+                        <VerticalStackLayout Grid.Column="0" Spacing="0">
+                            <Label Text="Due date" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                            <DatePicker Date="{Binding QuickDueDate}" />
+                        </VerticalStackLayout>
+
+                        <Grid ColumnDefinitions="*,*,*" Margin="0,4,0,0">
+                            <VerticalStackLayout Grid.Column="0">
+                                <Label Text="Subtotal" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                                <Label Text="{Binding PreviewSubtotal, StringFormat='R{0:N2}'}" TextColor="{StaticResource TextPrimary}" />
+                            </VerticalStackLayout>
+                            <VerticalStackLayout Grid.Column="1">
+                                <Label Text="VAT" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                                <Label Text="{Binding PreviewVat, StringFormat='R{0:N2}'}" TextColor="{StaticResource TextPrimary}" />
+                            </VerticalStackLayout>
+                            <VerticalStackLayout Grid.Column="2">
+                                <Label Text="Total" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                                <Label Text="{Binding PreviewTotal, StringFormat='R{0:N2}'}" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" />
+                            </VerticalStackLayout>
+                        </Grid>
+
+                        <Button Text="Add invoice" Command="{Binding AddInvoiceCommand}" Style="{StaticResource PrimaryButton}" />
+                    </VerticalStackLayout>
+                </Border>
+
+                <CollectionView ItemsSource="{Binding Invoices}">
+                    <CollectionView.EmptyView>
+                        <Label Text="No supplier invoices captured yet." Style="{StaticResource EmptyState}" Margin="0,24" />
+                    </CollectionView.EmptyView>
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="models:SupplierInvoice">
+                            <Border Margin="0,0,0,8" Padding="14" StrokeThickness="0"
+                                    BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 14">
+                                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                                    <Label Grid.Row="0" Grid.Column="0" Text="{Binding InvoiceNumber, TargetNullValue='(no number)'}" FontAttributes="Bold" FontSize="15" TextColor="{StaticResource TextPrimary}" />
+                                    <Label Grid.Row="0" Grid.Column="1" Text="{Binding TotalDisplay}" FontAttributes="Bold" FontSize="15" TextColor="{StaticResource TextPrimary}" />
+                                    <Label Grid.Row="1" Grid.Column="0" Text="{Binding DueDateDisplay, StringFormat='Due {0}'}" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+                                    <Border Grid.Row="1" Grid.Column="1" Padding="8,2" StrokeThickness="0" BackgroundColor="{Binding StatusColor}" StrokeShape="RoundRectangle 8">
+                                        <Label Text="{Binding StatusLabel}" FontSize="11" TextColor="White" />
+                                    </Border>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+
+            </VerticalStackLayout>
+        </ScrollView>
+    </RefreshView>
+</ContentPage>

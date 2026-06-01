@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Finance.FinanceDashboardPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Finance"
+    x:DataType="vm:FinanceDashboardViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="Finance">
+
+    <ContentPage.ToolbarItems>
+        <ToolbarItem Text="+ Invoice" Command="{Binding NewInvoiceCommand}" />
+    </ContentPage.ToolbarItems>
+
+    <RefreshView Command="{Binding RefreshCommand}" IsRefreshing="{Binding IsBusy}">
+        <ScrollView>
+            <VerticalStackLayout Spacing="16" Padding="16" MaximumWidthRequest="1100" HorizontalOptions="Center">
+
+                <!-- Period selector -->
+                <HorizontalStackLayout Spacing="8">
+                    <Button Text="Month" FontSize="13" Padding="14,6" CornerRadius="16"
+                            Command="{Binding SelectPeriodCommand}" CommandParameter="month"
+                            BackgroundColor="{Binding SelectedPeriodKey, Converter={StaticResource EqToStyleConverter}, ConverterParameter='month|#3B82F6,#FFFFFF'}"
+                            TextColor="{Binding SelectedPeriodKey, Converter={StaticResource EqToStyleConverter}, ConverterParameter='month|#FFFFFF,#6B7280'}" />
+                    <Button Text="3 Months" FontSize="13" Padding="14,6" CornerRadius="16"
+                            Command="{Binding SelectPeriodCommand}" CommandParameter="3m"
+                            BackgroundColor="{Binding SelectedPeriodKey, Converter={StaticResource EqToStyleConverter}, ConverterParameter='3m|#3B82F6,#FFFFFF'}"
+                            TextColor="{Binding SelectedPeriodKey, Converter={StaticResource EqToStyleConverter}, ConverterParameter='3m|#FFFFFF,#6B7280'}" />
+                    <Button Text="6 Months" FontSize="13" Padding="14,6" CornerRadius="16"
+                            Command="{Binding SelectPeriodCommand}" CommandParameter="6m"
+                            BackgroundColor="{Binding SelectedPeriodKey, Converter={StaticResource EqToStyleConverter}, ConverterParameter='6m|#3B82F6,#FFFFFF'}"
+                            TextColor="{Binding SelectedPeriodKey, Converter={StaticResource EqToStyleConverter}, ConverterParameter='6m|#FFFFFF,#6B7280'}" />
+                    <Button Text="Year" FontSize="13" Padding="14,6" CornerRadius="16"
+                            Command="{Binding SelectPeriodCommand}" CommandParameter="year"
+                            BackgroundColor="{Binding SelectedPeriodKey, Converter={StaticResource EqToStyleConverter}, ConverterParameter='year|#3B82F6,#FFFFFF'}"
+                            TextColor="{Binding SelectedPeriodKey, Converter={StaticResource EqToStyleConverter}, ConverterParameter='year|#FFFFFF,#6B7280'}" />
+                </HorizontalStackLayout>
+
+                <Label Text="{Binding Snapshot.PeriodLabel}" Style="{StaticResource Caption}" />
+
+                <!-- KPI cards -->
+                <FlexLayout Wrap="Wrap" JustifyContent="Start" AlignItems="Start">
+                    <Border WidthRequest="168" Margin="0,0,12,12" Padding="14" StrokeThickness="0"
+                            BackgroundColor="{StaticResource SurfaceCard}"
+                            StrokeShape="RoundRectangle 16">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Revenue" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+                            <Label Text="{Binding Snapshot.RevenueDisplay}" FontSize="20" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" />
+                        </VerticalStackLayout>
+                    </Border>
+                    <Border WidthRequest="168" Margin="0,0,12,12" Padding="14" StrokeThickness="0"
+                            BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 16">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Outstanding" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+                            <Label Text="{Binding Snapshot.OutstandingDisplay}" FontSize="20" FontAttributes="Bold" TextColor="#2563EB" />
+                            <Label Text="{Binding Snapshot.OutstandingInvoiceCount, StringFormat='{0} invoices'}" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                        </VerticalStackLayout>
+                    </Border>
+                    <Border WidthRequest="168" Margin="0,0,12,12" Padding="14" StrokeThickness="0"
+                            BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 16">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Supplier Payables" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+                            <Label Text="{Binding Snapshot.SupplierPayablesDisplay}" FontSize="20" FontAttributes="Bold" TextColor="#F59E0B" />
+                        </VerticalStackLayout>
+                    </Border>
+                    <Border WidthRequest="168" Margin="0,0,12,12" Padding="14" StrokeThickness="0"
+                            BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 16">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Contractor Payables" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+                            <Label Text="{Binding Snapshot.ContractorPayablesDisplay}" FontSize="20" FontAttributes="Bold" TextColor="#F59E0B" />
+                        </VerticalStackLayout>
+                    </Border>
+                    <Border WidthRequest="168" Margin="0,0,12,12" Padding="14" StrokeThickness="0"
+                            BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 16">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Payroll Costs" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+                            <Label Text="{Binding Snapshot.PayrollDisplay}" FontSize="20" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" />
+                        </VerticalStackLayout>
+                    </Border>
+                    <Border WidthRequest="168" Margin="0,0,12,12" Padding="14" StrokeThickness="0"
+                            BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 16">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="VAT Due" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+                            <Label Text="{Binding Snapshot.VatDueDisplay}" FontSize="20" FontAttributes="Bold" TextColor="#8B5CF6" />
+                        </VerticalStackLayout>
+                    </Border>
+                    <Border WidthRequest="168" Margin="0,0,12,12" Padding="14" StrokeThickness="0"
+                            BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 16">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Net Cashflow" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+                            <Label Text="{Binding Snapshot.NetCashflowDisplay}" FontSize="20" FontAttributes="Bold" TextColor="{Binding Snapshot.NetCashflowColor}" />
+                        </VerticalStackLayout>
+                    </Border>
+                    <Border WidthRequest="168" Margin="0,0,12,12" Padding="14" StrokeThickness="0"
+                            BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 16">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Profit Estimate" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+                            <Label Text="{Binding Snapshot.ProfitDisplay}" FontSize="20" FontAttributes="Bold" TextColor="{Binding Snapshot.ProfitColor}" />
+                        </VerticalStackLayout>
+                    </Border>
+                </FlexLayout>
+
+                <!-- Charts -->
+                <Border Padding="14" StrokeThickness="0" BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 16">
+                    <VerticalStackLayout Spacing="8">
+                        <Label Text="Revenue Trend" FontSize="15" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" />
+                        <GraphicsView x:Name="RevenueChart" HeightRequest="160" />
+                    </VerticalStackLayout>
+                </Border>
+
+                <Border Padding="14" StrokeThickness="0" BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 16">
+                    <VerticalStackLayout Spacing="8">
+                        <HorizontalStackLayout Spacing="14">
+                            <Label Text="Cashflow" FontSize="15" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" />
+                            <Label Text="● In" FontSize="11" TextColor="#16A34A" VerticalOptions="Center" />
+                            <Label Text="● Out" FontSize="11" TextColor="#DC2626" VerticalOptions="Center" />
+                        </HorizontalStackLayout>
+                        <GraphicsView x:Name="CashflowChart" HeightRequest="160" />
+                    </VerticalStackLayout>
+                </Border>
+
+                <Border Padding="14" StrokeThickness="0" BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 16">
+                    <VerticalStackLayout Spacing="8">
+                        <Label Text="VAT Trend (net)" FontSize="15" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" />
+                        <GraphicsView x:Name="VatChart" HeightRequest="140" />
+                    </VerticalStackLayout>
+                </Border>
+
+                <Border Padding="14" StrokeThickness="0" BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 16">
+                    <VerticalStackLayout Spacing="8">
+                        <Label Text="Expense Categories" FontSize="15" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" />
+                        <GraphicsView x:Name="ExpenseChart" HeightRequest="150" />
+                    </VerticalStackLayout>
+                </Border>
+
+                <Border Padding="14" StrokeThickness="0" BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 16">
+                    <VerticalStackLayout Spacing="8">
+                        <Label Text="Top Debtors" FontSize="15" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" />
+                        <GraphicsView x:Name="DebtorsChart" HeightRequest="150" />
+                    </VerticalStackLayout>
+                </Border>
+
+                <!-- Navigation tiles -->
+                <Label Text="Manage" FontSize="15" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" Margin="0,4,0,0" />
+                <FlexLayout Wrap="Wrap" JustifyContent="Start">
+                    <Button Text="Invoices" Command="{Binding OpenInvoicesCommand}" Style="{StaticResource PrimaryButton}" WidthRequest="168" Margin="0,0,12,12" />
+                    <Button Text="Supplier Invoices" Command="{Binding OpenSupplierInvoicesCommand}" Style="{StaticResource PrimaryButton}" WidthRequest="168" Margin="0,0,12,12" />
+                    <Button Text="Contractor Payouts" Command="{Binding OpenContractorPayoutsCommand}" Style="{StaticResource PrimaryButton}" WidthRequest="168" Margin="0,0,12,12" />
+                    <Button Text="VAT" Command="{Binding OpenVatCommand}" Style="{StaticResource PrimaryButton}" WidthRequest="168" Margin="0,0,12,12" />
+                    <Button Text="Cashflow" Command="{Binding OpenCashflowCommand}" Style="{StaticResource PrimaryButton}" WidthRequest="168" Margin="0,0,12,12" />
+                    <Button Text="Reports" Command="{Binding OpenReportsCommand}" Style="{StaticResource PrimaryButton}" WidthRequest="168" Margin="0,0,12,12" />
+                    <Button Text="Approvals" Command="{Binding OpenApprovalsCommand}" Style="{StaticResource PrimaryButton}" WidthRequest="168" Margin="0,0,12,12" />
+                </FlexLayout>
+
+            </VerticalStackLayout>
+        </ScrollView>
+    </RefreshView>
+</ContentPage>

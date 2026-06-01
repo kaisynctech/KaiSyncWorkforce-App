@@ -1,0 +1,230 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Auth.EmployeeLoginPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Auth"
+    x:DataType="vm:EmployeeLoginViewModel"
+    x:Name="Page"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="Employee Sign In">
+
+    <ScrollView>
+        <Grid RowDefinitions="*" MinimumHeightRequest="600">
+            <VerticalStackLayout
+                VerticalOptions="Center"
+                HorizontalOptions="Center"
+                Padding="24"
+                Spacing="0"
+                MaximumWidthRequest="480">
+
+                <!-- Branding -->
+                <Label
+                    Text="KaiSync Workforce"
+                    FontFamily="PoppinsBold"
+                    FontSize="24"
+                    TextColor="{StaticResource TextPrimary}"
+                    HorizontalOptions="Center" />
+                <BoxView HeightRequest="6" Color="Transparent" />
+                <Label
+                    Text="Employee sign in"
+                    FontFamily="PoppinsBold"
+                    FontSize="22"
+                    TextColor="{StaticResource TextPrimary}"
+                    HorizontalOptions="Center" />
+                <BoxView HeightRequest="4" Color="Transparent" />
+                <Label
+                    Text="{Binding SubtitleText}"
+                    FontFamily="PoppinsRegular"
+                    FontSize="13"
+                    TextColor="{StaticResource TextSecondary}"
+                    HorizontalOptions="Center"
+                    HorizontalTextAlignment="Center" />
+
+                <BoxView HeightRequest="24" Color="Transparent" />
+
+                <!-- Login card -->
+                <Frame
+                    BackgroundColor="{StaticResource SurfaceCard}"
+                    BorderColor="{StaticResource Divider}"
+                    CornerRadius="24"
+                    Padding="24"
+                    HasShadow="False">
+                    <VerticalStackLayout Spacing="16">
+
+                        <!-- Method toggle -->
+                        <VerticalStackLayout Spacing="6">
+                            <Label
+                                Text="Sign in method"
+                                Style="{StaticResource LabelField}" />
+                            <Frame
+                                BackgroundColor="{StaticResource SurfaceElevated}"
+                                BorderColor="{StaticResource Divider}"
+                                CornerRadius="10"
+                                Padding="4"
+                                HasShadow="False">
+                                <Grid ColumnDefinitions="*,*" ColumnSpacing="4">
+                                    <Button
+                                        Grid.Column="0"
+                                        Text="Login code"
+                                        Command="{Binding SetMethodCodeCommand}"
+                                        BackgroundColor="{Binding UseCodeMethod, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#3B82F6|Transparent'}"
+                                        TextColor="{Binding UseCodeMethod, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#6B7280'}"
+                                        FontFamily="PoppinsSemiBold"
+                                        FontSize="13"
+                                        CornerRadius="8"
+                                        Padding="12,10"
+                                        HeightRequest="40"
+                                        BorderWidth="0" />
+                                    <Button
+                                        Grid.Column="1"
+                                        Text="Email"
+                                        Command="{Binding SetMethodEmailCommand}"
+                                        BackgroundColor="{Binding UseCodeMethod, Converter={StaticResource BoolToColorConverter}, ConverterParameter='Transparent|#3B82F6'}"
+                                        TextColor="{Binding UseCodeMethod, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#6B7280|#FFFFFF'}"
+                                        FontFamily="PoppinsSemiBold"
+                                        FontSize="13"
+                                        CornerRadius="8"
+                                        Padding="12,10"
+                                        HeightRequest="40"
+                                        BorderWidth="0" />
+                                </Grid>
+                            </Frame>
+                        </VerticalStackLayout>
+
+                        <!-- Code method fields -->
+                        <VerticalStackLayout
+                            Spacing="12"
+                            IsVisible="{Binding UseCodeMethod}">
+
+                            <VerticalStackLayout Spacing="6">
+                                <Label Text="Company code" Style="{StaticResource LabelField}" />
+                                <Entry
+                                    Placeholder="e.g. 01"
+                                    Text="{Binding CompanyCode}"
+                                    IsEnabled="{Binding IsNotBusy}"
+                                    Style="{StaticResource DarkEntry}"
+                                    ReturnType="Next" />
+                            </VerticalStackLayout>
+
+                            <VerticalStackLayout Spacing="6">
+                                <Label Text="Login code" Style="{StaticResource LabelField}" />
+                                <Entry
+                                    Placeholder="Your employee / ID code"
+                                    Text="{Binding EmployeeCode}"
+                                    IsEnabled="{Binding IsNotBusy}"
+                                    Style="{StaticResource DarkEntry}"
+                                    ReturnType="Done" />
+                            </VerticalStackLayout>
+
+                            <Label
+                                Text="Ask your employer for both codes. Example: Company code 01, Login code = your employee / ID code."
+                                FontFamily="PoppinsRegular"
+                                FontSize="11"
+                                TextColor="{StaticResource TextSecondary}" />
+                        </VerticalStackLayout>
+
+                        <!-- Email method fields -->
+                        <VerticalStackLayout
+                            Spacing="12"
+                            IsVisible="{Binding UseCodeMethod, Converter={StaticResource InverseBoolConverter}}">
+
+                            <VerticalStackLayout Spacing="6">
+                                <Label Text="Email address" Style="{StaticResource LabelField}" />
+                                <Entry
+                                    Placeholder="you@example.com"
+                                    Text="{Binding Email}"
+                                    Keyboard="Email"
+                                    IsEnabled="{Binding IsNotBusy}"
+                                    Style="{StaticResource DarkEntry}"
+                                    ReturnType="Next" />
+                            </VerticalStackLayout>
+
+                            <VerticalStackLayout Spacing="6">
+                                <Label Text="Password" Style="{StaticResource LabelField}" />
+                                <Entry
+                                    Placeholder="Your password"
+                                    Text="{Binding Password}"
+                                    IsPassword="True"
+                                    IsEnabled="{Binding IsNotBusy}"
+                                    Style="{StaticResource DarkEntry}"
+                                    ReturnType="Done" />
+                            </VerticalStackLayout>
+
+                            <Label
+                                Text="Don't have a password yet? Use email verification code below, then you'll create one."
+                                FontFamily="PoppinsRegular"
+                                FontSize="11"
+                                TextColor="{StaticResource TextSecondary}" />
+
+                            <Button
+                                Text="Sign in with email verification code"
+                                Command="{Binding GoToOtpCommand}"
+                                BackgroundColor="Transparent"
+                                TextColor="{StaticResource Primary}"
+                                FontFamily="PoppinsSemiBold"
+                                FontSize="13"
+                                Padding="0"
+                                HorizontalOptions="Start" />
+
+                            <Button
+                                Text="Forgot password?"
+                                Command="{Binding ForgotPasswordCommand}"
+                                BackgroundColor="Transparent"
+                                TextColor="{StaticResource Primary}"
+                                FontFamily="PoppinsRegular"
+                                FontSize="12"
+                                Padding="0"
+                                HorizontalOptions="Start" />
+                        </VerticalStackLayout>
+
+                        <!-- Error -->
+                        <Label
+                            Text="{Binding ErrorMessage}"
+                            TextColor="{StaticResource Error}"
+                            FontFamily="PoppinsRegular"
+                            FontSize="13"
+                            IsVisible="{Binding ErrorMessage, Converter={StaticResource IsNotNullConverter}}" />
+
+                        <!-- Sign-in button -->
+                        <Button
+                            Text="{Binding SignInButtonText}"
+                            Command="{Binding SignInCommand}"
+                            IsEnabled="{Binding IsNotBusy}"
+                            Style="{StaticResource PrimaryButton}"
+                            HorizontalOptions="Fill" />
+
+                        <ActivityIndicator
+                            IsRunning="{Binding IsBusy}"
+                            IsVisible="{Binding IsBusy}"
+                            Color="{StaticResource Primary}"
+                            HorizontalOptions="Center" />
+
+                    </VerticalStackLayout>
+                </Frame>
+
+                <BoxView HeightRequest="16" Color="Transparent" />
+
+                <!-- Create account link -->
+                <Label HorizontalOptions="Center" Margin="0,4,0,0">
+                    <Label.FormattedText>
+                        <FormattedString>
+                            <Span Text="New employee? "
+                                  FontFamily="PoppinsRegular" FontSize="13"
+                                  TextColor="{StaticResource TextSecondary}" />
+                            <Span Text="Create account"
+                                  FontFamily="PoppinsSemiBold" FontSize="13"
+                                  TextColor="{StaticResource Primary}">
+                                <Span.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding GoToSelfRegisterCommand}" />
+                                </Span.GestureRecognizers>
+                            </Span>
+                        </FormattedString>
+                    </Label.FormattedText>
+                </Label>
+
+                <BoxView HeightRequest="8" Color="Transparent" />
+            </VerticalStackLayout>
+        </Grid>
+    </ScrollView>
+</ContentPage>

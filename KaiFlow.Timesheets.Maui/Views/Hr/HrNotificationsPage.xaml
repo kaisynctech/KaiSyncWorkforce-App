@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Hr.HrNotificationsPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:HrNotificationsViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="Notifications">
+
+    <RefreshView Command="{Binding RefreshCommand}" IsRefreshing="{Binding IsBusy}">
+        <ScrollView>
+            <VerticalStackLayout Padding="16" Spacing="20">
+
+                <Label Text="IN-APP ALERTS" Style="{StaticResource LabelSection}" />
+                <Label Text="Client messages and system alerts appear here instantly (not SMS)."
+                       FontSize="11" TextColor="{StaticResource TextSecondary}" LineBreakMode="WordWrap" />
+                <Label Text="No new in-app alerts."
+                       Style="{StaticResource EmptyState}"
+                       IsVisible="{Binding HasAppNotifications, Converter={StaticResource InverseBoolConverter}}" />
+                <CollectionView ItemsSource="{Binding AppNotifications}">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="vm:HrNotificationItem">
+                            <Frame Style="{StaticResource CardFrame}" Margin="0,0,0,8" Padding="12">
+                                <Frame.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type ContentPage}}, Path=BindingContext.OpenAppNotificationCommand}"
+                                                          CommandParameter="{Binding .}" />
+                                </Frame.GestureRecognizers>
+                                <Grid ColumnDefinitions="4,*" ColumnSpacing="10">
+                                    <BoxView Grid.Column="0" WidthRequest="4" Color="{Binding Color}" VerticalOptions="Fill" />
+                                    <VerticalStackLayout Grid.Column="1" Spacing="4">
+                                        <Label Text="{Binding Title}" FontFamily="PoppinsSemiBold" FontSize="14" />
+                                        <Label Text="{Binding Body}" FontSize="12" TextColor="{StaticResource TextSecondary}" LineBreakMode="WordWrap" />
+                                        <Label Text="{Binding When}" FontSize="10" TextColor="{StaticResource Primary}" />
+                                    </VerticalStackLayout>
+                                </Grid>
+                            </Frame>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+
+                <!-- Pending Leave -->
+                <Label Text="PENDING LEAVE REQUESTS" Style="{StaticResource LabelSection}" />
+                <Label
+                    Text="No pending leave requests."
+                    Style="{StaticResource EmptyState}"
+                    IsVisible="{Binding PendingLeave.Count, Converter={StaticResource IsZeroConverter}}" />
+                <CollectionView ItemsSource="{Binding PendingLeave}">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="models:LeaveRequest">
+                            <Frame Style="{StaticResource CardFrame}" Margin="0,0,0,6">
+                                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="4">
+                                    <Label
+                                        Grid.Row="0" Grid.Column="0"
+                                        Text="{Binding LeaveType}"
+                                        FontFamily="PoppinsSemiBold"
+                                        FontSize="14"
+                                        TextColor="{StaticResource TextPrimary}" />
+                                    <Frame
+                                        Grid.Row="0" Grid.Column="1"
+                                        BackgroundColor="#FEF3C7"
+                                        BorderColor="Transparent"
+                                        CornerRadius="10" Padding="8,3" HasShadow="False"
+                                        VerticalOptions="Center">
+                                        <Label Text="Pending" FontFamily="PoppinsSemiBold" FontSize="11" TextColor="{StaticResource TextPrimary}" />
+                                    </Frame>
+                                    <Label
+                                        Grid.Row="1" Grid.ColumnSpan="2"
+                                        Text="{Binding StartDate, StringFormat='{0:dd MMM yyyy}'}"
+                                        FontFamily="PoppinsRegular"
+                                        FontSize="12"
+                                        TextColor="{StaticResource TextSecondary}" />
+                                </Grid>
+                            </Frame>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+
+                <!-- Open Incidents -->
+                <Label Text="OPEN INCIDENTS" Style="{StaticResource LabelSection}" />
+                <Label
+                    Text="No open incidents."
+                    Style="{StaticResource EmptyState}"
+                    IsVisible="{Binding OpenIncidents.Count, Converter={StaticResource IsZeroConverter}}" />
+                <CollectionView ItemsSource="{Binding OpenIncidents}">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="models:IncidentReport">
+                            <Frame Style="{StaticResource CardFrame}" Margin="0,0,0,6">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <VerticalStackLayout Grid.Column="0" Spacing="2">
+                                        <Label
+                                            Text="{Binding Description}"
+                                            FontFamily="PoppinsMedium"
+                                            FontSize="13"
+                                            TextColor="{StaticResource TextPrimary}"
+                                            MaxLines="2"
+                                            LineBreakMode="TailTruncation" />
+                                        <Label
+                                            Text="{Binding CreatedAt, StringFormat='{0:dd MMM yyyy}'}"
+                                            FontFamily="PoppinsRegular"
+                                            FontSize="12"
+                                            TextColor="{StaticResource TextSecondary}" />
+                                    </VerticalStackLayout>
+                                    <Frame
+                                        Grid.Column="1"
+                                        BackgroundColor="{Binding SeverityRaw, Converter={StaticResource EqToStyleConverter}, ConverterParameter='critical|#FEE2E2,high|#FEF3C7,medium|#DBEAFE,#DCFCE7'}"
+                                        BorderColor="Transparent"
+                                        CornerRadius="10" Padding="8,3" HasShadow="False"
+                                        VerticalOptions="Start">
+                                        <Label
+                                            Text="{Binding SeverityRaw}"
+                                            FontFamily="PoppinsSemiBold"
+                                            FontSize="11"
+                                            TextColor="{StaticResource TextPrimary}" />
+                                    </Frame>
+                                </Grid>
+                            </Frame>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+
+                <!-- Pending Payments -->
+                <Label Text="PENDING PAYMENT APPROVALS" Style="{StaticResource LabelSection}" />
+                <Label
+                    Text="No pending payment approvals."
+                    Style="{StaticResource EmptyState}"
+                    IsVisible="{Binding PendingPayments.Count, Converter={StaticResource IsZeroConverter}}" />
+                <CollectionView ItemsSource="{Binding PendingPayments}">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="models:PaymentApproval">
+                            <Frame Style="{StaticResource CardFrame}" Margin="0,0,0,6">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <VerticalStackLayout Grid.Column="0" Spacing="2">
+                                        <Label
+                                            Text="{Binding PeriodLabel}"
+                                            FontFamily="PoppinsSemiBold"
+                                            FontSize="13"
+                                            TextColor="{StaticResource TextPrimary}" />
+                                        <Label
+                                            Text="{Binding GrossPay, StringFormat='R {0:N2}'}"
+                                            FontFamily="PoppinsRegular"
+                                            FontSize="12"
+                                            TextColor="{StaticResource TextSecondary}" />
+                                    </VerticalStackLayout>
+                                    <Frame
+                                        Grid.Column="1"
+                                        BackgroundColor="#FEF3C7"
+                                        BorderColor="Transparent"
+                                        CornerRadius="10" Padding="8,3" HasShadow="False"
+                                        VerticalOptions="Center">
+                                        <Label Text="Pending" FontFamily="PoppinsSemiBold" FontSize="11" TextColor="{StaticResource TextPrimary}" />
+                                    </Frame>
+                                </Grid>
+                            </Frame>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+
+            </VerticalStackLayout>
+        </ScrollView>
+    </RefreshView>
+</ContentPage>

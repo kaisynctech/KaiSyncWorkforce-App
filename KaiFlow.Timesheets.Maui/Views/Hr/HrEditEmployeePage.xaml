@@ -1,0 +1,338 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Hr.HrEditEmployeePage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
+    x:DataType="vm:HrEditEmployeeViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="{Binding Title}">
+
+    <Grid RowDefinitions="Auto,*">
+
+        <!-- ─────────────────────────────────────────────────── -->
+        <!-- STICKY HEADER: name + active toggle + action buttons -->
+        <!-- ─────────────────────────────────────────────────── -->
+        <VerticalStackLayout Grid.Row="0" Spacing="0"
+                             BackgroundColor="{StaticResource SurfaceDark}">
+
+            <!-- Name row + Active toggle -->
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" Padding="16,16,16,10">
+                <VerticalStackLayout Grid.Column="0" Spacing="2" VerticalOptions="Center">
+                    <Label Text="{Binding Title}"
+                           FontFamily="PoppinsBold" FontSize="19"
+                           TextColor="{StaticResource TextPrimary}"
+                           LineBreakMode="TailTruncation" />
+                    <Label Text="Editing employee record"
+                           FontFamily="Poppins" FontSize="12"
+                           TextColor="{StaticResource TextSecondary}" />
+                </VerticalStackLayout>
+
+                <!-- Active / Inactive toggle -->
+                <Frame Grid.Column="1"
+                       BackgroundColor="{Binding IsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#DCFCE7|#FEE2E2'}"
+                       BorderColor="Transparent" CornerRadius="10" Padding="10,6" HasShadow="False"
+                       VerticalOptions="Center">
+                    <HorizontalStackLayout Spacing="8">
+                        <Label Text="{Binding IsActive, Converter={StaticResource BoolToStringConverter}, ConverterParameter='Active|Inactive'}"
+                               FontFamily="PoppinsSemiBold" FontSize="12"
+                               TextColor="{Binding IsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#166534|#991B1B'}"
+                               VerticalOptions="Center" />
+                        <Switch IsToggled="{Binding IsActive}"
+                                ThumbColor="{StaticResource Primary}"
+                                OnColor="{StaticResource Primary}"
+                                VerticalOptions="Center" />
+                    </HorizontalStackLayout>
+                </Frame>
+            </Grid>
+
+            <!-- Action buttons row -->
+            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8" Padding="16,0,16,14">
+                <Button Grid.Column="0"
+                        Text="Save Changes"
+                        Command="{Binding SaveCommand}"
+                        IsEnabled="{Binding IsNotBusy}"
+                        Style="{StaticResource PrimaryButton}"
+                        HeightRequest="44" FontSize="13" />
+                <Button Grid.Column="1"
+                        Text="Send Invite"
+                        Command="{Binding SendInviteCommand}"
+                        IsEnabled="{Binding IsNotBusy}"
+                        BackgroundColor="Transparent"
+                        BorderColor="{StaticResource Primary}"
+                        BorderWidth="1.5"
+                        TextColor="{StaticResource Primary}"
+                        CornerRadius="8"
+                        HeightRequest="44"
+                        FontFamily="PoppinsMedium"
+                        FontSize="13" />
+                <Button Grid.Column="2"
+                        Text="Archive"
+                        Command="{Binding ArchiveCommand}"
+                        IsEnabled="{Binding IsNotBusy}"
+                        Style="{StaticResource DangerButton}"
+                        HeightRequest="44" FontSize="13" />
+            </Grid>
+
+            <Label Text="{Binding ErrorMessage}" TextColor="{StaticResource Error}"
+                   Padding="16,0,16,10" FontFamily="Poppins" FontSize="13"
+                   IsVisible="{Binding ErrorMessage, Converter={StaticResource IsNotNullConverter}}" />
+
+            <BoxView HeightRequest="1" Color="{StaticResource Divider}" />
+        </VerticalStackLayout>
+
+        <!-- ─────────────────────────────────────────────────── -->
+        <!-- SCROLLABLE FORM                                    -->
+        <!-- ─────────────────────────────────────────────────── -->
+        <ScrollView Grid.Row="1">
+            <VerticalStackLayout Padding="16" Spacing="16">
+
+                <!-- Personal Info -->
+                <Frame Style="{StaticResource CardFrame}">
+                    <VerticalStackLayout Spacing="12">
+                        <Label Text="PERSONAL INFO" Style="{StaticResource LabelSection}" />
+                        <VerticalStackLayout Spacing="6">
+                            <Label Text="First name *" Style="{StaticResource LabelField}" />
+                            <Entry Placeholder="First name" Text="{Binding Name}" Style="{StaticResource DarkEntry}" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Spacing="6">
+                            <Label Text="Last name *" Style="{StaticResource LabelField}" />
+                            <Entry Placeholder="Last name" Text="{Binding Surname}" Style="{StaticResource DarkEntry}" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Spacing="6">
+                            <Label Text="Email" Style="{StaticResource LabelField}" />
+                            <Entry Placeholder="employee@email.com" Text="{Binding Email}" Keyboard="Email" Style="{StaticResource DarkEntry}" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Spacing="6">
+                            <Label Text="Phone" Style="{StaticResource LabelField}" />
+                            <Entry Placeholder="+27..." Text="{Binding Phone}" Keyboard="Telephone" Style="{StaticResource DarkEntry}" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Spacing="6">
+                            <Label Text="ID / Passport number  (used as sign-in code)" Style="{StaticResource LabelField}" />
+                            <Entry Placeholder="Government ID" Text="{Binding IdNumber}" Style="{StaticResource DarkEntry}" />
+                            <Label Text="The employee uses this + company code to sign in."
+                                   FontFamily="Poppins" FontSize="11"
+                                   TextColor="{StaticResource TextSecondary}" />
+                        </VerticalStackLayout>
+                    </VerticalStackLayout>
+                </Frame>
+
+                <!-- Banking -->
+                <Frame Style="{StaticResource CardFrame}">
+                    <VerticalStackLayout Spacing="12">
+                        <Label Text="BANKING DETAILS" Style="{StaticResource LabelSection}" />
+                        <Label Text="Used for payroll at this company."
+                               Style="{StaticResource Caption}"
+                               TextColor="{StaticResource TextSecondary}" />
+                        <VerticalStackLayout Spacing="6">
+                            <Label Text="Account number" Style="{StaticResource LabelField}" />
+                            <Entry Placeholder="Account number" Text="{Binding BankAccount}" Keyboard="Numeric" Style="{StaticResource DarkEntry}" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Spacing="6">
+                            <Label Text="Bank name" Style="{StaticResource LabelField}" />
+                            <Entry Placeholder="Bank name" Text="{Binding BankName}" Style="{StaticResource DarkEntry}" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Spacing="6">
+                            <Label Text="Branch code" Style="{StaticResource LabelField}" />
+                            <Entry Placeholder="Branch code" Text="{Binding BankBranchCode}" Keyboard="Numeric" Style="{StaticResource DarkEntry}" />
+                        </VerticalStackLayout>
+                    </VerticalStackLayout>
+                </Frame>
+
+                <!-- Employment -->
+                <Frame Style="{StaticResource CardFrame}">
+                    <VerticalStackLayout Spacing="12">
+                        <Label Text="EMPLOYMENT" Style="{StaticResource LabelSection}" />
+                        <VerticalStackLayout Spacing="6">
+                            <Label Text="Position / Role" Style="{StaticResource LabelField}" />
+                            <Entry Placeholder="e.g. Cleaner, Guard, Technician" Text="{Binding Position}" Style="{StaticResource DarkEntry}" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Spacing="6">
+                            <Label Text="Branch / Department" Style="{StaticResource LabelField}" />
+                            <Entry Placeholder="Branch or department" Text="{Binding Branch}" Style="{StaticResource DarkEntry}" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Spacing="6">
+                            <Label Text="Time Template" Style="{StaticResource LabelField}" />
+                            <Picker ItemsSource="{Binding ShiftTemplates}"
+                                    SelectedItem="{Binding SelectedShiftTemplate}"
+                                    ItemDisplayBinding="{Binding Name}"
+                                    Title="Select time template"
+                                    TitleColor="{StaticResource TextSecondary}"
+                                    TextColor="{StaticResource TextPrimary}"
+                                    BackgroundColor="Transparent" />
+                            <Frame IsVisible="{Binding HasShiftTemplateSummary}"
+                                   BackgroundColor="{StaticResource SurfaceDark}"
+                                   CornerRadius="6"
+                                   Padding="10,6"
+                                   HasShadow="False"
+                                   BorderColor="Transparent">
+                                <Label Text="{Binding ShiftTemplateSummary}"
+                                       Style="{StaticResource BodySmall}"
+                                       TextColor="{StaticResource Primary}" />
+                            </Frame>
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Spacing="6">
+                            <Label Text="Employment type" Style="{StaticResource LabelField}" />
+                            <Picker ItemsSource="{Binding EmploymentTypes}"
+                                    SelectedItem="{Binding EmploymentType}"
+                                    TextColor="{StaticResource TextPrimary}"
+                                    BackgroundColor="Transparent" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Spacing="6">
+                            <Label Text="Access level" Style="{StaticResource LabelField}" />
+                            <Picker ItemsSource="{Binding AccessLevels}"
+                                    SelectedItem="{Binding AccessLevel}"
+                                    TextColor="{StaticResource TextPrimary}"
+                                    BackgroundColor="Transparent" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Spacing="6">
+                            <Label Text="Reports to (manager)" Style="{StaticResource LabelField}" />
+                            <Picker ItemsSource="{Binding ManagerOptions}"
+                                    SelectedItem="{Binding SelectedManager}"
+                                    ItemDisplayBinding="{Binding DisplayName}"
+                                    Title="Select manager"
+                                    TitleColor="{StaticResource TextSecondary}"
+                                    TextColor="{StaticResource TextPrimary}"
+                                    BackgroundColor="Transparent" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Spacing="6">
+                            <Label Text="Employment date" Style="{StaticResource LabelField}" />
+                            <DatePicker Date="{Binding EmploymentDate}"
+                                        TextColor="{StaticResource TextPrimary}"
+                                        BackgroundColor="Transparent"
+                                        Format="dd MMM yyyy" />
+                        </VerticalStackLayout>
+                    </VerticalStackLayout>
+                </Frame>
+
+                <!-- Rates & Hours -->
+                <Frame Style="{StaticResource CardFrame}">
+                    <VerticalStackLayout Spacing="12">
+                        <Label Text="RATES &amp; HOURS" Style="{StaticResource LabelSection}" />
+                        <VerticalStackLayout Spacing="6">
+                            <Label Text="Monthly salary (R)" Style="{StaticResource LabelField}" />
+                            <Entry Placeholder="0.00" Text="{Binding MonthlySalary}" Keyboard="Numeric" Style="{StaticResource DarkEntry}" />
+                        </VerticalStackLayout>
+                        <Grid ColumnDefinitions="*,Auto" Margin="0,4">
+                            <Label Text="Pay full salary if joined mid-month" Style="{StaticResource LabelField}" VerticalOptions="Center" />
+                            <Switch Grid.Column="1" IsToggled="{Binding PayFullMonthlySalary}" />
+                        </Grid>
+                        <VerticalStackLayout Spacing="6" IsVisible="{Binding UsesAutomaticMonthlyPay}">
+                            <Label Text="Pay type" Style="{StaticResource LabelField}" />
+                            <Label Text="{Binding PayBasisDisplay}"
+                                   FontFamily="PoppinsMedium" FontSize="14"
+                                   TextColor="{StaticResource Primary}" />
+                            <Label Text="Based on monthly salary above. Toggle below to pay by hour or day instead."
+                                   Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                        </VerticalStackLayout>
+                        <Grid ColumnDefinitions="*,Auto" Margin="0,4">
+                            <Label Text="Pay by hour/day instead" Style="{StaticResource LabelField}" VerticalOptions="Center" />
+                            <Switch Grid.Column="1" IsToggled="{Binding UseCustomPayBasis}" />
+                        </Grid>
+                        <VerticalStackLayout Spacing="6" IsVisible="{Binding UseCustomPayBasis}">
+                            <Label Text="Pay basis" Style="{StaticResource LabelField}" />
+                            <Picker ItemsSource="{Binding PayBasisOptions}" SelectedItem="{Binding PayBasis}" Title="Select" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Spacing="6">
+                            <Label Text="PAYE rate % (optional)" Style="{StaticResource LabelField}" />
+                            <Entry Text="{Binding PayeRatePercentText}" Keyboard="Numeric" Placeholder="e.g. 25" Style="{StaticResource DarkEntry}" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Spacing="6">
+                            <Label Text="PAYE fixed amount (R, optional)" Style="{StaticResource LabelField}" />
+                            <Entry Text="{Binding PayeFixedAmountText}" Keyboard="Numeric" Placeholder="e.g. 1500" Style="{StaticResource DarkEntry}" />
+                        </VerticalStackLayout>
+                        <Grid ColumnDefinitions="*,Auto" Margin="0,4">
+                            <Label Text="Exempt from UIF" Style="{StaticResource LabelField}" VerticalOptions="Center" />
+                            <Switch Grid.Column="1" IsToggled="{Binding UifExempt}" />
+                        </Grid>
+                        <VerticalStackLayout Spacing="6">
+                            <Label Text="UIF rate % (optional)" Style="{StaticResource LabelField}" />
+                            <Entry Text="{Binding UifRatePercentText}" Keyboard="Numeric" Placeholder="e.g. 1" Style="{StaticResource DarkEntry}" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Spacing="6">
+                            <Label Text="UIF fixed amount (R, optional)" Style="{StaticResource LabelField}" />
+                            <Entry Text="{Binding UifFixedAmountText}" Keyboard="Numeric" Placeholder="e.g. 20" Style="{StaticResource DarkEntry}" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Spacing="6">
+                            <Label Text="Termination date (yyyy-MM-dd, optional)" Style="{StaticResource LabelField}" />
+                            <Entry Text="{Binding TerminationDateText}" Placeholder="2026-05-31" Style="{StaticResource DarkEntry}" />
+                        </VerticalStackLayout>
+                        <Label Text="TAX PROFILE" Style="{StaticResource LabelSection}" />
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="12" RowDefinitions="Auto,Auto,Auto" RowSpacing="8">
+                            <VerticalStackLayout Grid.Row="0" Grid.Column="0" Spacing="6">
+                                <Label Text="Tax number" Style="{StaticResource LabelField}" />
+                                <Entry Text="{Binding TaxNumber}" Style="{StaticResource DarkEntry}" />
+                            </VerticalStackLayout>
+                            <VerticalStackLayout Grid.Row="0" Grid.Column="1" Spacing="6">
+                                <Label Text="PAYE reference" Style="{StaticResource LabelField}" />
+                                <Entry Text="{Binding PayeReference}" Style="{StaticResource DarkEntry}" />
+                            </VerticalStackLayout>
+                            <VerticalStackLayout Grid.Row="1" Grid.Column="0" Spacing="6">
+                                <Label Text="Date of birth (yyyy-MM-dd)" Style="{StaticResource LabelField}" />
+                                <Entry Text="{Binding DateOfBirthText}" Placeholder="1990-01-15" Style="{StaticResource DarkEntry}" />
+                            </VerticalStackLayout>
+                            <VerticalStackLayout Grid.Row="1" Grid.Column="1" Spacing="6">
+                                <Label Text="Cost center" Style="{StaticResource LabelField}" />
+                                <Entry Text="{Binding CostCenter}" Style="{StaticResource DarkEntry}" />
+                            </VerticalStackLayout>
+                            <VerticalStackLayout Grid.Row="2" Grid.Column="0" Spacing="6">
+                                <Label Text="Tax directive number" Style="{StaticResource LabelField}" />
+                                <Entry Text="{Binding TaxDirectiveNumber}" Style="{StaticResource DarkEntry}" />
+                            </VerticalStackLayout>
+                            <VerticalStackLayout Grid.Row="2" Grid.Column="1" Spacing="6">
+                                <Label Text="Directive rate %" Style="{StaticResource LabelField}" />
+                                <Entry Text="{Binding TaxDirectiveRateText}" Keyboard="Numeric" Style="{StaticResource DarkEntry}" />
+                            </VerticalStackLayout>
+                        </Grid>
+                        <Label Text="MONTHLY DEDUCTIONS (R)" Style="{StaticResource LabelSection}" />
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="12" RowDefinitions="Auto,Auto" RowSpacing="8">
+                            <VerticalStackLayout Grid.Row="0" Grid.Column="0" Spacing="6">
+                                <Label Text="Medical aid" Style="{StaticResource LabelField}" />
+                                <Entry Text="{Binding MedicalAidDeduction}" Keyboard="Numeric" Style="{StaticResource DarkEntry}" />
+                            </VerticalStackLayout>
+                            <VerticalStackLayout Grid.Row="0" Grid.Column="1" Spacing="6">
+                                <Label Text="Pension" Style="{StaticResource LabelField}" />
+                                <Entry Text="{Binding PensionDeduction}" Keyboard="Numeric" Style="{StaticResource DarkEntry}" />
+                            </VerticalStackLayout>
+                            <VerticalStackLayout Grid.Row="1" Grid.Column="0" Spacing="6">
+                                <Label Text="Union" Style="{StaticResource LabelField}" />
+                                <Entry Text="{Binding UnionDeduction}" Keyboard="Numeric" Style="{StaticResource DarkEntry}" />
+                            </VerticalStackLayout>
+                        </Grid>
+                        <VerticalStackLayout Spacing="6">
+                            <Label Text="Work days per week" Style="{StaticResource LabelField}" />
+                            <Entry Placeholder="5" Text="{Binding WorkDaysWeekly}" Keyboard="Numeric" Style="{StaticResource DarkEntry}" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Spacing="6">
+                            <Label Text="Daily hours" Style="{StaticResource LabelField}" />
+                            <Entry Placeholder="8" Text="{Binding DailyHours}" Keyboard="Numeric" Style="{StaticResource DarkEntry}" />
+                        </VerticalStackLayout>
+                        <BoxView HeightRequest="1" Color="{StaticResource Divider}" Margin="0,4" />
+                        <Label Text="Auto-calculated from monthly salary" Style="{StaticResource Caption}"
+                               TextColor="{StaticResource TextSecondary}" />
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                            <VerticalStackLayout Grid.Column="0" Spacing="6">
+                                <Label Text="Daily rate (R)" Style="{StaticResource LabelField}" />
+                                <Entry Placeholder="0.00" Text="{Binding DailyRate}" Keyboard="Numeric"
+                                       Style="{StaticResource DarkEntry}" IsReadOnly="True"
+                                       TextColor="{StaticResource Primary}" />
+                            </VerticalStackLayout>
+                            <VerticalStackLayout Grid.Column="1" Spacing="6">
+                                <Label Text="Hourly rate (R)" Style="{StaticResource LabelField}" />
+                                <Entry Placeholder="0.00" Text="{Binding HourlyRate}" Keyboard="Numeric"
+                                       Style="{StaticResource DarkEntry}" IsReadOnly="True"
+                                       TextColor="{StaticResource Primary}" />
+                            </VerticalStackLayout>
+                        </Grid>
+                    </VerticalStackLayout>
+                </Frame>
+
+                <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}"
+                                   Color="{StaticResource Primary}" HorizontalOptions="Center"
+                                   Margin="0,8,0,24" />
+
+            </VerticalStackLayout>
+        </ScrollView>
+
+    </Grid>
+</ContentPage>

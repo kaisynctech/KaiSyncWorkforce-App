@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Hr.HrCreateJobPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:HrCreateJobViewModel"
+    x:Name="Self"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="New Job">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="16" Spacing="16">
+
+            <!-- Job Details -->
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="JOB DETAILS" Style="{StaticResource LabelSection}" />
+                    <VerticalStackLayout Spacing="6">
+                        <Label Text="Title *" Style="{StaticResource LabelField}" />
+                        <Entry Placeholder="Job title" Text="{Binding Title}" Style="{StaticResource DarkEntry}" />
+                    </VerticalStackLayout>
+                    <VerticalStackLayout Spacing="6">
+                        <Label Text="Description / Notes" Style="{StaticResource LabelField}" />
+                        <Editor Placeholder="Job description or notes"
+                                Text="{Binding Description}"
+                                PlaceholderColor="{StaticResource TextSecondary}"
+                                TextColor="{StaticResource TextPrimary}"
+                                BackgroundColor="Transparent"
+                                MinimumHeightRequest="80"
+                                AutoSize="TextChanges" />
+                    </VerticalStackLayout>
+                    <VerticalStackLayout Spacing="6">
+                        <Label Text="Priority" Style="{StaticResource LabelField}" />
+                        <Picker ItemsSource="{Binding Priorities}"
+                                SelectedItem="{Binding Priority}"
+                                TextColor="{StaticResource TextPrimary}"
+                                BackgroundColor="Transparent" />
+                    </VerticalStackLayout>
+                    <VerticalStackLayout Spacing="6">
+                        <Label Text="Estimated cost (R)" Style="{StaticResource LabelField}" />
+                        <Entry Placeholder="0.00"
+                               Text="{Binding EstimatedCost}"
+                               Keyboard="Numeric"
+                               Style="{StaticResource DarkEntry}" />
+                    </VerticalStackLayout>
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Schedule -->
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="SCHEDULE" Style="{StaticResource LabelSection}" />
+                    <VerticalStackLayout Spacing="6">
+                        <Label Text="Start date" Style="{StaticResource LabelField}" />
+                        <DatePicker Date="{Binding ScheduledStartDate}"
+                                    TextColor="{StaticResource TextPrimary}"
+                                    BackgroundColor="Transparent" Format="dd MMM yyyy" />
+                    </VerticalStackLayout>
+                    <VerticalStackLayout Spacing="6">
+                        <Label Text="Start time" Style="{StaticResource LabelField}" />
+                        <TimePicker Time="{Binding ScheduledStartTime}"
+                                    TextColor="{StaticResource TextPrimary}"
+                                    BackgroundColor="Transparent" />
+                    </VerticalStackLayout>
+                    <VerticalStackLayout Spacing="6">
+                        <Label Text="End date" Style="{StaticResource LabelField}" />
+                        <DatePicker Date="{Binding ScheduledEndDate}"
+                                    TextColor="{StaticResource TextPrimary}"
+                                    BackgroundColor="Transparent" Format="dd MMM yyyy" />
+                    </VerticalStackLayout>
+                    <VerticalStackLayout Spacing="6">
+                        <Label Text="End time" Style="{StaticResource LabelField}" />
+                        <TimePicker Time="{Binding ScheduledEndTime}"
+                                    TextColor="{StaticResource TextPrimary}"
+                                    BackgroundColor="Transparent" />
+                    </VerticalStackLayout>
+                </VerticalStackLayout>
+            </Frame>
+
+            <Frame Style="{StaticResource CardFrame}" IsVisible="{Binding HasLinkedProject}">
+                <VerticalStackLayout Spacing="6">
+                    <Label Text="LINKED PROJECT" Style="{StaticResource LabelSection}" />
+                    <Label Text="{Binding LinkedProject.ProjectCodeDisplay, StringFormat='Project {0}'}" Style="{StaticResource BodyMedium}" />
+                    <Label Text="{Binding LinkedProject.Title}" Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Client & Site -->
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="CLIENT &amp; SITE" Style="{StaticResource LabelSection}" />
+                    <Label Text="Client selected from Jobs &amp; Projects or the client record."
+                           FontSize="11" TextColor="{StaticResource TextSecondary}"
+                           IsVisible="{Binding ClientLocked}" />
+                    <Label Text="{Binding SelectedClient.Name, StringFormat='Client: {0}'}"
+                           Style="{StaticResource BodyMedium}" TextColor="{StaticResource Primary}"
+                           IsVisible="{Binding ClientLocked}" />
+                    <VerticalStackLayout Spacing="6" IsVisible="{Binding ClientLocked, Converter={StaticResource InverseBoolConverter}}">
+                        <Label Text="Client *" Style="{StaticResource LabelField}" />
+                        <Picker ItemsSource="{Binding Clients}"
+                                SelectedItem="{Binding SelectedClient}"
+                                ItemDisplayBinding="{Binding Name}"
+                                Title="Select client…"
+                                TextColor="{StaticResource TextPrimary}"
+                                BackgroundColor="Transparent" />
+                    </VerticalStackLayout>
+                    <VerticalStackLayout Spacing="6">
+                        <Label Text="Site" Style="{StaticResource LabelField}" />
+                        <Picker ItemsSource="{Binding Sites}"
+                                SelectedItem="{Binding SelectedSite}"
+                                ItemDisplayBinding="{Binding Name}"
+                                Title="Select site…"
+                                TextColor="{StaticResource TextPrimary}"
+                                BackgroundColor="Transparent" />
+                    </VerticalStackLayout>
+                </VerticalStackLayout>
+            </Frame>
+
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="10">
+                    <Label Text="CONTRACTOR (OPTIONAL)" Style="{StaticResource LabelSection}" />
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Picker ItemsSource="{Binding Contractors}" SelectedItem="{Binding SelectedContractor}"
+                                ItemDisplayBinding="{Binding Name}" Title="Select contractor…"
+                                TextColor="{StaticResource TextPrimary}" BackgroundColor="Transparent" />
+                        <Button Grid.Column="1" Text="+ New" Command="{Binding AddContractorCommand}" Style="{StaticResource TextButton}" FontSize="12" />
+                    </Grid>
+                    <Entry Placeholder="Contractor cost (R)" Text="{Binding ContractorCostText, Mode=TwoWay}"
+                           Keyboard="Numeric" Style="{StaticResource DarkEntry}" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Employees assignment -->
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="10">
+                    <Label Text="ASSIGN EMPLOYEES" Style="{StaticResource LabelSection}" />
+                    <Label Text="No employees available."
+                           Style="{StaticResource EmptyState}"
+                           IsVisible="{Binding SelectableEmployees.Count, Converter={StaticResource IsZeroConverter}}" />
+                    <CollectionView ItemsSource="{Binding SelectableEmployees}">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="vm:SelectableEmployee">
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" Padding="4,6">
+                                    <CheckBox Grid.Column="0"
+                                              IsChecked="{Binding IsSelected}"
+                                              Color="{StaticResource Primary}" />
+                                    <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
+                                        <Label Text="{Binding Employee.FullName}"
+                                               FontFamily="PoppinsSemiBold" FontSize="13"
+                                               TextColor="{StaticResource TextPrimary}" />
+                                        <Label Text="{Binding Employee.Position}"
+                                               Style="{StaticResource Caption}"
+                                               TextColor="{StaticResource TextSecondary}"
+                                               IsVisible="{Binding Employee.Position, Converter={StaticResource IsNotNullConverter}}" />
+                                    </VerticalStackLayout>
+                                </Grid>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </VerticalStackLayout>
+            </Frame>
+
+            <Label Text="{Binding ErrorMessage}" TextColor="{StaticResource Error}"
+                   IsVisible="{Binding ErrorMessage, Converter={StaticResource IsNotNullConverter}}" />
+
+            <Button Text="Create Job"
+                    Command="{Binding SaveCommand}"
+                    IsEnabled="{Binding IsNotBusy}"
+                    Style="{StaticResource PrimaryButton}" />
+
+            <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}"
+                               Color="{StaticResource Primary}" HorizontalOptions="Center" />
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

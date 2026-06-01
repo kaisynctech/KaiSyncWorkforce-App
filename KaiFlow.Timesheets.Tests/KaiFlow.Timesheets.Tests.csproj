@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <RootNamespace>KaiFlow.Timesheets.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\KaiFlow.Timesheets.Maui\Models\PaTask.cs" Link="Models\PaTask.cs" />
+    <Compile Include="..\KaiFlow.Timesheets.Maui\Models\MyPaCalendarEntry.cs" Link="Models\MyPaCalendarEntry.cs" />
+    <Compile Include="..\KaiFlow.Timesheets.Maui\Helpers\JobPhotoUrlParser.cs" Link="Helpers\JobPhotoUrlParser.cs" />
+    <Compile Include="..\KaiFlow.Timesheets.Maui\Helpers\ChecklistPersistence.cs" Link="Helpers\ChecklistPersistence.cs" />
+    <Compile Include="..\KaiFlow.Timesheets.Maui\Helpers\ProjectQuotationDisplay.cs" Link="Helpers\ProjectQuotationDisplay.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Supabase" Version="1.1.1" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+</Project>

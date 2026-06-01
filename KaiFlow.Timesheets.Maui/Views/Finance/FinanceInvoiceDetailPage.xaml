@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Finance.FinanceInvoiceDetailPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Finance"
+    x:DataType="vm:FinanceInvoiceDetailViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="Invoice">
+
+    <ScrollView>
+        <VerticalStackLayout Spacing="14" Padding="16" MaximumWidthRequest="760" HorizontalOptions="Center">
+
+            <Label Text="{Binding InvoiceNumber, StringFormat='Invoice {0}'}" FontSize="20" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" />
+            <Label Text="{Binding ErrorMessage}" TextColor="#DC2626" IsVisible="{Binding ErrorMessage, Converter={StaticResource IsNotNullConverter}}" />
+
+            <!-- Header -->
+            <Border Padding="14" StrokeThickness="0" BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 16">
+                <VerticalStackLayout Spacing="10">
+                    <Label Text="Client" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+                    <Picker ItemsSource="{Binding Clients}" SelectedItem="{Binding SelectedClient}" ItemDisplayBinding="{Binding Name}" Title="Select client" />
+
+                    <Label Text="Project (optional)" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+                    <Picker ItemsSource="{Binding Projects}" SelectedItem="{Binding SelectedProject}" ItemDisplayBinding="{Binding Title}" Title="Link project" />
+
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                        <VerticalStackLayout Grid.Column="0" Spacing="2">
+                            <Label Text="Issue date" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+                            <DatePicker Date="{Binding IssueDate}" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Grid.Column="1" Spacing="2">
+                            <Label Text="Due date" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+                            <DatePicker Date="{Binding DueDate}" />
+                        </VerticalStackLayout>
+                    </Grid>
+
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                        <Label Grid.Column="0" Text="Prices include VAT" VerticalOptions="Center" TextColor="{StaticResource TextPrimary}" />
+                        <Switch Grid.Column="1" IsToggled="{Binding IsVatInclusive}" />
+                    </Grid>
+                </VerticalStackLayout>
+            </Border>
+
+            <!-- Line items -->
+            <Border Padding="14" StrokeThickness="0" BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 16">
+                <VerticalStackLayout Spacing="10">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Text="Line items" FontSize="15" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" />
+                        <Button Grid.Column="1" Text="+ Add line" Command="{Binding AddLineCommand}" Style="{StaticResource TextButton}" FontSize="13" />
+                    </Grid>
+
+                    <CollectionView ItemsSource="{Binding Lines}">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="vm:InvoiceLineEditor">
+                                <Border Margin="0,0,0,8" Padding="10" StrokeThickness="1" Stroke="{StaticResource Divider}" StrokeShape="RoundRectangle 12">
+                                    <VerticalStackLayout Spacing="6">
+                                        <Entry Text="{Binding Description}" Placeholder="Description" TextColor="{StaticResource TextPrimary}" />
+                                        <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
+                                            <VerticalStackLayout Grid.Column="0" Spacing="0">
+                                                <Label Text="Qty" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                                                <Entry Text="{Binding Quantity}" Keyboard="Numeric" TextColor="{StaticResource TextPrimary}" />
+                                            </VerticalStackLayout>
+                                            <VerticalStackLayout Grid.Column="1" Spacing="0">
+                                                <Label Text="Unit price" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                                                <Entry Text="{Binding UnitPrice}" Keyboard="Numeric" TextColor="{StaticResource TextPrimary}" />
+                                            </VerticalStackLayout>
+                                            <VerticalStackLayout Grid.Column="2" Spacing="0">
+                                                <Label Text="VAT %" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                                                <Entry Text="{Binding VatRate}" Keyboard="Numeric" TextColor="{StaticResource TextPrimary}" />
+                                            </VerticalStackLayout>
+                                        </Grid>
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <Label Grid.Column="0" Text="{Binding TotalDisplay}" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" VerticalOptions="Center" />
+                                            <Button Grid.Column="1" Text="Remove" FontSize="12" TextColor="#DC2626" BackgroundColor="Transparent"
+                                                    Command="{Binding Source={RelativeSource AncestorType={x:Type ContentPage}}, Path=BindingContext.RemoveLineCommand}"
+                                                    CommandParameter="{Binding .}" />
+                                        </Grid>
+                                    </VerticalStackLayout>
+                                </Border>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </VerticalStackLayout>
+            </Border>
+
+            <!-- Totals -->
+            <Border Padding="14" StrokeThickness="0" BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 16">
+                <VerticalStackLayout Spacing="6">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Text="Discount" TextColor="{StaticResource TextSecondary}" VerticalOptions="Center" />
+                        <Entry Grid.Column="1" Text="{Binding DiscountAmount}" Keyboard="Numeric" WidthRequest="120" HorizontalTextAlignment="End" TextColor="{StaticResource TextPrimary}" />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Text="Subtotal" TextColor="{StaticResource TextSecondary}" />
+                        <Label Grid.Column="1" Text="{Binding Subtotal, StringFormat='R{0:N2}'}" TextColor="{StaticResource TextPrimary}" />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Text="VAT" TextColor="{StaticResource TextSecondary}" />
+                        <Label Grid.Column="1" Text="{Binding VatAmount, StringFormat='R{0:N2}'}" TextColor="{StaticResource TextPrimary}" />
+                    </Grid>
+                    <BoxView HeightRequest="1" Color="{StaticResource Divider}" />
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Text="Total" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" />
+                        <Label Grid.Column="1" Text="{Binding TotalAmount, StringFormat='R{0:N2}'}" FontAttributes="Bold" FontSize="16" TextColor="{StaticResource TextPrimary}" />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Text="Paid" TextColor="{StaticResource TextSecondary}" />
+                        <Label Grid.Column="1" Text="{Binding AmountPaid, StringFormat='R{0:N2}'}" TextColor="#16A34A" />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Text="Balance due" TextColor="{StaticResource TextSecondary}" />
+                        <Label Grid.Column="1" Text="{Binding BalanceDue, StringFormat='R{0:N2}'}" FontAttributes="Bold" TextColor="#2563EB" />
+                    </Grid>
+                </VerticalStackLayout>
+            </Border>
+
+            <!-- Record payment (existing invoices) -->
+            <Border Padding="14" StrokeThickness="0" BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 16" IsVisible="{Binding IsExisting}">
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="Record payment" FontSize="14" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" />
+                    <Grid ColumnDefinitions="*,*,Auto" ColumnSpacing="8">
+                        <Entry Grid.Column="0" Text="{Binding PaymentAmount}" Keyboard="Numeric" Placeholder="Amount" TextColor="{StaticResource TextPrimary}" />
+                        <Entry Grid.Column="1" Text="{Binding PaymentMethod}" Placeholder="Method" TextColor="{StaticResource TextPrimary}" />
+                        <Button Grid.Column="2" Text="Add" Command="{Binding RecordPaymentCommand}" Style="{StaticResource PrimaryButton}" />
+                    </Grid>
+                </VerticalStackLayout>
+            </Border>
+
+            <Editor Text="{Binding Notes}" Placeholder="Notes…" HeightRequest="70" BackgroundColor="{StaticResource SurfaceCard}" TextColor="{StaticResource TextPrimary}" />
+
+            <!-- Actions -->
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                <Button Grid.Column="0" Text="Save" Command="{Binding SaveCommand}" Style="{StaticResource PrimaryButton}" />
+                <Button Grid.Column="1" Text="Save &amp; Mark Sent" Command="{Binding MarkSentCommand}" Style="{StaticResource PrimaryButton}" />
+            </Grid>
+            <Button Text="Delete invoice" Command="{Binding DeleteCommand}" Style="{StaticResource TextButton}" TextColor="#DC2626" IsVisible="{Binding IsExisting}" />
+
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

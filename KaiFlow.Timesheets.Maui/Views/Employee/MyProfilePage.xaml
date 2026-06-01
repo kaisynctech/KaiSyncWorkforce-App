@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Employee.MyProfilePage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Employees"
+    x:DataType="vm:MyProfileViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="My Profile">
+
+    <Grid RowDefinitions="*,Auto">
+        <ScrollView Grid.Row="0">
+            <VerticalStackLayout Padding="16" Spacing="12">
+
+                <!-- Personal -->
+                <Label Text="Personal Details" Style="{StaticResource LabelSection}" />
+                <Frame Style="{StaticResource CardFrame}" Padding="16">
+                    <VerticalStackLayout Spacing="12">
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                            <VerticalStackLayout Grid.Column="0" Spacing="4">
+                                <Label Text="First name" Style="{StaticResource LabelField}" />
+                                <Entry Text="{Binding FirstName}" Style="{StaticResource DarkEntry}" />
+                            </VerticalStackLayout>
+                            <VerticalStackLayout Grid.Column="1" Spacing="4">
+                                <Label Text="Last name" Style="{StaticResource LabelField}" />
+                                <Entry Text="{Binding LastName}" Style="{StaticResource DarkEntry}" />
+                            </VerticalStackLayout>
+                        </Grid>
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Email" Style="{StaticResource LabelField}" />
+                            <Entry Text="{Binding Email}" Keyboard="Email"
+                                   IsEnabled="False" Opacity="0.6"
+                                   Style="{StaticResource DarkEntry}" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Phone" Style="{StaticResource LabelField}" />
+                            <Entry Text="{Binding Phone}" Keyboard="Telephone"
+                                   Style="{StaticResource DarkEntry}" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="ID / Passport number" Style="{StaticResource LabelField}" />
+                            <Entry Text="{Binding IdNumber}" Style="{StaticResource DarkEntry}" />
+                        </VerticalStackLayout>
+                    </VerticalStackLayout>
+                </Frame>
+
+                <!-- Employment (read-only) -->
+                <Label Text="Employment" Style="{StaticResource LabelSection}" />
+                <Frame Style="{StaticResource CardFrame}" Padding="16">
+                    <VerticalStackLayout Spacing="10">
+                        <Grid ColumnDefinitions="*,*">
+                            <VerticalStackLayout Grid.Column="0" Spacing="2">
+                                <Label Text="Position" Style="{StaticResource Caption}"
+                                       TextColor="{StaticResource TextSecondary}" />
+                                <Label Text="{Binding Position}" Style="{StaticResource BodyMedium}"
+                                       TextColor="{StaticResource TextPrimary}" />
+                            </VerticalStackLayout>
+                            <VerticalStackLayout Grid.Column="1" Spacing="2">
+                                <Label Text="Type" Style="{StaticResource Caption}"
+                                       TextColor="{StaticResource TextSecondary}" />
+                                <Label Text="{Binding EmploymentType}" Style="{StaticResource BodyMedium}"
+                                       TextColor="{StaticResource TextPrimary}" />
+                            </VerticalStackLayout>
+                        </Grid>
+                    </VerticalStackLayout>
+                </Frame>
+
+                <!-- Bank details -->
+                <Label Text="{Binding BankingScopeLabel}" Style="{StaticResource Caption}"
+                       TextColor="{StaticResource TextSecondary}" />
+                <Label Text="Banking Details" Style="{StaticResource LabelSection}" />
+                <Frame Style="{StaticResource CardFrame}" Padding="16">
+                    <VerticalStackLayout Spacing="12">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Account number" Style="{StaticResource LabelField}" />
+                            <Entry Text="{Binding BankAccount}" Keyboard="Numeric"
+                                   Style="{StaticResource DarkEntry}" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Bank name" Style="{StaticResource LabelField}" />
+                            <Entry Text="{Binding BankName}" Style="{StaticResource DarkEntry}" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="Branch code" Style="{StaticResource LabelField}" />
+                            <Entry Text="{Binding BankBranchCode}" Keyboard="Numeric"
+                                   Style="{StaticResource DarkEntry}" />
+                        </VerticalStackLayout>
+                    </VerticalStackLayout>
+                </Frame>
+
+                <Label Text="{Binding ErrorMessage}" TextColor="{StaticResource Error}"
+                       IsVisible="{Binding ErrorMessage, Converter={StaticResource IsNotNullConverter}}" />
+
+                <BoxView HeightRequest="80" Color="Transparent" />
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <!-- Save button -->
+        <Frame Grid.Row="1" BackgroundColor="{StaticResource SurfaceDark}"
+               BorderColor="{StaticResource Divider}" CornerRadius="0" Padding="16,12" HasShadow="False">
+            <Button Text="Save Changes"
+                    Command="{Binding SaveCommand}"
+                    IsEnabled="{Binding IsNotBusy}"
+                    Style="{StaticResource PrimaryButton}" />
+        </Frame>
+    </Grid>
+</ContentPage>

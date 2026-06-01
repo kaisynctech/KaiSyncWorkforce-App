@@ -1,0 +1,5 @@
+# KaiSync Workforce marketing site
+User-agent: *
+Allow: /
+
+Sitemap: https://kaisyncworkforce.vercel.app/sitemap.xml

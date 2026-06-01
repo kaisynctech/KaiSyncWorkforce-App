@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Hr.HrContractorDetailsPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
+    x:DataType="vm:HrContractorDetailsViewModel"
+    x:Name="Self"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="">
+
+    <Grid RowDefinitions="Auto,*">
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Padding="16,12,16,4" ColumnSpacing="12">
+            <Label Text="{Binding Title}" Style="{StaticResource HeadlineMedium}" VerticalOptions="Center" />
+            <Button Grid.Column="1" Text="Save" Command="{Binding SaveCommand}"
+                    BackgroundColor="{StaticResource Primary}" TextColor="White"
+                    FontFamily="PoppinsSemiBold" FontSize="16"
+                    CornerRadius="8" Padding="20,0" HeightRequest="44" MinimumWidthRequest="96" />
+        </Grid>
+
+        <ScrollView Grid.Row="1">
+            <VerticalStackLayout Padding="16,0,16,24" Spacing="16"
+                                 IsVisible="{Binding Contractor, Converter={StaticResource IsNotNullConverter}}">
+
+                <Frame Style="{StaticResource CardFrame}">
+                    <VerticalStackLayout Spacing="12">
+                        <Label Text="COMPANY DETAILS" Style="{StaticResource LabelSection}" />
+                        <Entry Placeholder="Company / trading name *" Text="{Binding Contractor.Name, Mode=TwoWay}" Style="{StaticResource DarkEntry}" />
+                        <Picker Title="Partner type" ItemsSource="{Binding PartnerKindLabels}"
+                                SelectedItem="{Binding SelectedPartnerKindLabel, Mode=TwoWay}"
+                                TitleColor="{StaticResource TextSecondary}" TextColor="{StaticResource TextPrimary}" />
+                        <Entry Placeholder="Registration number" Text="{Binding Contractor.RegistrationNumber, Mode=TwoWay}" Style="{StaticResource DarkEntry}" />
+                        <Grid ColumnDefinitions="*,Auto">
+                            <Label Text="Active" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                            <Switch Grid.Column="1" IsToggled="{Binding Contractor.IsActive}" OnColor="{StaticResource Primary}" />
+                        </Grid>
+                    </VerticalStackLayout>
+                </Frame>
+
+                <Frame Style="{StaticResource CardFrame}" IsVisible="{Binding ShowPortalCodeSection}">
+                    <VerticalStackLayout Spacing="8">
+                        <Label Text="CONTRACTOR PORTAL CODE" Style="{StaticResource LabelSection}" />
+                        <Label Text="Share with the subcontractor team — one code for sign-in, site time, photos, and messages."
+                               FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                        <Entry Placeholder="Auto-generated" Text="{Binding Contractor.ContractorCode, Mode=TwoWay}" Style="{StaticResource DarkEntry}" />
+                        <Button Text="Generate code" Command="{Binding GenerateContractorCodeCommand}" Style="{StaticResource SecondaryButton}" FontSize="12" />
+                    </VerticalStackLayout>
+                </Frame>
+
+                <Frame Style="{StaticResource CardFrame}">
+                    <VerticalStackLayout Spacing="12">
+                        <Label Text="CONTACT" Style="{StaticResource LabelSection}" />
+                        <Entry Placeholder="Contact person" Text="{Binding Contractor.ContactPerson, Mode=TwoWay}" Style="{StaticResource DarkEntry}" />
+                        <Entry Placeholder="Phone" Text="{Binding Contractor.Phone, Mode=TwoWay}" Keyboard="Telephone" Style="{StaticResource DarkEntry}" />
+                        <Entry Placeholder="Email" Text="{Binding Contractor.Email, Mode=TwoWay}" Keyboard="Email" Style="{StaticResource DarkEntry}" />
+                        <Entry Placeholder="Address" Text="{Binding Contractor.Address, Mode=TwoWay}" Style="{StaticResource DarkEntry}" />
+                    </VerticalStackLayout>
+                </Frame>
+
+                <Frame Style="{StaticResource CardFrame}">
+                    <VerticalStackLayout Spacing="12">
+                        <Label Text="BANKING &amp; NOTES" Style="{StaticResource LabelSection}" />
+                        <Entry Placeholder="Bank name" Text="{Binding Contractor.BankName, Mode=TwoWay}" Style="{StaticResource DarkEntry}" />
+                        <Entry Placeholder="Account number" Text="{Binding Contractor.BankAccount, Mode=TwoWay}" Style="{StaticResource DarkEntry}" />
+                        <Entry Placeholder="Branch code" Text="{Binding Contractor.BankBranchCode, Mode=TwoWay}" Style="{StaticResource DarkEntry}" />
+                        <Editor Placeholder="Notes" Text="{Binding Contractor.Notes, Mode=TwoWay}"
+                                AutoSize="TextChanges" MinimumHeightRequest="72" TextColor="{StaticResource TextPrimary}" />
+                    </VerticalStackLayout>
+                </Frame>
+
+                <VerticalStackLayout Spacing="8" IsVisible="{Binding ShowMembersSection}">
+                    <Grid ColumnDefinitions="*,Auto,Auto">
+                        <Label Text="TEAM MEMBERS" Style="{StaticResource LabelSection}" VerticalOptions="Center" />
+                        <Button Grid.Column="1" Text="Invite" Command="{Binding InviteMemberCommand}" Style="{StaticResource TextButton}" Margin="0,0,8,0" />
+                        <Button Grid.Column="2" Text="+ Add" Command="{Binding AddMemberCommand}" Style="{StaticResource OutlinedButton}" HeightRequest="36" FontSize="12" />
+                    </Grid>
+                    <Frame Style="{StaticResource DataTableFrame}">
+                        <Grid ColumnDefinitions="*,120,80" Padding="12,10" BackgroundColor="{StaticResource SurfaceElevated}">
+                            <Label Text="Employee" Style="{StaticResource DataTableHeaderLabel}" />
+                            <Label Grid.Column="1" Text="Role" Style="{StaticResource DataTableHeaderLabel}" />
+                            <Label Grid.Column="2" Text="Primary" Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="End" />
+                        </Grid>
+                    </Frame>
+                    <CollectionView ItemsSource="{Binding Members}">
+                        <CollectionView.EmptyView>
+                            <Label Text="No members linked." Style="{StaticResource EmptyState}" />
+                        </CollectionView.EmptyView>
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ContractorMemberDisplay">
+                                <VerticalStackLayout Spacing="0">
+                                    <Grid ColumnDefinitions="*,120,80" Padding="12,10" BackgroundColor="{StaticResource SurfaceCard}">
+                                        <Label Text="{Binding EmployeeName}" Style="{StaticResource DataTableCellLabel}" />
+                                        <Label Grid.Column="1" Text="{Binding Link.Role}" Style="{StaticResource DataTableCellSecondary}" />
+                                        <Label Grid.Column="2" Text="{Binding Link.IsPrimary, Converter={StaticResource BoolToStringConverter}, ConverterParameter='Yes|—'}"
+                                               Style="{StaticResource DataTableCellSecondary}" HorizontalTextAlignment="End" />
+                                    </Grid>
+                                    <BoxView Style="{StaticResource DataTableRowDivider}" />
+                                </VerticalStackLayout>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </VerticalStackLayout>
+
+                <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}"
+                                   Color="{StaticResource Primary}" HorizontalOptions="Center" />
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
+</ContentPage>

@@ -1,0 +1,656 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView
+    x:Class="KaiFlow.Timesheets.Views.Shared.MyPaSectionView"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Employees"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:MyPaSectionViewModel"
+    x:Name="Self">
+
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,*" BackgroundColor="{StaticResource BackgroundDark}">
+
+        <!-- ══════════════ HEADER ══════════════ -->
+        <Grid Grid.Row="0" Padding="16,14,16,6" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <VerticalStackLayout Spacing="2">
+                <Label Text="{Binding Title}" Style="{StaticResource HeadlineMedium}" />
+                <Label Text="{Binding Subtitle}" Style="{StaticResource BodySmall}" />
+                <Label Text="{Binding SyncMessage}" FontSize="12" TextColor="{StaticResource Primary}"
+                       IsVisible="{Binding SyncMessage, Converter={StaticResource IsNotNullConverter}}" />
+                <Label Text="{Binding ErrorMessage}" FontSize="12" TextColor="{StaticResource Error}"
+                       IsVisible="{Binding ErrorMessage, Converter={StaticResource IsNotNullConverter}}" />
+            </VerticalStackLayout>
+
+            <HorizontalStackLayout Grid.Column="1" Spacing="8" VerticalOptions="Start">
+                <Border WidthRequest="40" HeightRequest="40" StrokeShape="RoundRectangle 20"
+                        BackgroundColor="{StaticResource SurfaceElevated}" Stroke="{StaticResource Divider}" StrokeThickness="1">
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding QuickNoteVoiceCommand}" />
+                    </Border.GestureRecognizers>
+                    <Label Text="&#127908;" FontSize="16" HorizontalOptions="Center" VerticalOptions="Center" />
+                </Border>
+                <Border WidthRequest="40" HeightRequest="40" StrokeShape="RoundRectangle 20"
+                        BackgroundColor="{StaticResource Primary}">
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding QuickAddCommand}" />
+                    </Border.GestureRecognizers>
+                    <Label Text="+" FontSize="24" FontFamily="PoppinsSemiBold" TextColor="White"
+                           HorizontalOptions="Center" VerticalOptions="Center" />
+                </Border>
+            </HorizontalStackLayout>
+        </Grid>
+
+        <!-- ══════════════ KPI ROW ══════════════ -->
+        <ScrollView Grid.Row="1" Orientation="Horizontal" Margin="0,4,0,0" Padding="16,0" HorizontalScrollBarVisibility="Never">
+            <HorizontalStackLayout Spacing="10">
+                <Frame Style="{StaticResource KpiCard}" WidthRequest="116">
+                    <VerticalStackLayout Spacing="4">
+                        <BoxView WidthRequest="8" HeightRequest="8" CornerRadius="4" Color="{StaticResource Primary}" HorizontalOptions="Start" />
+                        <Label Text="{Binding OpenCount}" Style="{StaticResource KpiNumber}" TextColor="{StaticResource TextPrimary}" />
+                        <Label Text="Open tasks" Style="{StaticResource KpiLabel}" />
+                    </VerticalStackLayout>
+                </Frame>
+                <Frame Style="{StaticResource KpiCard}" WidthRequest="116">
+                    <VerticalStackLayout Spacing="4">
+                        <BoxView WidthRequest="8" HeightRequest="8" CornerRadius="4" Color="#3B82F6" HorizontalOptions="Start" />
+                        <Label Text="{Binding DueTodayCount}" Style="{StaticResource KpiNumber}" TextColor="#3B82F6" />
+                        <Label Text="Due today" Style="{StaticResource KpiLabel}" />
+                    </VerticalStackLayout>
+                </Frame>
+                <Frame Style="{StaticResource KpiCard}" WidthRequest="116">
+                    <VerticalStackLayout Spacing="4">
+                        <BoxView WidthRequest="8" HeightRequest="8" CornerRadius="4" Color="#EF4444" HorizontalOptions="Start" />
+                        <Label Text="{Binding OverdueCount}" Style="{StaticResource KpiNumber}" TextColor="#EF4444" />
+                        <Label Text="Overdue" Style="{StaticResource KpiLabel}" />
+                    </VerticalStackLayout>
+                </Frame>
+                <Frame Style="{StaticResource KpiCard}" WidthRequest="116">
+                    <VerticalStackLayout Spacing="4">
+                        <BoxView WidthRequest="8" HeightRequest="8" CornerRadius="4" Color="#F97316" HorizontalOptions="Start" />
+                        <Label Text="{Binding MeetingsTodayCount}" Style="{StaticResource KpiNumber}" TextColor="#F97316" />
+                        <Label Text="Meetings" Style="{StaticResource KpiLabel}" />
+                    </VerticalStackLayout>
+                </Frame>
+                <Frame Style="{StaticResource KpiCard}" WidthRequest="116">
+                    <VerticalStackLayout Spacing="4">
+                        <BoxView WidthRequest="8" HeightRequest="8" CornerRadius="4" Color="#22C55E" HorizontalOptions="Start" />
+                        <Label Text="{Binding CompletedTodayCount}" Style="{StaticResource KpiNumber}" TextColor="#22C55E" />
+                        <Label Text="Done today" Style="{StaticResource KpiLabel}" />
+                    </VerticalStackLayout>
+                </Frame>
+            </HorizontalStackLayout>
+        </ScrollView>
+
+        <!-- ══════════════ SEGMENTED TABS ══════════════ -->
+        <Border Grid.Row="2" Margin="16,12,16,4" Padding="4" StrokeThickness="0"
+                StrokeShape="RoundRectangle 12" BackgroundColor="{StaticResource SurfaceElevated}">
+            <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="2">
+                <Button Text="Today" Command="{Binding SetTabCommand}" CommandParameter="today" FontSize="12" FontFamily="PoppinsSemiBold"
+                        HeightRequest="36" CornerRadius="9" Padding="0"
+                        BackgroundColor="{Binding ActiveTab, Converter={StaticResource EqToStyleConverter}, ConverterParameter='today|#3B82F6,#00000000'}"
+                        TextColor="{Binding ActiveTab, Converter={StaticResource EqToStyleConverter}, ConverterParameter='today|#FFFFFF,#6B7280'}" />
+                <Button Grid.Column="1" Text="Tasks" Command="{Binding SetTabCommand}" CommandParameter="tasks" FontSize="12" FontFamily="PoppinsSemiBold"
+                        HeightRequest="36" CornerRadius="9" Padding="0"
+                        BackgroundColor="{Binding ActiveTab, Converter={StaticResource EqToStyleConverter}, ConverterParameter='tasks|#3B82F6,#00000000'}"
+                        TextColor="{Binding ActiveTab, Converter={StaticResource EqToStyleConverter}, ConverterParameter='tasks|#FFFFFF,#6B7280'}" />
+                <Button Grid.Column="2" Text="Calendar" Command="{Binding SetTabCommand}" CommandParameter="calendar" FontSize="12" FontFamily="PoppinsSemiBold"
+                        HeightRequest="36" CornerRadius="9" Padding="0"
+                        BackgroundColor="{Binding ActiveTab, Converter={StaticResource EqToStyleConverter}, ConverterParameter='calendar|#3B82F6,#00000000'}"
+                        TextColor="{Binding ActiveTab, Converter={StaticResource EqToStyleConverter}, ConverterParameter='calendar|#FFFFFF,#6B7280'}" />
+                <Button Grid.Column="3" Text="Search" Command="{Binding SetTabCommand}" CommandParameter="search" FontSize="12" FontFamily="PoppinsSemiBold"
+                        HeightRequest="36" CornerRadius="9" Padding="0"
+                        BackgroundColor="{Binding ActiveTab, Converter={StaticResource EqToStyleConverter}, ConverterParameter='search|#3B82F6,#00000000'}"
+                        TextColor="{Binding ActiveTab, Converter={StaticResource EqToStyleConverter}, ConverterParameter='search|#FFFFFF,#6B7280'}" />
+            </Grid>
+        </Border>
+
+        <!-- ══════════════ TASK FILTER BAR ══════════════ -->
+        <Grid Grid.Row="3" ColumnDefinitions="*,Auto" Margin="16,4,16,8" IsVisible="{Binding ShowTasks}">
+            <ScrollView Orientation="Horizontal" Grid.Column="0" HorizontalScrollBarVisibility="Never">
+                <HorizontalStackLayout Spacing="6">
+                    <Button Text="All" Command="{Binding SetFilterCommand}" CommandParameter="all" FontSize="11" HeightRequest="32" CornerRadius="16" Padding="14,0"
+                            BackgroundColor="{Binding FilterStatus, Converter={StaticResource EqToStyleConverter}, ConverterParameter='all|#3B82F6,#FFFFFF'}"
+                            TextColor="{Binding FilterStatus, Converter={StaticResource EqToStyleConverter}, ConverterParameter='all|#FFFFFF,#6B7280'}" />
+                    <Button Text="To do" Command="{Binding SetFilterCommand}" CommandParameter="todo" FontSize="11" HeightRequest="32" CornerRadius="16" Padding="14,0"
+                            BackgroundColor="{Binding FilterStatus, Converter={StaticResource EqToStyleConverter}, ConverterParameter='todo|#3B82F6,#FFFFFF'}"
+                            TextColor="{Binding FilterStatus, Converter={StaticResource EqToStyleConverter}, ConverterParameter='todo|#FFFFFF,#6B7280'}" />
+                    <Button Text="In progress" Command="{Binding SetFilterCommand}" CommandParameter="in_progress" FontSize="11" HeightRequest="32" CornerRadius="16" Padding="14,0"
+                            BackgroundColor="{Binding FilterStatus, Converter={StaticResource EqToStyleConverter}, ConverterParameter='in_progress|#3B82F6,#FFFFFF'}"
+                            TextColor="{Binding FilterStatus, Converter={StaticResource EqToStyleConverter}, ConverterParameter='in_progress|#FFFFFF,#6B7280'}" />
+                    <Button Text="Overdue" Command="{Binding SetFilterCommand}" CommandParameter="overdue" FontSize="11" HeightRequest="32" CornerRadius="16" Padding="14,0"
+                            BackgroundColor="{Binding FilterStatus, Converter={StaticResource EqToStyleConverter}, ConverterParameter='overdue|#3B82F6,#FFFFFF'}"
+                            TextColor="{Binding FilterStatus, Converter={StaticResource EqToStyleConverter}, ConverterParameter='overdue|#FFFFFF,#6B7280'}" />
+                    <Button Text="Done" Command="{Binding SetFilterCommand}" CommandParameter="done" FontSize="11" HeightRequest="32" CornerRadius="16" Padding="14,0"
+                            BackgroundColor="{Binding FilterStatus, Converter={StaticResource EqToStyleConverter}, ConverterParameter='done|#3B82F6,#FFFFFF'}"
+                            TextColor="{Binding FilterStatus, Converter={StaticResource EqToStyleConverter}, ConverterParameter='done|#FFFFFF,#6B7280'}" />
+                </HorizontalStackLayout>
+            </ScrollView>
+            <Button Grid.Column="1" Text="+ New" Command="{Binding NewTaskCommand}" Style="{StaticResource PrimaryButton}"
+                    FontSize="12" HeightRequest="36" Padding="14,0" Margin="8,0,0,0" />
+        </Grid>
+
+        <!-- ══════════════ TODAY ══════════════ -->
+        <ScrollView Grid.Row="4" IsVisible="{Binding ShowToday}" Padding="16,4,16,90">
+            <VerticalStackLayout Spacing="14"
+                                 MaximumWidthRequest="{OnIdiom Default=100000, Desktop=1180}"
+                                 HorizontalOptions="{OnIdiom Default=Fill, Desktop=Center}">
+
+                <Grid ColumnDefinitions="*,Auto">
+                    <VerticalStackLayout Spacing="1">
+                        <Label Text="Today's focus" Style="{StaticResource HeadlineSmall}" />
+                        <Label Text="{Binding TodayHeading}" Style="{StaticResource Caption}" />
+                    </VerticalStackLayout>
+                    <Button Grid.Column="1" Text="Refresh" Command="{Binding RefreshCommand}" Style="{StaticResource TextButton}" FontSize="12" VerticalOptions="Start" />
+                </Grid>
+
+                <!-- Responsive split: agenda/focus (left) + needs-attention briefing (right) on desktop -->
+                <Grid ColumnSpacing="16" RowSpacing="14"
+                      ColumnDefinitions="{OnIdiom Default='*', Desktop='*,*'}"
+                      RowDefinitions="{OnIdiom Default='Auto,Auto', Desktop='Auto'}">
+
+                    <!-- ── LEFT PANE: agenda + focus + digest ── -->
+                    <VerticalStackLayout Grid.Row="0" Grid.Column="0" Spacing="14" VerticalOptions="Start">
+
+                        <!-- Today agenda -->
+                        <Frame Style="{StaticResource CardFrame}" Padding="0" IsVisible="{Binding HasTodayAgenda}">
+                            <VerticalStackLayout BindableLayout.ItemsSource="{Binding TodayAgenda}">
+                                <BindableLayout.ItemTemplate>
+                                    <DataTemplate x:DataType="models:MyPaCalendarEntry">
+                                        <Grid ColumnDefinitions="4,64,*,Auto" Padding="0">
+                                            <Grid.GestureRecognizers>
+                                                <TapGestureRecognizer Command="{Binding Source={x:Reference Self}, Path=BindingContext.OpenCalendarEntryCommand}" CommandParameter="{Binding .}" />
+                                            </Grid.GestureRecognizers>
+                                            <BoxView Grid.Column="0" Color="{Binding AccentColor, Converter={StaticResource HexToColorConverter}}" VerticalOptions="Fill" />
+                                            <Label Grid.Column="1" Text="{Binding Start, StringFormat='{0:HH:mm}'}" FontFamily="PoppinsSemiBold" FontSize="13"
+                                                   TextColor="{StaticResource TextPrimary}" VerticalOptions="Center" Margin="12,12" />
+                                            <VerticalStackLayout Grid.Column="2" Spacing="1" Padding="0,10" VerticalOptions="Center">
+                                                <Label Text="{Binding Title}" Style="{StaticResource BodyLarge}" FontSize="14" LineBreakMode="TailTruncation" />
+                                                <Label Text="{Binding Subtitle}" Style="{StaticResource Caption}" LineBreakMode="TailTruncation"
+                                                       IsVisible="{Binding Subtitle, Converter={StaticResource IsNotNullConverter}}" />
+                                            </VerticalStackLayout>
+                                            <Label Grid.Column="3" Text="{Binding KindLabel}" FontSize="10" FontFamily="PoppinsSemiBold"
+                                                   TextColor="{Binding AccentColor, Converter={StaticResource HexToColorConverter}}"
+                                                   VerticalOptions="Center" Margin="0,0,14,0" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </BindableLayout.ItemTemplate>
+                            </VerticalStackLayout>
+                        </Frame>
+
+                        <Frame Style="{StaticResource CardFrame}" IsVisible="{Binding HasTodayAgenda, Converter={StaticResource InverseBoolConverter}}">
+                            <VerticalStackLayout Spacing="4" Padding="4,8">
+                                <Label Text="No scheduled meetings today." Style="{StaticResource BodyLarge}" HorizontalTextAlignment="Center" />
+                                <Label Text="You're clear until tomorrow." Style="{StaticResource Caption}" HorizontalTextAlignment="Center" />
+                            </VerticalStackLayout>
+                        </Frame>
+
+                        <!-- Focus mode card -->
+                        <Frame Style="{StaticResource CardFrame}">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                <VerticalStackLayout Spacing="2">
+                                    <Label Text="Focus mode" Style="{StaticResource LabelField}" />
+                                    <Label Text="{Binding FocusModeSummary}" Style="{StaticResource Caption}" />
+                                </VerticalStackLayout>
+                                <Button Grid.Column="1" VerticalOptions="Center"
+                                        Text="{Binding FocusModeEnabled, Converter={StaticResource BoolToStringConverter}, ConverterParameter='Disable|Enable'}"
+                                        Command="{Binding ToggleFocusModeCommand}" Style="{StaticResource SecondaryButton}" FontSize="12" HeightRequest="38" Padding="16,0" />
+                            </Grid>
+                        </Frame>
+
+                        <!-- Manager digest (HR) -->
+                        <Frame Style="{StaticResource CardFrame}" IsVisible="{Binding ShowManagerDigest}">
+                            <VerticalStackLayout Spacing="10">
+                                <Label Text="Manager weekly digest" Style="{StaticResource LabelField}" TextColor="{StaticResource Primary}" />
+                                <CollectionView ItemsSource="{Binding ManagerDigest}" SelectionMode="None">
+                                    <CollectionView.ItemTemplate>
+                                        <DataTemplate x:DataType="models:MyPaManagerDigestLine">
+                                            <Grid ColumnDefinitions="*,Auto" Padding="0,4">
+                                                <Label Text="{Binding Label}" Style="{StaticResource BodyMedium}" />
+                                                <Label Grid.Column="1" Text="{Binding Count}" FontSize="15" FontFamily="PoppinsSemiBold"
+                                                       TextColor="{Binding Color, Converter={StaticResource HexToColorConverter}}" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </CollectionView.ItemTemplate>
+                                </CollectionView>
+                                <Button Text="Apply HR template" Command="{Binding ApplyTemplateCommand}" Style="{StaticResource OutlinedButton}"
+                                        FontSize="12" HeightRequest="40" IsVisible="{Binding IsHrWorkspace}" />
+                            </VerticalStackLayout>
+                        </Frame>
+                    </VerticalStackLayout>
+
+                    <!-- ── RIGHT PANE: needs-attention briefing ── -->
+                    <VerticalStackLayout Spacing="14" VerticalOptions="Start"
+                                         Grid.Row="{OnIdiom Default=1, Desktop=0}"
+                                         Grid.Column="{OnIdiom Default=0, Desktop=1}">
+                        <Label Text="NEEDS ATTENTION" Style="{StaticResource LabelSection}" />
+                        <CollectionView ItemsSource="{Binding BriefingItems}" SelectionMode="None">
+                            <CollectionView.EmptyView>
+                                <Frame Style="{StaticResource CardFrame}">
+                                    <Label Text="Nothing urgent for today — enjoy the calm." Style="{StaticResource Caption}" HorizontalTextAlignment="Center" />
+                                </Frame>
+                            </CollectionView.EmptyView>
+                            <CollectionView.ItemTemplate>
+                                <DataTemplate x:DataType="models:MyPaBriefingItem">
+                                    <Frame Style="{StaticResource CardFrame}" Margin="0,0,0,8" Padding="0">
+                                        <Frame.GestureRecognizers>
+                                            <TapGestureRecognizer Command="{Binding Source={x:Reference Self}, Path=BindingContext.OpenBriefingItemCommand}" CommandParameter="{Binding .}" />
+                                        </Frame.GestureRecognizers>
+                                        <Grid ColumnDefinitions="4,Auto,*" ColumnSpacing="0">
+                                            <BoxView Grid.Column="0" Color="{Binding AccentColor, Converter={StaticResource HexToColorConverter}}" VerticalOptions="Fill" />
+                                            <Label Grid.Column="1" Text="{Binding Icon}" FontSize="20" VerticalOptions="Center" Margin="14,0,0,0" />
+                                            <VerticalStackLayout Grid.Column="2" Spacing="2" Padding="12,14" VerticalOptions="Center">
+                                                <Label Text="{Binding Title}" Style="{StaticResource BodyLarge}" FontSize="14" LineBreakMode="TailTruncation" />
+                                                <Label Text="{Binding Subtitle}" Style="{StaticResource Caption}" />
+                                            </VerticalStackLayout>
+                                        </Grid>
+                                    </Frame>
+                                </DataTemplate>
+                            </CollectionView.ItemTemplate>
+                        </CollectionView>
+                    </VerticalStackLayout>
+                </Grid>
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <!-- ══════════════ SEARCH ══════════════ -->
+        <ScrollView Grid.Row="4" IsVisible="{Binding ShowSearch}" Padding="16,4,16,90">
+            <VerticalStackLayout Spacing="12"
+                                 MaximumWidthRequest="{OnIdiom Default=100000, Desktop=820}"
+                                 HorizontalOptions="{OnIdiom Default=Fill, Desktop=Center}">
+                <Frame Style="{StaticResource CardFrame}" Padding="4,0">
+                    <SearchBar Text="{Binding SearchQuery}" Placeholder="Search tasks, jobs, meetings, notes…"
+                               TextColor="{StaticResource TextPrimary}" PlaceholderColor="{StaticResource TextDisabled}"
+                               BackgroundColor="Transparent" />
+                </Frame>
+                <CollectionView ItemsSource="{Binding SearchResults}">
+                    <CollectionView.EmptyView>
+                        <Frame Style="{StaticResource CardFrame}">
+                            <Label Text="Type to search across My PA." Style="{StaticResource Caption}" HorizontalTextAlignment="Center" />
+                        </Frame>
+                    </CollectionView.EmptyView>
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="models:MyPaSearchResult">
+                            <Frame Style="{StaticResource CardFrame}" Margin="0,0,0,8" Padding="14">
+                                <Frame.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding Source={x:Reference Self}, Path=BindingContext.OpenSearchResultCommand}" CommandParameter="{Binding .}" />
+                                </Frame.GestureRecognizers>
+                                <VerticalStackLayout Spacing="2">
+                                    <Label Text="{Binding Title}" Style="{StaticResource BodyLarge}" FontSize="14" />
+                                    <Label Text="{Binding Subtitle}" Style="{StaticResource Caption}" />
+                                </VerticalStackLayout>
+                            </Frame>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <!-- ══════════════ TASKS ══════════════ -->
+        <RefreshView Grid.Row="4" Command="{Binding RefreshCommand}" IsRefreshing="{Binding IsBusy}" IsVisible="{Binding ShowTasks}">
+            <CollectionView ItemsSource="{Binding Tasks}" Margin="16,4,16,0"
+                            MaximumWidthRequest="{OnIdiom Default=100000, Desktop=900}"
+                            HorizontalOptions="{OnIdiom Default=Fill, Desktop=Center}">
+                <CollectionView.EmptyView>
+                    <Frame Style="{StaticResource CardFrame}" Margin="0,8">
+                        <VerticalStackLayout Spacing="6" Padding="4,12">
+                            <Label Text="No tasks in this view." Style="{StaticResource BodyLarge}" HorizontalTextAlignment="Center" />
+                            <Label Text="Assign jobs on the HR dashboard or tap + New to add a personal task."
+                                   Style="{StaticResource Caption}" HorizontalTextAlignment="Center" />
+                        </VerticalStackLayout>
+                    </Frame>
+                </CollectionView.EmptyView>
+                <CollectionView.ItemTemplate>
+                    <DataTemplate x:DataType="models:PaTask">
+                        <Border Margin="0,0,0,10" Padding="0" StrokeThickness="1" Stroke="{StaticResource Divider}"
+                                StrokeShape="RoundRectangle 16" BackgroundColor="{StaticResource SurfaceCard}">
+                            <Grid ColumnDefinitions="5,*">
+                                <BoxView Grid.Column="0" Color="{Binding PriorityColor, Converter={StaticResource HexToColorConverter}}" VerticalOptions="Fill" />
+                                <VerticalStackLayout Grid.Column="1" Spacing="8" Padding="14">
+
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                        <Label Text="{Binding Title}" FontFamily="PoppinsSemiBold" FontSize="15"
+                                               TextColor="{StaticResource TextPrimary}" LineBreakMode="TailTruncation" VerticalOptions="Center" />
+                                        <Border Grid.Column="1" IsVisible="{Binding HasStatusBadge}" Padding="8,3" StrokeThickness="0"
+                                                StrokeShape="RoundRectangle 7"
+                                                BackgroundColor="{Binding StatusBadgeColor, Converter={StaticResource HexToColorConverter}}"
+                                                VerticalOptions="Center">
+                                            <Label Text="{Binding StatusBadgeText}" FontSize="9.5" FontFamily="PoppinsSemiBold" TextColor="White" />
+                                        </Border>
+                                    </Grid>
+
+                                    <HorizontalStackLayout Spacing="8">
+                                        <Label Text="{Binding SourceBadge}" FontSize="11" TextColor="{StaticResource Primary}" />
+                                        <Label Text="•" FontSize="11" TextColor="{StaticResource TextDisabled}" />
+                                        <Label Text="{Binding PriorityLabel}" FontSize="11" FontFamily="PoppinsSemiBold"
+                                               TextColor="{Binding PriorityColor, Converter={StaticResource HexToColorConverter}}" />
+                                    </HorizontalStackLayout>
+
+                                    <Label Text="{Binding EffectiveDue, StringFormat='Due {0:ddd d MMM • h:mm tt}', TargetNullValue='No due date'}"
+                                           FontSize="13"
+                                           TextColor="{Binding IsOverdue, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#EF4444|#6B7280'}" />
+
+                                    <Label Text="{Binding Notes}" Style="{StaticResource Caption}" MaxLines="2" LineBreakMode="TailTruncation"
+                                           IsVisible="{Binding HasNotes}" />
+
+                                    <HorizontalStackLayout Spacing="6" IsVisible="{Binding HasLinkedRecord}">
+                                        <Border Padding="8,2" StrokeThickness="0" StrokeShape="RoundRectangle 8" BackgroundColor="{StaticResource SurfaceElevated}">
+                                            <Label Text="{Binding LinkedTypeDisplay}" FontSize="10" TextColor="{StaticResource Primary}" />
+                                        </Border>
+                                        <Label Text="{Binding LinkedLabel}" FontSize="10" TextColor="{StaticResource TextSecondary}"
+                                               LineBreakMode="TailTruncation" VerticalOptions="Center" />
+                                    </HorizontalStackLayout>
+
+                                    <BoxView Style="{StaticResource DividerLine}" Margin="0,2,0,0" />
+
+                                    <Grid ColumnDefinitions="*,*,*,*,*" ColumnSpacing="2">
+                                        <Button Text="Open" Command="{Binding Source={x:Reference Self}, Path=BindingContext.OpenLinkedCommand}"
+                                                CommandParameter="{Binding .}" Style="{StaticResource TextButton}" FontSize="11"
+                                                TextColor="{StaticResource Primary}" Padding="0" IsVisible="{Binding HasLinkedRecord}" />
+                                        <Button Grid.Column="1" Text="Done" Command="{Binding Source={x:Reference Self}, Path=BindingContext.CompleteTaskCommand}"
+                                                CommandParameter="{Binding .}" Style="{StaticResource TextButton}" FontSize="11"
+                                                TextColor="{StaticResource Success}" Padding="0" IsVisible="{Binding IsOpen}" />
+                                        <Button Grid.Column="2" Text="Edit" Command="{Binding Source={x:Reference Self}, Path=BindingContext.EditTaskCommand}"
+                                                CommandParameter="{Binding .}" Style="{StaticResource TextButton}" FontSize="11" Padding="0" />
+                                        <Button Grid.Column="3" Text="Snooze" Command="{Binding Source={x:Reference Self}, Path=BindingContext.SnoozeTaskCommand}"
+                                                CommandParameter="{Binding .}" Style="{StaticResource TextButton}" FontSize="11" Padding="0" IsVisible="{Binding IsOpen}" />
+                                        <Button Grid.Column="4" Text="Delete" Command="{Binding Source={x:Reference Self}, Path=BindingContext.DeleteTaskCommand}"
+                                                CommandParameter="{Binding .}" Style="{StaticResource TextButton}" FontSize="11"
+                                                TextColor="{StaticResource Error}" Padding="0" />
+                                    </Grid>
+                                </VerticalStackLayout>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+        </RefreshView>
+
+        <!-- ══════════════ CALENDAR ══════════════ -->
+        <ScrollView Grid.Row="4" IsVisible="{Binding ShowCalendar}" Padding="16,4,16,90">
+            <VerticalStackLayout Spacing="14"
+                                 MaximumWidthRequest="{OnIdiom Default=100000, Desktop=1320}"
+                                 HorizontalOptions="{OnIdiom Default=Fill, Desktop=Center}">
+
+                <Grid ColumnDefinitions="*,*,Auto" ColumnSpacing="6">
+                    <Button Text="Month" Command="{Binding SetCalendarLayoutCommand}" CommandParameter="month" FontSize="12" HeightRequest="36" CornerRadius="10" Padding="0"
+                            BackgroundColor="{Binding CalendarLayout, Converter={StaticResource EqToStyleConverter}, ConverterParameter='month|#3B82F6,#FFFFFF'}"
+                            TextColor="{Binding CalendarLayout, Converter={StaticResource EqToStyleConverter}, ConverterParameter='month|#FFFFFF,#6B7280'}" />
+                    <Button Grid.Column="1" Text="Week" Command="{Binding SetCalendarLayoutCommand}" CommandParameter="week" FontSize="12" HeightRequest="36" CornerRadius="10" Padding="0"
+                            BackgroundColor="{Binding CalendarLayout, Converter={StaticResource EqToStyleConverter}, ConverterParameter='week|#3B82F6,#FFFFFF'}"
+                            TextColor="{Binding CalendarLayout, Converter={StaticResource EqToStyleConverter}, ConverterParameter='week|#FFFFFF,#6B7280'}" />
+                    <Button Grid.Column="2" Text="Export" Command="{Binding ExportCalendarCommand}" Style="{StaticResource TextButton}" FontSize="12" TextColor="{StaticResource Primary}" />
+                </Grid>
+
+                <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="4">
+                    <Button Text="‹" Command="{Binding PrevPeriodCommand}" Style="{StaticResource TextButton}" FontSize="20" TextColor="{StaticResource TextPrimary}" />
+                    <Label Grid.Column="1" Text="{Binding CalendarPeriodLabel}" Style="{StaticResource HeadlineSmall}"
+                           HorizontalOptions="Center" VerticalOptions="Center" />
+                    <Button Grid.Column="2" Text="Today" Command="{Binding GoToTodayCommand}" Style="{StaticResource TextButton}" FontSize="12" TextColor="{StaticResource Primary}" />
+                    <Button Grid.Column="3" Text="›" Command="{Binding NextPeriodCommand}" Style="{StaticResource TextButton}" FontSize="20" TextColor="{StaticResource TextPrimary}" />
+                </Grid>
+
+                <!-- Responsive split: calendar grid (left) + day detail (right) on desktop; stacked on phone/tablet -->
+                <Grid ColumnSpacing="16" RowSpacing="14"
+                      ColumnDefinitions="{OnIdiom Default='*', Desktop='1.05*,0.95*'}"
+                      RowDefinitions="{OnIdiom Default='Auto,Auto', Desktop='Auto'}">
+
+                    <!-- ── LEFT PANE: calendar surface ── -->
+                    <VerticalStackLayout Grid.Row="0" Grid.Column="0" Spacing="14" VerticalOptions="Start">
+
+                        <!-- Week grid -->
+                        <CollectionView ItemsSource="{Binding WeekDays}" SelectionMode="None" HeightRequest="132" IsVisible="{Binding IsWeekLayout}">
+                            <CollectionView.ItemsLayout>
+                                <GridItemsLayout Orientation="Vertical" Span="7" HorizontalItemSpacing="4" VerticalItemSpacing="4" />
+                            </CollectionView.ItemsLayout>
+                            <CollectionView.ItemTemplate>
+                                <DataTemplate x:DataType="models:MyPaMonthDay">
+                                    <Border StrokeThickness="1" Stroke="{StaticResource Divider}" Padding="4,5" HeightRequest="124"
+                                            StrokeShape="RoundRectangle 10" BackgroundColor="{StaticResource SurfaceCard}">
+                                        <Border.Triggers>
+                                            <DataTrigger TargetType="Border" Binding="{Binding IsSelected}" Value="True">
+                                                <Setter Property="BackgroundColor" Value="#EFF6FF" />
+                                                <Setter Property="Stroke" Value="{StaticResource Primary}" />
+                                                <Setter Property="StrokeThickness" Value="2" />
+                                            </DataTrigger>
+                                            <DataTrigger TargetType="Border" Binding="{Binding IsToday}" Value="True">
+                                                <Setter Property="Stroke" Value="{StaticResource Primary}" />
+                                            </DataTrigger>
+                                        </Border.Triggers>
+                                        <Border.GestureRecognizers>
+                                            <TapGestureRecognizer Command="{Binding Source={x:Reference Self}, Path=BindingContext.SelectMonthDayCommand}" CommandParameter="{Binding .}" />
+                                        </Border.GestureRecognizers>
+                                        <VerticalStackLayout Spacing="3">
+                                            <Label Text="{Binding WeekdayShort}" FontSize="9" HorizontalTextAlignment="Center" TextColor="{StaticResource TextSecondary}" />
+                                            <Label Text="{Binding DayNumber}" FontSize="14" HorizontalTextAlignment="Center" FontFamily="PoppinsSemiBold" TextColor="{StaticResource TextPrimary}" />
+                                            <VerticalStackLayout BindableLayout.ItemsSource="{Binding EventChips}" Spacing="2">
+                                                <BindableLayout.ItemTemplate>
+                                                    <DataTemplate x:DataType="models:MyPaDayChip">
+                                                        <Border Padding="3,1" StrokeThickness="0" StrokeShape="RoundRectangle 3"
+                                                                BackgroundColor="{Binding Color, Converter={StaticResource HexToColorConverter}}">
+                                                            <Label Text="{Binding Title}" FontSize="8" TextColor="White" LineBreakMode="TailTruncation" MaxLines="1" />
+                                                        </Border>
+                                                    </DataTemplate>
+                                                </BindableLayout.ItemTemplate>
+                                            </VerticalStackLayout>
+                                            <Label Text="{Binding OverflowLabel}" FontSize="8" TextColor="{StaticResource TextSecondary}" IsVisible="{Binding HasOverflow}" />
+                                        </VerticalStackLayout>
+                                    </Border>
+                                </DataTemplate>
+                            </CollectionView.ItemTemplate>
+                        </CollectionView>
+
+                        <!-- Month weekday header -->
+                        <Grid ColumnDefinitions="*,*,*,*,*,*,*" ColumnSpacing="4" IsVisible="{Binding IsMonthLayout}">
+                            <Label Grid.Column="0" Text="Mon" Style="{StaticResource Caption}" HorizontalTextAlignment="Center" />
+                            <Label Grid.Column="1" Text="Tue" Style="{StaticResource Caption}" HorizontalTextAlignment="Center" />
+                            <Label Grid.Column="2" Text="Wed" Style="{StaticResource Caption}" HorizontalTextAlignment="Center" />
+                            <Label Grid.Column="3" Text="Thu" Style="{StaticResource Caption}" HorizontalTextAlignment="Center" />
+                            <Label Grid.Column="4" Text="Fri" Style="{StaticResource Caption}" HorizontalTextAlignment="Center" />
+                            <Label Grid.Column="5" Text="Sat" Style="{StaticResource Caption}" HorizontalTextAlignment="Center" />
+                            <Label Grid.Column="6" Text="Sun" Style="{StaticResource Caption}" HorizontalTextAlignment="Center" />
+                        </Grid>
+
+                        <!-- Month grid -->
+                        <CollectionView ItemsSource="{Binding MonthDays}" SelectionMode="None" HeightRequest="486" IsVisible="{Binding IsMonthLayout}">
+                            <CollectionView.ItemsLayout>
+                                <GridItemsLayout Orientation="Vertical" Span="7" HorizontalItemSpacing="4" VerticalItemSpacing="4" />
+                            </CollectionView.ItemsLayout>
+                            <CollectionView.ItemTemplate>
+                                <DataTemplate x:DataType="models:MyPaMonthDay">
+                                    <Border StrokeThickness="1" Stroke="{StaticResource Divider}" BackgroundColor="{StaticResource SurfaceCard}"
+                                            Padding="3,4" HeightRequest="74" StrokeShape="RoundRectangle 8">
+                                        <Border.Triggers>
+                                            <DataTrigger TargetType="Border" Binding="{Binding IsPlaceholder}" Value="True">
+                                                <Setter Property="BackgroundColor" Value="Transparent" />
+                                                <Setter Property="Stroke" Value="Transparent" />
+                                            </DataTrigger>
+                                            <DataTrigger TargetType="Border" Binding="{Binding IsSelected}" Value="True">
+                                                <Setter Property="BackgroundColor" Value="#EFF6FF" />
+                                                <Setter Property="Stroke" Value="{StaticResource Primary}" />
+                                                <Setter Property="StrokeThickness" Value="2" />
+                                            </DataTrigger>
+                                            <DataTrigger TargetType="Border" Binding="{Binding IsToday}" Value="True">
+                                                <Setter Property="Stroke" Value="{StaticResource Primary}" />
+                                            </DataTrigger>
+                                        </Border.Triggers>
+                                        <Border.GestureRecognizers>
+                                            <TapGestureRecognizer Command="{Binding Source={x:Reference Self}, Path=BindingContext.SelectMonthDayCommand}" CommandParameter="{Binding .}" />
+                                        </Border.GestureRecognizers>
+                                        <VerticalStackLayout Spacing="2">
+                                            <Label Text="{Binding DayNumber}" FontSize="12" HorizontalTextAlignment="Start" Margin="2,0,0,0"
+                                                   FontFamily="PoppinsSemiBold"
+                                                   IsVisible="{Binding IsPlaceholder, Converter={StaticResource InverseBoolConverter}}"
+                                                   TextColor="{StaticResource TextPrimary}">
+                                                <Label.Triggers>
+                                                    <DataTrigger TargetType="Label" Binding="{Binding IsToday}" Value="True">
+                                                        <Setter Property="TextColor" Value="{StaticResource Primary}" />
+                                                    </DataTrigger>
+                                                </Label.Triggers>
+                                            </Label>
+                                            <VerticalStackLayout BindableLayout.ItemsSource="{Binding EventChips}" Spacing="2">
+                                                <BindableLayout.ItemTemplate>
+                                                    <DataTemplate x:DataType="models:MyPaDayChip">
+                                                        <Border Padding="3,1" StrokeThickness="0" StrokeShape="RoundRectangle 3"
+                                                                BackgroundColor="{Binding Color, Converter={StaticResource HexToColorConverter}}">
+                                                            <Label Text="{Binding Title}" FontSize="7.5" TextColor="White" LineBreakMode="TailTruncation" MaxLines="1" />
+                                                        </Border>
+                                                    </DataTemplate>
+                                                </BindableLayout.ItemTemplate>
+                                            </VerticalStackLayout>
+                                            <Label Text="{Binding OverflowLabel}" FontSize="7.5" Margin="2,0,0,0"
+                                                   TextColor="{StaticResource TextSecondary}" IsVisible="{Binding HasOverflow}" />
+                                        </VerticalStackLayout>
+                                    </Border>
+                                </DataTemplate>
+                            </CollectionView.ItemTemplate>
+                        </CollectionView>
+
+                        <!-- Legend -->
+                        <HorizontalStackLayout Spacing="14" HorizontalOptions="Center">
+                            <HorizontalStackLayout Spacing="4">
+                                <BoxView WidthRequest="8" HeightRequest="8" CornerRadius="4" Color="#F97316" VerticalOptions="Center" />
+                                <Label Text="Meeting" FontSize="10" TextColor="{StaticResource TextSecondary}" />
+                            </HorizontalStackLayout>
+                            <HorizontalStackLayout Spacing="4">
+                                <BoxView WidthRequest="8" HeightRequest="8" CornerRadius="4" Color="#3B82F6" VerticalOptions="Center" />
+                                <Label Text="Due" FontSize="10" TextColor="{StaticResource TextSecondary}" />
+                            </HorizontalStackLayout>
+                            <HorizontalStackLayout Spacing="4">
+                                <BoxView WidthRequest="8" HeightRequest="8" CornerRadius="4" Color="#8B5CF6" VerticalOptions="Center" />
+                                <Label Text="Job" FontSize="10" TextColor="{StaticResource TextSecondary}" />
+                            </HorizontalStackLayout>
+                            <HorizontalStackLayout Spacing="4">
+                                <BoxView WidthRequest="8" HeightRequest="8" CornerRadius="4" Color="#10B981" VerticalOptions="Center" />
+                                <Label Text="Project" FontSize="10" TextColor="{StaticResource TextSecondary}" />
+                            </HorizontalStackLayout>
+                        </HorizontalStackLayout>
+                    </VerticalStackLayout>
+
+                    <!-- ── RIGHT PANE: day detail + reminders + sync ── -->
+                    <VerticalStackLayout Spacing="14" VerticalOptions="Start"
+                                         Grid.Row="{OnIdiom Default=1, Desktop=0}"
+                                         Grid.Column="{OnIdiom Default=0, Desktop=1}">
+
+                        <!-- Selected day -->
+                        <Grid ColumnDefinitions="*,Auto">
+                            <Label Text="{Binding SelectedDay, StringFormat='{0:dddd, d MMMM yyyy}'}" Style="{StaticResource HeadlineSmall}" VerticalOptions="Center" />
+                            <Button Grid.Column="1" Text="+ Add" Command="{Binding PlanDayCommand}" Style="{StaticResource TextButton}" FontSize="12" TextColor="{StaticResource Primary}" />
+                        </Grid>
+
+                        <Label Text="DAY TIMELINE" Style="{StaticResource LabelSection}" />
+                        <CollectionView ItemsSource="{Binding TimelineSlots}" HeightRequest="220">
+                            <CollectionView.ItemTemplate>
+                                <DataTemplate x:DataType="models:MyPaTimelineSlot">
+                                    <Grid ColumnDefinitions="48,*" Padding="0,4" IsVisible="{Binding HasEntries}">
+                                        <Label Text="{Binding HourLabel}" FontSize="11" TextColor="{StaticResource TextSecondary}" VerticalOptions="Start" />
+                                        <VerticalStackLayout Grid.Column="1" BindableLayout.ItemsSource="{Binding Entries}" Spacing="4">
+                                            <BindableLayout.ItemTemplate>
+                                                <DataTemplate x:DataType="models:MyPaCalendarEntry">
+                                                    <Border Padding="0" StrokeThickness="0" StrokeShape="RoundRectangle 8" BackgroundColor="{StaticResource SurfaceElevated}">
+                                                        <Border.GestureRecognizers>
+                                                            <TapGestureRecognizer Command="{Binding Source={x:Reference Self}, Path=BindingContext.OpenCalendarEntryCommand}" CommandParameter="{Binding .}" />
+                                                        </Border.GestureRecognizers>
+                                                        <Grid ColumnDefinitions="4,*">
+                                                            <BoxView Grid.Column="0" Color="{Binding AccentColor, Converter={StaticResource HexToColorConverter}}" VerticalOptions="Fill" />
+                                                            <Label Grid.Column="1" Text="{Binding Title}" FontSize="11" TextColor="{StaticResource TextPrimary}"
+                                                                   LineBreakMode="TailTruncation" Padding="8,6" VerticalOptions="Center" />
+                                                        </Grid>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </BindableLayout.ItemTemplate>
+                                        </VerticalStackLayout>
+                                    </Grid>
+                                </DataTemplate>
+                            </CollectionView.ItemTemplate>
+                        </CollectionView>
+
+                        <CollectionView ItemsSource="{Binding SelectedDayEntries}">
+                            <CollectionView.EmptyView>
+                                <Frame Style="{StaticResource CardFrame}">
+                                    <VerticalStackLayout Spacing="10" Padding="4,8">
+                                        <Label Text="Nothing scheduled this day." Style="{StaticResource Caption}" HorizontalTextAlignment="Center" />
+                                        <Button Text="Add task for this day" Command="{Binding PlanDayCommand}" Style="{StaticResource PrimaryButton}" />
+                                    </VerticalStackLayout>
+                                </Frame>
+                            </CollectionView.EmptyView>
+                            <CollectionView.ItemTemplate>
+                                <DataTemplate x:DataType="models:MyPaCalendarEntry">
+                                    <SwipeView Margin="0,0,0,8">
+                                        <SwipeView.RightItems>
+                                            <SwipeItems Mode="Reveal">
+                                                <SwipeItem Text="Move" BackgroundColor="{StaticResource Primary}"
+                                                           Command="{Binding Source={x:Reference Self}, Path=BindingContext.RescheduleEntryCommand}"
+                                                           CommandParameter="{Binding .}" />
+                                            </SwipeItems>
+                                        </SwipeView.RightItems>
+                                        <Border Padding="0" StrokeThickness="1" Stroke="{StaticResource Divider}"
+                                                StrokeShape="RoundRectangle 14" BackgroundColor="{StaticResource SurfaceCard}">
+                                            <Border.GestureRecognizers>
+                                                <TapGestureRecognizer Command="{Binding Source={x:Reference Self}, Path=BindingContext.OpenCalendarEntryCommand}" CommandParameter="{Binding .}" />
+                                            </Border.GestureRecognizers>
+                                            <Grid ColumnDefinitions="4,*" Padding="0">
+                                                <BoxView Grid.Column="0" Color="{Binding AccentColor, Converter={StaticResource HexToColorConverter}}" VerticalOptions="Fill" />
+                                                <VerticalStackLayout Grid.Column="1" Spacing="4" Padding="12,10">
+                                                    <Grid ColumnDefinitions="*,Auto">
+                                                        <Label Text="{Binding Title}" Style="{StaticResource BodyLarge}" FontSize="14" LineBreakMode="TailTruncation" />
+                                                        <Label Grid.Column="1" Text="{Binding KindLabel}" FontSize="10" FontFamily="PoppinsSemiBold"
+                                                               TextColor="{Binding AccentColor, Converter={StaticResource HexToColorConverter}}" />
+                                                    </Grid>
+                                                    <Label Text="{Binding TimeDisplay}" Style="{StaticResource Caption}" TextColor="{StaticResource Primary}" />
+                                                    <Label Text="{Binding Subtitle}" Style="{StaticResource Caption}"
+                                                           IsVisible="{Binding Subtitle, Converter={StaticResource IsNotNullConverter}}" />
+                                                    <Label Text="Swipe to reschedule" FontSize="9" TextColor="{StaticResource TextDisabled}"
+                                                           IsVisible="{Binding CanReschedule}" />
+                                                </VerticalStackLayout>
+                                            </Grid>
+                                        </Border>
+                                    </SwipeView>
+                                </DataTemplate>
+                            </CollectionView.ItemTemplate>
+                        </CollectionView>
+
+                        <!-- Upcoming reminders -->
+                        <Frame Style="{StaticResource CardFrame}" IsVisible="{Binding HasUpcomingReminders}">
+                            <VerticalStackLayout Spacing="8">
+                                <Label Text="Reminders coming up" Style="{StaticResource LabelField}" TextColor="{StaticResource Primary}" />
+                                <CollectionView ItemsSource="{Binding UpcomingReminders}" SelectionMode="None">
+                                    <CollectionView.ItemTemplate>
+                                        <DataTemplate x:DataType="models:PaTask">
+                                            <Grid ColumnDefinitions="*,Auto" Padding="0,4">
+                                                <Grid.GestureRecognizers>
+                                                    <TapGestureRecognizer Command="{Binding Source={x:Reference Self}, Path=BindingContext.EditTaskCommand}" CommandParameter="{Binding .}" />
+                                                </Grid.GestureRecognizers>
+                                                <Label Text="{Binding Title}" Style="{StaticResource BodyMedium}" TextColor="{StaticResource TextPrimary}" LineBreakMode="TailTruncation" />
+                                                <Label Grid.Column="1" Text="{Binding RemindAt, StringFormat='{0:ddd h:mm tt}'}" Style="{StaticResource Caption}" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </CollectionView.ItemTemplate>
+                                </CollectionView>
+                            </VerticalStackLayout>
+                        </Frame>
+
+                        <!-- Calendar sync -->
+                        <Frame Style="{StaticResource CardFrame}">
+                            <VerticalStackLayout Spacing="8">
+                                <Label Text="Calendar sync (Google / Outlook)" Style="{StaticResource LabelField}" />
+                                <Label Text="{Binding GoogleConnectStatus}" Style="{StaticResource Caption}" />
+                                <Button Text="Connect Google" Command="{Binding ConnectGoogleCommand}" Style="{StaticResource SecondaryButton}" FontSize="12" HeightRequest="40" />
+                                <Label Text="{Binding OutlookConnectStatus}" Style="{StaticResource Caption}" />
+                                <Button Text="Connect Outlook" Command="{Binding ConnectOutlookCommand}" Style="{StaticResource SecondaryButton}" FontSize="12" HeightRequest="40" />
+                            </VerticalStackLayout>
+                        </Frame>
+                    </VerticalStackLayout>
+                </Grid>
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <!-- ══════════════ FAB ══════════════ -->
+        <Border Grid.Row="4" WidthRequest="56" HeightRequest="56" StrokeShape="RoundRectangle 28" StrokeThickness="0"
+                BackgroundColor="{StaticResource Primary}" HorizontalOptions="End" VerticalOptions="End" Margin="0,0,18,18">
+            <Border.GestureRecognizers>
+                <TapGestureRecognizer Command="{Binding QuickAddCommand}" />
+            </Border.GestureRecognizers>
+            <Label Text="+" FontSize="28" FontFamily="PoppinsSemiBold" TextColor="White" HorizontalOptions="Center" VerticalOptions="Center" />
+        </Border>
+    </Grid>
+</ContentView>

@@ -1,0 +1,317 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Hr.HrPayslipDetailPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
+    xmlns:payroll="clr-namespace:KaiFlow.Payroll;assembly=KaiFlow.Payroll"
+    xmlns:helpers="clr-namespace:KaiFlow.Timesheets.Helpers"
+    xmlns:shared="clr-namespace:KaiFlow.Timesheets.Views.Shared"
+    x:DataType="vm:HrPayslipDetailViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="{Binding Title}">
+
+    <Grid RowDefinitions="*,Auto">
+
+        <ScrollView Grid.Row="0">
+            <VerticalStackLayout Padding="16" Spacing="16">
+
+                <!-- Employee & Period -->
+                <Frame Style="{StaticResource CardFrame}"
+                       IsVisible="{Binding Payment, Converter={StaticResource IsNotNullConverter}}">
+                    <VerticalStackLayout Spacing="10">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <VerticalStackLayout Spacing="2">
+                                <Label Text="{Binding EmployeeName}"
+                                       FontFamily="PoppinsSemiBold" FontSize="18"
+                                       TextColor="{StaticResource TextPrimary}" />
+                                <Label Text="{Binding Payment.PeriodLabel}"
+                                       Style="{StaticResource BodySmall}"
+                                       TextColor="{StaticResource TextSecondary}" />
+                            </VerticalStackLayout>
+                            <Frame Grid.Column="1"
+                                   BackgroundColor="{Binding Payment.StatusRaw, Converter={StaticResource EqToStyleConverter}, ConverterParameter='approved|#DCFCE7,paid|#DBEAFE,rejected|#FEE2E2,#FEF9C3'}"
+                                   BorderColor="Transparent" CornerRadius="12" Padding="10,4" HasShadow="False"
+                                   VerticalOptions="Center">
+                                <Label Text="{Binding Payment.StatusRaw}"
+                                       FontFamily="PoppinsSemiBold" FontSize="12"
+                                       TextColor="{StaticResource TextPrimary}" />
+                            </Frame>
+                        </Grid>
+
+                        <BoxView HeightRequest="1" BackgroundColor="{StaticResource Divider}" />
+
+                        <Frame Style="{StaticResource DataTableFrame}" Margin="0,4,0,0">
+                            <VerticalStackLayout Spacing="0">
+                                <Grid ColumnDefinitions="*,110" Padding="12,10"
+                                      BackgroundColor="{StaticResource SurfaceElevated}">
+                                    <Label Grid.Column="0" Text="Item" Style="{StaticResource DataTableHeaderLabel}" />
+                                    <Label Grid.Column="1" Text="Value" Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="End" />
+                                </Grid>
+                                <BoxView Style="{StaticResource DataTableRowDivider}" />
+
+                                <Grid ColumnDefinitions="*,110" Padding="12,10" BackgroundColor="{StaticResource SurfaceCard}">
+                                    <Label Grid.Column="0" Text="Days Worked" Style="{StaticResource DataTableCellSecondary}" />
+                                    <Label Grid.Column="1" Text="{Binding Payment.WorkingDays, StringFormat='{0} day(s)'}" Style="{StaticResource DataTableCellLabel}" HorizontalTextAlignment="End" />
+                                </Grid>
+                                <BoxView Style="{StaticResource DataTableRowDivider}" />
+                                <Grid ColumnDefinitions="*,110" Padding="12,10" BackgroundColor="{StaticResource SurfaceCard}">
+                                    <Label Grid.Column="0" Text="Approved Leave" Style="{StaticResource DataTableCellSecondary}" />
+                                    <Label Grid.Column="1" Text="{Binding Payment.LeaveDaysDisplay}" Style="{StaticResource DataTableCellLabel}" HorizontalTextAlignment="End" TextColor="{StaticResource Primary}" />
+                                </Grid>
+                                <BoxView Style="{StaticResource DataTableRowDivider}" IsVisible="{Binding Payment.HasAbsences}" />
+                                <Grid ColumnDefinitions="*,110" Padding="12,10" BackgroundColor="{StaticResource SurfaceCard}" IsVisible="{Binding Payment.HasAbsences}">
+                                    <Label Grid.Column="0" Text="Absent Days" Style="{StaticResource DataTableCellSecondary}" TextColor="{StaticResource Error}" />
+                                    <Label Grid.Column="1" Text="{Binding Payment.AbsentDays, StringFormat='{0} day(s)'}" Style="{StaticResource DataTableCellLabel}" HorizontalTextAlignment="End" TextColor="{StaticResource Error}" />
+                                </Grid>
+                                <BoxView Style="{StaticResource DataTableRowDivider}" />
+                                <Grid ColumnDefinitions="*,110" Padding="12,10" BackgroundColor="{StaticResource SurfaceCard}">
+                                    <Label Grid.Column="0" Text="Regular Hours" Style="{StaticResource DataTableCellSecondary}" />
+                                    <Label Grid.Column="1" Text="{Binding Payment.RegularHours, StringFormat='{0:F2} hrs'}" Style="{StaticResource DataTableCellLabel}" HorizontalTextAlignment="End" />
+                                </Grid>
+                                <BoxView Style="{StaticResource DataTableRowDivider}" IsVisible="{Binding Payment.HasOvertimePay}" />
+                                <Grid ColumnDefinitions="*,110" Padding="12,10" BackgroundColor="{StaticResource SurfaceCard}" IsVisible="{Binding Payment.HasOvertimePay}">
+                                    <Label Grid.Column="0" Text="Overtime Hours" Style="{StaticResource DataTableCellSecondary}" />
+                                    <Label Grid.Column="1" Text="{Binding Payment.OvertimeHours, StringFormat='{0:F2} hrs'}" Style="{StaticResource DataTableCellLabel}" HorizontalTextAlignment="End" TextColor="#F59E0B" />
+                                </Grid>
+                                <BoxView Style="{StaticResource DataTableRowDivider}" />
+                                <Grid ColumnDefinitions="*,110" Padding="12,10" BackgroundColor="{StaticResource SurfaceCard}">
+                                    <Label Grid.Column="0" Text="Regular Pay" Style="{StaticResource DataTableCellSecondary}" />
+                                    <Label Grid.Column="1" Text="{Binding Payment.RegularPay, StringFormat='R{0:N2}'}" Style="{StaticResource DataTableCellLabel}" HorizontalTextAlignment="End" />
+                                </Grid>
+                                <BoxView Style="{StaticResource DataTableRowDivider}" IsVisible="{Binding Payment.HasOvertimePay}" />
+                                <Grid ColumnDefinitions="*,110" Padding="12,10" BackgroundColor="{StaticResource SurfaceCard}" IsVisible="{Binding Payment.HasOvertimePay}">
+                                    <Label Grid.Column="0" Text="Overtime Pay" Style="{StaticResource DataTableCellSecondary}" />
+                                    <Label Grid.Column="1" Text="{Binding Payment.OvertimePay, StringFormat='R{0:N2}'}" Style="{StaticResource DataTableCellLabel}" HorizontalTextAlignment="End" TextColor="#F59E0B" />
+                                </Grid>
+                                <BoxView Style="{StaticResource DataTableRowDivider}" />
+                                <Grid ColumnDefinitions="*,110" Padding="12,10" BackgroundColor="{StaticResource SurfaceCard}">
+                                    <Label Grid.Column="0" Text="Gross Pay" Style="{StaticResource DataTableCellLabel}" />
+                                    <Label Grid.Column="1" Text="{Binding Payment.GrossPay, StringFormat='R{0:N2}'}" Style="{StaticResource DataTableCellLabel}" HorizontalTextAlignment="End" />
+                                </Grid>
+                                <BoxView Style="{StaticResource DataTableRowDivider}" IsVisible="{Binding Payment.HasDeductions}" />
+                                <Grid ColumnDefinitions="*,110" Padding="12,10" BackgroundColor="{StaticResource SurfaceCard}" IsVisible="{Binding Payment.HasDeductions}">
+                                    <Label Grid.Column="0" Text="Deductions" Style="{StaticResource DataTableCellSecondary}" TextColor="{StaticResource Error}" />
+                                    <Label Grid.Column="1" Text="{Binding Payment.Deductions, StringFormat='R{0:N2}'}" Style="{StaticResource DataTableCellLabel}" HorizontalTextAlignment="End" TextColor="{StaticResource Error}" />
+                                </Grid>
+                                <BoxView Style="{StaticResource DataTableRowDivider}" />
+                                <Grid ColumnDefinitions="*,110" Padding="12,12" BackgroundColor="{StaticResource SurfaceElevated}">
+                                    <Label Grid.Column="0" Text="NET PAY" FontFamily="PoppinsBold" FontSize="14" TextColor="{StaticResource TextPrimary}" />
+                                    <Label Grid.Column="1" Text="{Binding Payment.NetPay, StringFormat='R{0:N2}'}" FontFamily="PoppinsBold" FontSize="16" TextColor="{StaticResource Primary}" HorizontalTextAlignment="End" />
+                                </Grid>
+                            </VerticalStackLayout>
+                        </Frame>
+                    </VerticalStackLayout>
+                </Frame>
+
+                <Frame Style="{StaticResource CardFrame}" IsVisible="{Binding IsPeriodLocked}"
+                       BackgroundColor="#FEE2E2" BorderColor="#DC2626">
+                    <Label Text="This pay period is locked — recalculation and overrides are disabled."
+                           Style="{StaticResource BodyMedium}" TextColor="#DC2626" />
+                </Frame>
+
+                <!-- HR overrides (pending payslips) -->
+                <Frame Style="{StaticResource CardFrame}" IsVisible="{Binding CanEditOverrides}">
+                    <VerticalStackLayout Spacing="12">
+                        <Label Text="HR ADJUSTMENTS" Style="{StaticResource LabelSection}" />
+                        <Label Text="Override payroll before approving. Tap Recalculate to apply — PAYE and settings save to the employee profile for next month."
+                               Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="10">
+                            <Label Grid.Row="0" Grid.Column="0" Text="Pay full monthly salary (ignore mid-month join pro-rate)" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                            <Switch Grid.Row="0" Grid.Column="1" IsToggled="{Binding PayFullBaseSalary}" />
+                            <Label Grid.Row="1" Grid.Column="0" Text="Waive attendance penalties" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                            <Switch Grid.Row="1" Grid.Column="1" IsToggled="{Binding WaivePenalties}" />
+                            <Label Grid.Row="2" Grid.Column="0" Text="Manual PAYE (R)" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                            <Entry Grid.Row="2" Grid.Column="1" Text="{Binding ManualPayeOverrideText}" Keyboard="Numeric" WidthRequest="100" Style="{StaticResource DarkEntry}" HorizontalTextAlignment="End" Placeholder="Auto" />
+                            <Label Grid.Row="3" Grid.Column="0" Text="Extra deduction (R)" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                            <Entry Grid.Row="3" Grid.Column="1" Text="{Binding ManualAdjustmentText}" Keyboard="Numeric" WidthRequest="100" Style="{StaticResource DarkEntry}" HorizontalTextAlignment="End" />
+                            <Label Grid.Row="4" Grid.Column="0" Text="Adjustment note" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                            <Entry Grid.Row="4" Grid.Column="1" Text="{Binding AdjustmentNote}" Style="{StaticResource DarkEntry}" WidthRequest="160" />
+                            <Label Grid.Row="5" Grid.Column="0" Text="Bonus (R)" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                            <Entry Grid.Row="5" Grid.Column="1" Text="{Binding BonusAmountText}" Keyboard="Numeric" WidthRequest="100" Style="{StaticResource DarkEntry}" HorizontalTextAlignment="End" />
+                            <Label Grid.Row="6" Grid.Column="0" Text="Bonus note" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                            <Entry Grid.Row="6" Grid.Column="1" Text="{Binding BonusNote}" Style="{StaticResource DarkEntry}" WidthRequest="160" />
+                        </Grid>
+                        <Button Text="Recalculate Payslip" Command="{Binding RecalculateCommand}"
+                                Style="{StaticResource PrimaryButton}" />
+                    </VerticalStackLayout>
+                </Frame>
+
+                <VerticalStackLayout Spacing="8" IsVisible="{Binding HasEarningsLines}">
+                    <Label Text="EARNINGS BREAKDOWN" Style="{StaticResource LabelSection}" />
+                    <shared:PayrollLineItemsTableView ItemsSource="{Binding EarningsLines}" EmptyMessage="No earnings lines." />
+                </VerticalStackLayout>
+
+                <VerticalStackLayout Spacing="8" IsVisible="{Binding HasDeductionLines}">
+                    <Label Text="DEDUCTIONS BREAKDOWN" Style="{StaticResource LabelSection}" />
+                    <shared:PayrollLineItemsTableView ItemsSource="{Binding DeductionLines}" ShowAsDeductions="True" EmptyMessage="No deduction lines." />
+                </VerticalStackLayout>
+
+                <Frame Style="{StaticResource CardFrame}" IsVisible="{Binding HasYtd}">
+                    <VerticalStackLayout Spacing="8">
+                        <Label Text="YEAR TO DATE (TAX YEAR)" Style="{StaticResource LabelSection}" />
+                        <Frame Style="{StaticResource DataTableFrame}">
+                            <VerticalStackLayout Spacing="0">
+                                <Grid ColumnDefinitions="*,110" Padding="12,10" BackgroundColor="{StaticResource SurfaceElevated}">
+                                    <Label Grid.Column="0" Text="Item" Style="{StaticResource DataTableHeaderLabel}" />
+                                    <Label Grid.Column="1" Text="Amount" Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="End" />
+                                </Grid>
+                                <BoxView Style="{StaticResource DataTableRowDivider}" />
+                                <Grid ColumnDefinitions="*,110" Padding="12,10" BackgroundColor="{StaticResource SurfaceCard}">
+                                    <Label Grid.Column="0" Text="YTD Gross" Style="{StaticResource DataTableCellSecondary}" />
+                                    <Label Grid.Column="1" Text="{Binding YtdTotals.GrossPay, StringFormat='R{0:N2}'}" Style="{StaticResource DataTableCellLabel}" HorizontalTextAlignment="End" />
+                                </Grid>
+                                <BoxView Style="{StaticResource DataTableRowDivider}" />
+                                <Grid ColumnDefinitions="*,110" Padding="12,10" BackgroundColor="{StaticResource SurfaceCard}">
+                                    <Label Grid.Column="0" Text="YTD PAYE" Style="{StaticResource DataTableCellSecondary}" TextColor="{StaticResource Error}" />
+                                    <Label Grid.Column="1" Text="{Binding YtdTotals.Paye, StringFormat='R{0:N2}'}" Style="{StaticResource DataTableCellLabel}" HorizontalTextAlignment="End" TextColor="{StaticResource Error}" />
+                                </Grid>
+                                <BoxView Style="{StaticResource DataTableRowDivider}" />
+                                <Grid ColumnDefinitions="*,110" Padding="12,10" BackgroundColor="{StaticResource SurfaceCard}">
+                                    <Label Grid.Column="0" Text="YTD UIF" Style="{StaticResource DataTableCellSecondary}" TextColor="{StaticResource Error}" />
+                                    <Label Grid.Column="1" Text="{Binding YtdTotals.Uif, StringFormat='R{0:N2}'}" Style="{StaticResource DataTableCellLabel}" HorizontalTextAlignment="End" TextColor="{StaticResource Error}" />
+                                </Grid>
+                                <BoxView Style="{StaticResource DataTableRowDivider}" />
+                                <Grid ColumnDefinitions="*,110" Padding="12,10" BackgroundColor="{StaticResource SurfaceCard}">
+                                    <Label Grid.Column="0" Text="YTD Net" Style="{StaticResource DataTableCellLabel}" />
+                                    <Label Grid.Column="1" Text="{Binding YtdTotals.NetPay, StringFormat='R{0:N2}'}" Style="{StaticResource DataTableCellLabel}" HorizontalTextAlignment="End" TextColor="{StaticResource Primary}" />
+                                </Grid>
+                            </VerticalStackLayout>
+                        </Frame>
+                    </VerticalStackLayout>
+                </Frame>
+
+                <Frame Style="{StaticResource CardFrame}" IsVisible="{Binding HasPolicySnapshot}">
+                    <VerticalStackLayout Spacing="8">
+                        <Label Text="POLICY AT GENERATION" Style="{StaticResource LabelSection}" />
+                        <Label Text="{Binding PolicySnapshotSummary}"
+                               Style="{StaticResource BodySmall}"
+                               TextColor="{StaticResource TextSecondary}" />
+                    </VerticalStackLayout>
+                </Frame>
+
+                <Frame Style="{StaticResource CardFrame}" IsVisible="{Binding HasAuditEntries}">
+                    <VerticalStackLayout Spacing="8">
+                        <Label Text="AUDIT TRAIL" Style="{StaticResource LabelSection}" />
+                        <Frame Style="{StaticResource DataTableFrame}">
+                            <VerticalStackLayout Spacing="0">
+                                <Grid ColumnDefinitions="*,120" Padding="12,10" BackgroundColor="{StaticResource SurfaceElevated}">
+                                    <Label Grid.Column="0" Text="Action" Style="{StaticResource DataTableHeaderLabel}" />
+                                    <Label Grid.Column="1" Text="When" Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="End" />
+                                </Grid>
+                                <BoxView Style="{StaticResource DataTableRowDivider}" />
+                                <VerticalStackLayout Spacing="0" BindableLayout.ItemsSource="{Binding AuditEntries}">
+                                    <BindableLayout.ItemTemplate>
+                                        <DataTemplate x:DataType="helpers:PayrollAuditEntry">
+                                            <VerticalStackLayout Spacing="0">
+                                                <Grid ColumnDefinitions="*,120" Padding="12,10" BackgroundColor="{StaticResource SurfaceCard}">
+                                                    <VerticalStackLayout Grid.Column="0" Spacing="2">
+                                                        <Label Text="{Binding Action}" Style="{StaticResource DataTableCellLabel}" />
+                                                        <Label Text="{Binding Detail}" Style="{StaticResource DataTableCellSecondary}" FontSize="11"
+                                                               IsVisible="{Binding Detail, Converter={StaticResource IsNotNullConverter}}" />
+                                                    </VerticalStackLayout>
+                                                    <Label Grid.Column="1" Text="{Binding At, StringFormat='{0:dd MMM HH:mm}'}"
+                                                           Style="{StaticResource DataTableCellSecondary}" HorizontalTextAlignment="End" VerticalOptions="Start" />
+                                                </Grid>
+                                                <BoxView Style="{StaticResource DataTableRowDivider}" />
+                                            </VerticalStackLayout>
+                                        </DataTemplate>
+                                    </BindableLayout.ItemTemplate>
+                                </VerticalStackLayout>
+                            </VerticalStackLayout>
+                        </Frame>
+                    </VerticalStackLayout>
+                </Frame>
+
+                <!-- Timestamps -->
+                <Frame Style="{StaticResource CardFrame}"
+                       IsVisible="{Binding Payment, Converter={StaticResource IsNotNullConverter}}">
+                    <VerticalStackLayout Spacing="8">
+                        <Label Text="TIMELINE" Style="{StaticResource LabelSection}" />
+                        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="6" ColumnSpacing="12">
+                            <Label Grid.Row="0" Grid.Column="0" Text="Created"
+                                   Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}"
+                                   IsVisible="{Binding Payment.HasValidCreatedAt}" />
+                            <Label Grid.Row="0" Grid.Column="1"
+                                   Text="{Binding Payment.EffectiveCreatedAt, StringFormat='{0:dd MMM yyyy HH:mm}'}"
+                                   Style="{StaticResource BodySmall}"
+                                   IsVisible="{Binding Payment.HasValidCreatedAt}" />
+
+                            <Label Grid.Row="1" Grid.Column="0" Text="Approved"
+                                   Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}"
+                                   IsVisible="{Binding Payment.ApprovedAt, Converter={StaticResource IsNotNullConverter}}" />
+                            <Label Grid.Row="1" Grid.Column="1"
+                                   Text="{Binding Payment.ApprovedAt, StringFormat='{0:dd MMM yyyy}'}"
+                                   Style="{StaticResource BodySmall}"
+                                   IsVisible="{Binding Payment.ApprovedAt, Converter={StaticResource IsNotNullConverter}}" />
+
+                            <Label Grid.Row="2" Grid.Column="0" Text="Paid"
+                                   Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}"
+                                   IsVisible="{Binding Payment.PaidAt, Converter={StaticResource IsNotNullConverter}}" />
+                            <Label Grid.Row="2" Grid.Column="1"
+                                   Text="{Binding Payment.PaidAt, StringFormat='{0:dd MMM yyyy}'}"
+                                   Style="{StaticResource BodySmall}"
+                                   IsVisible="{Binding Payment.PaidAt, Converter={StaticResource IsNotNullConverter}}" />
+                        </Grid>
+                    </VerticalStackLayout>
+                </Frame>
+
+                <!-- Notes -->
+                <Frame Style="{StaticResource CardFrame}"
+                       IsVisible="{Binding Payment.Notes, Converter={StaticResource IsNotNullConverter}}">
+                    <VerticalStackLayout Spacing="6">
+                        <Label Text="NOTES" Style="{StaticResource LabelSection}" />
+                        <Label Text="{Binding Payment.Notes}"
+                               Style="{StaticResource BodyMedium}"
+                               TextColor="{StaticResource TextSecondary}" />
+                    </VerticalStackLayout>
+                </Frame>
+
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <!-- Action buttons -->
+        <VerticalStackLayout Grid.Row="1" Padding="16,8" Spacing="8"
+                             IsVisible="{Binding Payment, Converter={StaticResource IsNotNullConverter}}">
+            <Button Text="Approve Payslip"
+                    Command="{Binding ApproveCommand}"
+                    IsVisible="{Binding CanApprove}"
+                    BackgroundColor="{StaticResource Primary}" TextColor="White"
+                    CornerRadius="12" HeightRequest="48" FontFamily="PoppinsSemiBold" />
+            <Button Text="Mark as Paid"
+                    Command="{Binding MarkPaidCommand}"
+                    IsVisible="{Binding CanMarkPaid}"
+                    BackgroundColor="#16A34A" TextColor="White"
+                    CornerRadius="12" HeightRequest="48" FontFamily="PoppinsSemiBold" />
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                <Button Grid.Column="0" Text="Download PDF"
+                        Command="{Binding DownloadPdfCommand}"
+                        BackgroundColor="#DC2626" TextColor="White"
+                        CornerRadius="12" HeightRequest="44" FontFamily="PoppinsSemiBold" />
+                <Button Grid.Column="1" Text="Send to Employee"
+                        Command="{Binding SendToEmployeeCommand}"
+                        IsVisible="{Binding CanSendToEmployee}"
+                        BackgroundColor="#7C3AED" TextColor="White"
+                        CornerRadius="12" HeightRequest="44" FontFamily="PoppinsSemiBold" />
+                <Label Grid.Column="1" Text="✓ Sent to Employee"
+                       IsVisible="{Binding CanSendToEmployee, Converter={StaticResource InverseBoolConverter}}"
+                       FontFamily="PoppinsMedium" FontSize="13"
+                       TextColor="#16A34A"
+                       HorizontalOptions="Center" VerticalOptions="Center" />
+            </Grid>
+            <Button Text="Reject"
+                    Command="{Binding RejectCommand}"
+                    IsVisible="{Binding CanReject}"
+                    BackgroundColor="Transparent" TextColor="{StaticResource Error}"
+                    BorderColor="{StaticResource Error}" BorderWidth="1"
+                    CornerRadius="12" HeightRequest="44" FontFamily="PoppinsSemiBold" />
+        </VerticalStackLayout>
+
+        <!-- Busy overlay -->
+        <ActivityIndicator Grid.RowSpan="2"
+                           IsRunning="{Binding IsBusy}"
+                           IsVisible="{Binding IsBusy}"
+                           Color="{StaticResource Primary}"
+                           VerticalOptions="Center" HorizontalOptions="Center" />
+    </Grid>
+</ContentPage>

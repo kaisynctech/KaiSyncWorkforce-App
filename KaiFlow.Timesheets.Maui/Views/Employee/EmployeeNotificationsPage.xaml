@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Employee.EmployeeNotificationsPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Employees"
+    x:DataType="vm:EmployeeNotificationsViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="{Binding Title}">
+
+    <RefreshView Command="{Binding LoadCommand}" IsRefreshing="{Binding IsBusy}">
+        <CollectionView ItemsSource="{Binding Notifications}" Margin="16">
+            <CollectionView.EmptyView>
+                <VerticalStackLayout VerticalOptions="Center" HorizontalOptions="Center" Spacing="8" Padding="32">
+                    <Label Text="No notifications yet." Style="{StaticResource EmptyState}" />
+                    <Label Text="Leave updates, registration approvals, and incident changes will appear here."
+                           Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}"
+                           HorizontalTextAlignment="Center" />
+                </VerticalStackLayout>
+            </CollectionView.EmptyView>
+            <CollectionView.ItemTemplate>
+                <DataTemplate x:DataType="vm:NotificationItem">
+                    <Frame Style="{StaticResource CardFrame}" Margin="0,4"
+                           BackgroundColor="{Binding IsUnread, Converter={StaticResource BoolToColorConverter},
+                                            ConverterParameter='#EFF6FF|#FFFFFF'}">
+                        <Frame.GestureRecognizers>
+                            <TapGestureRecognizer
+                                Command="{Binding Source={RelativeSource AncestorType={x:Type ContentPage}}, Path=BindingContext.OpenNotificationCommand}"
+                                CommandParameter="{Binding .}" />
+                        </Frame.GestureRecognizers>
+                        <Grid ColumnDefinitions="4,*,Auto" ColumnSpacing="12">
+                            <!-- Status stripe -->
+                            <BoxView Grid.Column="0" Color="{Binding Color}"
+                                     CornerRadius="2" WidthRequest="4" />
+                            <VerticalStackLayout Grid.Column="1" Spacing="3">
+                                <Label Text="{Binding Title}" Style="{StaticResource BodyMedium}" />
+                                <Label Text="{Binding Body}" Style="{StaticResource Caption}"
+                                       TextColor="{StaticResource TextSecondary}"
+                                       MaxLines="2" LineBreakMode="TailTruncation" />
+                            </VerticalStackLayout>
+                            <VerticalStackLayout Grid.Column="2" Spacing="4" VerticalOptions="Start">
+                                <Label Text="{Binding When}" Style="{StaticResource Caption}"
+                                       TextColor="{StaticResource TextSecondary}" />
+                                <BoxView WidthRequest="8" HeightRequest="8" CornerRadius="4"
+                                         Color="{StaticResource Primary}"
+                                         IsVisible="{Binding IsUnread}"
+                                         HorizontalOptions="Center" />
+                            </VerticalStackLayout>
+                        </Grid>
+                    </Frame>
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+        </CollectionView>
+    </RefreshView>
+</ContentPage>

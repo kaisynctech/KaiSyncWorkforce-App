@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Hr.HrSchedulingPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:HrSchedulingViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="{Binding Title}">
+
+    <ContentPage.ToolbarItems>
+        <ToolbarItem Text="Export" Command="{Binding ExportCommand}" />
+    </ContentPage.ToolbarItems>
+
+    <Grid RowDefinitions="Auto,Auto,*">
+
+        <!-- Header -->
+        <Grid Grid.Row="0" Padding="16,12" ColumnDefinitions="*,Auto"
+              BackgroundColor="{StaticResource SurfaceDark}">
+            <Label Grid.Column="0" Text="Scheduling"
+                   Style="{StaticResource HeadlineMedium}" VerticalOptions="Center" />
+            <Button Grid.Column="1" Text="+ Shift" Padding="12,8"
+                    Command="{Binding CreateEventCommand}"
+                    Style="{StaticResource PrimaryButton}" />
+        </Grid>
+
+        <!-- Date Picker Bar -->
+        <Frame Grid.Row="1"
+               BackgroundColor="{StaticResource SurfaceDark}"
+               BorderColor="{StaticResource Divider}"
+               CornerRadius="0" Padding="16,10">
+            <Grid ColumnDefinitions="Auto,*">
+                <Label Grid.Column="0" Text="Date:" Style="{StaticResource LabelField}"
+                       VerticalOptions="Center" Margin="0,0,12,0" />
+                <DatePicker Grid.Column="1"
+                            Date="{Binding SelectedDate}"
+                            TextColor="{StaticResource TextPrimary}"
+                            BackgroundColor="Transparent"
+                            Format="dddd, d MMMM yyyy" />
+            </Grid>
+        </Frame>
+
+        <!-- Calendar Events -->
+        <Grid Grid.Row="2">
+            <CollectionView ItemsSource="{Binding Events}"
+                            Margin="16,8">
+                <CollectionView.EmptyView>
+                    <VerticalStackLayout VerticalOptions="Center" Spacing="16" Padding="32">
+                        <Label Text="📅" FontSize="56" HorizontalOptions="Center" />
+                        <Label Text="No events scheduled" Style="{StaticResource EmptyState}" />
+                        <Label Text="Use the + Event button to add shifts, meetings or reminders"
+                               Style="{StaticResource BodySmall}"
+                               TextColor="{StaticResource TextSecondary}"
+                               HorizontalOptions="Center" HorizontalTextAlignment="Center" />
+                    </VerticalStackLayout>
+                </CollectionView.EmptyView>
+                <CollectionView.ItemTemplate>
+                    <DataTemplate x:DataType="models:CalendarEvent">
+                        <Frame Style="{StaticResource CardFrame}" Margin="0,4">
+                            <Grid ColumnDefinitions="4,*" ColumnSpacing="12">
+                                <!-- Color Bar -->
+                                <BoxView Grid.Column="0"
+                                         BackgroundColor="{StaticResource Primary}"
+                                         CornerRadius="2" />
+                                <!-- Event Details -->
+                                <VerticalStackLayout Grid.Column="1" Spacing="4">
+                                    <Label Text="{Binding Title}"
+                                           Style="{StaticResource BodyLarge}" />
+                                    <HorizontalStackLayout Spacing="8">
+                                        <Label Text="{Binding StartTime, StringFormat='{0:HH:mm}'}"
+                                               Style="{StaticResource Caption}"
+                                               TextColor="{StaticResource Primary}" />
+                                        <Label Text="–" Style="{StaticResource Caption}"
+                                               TextColor="{StaticResource TextSecondary}" />
+                                        <Label Text="{Binding EndTime, StringFormat='{0:HH:mm}'}"
+                                               Style="{StaticResource Caption}"
+                                               TextColor="{StaticResource TextSecondary}" />
+                                    </HorizontalStackLayout>
+                                    <Label Text="{Binding Description}"
+                                           Style="{StaticResource BodySmall}"
+                                           TextColor="{StaticResource TextSecondary}"
+                                           IsVisible="{Binding Description, Converter={StaticResource IsNotNullConverter}}" />
+                                </VerticalStackLayout>
+                            </Grid>
+                        </Frame>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+
+            <ActivityIndicator IsRunning="{Binding IsBusy}"
+                               IsVisible="{Binding IsBusy}"
+                               Color="{StaticResource Primary}"
+                               VerticalOptions="Center" HorizontalOptions="Center" />
+        </Grid>
+    </Grid>
+</ContentPage>

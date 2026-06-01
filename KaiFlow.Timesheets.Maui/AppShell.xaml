@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<Shell
+    x:Class="KaiFlow.Timesheets.AppShell"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:auth="clr-namespace:KaiFlow.Timesheets.Views.Auth"
+    xmlns:emp="clr-namespace:KaiFlow.Timesheets.Views.Employee"
+    xmlns:hr="clr-namespace:KaiFlow.Timesheets.Views.Hr"
+    Shell.FlyoutBehavior="Disabled"
+    BackgroundColor="{StaticResource SurfaceDark}">
+
+    <!-- Auth flow (no tabs/flyout) -->
+    <ShellContent
+        x:Name="IdEntryShell"
+        Route="IdEntry"
+        ContentTemplate="{DataTemplate auth:IdEntryPage}"
+        Shell.FlyoutItemIsVisible="False" />
+
+    <ShellContent
+        Route="EmployeeLogin"
+        ContentTemplate="{DataTemplate auth:EmployeeLoginPage}"
+        Shell.FlyoutItemIsVisible="False" />
+
+    <ShellContent
+        Route="EmployeeEmailOtp"
+        ContentTemplate="{DataTemplate auth:EmployeeEmailOtpPage}"
+        Shell.FlyoutItemIsVisible="False" />
+
+    <ShellContent
+        Route="HrSignIn"
+        ContentTemplate="{DataTemplate auth:HrSignInPage}"
+        Shell.FlyoutItemIsVisible="False" />
+
+    <ShellContent
+        Route="HrRegister"
+        ContentTemplate="{DataTemplate auth:HrRegisterPage}"
+        Shell.FlyoutItemIsVisible="False" />
+
+    <ShellContent
+        Route="HrRegisterVerifyCode"
+        ContentTemplate="{DataTemplate auth:HrRegisterVerifyCodePage}"
+        Shell.FlyoutItemIsVisible="False" />
+
+    <ShellContent
+        Route="HrRegisterCompanyDetails"
+        ContentTemplate="{DataTemplate auth:HrRegisterCompanyDetailsPage}"
+        Shell.FlyoutItemIsVisible="False" />
+
+    <ShellContent
+        Route="RoleSelection"
+        ContentTemplate="{DataTemplate auth:RoleSelectionPage}"
+        Shell.FlyoutItemIsVisible="False" />
+
+    <ShellContent
+        Route="EmployeeCompanySelector"
+        ContentTemplate="{DataTemplate auth:EmployeeCompanySelectorPage}"
+        Shell.FlyoutItemIsVisible="False" />
+
+    <!-- Employee / HR home (drill-down pages use RegisterRoute + push navigation) -->
+    <ShellContent
+        Route="EmployeeDashboard"
+        ContentTemplate="{DataTemplate emp:EmployeeDashboardPage}"
+        Shell.FlyoutItemIsVisible="False" />
+
+    <ShellContent
+        Route="HrDashboard"
+        ContentTemplate="{DataTemplate hr:HrDashboardPage}"
+        Shell.FlyoutItemIsVisible="False" />
+
+</Shell>

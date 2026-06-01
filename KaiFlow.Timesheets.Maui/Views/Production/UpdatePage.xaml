@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Production.UpdatePage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Production"
+    xmlns:kf="clr-namespace:KaiFlow.Timesheets.Controls"
+    x:DataType="vm:UpdateViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="{Binding Title}">
+
+    <ScrollView Padding="24">
+        <VerticalStackLayout Spacing="20" VerticalOptions="Center">
+            <Label Text="&#xE923;" FontFamily="MaterialIcons" FontSize="48" TextColor="{StaticResource Primary}" HorizontalOptions="Center" />
+            <kf:SectionHeader
+                Title="Update available"
+                Subtitle="{Binding UpdateInfo.Summary, FallbackValue='Checking for updates…'}" />
+
+            <Border Padding="16" Stroke="{StaticResource Divider}" BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 14">
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="{Binding InstalledVersion, StringFormat='Installed: {0}'}" Style="{StaticResource Caption}" />
+                    <Label Text="{Binding LatestVersion, StringFormat='Latest: {0}'}" Style="{StaticResource BodyMedium}" />
+                    <Label Text="Release notes" Style="{StaticResource LabelSection}" Margin="0,8,0,0" />
+                    <Label Text="{Binding ReleaseNotes}" Style="{StaticResource BodySmall}" TextColor="{StaticResource TextSecondary}" />
+                </VerticalStackLayout>
+            </Border>
+
+            <Button Text="Download update"
+                    Command="{Binding OpenStoreCommand}"
+                    Style="{StaticResource PrimaryButton}"
+                    IsVisible="{Binding HasStoreUrl}" />
+
+            <Button Text="Update later"
+                    Command="{Binding ContinueCommand}"
+                    Style="{StaticResource SecondaryButton}"
+                    IsVisible="{Binding CanSkip}" />
+
+            <Label Text="This update is required. Install the latest version to continue using KaiFlow."
+                   Style="{StaticResource Caption}"
+                   TextColor="{StaticResource Warning}"
+                   IsVisible="{Binding IsMandatory}"
+                   HorizontalTextAlignment="Center" />
+
+            <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}" Color="{StaticResource Primary}" />
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Auth.HrRegisterPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Auth"
+    x:DataType="vm:HrRegisterViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="Create Account">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="32" Spacing="16">
+            <Label Text="Create Company Account" Style="{StaticResource HeadlineMedium}" />
+
+            <Entry Placeholder="Email" Text="{Binding Email}" Keyboard="Email" Style="{StaticResource DarkEntry}" />
+            <Grid ColumnDefinitions="*,Auto">
+                <Entry Grid.Column="0" Placeholder="Password" Text="{Binding Password}"
+                       IsPassword="{Binding ShowPassword, Converter={StaticResource InverseBoolConverter}}"
+                       Style="{StaticResource DarkEntry}" />
+                <Button Grid.Column="1"
+                        Text="{Binding ShowPassword, Converter={StaticResource BoolToStringConverter}, ConverterParameter='Hide|Show'}"
+                        Command="{Binding ToggleShowPasswordCommand}"
+                        Style="{StaticResource TextButton}" FontSize="12" WidthRequest="60" />
+            </Grid>
+            <Entry Placeholder="Confirm Password" Text="{Binding ConfirmPassword}"
+                   IsPassword="{Binding ShowPassword, Converter={StaticResource InverseBoolConverter}}"
+                   Style="{StaticResource DarkEntry}" />
+
+            <Label Text="{Binding ErrorMessage}" TextColor="{StaticResource Error}"
+                   IsVisible="{Binding ErrorMessage, Converter={StaticResource IsNotNullConverter}}" />
+
+            <Button Text="Continue"
+                    Command="{Binding RegisterCommand}"
+                    IsEnabled="{Binding IsNotBusy}"
+                    Style="{StaticResource PrimaryButton}" />
+
+            <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}"
+                               Color="{StaticResource Primary}" HorizontalOptions="Center" />
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

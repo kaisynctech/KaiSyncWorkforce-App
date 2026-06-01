@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Auth.EmployeeRegistrationStatusPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Auth"
+    x:DataType="vm:EmployeeRegistrationStatusViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="Registration Status">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="32" Spacing="20" VerticalOptions="Center">
+
+            <Label Text="{Binding Headline}"
+                   Style="{StaticResource HeadlineMedium}"
+                   HorizontalTextAlignment="Center" />
+
+            <Frame BackgroundColor="{Binding IsPending, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FEF3C7|#FEE2E2'}"
+                   BorderColor="{Binding IsPending, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#F59E0B|#FCA5A5'}"
+                   CornerRadius="12" Padding="20" HasShadow="False">
+                <Label Text="{Binding Message}"
+                       FontFamily="Poppins" FontSize="14"
+                       TextColor="{Binding IsPending, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#92400E|#991B1B'}"
+                       HorizontalTextAlignment="Center" />
+            </Frame>
+
+            <Button Text="Back to Login"
+                    Command="{Binding BackToLoginCommand}"
+                    BackgroundColor="{StaticResource Primary}" TextColor="White"
+                    FontFamily="PoppinsSemiBold" CornerRadius="10" HeightRequest="48" />
+
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

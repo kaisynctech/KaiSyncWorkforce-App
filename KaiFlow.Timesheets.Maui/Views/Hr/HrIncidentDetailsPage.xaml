@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Hr.HrIncidentDetailsPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:HrIncidentDetailsViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="Incident Details">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="16" Spacing="16"
+                             IsVisible="{Binding Incident, Converter={StaticResource IsNotNullConverter}}">
+
+            <Frame Style="{StaticResource CardFrame}">
+                <Grid ColumnDefinitions="*,Auto">
+                    <VerticalStackLayout Grid.Column="0" Spacing="4">
+                        <Label Text="{Binding Incident.DisplayTitle}"
+                               FontFamily="PoppinsBold" FontSize="18"
+                               TextColor="{StaticResource TextPrimary}" />
+                        <Label Text="{Binding Incident.StatusRaw}"
+                               Style="{StaticResource Caption}" TextColor="{StaticResource Primary}" />
+                        <Label Text="{Binding Incident.CreatedAt, StringFormat='Reported {0:dd MMM yyyy, HH:mm}'}"
+                               Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                    </VerticalStackLayout>
+                    <Frame Grid.Column="1"
+                           BackgroundColor="{Binding Incident.SeverityRaw, Converter={StaticResource EqToStyleConverter}, ConverterParameter='critical|#FEE2E2,high|#FEF3C7,medium|#DBEAFE,#DCFCE7'}"
+                           BorderColor="Transparent" CornerRadius="10" Padding="8,4" HasShadow="False"
+                           VerticalOptions="Center">
+                        <Label Text="{Binding Incident.SeverityRaw}"
+                               FontFamily="PoppinsSemiBold" FontSize="12"
+                               TextColor="{StaticResource TextPrimary}" />
+                    </Frame>
+                </Grid>
+            </Frame>
+
+            <Frame Style="{StaticResource CardFrame}" IsVisible="{Binding JobTitle, Converter={StaticResource IsNotNullConverter}}">
+                <Label Text="{Binding JobTitle, StringFormat='Linked job: {0}'}"
+                       Style="{StaticResource BodyMedium}" TextColor="{StaticResource Primary}" />
+            </Frame>
+
+            <Frame Style="{StaticResource CardFrame}">
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                    <Label Grid.Column="0" Text="Reported by" Style="{StaticResource LabelField}" VerticalOptions="Center" />
+                    <Label Grid.Column="1" Text="{Binding ReportedBy}" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                </Grid>
+            </Frame>
+
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="DESCRIPTION" Style="{StaticResource LabelSection}" />
+                    <Label Text="{Binding Incident.Description}" LineBreakMode="WordWrap"
+                           Style="{StaticResource BodyMedium}" TextColor="{StaticResource TextPrimary}" />
+                    <Label Text="{Binding Incident.CategoryRaw, StringFormat='Category: {0}'}"
+                           Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <Frame Style="{StaticResource CardFrame}" IsVisible="{Binding Incident.HasPhotos}">
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="PHOTOS" Style="{StaticResource LabelSection}" />
+                    <ScrollView Orientation="Horizontal" HeightRequest="120">
+                        <HorizontalStackLayout Spacing="8" BindableLayout.ItemsSource="{Binding Incident.PhotoUrls}">
+                            <BindableLayout.ItemTemplate>
+                                <DataTemplate x:DataType="x:String">
+                                    <Image Source="{Binding .}" WidthRequest="110" HeightRequest="110" Aspect="AspectFill" />
+                                </DataTemplate>
+                            </BindableLayout.ItemTemplate>
+                        </HorizontalStackLayout>
+                    </ScrollView>
+                </VerticalStackLayout>
+            </Frame>
+
+            <Frame Style="{StaticResource CardFrame}" IsVisible="{Binding Incident.IsClosed}">
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="RESOLUTION" Style="{StaticResource LabelSection}" />
+                    <Label Text="{Binding Incident.ResolutionNotes, FallbackValue='No notes.'}"
+                           Style="{StaticResource BodyMedium}" TextColor="{StaticResource TextSecondary}" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <Frame Style="{StaticResource CardFrame}">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                    <VerticalStackLayout Grid.Column="0" Spacing="2">
+                        <Label Text="ASSIGNED TO" Style="{StaticResource LabelSection}" />
+                        <Label Text="{Binding AssigneeName}" Style="{StaticResource BodyMedium}" />
+                    </VerticalStackLayout>
+                    <Button Grid.Column="1" Text="Assign" Command="{Binding AssignCommand}"
+                            IsVisible="{Binding CanManage}"
+                            BackgroundColor="{StaticResource SurfaceDark}" TextColor="{StaticResource Primary}"
+                            CornerRadius="8" FontSize="12" Padding="12,6" />
+                </Grid>
+            </Frame>
+
+            <HorizontalStackLayout Spacing="8" IsVisible="{Binding CanManage}">
+                <Button Text="Investigating" Command="{Binding SetStatusCommand}" CommandParameter="investigating"
+                        Style="{StaticResource OutlinedButton}" FontSize="11" />
+                <Button Text="Resolved" Command="{Binding SetStatusCommand}" CommandParameter="resolved"
+                        Style="{StaticResource OutlinedButton}" FontSize="11" />
+                <Button Text="Close" Command="{Binding CloseCommand}" Style="{StaticResource PrimaryButton}" FontSize="11" />
+            </HorizontalStackLayout>
+
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="10">
+                    <Label Text="COMMENTS" Style="{StaticResource LabelSection}" />
+                    <CollectionView ItemsSource="{Binding Comments}">
+                        <CollectionView.EmptyView>
+                            <Label Text="No comments yet." Style="{StaticResource EmptyState}" />
+                        </CollectionView.EmptyView>
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="models:IncidentComment">
+                                <VerticalStackLayout Padding="0,6" Spacing="2">
+                                    <Label Text="{Binding AuthorDisplay}" Style="{StaticResource Caption}"
+                                           TextColor="{StaticResource Primary}" />
+                                    <Label Text="{Binding Body}" Style="{StaticResource BodyMedium}" LineBreakMode="WordWrap" />
+                                    <Label Text="{Binding CreatedAt, StringFormat='{0:dd MMM HH:mm}'}"
+                                           Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                                </VerticalStackLayout>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                    <Entry Text="{Binding NewComment}" Placeholder="Add a comment..." Style="{StaticResource DarkEntry}" />
+                    <Button Text="Post Comment" Command="{Binding AddCommentCommand}" Style="{StaticResource OutlinedButton}" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <Frame Style="{StaticResource CardFrame}" IsVisible="{Binding StatusHistory.Count, Converter={StaticResource IsNotZeroConverter}}">
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="STATUS HISTORY" Style="{StaticResource LabelSection}" />
+                    <CollectionView ItemsSource="{Binding StatusHistory}">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="models:IncidentStatusHistory">
+                                <Label Text="{Binding NewStatus, StringFormat='{0} — '}"
+                                       Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </VerticalStackLayout>
+            </Frame>
+
+            <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}"
+                               Color="{StaticResource Primary}" HorizontalOptions="Center" />
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

@@ -1,0 +1,416 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Hr.HrJobDetailsPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
+    xmlns:shared="clr-namespace:KaiFlow.Timesheets.ViewModels"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:HrJobDetailsViewModel"
+    x:Name="Self"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="{Binding Title}">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="16" Spacing="16">
+
+            <!-- Top actions (larger than toolbar items) -->
+            <ScrollView Orientation="Horizontal">
+                <HorizontalStackLayout Spacing="8" Padding="0,0,0,4">
+                    <Button Text="Save" Command="{Binding SaveJobCommand}"
+                            Style="{StaticResource PrimaryButton}"
+                            FontSize="14" HeightRequest="42" Padding="18,8" MinimumWidthRequest="72" />
+                    <Button Text="Chat" Command="{Binding OpenThreadCommand}"
+                            Style="{StaticResource OutlinedButton}"
+                            FontSize="14" HeightRequest="42" Padding="18,8" MinimumWidthRequest="72" />
+                    <Button Text="Edit" Command="{Binding EditJobCommand}"
+                            Style="{StaticResource SecondaryButton}"
+                            FontSize="14" HeightRequest="42" Padding="18,8" MinimumWidthRequest="72" />
+                    <Button Text="Delete" Command="{Binding DeleteJobCommand}"
+                            BackgroundColor="{StaticResource ErrorDark}"
+                            TextColor="{StaticResource Error}"
+                            FontFamily="PoppinsSemiBold" FontSize="14"
+                            CornerRadius="12" Padding="18,8" HeightRequest="42" MinimumWidthRequest="72"
+                            BorderColor="{StaticResource Error}" BorderWidth="1" />
+                </HorizontalStackLayout>
+            </ScrollView>
+
+            <Label Text="{Binding ErrorMessage}"
+                   TextColor="#FCA5A5" FontSize="13" FontFamily="PoppinsSemiBold"
+                   IsVisible="{Binding ErrorMessage, Converter={StaticResource IsNotNullConverter}}" />
+
+            <!-- Job header -->
+            <Frame Style="{StaticResource CardFrame}" IsVisible="{Binding Job, Converter={StaticResource IsNotNullConverter}}">
+                <VerticalStackLayout Spacing="8">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Text="{Binding Job.Title}" FontFamily="PoppinsSemiBold" FontSize="18"
+                               TextColor="{StaticResource TextPrimary}" />
+                        <Frame Grid.Column="1"
+                               BackgroundColor="{Binding Job.StatusRaw, Converter={StaticResource EqToStyleConverter}, ConverterParameter='completed|#DCFCE7,inProgress|#DBEAFE,cancelled|#FEE2E2,#F3F4F6'}"
+                               BorderColor="Transparent" CornerRadius="12" Padding="10,4" HasShadow="False">
+                            <Label Text="{Binding Job.StatusRaw}" FontFamily="PoppinsSemiBold" FontSize="11"
+                                   TextColor="{StaticResource TextPrimary}" />
+                        </Frame>
+                    </Grid>
+
+                    <Label Text="{Binding Job.Description}"
+                           Style="{StaticResource BodyMedium}"
+                           TextColor="{StaticResource TextSecondary}"
+                           IsVisible="{Binding Job.Description, Converter={StaticResource IsNotNullConverter}}" />
+
+                    <BoxView HeightRequest="1" BackgroundColor="{StaticResource Divider}" />
+
+                    <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="12">
+                        <Label Grid.Row="0" Grid.Column="0" Text="Priority" Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" VerticalOptions="Center" />
+                        <Label Grid.Row="0" Grid.Column="1" Text="{Binding Job.PriorityRaw}" Style="{StaticResource BodySmall}" VerticalOptions="Center" />
+
+                        <Label Grid.Row="1" Grid.Column="0" Text="Client" Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" VerticalOptions="Center" />
+                        <Label Grid.Row="1" Grid.Column="1" Text="{Binding Client.Name, FallbackValue='—'}" Style="{StaticResource BodySmall}" VerticalOptions="Center" />
+
+                        <Label Grid.Row="2" Grid.Column="0" Text="Site" Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" VerticalOptions="Center" />
+                        <Label Grid.Row="2" Grid.Column="1" Text="{Binding Site.Address, FallbackValue='—'}" Style="{StaticResource BodySmall}" VerticalOptions="Center" />
+
+                        <Label Grid.Row="3" Grid.Column="0" Text="Start" Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" VerticalOptions="Center" />
+                        <Label Grid.Row="3" Grid.Column="1" Text="{Binding Job.ScheduledStart, StringFormat='{0:dd MMM yyyy HH:mm}', FallbackValue='—'}" Style="{StaticResource BodySmall}" VerticalOptions="Center" />
+
+                        <Label Grid.Row="4" Grid.Column="0" Text="End" Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" VerticalOptions="Center" />
+                        <Label Grid.Row="4" Grid.Column="1" Text="{Binding Job.ScheduledEnd, StringFormat='{0:dd MMM yyyy HH:mm}', FallbackValue='—'}" Style="{StaticResource BodySmall}" VerticalOptions="Center" />
+
+                        <Label Grid.Row="5" Grid.Column="0" Text="Est. Cost" Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" VerticalOptions="Center" />
+                        <Label Grid.Row="5" Grid.Column="1" Text="{Binding Job.EstimatedCost, StringFormat='R{0:N2}'}" Style="{StaticResource BodySmall}" VerticalOptions="Center" />
+                    </Grid>
+
+                    <!-- Lifecycle actions -->
+                    <HorizontalStackLayout Spacing="8"
+                                           IsVisible="{Binding ShowLifecycleActions}">
+                        <Button Text="Mark First Response"
+                                Command="{Binding MarkFirstResponseCommand}"
+                                IsVisible="{Binding Job.FirstResponseAt, Converter={StaticResource IsNullConverter}}"
+                                Style="{StaticResource SecondaryButton}" FontSize="12" />
+                        <Button Text="Close Job"
+                                Command="{Binding CloseJobCommand}"
+                                Style="{StaticResource PrimaryButton}" FontSize="12" />
+                    </HorizontalStackLayout>
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Status update -->
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="UPDATE STATUS" Style="{StaticResource LabelSection}" />
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                        <Picker Grid.Column="0" ItemsSource="{Binding StatusOptions}"
+                                SelectedItem="{Binding SelectedStatus}"
+                                TextColor="{StaticResource TextPrimary}" BackgroundColor="Transparent" />
+                        <Button Grid.Column="1" Text="Update" Command="{Binding UpdateStatusCommand}"
+                                Style="{StaticResource PrimaryButton}" WidthRequest="80" />
+                    </Grid>
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Team & contractor -->
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="10">
+                    <Label Text="TEAM &amp; CONTRACTOR" Style="{StaticResource LabelSection}" />
+                    <Label Text="Assign employees and/or a contractor for this job." FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                    <CollectionView ItemsSource="{Binding TeamMembers}" HeightRequest="160">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="vm:SelectableEmployee">
+                                <Grid ColumnDefinitions="Auto,*" Padding="0,4">
+                                    <CheckBox IsChecked="{Binding IsSelected}" VerticalOptions="Center" />
+                                    <Label Grid.Column="1" Text="{Binding Employee.FullName}" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                                </Grid>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Picker Title="Contractor (optional)" ItemsSource="{Binding Contractors}" ItemDisplayBinding="{Binding Name}"
+                                SelectedItem="{Binding SelectedContractor}" TitleColor="{StaticResource TextSecondary}" TextColor="{StaticResource TextPrimary}" />
+                        <Button Grid.Column="1" Text="+ New" Command="{Binding AddContractorCommand}"
+                                Style="{StaticResource OutlinedButton}" FontSize="12" HeightRequest="36" Padding="10,6" />
+                    </Grid>
+                    <Entry Placeholder="Amount paid to contractor (R)" Text="{Binding ContractorCostText, Mode=TwoWay}"
+                           Keyboard="Numeric" Style="{StaticResource DarkEntry}" />
+                    <Button Text="Save team &amp; contractor" Command="{Binding SaveTeamAndContractorCommand}" Style="{StaticResource PrimaryButton}" HeightRequest="44" FontSize="13" />
+                    <Label Text="{Binding ContractorHoursSummary}" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+                    <CollectionView ItemsSource="{Binding SiteSessions}" HeightRequest="140">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="models:JobSiteSession">
+                                <Grid ColumnDefinitions="*,Auto" Padding="0,4">
+                                    <VerticalStackLayout>
+                                        <Label Text="{Binding PartyLine}" FontSize="12" FontFamily="PoppinsSemiBold" />
+                                        <Label Text="{Binding SignInDisplay, StringFormat='In: {0}'}" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                                    </VerticalStackLayout>
+                                    <Label Grid.Column="1" Text="{Binding HoursDisplay}" FontSize="12" VerticalOptions="Center" />
+                                </Grid>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Cost breakdown -->
+            <Frame Style="{StaticResource CardFrame}" IsVisible="{Binding Job, Converter={StaticResource IsNotNullConverter}}">
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="COST BREAKDOWN" Style="{StaticResource LabelSection}" />
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Text="Labor" Style="{StaticResource BodyMedium}" />
+                        <Label Grid.Column="1" Text="{Binding Job.LaborCost, StringFormat='R{0:N2}'}" Style="{StaticResource BodyMedium}" />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Text="Inventory" Style="{StaticResource BodyMedium}" />
+                        <Label Grid.Column="1" Text="{Binding Job.InventoryCost, StringFormat='R{0:N2}'}" Style="{StaticResource BodyMedium}" />
+                    </Grid>
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Text="Actual" Style="{StaticResource BodyMedium}" />
+                        <Label Grid.Column="1" Text="{Binding Job.ActualCost, StringFormat='R{0:N2}'}" Style="{StaticResource BodyMedium}" />
+                    </Grid>
+                    <BoxView HeightRequest="1" BackgroundColor="{StaticResource Divider}" />
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Text="Total" Style="{StaticResource BodyLarge}" />
+                        <Label Grid.Column="1" Text="{Binding Job.TotalCost, StringFormat='R{0:N2}'}"
+                               Style="{StaticResource BodyLarge}" TextColor="{StaticResource Primary}" />
+                    </Grid>
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Labor entries -->
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="LABOR ENTRIES" Style="{StaticResource LabelSection}" />
+                    <CollectionView ItemsSource="{Binding LaborEntries}">
+                        <CollectionView.EmptyView>
+                            <Label Text="No labor entries." Style="{StaticResource EmptyState}" />
+                        </CollectionView.EmptyView>
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="models:LaborEntry">
+                                <Grid ColumnDefinitions="*,Auto,Auto" Padding="0,4">
+                                    <Label Text="{Binding WorkDate}" Style="{StaticResource BodySmall}" />
+                                    <Label Grid.Column="1" Text="{Binding Hours, StringFormat='{0:F1}h'}"
+                                           Style="{StaticResource BodySmall}" Margin="8,0" />
+                                    <Label Grid.Column="2" Text="{Binding TotalCost, StringFormat='R{0:N2}'}"
+                                           Style="{StaticResource BodySmall}" TextColor="{StaticResource Primary}" />
+                                </Grid>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Inventory -->
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="8">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Text="INVENTORY" Style="{StaticResource LabelSection}" />
+                        <Button Grid.Column="1" Text="+ Add" Command="{Binding AddInventoryCommand}"
+                                Style="{StaticResource OutlinedButton}" FontSize="12" HeightRequest="36" Padding="12,6" />
+                    </Grid>
+                    <Label Text="{Binding InventoryTotalDisplay, StringFormat='Total inventory cost: {0}'}" FontSize="12" TextColor="{StaticResource Primary}" />
+                    <CollectionView ItemsSource="{Binding InventoryLines}">
+                        <CollectionView.EmptyView>
+                            <Label Text="No inventory selected yet." Style="{StaticResource EmptyState}" />
+                        </CollectionView.EmptyView>
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="shared:InventoryUsageLine">
+                                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" Padding="0,6">
+                                    <Label Text="{Binding ItemName}" Style="{StaticResource BodyMedium}" />
+                                    <Label Grid.Column="1" Text="{Binding TotalCost, StringFormat='R{0:N2}'}"
+                                           Style="{StaticResource BodySmall}" TextColor="{StaticResource Primary}" />
+                                    <Label Grid.Row="1" Grid.ColumnSpan="2"
+                                           FontSize="11" TextColor="{StaticResource TextSecondary}">
+                                        <Label.Text>
+                                            <MultiBinding StringFormat="Supplier: {0} · {1:F1} × R{2:N2}">
+                                                <Binding Path="Supplier" />
+                                                <Binding Path="Quantity" />
+                                                <Binding Path="UnitCost" />
+                                            </MultiBinding>
+                                        </Label.Text>
+                                    </Label>
+                                </Grid>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Photos -->
+            <Frame Style="{StaticResource CardFrame}">
+                <Grid>
+                    <VerticalStackLayout Spacing="10">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Text="JOB PHOTOS" Style="{StaticResource LabelSection}" VerticalOptions="Center" />
+                        <ActivityIndicator Grid.Column="1" IsRunning="{Binding IsPhotosBusy}" IsVisible="{Binding IsPhotosBusy}"
+                                           Color="{StaticResource Primary}" HeightRequest="24" WidthRequest="24" />
+                    </Grid>
+                    <HorizontalStackLayout Spacing="8">
+                        <Button Text="Upload Before" Command="{Binding UploadPhotoCommand}" CommandParameter="before"
+                                IsEnabled="{Binding IsPhotosBusy, Converter={StaticResource InverseBoolConverter}}"
+                                Style="{StaticResource PrimaryButton}" FontSize="12" HeightRequest="40" Padding="14,8" />
+                        <Button Text="Upload After" Command="{Binding UploadPhotoCommand}" CommandParameter="after"
+                                IsEnabled="{Binding IsPhotosBusy, Converter={StaticResource InverseBoolConverter}}"
+                                Style="{StaticResource OutlinedButton}" FontSize="12" HeightRequest="40" Padding="14,8" />
+                    </HorizontalStackLayout>
+                    <Label Text="Before" FontFamily="PoppinsSemiBold" FontSize="12" TextColor="{StaticResource Primary}" IsVisible="{Binding HasPhotosBefore}" />
+                    <CollectionView ItemsSource="{Binding PhotosBefore}" HeightRequest="80" IsVisible="{Binding HasPhotosBefore}">
+                        <CollectionView.ItemsLayout>
+                            <LinearItemsLayout Orientation="Horizontal" ItemSpacing="8" />
+                        </CollectionView.ItemsLayout>
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="x:String">
+                                <Image Source="{Binding .}" HeightRequest="72" WidthRequest="72" Aspect="AspectFill">
+                                    <Image.GestureRecognizers>
+                                        <TapGestureRecognizer Command="{Binding Source={x:Reference Self}, Path=BindingContext.OpenPhotoCommand}" CommandParameter="{Binding .}" />
+                                    </Image.GestureRecognizers>
+                                </Image>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                    <Label Text="After" FontFamily="PoppinsSemiBold" FontSize="12" TextColor="{StaticResource Success}" IsVisible="{Binding HasPhotosAfter}" />
+                    <CollectionView ItemsSource="{Binding PhotosAfter}" HeightRequest="80" IsVisible="{Binding HasPhotosAfter}">
+                        <CollectionView.ItemsLayout>
+                            <LinearItemsLayout Orientation="Horizontal" ItemSpacing="8" />
+                        </CollectionView.ItemsLayout>
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="x:String">
+                                <Image Source="{Binding .}" HeightRequest="72" WidthRequest="72" Aspect="AspectFill">
+                                    <Image.GestureRecognizers>
+                                        <TapGestureRecognizer Command="{Binding Source={x:Reference Self}, Path=BindingContext.OpenPhotoCommand}" CommandParameter="{Binding .}" />
+                                    </Image.GestureRecognizers>
+                                </Image>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                    </VerticalStackLayout>
+                </Grid>
+            </Frame>
+
+            <!-- Job documents -->
+            <Frame Style="{StaticResource CardFrame}">
+                <Grid>
+                    <VerticalStackLayout Spacing="8">
+                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                        <Label Text="DOCUMENTATION" Style="{StaticResource LabelSection}" VerticalOptions="Center" />
+                        <ActivityIndicator Grid.Column="1" IsRunning="{Binding IsDocumentsBusy}" IsVisible="{Binding IsDocumentsBusy}"
+                                           Color="{StaticResource Primary}" HeightRequest="24" WidthRequest="24" VerticalOptions="Center" />
+                        <Button Grid.Column="2" Text="Upload" Command="{Binding UploadJobDocumentCommand}"
+                                IsEnabled="{Binding IsDocumentsBusy, Converter={StaticResource InverseBoolConverter}}"
+                                Style="{StaticResource PrimaryButton}" FontSize="12" HeightRequest="36" Padding="14,6" />
+                    </Grid>
+                    <CollectionView ItemsSource="{Binding JobDocuments}">
+                        <CollectionView.EmptyView>
+                            <Label Text="No documents yet." Style="{StaticResource EmptyState}" />
+                        </CollectionView.EmptyView>
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="models:JobDocument">
+                                <Grid ColumnDefinitions="*,Auto" Padding="0,4">
+                                    <VerticalStackLayout>
+                                        <Label Text="{Binding DocumentName}" Style="{StaticResource BodyMedium}"
+                                               TextColor="{StaticResource TextPrimary}" FontFamily="PoppinsSemiBold" />
+                                        <Label Text="{Binding TypeLabel}" FontSize="11" TextColor="{StaticResource Primary}" />
+                                    </VerticalStackLayout>
+                                    <Button Grid.Column="1" Text="Open" Command="{Binding Source={x:Reference Self}, Path=BindingContext.OpenJobDocumentCommand}"
+                                            CommandParameter="{Binding .}" Style="{StaticResource OutlinedButton}"
+                                            FontSize="11" HeightRequest="34" Padding="12,4" />
+                                </Grid>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                    </VerticalStackLayout>
+                </Grid>
+            </Frame>
+
+            <!-- Checklist -->
+            <Frame Style="{StaticResource CardFrame}">
+                <Grid>
+                    <VerticalStackLayout Spacing="8">
+                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                        <Label Text="CHECKLIST" Style="{StaticResource LabelSection}" VerticalOptions="Center" />
+                        <ActivityIndicator Grid.Column="1" IsRunning="{Binding IsChecklistBusy}" IsVisible="{Binding IsChecklistBusy}"
+                                           Color="{StaticResource Primary}" HeightRequest="24" WidthRequest="24" VerticalOptions="Center" />
+                        <Button Grid.Column="2" Text="+ Add"
+                                Command="{Binding AddChecklistItemCommand}"
+                                IsEnabled="{Binding IsChecklistBusy, Converter={StaticResource InverseBoolConverter}}"
+                                Style="{StaticResource OutlinedButton}" FontSize="12" HeightRequest="36" Padding="12,6" />
+                    </Grid>
+                    <CollectionView ItemsSource="{Binding Checklist}">
+                        <CollectionView.EmptyView>
+                            <Label Text="No checklist items." Style="{StaticResource EmptyState}" />
+                        </CollectionView.EmptyView>
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="models:JobChecklistItem">
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" Padding="0,4">
+                                    <CheckBox IsChecked="{Binding IsChecked, Mode=OneWay}"
+                                              Command="{Binding Source={x:Reference Self}, Path=BindingContext.ToggleChecklistItemCommand}"
+                                              CommandParameter="{Binding .}"
+                                              Color="{StaticResource Primary}"
+                                              VerticalOptions="Center" />
+                                    <Label Grid.Column="1" Text="{Binding Description}"
+                                           FontFamily="PoppinsMedium" FontSize="14"
+                                           TextColor="{Binding IsChecked, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#9CA3AF|#111827'}"
+                                           VerticalOptions="Center" />
+                                </Grid>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                    </VerticalStackLayout>
+                </Grid>
+            </Frame>
+
+            <!-- Incidents -->
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="8">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Text="INCIDENTS" Style="{StaticResource LabelSection}" />
+                        <Button Grid.Column="1" Text="Report" Command="{Binding ReportIncidentCommand}"
+                                Style="{StaticResource OutlinedButton}" FontSize="12" HeightRequest="36" Padding="12,6" />
+                    </Grid>
+                    <CollectionView ItemsSource="{Binding Incidents}">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="models:IncidentReport">
+                                <VerticalStackLayout Padding="0,4" Spacing="2">
+                                    <Label Text="{Binding SeverityRaw}" FontFamily="PoppinsSemiBold" FontSize="12"
+                                           TextColor="{StaticResource Accent}" />
+                                    <Label Text="{Binding Description}" Style="{StaticResource Caption}"
+                                           TextColor="{StaticResource TextSecondary}"
+                                           MaxLines="2" LineBreakMode="TailTruncation" />
+                                </VerticalStackLayout>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Job card submission -->
+            <Frame Style="{StaticResource CardFrame}"
+                   IsVisible="{Binding Card, Converter={StaticResource IsNotNullConverter}}">
+                <VerticalStackLayout Spacing="8">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Text="JOB CARD SUBMISSION" Style="{StaticResource LabelSection}" />
+                        <Frame Grid.Column="1"
+                               BackgroundColor="{Binding Card.IsCompleted, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#DCFCE7|#FEF9C3'}"
+                               BorderColor="Transparent" CornerRadius="10" Padding="8,3" HasShadow="False">
+                            <Label Text="{Binding Card.IsCompleted, Converter={StaticResource BoolToStringConverter}, ConverterParameter='Completed|In Progress'}"
+                                   FontSize="11" FontFamily="PoppinsSemiBold"
+                                   TextColor="{StaticResource TextPrimary}" />
+                        </Frame>
+                    </Grid>
+                    <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="6" ColumnSpacing="12"
+                          IsVisible="{Binding Card, Converter={StaticResource IsNotNullConverter}}">
+                        <Label Grid.Row="0" Grid.Column="0" Text="Work Performed" Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                        <Label Grid.Row="0" Grid.Column="1" Text="{Binding Card.WorkPerformed, FallbackValue='—'}" Style="{StaticResource BodySmall}" />
+                        <Label Grid.Row="1" Grid.Column="0" Text="Materials Used" Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                        <Label Grid.Row="1" Grid.Column="1" Text="{Binding Card.MaterialsUsed, FallbackValue='—'}" Style="{StaticResource BodySmall}" />
+                        <Label Grid.Row="2" Grid.Column="0" Text="Client Signed" Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                        <Label Grid.Row="2" Grid.Column="1" Text="{Binding Card.ClientNameSigned, FallbackValue='—'}" Style="{StaticResource BodySmall}" />
+                        <Label Grid.Row="3" Grid.Column="0" Text="Duration" Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                        <Label Grid.Row="3" Grid.Column="1" Style="{StaticResource BodySmall}"
+                               Text="{Binding Card.WorkDuration, StringFormat='{0:hh\\:mm}', FallbackValue='—'}" />
+                    </Grid>
+                </VerticalStackLayout>
+            </Frame>
+
+            <ActivityIndicator IsRunning="{Binding IsLoadingPage}" IsVisible="{Binding IsLoadingPage}"
+                               Color="{StaticResource Primary}" HorizontalOptions="Center" Margin="0,8" />
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

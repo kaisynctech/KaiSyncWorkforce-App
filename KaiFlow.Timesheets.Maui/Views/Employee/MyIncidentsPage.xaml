@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Employee.MyIncidentsPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Employees"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:MyIncidentsViewModel"
+    x:Name="Self"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="Incidents">
+
+    <ContentPage.ToolbarItems>
+        <ToolbarItem Text="Export" Command="{Binding ExportCommand}" />
+        <ToolbarItem Text="New" Command="{Binding NewIncidentCommand}" />
+    </ContentPage.ToolbarItems>
+
+    <Grid RowDefinitions="Auto,Auto,Auto,*">
+        <Label Grid.Row="0" Margin="16,8,16,0"
+               Text="{Binding PendingOfflineCount, StringFormat='{0} incident(s) pending sync'}"
+               Style="{StaticResource Caption}"
+               TextColor="{StaticResource Accent}"
+               IsVisible="{Binding PendingOfflineCount, Converter={StaticResource IsNotZeroConverter}}" />
+
+        <ScrollView Grid.Row="1" Orientation="Horizontal" Margin="8,4">
+            <HorizontalStackLayout Padding="8,0" Spacing="8">
+                <Button Text="All" Command="{Binding SetScopeCommand}" CommandParameter="all"
+                        CornerRadius="16" HeightRequest="32" FontSize="12"
+                        BackgroundColor="{Binding Scope, Converter={StaticResource EqToStyleConverter}, ConverterParameter='all|#3B82F6,#FFFFFF'}"
+                        TextColor="{Binding Scope, Converter={StaticResource EqToStyleConverter}, ConverterParameter='all|#FFFFFF,#6B7280'}" />
+                <Button Text="Standalone" Command="{Binding SetScopeCommand}" CommandParameter="standalone"
+                        CornerRadius="16" HeightRequest="32" FontSize="12"
+                        BackgroundColor="{Binding Scope, Converter={StaticResource EqToStyleConverter}, ConverterParameter='standalone|#3B82F6,#FFFFFF'}"
+                        TextColor="{Binding Scope, Converter={StaticResource EqToStyleConverter}, ConverterParameter='standalone|#FFFFFF,#6B7280'}" />
+                <Button Text="Job-linked" Command="{Binding SetScopeCommand}" CommandParameter="job"
+                        CornerRadius="16" HeightRequest="32" FontSize="12"
+                        BackgroundColor="{Binding Scope, Converter={StaticResource EqToStyleConverter}, ConverterParameter='job|#3B82F6,#FFFFFF'}"
+                        TextColor="{Binding Scope, Converter={StaticResource EqToStyleConverter}, ConverterParameter='job|#FFFFFF,#6B7280'}" />
+            </HorizontalStackLayout>
+        </ScrollView>
+
+        <ScrollView Grid.Row="2" Orientation="Horizontal" Margin="8,0,8,4">
+            <HorizontalStackLayout Padding="8,0" Spacing="8">
+                <Button Text="Open" Command="{Binding SetStatusFilterCommand}" CommandParameter="open"
+                        CornerRadius="16" HeightRequest="28" FontSize="11"
+                        BackgroundColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='open|#3B82F6,#FFFFFF'}"
+                        TextColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='open|#FFFFFF,#6B7280'}" />
+                <Button Text="All status" Command="{Binding SetStatusFilterCommand}" CommandParameter="all"
+                        CornerRadius="16" HeightRequest="28" FontSize="11"
+                        BackgroundColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='all|#3B82F6,#FFFFFF'}"
+                        TextColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='all|#FFFFFF,#6B7280'}" />
+                <Button Text="Closed" Command="{Binding SetStatusFilterCommand}" CommandParameter="closed"
+                        CornerRadius="16" HeightRequest="28" FontSize="11"
+                        BackgroundColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='closed|#3B82F6,#FFFFFF'}"
+                        TextColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='closed|#FFFFFF,#6B7280'}" />
+            </HorizontalStackLayout>
+        </ScrollView>
+
+        <RefreshView Grid.Row="3" Command="{Binding RefreshCommand}" IsRefreshing="{Binding IsBusy}">
+            <VerticalStackLayout Spacing="8" Margin="16,0,16,16">
+                <SearchBar Text="{Binding SearchText}" Placeholder="Search incidents..." />
+                <CollectionView ItemsSource="{Binding Incidents}">
+                    <CollectionView.EmptyView>
+                        <Label Text="{Binding EmptyMessage}" Style="{StaticResource EmptyState}" />
+                    </CollectionView.EmptyView>
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="models:IncidentReport">
+                            <Frame Style="{StaticResource CardFrame}" Margin="0,4">
+                                <Frame.GestureRecognizers>
+                                    <TapGestureRecognizer
+                                        Command="{Binding BindingContext.ViewIncidentCommand, Source={x:Reference Self}}"
+                                        CommandParameter="{Binding .}" />
+                                </Frame.GestureRecognizers>
+                                <VerticalStackLayout Spacing="6">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <Label Grid.Column="0" Text="{Binding DisplayTitle}"
+                                               Style="{StaticResource BodyMedium}" LineBreakMode="TailTruncation" />
+                                        <Label Grid.Column="1" Text="{Binding StatusRaw}"
+                                               Style="{StaticResource Caption}" TextColor="{StaticResource Primary}" />
+                                    </Grid>
+                                    <HorizontalStackLayout Spacing="8">
+                                        <Label Text="{Binding SeverityRaw}" Style="{StaticResource Caption}"
+                                               TextColor="{StaticResource Accent}" />
+                                        <Label Text="{Binding CategoryRaw}" Style="{StaticResource Caption}"
+                                               TextColor="{StaticResource TextSecondary}" />
+                                        <Label Text="Job" Style="{StaticResource Caption}"
+                                               TextColor="{StaticResource Primary}"
+                                               IsVisible="{Binding IsJobLinked}" />
+                                    </HorizontalStackLayout>
+                                    <Label Text="{Binding Description}" Style="{StaticResource Caption}"
+                                           MaxLines="2" LineBreakMode="TailTruncation"
+                                           TextColor="{StaticResource TextSecondary}" />
+                                    <Label Text="{Binding CreatedAt, StringFormat='{0:dd MMM yyyy}'}"
+                                           Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                                </VerticalStackLayout>
+                            </Frame>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+            </VerticalStackLayout>
+        </RefreshView>
+    </Grid>
+</ContentPage>

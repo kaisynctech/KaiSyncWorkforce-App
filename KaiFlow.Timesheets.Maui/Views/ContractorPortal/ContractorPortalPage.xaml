@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.ContractorPortal.ContractorPortalPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.ContractorPortal"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:ContractorPortalViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="{Binding Title}">
+
+    <ContentPage.ToolbarItems>
+        <ToolbarItem Text="Sign out" Command="{Binding SignOutCommand}" />
+    </ContentPage.ToolbarItems>
+
+    <Grid RowDefinitions="Auto,Auto,*" Padding="16" RowSpacing="12">
+        <Frame Grid.Row="0" Style="{StaticResource CardFrame}" Padding="18">
+            <VerticalStackLayout Spacing="4">
+                <Label Text="Contractor portal" Style="{StaticResource Caption}" TextColor="{StaticResource Primary}" />
+                <Label Text="{Binding ContractorName}" Style="{StaticResource HeadlineMedium}" />
+                <Label Text="{Binding CompanyCode, StringFormat='Company: {0}'}" Style="{StaticResource BodySmall}" TextColor="{StaticResource TextSecondary}" />
+                <Label Text="{Binding ContractorCode, StringFormat='Code: {0}'}" Style="{StaticResource BodySmall}" TextColor="{StaticResource TextSecondary}" />
+                <Label Text="{Binding OnSiteBanner}" FontSize="12" TextColor="{StaticResource Primary}" Margin="0,6,0,0" />
+            </VerticalStackLayout>
+        </Frame>
+
+        <HorizontalStackLayout Grid.Row="1" Spacing="8">
+
+            <Button Text="Jobs"
+                    Command="{Binding ShowJobsTabCommand}"
+                    CornerRadius="12" HeightRequest="36" FontSize="12" Padding="14,6"
+                    BackgroundColor="{Binding IsJobsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#3B82F6|#FFFFFF'}"
+                    TextColor="{Binding IsJobsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#6B7280'}" />
+
+            <Button Text="Payouts"
+                    Command="{Binding ShowPayoutsTabCommand}"
+                    CornerRadius="12" HeightRequest="36" FontSize="12" Padding="14,6"
+                    BackgroundColor="{Binding IsPayoutsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#3B82F6|#FFFFFF'}"
+                    TextColor="{Binding IsPayoutsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#6B7280'}" />
+
+        </HorizontalStackLayout>
+
+        <!-- Jobs tab -->
+        <RefreshView Grid.Row="2" Command="{Binding RefreshCommand}" IsRefreshing="{Binding IsBusy}"
+                     IsVisible="{Binding IsJobsTab}">
+            <CollectionView ItemsSource="{Binding Jobs}">
+                <CollectionView.EmptyView>
+                    <Label Text="No jobs assigned to your contractor profile yet." Style="{StaticResource EmptyState}" />
+                </CollectionView.EmptyView>
+                <CollectionView.ItemTemplate>
+                    <DataTemplate x:DataType="models:Job">
+                        <Frame Style="{StaticResource CardFrame}" Margin="0,0,0,10" Padding="16">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                <VerticalStackLayout Spacing="8" VerticalOptions="Center">
+                                    <Label Text="{Binding Title}" FontFamily="PoppinsSemiBold" FontSize="15" TextColor="{StaticResource TextPrimary}" />
+                                    <Frame BackgroundColor="{StaticResource SurfaceElevated}" BorderColor="{StaticResource Divider}"
+                                           CornerRadius="8" Padding="8,3" HasShadow="False" HorizontalOptions="Start">
+                                        <Label Text="{Binding StatusRaw}" FontFamily="PoppinsMedium" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                                    </Frame>
+                                </VerticalStackLayout>
+                                <Button Grid.Column="1" Text="Open" VerticalOptions="Center"
+                                        Command="{Binding Source={RelativeSource AncestorType={x:Type vm:ContractorPortalViewModel}}, Path=OpenJobCommand}"
+                                        CommandParameter="{Binding .}" Style="{StaticResource PrimaryButton}" FontSize="12" />
+                            </Grid>
+                        </Frame>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+        </RefreshView>
+
+        <!-- Payouts tab -->
+        <RefreshView Grid.Row="2" Command="{Binding RefreshCommand}" IsRefreshing="{Binding IsBusy}"
+                     IsVisible="{Binding IsPayoutsTab}">
+            <ScrollView>
+                <VerticalStackLayout Spacing="0">
+
+                    <Frame Style="{StaticResource CardFrame}" Padding="16" Margin="0,0,0,12">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <Label Grid.Column="0" Text="Outstanding (unpaid)" Style="{StaticResource BodySmall}"
+                                   TextColor="{StaticResource TextSecondary}" VerticalOptions="Center" />
+                            <Label Grid.Column="1" Text="{Binding OutstandingPayoutsDisplay}" FontFamily="PoppinsSemiBold"
+                                   FontSize="18" TextColor="{StaticResource TextPrimary}" VerticalOptions="Center" />
+                        </Grid>
+                    </Frame>
+
+                    <CollectionView ItemsSource="{Binding Payouts}" SelectionMode="None">
+                        <CollectionView.EmptyView>
+                            <Label Text="No payouts recorded yet. Settlements will appear here once raised."
+                                   Style="{StaticResource EmptyState}" Margin="0,24" />
+                        </CollectionView.EmptyView>
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="models:ContractorPayout">
+                                <Frame Style="{StaticResource CardFrame}" Margin="0,0,0,10" Padding="16">
+                                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto" RowSpacing="4" ColumnSpacing="12">
+                                        <Label Grid.Row="0" Grid.Column="0" Text="{Binding PayoutDateDisplay}"
+                                               FontFamily="PoppinsSemiBold" FontSize="14" TextColor="{StaticResource TextPrimary}" />
+                                        <Label Grid.Row="0" Grid.Column="1" Text="{Binding NetDisplay}"
+                                               FontFamily="PoppinsSemiBold" FontSize="15" TextColor="{StaticResource TextPrimary}" HorizontalTextAlignment="End" />
+                                        <Label Grid.Row="1" Grid.Column="0" Text="{Binding PayoutStatusLabel}"
+                                               FontSize="12" TextColor="{Binding StatusColor}" />
+                                        <Label Grid.Row="1" Grid.Column="1" Text="{Binding TotalDisplay, StringFormat='Gross {0}'}"
+                                               FontSize="12" TextColor="{StaticResource TextSecondary}" HorizontalTextAlignment="End" />
+                                        <Label Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2"
+                                               Text="{Binding RetentionDisplay, StringFormat='Retention held: {0}'}"
+                                               FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                                    </Grid>
+                                </Frame>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+
+                </VerticalStackLayout>
+            </ScrollView>
+        </RefreshView>
+    </Grid>
+</ContentPage>

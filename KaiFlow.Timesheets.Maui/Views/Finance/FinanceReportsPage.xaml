@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Finance.FinanceReportsPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Finance"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:FinanceReportsViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="Financial Reports">
+
+    <Grid RowDefinitions="Auto,*">
+
+        <!-- Controls -->
+        <VerticalStackLayout Grid.Row="0" Spacing="10" Padding="16,16,16,8">
+            <Border Padding="14" StrokeThickness="0" BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 16">
+                <VerticalStackLayout Spacing="10">
+                    <Label Text="Report" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+                    <Picker ItemsSource="{Binding ReportTypes}" SelectedItem="{Binding SelectedType}" ItemDisplayBinding="{Binding Name}" Title="Select report" />
+                    <Label Text="{Binding SelectedType.Description}" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                        <VerticalStackLayout Grid.Column="0" Spacing="0">
+                            <Label Text="From" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                            <DatePicker Date="{Binding FromDate}" />
+                        </VerticalStackLayout>
+                        <VerticalStackLayout Grid.Column="1" Spacing="0">
+                            <Label Text="To" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                            <DatePicker Date="{Binding ToDate}" />
+                        </VerticalStackLayout>
+                    </Grid>
+
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                        <Button Grid.Column="0" Text="Export PDF" Command="{Binding ExportPdfCommand}" Style="{StaticResource PrimaryButton}" IsEnabled="{Binding HasReport}" />
+                        <Button Grid.Column="1" Text="Export Excel" Command="{Binding ExportExcelCommand}" Style="{StaticResource PrimaryButton}" IsEnabled="{Binding HasReport}" />
+                    </Grid>
+                </VerticalStackLayout>
+            </Border>
+        </VerticalStackLayout>
+
+        <!-- Preview -->
+        <RefreshView Grid.Row="1" Command="{Binding GenerateCommand}" IsRefreshing="{Binding IsBusy}">
+            <ScrollView>
+                <VerticalStackLayout Padding="16,0,16,16" Spacing="0">
+                    <Label Text="{Binding Report.Title}" FontSize="18" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" Margin="0,4,0,0" />
+                    <Label Text="{Binding Report.PeriodLabel}" FontSize="12" TextColor="{StaticResource TextSecondary}" Margin="0,0,0,8" />
+
+                    <Border StrokeThickness="0" BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 14">
+                        <VerticalStackLayout Spacing="0">
+                            <!-- Column headers -->
+                            <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="12" Padding="14,10"
+                                  BackgroundColor="{StaticResource SurfaceElevated}">
+                                <Label Grid.Column="0" Text="{Binding Report.H1}" FontAttributes="Bold" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+                                <Label Grid.Column="1" Text="{Binding Report.H2}" FontAttributes="Bold" FontSize="12" TextColor="{StaticResource TextSecondary}" HorizontalTextAlignment="End" MinimumWidthRequest="80" />
+                                <Label Grid.Column="2" Text="{Binding Report.H3}" FontAttributes="Bold" FontSize="12" TextColor="{StaticResource TextSecondary}" HorizontalTextAlignment="End" MinimumWidthRequest="70" />
+                                <Label Grid.Column="3" Text="{Binding Report.H4}" FontAttributes="Bold" FontSize="12" TextColor="{StaticResource TextSecondary}" HorizontalTextAlignment="End" MinimumWidthRequest="70" />
+                            </Grid>
+
+                            <CollectionView ItemsSource="{Binding Lines}">
+                                <CollectionView.EmptyView>
+                                    <Label Text="No data for this report and period." Style="{StaticResource EmptyState}" Margin="0,24" />
+                                </CollectionView.EmptyView>
+                                <CollectionView.ItemTemplate>
+                                    <DataTemplate x:DataType="models:FinanceReportLine">
+                                        <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="12" Padding="14,9"
+                                              BackgroundColor="{Binding RowBackground}">
+                                            <Label Grid.Column="0" Text="{Binding C1}" FontSize="13" FontAttributes="{Binding FontAttr}" TextColor="{Binding TextColor}" />
+                                            <Label Grid.Column="1" Text="{Binding C2}" FontSize="13" FontAttributes="{Binding FontAttr}" TextColor="{Binding TextColor}" HorizontalTextAlignment="End" MinimumWidthRequest="80" />
+                                            <Label Grid.Column="2" Text="{Binding C3}" FontSize="13" FontAttributes="{Binding FontAttr}" TextColor="{Binding TextColor}" HorizontalTextAlignment="End" MinimumWidthRequest="70" />
+                                            <Label Grid.Column="3" Text="{Binding C4}" FontSize="13" FontAttributes="{Binding FontAttr}" TextColor="{Binding TextColor}" HorizontalTextAlignment="End" MinimumWidthRequest="70" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </CollectionView.ItemTemplate>
+                            </CollectionView>
+                        </VerticalStackLayout>
+                    </Border>
+                </VerticalStackLayout>
+            </ScrollView>
+        </RefreshView>
+    </Grid>
+</ContentPage>

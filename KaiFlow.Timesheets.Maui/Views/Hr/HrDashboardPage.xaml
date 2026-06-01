@@ -1,0 +1,1898 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Hr.HrDashboardPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    xmlns:shared="clr-namespace:KaiFlow.Timesheets.Views.Shared"
+    xmlns:hrcontrols="clr-namespace:KaiFlow.Timesheets.Views.Hr.Controls"
+    x:DataType="vm:HrDashboardViewModel"
+    x:Name="Self"
+    BackgroundColor="{StaticResource SidebarBackground}"
+    Shell.NavBarIsVisible="False"
+    Title="HR Dashboard">
+
+    <Grid ColumnDefinitions="Auto,*">
+
+        <!-- ════════════════════ LEFT SIDEBAR ════════════════════ -->
+        <Grid Grid.Column="0" WidthRequest="220" MinimumWidthRequest="180" MaximumWidthRequest="260"
+              BackgroundColor="{StaticResource SidebarBackground}"
+              RowDefinitions="Auto,*,Auto">
+
+            <!-- Branding -->
+            <VerticalStackLayout Grid.Row="0" Padding="20,28,20,16">
+                <Label Text="KaiSync" FontFamily="PoppinsBold" FontSize="21" TextColor="#FFFFFF" />
+                <Label Text="Workforce" FontFamily="PoppinsRegular" FontSize="11"
+                       TextColor="#64748B" Margin="0,-3,0,0" />
+                <BoxView HeightRequest="1" Color="#1E293B" Margin="0,14,0,10" />
+                <Label Text="{Binding CurrentCompany.Name}" FontFamily="PoppinsSemiBold" FontSize="12"
+                       TextColor="#60A5FA" LineBreakMode="TailTruncation"
+                       IsVisible="{Binding CurrentCompany, Converter={StaticResource IsNotNullConverter}}" />
+                <Label Text="{Binding CurrentCompany.Code, StringFormat='Code: {0}'}"
+                       FontFamily="PoppinsRegular" FontSize="11" TextColor="#475569"
+                       IsVisible="{Binding CurrentCompany, Converter={StaticResource IsNotNullConverter}}" />
+            </VerticalStackLayout>
+
+            <!-- Navigation -->
+            <ScrollView Grid.Row="1" VerticalScrollBarVisibility="Never">
+                <VerticalStackLayout Spacing="1" Padding="10,0">
+
+                    <!-- Overview -->
+                    <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                           BackgroundColor="{Binding IsOverviewTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                        <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding SetTabCommand}" CommandParameter="0" /></Frame.GestureRecognizers>
+                        <HorizontalStackLayout Spacing="10" Padding="12,10">
+                            <Label Text="&#xE871;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                                   TextColor="{Binding IsOverviewTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                            <Label Text="Overview" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                                   TextColor="{Binding IsOverviewTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}" />
+                        </HorizontalStackLayout>
+                    </Frame>
+
+                    <!-- My Profile -->
+                    <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                           BackgroundColor="{Binding IsMyProfileTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                        <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding SetTabCommand}" CommandParameter="1" /></Frame.GestureRecognizers>
+                        <HorizontalStackLayout Spacing="10" Padding="12,10">
+                            <Label Text="&#xE853;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                                   TextColor="{Binding IsMyProfileTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                            <Label Text="My Profile" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                                   TextColor="{Binding IsMyProfileTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}" />
+                        </HorizontalStackLayout>
+                    </Frame>
+
+                    <!-- Messages (always in top nav with Overview / My Profile) -->
+                    <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                           BackgroundColor="{Binding IsMessagesTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                        <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding SetTabCommand}" CommandParameter="17" /></Frame.GestureRecognizers>
+                        <Grid ColumnDefinitions="*,Auto" Padding="12,10">
+                            <HorizontalStackLayout Grid.Column="0" Spacing="10">
+                                <Label Text="&#xE0BF;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                                       TextColor="{Binding IsMessagesTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                                <Label Text="Messages" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                                       TextColor="{Binding IsMessagesTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}" />
+                            </HorizontalStackLayout>
+                            <Frame Grid.Column="1" BackgroundColor="#3B82F6" BorderColor="Transparent"
+                                   CornerRadius="10" Padding="5,1" HasShadow="False" VerticalOptions="Center"
+                                   IsVisible="{Binding MessageThreadCount, Converter={StaticResource IsNotZeroConverter}}">
+                                <Label Text="{Binding MessageThreadCount}" TextColor="White" FontFamily="PoppinsBold" FontSize="10" />
+                            </Frame>
+                        </Grid>
+                    </Frame>
+
+                    <Label Text="PEOPLE &amp; WORK" FontFamily="PoppinsMedium" FontSize="10"
+                           TextColor="#475569" Margin="12,12,0,2" CharacterSpacing="1"
+                           IsVisible="{Binding ShowPeopleWorkSection}" />
+
+                    <!-- Employees -->
+                    <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                           IsVisible="{Binding ShowEmployeesNav}"
+                           BackgroundColor="{Binding IsEmployeesSidebarActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                        <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding SetTabCommand}" CommandParameter="2" /></Frame.GestureRecognizers>
+                        <HorizontalStackLayout Spacing="10" Padding="12,10">
+                            <Label Text="&#xE7EF;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                                   TextColor="{Binding IsEmployeesSidebarActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                            <Label Text="Employees" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                                   TextColor="{Binding IsEmployeesSidebarActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}" />
+                        </HorizontalStackLayout>
+                    </Frame>
+
+                    <!-- Leave -->
+                    <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                           IsVisible="{Binding ShowLeaveNav}"
+                           BackgroundColor="{Binding IsLeaveNavActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                        <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding SetTabCommand}" CommandParameter="20" /></Frame.GestureRecognizers>
+                        <Grid ColumnDefinitions="*,Auto" Padding="12,10">
+                            <HorizontalStackLayout Grid.Column="0" Spacing="10">
+                                <Label Text="&#xE916;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                                       TextColor="{Binding IsLeaveNavActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                                <Label Text="Leave" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                                       TextColor="{Binding IsLeaveNavActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}" />
+                            </HorizontalStackLayout>
+                            <Frame Grid.Column="1"
+                                   BackgroundColor="#F59E0B" BorderColor="Transparent"
+                                   CornerRadius="10" Padding="5,1" HasShadow="False"
+                                   VerticalOptions="Center"
+                                   IsVisible="{Binding PendingLeaveCount, Converter={StaticResource IsNotZeroConverter}}">
+                                <Label Text="{Binding PendingLeaveCount}" TextColor="White"
+                                       FontFamily="PoppinsBold" FontSize="10" />
+                            </Frame>
+                        </Grid>
+                    </Frame>
+
+                    <!-- Attendance -->
+                    <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                           IsVisible="{Binding ShowAttendanceNav}"
+                           BackgroundColor="{Binding IsAttendanceTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                        <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding SetTabCommand}" CommandParameter="3" /></Frame.GestureRecognizers>
+                        <HorizontalStackLayout Spacing="10" Padding="12,10">
+                            <Label Text="&#xE192;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                                   TextColor="{Binding IsAttendanceTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                            <Label Text="Attendance" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                                   TextColor="{Binding IsAttendanceTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}" />
+                        </HorizontalStackLayout>
+                    </Frame>
+
+                    <!-- Jobs -->
+                    <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                           IsVisible="{Binding ShowJobsNav}"
+                           BackgroundColor="{Binding IsJobsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                        <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding SetTabCommand}" CommandParameter="4" /></Frame.GestureRecognizers>
+                        <Grid ColumnDefinitions="*,Auto" Padding="12,10">
+                            <HorizontalStackLayout Grid.Column="0" Spacing="10">
+                                <Label Text="&#xE8F9;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                                       TextColor="{Binding IsJobsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                                <Label Text="Jobs" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                                       TextColor="{Binding IsJobsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}" />
+                            </HorizontalStackLayout>
+                            <Frame Grid.Column="1" BackgroundColor="#3B82F6" BorderColor="Transparent"
+                                   CornerRadius="10" Padding="5,1" HasShadow="False" VerticalOptions="Center"
+                                   IsVisible="{Binding ActiveJobCount, Converter={StaticResource IsNotZeroConverter}}">
+                                <Label Text="{Binding ActiveJobCount}" TextColor="White" FontFamily="PoppinsBold" FontSize="10" />
+                            </Frame>
+                        </Grid>
+                    </Frame>
+
+                    <!-- Projects -->
+                    <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                           IsVisible="{Binding ShowProjectsNav}"
+                           BackgroundColor="{Binding IsProjectsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                        <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding SetTabCommand}" CommandParameter="19" /></Frame.GestureRecognizers>
+                        <Grid ColumnDefinitions="*,Auto" Padding="12,10">
+                            <HorizontalStackLayout Grid.Column="0" Spacing="10">
+                                <Label Text="&#xE2C8;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                                       TextColor="{Binding IsProjectsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                                <Label Text="Projects" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                                       TextColor="{Binding IsProjectsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}" />
+                            </HorizontalStackLayout>
+                            <Frame Grid.Column="1" BackgroundColor="{StaticResource Primary}" BorderColor="Transparent"
+                                   CornerRadius="10" Padding="5,1" HasShadow="False" VerticalOptions="Center"
+                                   IsVisible="{Binding ProjectCount, Converter={StaticResource IsNotZeroConverter}}">
+                                <Label Text="{Binding ProjectCount}" TextColor="White" FontFamily="PoppinsBold" FontSize="10" />
+                            </Frame>
+                        </Grid>
+                    </Frame>
+
+                    <Label Text="OPERATIONS" FontFamily="PoppinsMedium" FontSize="10"
+                           TextColor="#475569" Margin="12,12,0,2" CharacterSpacing="1"
+                           IsVisible="{Binding ShowOperationsSection}" />
+
+                    <!-- Payroll (hidden for managers) -->
+                    <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                           IsVisible="{Binding ShowPayrollNav}"
+                           BackgroundColor="{Binding IsPayrollTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                        <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding SetTabCommand}" CommandParameter="5" /></Frame.GestureRecognizers>
+                        <Grid ColumnDefinitions="*,Auto" Padding="12,10">
+                            <HorizontalStackLayout Grid.Column="0" Spacing="10">
+                                <Label Text="&#xE8A1;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                                       TextColor="{Binding IsPayrollTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                                <Label Text="Payroll" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                                       TextColor="{Binding IsPayrollTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}" />
+                            </HorizontalStackLayout>
+                            <Frame Grid.Column="1" BackgroundColor="#F59E0B" BorderColor="Transparent"
+                                   CornerRadius="10" Padding="5,1" HasShadow="False" VerticalOptions="Center"
+                                   IsVisible="{Binding PendingPaymentCount, Converter={StaticResource IsNotZeroConverter}}">
+                                <Label Text="{Binding PendingPaymentCount}" TextColor="White" FontFamily="PoppinsBold" FontSize="10" />
+                            </Frame>
+                        </Grid>
+                    </Frame>
+
+                    <!-- Finance (full finance & cashflow module) -->
+                    <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                           IsVisible="{Binding ShowFinanceNav}" BackgroundColor="Transparent">
+                        <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding GoToFinanceCommand}" /></Frame.GestureRecognizers>
+                        <HorizontalStackLayout Spacing="10" Padding="12,10">
+                            <Label Text="&#xE84F;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center" TextColor="#64748B" />
+                            <Label Text="Finance" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center" TextColor="#94A3B8" />
+                        </HorizontalStackLayout>
+                    </Frame>
+
+                    <!-- Contractors -->
+                    <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                           IsVisible="{Binding ShowContractorsNav}"
+                           BackgroundColor="{Binding IsContractorsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                        <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding SetTabCommand}" CommandParameter="6" /></Frame.GestureRecognizers>
+                        <HorizontalStackLayout Spacing="10" Padding="12,10">
+                            <Label Text="&#xE7EE;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                                   TextColor="{Binding IsContractorsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                            <Label Text="Contractors" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                                   TextColor="{Binding IsContractorsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}" />
+                        </HorizontalStackLayout>
+                    </Frame>
+
+                    <!-- Clients -->
+                    <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                           IsVisible="{Binding ShowClientsNav}"
+                           BackgroundColor="{Binding IsClientsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                        <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding SetTabCommand}" CommandParameter="7" /></Frame.GestureRecognizers>
+                        <HorizontalStackLayout Spacing="10" Padding="12,10">
+                            <Label Text="&#xE7FD;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                                   TextColor="{Binding IsClientsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                            <Label Text="Clients" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                                   TextColor="{Binding IsClientsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}" />
+                        </HorizontalStackLayout>
+                    </Frame>
+
+                    <!-- Inventory -->
+                    <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                           IsVisible="{Binding ShowInventoryNav}"
+                           BackgroundColor="{Binding IsInventoryTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                        <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding SetTabCommand}" CommandParameter="8" /></Frame.GestureRecognizers>
+                        <HorizontalStackLayout Spacing="10" Padding="12,10">
+                            <Label Text="&#xE8D3;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                                   TextColor="{Binding IsInventoryTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                            <Label Text="Inventory" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                                   TextColor="{Binding IsInventoryTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}" />
+                        </HorizontalStackLayout>
+                    </Frame>
+
+                    <!-- Suppliers -->
+                    <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                           IsVisible="{Binding ShowSuppliersNav}"
+                           BackgroundColor="{Binding IsSuppliersTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                        <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding SetTabCommand}" CommandParameter="21" /></Frame.GestureRecognizers>
+                        <HorizontalStackLayout Spacing="10" Padding="12,10">
+                            <Label Text="&#xE8CC;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                                   TextColor="{Binding IsSuppliersTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                            <Label Text="Suppliers" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                                   TextColor="{Binding IsSuppliersTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}" />
+                        </HorizontalStackLayout>
+                    </Frame>
+
+                    <!-- Assets -->
+                    <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                           IsVisible="{Binding ShowAssetsNav}"
+                           BackgroundColor="{Binding IsAssetsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                        <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding SetTabCommand}" CommandParameter="9" /></Frame.GestureRecognizers>
+                        <HorizontalStackLayout Spacing="10" Padding="12,10">
+                            <Label Text="&#xE8D8;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                                   TextColor="{Binding IsAssetsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                            <Label Text="Assets" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                                   TextColor="{Binding IsAssetsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}" />
+                        </HorizontalStackLayout>
+                    </Frame>
+
+                    <!-- Properties -->
+                    <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                           IsVisible="{Binding ShowPropertiesNav}"
+                           BackgroundColor="{Binding IsPropertiesTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                        <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding SetTabCommand}" CommandParameter="10" /></Frame.GestureRecognizers>
+                        <HorizontalStackLayout Spacing="10" Padding="12,10">
+                            <Label Text="&#xE88A;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                                   TextColor="{Binding IsPropertiesTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                            <Label Text="Properties" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                                   TextColor="{Binding IsPropertiesTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}" />
+                        </HorizontalStackLayout>
+                    </Frame>
+
+                    <Label Text="ANALYTICS" FontFamily="PoppinsMedium" FontSize="10"
+                           TextColor="#475569" Margin="12,12,0,2" CharacterSpacing="1"
+                           IsVisible="{Binding ShowAnalyticsSection}" />
+
+                    <!-- Incidents -->
+                    <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                           IsVisible="{Binding ShowIncidentsNav}"
+                           BackgroundColor="{Binding IsIncidentsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                        <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding SetTabCommand}" CommandParameter="11" /></Frame.GestureRecognizers>
+                        <Grid ColumnDefinitions="*,Auto" Padding="12,10">
+                            <HorizontalStackLayout Grid.Column="0" Spacing="10">
+                                <Label Text="&#xE7F4;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                                       TextColor="{Binding IsIncidentsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                                <Label Text="Incidents" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                                       TextColor="{Binding IsIncidentsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}" />
+                            </HorizontalStackLayout>
+                            <Frame Grid.Column="1" BackgroundColor="#EF4444" BorderColor="Transparent"
+                                   CornerRadius="10" Padding="5,1" HasShadow="False" VerticalOptions="Center"
+                                   IsVisible="{Binding OpenIncidentCount, Converter={StaticResource IsNotZeroConverter}}">
+                                <Label Text="{Binding OpenIncidentCount}" TextColor="White" FontFamily="PoppinsBold" FontSize="10" />
+                            </Frame>
+                        </Grid>
+                    </Frame>
+
+                    <!-- Reports -->
+                    <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                           IsVisible="{Binding ShowReportsNav}"
+                           BackgroundColor="{Binding IsReportsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                        <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding SetTabCommand}" CommandParameter="12" /></Frame.GestureRecognizers>
+                        <HorizontalStackLayout Spacing="10" Padding="12,10">
+                            <Label Text="&#xE8EF;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                                   TextColor="{Binding IsReportsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                            <Label Text="Reports" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                                   TextColor="{Binding IsReportsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}" />
+                        </HorizontalStackLayout>
+                    </Frame>
+
+                    <!-- Scheduling -->
+                    <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                           IsVisible="{Binding ShowSchedulingNav}"
+                           BackgroundColor="{Binding IsSchedulingTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                        <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding SetTabCommand}" CommandParameter="13" /></Frame.GestureRecognizers>
+                        <HorizontalStackLayout Spacing="10" Padding="12,10">
+                            <Label Text="&#xE878;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                                   TextColor="{Binding IsSchedulingTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                            <Label Text="Scheduling" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                                   TextColor="{Binding IsSchedulingTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}" />
+                        </HorizontalStackLayout>
+                    </Frame>
+
+                    <!-- My PA -->
+                    <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                           IsVisible="{Binding ShowMyPaNav}"
+                           BackgroundColor="{Binding IsMyPaTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                        <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding SetTabCommand}" CommandParameter="22" /></Frame.GestureRecognizers>
+                        <HorizontalStackLayout Spacing="10" Padding="12,10">
+                            <Label Text="&#xE55F;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                                   TextColor="{Binding IsMyPaTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                            <Label Text="My PA" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                                   TextColor="{Binding IsMyPaTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}" />
+                        </HorizontalStackLayout>
+                    </Frame>
+
+                    <!-- Work Teams -->
+                    <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                           IsVisible="{Binding ShowWorkTeamsNav}"
+                           BackgroundColor="{Binding IsWorkTeamsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                        <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding SetTabCommand}" CommandParameter="14" /></Frame.GestureRecognizers>
+                        <HorizontalStackLayout Spacing="10" Padding="12,10">
+                            <Label Text="&#xE533;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                                   TextColor="{Binding IsWorkTeamsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                            <Label Text="Work Teams" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                                   TextColor="{Binding IsWorkTeamsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}" />
+                        </HorizontalStackLayout>
+                    </Frame>
+
+                    <Label Text="COMMS" FontFamily="PoppinsMedium" FontSize="10"
+                           TextColor="#475569" Margin="12,12,0,2" CharacterSpacing="1"
+                           IsVisible="{Binding ShowCommsSection}" />
+
+                    <!-- Notifications -->
+                    <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                           BackgroundColor="{Binding IsNotificationsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                        <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding SetTabCommand}" CommandParameter="15" /></Frame.GestureRecognizers>
+                        <HorizontalStackLayout Spacing="10" Padding="12,10">
+                            <Label Text="&#xE7F5;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                                   TextColor="{Binding IsNotificationsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                            <Label Text="Notifications" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                                   TextColor="{Binding IsNotificationsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}" />
+                        </HorizontalStackLayout>
+                    </Frame>
+
+                    <!-- Activity Log -->
+                    <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                           IsVisible="{Binding IsOwner}"
+                           BackgroundColor="{Binding IsActivityLogTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                        <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding SetTabCommand}" CommandParameter="16" /></Frame.GestureRecognizers>
+                        <HorizontalStackLayout Spacing="10" Padding="12,10">
+                            <Label Text="&#xE8EE;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                                   TextColor="{Binding IsActivityLogTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                            <Label Text="Activity Log" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                                   TextColor="{Binding IsActivityLogTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}" />
+                        </HorizontalStackLayout>
+                    </Frame>
+
+                    <Label Text="ADMIN" FontFamily="PoppinsMedium" FontSize="10"
+                           TextColor="#475569" Margin="12,12,0,2" CharacterSpacing="1"
+                           IsVisible="{Binding ShowAdminSection}" />
+
+                    <!-- Settings -->
+                    <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                           IsVisible="{Binding ShowAdminSection}"
+                           BackgroundColor="{Binding IsSettingsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                        <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding SetTabCommand}" CommandParameter="18" /></Frame.GestureRecognizers>
+                        <HorizontalStackLayout Spacing="10" Padding="12,10">
+                            <Label Text="&#xE8B8;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                                   TextColor="{Binding IsSettingsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                            <Label Text="Settings" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                                   TextColor="{Binding IsSettingsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}" />
+                        </HorizontalStackLayout>
+                    </Frame>
+
+                    <!-- Platform Admin (KaiFlow operators only) -->
+                    <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                           IsVisible="{Binding ShowPlatformAdminNav}" BackgroundColor="Transparent">
+                        <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding GoToPlatformAdminCommand}" /></Frame.GestureRecognizers>
+                        <HorizontalStackLayout Spacing="10" Padding="12,10">
+                            <Label Text="&#xE8AF;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center" TextColor="#A78BFA" />
+                            <Label Text="Platform Console" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center" TextColor="#C4B5FD" />
+                        </HorizontalStackLayout>
+                    </Frame>
+
+                    <BoxView HeightRequest="16" Color="Transparent" />
+                </VerticalStackLayout>
+            </ScrollView>
+
+            <!-- Back button (returns to login screen without signing out) -->
+            <VerticalStackLayout Grid.Row="2" Padding="10,0,10,20">
+                <BoxView HeightRequest="1" Color="#1E293B" Margin="2,0,2,8" />
+                <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent" BackgroundColor="Transparent">
+                    <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding GoBackCommand}" /></Frame.GestureRecognizers>
+                    <HorizontalStackLayout Spacing="10" Padding="12,10">
+                        <Label Text="&#xE5C4;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center" TextColor="{StaticResource TextSecondary}" />
+                        <Label Text="Back" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center" TextColor="{StaticResource TextSecondary}" />
+                    </HorizontalStackLayout>
+                </Frame>
+            </VerticalStackLayout>
+
+        </Grid>
+
+        <!-- ════════════════════ CONTENT AREA ════════════════════ -->
+        <Grid Grid.Column="1" BackgroundColor="{StaticResource BackgroundDark}" RowDefinitions="56,*">
+
+            <!-- Top Header Bar -->
+            <Grid Grid.Row="0" BackgroundColor="{StaticResource SurfaceCard}" Padding="24,0" ColumnDefinitions="*,Auto">
+                <BoxView Grid.ColumnSpan="2" HeightRequest="1" VerticalOptions="End" Color="{StaticResource Divider}" />
+                <Label Text="{Binding ActiveTabTitle}" Style="{StaticResource HeadlineSmall}" VerticalOptions="Center" />
+                <Frame Grid.Column="1" CornerRadius="8" Padding="8,4"
+                       BackgroundColor="{StaticResource SurfaceElevated}"
+                       BorderColor="{StaticResource Divider}" HasShadow="False"
+                       IsVisible="{Binding CurrentEmployee, Converter={StaticResource IsNotNullConverter}}">
+                    <Label Text="{Binding CurrentEmployee.FullName}"
+                           FontFamily="PoppinsMedium" FontSize="12" TextColor="{StaticResource TextSecondary}" VerticalOptions="Center" />
+                </Frame>
+            </Grid>
+
+            <!-- All Tab Content Panels -->
+            <Grid Grid.Row="1">
+
+                <!-- ── Tab 0: Overview ── -->
+                <ScrollView IsVisible="{Binding IsOverviewTab}">
+                    <VerticalStackLayout Padding="24" Spacing="18">
+
+                        <!-- Subscription / trial banner -->
+                        <Border StrokeThickness="0" Padding="14,12" IsVisible="{Binding ShowSubscriptionBanner}">
+                            <Border.StrokeShape><RoundRectangle CornerRadius="10"/></Border.StrokeShape>
+                            <Border.BackgroundColor>#422006</Border.BackgroundColor>
+                            <Label Text="{Binding SubscriptionBannerText}" FontFamily="PoppinsMedium" FontSize="12" TextColor="#FCD34D" />
+                        </Border>
+
+                        <!-- Onboarding prompt -->
+                        <Border StrokeThickness="0" Padding="14,12" IsVisible="{Binding ShowOnboardingPrompt}">
+                            <Border.StrokeShape><RoundRectangle CornerRadius="10"/></Border.StrokeShape>
+                            <Border.BackgroundColor>#1E3A5F</Border.BackgroundColor>
+                            <Grid ColumnDefinitions="*,Auto">
+                                <Label Grid.Column="0" Text="Complete your company setup wizard to unlock all features."
+                                       FontFamily="PoppinsMedium" FontSize="12" TextColor="#93C5FD" VerticalOptions="Center" />
+                                <Button Grid.Column="1" Text="Start setup" Command="{Binding GoToOnboardingCommand}"
+                                        BackgroundColor="#3B82F6" TextColor="White" FontSize="11" HeightRequest="32" Padding="12,0" CornerRadius="8" />
+                            </Grid>
+                        </Border>
+
+                        <!-- Welcome Banner -->
+                        <Border StrokeThickness="0" Padding="20,18">
+                            <Border.StrokeShape><RoundRectangle CornerRadius="14"/></Border.StrokeShape>
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                    <GradientStop Color="#1E3A5F" Offset="0.0"/>
+                                    <GradientStop Color="#0F172A" Offset="1.0"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                            <Grid ColumnDefinitions="*,Auto">
+                                <VerticalStackLayout Grid.Column="0" Spacing="4" VerticalOptions="Center">
+                                    <Label Text="{Binding TimeGreeting}" FontFamily="PoppinsRegular" FontSize="13" TextColor="#94A3B8" />
+                                    <Label Text="{Binding CurrentEmployee.FullName, FallbackValue='Administrator'}"
+                                           FontFamily="PoppinsBold" FontSize="22" TextColor="White" />
+                                    <Label Text="{Binding CurrentCompany.Name, FallbackValue=''}"
+                                           FontFamily="PoppinsMedium" FontSize="13" TextColor="#60A5FA" />
+                                </VerticalStackLayout>
+                                <Label Grid.Column="1" Text="{Binding TodayDate}"
+                                       FontFamily="PoppinsRegular" FontSize="12" TextColor="#94A3B8"
+                                       HorizontalTextAlignment="End" VerticalOptions="Center" />
+                            </Grid>
+                        </Border>
+
+                        <!-- ── Self-Punch Card ── -->
+                        <Border StrokeThickness="0" Padding="18,14">
+                            <Border.StrokeShape><RoundRectangle CornerRadius="14"/></Border.StrokeShape>
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                    <GradientStop Color="#0F172A" Offset="0.0"/>
+                                    <GradientStop Color="#1E3A5F" Offset="1.0"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                            <Grid ColumnDefinitions="*,Auto" RowSpacing="4">
+                                <VerticalStackLayout Grid.Column="0" Spacing="4" VerticalOptions="Center">
+                                    <!-- Status -->
+                                    <HorizontalStackLayout Spacing="8">
+                                        <Frame CornerRadius="5" WidthRequest="10" HeightRequest="10" Padding="0"
+                                               HasShadow="False" BorderColor="Transparent"
+                                               BackgroundColor="{Binding AmIClockedIn, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#22C55E|#64748B'}"
+                                               VerticalOptions="Center" />
+                                        <Label Text="{Binding AmIClockedIn, Converter={StaticResource BoolToStringConverter}, ConverterParameter='You are Clocked In|You are Clocked Out'}"
+                                               FontFamily="PoppinsSemiBold" FontSize="14" TextColor="White"
+                                               VerticalOptions="Center" />
+                                    </HorizontalStackLayout>
+                                    <!-- Today hours -->
+                                    <Label Text="{Binding MyTodayHoursDisplay, StringFormat='Today: {0}'}"
+                                           FontFamily="PoppinsRegular" FontSize="12" TextColor="#94A3B8" />
+                                    <!-- Location -->
+                                    <Label Text="{Binding MyPunchAddress}"
+                                           FontFamily="PoppinsRegular" FontSize="11" TextColor="#64748B"
+                                           IsVisible="{Binding MyPunchAddress, Converter={StaticResource IsNotNullConverter}}"
+                                           LineBreakMode="TailTruncation" MaxLines="1" />
+                                    <!-- Team punch link -->
+                                    <Button Text="Clock in/out for my team →"
+                                            Command="{Binding GoToTeamPunchCommand}"
+                                            BackgroundColor="Transparent" TextColor="#60A5FA"
+                                            FontFamily="PoppinsMedium" FontSize="12" Padding="0"
+                                            HorizontalOptions="Start" Margin="0,2,0,0" />
+                                </VerticalStackLayout>
+                                <!-- Clock In/Out button -->
+                                <Button Grid.Column="1"
+                                        Text="{Binding MyClockButtonLabel}"
+                                        Command="{Binding ClockSelfCommand}"
+                                        BackgroundColor="{Binding AmIClockedIn, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#EF4444|#22C55E'}"
+                                        TextColor="White"
+                                        FontFamily="PoppinsSemiBold" FontSize="13"
+                                        CornerRadius="10" HeightRequest="44" Padding="18,0"
+                                        VerticalOptions="Center" />
+                            </Grid>
+                        </Border>
+
+                        <!-- KPI Row 1 -->
+                        <Grid ColumnDefinitions="*,*,*" ColumnSpacing="14">
+                            <Border Grid.Column="0" StrokeThickness="0" Padding="16,14">
+                                <Border.StrokeShape><RoundRectangle CornerRadius="14"/></Border.StrokeShape>
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                        <GradientStop Color="#0F172A" Offset="0.0"/><GradientStop Color="#1E3A5F" Offset="1.0"/>
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                                <Grid ColumnDefinitions="44,*" ColumnSpacing="12">
+                                    <Frame Grid.Column="0" CornerRadius="22" WidthRequest="44" HeightRequest="44" BackgroundColor="#3B82F630" Padding="0" BorderColor="Transparent" HasShadow="False">
+                                        <Label Text="&#xE7EF;" FontFamily="MaterialIcons" FontSize="22" TextColor="#60A5FA" HorizontalOptions="Center" VerticalOptions="Center"/>
+                                    </Frame>
+                                    <VerticalStackLayout Grid.Column="1" VerticalOptions="Center">
+                                        <Label Text="{Binding EmployeeCount}" FontFamily="PoppinsBold" FontSize="24" TextColor="White" />
+                                        <Label Text="Employees" FontFamily="PoppinsRegular" FontSize="11" TextColor="#94A3B8" />
+                                    </VerticalStackLayout>
+                                </Grid>
+                            </Border>
+                            <Border Grid.Column="1" StrokeThickness="0" Padding="16,14">
+                                <Border.StrokeShape><RoundRectangle CornerRadius="14"/></Border.StrokeShape>
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                        <GradientStop Color="#0F172A" Offset="0.0"/><GradientStop Color="#1E3A5F" Offset="1.0"/>
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                                <Grid ColumnDefinitions="44,*" ColumnSpacing="12">
+                                    <Frame Grid.Column="0" CornerRadius="22" WidthRequest="44" HeightRequest="44" BackgroundColor="#22C55E30" Padding="0" BorderColor="Transparent" HasShadow="False">
+                                        <Label Text="&#xE8B5;" FontFamily="MaterialIcons" FontSize="22" TextColor="#4ADE80" HorizontalOptions="Center" VerticalOptions="Center"/>
+                                    </Frame>
+                                    <VerticalStackLayout Grid.Column="1" VerticalOptions="Center">
+                                        <Label Text="{Binding ClockedInCount}" FontFamily="PoppinsBold" FontSize="24" TextColor="White" />
+                                        <Label Text="Clocked In" FontFamily="PoppinsRegular" FontSize="11" TextColor="#94A3B8" />
+                                    </VerticalStackLayout>
+                                </Grid>
+                            </Border>
+                            <Border Grid.Column="2" StrokeThickness="0" Padding="16,14">
+                                <Border.StrokeShape><RoundRectangle CornerRadius="14"/></Border.StrokeShape>
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                        <GradientStop Color="#0F172A" Offset="0.0"/><GradientStop Color="#1E3A5F" Offset="1.0"/>
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                                <Grid ColumnDefinitions="44,*" ColumnSpacing="12">
+                                    <Frame Grid.Column="0" CornerRadius="22" WidthRequest="44" HeightRequest="44" BackgroundColor="#F59E0B30" Padding="0" BorderColor="Transparent" HasShadow="False">
+                                        <Label Text="&#xE8F9;" FontFamily="MaterialIcons" FontSize="22" TextColor="#FCD34D" HorizontalOptions="Center" VerticalOptions="Center"/>
+                                    </Frame>
+                                    <VerticalStackLayout Grid.Column="1" VerticalOptions="Center">
+                                        <Label Text="{Binding ActiveJobCount}" FontFamily="PoppinsBold" FontSize="24" TextColor="White" />
+                                        <Label Text="Active Jobs" FontFamily="PoppinsRegular" FontSize="11" TextColor="#94A3B8" />
+                                    </VerticalStackLayout>
+                                </Grid>
+                            </Border>
+                        </Grid>
+
+                        <!-- KPI Row 2 -->
+                        <Grid ColumnDefinitions="*,*,*" ColumnSpacing="14">
+                            <Border Grid.Column="0" StrokeThickness="0" Padding="16,14">
+                                <Border.StrokeShape><RoundRectangle CornerRadius="14"/></Border.StrokeShape>
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                        <GradientStop Color="#0F172A" Offset="0.0"/><GradientStop Color="#1E3A5F" Offset="1.0"/>
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                                <Grid ColumnDefinitions="44,*" ColumnSpacing="12">
+                                    <Frame Grid.Column="0" CornerRadius="22" WidthRequest="44" HeightRequest="44" BackgroundColor="#A855F730" Padding="0" BorderColor="Transparent" HasShadow="False">
+                                        <Label Text="&#xE040;" FontFamily="MaterialIcons" FontSize="22" TextColor="#C084FC" HorizontalOptions="Center" VerticalOptions="Center"/>
+                                    </Frame>
+                                    <VerticalStackLayout Grid.Column="1" VerticalOptions="Center">
+                                        <Label Text="{Binding PendingLeaveCount}" FontFamily="PoppinsBold" FontSize="24" TextColor="White" />
+                                        <Label Text="Pending Leave" FontFamily="PoppinsRegular" FontSize="11" TextColor="#94A3B8" />
+                                    </VerticalStackLayout>
+                                </Grid>
+                            </Border>
+                            <Border Grid.Column="1" StrokeThickness="0" Padding="16,14">
+                                <Border.StrokeShape><RoundRectangle CornerRadius="14"/></Border.StrokeShape>
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                        <GradientStop Color="#0F172A" Offset="0.0"/><GradientStop Color="#1E3A5F" Offset="1.0"/>
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                                <Grid ColumnDefinitions="44,*" ColumnSpacing="12">
+                                    <Frame Grid.Column="0" CornerRadius="22" WidthRequest="44" HeightRequest="44" BackgroundColor="#EF444430" Padding="0" BorderColor="Transparent" HasShadow="False">
+                                        <Label Text="&#xE7F4;" FontFamily="MaterialIcons" FontSize="22" TextColor="#FCA5A5" HorizontalOptions="Center" VerticalOptions="Center"/>
+                                    </Frame>
+                                    <VerticalStackLayout Grid.Column="1" VerticalOptions="Center">
+                                        <Label Text="{Binding OpenIncidentCount}" FontFamily="PoppinsBold" FontSize="24" TextColor="White" />
+                                        <Label Text="Open Incidents" FontFamily="PoppinsRegular" FontSize="11" TextColor="#94A3B8" />
+                                    </VerticalStackLayout>
+                                </Grid>
+                            </Border>
+                            <Border Grid.Column="2" StrokeThickness="0" Padding="16,14">
+                                <Border.StrokeShape><RoundRectangle CornerRadius="14"/></Border.StrokeShape>
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                        <GradientStop Color="#0F172A" Offset="0.0"/><GradientStop Color="#1E3A5F" Offset="1.0"/>
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                                <Grid ColumnDefinitions="44,*" ColumnSpacing="12">
+                                    <Frame Grid.Column="0" CornerRadius="22" WidthRequest="44" HeightRequest="44" BackgroundColor="#3B82F630" Padding="0" BorderColor="Transparent" HasShadow="False">
+                                        <Label Text="&#xE8A1;" FontFamily="MaterialIcons" FontSize="22" TextColor="#60A5FA" HorizontalOptions="Center" VerticalOptions="Center"/>
+                                    </Frame>
+                                    <VerticalStackLayout Grid.Column="1" VerticalOptions="Center">
+                                        <Label Text="{Binding PendingPaymentCount}" FontFamily="PoppinsBold" FontSize="24" TextColor="White" />
+                                        <Label Text="Pending Pay" FontFamily="PoppinsRegular" FontSize="11" TextColor="#94A3B8" />
+                                    </VerticalStackLayout>
+                                </Grid>
+                            </Border>
+                        </Grid>
+
+                        <!-- Today's Attendance -->
+                        <Frame Style="{StaticResource CardFrame}" Padding="20">
+                            <VerticalStackLayout Spacing="10">
+
+                                <!-- Clocked in row -->
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <Label Text="TODAY'S ATTENDANCE" Style="{StaticResource LabelSection}" VerticalOptions="Center" />
+                                    <Label Grid.Column="1" VerticalOptions="Center" FontFamily="PoppinsSemiBold" FontSize="13" TextColor="{StaticResource TextPrimary}">
+                                        <Label.FormattedText>
+                                            <FormattedString>
+                                                <Span Text="{Binding ClockedInCount}" FontFamily="PoppinsBold" TextColor="#3B82F6" />
+                                                <Span Text=" / " TextColor="{StaticResource TextSecondary}" />
+                                                <Span Text="{Binding EmployeeCount}" FontFamily="PoppinsSemiBold" />
+                                            </FormattedString>
+                                        </Label.FormattedText>
+                                    </Label>
+                                </Grid>
+                                <ProgressBar Progress="{Binding AttendancePercent}" ProgressColor="#3B82F6" HeightRequest="6" />
+                                <Label Text="employees currently clocked in" FontFamily="PoppinsRegular" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+
+                                <!-- On Leave Today -->
+                                <BoxView Color="{StaticResource Divider}" HeightRequest="1"
+                                         IsVisible="{Binding HasOnLeaveToday}" />
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8"
+                                      IsVisible="{Binding HasOnLeaveToday}">
+                                    <Frame Grid.Column="0" BackgroundColor="#DCFCE7" BorderColor="Transparent"
+                                           CornerRadius="6" Padding="8,3" HasShadow="False">
+                                        <Label FontFamily="PoppinsSemiBold" FontSize="11" TextColor="#166534">
+                                            <Label.FormattedText>
+                                                <FormattedString>
+                                                    <Span Text="🏖 " />
+                                                    <Span Text="{Binding OnLeaveTodayCount}" FontFamily="PoppinsBold" />
+                                                    <Span Text=" on leave" />
+                                                </FormattedString>
+                                            </Label.FormattedText>
+                                        </Label>
+                                    </Frame>
+                                    <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center"
+                                                         BindableLayout.ItemsSource="{Binding OnLeaveTodayNames}">
+                                        <BindableLayout.ItemTemplate>
+                                            <DataTemplate x:DataType="x:String">
+                                                <Label Text="{Binding .}" FontFamily="Poppins" FontSize="12"
+                                                       TextColor="#166534" />
+                                            </DataTemplate>
+                                        </BindableLayout.ItemTemplate>
+                                    </VerticalStackLayout>
+                                </Grid>
+
+                                <!-- Reported Absent Today -->
+                                <BoxView Color="{StaticResource Divider}" HeightRequest="1"
+                                         IsVisible="{Binding HasAbsentToday}" />
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8"
+                                      IsVisible="{Binding HasAbsentToday}">
+                                    <Frame Grid.Column="0" BackgroundColor="#FEF3C7" BorderColor="Transparent"
+                                           CornerRadius="6" Padding="8,3" HasShadow="False">
+                                        <Label FontFamily="PoppinsSemiBold" FontSize="11" TextColor="#92400E">
+                                            <Label.FormattedText>
+                                                <FormattedString>
+                                                    <Span Text="🤒 " />
+                                                    <Span Text="{Binding AbsentTodayCount}" FontFamily="PoppinsBold" />
+                                                    <Span Text=" absent" />
+                                                </FormattedString>
+                                            </Label.FormattedText>
+                                        </Label>
+                                    </Frame>
+                                    <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center"
+                                                         BindableLayout.ItemsSource="{Binding AbsentTodayNames}">
+                                        <BindableLayout.ItemTemplate>
+                                            <DataTemplate x:DataType="x:String">
+                                                <Label Text="{Binding .}" FontFamily="Poppins" FontSize="12"
+                                                       TextColor="#92400E" />
+                                            </DataTemplate>
+                                        </BindableLayout.ItemTemplate>
+                                    </VerticalStackLayout>
+                                </Grid>
+
+                                <!-- Not Yet Clocked In -->
+                                <BoxView Color="{StaticResource Divider}" HeightRequest="1"
+                                         IsVisible="{Binding HasNotClockedInToday}" />
+                                <VerticalStackLayout Spacing="6"
+                                                     IsVisible="{Binding HasNotClockedInToday}">
+                                    <Label Text="NOT SIGNED IN TODAY" Style="{StaticResource LabelSection}" />
+                                    <VerticalStackLayout Spacing="4"
+                                                         BindableLayout.ItemsSource="{Binding NotClockedInToday}">
+                                        <BindableLayout.ItemTemplate>
+                                            <DataTemplate x:DataType="models:Employee">
+                                                <Grid ColumnDefinitions="*,Auto" Padding="0,2">
+                                                    <Label Grid.Column="0" Text="{Binding FullName}"
+                                                           FontFamily="Poppins" FontSize="12"
+                                                           TextColor="{StaticResource TextPrimary}"
+                                                           VerticalOptions="Center" />
+                                                    <Button Grid.Column="1" Text="Mark Absent"
+                                                            Command="{Binding BindingContext.MarkAbsentCommand, Source={x:Reference Self}}"
+                                                            CommandParameter="{Binding .}"
+                                                            BackgroundColor="#FEF3C7"
+                                                            TextColor="#92400E"
+                                                            BorderColor="#F59E0B" BorderWidth="1"
+                                                            CornerRadius="6"
+                                                            FontFamily="PoppinsMedium" FontSize="11"
+                                                            Padding="10,0" HeightRequest="30" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </BindableLayout.ItemTemplate>
+                                    </VerticalStackLayout>
+                                </VerticalStackLayout>
+
+                            </VerticalStackLayout>
+                        </Frame>
+
+                        <!-- Quick Actions -->
+                        <Frame Style="{StaticResource CardFrame}" Padding="20">
+                            <VerticalStackLayout Spacing="12">
+                                <Label Text="QUICK ACTIONS" Style="{StaticResource LabelSection}" />
+                                <HorizontalStackLayout Spacing="10">
+                                    <Button Text="+ Add Employee" Command="{Binding GoToCreateEmployeeCommand}"
+                                            BackgroundColor="{StaticResource Primary}" TextColor="White"
+                                            FontFamily="PoppinsSemiBold" FontSize="13"
+                                            CornerRadius="8" Padding="16,0" HeightRequest="40" />
+                                    <Button Text="+ New Job" Command="{Binding GoToCreateJobCommand}"
+                                            BackgroundColor="#1E293B" TextColor="White"
+                                            FontFamily="PoppinsSemiBold" FontSize="13"
+                                            CornerRadius="8" Padding="16,0" HeightRequest="40" />
+                                </HorizontalStackLayout>
+                            </VerticalStackLayout>
+                        </Frame>
+
+                    </VerticalStackLayout>
+                </ScrollView>
+
+                <!-- ── Tab 1: My Profile ── -->
+                <ScrollView IsVisible="{Binding IsMyProfileTab}">
+                    <VerticalStackLayout Padding="24" Spacing="16">
+
+                        <Frame Style="{StaticResource CardFrame}" Padding="20">
+                            <VerticalStackLayout Spacing="14">
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14">
+                                    <Frame CornerRadius="28" WidthRequest="56" HeightRequest="56"
+                                           BackgroundColor="#3B82F620" Padding="0" BorderColor="Transparent" HasShadow="False">
+                                        <Label Text="&#xE853;" FontFamily="MaterialIcons" FontSize="28"
+                                               TextColor="{StaticResource Primary}"
+                                               HorizontalOptions="Center" VerticalOptions="Center" />
+                                    </Frame>
+                                    <VerticalStackLayout Grid.Column="1" VerticalOptions="Center" Spacing="4">
+                                        <Label Text="{Binding MyFullName}" Style="{StaticResource BodyLarge}" />
+                                        <Label Text="{Binding MyEmail}" Style="{StaticResource Caption}"
+                                               TextColor="{StaticResource TextSecondary}" />
+                                        <Label Text="{Binding CurrentCompany.Name, FallbackValue=''}"
+                                               FontFamily="PoppinsMedium" FontSize="12"
+                                               TextColor="{StaticResource Primary}" />
+                                    </VerticalStackLayout>
+                                </Grid>
+                                <Button Text="Edit Profile"
+                                        Command="{Binding GoToMyProfileCommand}"
+                                        Style="{StaticResource PrimaryButton}"
+                                        HeightRequest="44" />
+                            </VerticalStackLayout>
+                        </Frame>
+
+                        <Label Text="MY RECORD" Style="{StaticResource LabelSection}" />
+
+                        <Frame Style="{StaticResource CardFrame}" Padding="0">
+                            <VerticalStackLayout Spacing="0">
+                                <Grid ColumnDefinitions="Auto,*,Auto" Padding="16,14" ColumnSpacing="14">
+                                    <Grid.GestureRecognizers>
+                                        <TapGestureRecognizer Command="{Binding GoToMyPayslipsCommand}" />
+                                    </Grid.GestureRecognizers>
+                                    <Label Grid.Column="0" Text="💰" FontSize="22" VerticalOptions="Center" />
+                                    <Label Grid.Column="1" Text="My Payslips" FontFamily="PoppinsMedium" FontSize="14"
+                                           TextColor="{StaticResource TextPrimary}" VerticalOptions="Center" />
+                                    <Label Grid.Column="2" Text="›" FontSize="20"
+                                           TextColor="{StaticResource TextDisabled}" VerticalOptions="Center" />
+                                </Grid>
+                                <BoxView HeightRequest="1" Color="{StaticResource Divider}" Margin="16,0" />
+                                <Grid ColumnDefinitions="Auto,*,Auto" Padding="16,14" ColumnSpacing="14">
+                                    <Grid.GestureRecognizers>
+                                        <TapGestureRecognizer Command="{Binding GoToMyLeaveCommand}" />
+                                    </Grid.GestureRecognizers>
+                                    <Label Grid.Column="0" Text="🏖" FontSize="22" VerticalOptions="Center" />
+                                    <Label Grid.Column="1" Text="My Leave" FontFamily="PoppinsMedium" FontSize="14"
+                                           TextColor="{StaticResource TextPrimary}" VerticalOptions="Center" />
+                                    <Label Grid.Column="2" Text="›" FontSize="20"
+                                           TextColor="{StaticResource TextDisabled}" VerticalOptions="Center" />
+                                </Grid>
+                                <BoxView HeightRequest="1" Color="{StaticResource Divider}" Margin="16,0" />
+                                <Grid ColumnDefinitions="Auto,*,Auto" Padding="16,14" ColumnSpacing="14">
+                                    <Grid.GestureRecognizers>
+                                        <TapGestureRecognizer Command="{Binding GoToMyDocumentsCommand}" />
+                                    </Grid.GestureRecognizers>
+                                    <Label Grid.Column="0" Text="📁" FontSize="22" VerticalOptions="Center" />
+                                    <Label Grid.Column="1" Text="My Documents" FontFamily="PoppinsMedium" FontSize="14"
+                                           TextColor="{StaticResource TextPrimary}" VerticalOptions="Center" />
+                                    <Label Grid.Column="2" Text="›" FontSize="20"
+                                           TextColor="{StaticResource TextDisabled}" VerticalOptions="Center" />
+                                </Grid>
+                            </VerticalStackLayout>
+                        </Frame>
+
+                    </VerticalStackLayout>
+                </ScrollView>
+
+                <!-- ── Tab 2: Employees ── -->
+                <Grid IsVisible="{Binding IsEmployeesTab}" RowDefinitions="Auto,*">
+
+                    <!-- Controls: sub-tab toggle + branch picker + action button + search -->
+                    <VerticalStackLayout Grid.Row="0" Spacing="8" Padding="24,12,24,8">
+
+                        <ScrollView Orientation="Horizontal">
+                            <Frame BackgroundColor="{StaticResource SurfaceCard}"
+                                   CornerRadius="10" Padding="3" BorderColor="Transparent" HasShadow="False">
+                                <Grid ColumnDefinitions="Auto,Auto,Auto" ColumnSpacing="2">
+                                    <Button Grid.Column="0" Text="Employees"
+                                            Command="{Binding SetEmployeesSubTabCommand}" CommandParameter="employees"
+                                            HeightRequest="36" CornerRadius="8" FontFamily="PoppinsSemiBold" FontSize="12" Padding="12,0"
+                                            BackgroundColor="{Binding EmployeesSubTab, Converter={StaticResource EqToStyleConverter}, ConverterParameter='employees|#3B82F6,Transparent'}"
+                                            TextColor="{Binding EmployeesSubTab, Converter={StaticResource EqToStyleConverter}, ConverterParameter='employees|#FFFFFF,#6B7280'}" />
+                                    <Button Grid.Column="1" Text="Teams"
+                                            Command="{Binding SetEmployeesSubTabCommand}" CommandParameter="teams"
+                                            HeightRequest="36" CornerRadius="8" FontFamily="PoppinsSemiBold" FontSize="12" Padding="12,0"
+                                            BackgroundColor="{Binding EmployeesSubTab, Converter={StaticResource EqToStyleConverter}, ConverterParameter='teams|#3B82F6,Transparent'}"
+                                            TextColor="{Binding EmployeesSubTab, Converter={StaticResource EqToStyleConverter}, ConverterParameter='teams|#FFFFFF,#6B7280'}" />
+                                    <Button Grid.Column="2" Text="Time Templates"
+                                            Command="{Binding SetEmployeesSubTabCommand}" CommandParameter="templates"
+                                            HeightRequest="36" CornerRadius="8" FontFamily="PoppinsSemiBold" FontSize="12" Padding="12,0"
+                                            BackgroundColor="{Binding EmployeesSubTab, Converter={StaticResource EqToStyleConverter}, ConverterParameter='templates|#3B82F6,Transparent'}"
+                                            TextColor="{Binding EmployeesSubTab, Converter={StaticResource EqToStyleConverter}, ConverterParameter='templates|#FFFFFF,#6B7280'}" />
+                                </Grid>
+                            </Frame>
+                        </ScrollView>
+
+                        <Picker Title="All Branches"
+                                ItemsSource="{Binding DashboardBranchFilters}"
+                                SelectedItem="{Binding DashboardBranchFilter}"
+                                TextColor="{StaticResource TextPrimary}"
+                                BackgroundColor="{StaticResource SurfaceCard}"
+                                HeightRequest="44" />
+
+                        <FlexLayout Wrap="Wrap" JustifyContent="End" AlignItems="Center" Direction="Row">
+
+                            <Button Text="Import"
+                                    IsVisible="{Binding IsEmployeesSubTab}"
+                                    Command="{Binding GoToImportEmployeesCommand}"
+                                    BackgroundColor="{StaticResource SurfaceElevated}"
+                                    TextColor="{StaticResource TextPrimary}"
+                                    BorderColor="{StaticResource Divider}" BorderWidth="1"
+                                    FontFamily="PoppinsSemiBold" FontSize="13"
+                                    CornerRadius="8" Padding="14,0" HeightRequest="44"
+                                    Margin="0,0,8,8" />
+
+                            <Button Text="+ Add Employee"
+                                    IsVisible="{Binding IsEmployeesSubTab}"
+                                    Command="{Binding GoToCreateEmployeeCommand}"
+                                    BackgroundColor="{StaticResource Primary}" TextColor="White"
+                                    FontFamily="PoppinsSemiBold" FontSize="13"
+                                    CornerRadius="8" Padding="16,0" HeightRequest="44"
+                                    Margin="0,0,8,8" />
+
+                            <Button Text="+ Create Team"
+                                    IsVisible="{Binding IsTeamsSubTab}"
+                                    Command="{Binding CreateTeamCommand}"
+                                    BackgroundColor="{StaticResource SurfaceElevated}" TextColor="{StaticResource TextPrimary}"
+                                    FontFamily="PoppinsSemiBold" FontSize="13"
+                                    CornerRadius="8" Padding="14,0" HeightRequest="44"
+                                    Margin="0,0,8,8" />
+
+                            <Button Text="+ Add Template"
+                                    IsVisible="{Binding IsTemplatesSubTab}"
+                                    Command="{Binding AddDashboardTemplateCommand}"
+                                    BackgroundColor="{StaticResource Primary}" TextColor="White"
+                                    FontFamily="PoppinsSemiBold" FontSize="13"
+                                    CornerRadius="8" Padding="14,0" HeightRequest="44"
+                                    Margin="0,0,8,8" />
+
+                        </FlexLayout>
+
+                        <!-- Employee search (employees sub-tab only) -->
+                        <SearchBar IsVisible="{Binding IsEmployeesSubTab}"
+                                   Text="{Binding EmployeeSearch}"
+                                   Placeholder="Search employees…"
+                                   Margin="24,0,24,8"
+                                   BackgroundColor="{StaticResource SurfaceCard}"
+                                   TextColor="{StaticResource TextPrimary}"
+                                   PlaceholderColor="{StaticResource TextSecondary}" />
+
+                        <!-- Team search (teams sub-tab only) -->
+                        <SearchBar IsVisible="{Binding IsTeamsSubTab}"
+                                   Text="{Binding DashboardTeamSearch}"
+                                   Placeholder="Search teams…"
+                                   Margin="24,0,24,8"
+                                   BackgroundColor="{StaticResource SurfaceCard}"
+                                   TextColor="{StaticResource TextPrimary}"
+                                   PlaceholderColor="{StaticResource TextSecondary}" />
+
+                    </VerticalStackLayout>
+
+                    <!-- Employees table -->
+                    <CollectionView Grid.Row="1" ItemsSource="{Binding Employees}" Margin="24,0,24,24"
+                                    IsVisible="{Binding IsEmployeesSubTab}">
+                        <CollectionView.EmptyView>
+                            <Label Text="No employees found." Style="{StaticResource EmptyState}" Margin="0,40,0,0" />
+                        </CollectionView.EmptyView>
+                        <CollectionView.Header>
+                            <Frame Style="{StaticResource DataTableFrame}">
+                                <Grid ColumnDefinitions="2*,*,*,120,100" Padding="14,10"
+                                      BackgroundColor="{StaticResource SurfaceElevated}">
+                                    <Label Grid.Column="0" Text="Name" Style="{StaticResource DataTableHeaderLabel}" />
+                                    <Label Grid.Column="1" Text="Position" Style="{StaticResource DataTableHeaderLabel}" />
+                                    <Label Grid.Column="2" Text="Branch" Style="{StaticResource DataTableHeaderLabel}" />
+                                    <Label Grid.Column="3" Text="Role" Style="{StaticResource DataTableHeaderLabel}" />
+                                    <Label Grid.Column="4" Text="Type" Style="{StaticResource DataTableHeaderLabel}" />
+                                </Grid>
+                            </Frame>
+                        </CollectionView.Header>
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="models:Employee">
+                                <VerticalStackLayout Spacing="0">
+                                    <Grid ColumnDefinitions="2*,*,*,120,100" Padding="14,10"
+                                          BackgroundColor="{StaticResource SurfaceCard}">
+                                        <Grid.GestureRecognizers>
+                                            <TapGestureRecognizer
+                                                Command="{Binding BindingContext.ViewEmployeeDashboardCommand, Source={x:Reference Self}}"
+                                                CommandParameter="{Binding .}" />
+                                        </Grid.GestureRecognizers>
+                                        <HorizontalStackLayout Grid.Column="0" Spacing="10" VerticalOptions="Center">
+                                            <Frame CornerRadius="16" WidthRequest="32" HeightRequest="32"
+                                                   BackgroundColor="{StaticResource SidebarActive}" Padding="0"
+                                                   BorderColor="Transparent" HasShadow="False">
+                                                <Label Text="{Binding Initials}" FontFamily="PoppinsBold" FontSize="11"
+                                                       TextColor="{StaticResource Primary}"
+                                                       HorizontalOptions="Center" VerticalOptions="Center" />
+                                            </Frame>
+                                            <Label Text="{Binding FullName}" Style="{StaticResource DataTableCellLabel}"
+                                                   TextColor="{StaticResource Primary}" />
+                                        </HorizontalStackLayout>
+                                        <Label Grid.Column="1" Text="{Binding Position, FallbackValue='—', TargetNullValue='—'}"
+                                               Style="{StaticResource DataTableCellSecondary}" />
+                                        <Label Grid.Column="2" Text="{Binding Branch, FallbackValue='—', TargetNullValue='—'}"
+                                               Style="{StaticResource DataTableCellSecondary}" />
+                                        <Label Grid.Column="3" Text="{Binding AccessLevelDisplay}"
+                                               Style="{StaticResource DataTableCellLabel}" />
+                                        <Label Grid.Column="4" Text="{Binding EmploymentTypeDisplay}"
+                                               Style="{StaticResource DataTableCellSecondary}" />
+                                    </Grid>
+                                    <BoxView Style="{StaticResource DataTableRowDivider}" />
+                                </VerticalStackLayout>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+
+                    <!-- Teams list -->
+                    <CollectionView Grid.Row="1" ItemsSource="{Binding DashboardTeams}" Margin="24,0,24,24"
+                                    IsVisible="{Binding IsTeamsSubTab}">
+                        <CollectionView.EmptyView>
+                            <Label Text="No teams found." Style="{StaticResource EmptyState}" Margin="0,40,0,0" />
+                        </CollectionView.EmptyView>
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="models:WorkTeam">
+                                <Frame Style="{StaticResource CardFrame}" Margin="0,4" Padding="16,12">
+                                    <Frame.GestureRecognizers>
+                                        <TapGestureRecognizer
+                                            Command="{Binding BindingContext.ViewTeamCommand, Source={x:Reference Self}}"
+                                            CommandParameter="{Binding .}" />
+                                    </Frame.GestureRecognizers>
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                        <VerticalStackLayout Grid.Column="0" Spacing="3" VerticalOptions="Center">
+                                            <Label Text="{Binding Name}" Style="{StaticResource BodyLarge}" />
+                                            <Label Text="{Binding Description}" Style="{StaticResource Caption}"
+                                                   IsVisible="{Binding Description, Converter={StaticResource IsNotNullConverter}}" />
+                                        </VerticalStackLayout>
+                                        <Frame Grid.Column="1" CornerRadius="6" Padding="8,4"
+                                               BackgroundColor="{StaticResource SidebarActive}" BorderColor="Transparent" HasShadow="False" VerticalOptions="Center">
+                                            <Label FontFamily="PoppinsMedium" FontSize="11" TextColor="{StaticResource Primary}">
+                                                <Label.FormattedText>
+                                                    <FormattedString>
+                                                        <Span Text="{Binding MemberCount}" />
+                                                        <Span Text=" members" />
+                                                    </FormattedString>
+                                                </Label.FormattedText>
+                                            </Label>
+                                        </Frame>
+                                    </Grid>
+                                </Frame>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+
+                    <!-- Time Templates list -->
+                    <ScrollView Grid.Row="1" Margin="24,0,24,24"
+                                IsVisible="{Binding IsTemplatesSubTab}">
+                        <VerticalStackLayout Spacing="10">
+
+                            <Label Text="No time templates yet. Tap '+ Add Template' to create your first one."
+                                   Style="{StaticResource EmptyState}" Margin="0,40,0,0"
+                                   IsVisible="{Binding DashboardTemplates.Count, Converter={StaticResource IsZeroConverter}}" />
+
+                            <CollectionView ItemsSource="{Binding DashboardTemplates}" SelectionMode="None">
+                                <CollectionView.ItemTemplate>
+                                    <DataTemplate x:DataType="models:EmployeeShiftTemplate">
+                                        <Frame Style="{StaticResource CardFrame}" Margin="0,0,0,8">
+                                            <Grid ColumnDefinitions="*,Auto,Auto,Auto" RowDefinitions="Auto,Auto" RowSpacing="4">
+
+                                                <HorizontalStackLayout Grid.Row="0" Grid.Column="0" Spacing="8" VerticalOptions="Center">
+                                                    <Label Text="{Binding Name}"
+                                                           Style="{StaticResource BodyLarge}"
+                                                           FontAttributes="Bold"
+                                                           VerticalOptions="Center" />
+                                                    <Frame BackgroundColor="#DCFCE7" BorderColor="Transparent"
+                                                           CornerRadius="6" Padding="6,2" HasShadow="False"
+                                                           VerticalOptions="Center"
+                                                           IsVisible="{Binding IsDefault}">
+                                                        <Label Text="Default" FontFamily="PoppinsSemiBold" FontSize="10" TextColor="#166534" />
+                                                    </Frame>
+                                                </HorizontalStackLayout>
+
+                                                <Button Grid.Row="0" Grid.Column="1"
+                                                        Text="Default"
+                                                        IsVisible="{Binding IsDefault, Converter={StaticResource InverseBoolConverter}}"
+                                                        Command="{Binding BindingContext.SetDefaultDashboardTemplateCommand, Source={x:Reference Self}}"
+                                                        CommandParameter="{Binding .}"
+                                                        BackgroundColor="{StaticResource SurfaceDark}"
+                                                        TextColor="{StaticResource TextSecondary}"
+                                                        CornerRadius="6" FontSize="11"
+                                                        Padding="8,4" HeightRequest="30" Margin="4,0" />
+
+                                                <Button Grid.Row="0" Grid.Column="2"
+                                                        Text="Edit"
+                                                        Command="{Binding BindingContext.EditDashboardTemplateCommand, Source={x:Reference Self}}"
+                                                        CommandParameter="{Binding .}"
+                                                        BackgroundColor="{StaticResource SurfaceDark}"
+                                                        TextColor="{StaticResource Primary}"
+                                                        CornerRadius="6" FontSize="12"
+                                                        Padding="10,4" HeightRequest="30" Margin="4,0" />
+
+                                                <Button Grid.Row="0" Grid.Column="3"
+                                                        Text="Delete"
+                                                        Command="{Binding BindingContext.DeleteDashboardTemplateCommand, Source={x:Reference Self}}"
+                                                        CommandParameter="{Binding .}"
+                                                        BackgroundColor="#FEE2E2" TextColor="#DC2626"
+                                                        CornerRadius="6" FontSize="12"
+                                                        Padding="10,4" HeightRequest="30" />
+
+                                                <Label Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="4"
+                                                       Text="{Binding Summary}"
+                                                       Style="{StaticResource BodySmall}"
+                                                       TextColor="{StaticResource TextSecondary}" />
+                                            </Grid>
+                                        </Frame>
+                                    </DataTemplate>
+                                </CollectionView.ItemTemplate>
+                            </CollectionView>
+
+                        </VerticalStackLayout>
+                    </ScrollView>
+
+                </Grid>
+
+                <!-- ── Tab 20: Leave ── -->
+                <Grid IsVisible="{Binding IsLeaveTab}" RowDefinitions="Auto,Auto,*">
+                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Padding="24,12,24,8">
+                        <Label Grid.Column="0" Text="Leave requests and approvals" Style="{StaticResource Caption}" VerticalOptions="Center" />
+                        <Frame Grid.Column="1" BackgroundColor="#FEF3C7" BorderColor="#F59E0B" CornerRadius="8"
+                               Padding="12,0" HeightRequest="40" HasShadow="False" VerticalOptions="Center">
+                            <Label VerticalOptions="Center" FontFamily="PoppinsSemiBold" FontSize="13" TextColor="#92400E">
+                                <Label.FormattedText>
+                                    <FormattedString>
+                                        <Span Text="{Binding PendingLeaveCount}" FontFamily="PoppinsBold" />
+                                        <Span Text=" pending" />
+                                    </FormattedString>
+                                </Label.FormattedText>
+                            </Label>
+                        </Frame>
+                    </Grid>
+                    <SearchBar Grid.Row="1"
+                               Text="{Binding DashboardLeaveSearch}"
+                               Placeholder="Search by employee or leave type…"
+                               Margin="24,0,24,8"
+                               BackgroundColor="{StaticResource SurfaceCard}"
+                               TextColor="{StaticResource TextPrimary}"
+                               PlaceholderColor="{StaticResource TextSecondary}" />
+                    <CollectionView Grid.Row="2" ItemsSource="{Binding DashboardLeaveRequests}" Margin="24,4,24,24">
+                        <CollectionView.EmptyView>
+                            <Label Text="No pending leave requests." Style="{StaticResource EmptyState}" Margin="0,40,0,0" />
+                        </CollectionView.EmptyView>
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="models:LeaveRequestDisplay">
+                                <Grid ColumnDefinitions="32,*,Auto" RowDefinitions="Auto,Auto"
+                                      Padding="0,6" ColumnSpacing="10" RowSpacing="4" Margin="0,2">
+                                    <Frame Grid.Column="0" Grid.RowSpan="2"
+                                           CornerRadius="16" WidthRequest="32" HeightRequest="32"
+                                           BackgroundColor="{Binding TypeColor, Converter={StaticResource HexToColorConverter}}"
+                                           Padding="0" HasShadow="False" VerticalOptions="Center">
+                                        <Label Text="{Binding EmployeeInitials}" TextColor="White"
+                                               FontFamily="PoppinsBold" FontSize="11"
+                                               HorizontalOptions="Center" VerticalOptions="Center" />
+                                    </Frame>
+                                    <VerticalStackLayout Grid.Column="1" Grid.Row="0" Spacing="1" VerticalOptions="Center">
+                                        <Label Text="{Binding EmployeeName}"
+                                               FontFamily="PoppinsSemiBold" FontSize="13"
+                                               TextColor="{StaticResource TextPrimary}" />
+                                        <Label Text="{Binding PeriodText}"
+                                               FontFamily="Poppins" FontSize="11"
+                                               TextColor="{StaticResource TextSecondary}" />
+                                    </VerticalStackLayout>
+                                    <VerticalStackLayout Grid.Column="2" Grid.Row="0" Spacing="3"
+                                                         HorizontalOptions="End" VerticalOptions="Center">
+                                        <Frame BackgroundColor="{Binding TypeColor, Converter={StaticResource HexToColorConverter}}"
+                                               BorderColor="Transparent" CornerRadius="8" Padding="6,2"
+                                               HasShadow="False" HorizontalOptions="End">
+                                            <Label Text="{Binding Request.LeaveType}" TextColor="White"
+                                                   FontFamily="PoppinsSemiBold" FontSize="10" />
+                                        </Frame>
+                                        <Label Text="{Binding RequestedDaysText}"
+                                               FontFamily="PoppinsBold" FontSize="11"
+                                               TextColor="{StaticResource TextSecondary}"
+                                               HorizontalOptions="End" />
+                                    </VerticalStackLayout>
+                                    <HorizontalStackLayout Grid.Column="1" Grid.ColumnSpan="2" Grid.Row="1"
+                                                           Spacing="8" IsVisible="{Binding Request.IsPending}">
+                                        <Button Text="✓ Approve"
+                                                Command="{Binding BindingContext.ApproveLeaveCommand, Source={x:Reference Self}}"
+                                                CommandParameter="{Binding .}"
+                                                BackgroundColor="#22C55E" TextColor="White"
+                                                FontFamily="PoppinsSemiBold" FontSize="11"
+                                                CornerRadius="6" HeightRequest="28" Padding="10,0" />
+                                        <Button Text="✕ Reject"
+                                                Command="{Binding BindingContext.RejectLeaveCommand, Source={x:Reference Self}}"
+                                                CommandParameter="{Binding .}"
+                                                BackgroundColor="#EF4444" TextColor="White"
+                                                FontFamily="PoppinsSemiBold" FontSize="11"
+                                                CornerRadius="6" HeightRequest="28" Padding="10,0" />
+                                    </HorizontalStackLayout>
+                                    <Label Grid.Column="1" Grid.ColumnSpan="2" Grid.Row="1"
+                                           Text="{Binding Request.StatusRaw}"
+                                           FontFamily="PoppinsMedium" FontSize="11"
+                                           IsVisible="{Binding Request.IsNotPending}"
+                                           TextColor="{Binding Request.StatusRaw, Converter={StaticResource EqToStyleConverter}, ConverterParameter='approved|#16A34A,declined|#DC2626,#9CA3AF'}" />
+                                    <BoxView Grid.ColumnSpan="3" Grid.Row="1" Color="{StaticResource Divider}"
+                                             HeightRequest="1" VerticalOptions="End" Margin="0,6,0,0" />
+                                </Grid>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </Grid>
+
+                <!-- ── Tab 2: Attendance ── -->
+                <Grid IsVisible="{Binding IsAttendanceTab}" RowDefinitions="Auto,Auto,Auto,Auto,Auto,*">
+
+                    <!-- Period filter tabs -->
+                    <ScrollView Grid.Row="0" Orientation="Horizontal" Margin="24,12,24,4">
+                        <HorizontalStackLayout Spacing="8">
+                            <Button Text="Today" Command="{Binding SetAttendancePeriodCommand}" CommandParameter="today"
+                                    CornerRadius="20" HeightRequest="34" FontFamily="PoppinsMedium" FontSize="12" Padding="16,0"
+                                    BackgroundColor="{Binding AttendancePeriod, Converter={StaticResource EqToStyleConverter}, ConverterParameter='today|#3B82F6,#FFFFFF'}"
+                                    TextColor="{Binding AttendancePeriod, Converter={StaticResource EqToStyleConverter}, ConverterParameter='today|#FFFFFF,#6B7280'}" />
+                            <Button Text="Past Week" Command="{Binding SetAttendancePeriodCommand}" CommandParameter="week"
+                                    CornerRadius="20" HeightRequest="34" FontFamily="PoppinsMedium" FontSize="12" Padding="16,0"
+                                    BackgroundColor="{Binding AttendancePeriod, Converter={StaticResource EqToStyleConverter}, ConverterParameter='week|#3B82F6,#FFFFFF'}"
+                                    TextColor="{Binding AttendancePeriod, Converter={StaticResource EqToStyleConverter}, ConverterParameter='week|#FFFFFF,#6B7280'}" />
+                            <Button Text="Past Month" Command="{Binding SetAttendancePeriodCommand}" CommandParameter="month"
+                                    CornerRadius="20" HeightRequest="34" FontFamily="PoppinsMedium" FontSize="12" Padding="16,0"
+                                    BackgroundColor="{Binding AttendancePeriod, Converter={StaticResource EqToStyleConverter}, ConverterParameter='month|#3B82F6,#FFFFFF'}"
+                                    TextColor="{Binding AttendancePeriod, Converter={StaticResource EqToStyleConverter}, ConverterParameter='month|#FFFFFF,#6B7280'}" />
+                            <Button Text="All" Command="{Binding SetAttendancePeriodCommand}" CommandParameter="all"
+                                    CornerRadius="20" HeightRequest="34" FontFamily="PoppinsMedium" FontSize="12" Padding="16,0"
+                                    BackgroundColor="{Binding AttendancePeriod, Converter={StaticResource EqToStyleConverter}, ConverterParameter='all|#3B82F6,#FFFFFF'}"
+                                    TextColor="{Binding AttendancePeriod, Converter={StaticResource EqToStyleConverter}, ConverterParameter='all|#FFFFFF,#6B7280'}" />
+                            <Button Text="Custom" Command="{Binding SetAttendancePeriodCommand}" CommandParameter="custom"
+                                    CornerRadius="20" HeightRequest="34" FontFamily="PoppinsMedium" FontSize="12" Padding="16,0"
+                                    BackgroundColor="{Binding AttendancePeriod, Converter={StaticResource EqToStyleConverter}, ConverterParameter='custom|#8B5CF6,#FFFFFF'}"
+                                    TextColor="{Binding AttendancePeriod, Converter={StaticResource EqToStyleConverter}, ConverterParameter='custom|#FFFFFF,#6B7280'}" />
+                        </HorizontalStackLayout>
+                    </ScrollView>
+
+                    <!-- Custom date range pickers (shown only when period = custom) -->
+                    <Grid Grid.Row="1" IsVisible="{Binding IsCustomPeriod}"
+                          ColumnDefinitions="*,*,Auto" ColumnSpacing="8"
+                          Padding="24,4,24,4">
+                        <Frame Grid.Column="0" Padding="10,4" CornerRadius="8"
+                               BackgroundColor="{StaticResource SurfaceCard}" BorderColor="{StaticResource Divider}" HasShadow="False">
+                            <DatePicker Date="{Binding CustomAttendanceFrom}"
+                                        Format="dd MMM yyyy" FontFamily="Poppins" FontSize="13"
+                                        TextColor="{StaticResource TextPrimary}" />
+                        </Frame>
+                        <Frame Grid.Column="1" Padding="10,4" CornerRadius="8"
+                               BackgroundColor="{StaticResource SurfaceCard}" BorderColor="{StaticResource Divider}" HasShadow="False">
+                            <DatePicker Date="{Binding CustomAttendanceTo}"
+                                        Format="dd MMM yyyy" FontFamily="Poppins" FontSize="13"
+                                        TextColor="{StaticResource TextPrimary}" />
+                        </Frame>
+                        <Button Grid.Column="2" Text="Apply" Command="{Binding ApplyCustomRangeCommand}"
+                                BackgroundColor="{StaticResource Primary}" TextColor="White"
+                                FontFamily="PoppinsMedium" FontSize="13"
+                                CornerRadius="8" Padding="16,0" HeightRequest="44" />
+                    </Grid>
+
+                    <!-- Employee search + export buttons -->
+                    <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto,Auto" Padding="24,4,24,4" ColumnSpacing="8">
+                        <SearchBar Grid.Column="0" Text="{Binding AttendanceEmployeeSearch}"
+                                   Placeholder="Search by employee…"
+                                   BackgroundColor="{StaticResource SurfaceCard}"
+                                   TextColor="{StaticResource TextPrimary}"
+                                   PlaceholderColor="{StaticResource TextSecondary}" />
+                        <Button Grid.Column="1" Text="Excel" Command="{Binding ExportAttendanceExcelCommand}"
+                                BackgroundColor="#16A34A" TextColor="White"
+                                FontFamily="PoppinsMedium" FontSize="12"
+                                CornerRadius="8" Padding="12,0" HeightRequest="44" />
+                        <Button Grid.Column="2" Text="PDF" Command="{Binding ExportAttendancePdfCommand}"
+                                BackgroundColor="#DC2626" TextColor="White"
+                                FontFamily="PoppinsMedium" FontSize="12"
+                                CornerRadius="8" Padding="12,0" HeightRequest="44" />
+                    </Grid>
+
+                    <!-- KPI summary row -->
+                    <Grid Grid.Row="3" ColumnDefinitions="*,*" Margin="24,4,24,4" ColumnSpacing="12">
+                        <Frame Grid.Column="0" Style="{StaticResource KpiCard}">
+                            <VerticalStackLayout>
+                                <Label Text="{Binding AttendanceTotalHours, StringFormat='{0:F1}h'}" Style="{StaticResource KpiNumber}" />
+                                <Label Text="Total Hours" Style="{StaticResource KpiLabel}" />
+                            </VerticalStackLayout>
+                        </Frame>
+                        <Frame Grid.Column="1" Style="{StaticResource KpiCard}">
+                            <VerticalStackLayout>
+                                <Label Text="{Binding AttendanceSessionCount}" Style="{StaticResource KpiNumber}" />
+                                <Label Text="Sessions" Style="{StaticResource KpiLabel}" />
+                            </VerticalStackLayout>
+                        </Frame>
+                    </Grid>
+
+                    <!-- Full view link -->
+                    <Grid Grid.Row="4" ColumnDefinitions="*,Auto" Padding="24,0,24,4">
+                        <Label Grid.Column="0" Style="{StaticResource Caption}" VerticalOptions="Center"
+                               Text="Tap a session for details" />
+                        <Button Grid.Column="1" Text="Full Attendance View" Command="{Binding GoToAttendanceCommand}"
+                                BackgroundColor="{StaticResource Primary}" TextColor="White"
+                                FontFamily="PoppinsSemiBold" FontSize="12"
+                                CornerRadius="8" Padding="14,0" HeightRequest="36" />
+                    </Grid>
+
+                    <!-- Attendance Table -->
+                    <ScrollView Grid.Row="5" Margin="24,4,24,24">
+                        <shared:AttendanceSessionTableView Sessions="{Binding AttendanceSessions}"
+                                                             ShowEmployeeColumn="True"
+                                                             EmptyMessage="No sessions in this period." />
+                    </ScrollView>
+                </Grid>
+
+                <!-- ── Tab 4: Jobs ── -->
+                <Grid IsVisible="{Binding IsJobsTab}" RowDefinitions="Auto,*">
+                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Padding="24,12,24,4">
+                        <Label Grid.Column="0" Text="Jobs" FontFamily="PoppinsSemiBold" FontSize="16"
+                               TextColor="{StaticResource TextPrimary}" VerticalOptions="Center" />
+                        <Button Grid.Column="1" Text="Export" Command="{Binding WorkList.ExportCommand}"
+                                BackgroundColor="{StaticResource SurfaceCard}" TextColor="{StaticResource TextPrimary}"
+                                FontFamily="PoppinsMedium" FontSize="12" CornerRadius="8" Padding="14,0" HeightRequest="40" Margin="0,0,8,0" />
+                        <Button Grid.Column="2" Text="+ New Job" Command="{Binding WorkList.CreateJobCommand}"
+                                BackgroundColor="{StaticResource Primary}" TextColor="White"
+                                FontFamily="PoppinsSemiBold" FontSize="13"
+                                CornerRadius="8" Padding="16,0" HeightRequest="40" />
+                    </Grid>
+                    <hrcontrols:HrJobsListPanel Grid.Row="1" BindingContext="{Binding WorkList}" />
+                </Grid>
+
+                <!-- ── Tab 19: Projects ── -->
+                <Grid IsVisible="{Binding IsProjectsTab}" RowDefinitions="Auto,*">
+                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Padding="24,12,24,4">
+                        <Label Grid.Column="0" Text="Projects" FontFamily="PoppinsSemiBold" FontSize="16"
+                               TextColor="{StaticResource TextPrimary}" VerticalOptions="Center" />
+                        <Button Grid.Column="1" Text="Export" Command="{Binding WorkList.ExportCommand}"
+                                BackgroundColor="{StaticResource SurfaceCard}" TextColor="{StaticResource TextPrimary}"
+                                FontFamily="PoppinsMedium" FontSize="12" CornerRadius="8" Padding="14,0" HeightRequest="40" Margin="0,0,8,0" />
+                        <Button Grid.Column="2" Text="+ New Project" Command="{Binding WorkList.CreateProjectCommand}"
+                                BackgroundColor="{StaticResource Primary}" TextColor="White"
+                                FontFamily="PoppinsSemiBold" FontSize="13"
+                                CornerRadius="8" Padding="16,0" HeightRequest="40" />
+                    </Grid>
+                    <hrcontrols:HrProjectsListPanel Grid.Row="1" BindingContext="{Binding WorkList}" />
+                </Grid>
+
+                <!-- ── Tab 4: Payroll (managers cannot access) ── -->
+                <Grid IsVisible="{Binding IsPayrollTab}" RowDefinitions="Auto,*">
+                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Padding="24,12,24,8">
+                        <Label Grid.Column="0" Text="Payment approvals" Style="{StaticResource Caption}" VerticalOptions="Center" />
+                        <Button Grid.Column="1" Text="Full Payroll View" Command="{Binding GoToPaymentsCommand}"
+                                BackgroundColor="{StaticResource Primary}" TextColor="White"
+                                FontFamily="PoppinsSemiBold" FontSize="13"
+                                CornerRadius="8" Padding="16,0" HeightRequest="40" />
+                    </Grid>
+                    <ScrollView Grid.Row="1" Margin="24,4,24,24">
+                        <ScrollView Orientation="Horizontal">
+                            <VerticalStackLayout WidthRequest="720" Spacing="0">
+                                <Frame Style="{StaticResource DataTableFrame}">
+                                    <Grid ColumnDefinitions="150,120,85,85,85,80" Padding="12,10"
+                                          BackgroundColor="{StaticResource SurfaceElevated}">
+                                        <Label Grid.Column="0" Text="Employee" Style="{StaticResource DataTableHeaderLabel}" />
+                                        <Label Grid.Column="1" Text="Period" Style="{StaticResource DataTableHeaderLabel}" />
+                                        <Label Grid.Column="2" Text="Gross" Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="End" />
+                                        <Label Grid.Column="3" Text="Deduct." Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="End" />
+                                        <Label Grid.Column="4" Text="Net" Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="End" />
+                                        <Label Grid.Column="5" Text="Status" Style="{StaticResource DataTableHeaderLabel}" />
+                                    </Grid>
+                                </Frame>
+
+                                <Label Text="No payment records found."
+                                       Style="{StaticResource EmptyState}"
+                                       Margin="0,24"
+                                       IsVisible="{Binding Payments.Count, Converter={StaticResource IsZeroConverter}}" />
+
+                                <VerticalStackLayout Spacing="0"
+                                                     BindableLayout.ItemsSource="{Binding Payments}"
+                                                     IsVisible="{Binding Payments.Count, Converter={StaticResource IsNotZeroConverter}}">
+                                    <BindableLayout.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:PaymentDisplay">
+                                            <VerticalStackLayout Spacing="0">
+                                                <Grid ColumnDefinitions="150,120,85,85,85,80" Padding="12,10"
+                                                      BackgroundColor="{StaticResource SurfaceCard}">
+                                                    <Grid.GestureRecognizers>
+                                                        <TapGestureRecognizer Command="{Binding BindingContext.GoToPaymentsCommand, Source={x:Reference Self}}" />
+                                                    </Grid.GestureRecognizers>
+                                                    <Label Grid.Column="0" Text="{Binding EmployeeName}"
+                                                           Style="{StaticResource DataTableCellLabel}"
+                                                           TextColor="{StaticResource Primary}" />
+                                                    <Label Grid.Column="1" Text="{Binding Payment.PeriodLabel}"
+                                                           Style="{StaticResource DataTableCellSecondary}" />
+                                                    <Label Grid.Column="2" Text="{Binding GrossDisplay}"
+                                                           Style="{StaticResource DataTableCellLabel}" HorizontalTextAlignment="End" />
+                                                    <Label Grid.Column="3" Text="{Binding DeductionsDisplay}"
+                                                           Style="{StaticResource DataTableCellSecondary}" HorizontalTextAlignment="End" />
+                                                    <Label Grid.Column="4" Text="{Binding NetDisplay}"
+                                                           Style="{StaticResource DataTableCellLabel}" HorizontalTextAlignment="End"
+                                                           TextColor="{StaticResource Primary}" />
+                                                    <Label Grid.Column="5" Text="{Binding Payment.StatusRaw}"
+                                                           Style="{StaticResource DataTableCellLabel}" />
+                                                </Grid>
+                                                <BoxView Style="{StaticResource DataTableRowDivider}" />
+                                            </VerticalStackLayout>
+                                        </DataTemplate>
+                                    </BindableLayout.ItemTemplate>
+                                </VerticalStackLayout>
+                            </VerticalStackLayout>
+                        </ScrollView>
+                    </ScrollView>
+                </Grid>
+
+                <!-- ── Tab 5: Contractors ── -->
+                <Grid IsVisible="{Binding IsContractorsTab}" RowDefinitions="Auto,*">
+                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Padding="24,12,24,8">
+                        <Label Grid.Column="0" Text="External contractors" Style="{StaticResource Caption}" VerticalOptions="Center" />
+                        <Button Grid.Column="1" Text="Full View" Command="{Binding GoToContractorsCommand}"
+                                BackgroundColor="{StaticResource Primary}" TextColor="White"
+                                FontFamily="PoppinsSemiBold" FontSize="13"
+                                CornerRadius="8" Padding="16,0" HeightRequest="40" />
+                    </Grid>
+                    <CollectionView Grid.Row="1" ItemsSource="{Binding Contractors}" Margin="24,4,24,24">
+                        <CollectionView.EmptyView>
+                            <Label Text="No contractors added." Style="{StaticResource EmptyState}" Margin="0,40,0,0" />
+                        </CollectionView.EmptyView>
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="models:Contractor">
+                                <Frame Style="{StaticResource CardFrame}" Margin="0,4" Padding="16,12">
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                        <VerticalStackLayout Grid.Column="0" Spacing="3" VerticalOptions="Center">
+                                            <Label Text="{Binding Name}" Style="{StaticResource BodyLarge}" />
+                                            <Label Text="{Binding ContactPerson}" Style="{StaticResource Caption}"
+                                                   IsVisible="{Binding ContactPerson, Converter={StaticResource IsNotNullConverter}}" />
+                                        </VerticalStackLayout>
+                                        <Label Grid.Column="1" VerticalOptions="Center" FontFamily="PoppinsMedium" FontSize="12"
+                                               TextColor="{Binding IsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#22C55E|#EF4444'}">
+                                            <Label.Triggers>
+                                                <DataTrigger TargetType="Label" Binding="{Binding IsActive}" Value="True">
+                                                    <Setter Property="Text" Value="● Active"/>
+                                                </DataTrigger>
+                                                <DataTrigger TargetType="Label" Binding="{Binding IsActive}" Value="False">
+                                                    <Setter Property="Text" Value="● Inactive"/>
+                                                </DataTrigger>
+                                            </Label.Triggers>
+                                        </Label>
+                                    </Grid>
+                                </Frame>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </Grid>
+
+                <!-- ── Tab 7: Clients ── -->
+                <Grid IsVisible="{Binding IsClientsTab}" RowDefinitions="Auto,Auto,*" x:Name="ClientsTabRoot">
+                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Padding="24,12,24,4">
+                        <SearchBar Text="{Binding ClientSearchText}" Placeholder="Search clients…"
+                                   BackgroundColor="{StaticResource SurfaceDark}"
+                                   TextColor="{StaticResource TextPrimary}"
+                                   PlaceholderColor="{StaticResource TextSecondary}" />
+                        <Button Grid.Column="1" Text="+ Add Client" Command="{Binding AddClientCommand}"
+                                BackgroundColor="{StaticResource Primary}" TextColor="White"
+                                FontFamily="PoppinsSemiBold" FontSize="13"
+                                CornerRadius="8" Padding="14,0" HeightRequest="40" Margin="8,0,0,0" />
+                    </Grid>
+                    <Label Grid.Row="1" Text="{Binding Clients.Count, StringFormat='{0} clients'}"
+                           Style="{StaticResource Caption}" Margin="24,0,24,4" />
+                    <RefreshView Grid.Row="2" Command="{Binding RefreshClientsCommand}" IsRefreshing="{Binding IsBusy}">
+                        <ScrollView Orientation="Horizontal">
+                            <VerticalStackLayout WidthRequest="920" Spacing="0" Margin="24,0,24,16">
+                                <Frame Style="{StaticResource DataTableFrame}">
+                                    <Grid ColumnDefinitions="160,90,100,120,130,110" Padding="12,10"
+                                          BackgroundColor="{StaticResource SurfaceElevated}">
+                                        <Label Grid.Column="0" Text="Client" Style="{StaticResource DataTableHeaderLabel}" />
+                                        <Label Grid.Column="1" Text="Code" Style="{StaticResource DataTableHeaderLabel}" />
+                                        <Label Grid.Column="2" Text="Type" Style="{StaticResource DataTableHeaderLabel}" />
+                                        <Label Grid.Column="3" Text="Contact" Style="{StaticResource DataTableHeaderLabel}" />
+                                        <Label Grid.Column="4" Text="Email" Style="{StaticResource DataTableHeaderLabel}" />
+                                        <Label Grid.Column="5" Text="Phone" Style="{StaticResource DataTableHeaderLabel}" />
+                                    </Grid>
+                                </Frame>
+                                <CollectionView ItemsSource="{Binding Clients}" SelectionMode="None"
+                                                  MinimumHeightRequest="120">
+                                    <CollectionView.EmptyView>
+                                        <Label Text="No clients yet. Tap + Add Client."
+                                               Style="{StaticResource EmptyState}" Margin="0,24" />
+                                    </CollectionView.EmptyView>
+                                    <CollectionView.ItemTemplate>
+                                        <DataTemplate x:DataType="models:Client">
+                                            <VerticalStackLayout Spacing="0">
+                                                <Grid ColumnDefinitions="160,90,100,120,130,110" Padding="12,10"
+                                                      BackgroundColor="{StaticResource SurfaceCard}">
+                                                    <Grid.GestureRecognizers>
+                                                        <TapGestureRecognizer
+                                                            Command="{Binding Source={RelativeSource AncestorType={x:Type ContentPage}}, Path=BindingContext.OpenClientCommand}"
+                                                            CommandParameter="{Binding .}" />
+                                                    </Grid.GestureRecognizers>
+                                                    <Label Grid.Column="0" Text="{Binding Name}" Style="{StaticResource DataTableCellLabel}"
+                                                           TextColor="{StaticResource Primary}" />
+                                                    <Label Grid.Column="1" Text="{Binding ClientCodeDisplay}" Style="{StaticResource DataTableCellLabel}" />
+                                                    <Label Grid.Column="2" Text="{Binding TypeLabel}" Style="{StaticResource DataTableCellSecondary}" />
+                                                    <Label Grid.Column="3" Text="{Binding ContactPerson}" Style="{StaticResource DataTableCellSecondary}" />
+                                                    <Label Grid.Column="4" Text="{Binding Email}" Style="{StaticResource DataTableCellSecondary}" />
+                                                    <Label Grid.Column="5" Text="{Binding Phone}" Style="{StaticResource DataTableCellSecondary}" />
+                                                </Grid>
+                                                <BoxView Style="{StaticResource DataTableRowDivider}" />
+                                            </VerticalStackLayout>
+                                        </DataTemplate>
+                                    </CollectionView.ItemTemplate>
+                                </CollectionView>
+                            </VerticalStackLayout>
+                        </ScrollView>
+                    </RefreshView>
+                </Grid>
+
+                <!-- ── Tab 7: Inventory ── -->
+                <Grid IsVisible="{Binding IsInventoryTab}" RowDefinitions="Auto,*">
+                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Padding="24,12,24,8">
+                        <Label Grid.Column="0" Text="Stock items" Style="{StaticResource Caption}" VerticalOptions="Center" />
+                        <Button Grid.Column="1" Text="Full View" Command="{Binding GoToInventoryCommand}"
+                                BackgroundColor="{StaticResource Primary}" TextColor="White"
+                                FontFamily="PoppinsSemiBold" FontSize="13"
+                                CornerRadius="8" Padding="16,0" HeightRequest="40" />
+                    </Grid>
+                    <CollectionView Grid.Row="1" ItemsSource="{Binding InventoryItems}" Margin="24,4,24,24">
+                        <CollectionView.EmptyView>
+                            <Label Text="No inventory items found." Style="{StaticResource EmptyState}" Margin="0,40,0,0" />
+                        </CollectionView.EmptyView>
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="models:InventoryItem">
+                                <Frame Style="{StaticResource CardFrame}" Margin="0,4" Padding="16,12">
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                        <VerticalStackLayout Grid.Column="0" Spacing="3" VerticalOptions="Center">
+                                            <Label Text="{Binding Name}" Style="{StaticResource BodyLarge}" />
+                                            <Label Text="{Binding Sku, StringFormat='SKU: {0}'}" Style="{StaticResource Caption}"
+                                                   IsVisible="{Binding Sku, Converter={StaticResource IsNotNullConverter}}" />
+                                        </VerticalStackLayout>
+                                        <VerticalStackLayout Grid.Column="1" VerticalOptions="Center" HorizontalOptions="End" Spacing="1">
+                                            <Label Text="{Binding QuantityOnHand, StringFormat='{0:N0}'}" FontFamily="PoppinsBold" FontSize="18" TextColor="{StaticResource Primary}" HorizontalTextAlignment="End" />
+                                            <Label Text="{Binding UnitOfMeasure, FallbackValue='units'}" Style="{StaticResource Caption}" HorizontalTextAlignment="End" />
+                                        </VerticalStackLayout>
+                                    </Grid>
+                                </Frame>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </Grid>
+
+                <!-- ── Tab 21: Suppliers ── -->
+                <Grid IsVisible="{Binding IsSuppliersTab}" RowDefinitions="Auto,*">
+                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Padding="24,12,24,8">
+                        <Label Grid.Column="0" Text="Inventory suppliers and procurement partners" Style="{StaticResource Caption}" VerticalOptions="Center" />
+                        <Button Grid.Column="1" Text="Full View" Command="{Binding GoToSuppliersCommand}"
+                                BackgroundColor="{StaticResource Primary}" TextColor="White"
+                                FontFamily="PoppinsSemiBold" FontSize="13"
+                                CornerRadius="8" Padding="16,0" HeightRequest="40" />
+                    </Grid>
+                    <CollectionView Grid.Row="1" ItemsSource="{Binding Suppliers}" Margin="24,4,24,24">
+                        <CollectionView.EmptyView>
+                            <Label Text="No suppliers added." Style="{StaticResource EmptyState}" Margin="0,40,0,0" />
+                        </CollectionView.EmptyView>
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="models:Contractor">
+                                <Frame Style="{StaticResource CardFrame}" Margin="0,4" Padding="16,12">
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                        <VerticalStackLayout Grid.Column="0" Spacing="3" VerticalOptions="Center">
+                                            <Label Text="{Binding Name}" Style="{StaticResource BodyLarge}" />
+                                            <Label Text="{Binding ContactPerson}" Style="{StaticResource Caption}"
+                                                   IsVisible="{Binding ContactPerson, Converter={StaticResource IsNotNullConverter}}" />
+                                        </VerticalStackLayout>
+                                        <Label Grid.Column="1" VerticalOptions="Center" FontFamily="PoppinsMedium" FontSize="12"
+                                               TextColor="{Binding IsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#22C55E|#EF4444'}">
+                                            <Label.Triggers>
+                                                <DataTrigger TargetType="Label" Binding="{Binding IsActive}" Value="True">
+                                                    <Setter Property="Text" Value="● Active"/>
+                                                </DataTrigger>
+                                                <DataTrigger TargetType="Label" Binding="{Binding IsActive}" Value="False">
+                                                    <Setter Property="Text" Value="● Inactive"/>
+                                                </DataTrigger>
+                                            </Label.Triggers>
+                                        </Label>
+                                    </Grid>
+                                </Frame>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </Grid>
+
+                <!-- ── Tab 8: Assets ── -->
+                <Grid IsVisible="{Binding IsAssetsTab}" RowDefinitions="Auto,*">
+                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Padding="24,12,24,8">
+                        <Label Grid.Column="0" Text="Company assets" Style="{StaticResource Caption}" VerticalOptions="Center" />
+                        <Button Grid.Column="1" Text="Full View" Command="{Binding GoToAssetsCommand}"
+                                BackgroundColor="{StaticResource Primary}" TextColor="White"
+                                FontFamily="PoppinsSemiBold" FontSize="13"
+                                CornerRadius="8" Padding="16,0" HeightRequest="40" />
+                    </Grid>
+                    <CollectionView Grid.Row="1" ItemsSource="{Binding Assets}" Margin="24,4,24,24">
+                        <CollectionView.EmptyView>
+                            <Label Text="No assets recorded." Style="{StaticResource EmptyState}" Margin="0,40,0,0" />
+                        </CollectionView.EmptyView>
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="models:Asset">
+                                <Frame Style="{StaticResource CardFrame}" Margin="0,4" Padding="16,12">
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                        <VerticalStackLayout Grid.Column="0" Spacing="3" VerticalOptions="Center">
+                                            <Label Text="{Binding Label}" Style="{StaticResource BodyLarge}" />
+                                            <Label Text="{Binding Manufacturer}" Style="{StaticResource Caption}"
+                                                   IsVisible="{Binding Manufacturer, Converter={StaticResource IsNotNullConverter}}" />
+                                        </VerticalStackLayout>
+                                        <Frame Grid.Column="1" CornerRadius="6" Padding="8,4"
+                                               BackgroundColor="{StaticResource SurfaceElevated}" BorderColor="Transparent" HasShadow="False" VerticalOptions="Center">
+                                            <Label Text="{Binding AssetType, FallbackValue='Asset'}" FontFamily="PoppinsMedium" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                                        </Frame>
+                                    </Grid>
+                                </Frame>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </Grid>
+
+                <!-- ── Tab 9: Properties ── -->
+                <Grid IsVisible="{Binding IsPropertiesTab}" RowDefinitions="Auto,*">
+                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Padding="24,12,24,8">
+                        <Label Grid.Column="0" Text="Sites &amp; locations" Style="{StaticResource Caption}" VerticalOptions="Center" />
+                        <Button Grid.Column="1" Text="Full View" Command="{Binding GoToPropertiesCommand}"
+                                BackgroundColor="{StaticResource Primary}" TextColor="White"
+                                FontFamily="PoppinsSemiBold" FontSize="13"
+                                CornerRadius="8" Padding="16,0" HeightRequest="40" />
+                    </Grid>
+                    <CollectionView Grid.Row="1" ItemsSource="{Binding Sites}" Margin="24,4,24,24">
+                        <CollectionView.EmptyView>
+                            <Label Text="No sites added." Style="{StaticResource EmptyState}" Margin="0,40,0,0" />
+                        </CollectionView.EmptyView>
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="models:Site">
+                                <Frame Style="{StaticResource CardFrame}" Margin="0,4" Padding="16,12">
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                        <VerticalStackLayout Grid.Column="0" Spacing="3" VerticalOptions="Center">
+                                            <Label Text="{Binding Name}" Style="{StaticResource BodyLarge}" />
+                                            <Label Text="{Binding Address}" Style="{StaticResource Caption}"
+                                                   IsVisible="{Binding Address, Converter={StaticResource IsNotNullConverter}}"
+                                                   MaxLines="1" LineBreakMode="TailTruncation" />
+                                        </VerticalStackLayout>
+                                        <Frame Grid.Column="1" CornerRadius="6" Padding="8,4"
+                                               BackgroundColor="{StaticResource SurfaceElevated}" BorderColor="Transparent" HasShadow="False" VerticalOptions="Center">
+                                            <Label Text="{Binding RadiusMeters, StringFormat='{0:N0}m radius'}" FontFamily="PoppinsMedium" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                                        </Frame>
+                                    </Grid>
+                                </Frame>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </Grid>
+
+                <!-- ── Tab 10: Incidents ── -->
+                <Grid IsVisible="{Binding IsIncidentsTab}" RowDefinitions="Auto,*">
+                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Padding="24,12,24,8">
+                        <Label Grid.Column="0" Text="Reported incidents" Style="{StaticResource Caption}" VerticalOptions="Center" />
+                        <Button Grid.Column="1" Text="Full View" Command="{Binding GoToIncidentsCommand}"
+                                BackgroundColor="{StaticResource Primary}" TextColor="White"
+                                FontFamily="PoppinsSemiBold" FontSize="13"
+                                CornerRadius="8" Padding="16,0" HeightRequest="40" />
+                    </Grid>
+                    <CollectionView Grid.Row="1" ItemsSource="{Binding Incidents}" Margin="24,4,24,24">
+                        <CollectionView.EmptyView>
+                            <Label Text="No incidents recorded." Style="{StaticResource EmptyState}" Margin="0,40,0,0" />
+                        </CollectionView.EmptyView>
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="models:IncidentReport">
+                                <Frame Style="{StaticResource CardFrame}" Margin="0,4" Padding="16,12">
+                                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                                        <VerticalStackLayout Grid.Column="0" Spacing="3" VerticalOptions="Center">
+                                            <Label Text="{Binding Description}" Style="{StaticResource BodyLarge}"
+                                                   MaxLines="1" LineBreakMode="TailTruncation" />
+                                            <Label Text="{Binding CreatedAt, StringFormat='{0:dd MMM yyyy}'}" Style="{StaticResource Caption}" />
+                                        </VerticalStackLayout>
+                                        <Frame Grid.Column="1" CornerRadius="6" Padding="8,4"
+                                               BackgroundColor="{StaticResource SurfaceElevated}" BorderColor="Transparent" HasShadow="False" VerticalOptions="Center">
+                                            <Label Text="{Binding SeverityRaw}" FontFamily="PoppinsMedium" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                                        </Frame>
+                                        <Label Grid.Column="2" VerticalOptions="Center" FontFamily="PoppinsMedium" FontSize="12"
+                                               TextColor="{Binding IsClosed, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#22C55E|#EF4444'}">
+                                            <Label.Triggers>
+                                                <DataTrigger TargetType="Label" Binding="{Binding IsClosed}" Value="True">
+                                                    <Setter Property="Text" Value="● Closed"/>
+                                                </DataTrigger>
+                                                <DataTrigger TargetType="Label" Binding="{Binding IsClosed}" Value="False">
+                                                    <Setter Property="Text" Value="● Open"/>
+                                                </DataTrigger>
+                                            </Label.Triggers>
+                                        </Label>
+                                    </Grid>
+                                </Frame>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </Grid>
+
+                <!-- ── Tab 11: Reports (placeholder) ── -->
+                <Grid IsVisible="{Binding IsReportsTab}">
+                    <VerticalStackLayout Spacing="16" HorizontalOptions="Center" VerticalOptions="Center" Padding="40">
+                        <Label Text="&#xE8EF;" FontFamily="MaterialIcons" FontSize="72" TextColor="{StaticResource TextDisabled}" HorizontalOptions="Center" />
+                        <Label Text="Reports &amp; Analytics" Style="{StaticResource HeadlineSmall}" HorizontalOptions="Center" HorizontalTextAlignment="Center" />
+                        <Label Text="View detailed reports, export data and analyse workforce trends."
+                               Style="{StaticResource Caption}" HorizontalTextAlignment="Center" MaximumWidthRequest="320" />
+                        <Button Text="Open Full Reports" Command="{Binding GoToReportsCommand}"
+                                BackgroundColor="{StaticResource Primary}" TextColor="White"
+                                FontFamily="PoppinsSemiBold" FontSize="14"
+                                CornerRadius="10" Padding="24,0" HeightRequest="48"
+                                HorizontalOptions="Center" Margin="0,8,0,0" />
+                    </VerticalStackLayout>
+                </Grid>
+
+                <!-- ── Tab 22: My PA ── -->
+                <Grid IsVisible="{Binding IsMyPaTab}">
+                    <shared:MyPaSectionView BindingContext="{Binding MyPa}" />
+                </Grid>
+
+                <!-- ── Tab 12: Scheduling ── -->
+                <Grid IsVisible="{Binding IsSchedulingTab}" RowDefinitions="Auto,*">
+                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Padding="24,12,24,8">
+                        <Label Grid.Column="0" Text="Upcoming 30 days" Style="{StaticResource Caption}" VerticalOptions="Center" />
+                        <Button Grid.Column="1" Text="Full Calendar" Command="{Binding GoToSchedulingCommand}"
+                                BackgroundColor="{StaticResource Primary}" TextColor="White"
+                                FontFamily="PoppinsSemiBold" FontSize="13"
+                                CornerRadius="8" Padding="16,0" HeightRequest="40" />
+                    </Grid>
+                    <CollectionView Grid.Row="1" ItemsSource="{Binding ScheduleEvents}" Margin="24,4,24,24">
+                        <CollectionView.EmptyView>
+                            <Label Text="No upcoming events." Style="{StaticResource EmptyState}" Margin="0,40,0,0" />
+                        </CollectionView.EmptyView>
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="models:CalendarEvent">
+                                <Frame Style="{StaticResource CardFrame}" Margin="0,4" Padding="16,12">
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                        <VerticalStackLayout Grid.Column="0" Spacing="3" VerticalOptions="Center">
+                                            <Label Text="{Binding Title}" Style="{StaticResource BodyLarge}" />
+                                            <Label Text="{Binding StartTime, StringFormat='{0:ddd dd MMM, HH:mm}'}" Style="{StaticResource Caption}" />
+                                        </VerticalStackLayout>
+                                        <Frame Grid.Column="1" CornerRadius="6" Padding="8,4"
+                                               BackgroundColor="{StaticResource SurfaceElevated}" BorderColor="Transparent" HasShadow="False" VerticalOptions="Center">
+                                            <Label Text="{Binding EventType, FallbackValue='Event'}" FontFamily="PoppinsMedium" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                                        </Frame>
+                                    </Grid>
+                                </Frame>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </Grid>
+
+                <!-- ── Tab 13: Work Teams ── -->
+                <Grid IsVisible="{Binding IsWorkTeamsTab}" RowDefinitions="Auto,*">
+                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Padding="24,12,24,8">
+                        <Label Grid.Column="0" Text="Active teams" Style="{StaticResource Caption}" VerticalOptions="Center" />
+                        <Button Grid.Column="1" Text="Full View" Command="{Binding GoToWorkTeamsCommand}"
+                                BackgroundColor="{StaticResource Primary}" TextColor="White"
+                                FontFamily="PoppinsSemiBold" FontSize="13"
+                                CornerRadius="8" Padding="16,0" HeightRequest="40" />
+                    </Grid>
+                    <CollectionView Grid.Row="1" ItemsSource="{Binding WorkTeams}" Margin="24,4,24,24">
+                        <CollectionView.EmptyView>
+                            <Label Text="No work teams created." Style="{StaticResource EmptyState}" Margin="0,40,0,0" />
+                        </CollectionView.EmptyView>
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="models:WorkTeam">
+                                <Frame Style="{StaticResource CardFrame}" Margin="0,4" Padding="16,12">
+                                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
+                                        <VerticalStackLayout Grid.Column="0" Spacing="3" VerticalOptions="Center">
+                                            <Label Text="{Binding Name}" Style="{StaticResource BodyLarge}" />
+                                            <Label Text="{Binding Description}" Style="{StaticResource Caption}"
+                                                   IsVisible="{Binding Description, Converter={StaticResource IsNotNullConverter}}"
+                                                   MaxLines="1" LineBreakMode="TailTruncation" />
+                                        </VerticalStackLayout>
+                                        <Frame Grid.Column="1" CornerRadius="6" Padding="8,4"
+                                               BackgroundColor="{StaticResource SurfaceElevated}" BorderColor="Transparent" HasShadow="False" VerticalOptions="Center">
+                                            <Label Text="{Binding MemberCount, StringFormat='{0} members'}" FontFamily="PoppinsMedium" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                                        </Frame>
+                                        <Label Grid.Column="2" VerticalOptions="Center" FontFamily="PoppinsMedium" FontSize="12"
+                                               TextColor="{Binding IsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#22C55E|#EF4444'}">
+                                            <Label.Triggers>
+                                                <DataTrigger TargetType="Label" Binding="{Binding IsActive}" Value="True">
+                                                    <Setter Property="Text" Value="● Active"/>
+                                                </DataTrigger>
+                                                <DataTrigger TargetType="Label" Binding="{Binding IsActive}" Value="False">
+                                                    <Setter Property="Text" Value="● Inactive"/>
+                                                </DataTrigger>
+                                            </Label.Triggers>
+                                        </Label>
+                                    </Grid>
+                                </Frame>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </Grid>
+
+                <!-- ── Tab 14: Notifications (placeholder) ── -->
+                <Grid IsVisible="{Binding IsNotificationsTab}">
+                    <VerticalStackLayout Spacing="16" HorizontalOptions="Center" VerticalOptions="Center" Padding="40">
+                        <Label Text="&#xE7F5;" FontFamily="MaterialIcons" FontSize="72" TextColor="{StaticResource TextDisabled}" HorizontalOptions="Center" />
+                        <Label Text="Notifications" Style="{StaticResource HeadlineSmall}" HorizontalOptions="Center" />
+                        <Label Text="View system alerts, approvals and company announcements."
+                               Style="{StaticResource Caption}" HorizontalTextAlignment="Center" MaximumWidthRequest="320" />
+                        <Button Text="{Binding UnreadNotificationLabel}" Command="{Binding GoToNotificationsCommand}"
+                                BackgroundColor="{StaticResource Primary}" TextColor="White"
+                                FontFamily="PoppinsSemiBold" FontSize="14"
+                                CornerRadius="10" Padding="24,0" HeightRequest="48"
+                                HorizontalOptions="Center" Margin="0,8,0,0" />
+                    </VerticalStackLayout>
+                </Grid>
+
+                <!-- ── Tab 15: Activity Log (placeholder) ── -->
+                <Grid IsVisible="{Binding IsActivityLogTab}">
+                    <VerticalStackLayout Spacing="16" HorizontalOptions="Center" VerticalOptions="Center" Padding="40">
+                        <Label Text="&#xE8EE;" FontFamily="MaterialIcons" FontSize="72" TextColor="{StaticResource TextDisabled}" HorizontalOptions="Center" />
+                        <Label Text="Activity Log" Style="{StaticResource HeadlineSmall}" HorizontalOptions="Center" />
+                        <Label Text="Track all system activity, logins and changes across your company."
+                               Style="{StaticResource Caption}" HorizontalTextAlignment="Center" MaximumWidthRequest="320" />
+                        <Button Text="Open Activity Log" Command="{Binding GoToActivityLogCommand}"
+                                BackgroundColor="{StaticResource Primary}" TextColor="White"
+                                FontFamily="PoppinsSemiBold" FontSize="14"
+                                CornerRadius="10" Padding="24,0" HeightRequest="48"
+                                HorizontalOptions="Center" Margin="0,8,0,0" />
+                    </VerticalStackLayout>
+                </Grid>
+
+                <!-- ── Tab 16: Messages ── -->
+                <Grid IsVisible="{Binding IsMessagesTab}" RowDefinitions="Auto,*">
+                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Padding="24,12">
+                        <Label Text="Messages" Style="{StaticResource HeadlineSmall}" VerticalOptions="Center" />
+                        <Button Grid.Column="1" Text="+ New Thread" Command="{Binding NewThreadCommand}"
+                                BackgroundColor="{StaticResource Primary}" TextColor="White"
+                                FontFamily="PoppinsSemiBold" FontSize="13"
+                                CornerRadius="8" Padding="16,0" HeightRequest="44" />
+                    </Grid>
+                    <CollectionView Grid.Row="1" ItemsSource="{Binding Threads}" Margin="24,0,24,24">
+                        <CollectionView.EmptyView>
+                            <VerticalStackLayout VerticalOptions="Center" HorizontalOptions="Center" Spacing="8" Margin="0,40,0,0">
+                                <Label Text="No conversations yet." Style="{StaticResource EmptyState}" />
+                                <Label Text="Tap '+ New Thread' to message an employee."
+                                       Style="{StaticResource Caption}" HorizontalTextAlignment="Center" />
+                            </VerticalStackLayout>
+                        </CollectionView.EmptyView>
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="models:MessageThread">
+                                <Frame Style="{StaticResource CardFrame}" Margin="0,4" Padding="16,12">
+                                    <Frame.GestureRecognizers>
+                                        <TapGestureRecognizer
+                                            Command="{Binding BindingContext.OpenThreadCommand, Source={x:Reference Self}}"
+                                            CommandParameter="{Binding .}" />
+                                    </Frame.GestureRecognizers>
+                                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="4">
+                                        <Label Grid.Row="0" Grid.Column="0"
+                                               Text="{Binding ListTitle}"
+                                               Style="{StaticResource BodyLarge}" />
+                                        <Label Grid.Row="0" Grid.Column="1"
+                                               Text="{Binding LastMessageAtDisplay}"
+                                               Style="{StaticResource Caption}"
+                                               IsVisible="{Binding LastMessageAt, Converter={StaticResource IsNotNullConverter}}" />
+                                        <Label Grid.Row="1" Grid.ColumnSpan="2"
+                                               Text="{Binding LastMessagePreview, FallbackValue='No messages yet'}"
+                                               Style="{StaticResource Caption}" MaxLines="1" LineBreakMode="TailTruncation" />
+                                    </Grid>
+                                </Frame>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </Grid>
+
+                <!-- ── Tab 17: Settings ── -->
+                <ScrollView IsVisible="{Binding IsSettingsTab}">
+                    <VerticalStackLayout Padding="24" Spacing="16">
+                        <Frame Style="{StaticResource CardFrame}" Padding="24">
+                            <VerticalStackLayout Spacing="14">
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14">
+                                    <Frame Grid.Column="0" CornerRadius="22" WidthRequest="44" HeightRequest="44"
+                                           BackgroundColor="#3B82F615" Padding="0" BorderColor="Transparent" HasShadow="False">
+                                        <Label Text="&#xE8B8;" FontFamily="MaterialIcons" FontSize="24"
+                                               TextColor="{StaticResource Primary}" HorizontalOptions="Center" VerticalOptions="Center" />
+                                    </Frame>
+                                    <VerticalStackLayout Grid.Column="1" VerticalOptions="Center" Spacing="2">
+                                        <Label Text="{Binding CurrentCompany.Name, FallbackValue='Company'}"
+                                               FontFamily="PoppinsSemiBold" FontSize="16" TextColor="{StaticResource TextPrimary}" />
+                                        <Label Text="Company settings &amp; configuration"
+                                               FontFamily="PoppinsRegular" FontSize="13" TextColor="{StaticResource TextSecondary}" />
+                                    </VerticalStackLayout>
+                                </Grid>
+                                <BoxView HeightRequest="1" Color="{StaticResource Divider}" />
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <Label Grid.Column="0" Text="Subscription plan" FontFamily="PoppinsMedium" FontSize="14" TextColor="{StaticResource TextPrimary}" VerticalOptions="Center" />
+                                    <Label Grid.Column="1" Text="{Binding CurrentCompany.PlanCode, FallbackValue='free'}"
+                                           FontFamily="PoppinsMedium" FontSize="13" TextColor="{StaticResource Accent}" VerticalOptions="Center" />
+                                </Grid>
+                                <Button Text="Open Full Settings" Command="{Binding GoToSettingsCommand}"
+                                        BackgroundColor="{StaticResource Primary}" TextColor="White"
+                                        FontFamily="PoppinsSemiBold" FontSize="14"
+                                        CornerRadius="10" HeightRequest="48" HorizontalOptions="Fill" />
+                            </VerticalStackLayout>
+                        </Frame>
+                    </VerticalStackLayout>
+                </ScrollView>
+
+            </Grid>
+        </Grid>
+
+    </Grid>
+
+</ContentPage>

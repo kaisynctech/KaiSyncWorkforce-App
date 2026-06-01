@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Auth.HrSignInPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Auth"
+    x:DataType="vm:HrSignInViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="HR Sign In">
+
+    <ScrollView>
+        <Grid RowDefinitions="*" MinimumHeightRequest="500">
+            <VerticalStackLayout
+                VerticalOptions="Center"
+                HorizontalOptions="Center"
+                Padding="24"
+                Spacing="0"
+                MaximumWidthRequest="480">
+
+                <!-- Login card -->
+                <Frame
+                    BackgroundColor="{StaticResource SurfaceCard}"
+                    BorderColor="{StaticResource Divider}"
+                    CornerRadius="20"
+                    Padding="24"
+                    HasShadow="False">
+                    <VerticalStackLayout Spacing="12">
+
+                        <!-- Branding -->
+                        <Label
+                            Text="KaiSync Workforce"
+                            FontFamily="PoppinsBold"
+                            FontSize="20"
+                            TextColor="{StaticResource TextPrimary}"
+                            HorizontalOptions="Center" />
+
+                        <BoxView HeightRequest="4" Color="Transparent" />
+
+                        <!-- Email field -->
+                        <VerticalStackLayout Spacing="6">
+                            <Label Text="HR email" Style="{StaticResource LabelField}" />
+                            <Entry
+                                Placeholder="you@company.com"
+                                Text="{Binding Email}"
+                                Keyboard="Email"
+                                IsEnabled="{Binding IsNotBusy}"
+                                Style="{StaticResource DarkEntry}"
+                                ReturnType="Next" />
+                        </VerticalStackLayout>
+
+                        <!-- Password field -->
+                        <VerticalStackLayout Spacing="6">
+                            <Label Text="Password" Style="{StaticResource LabelField}" />
+                            <Grid ColumnDefinitions="*,Auto">
+                                <Entry Grid.Column="0"
+                                    Placeholder="Your password"
+                                    Text="{Binding Password}"
+                                    IsPassword="{Binding ShowPassword, Converter={StaticResource InverseBoolConverter}}"
+                                    IsEnabled="{Binding IsNotBusy}"
+                                    Style="{StaticResource DarkEntry}"
+                                    ReturnType="Done" />
+                                <Button Grid.Column="1"
+                                    Text="{Binding ShowPassword, Converter={StaticResource BoolToStringConverter}, ConverterParameter='Hide|Show'}"
+                                    Command="{Binding ToggleShowPasswordCommand}"
+                                    Style="{StaticResource TextButton}"
+                                    FontSize="12" WidthRequest="60" />
+                            </Grid>
+                        </VerticalStackLayout>
+
+                        <!-- Error -->
+                        <Label
+                            Text="{Binding ErrorMessage}"
+                            TextColor="{StaticResource Error}"
+                            FontFamily="PoppinsRegular"
+                            FontSize="13"
+                            IsVisible="{Binding ErrorMessage, Converter={StaticResource IsNotNullConverter}}" />
+
+                        <!-- Sign in button -->
+                        <Button
+                            Text="Sign in as HR"
+                            Command="{Binding SignInCommand}"
+                            IsEnabled="{Binding IsNotBusy}"
+                            Style="{StaticResource PrimaryButton}"
+                            HorizontalOptions="Fill" />
+
+                        <ActivityIndicator
+                            IsRunning="{Binding IsBusy}"
+                            IsVisible="{Binding IsBusy}"
+                            Color="{StaticResource Primary}"
+                            HorizontalOptions="Center" />
+
+                        <Label
+                            Text="Your company is resolved automatically from your HR account."
+                            FontFamily="PoppinsRegular"
+                            FontSize="12"
+                            TextColor="{StaticResource TextSecondary}"
+                            HorizontalOptions="Center"
+                            HorizontalTextAlignment="Center" />
+
+                        <BoxView HeightRequest="4" Color="Transparent" />
+
+                        <!-- Register link -->
+                        <Button
+                            Text="New company? Register here"
+                            Command="{Binding GoToRegisterCommand}"
+                            Style="{StaticResource OutlinedButton}"
+                            HorizontalOptions="Fill" />
+
+                    </VerticalStackLayout>
+                </Frame>
+
+                <BoxView HeightRequest="16" Color="Transparent" />
+            </VerticalStackLayout>
+        </Grid>
+    </ScrollView>
+</ContentPage>

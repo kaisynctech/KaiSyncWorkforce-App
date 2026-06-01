@@ -1,0 +1,388 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Hr.HrSettingsPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:HrSettingsViewModel"
+    x:Name="settingsPage"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="{Binding Title}">
+
+    <ScrollView>
+        <VerticalStackLayout Spacing="16" Padding="16">
+
+            <!-- Company Info Header -->
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="{Binding Company.Name, FallbackValue='Company'}"
+                           Style="{StaticResource HeadlineMedium}" />
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Grid.Column="0"
+                               Text="{Binding Company.Code, StringFormat='Company Code: {0}', FallbackValue=''}"
+                               Style="{StaticResource BodySmall}"
+                               TextColor="{StaticResource TextSecondary}"
+                               VerticalOptions="Center" />
+                        <Button Grid.Column="1"
+                                Text="Copy"
+                                Command="{Binding CopyCodeCommand}"
+                                FontSize="12"
+                                BackgroundColor="{StaticResource SurfaceDark}"
+                                TextColor="{StaticResource Primary}"
+                                CornerRadius="8"
+                                Padding="12,4"
+                                HeightRequest="32" />
+                    </Grid>
+                    <Label Text="{Binding Company.PlanCode, StringFormat='Plan: {0}', FallbackValue=''}"
+                           Style="{StaticResource BodySmall}"
+                           TextColor="{StaticResource TextSecondary}" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Module Toggles -->
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="FEATURE MODULES" Style="{StaticResource LabelSection}" />
+                    <Label Text="Turn features on or off for this company. Disabling a module hides it from navigation — your data is kept."
+                           Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                    <HorizontalStackLayout Spacing="8" HorizontalOptions="End">
+                        <Button Text="Enable all"
+                                Command="{Binding EnableAllModulesCommand}"
+                                FontSize="12" CornerRadius="8" HeightRequest="34" Padding="12,0"
+                                BackgroundColor="{StaticResource SurfaceDark}"
+                                TextColor="{StaticResource Primary}" />
+                        <Button Text="Disable all"
+                                Command="{Binding DisableAllModulesCommand}"
+                                FontSize="12" CornerRadius="8" HeightRequest="34" Padding="12,0"
+                                BackgroundColor="{StaticResource SurfaceDark}"
+                                TextColor="{StaticResource TextSecondary}" />
+                    </HorizontalStackLayout>
+                    <BoxView Style="{StaticResource DividerLine}" />
+
+                    <VerticalStackLayout Spacing="0" BindableLayout.ItemsSource="{Binding ModuleToggles}">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate x:DataType="models:ModuleToggleItem">
+                                <VerticalStackLayout Spacing="0">
+                                    <Grid ColumnDefinitions="*,Auto" Padding="0,10">
+                                        <VerticalStackLayout Grid.Column="0" Spacing="2">
+                                            <Label Text="{Binding Title}" Style="{StaticResource BodyLarge}" />
+                                            <Label Text="{Binding Description}"
+                                                   Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                                        </VerticalStackLayout>
+                                        <Switch Grid.Column="1" IsToggled="{Binding IsEnabled}"
+                                                IsEnabled="{Binding IsPlanEntitled}"
+                                                ThumbColor="{StaticResource Primary}"
+                                                OnColor="{StaticResource Primary}" VerticalOptions="Center" />
+                                    </Grid>
+                                    <BoxView Style="{StaticResource DividerLine}" />
+                                </VerticalStackLayout>
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                    </VerticalStackLayout>
+
+                    <Button Text="Open Payroll Settings"
+                            Command="{Binding GoToPayrollSettingsCommand}"
+                            IsVisible="{Binding IsPayrollModuleEnabled}"
+                            BackgroundColor="{StaticResource SurfaceDark}"
+                            TextColor="{StaticResource Primary}"
+                            CornerRadius="8" FontSize="13" Padding="14,8" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Error -->
+            <Label Text="{Binding ErrorMessage}"
+                   TextColor="{StaticResource Error}"
+                   IsVisible="{Binding ErrorMessage, Converter={StaticResource IsNotNullConverter}}"
+                   HorizontalOptions="Center" />
+
+            <!-- Save Button -->
+            <Button Text="Save Module Settings"
+                    Command="{Binding SaveModulesCommand}"
+                    Style="{StaticResource PrimaryButton}"
+                    IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBoolConverter}}" />
+
+            <!-- Company Details -->
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="COMPANY DETAILS" Style="{StaticResource LabelSection}" />
+                    <Grid ColumnDefinitions="*,Auto">
+                        <VerticalStackLayout Spacing="2">
+                            <Label Text="{Binding Company.Name, FallbackValue='—'}" Style="{StaticResource BodyLarge}" />
+                            <Label Text="{Binding Company.ContactEmail, FallbackValue=''}" Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                            <Label Text="{Binding Company.ContactPhone, FallbackValue=''}" Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                            <Label Text="{Binding Company.Address, FallbackValue=''}" Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                        </VerticalStackLayout>
+                        <Button Grid.Column="1" Text="Edit"
+                                Command="{Binding EditCompanyDetailsCommand}"
+                                Style="{StaticResource TextButton}" VerticalOptions="Start" />
+                    </Grid>
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Location rules -->
+            <Frame Style="{StaticResource CardFrame}" IsVisible="{Binding IsOwnerOrAdmin}">
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="LOCATION RULES" Style="{StaticResource LabelSection}" />
+                    <Label Text="Optional. When enabled, employees with an assigned branch must be near that branch to clock in."
+                           Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                        <Label Grid.Column="0" Text="Enforce branch sign-in radius"
+                               Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                        <Switch Grid.Column="1" IsToggled="{Binding EnforceBranchSignInRadius}"
+                                OnColor="{StaticResource Primary}" />
+                    </Grid>
+                    <Label Text="Allowed distance from branch"
+                           Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                    <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
+                        <Button Grid.Column="0" Text="200 m"
+                                Command="{Binding SetBranchSignInRadiusCommand}" CommandParameter="200"
+                                FontSize="12" CornerRadius="8" HeightRequest="36" />
+                        <Button Grid.Column="1" Text="500 m"
+                                Command="{Binding SetBranchSignInRadiusCommand}" CommandParameter="500"
+                                FontSize="12" CornerRadius="8" HeightRequest="36" />
+                        <Button Grid.Column="2" Text="1 km"
+                                Command="{Binding SetBranchSignInRadiusCommand}" CommandParameter="1000"
+                                FontSize="12" CornerRadius="8" HeightRequest="36" />
+                    </Grid>
+                    <Label Text="{Binding BranchSignInRadiusMeters, StringFormat='Selected: {0:F0} metres'}"
+                           Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                    <Button Text="Save Location Rules"
+                            Command="{Binding SaveLocationRulesCommand}"
+                            Style="{StaticResource PrimaryButton}" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Branches -->
+            <Frame Style="{StaticResource CardFrame}" IsVisible="{Binding IsOwnerOrAdmin}">
+                <VerticalStackLayout Spacing="10">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Grid.Column="0" Text="BRANCHES" Style="{StaticResource LabelSection}" VerticalOptions="Center" />
+                        <Button Grid.Column="1" Text="+ Add"
+                                Command="{Binding AddBranchCommand}"
+                                FontSize="12" Padding="12,4"
+                                BackgroundColor="{StaticResource SurfaceDark}"
+                                TextColor="{StaticResource Primary}"
+                                CornerRadius="8" HeightRequest="32" />
+                    </Grid>
+                    <Label Text="No branches configured."
+                           Style="{StaticResource EmptyState}"
+                           IsVisible="{Binding Branches.Count, Converter={StaticResource IsZeroConverter}}" />
+                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding Branches}" Spacing="8">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate x:DataType="models:Branch">
+                                <Frame Style="{StaticResource CardFrame}" Padding="12,8">
+                                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                                        <VerticalStackLayout Grid.Column="0" Spacing="2">
+                                            <Label Text="{Binding Name}" Style="{StaticResource BodyMedium}" />
+                                            <Label Text="{Binding LocationStatusDisplay}"
+                                                   Style="{StaticResource Caption}"
+                                                   TextColor="{StaticResource TextSecondary}" />
+                                        </VerticalStackLayout>
+                                        <Button Grid.Column="1" Text="Edit"
+                                                Command="{Binding BindingContext.EditBranchCommand, Source={x:Reference settingsPage}}"
+                                                CommandParameter="{Binding .}"
+                                                Style="{StaticResource TextButton}" FontSize="12" />
+                                        <Button Grid.Column="2" Text="✕"
+                                                Command="{Binding BindingContext.DeleteBranchCommand, Source={x:Reference settingsPage}}"
+                                                CommandParameter="{Binding .}"
+                                                BackgroundColor="Transparent"
+                                                TextColor="{StaticResource Error}"
+                                                FontSize="14" Padding="8,0" />
+                                    </Grid>
+                                </Frame>
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                    </VerticalStackLayout>
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Leave Policy -->
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="LEAVE POLICIES" Style="{StaticResource LabelSection}" />
+                    <Label Text="Annual and sick leave entitlements. Pay calculation settings live under Payroll."
+                           Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="8">
+                        <Label Grid.Row="0" Grid.Column="0" Text="Annual Leave (days/year)" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                        <Entry Grid.Row="0" Grid.Column="1" Text="{Binding AnnualLeaveDays}"
+                               Keyboard="Numeric" WidthRequest="80" Style="{StaticResource DarkEntry}" HorizontalTextAlignment="End" />
+                        <Label Grid.Row="1" Grid.Column="0" Text="Sick Leave (days/year)" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                        <Entry Grid.Row="1" Grid.Column="1" Text="{Binding SickLeaveDays}"
+                               Keyboard="Numeric" WidthRequest="80" Style="{StaticResource DarkEntry}" HorizontalTextAlignment="End" />
+                    </Grid>
+                    <Button Text="Save Leave Policies"
+                            Command="{Binding SavePoliciesCommand}"
+                            Style="{StaticResource PrimaryButton}" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Subscription Plan -->
+            <Frame Style="{StaticResource CardFrame}" IsVisible="{Binding IsOwnerOrAdmin}">
+                <VerticalStackLayout Spacing="14">
+                    <Label Text="SUBSCRIPTION PLAN" Style="{StaticResource LabelSection}" />
+                    <Frame BackgroundColor="{StaticResource SurfaceElevated}" BorderColor="{StaticResource Divider}"
+                           CornerRadius="10" Padding="14,10" HasShadow="False">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="{Binding CurrentPlanLabel}" Style="{StaticResource BodyLarge}" />
+                            <Label Text="Active subscription" Style="{StaticResource Caption}"
+                                   TextColor="{StaticResource Success}"
+                                   IsVisible="{Binding HasActiveSubscription}" />
+                            <Label Text="Inactive or trial — contact support to activate billing"
+                                   Style="{StaticResource Caption}"
+                                   TextColor="{StaticResource Warning}"
+                                   IsVisible="{Binding HasActiveSubscription, Converter={StaticResource InverseBoolConverter}}" />
+                        </VerticalStackLayout>
+                    </Frame>
+                    <Label Text="Plan changes are handled by KaiFlow billing — not from this screen."
+                           Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                    <Button Text="Request plan change"
+                            Command="{Binding RequestPlanChangeCommand}"
+                            Style="{StaticResource SecondaryButton}" />
+                    <Label Text="Legacy self-service upgrade (disabled)" Style="{StaticResource LabelSection}" IsVisible="False" />
+                    <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="10" IsVisible="False">
+                        <!-- Basic -->
+                        <Frame Grid.Row="0" Grid.Column="0" CornerRadius="10" Padding="14,12" HasShadow="False"
+                               BackgroundColor="{Binding IsBasicPlan, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#EFF6FF|#F9FAFB'}"
+                               BorderColor="{Binding IsBasicPlan, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#3B82F6|#E5E7EB'}">
+                            <VerticalStackLayout Spacing="4">
+                                <Label Text="Basic" FontFamily="PoppinsBold" FontSize="15" TextColor="{StaticResource TextPrimary}" />
+                                <Label Text="R700 / month" FontFamily="PoppinsSemiBold" FontSize="13" TextColor="{StaticResource Primary}" />
+                                <Label Text="Up to 20 users" Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                                <Button Text="Select Basic" Command="{Binding UpgradePlanCommand}" CommandParameter="basic"
+                                        BackgroundColor="{StaticResource Primary}" TextColor="White"
+                                        CornerRadius="8" HeightRequest="36" FontFamily="PoppinsMedium" FontSize="12"
+                                        Margin="0,6,0,0"
+                                        IsEnabled="{Binding IsBasicPlan, Converter={StaticResource InverseBoolConverter}}" />
+                            </VerticalStackLayout>
+                        </Frame>
+                        <!-- Pro -->
+                        <Frame Grid.Row="0" Grid.Column="1" CornerRadius="10" Padding="14,12" HasShadow="False"
+                               BackgroundColor="{Binding IsProPlan, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#EFF6FF|#F9FAFB'}"
+                               BorderColor="{Binding IsProPlan, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#3B82F6|#E5E7EB'}">
+                            <VerticalStackLayout Spacing="4">
+                                <Label Text="Pro" FontFamily="PoppinsBold" FontSize="15" TextColor="{StaticResource TextPrimary}" />
+                                <Label Text="R1,000 / month" FontFamily="PoppinsSemiBold" FontSize="13" TextColor="{StaticResource Primary}" />
+                                <Label Text="Up to 80 users" Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                                <Button Text="Select Pro" Command="{Binding UpgradePlanCommand}" CommandParameter="pro"
+                                        BackgroundColor="{StaticResource Primary}" TextColor="White"
+                                        CornerRadius="8" HeightRequest="36" FontFamily="PoppinsMedium" FontSize="12"
+                                        Margin="0,6,0,0"
+                                        IsEnabled="{Binding IsProPlan, Converter={StaticResource InverseBoolConverter}}" />
+                            </VerticalStackLayout>
+                        </Frame>
+                        <!-- Premium -->
+                        <Frame Grid.Row="1" Grid.Column="0" CornerRadius="10" Padding="14,12" HasShadow="False"
+                               BackgroundColor="{Binding IsPremiumPlan, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#EFF6FF|#111827'}"
+                               BorderColor="{Binding IsPremiumPlan, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#3B82F6|#374151'}">
+                            <VerticalStackLayout Spacing="4">
+                                <Label Text="Premium" FontFamily="PoppinsBold" FontSize="15"
+                                       TextColor="{Binding IsPremiumPlan, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#111827|#F9FAFB'}" />
+                                <Label Text="R1,500 / month" FontFamily="PoppinsSemiBold" FontSize="13" TextColor="{StaticResource PrimaryLight}" />
+                                <Label Text="Up to 250 users" Style="{StaticResource Caption}" TextColor="#94A3B8" />
+                                <Button Text="Select Premium" Command="{Binding UpgradePlanCommand}" CommandParameter="premium"
+                                        BackgroundColor="#6366F1" TextColor="White"
+                                        CornerRadius="8" HeightRequest="36" FontFamily="PoppinsMedium" FontSize="12"
+                                        Margin="0,6,0,0"
+                                        IsEnabled="{Binding IsPremiumPlan, Converter={StaticResource InverseBoolConverter}}" />
+                            </VerticalStackLayout>
+                        </Frame>
+                    </Grid>
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- HR Access -->
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="10">
+                    <Label Text="HR ACCESS &amp; ROLES" Style="{StaticResource LabelSection}" />
+                    <Label Text="Employees with elevated access in this company."
+                           Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                    <Label Text="No HR or manager accounts yet."
+                           Style="{StaticResource EmptyState}"
+                           IsVisible="{Binding HrStaff.Count, Converter={StaticResource IsZeroConverter}}" />
+                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding HrStaff}" Spacing="8">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate x:DataType="models:Employee">
+                                <Frame Style="{StaticResource CardFrame}" Padding="12,10">
+                                    <Grid ColumnDefinitions="44,*,Auto" ColumnSpacing="12">
+                                        <Frame Grid.Column="0" CornerRadius="22" WidthRequest="44" HeightRequest="44"
+                                               BackgroundColor="{StaticResource SidebarActive}"
+                                               Padding="0" BorderColor="Transparent" HasShadow="False">
+                                            <Label Text="{Binding Initials}" FontFamily="PoppinsBold" FontSize="15"
+                                                   TextColor="{StaticResource Primary}"
+                                                   HorizontalOptions="Center" VerticalOptions="Center" />
+                                        </Frame>
+                                        <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
+                                            <Label Text="{Binding FullName}" Style="{StaticResource BodyMedium}" />
+                                            <Label Text="{Binding Position}" Style="{StaticResource Caption}"
+                                                   TextColor="{StaticResource TextSecondary}"
+                                                   IsVisible="{Binding Position, Converter={StaticResource IsNotNullConverter}}" />
+                                        </VerticalStackLayout>
+                                        <Frame Grid.Column="2" CornerRadius="6" Padding="8,4" VerticalOptions="Center"
+                                               BackgroundColor="{StaticResource SurfaceElevated}"
+                                               BorderColor="{StaticResource Divider}" HasShadow="False">
+                                            <Label Text="{Binding AccessLevelRaw}" FontFamily="PoppinsMedium" FontSize="11"
+                                                   TextColor="{StaticResource Primary}" />
+                                        </Frame>
+                                    </Grid>
+                                </Frame>
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                    </VerticalStackLayout>
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Security -->
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="SECURITY" Style="{StaticResource LabelSection}" />
+                    <Button Text="Change Password"
+                            Command="{Binding ChangePasswordCommand}"
+                            BackgroundColor="{StaticResource SurfaceElevated}"
+                            TextColor="{StaticResource TextPrimary}"
+                            CornerRadius="10" HeightRequest="44" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Feedback -->
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="10">
+                    <Label Text="FEEDBACK" Style="{StaticResource LabelSection}" />
+                    <Label Text="Report bugs, suggest features, or contact KaiFlow support."
+                           Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                    <Button Text="Send Feedback" Command="{Binding GoToSendFeedbackCommand}" Style="{StaticResource SecondaryButton}" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Danger Zone -->
+            <Frame Style="{StaticResource CardFrame}"
+                   BorderColor="{StaticResource Error}"
+                   BackgroundColor="#FEF2F2">
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="DANGER ZONE" Style="{StaticResource LabelSection}"
+                           TextColor="{StaticResource Error}" />
+                    <Label Text="These actions are permanent and cannot be undone."
+                           Style="{StaticResource BodySmall}"
+                           TextColor="{StaticResource TextSecondary}" />
+                    <Button Text="Transfer Ownership"
+                            Command="{Binding TransferOwnershipCommand}"
+                            IsVisible="{Binding IsOwner}"
+                            BackgroundColor="Transparent"
+                            TextColor="{StaticResource Error}"
+                            BorderColor="{StaticResource Error}"
+                            BorderWidth="1"
+                            CornerRadius="10" HeightRequest="44" />
+                    <Button Text="Sign Out"
+                            Command="{Binding SignOutCommand}"
+                            Style="{StaticResource DangerButton}" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <ActivityIndicator IsRunning="{Binding IsBusy}"
+                               IsVisible="{Binding IsBusy}"
+                               Color="{StaticResource Primary}"
+                               HorizontalOptions="Center" />
+
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

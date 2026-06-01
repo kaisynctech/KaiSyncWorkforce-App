@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Finance.ContractorPayoutsPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Finance"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:ContractorPayoutsViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="Contractor Payouts">
+
+    <RefreshView Command="{Binding RefreshCommand}" IsRefreshing="{Binding IsBusy}">
+        <ScrollView>
+            <VerticalStackLayout Spacing="14" Padding="16" MaximumWidthRequest="760" HorizontalOptions="Center">
+
+                <Border Padding="14" StrokeThickness="0" BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 16">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <VerticalStackLayout Spacing="2">
+                            <Label Text="Payable to Contractors" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+                            <Label Text="{Binding PayableTotal, StringFormat='R{0:N2}'}" FontSize="22" FontAttributes="Bold" TextColor="#F59E0B" />
+                        </VerticalStackLayout>
+                        <Label Grid.Column="1" Text="{Binding Payouts.Count, StringFormat='{0} payouts'}" Style="{StaticResource Caption}" VerticalOptions="End" />
+                    </Grid>
+                </Border>
+
+                <!-- Quick add -->
+                <Border Padding="14" StrokeThickness="0" BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 16">
+                    <VerticalStackLayout Spacing="10">
+                        <Label Text="Capture payout" FontSize="15" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" />
+                        <Picker ItemsSource="{Binding Contractors}" SelectedItem="{Binding SelectedContractor}" ItemDisplayBinding="{Binding Name}" Title="Select contractor" />
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                            <VerticalStackLayout Grid.Column="0" Spacing="0">
+                                <Label Text="Amount" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                                <Entry Text="{Binding QuickAmount}" Keyboard="Numeric" TextColor="{StaticResource TextPrimary}" />
+                            </VerticalStackLayout>
+                            <VerticalStackLayout Grid.Column="1" Spacing="0">
+                                <Label Text="VAT rate" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                                <Entry Text="{Binding QuickVatRate}" Keyboard="Numeric" TextColor="{StaticResource TextPrimary}" />
+                            </VerticalStackLayout>
+                        </Grid>
+                        <Grid ColumnDefinitions="*,Auto">
+                            <Label Text="Amount includes VAT" VerticalOptions="Center" TextColor="{StaticResource TextPrimary}" />
+                            <Switch Grid.Column="1" IsToggled="{Binding QuickIsInclusive}" />
+                        </Grid>
+                        <VerticalStackLayout Spacing="0">
+                            <Label Text="Retention held back" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                            <Entry Text="{Binding QuickRetention}" Keyboard="Numeric" TextColor="{StaticResource TextPrimary}" />
+                        </VerticalStackLayout>
+
+                        <Grid ColumnDefinitions="*,*,*" Margin="0,4,0,0">
+                            <VerticalStackLayout Grid.Column="0">
+                                <Label Text="VAT" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                                <Label Text="{Binding PreviewVat, StringFormat='R{0:N2}'}" TextColor="{StaticResource TextPrimary}" />
+                            </VerticalStackLayout>
+                            <VerticalStackLayout Grid.Column="1">
+                                <Label Text="Total" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                                <Label Text="{Binding PreviewTotal, StringFormat='R{0:N2}'}" TextColor="{StaticResource TextPrimary}" />
+                            </VerticalStackLayout>
+                            <VerticalStackLayout Grid.Column="2">
+                                <Label Text="Net payable" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                                <Label Text="{Binding PreviewNet, StringFormat='R{0:N2}'}" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" />
+                            </VerticalStackLayout>
+                        </Grid>
+
+                        <Button Text="Add payout" Command="{Binding AddPayoutCommand}" Style="{StaticResource PrimaryButton}" />
+                    </VerticalStackLayout>
+                </Border>
+
+                <CollectionView ItemsSource="{Binding Payouts}">
+                    <CollectionView.EmptyView>
+                        <Label Text="No contractor payouts captured yet." Style="{StaticResource EmptyState}" Margin="0,24" />
+                    </CollectionView.EmptyView>
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="models:ContractorPayout">
+                            <Border Margin="0,0,0,8" Padding="14" StrokeThickness="0"
+                                    BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 14">
+                                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                                    <Label Grid.Row="0" Grid.Column="0" Text="{Binding NetDisplay, StringFormat='Net {0}'}" FontAttributes="Bold" FontSize="15" TextColor="{StaticResource TextPrimary}" />
+                                    <Label Grid.Row="0" Grid.Column="1" Text="{Binding TotalDisplay}" FontSize="14" TextColor="{StaticResource TextSecondary}" />
+                                    <Label Grid.Row="1" Grid.Column="0" Text="{Binding RetentionDisplay, StringFormat='Retention {0}'}" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+                                    <Border Grid.Row="1" Grid.Column="1" Padding="8,2" StrokeThickness="0" BackgroundColor="{Binding StatusColor}" StrokeShape="RoundRectangle 8">
+                                        <Label Text="{Binding PayoutStatusLabel}" FontSize="11" TextColor="White" />
+                                    </Border>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+
+            </VerticalStackLayout>
+        </ScrollView>
+    </RefreshView>
+</ContentPage>

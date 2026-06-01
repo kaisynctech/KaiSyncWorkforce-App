@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Hr.HrAttendancePage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    xmlns:shared="clr-namespace:KaiFlow.Timesheets.Views.Shared"
+    x:DataType="vm:HrAttendanceViewModel"
+    x:Name="attendancePage"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="Attendance">
+
+    <ContentPage.ToolbarItems>
+        <ToolbarItem Text="Export" Command="{Binding ExportCommand}" />
+    </ContentPage.ToolbarItems>
+
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,*">
+
+        <!-- Period filter tabs -->
+        <ScrollView Grid.Row="0" Orientation="Horizontal" Margin="16,12,16,4">
+            <HorizontalStackLayout Spacing="8">
+                <Button Text="Today" Command="{Binding SetPeriodCommand}" CommandParameter="today"
+                        CornerRadius="20" HeightRequest="34" FontFamily="PoppinsMedium" FontSize="12" Padding="16,0"
+                        BackgroundColor="{Binding AttendancePeriod, Converter={StaticResource EqToStyleConverter}, ConverterParameter='today|#3B82F6,#FFFFFF'}"
+                        TextColor="{Binding AttendancePeriod, Converter={StaticResource EqToStyleConverter}, ConverterParameter='today|#FFFFFF,#6B7280'}" />
+                <Button Text="Past Week" Command="{Binding SetPeriodCommand}" CommandParameter="week"
+                        CornerRadius="20" HeightRequest="34" FontFamily="PoppinsMedium" FontSize="12" Padding="16,0"
+                        BackgroundColor="{Binding AttendancePeriod, Converter={StaticResource EqToStyleConverter}, ConverterParameter='week|#3B82F6,#FFFFFF'}"
+                        TextColor="{Binding AttendancePeriod, Converter={StaticResource EqToStyleConverter}, ConverterParameter='week|#FFFFFF,#6B7280'}" />
+                <Button Text="Past Month" Command="{Binding SetPeriodCommand}" CommandParameter="month"
+                        CornerRadius="20" HeightRequest="34" FontFamily="PoppinsMedium" FontSize="12" Padding="16,0"
+                        BackgroundColor="{Binding AttendancePeriod, Converter={StaticResource EqToStyleConverter}, ConverterParameter='month|#3B82F6,#FFFFFF'}"
+                        TextColor="{Binding AttendancePeriod, Converter={StaticResource EqToStyleConverter}, ConverterParameter='month|#FFFFFF,#6B7280'}" />
+                <Button Text="All" Command="{Binding SetPeriodCommand}" CommandParameter="all"
+                        CornerRadius="20" HeightRequest="34" FontFamily="PoppinsMedium" FontSize="12" Padding="16,0"
+                        BackgroundColor="{Binding AttendancePeriod, Converter={StaticResource EqToStyleConverter}, ConverterParameter='all|#3B82F6,#FFFFFF'}"
+                        TextColor="{Binding AttendancePeriod, Converter={StaticResource EqToStyleConverter}, ConverterParameter='all|#FFFFFF,#6B7280'}" />
+            </HorizontalStackLayout>
+        </ScrollView>
+
+        <!-- Employee name search -->
+        <Frame Grid.Row="1" Style="{StaticResource CardFrame}" Margin="16,4,16,0">
+            <SearchBar Text="{Binding EmployeeNameFilter}"
+                       Placeholder="Search by employee name…"
+                       TextColor="{StaticResource TextPrimary}"
+                       PlaceholderColor="{StaticResource TextSecondary}"
+                       BackgroundColor="Transparent" />
+        </Frame>
+
+        <!-- Date range (manual override) -->
+        <Frame Grid.Row="2" Style="{StaticResource CardFrame}" Margin="16,8">
+            <Grid ColumnDefinitions="*,Auto,*,Auto" ColumnSpacing="8">
+                <DatePicker Grid.Column="0" Date="{Binding FromDate}" TextColor="{StaticResource TextPrimary}" />
+                <Label Grid.Column="1" Text="–" VerticalOptions="Center" TextColor="{StaticResource TextSecondary}" />
+                <DatePicker Grid.Column="2" Date="{Binding ToDate}" TextColor="{StaticResource TextPrimary}" />
+                <Button Grid.Column="3" Text="Apply"
+                        Command="{Binding ApplyFilterCommand}"
+                        Style="{StaticResource PrimaryButton}"
+                        HeightRequest="40" Padding="12,0" />
+            </Grid>
+        </Frame>
+
+        <!-- Totals -->
+        <Grid Grid.Row="3" ColumnDefinitions="*,*" Margin="16,0" ColumnSpacing="12">
+            <Frame Grid.Column="0" Style="{StaticResource KpiCard}">
+                <VerticalStackLayout>
+                    <Label Text="{Binding TotalHours, StringFormat='{0:F1}h'}" Style="{StaticResource KpiNumber}" />
+                    <Label Text="Total Hours" Style="{StaticResource KpiLabel}" />
+                </VerticalStackLayout>
+            </Frame>
+            <Frame Grid.Column="1" Style="{StaticResource KpiCard}">
+                <VerticalStackLayout>
+                    <Label Text="{Binding TotalPay, StringFormat='R{0:N2}'}" Style="{StaticResource KpiNumber}" />
+                    <Label Text="Total Pay" Style="{StaticResource KpiLabel}" />
+                </VerticalStackLayout>
+            </Frame>
+        </Grid>
+
+        <!-- Sessions table -->
+        <ScrollView Grid.Row="4" Margin="16,8,16,24">
+            <shared:AttendanceSessionTableView Sessions="{Binding Sessions}"
+                                               ShowEmployeeColumn="True"
+                                               EmptyMessage="No sessions in this period." />
+        </ScrollView>
+    </Grid>
+</ContentPage>

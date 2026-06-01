@@ -1,0 +1,325 @@
+<?xml version="1.0" encoding="utf-8" ?>
+
+<ContentPage
+
+    x:Class="KaiFlow.Timesheets.Views.ClientPortal.ClientPortalPage"
+
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.ClientPortal"
+
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+
+    x:DataType="vm:ClientPortalViewModel"
+
+    BackgroundColor="{StaticResource BackgroundDark}"
+
+    Title="{Binding Title}">
+
+
+
+    <ContentPage.ToolbarItems>
+        <ToolbarItem Text="Main menu" Command="{Binding ExitToMainMenuCommand}" />
+        <ToolbarItem Text="Sign out" Command="{Binding SignOutCommand}" />
+    </ContentPage.ToolbarItems>
+
+
+
+    <Grid RowDefinitions="Auto,Auto,*" Padding="16" RowSpacing="12">
+
+        <VerticalStackLayout Grid.Row="0" Spacing="4">
+
+            <Label Text="Welcome" Style="{StaticResource Caption}" />
+
+            <Label Text="{Binding ClientName}" Style="{StaticResource HeadlineMedium}" />
+
+            <Label Text="{Binding CompanyCode, StringFormat='Company code: {0}'}" Style="{StaticResource BodySmall}" TextColor="{StaticResource TextSecondary}" />
+
+            <Label Text="{Binding ClientCode, StringFormat='Client code: {0}'}" Style="{StaticResource BodySmall}" TextColor="{StaticResource TextSecondary}" />
+
+        </VerticalStackLayout>
+
+
+
+        <HorizontalStackLayout Grid.Row="1" Spacing="8">
+
+            <Button Text="Projects"
+                    Command="{Binding ShowProjectsTabCommand}"
+                    CornerRadius="12" HeightRequest="36" FontSize="12" Padding="14,6"
+                    BackgroundColor="{Binding IsProjectsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#3B82F6|#FFFFFF'}"
+                    TextColor="{Binding IsProjectsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#6B7280'}" />
+
+            <Button Text="{Binding MessagesTabLabel}"
+                    Command="{Binding ShowMessagesTabCommand}"
+                    CornerRadius="12" HeightRequest="36" FontSize="12" Padding="14,6"
+                    BackgroundColor="{Binding IsMessagesTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#3B82F6|#FFFFFF'}"
+                    TextColor="{Binding IsMessagesTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#6B7280'}" />
+
+            <Button Text="Invoices"
+                    Command="{Binding ShowInvoicesTabCommand}"
+                    CornerRadius="12" HeightRequest="36" FontSize="12" Padding="14,6"
+                    BackgroundColor="{Binding IsInvoicesTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#3B82F6|#FFFFFF'}"
+                    TextColor="{Binding IsInvoicesTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#6B7280'}" />
+
+        </HorizontalStackLayout>
+
+
+
+        <!-- Projects tab -->
+
+        <RefreshView Grid.Row="2" Command="{Binding RefreshCommand}" IsRefreshing="{Binding IsBusy}"
+                     IsVisible="{Binding IsProjectsTab}">
+
+            <ScrollView Orientation="Horizontal">
+
+                <VerticalStackLayout WidthRequest="880" Spacing="0">
+
+                    <Label Text="Your projects" Style="{StaticResource LabelSection}" Margin="0,0,0,8" />
+
+                    <Frame Style="{StaticResource DataTableFrame}">
+
+                        <Grid ColumnDefinitions="90,*,80,90,90,80,90" Padding="12,10" BackgroundColor="{StaticResource SurfaceElevated}">
+
+                            <Label Grid.Column="0" Text="Code" Style="{StaticResource DataTableHeaderLabel}" />
+
+                            <Label Grid.Column="1" Text="Project" Style="{StaticResource DataTableHeaderLabel}" />
+
+                            <Label Grid.Column="2" Text="Status" Style="{StaticResource DataTableHeaderLabel}" />
+
+                            <Label Grid.Column="3" Text="Offer" Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="End" />
+
+                            <Label Grid.Column="4" Text="Paid" Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="End" />
+
+                            <Label Grid.Column="5" Text="Progress" Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="End" />
+
+                            <Label Grid.Column="6" Text="Updated" Style="{StaticResource DataTableHeaderLabel}" />
+
+                        </Grid>
+
+                    </Frame>
+
+                    <CollectionView ItemsSource="{Binding Projects}" SelectionMode="None">
+
+                        <CollectionView.EmptyView>
+
+                            <Label Text="No projects shared yet. Your contractor will add projects here when ready."
+
+                                   Style="{StaticResource EmptyState}" Margin="0,24" />
+
+                        </CollectionView.EmptyView>
+
+                        <CollectionView.ItemTemplate>
+
+                            <DataTemplate x:DataType="models:ClientDeal">
+
+                                <VerticalStackLayout Spacing="0">
+
+                                    <Grid ColumnDefinitions="90,*,80,90,90,80,90" Padding="12,10" BackgroundColor="{StaticResource SurfaceCard}">
+
+                                        <Grid.GestureRecognizers>
+
+                                            <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type ContentPage}}, Path=BindingContext.OpenProjectCommand}" CommandParameter="{Binding .}" />
+
+                                        </Grid.GestureRecognizers>
+
+                                        <Label Grid.Column="0" Text="{Binding ProjectCodeDisplay}" Style="{StaticResource DataTableCellLabel}" />
+
+                                        <Label Grid.Column="1" Text="{Binding Title}" Style="{StaticResource DataTableCellLabel}" TextColor="{StaticResource Primary}" />
+
+                                        <Label Grid.Column="2" Text="{Binding StatusLabel}" Style="{StaticResource DataTableCellSecondary}" />
+
+                                        <Label Grid.Column="3" Text="{Binding OfferDisplay}" Style="{StaticResource DataTableCellLabel}" HorizontalTextAlignment="End" />
+
+                                        <Label Grid.Column="4" Text="{Binding PaidDisplay}" Style="{StaticResource DataTableCellLabel}" HorizontalTextAlignment="End" />
+
+                                        <Label Grid.Column="5" Text="{Binding ProgressDisplay}" Style="{StaticResource DataTableCellSecondary}" HorizontalTextAlignment="End" />
+
+                                        <Label Grid.Column="6" Text="{Binding LastUpdateDisplay}" Style="{StaticResource DataTableCellSecondary}" />
+
+                                    </Grid>
+
+                                    <BoxView Style="{StaticResource DataTableRowDivider}" />
+
+                                </VerticalStackLayout>
+
+                            </DataTemplate>
+
+                        </CollectionView.ItemTemplate>
+
+                    </CollectionView>
+
+                </VerticalStackLayout>
+
+            </ScrollView>
+
+        </RefreshView>
+
+
+
+        <!-- Messages tab -->
+
+        <RefreshView Grid.Row="2" Command="{Binding RefreshCommand}" IsRefreshing="{Binding IsBusy}"
+                     IsVisible="{Binding IsMessagesTab}">
+
+            <CollectionView ItemsSource="{Binding MessageInbox}" Margin="0,4,0,0">
+
+                <CollectionView.EmptyView>
+
+                    <VerticalStackLayout Spacing="8" Margin="0,32">
+
+                        <Label Text="No messages yet."
+
+                               Style="{StaticResource EmptyState}" />
+
+                        <Label Text="When your contractor messages you about a project, it will appear here."
+
+                               Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+
+                    </VerticalStackLayout>
+
+                </CollectionView.EmptyView>
+
+                <CollectionView.ItemTemplate>
+
+                    <DataTemplate x:DataType="models:ClientPortalMessageInboxItem">
+
+                        <Frame Style="{StaticResource CardFrame}" Margin="0,6" Padding="14,12">
+
+                            <Frame.GestureRecognizers>
+
+                                <TapGestureRecognizer
+
+                                    Command="{Binding Source={RelativeSource AncestorType={x:Type ContentPage}}, Path=BindingContext.OpenMessageThreadCommand}"
+
+                                    CommandParameter="{Binding .}" />
+
+                            </Frame.GestureRecognizers>
+
+                            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto" RowSpacing="4">
+
+                                <Label Grid.Row="0" Grid.Column="0" Text="{Binding ProjectLabel}" Style="{StaticResource BodyLarge}" />
+
+                                <Frame Grid.Row="0" Grid.Column="1" IsVisible="{Binding HasUnread}"
+                                       BackgroundColor="{StaticResource Primary}" BorderColor="Transparent"
+                                       CornerRadius="8" Padding="8,3" HasShadow="False" VerticalOptions="Center">
+                                    <Label Text="New" FontSize="10" FontFamily="PoppinsSemiBold" TextColor="White" />
+                                </Frame>
+
+                                <Label Grid.Row="1" Grid.ColumnSpan="2"
+
+                                       Text="{Binding LastMessagePreview, FallbackValue='No messages yet'}"
+
+                                       Style="{StaticResource Caption}" MaxLines="2" LineBreakMode="TailTruncation" />
+
+                                <Label Grid.Row="2" Grid.ColumnSpan="2"
+
+                                       Text="{Binding LastMessageAtDisplay}"
+
+                                       Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+
+                            </Grid>
+
+                        </Frame>
+
+                    </DataTemplate>
+
+                </CollectionView.ItemTemplate>
+
+            </CollectionView>
+
+        </RefreshView>
+
+
+
+        <!-- Invoices tab -->
+
+        <RefreshView Grid.Row="2" Command="{Binding RefreshCommand}" IsRefreshing="{Binding IsBusy}"
+                     IsVisible="{Binding IsInvoicesTab}">
+
+            <ScrollView Orientation="Horizontal">
+
+                <VerticalStackLayout WidthRequest="880" Spacing="0">
+
+                    <Grid ColumnDefinitions="*,Auto" Margin="0,0,0,8">
+
+                        <Label Grid.Column="0" Text="Your invoices" Style="{StaticResource LabelSection}" VerticalOptions="Center" />
+
+                        <Label Grid.Column="1" Text="{Binding OutstandingBalanceDisplay, StringFormat='Outstanding: {0}'}"
+                               Style="{StaticResource BodySmall}" FontFamily="PoppinsSemiBold"
+                               TextColor="{StaticResource TextSecondary}" VerticalOptions="Center" />
+
+                    </Grid>
+
+                    <Frame Style="{StaticResource DataTableFrame}">
+
+                        <Grid ColumnDefinitions="130,100,110,110,110,110" Padding="12,10" BackgroundColor="{StaticResource SurfaceElevated}">
+
+                            <Label Grid.Column="0" Text="Invoice #" Style="{StaticResource DataTableHeaderLabel}" />
+
+                            <Label Grid.Column="1" Text="Status" Style="{StaticResource DataTableHeaderLabel}" />
+
+                            <Label Grid.Column="2" Text="Total" Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="End" />
+
+                            <Label Grid.Column="3" Text="Balance" Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="End" />
+
+                            <Label Grid.Column="4" Text="Issued" Style="{StaticResource DataTableHeaderLabel}" />
+
+                            <Label Grid.Column="5" Text="Due" Style="{StaticResource DataTableHeaderLabel}" />
+
+                        </Grid>
+
+                    </Frame>
+
+                    <CollectionView ItemsSource="{Binding Invoices}" SelectionMode="None">
+
+                        <CollectionView.EmptyView>
+
+                            <Label Text="No invoices issued yet. Invoices from your contractor will appear here."
+                                   Style="{StaticResource EmptyState}" Margin="0,24" />
+
+                        </CollectionView.EmptyView>
+
+                        <CollectionView.ItemTemplate>
+
+                            <DataTemplate x:DataType="models:FinanceInvoice">
+
+                                <VerticalStackLayout Spacing="0">
+
+                                    <Grid ColumnDefinitions="130,100,110,110,110,110" Padding="12,10" BackgroundColor="{StaticResource SurfaceCard}">
+
+                                        <Label Grid.Column="0" Text="{Binding NumberDisplay}" Style="{StaticResource DataTableCellLabel}" />
+
+                                        <Label Grid.Column="1" Text="{Binding StatusLabel}" Style="{StaticResource DataTableCellLabel}"
+                                               TextColor="{Binding StatusColor}" />
+
+                                        <Label Grid.Column="2" Text="{Binding TotalDisplay}" Style="{StaticResource DataTableCellLabel}" HorizontalTextAlignment="End" />
+
+                                        <Label Grid.Column="3" Text="{Binding BalanceDisplay}" Style="{StaticResource DataTableCellLabel}" HorizontalTextAlignment="End" />
+
+                                        <Label Grid.Column="4" Text="{Binding IssueDateDisplay}" Style="{StaticResource DataTableCellSecondary}" />
+
+                                        <Label Grid.Column="5" Text="{Binding DueDateDisplay}" Style="{StaticResource DataTableCellSecondary}" />
+
+                                    </Grid>
+
+                                    <BoxView Style="{StaticResource DataTableRowDivider}" />
+
+                                </VerticalStackLayout>
+
+                            </DataTemplate>
+
+                        </CollectionView.ItemTemplate>
+
+                    </CollectionView>
+
+                </VerticalStackLayout>
+
+            </ScrollView>
+
+        </RefreshView>
+
+    </Grid>
+
+</ContentPage>

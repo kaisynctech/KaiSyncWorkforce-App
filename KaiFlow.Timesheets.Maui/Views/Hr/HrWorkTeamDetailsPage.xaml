@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Hr.HrWorkTeamDetailsPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
+    x:DataType="vm:HrWorkTeamDetailsViewModel"
+    x:Name="teamDetailsPage"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="{Binding Title}">
+
+    <ContentPage.ToolbarItems>
+        <ToolbarItem Text="Save" Command="{Binding SaveCommand}" />
+    </ContentPage.ToolbarItems>
+
+    <ScrollView>
+        <VerticalStackLayout Padding="16" Spacing="16"
+                             IsVisible="{Binding Team, Converter={StaticResource IsNotNullConverter}}">
+
+            <!-- Team Info -->
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="TEAM INFO" Style="{StaticResource LabelSection}" />
+                    <VerticalStackLayout Spacing="6">
+                        <Label Text="Team name *" Style="{StaticResource LabelField}" />
+                        <Entry Text="{Binding Name}" Placeholder="Team name" Style="{StaticResource DarkEntry}" />
+                    </VerticalStackLayout>
+                    <VerticalStackLayout Spacing="6">
+                        <Label Text="Description" Style="{StaticResource LabelField}" />
+                        <Entry Text="{Binding Description}" Placeholder="Description (optional)" Style="{StaticResource DarkEntry}" />
+                    </VerticalStackLayout>
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Mixed-branch warning -->
+            <Frame BackgroundColor="{StaticResource WarningDark}" BorderColor="{StaticResource Warning}"
+                   CornerRadius="8" Padding="12,8" HasShadow="False"
+                   IsVisible="{Binding HasMixedBranches}">
+                <VerticalStackLayout Spacing="2">
+                    <Label Text="Mixed Branches in This Team" FontFamily="PoppinsSemiBold" FontSize="13"
+                           TextColor="{StaticResource Warning}" />
+                    <Label Text="{Binding BranchSummary, StringFormat='Members from: {0}'}"
+                           Style="{StaticResource Caption}" TextColor="{StaticResource TextPrimary}" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Members -->
+            <Grid ColumnDefinitions="*,Auto">
+                <Label Grid.Column="0" Text="MEMBERS" Style="{StaticResource LabelSection}" VerticalOptions="Center" />
+                <Button Grid.Column="1" Text="+ Add Member"
+                        Command="{Binding AddMemberCommand}"
+                        Style="{StaticResource PrimaryButton}"
+                        HeightRequest="36" FontSize="13" />
+            </Grid>
+
+            <CollectionView ItemsSource="{Binding Members}">
+                <CollectionView.EmptyView>
+                    <Label Text="No members yet. Add some above." Style="{StaticResource EmptyState}" Padding="0,8" />
+                </CollectionView.EmptyView>
+                <CollectionView.ItemTemplate>
+                    <DataTemplate x:DataType="vm:TeamMemberDisplay">
+                        <SwipeView Margin="0,4">
+                            <SwipeView.RightItems>
+                                <SwipeItems>
+                                    <SwipeItem Text="Remove"
+                                               BackgroundColor="{StaticResource Error}"
+                                               Command="{Binding BindingContext.RemoveMemberCommand, Source={x:Reference teamDetailsPage}}"
+                                               CommandParameter="{Binding .}" />
+                                </SwipeItems>
+                            </SwipeView.RightItems>
+                            <Frame Style="{StaticResource CardFrame}">
+                                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                                    <VerticalStackLayout Grid.Column="0" Spacing="2" VerticalOptions="Center">
+                                        <Label Text="{Binding FullName}" Style="{StaticResource BodyMedium}" />
+                                        <Label Text="{Binding Branch}" Style="{StaticResource Caption}"
+                                               TextColor="{StaticResource TextSecondary}"
+                                               IsVisible="{Binding Branch, Converter={StaticResource IsNotNullConverter}}" />
+                                        <Label Text="Leader" Style="{StaticResource Caption}"
+                                               TextColor="{StaticResource Accent}"
+                                               IsVisible="{Binding IsLeader}" />
+                                    </VerticalStackLayout>
+                                    <Button Grid.Column="1"
+                                            Text="{Binding IsLeader, Converter={StaticResource BoolToStringConverter}, ConverterParameter='Unset Leader|Set Leader'}"
+                                            Command="{Binding BindingContext.SetLeaderCommand, Source={x:Reference teamDetailsPage}}"
+                                            CommandParameter="{Binding .}"
+                                            Style="{StaticResource TextButton}"
+                                            FontSize="12" />
+                                </Grid>
+                            </Frame>
+                        </SwipeView>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+
+            <Label Text="{Binding ErrorMessage}" TextColor="{StaticResource Error}"
+                   IsVisible="{Binding ErrorMessage, Converter={StaticResource IsNotNullConverter}}" />
+
+            <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}"
+                               Color="{StaticResource Primary}" HorizontalOptions="Center" />
+
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

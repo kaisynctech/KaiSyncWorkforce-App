@@ -1,0 +1,299 @@
+<?xml version="1.0" encoding="utf-8" ?>
+
+<ContentPage
+
+    x:Class="KaiFlow.Timesheets.Views.Finance.FinanceInvoicesPage"
+
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Finance"
+
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+
+    xmlns:kf="clr-namespace:KaiFlow.Timesheets.Controls"
+
+    x:DataType="vm:FinanceInvoicesViewModel"
+
+    BackgroundColor="{StaticResource BackgroundDark}"
+
+    Title="Invoices">
+
+
+
+    <ContentPage.ToolbarItems>
+
+        <ToolbarItem Text="+ New" Command="{Binding NewInvoiceCommand}" />
+
+    </ContentPage.ToolbarItems>
+
+
+
+    <Grid RowDefinitions="Auto,Auto,*" Padding="12">
+
+
+
+        <!-- KPI summary -->
+
+        <Grid Grid.Row="0" ColumnDefinitions="*,*,*" ColumnSpacing="10" Margin="0,0,0,12">
+
+            <kf:KpiCard Grid.Column="0"
+
+                        Title="Outstanding"
+
+                        Value="{Binding OutstandingTotal, StringFormat='R{0:N0}'}"
+
+                        Caption="balance due"
+
+                        Accent="{StaticResource Chart1}" />
+
+            <kf:KpiCard Grid.Column="1"
+
+                        Title="Overdue"
+
+                        Value="{Binding OverdueTotal, StringFormat='R{0:N0}'}"
+
+                        Caption="past due date"
+
+                        Accent="{StaticResource Chart5}" />
+
+            <kf:KpiCard Grid.Column="2"
+
+                        Title="Drafts"
+
+                        Value="{Binding DraftCount}"
+
+                        Caption="not yet sent"
+
+                        Accent="{StaticResource Chart3}" />
+
+        </Grid>
+
+
+
+        <!-- Search + status filters -->
+
+        <kf:FilterToolbar Grid.Row="1"
+
+                          SearchText="{Binding SearchText}"
+
+                          SearchPlaceholder="Search invoice number…"
+
+                          Margin="0,0,0,12">
+
+            <kf:FilterToolbar.FilterContent>
+
+                <ScrollView Orientation="Horizontal">
+
+                    <HorizontalStackLayout Spacing="8">
+
+                        <Button Text="All" FontSize="13" Padding="14,6" CornerRadius="16" HeightRequest="36"
+
+                                Command="{Binding SelectStatusCommand}" CommandParameter="all"
+
+                                BackgroundColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='all|#3B82F6,#FFFFFF'}"
+
+                                TextColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='all|#FFFFFF,#6B7280'}" />
+
+                        <Button Text="Outstanding" FontSize="13" Padding="14,6" CornerRadius="16" HeightRequest="36"
+
+                                Command="{Binding SelectStatusCommand}" CommandParameter="outstanding"
+
+                                BackgroundColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='outstanding|#3B82F6,#FFFFFF'}"
+
+                                TextColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='outstanding|#FFFFFF,#6B7280'}" />
+
+                        <Button Text="Overdue" FontSize="13" Padding="14,6" CornerRadius="16" HeightRequest="36"
+
+                                Command="{Binding SelectStatusCommand}" CommandParameter="overdue"
+
+                                BackgroundColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='overdue|#3B82F6,#FFFFFF'}"
+
+                                TextColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='overdue|#FFFFFF,#6B7280'}" />
+
+                        <Button Text="Paid" FontSize="13" Padding="14,6" CornerRadius="16" HeightRequest="36"
+
+                                Command="{Binding SelectStatusCommand}" CommandParameter="paid"
+
+                                BackgroundColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='paid|#3B82F6,#FFFFFF'}"
+
+                                TextColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='paid|#FFFFFF,#6B7280'}" />
+
+                        <Button Text="Draft" FontSize="13" Padding="14,6" CornerRadius="16" HeightRequest="36"
+
+                                Command="{Binding SelectStatusCommand}" CommandParameter="draft"
+
+                                BackgroundColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='draft|#3B82F6,#FFFFFF'}"
+
+                                TextColor="{Binding StatusFilter, Converter={StaticResource EqToStyleConverter}, ConverterParameter='draft|#FFFFFF,#6B7280'}" />
+
+                    </HorizontalStackLayout>
+
+                </ScrollView>
+
+            </kf:FilterToolbar.FilterContent>
+
+        </kf:FilterToolbar>
+
+
+
+        <!-- Enterprise table -->
+
+        <RefreshView Grid.Row="2" Command="{Binding RefreshCommand}" IsRefreshing="{Binding IsBusy}">
+
+            <kf:EnterpriseTableView ItemsSource="{Binding Invoices}"
+
+                                    PageSummary="{Binding PageSummary}"
+
+                                    CanGoPrevious="{Binding CanGoPrevious}"
+
+                                    CanGoNext="{Binding CanGoNext}"
+
+                                    PreviousPageCommand="{Binding PreviousPageCommand}"
+
+                                    NextPageCommand="{Binding NextPageCommand}"
+
+                                    EmptyTitle="No invoices yet"
+
+                                    EmptyMessage="Tap + New to create your first invoice.">
+
+                <kf:EnterpriseTableView.HeaderContent>
+
+                    <Grid ColumnDefinitions="2*,*,*,*,*,Auto" Padding="14,10" BackgroundColor="{StaticResource SurfaceElevated}">
+
+                        <Label Grid.Column="0" Text="{Binding InvoiceHeaderLabel}" Style="{StaticResource DataTableHeaderLabel}">
+
+                            <Label.GestureRecognizers>
+
+                                <TapGestureRecognizer Command="{Binding ToggleSortCommand}" CommandParameter="number" />
+
+                            </Label.GestureRecognizers>
+
+                        </Label>
+
+                        <Label Grid.Column="1" Text="{Binding IssueHeaderLabel}" Style="{StaticResource DataTableHeaderLabel}">
+
+                            <Label.GestureRecognizers>
+
+                                <TapGestureRecognizer Command="{Binding ToggleSortCommand}" CommandParameter="issue" />
+
+                            </Label.GestureRecognizers>
+
+                        </Label>
+
+                        <Label Grid.Column="2" Text="{Binding DueHeaderLabel}" Style="{StaticResource DataTableHeaderLabel}">
+
+                            <Label.GestureRecognizers>
+
+                                <TapGestureRecognizer Command="{Binding ToggleSortCommand}" CommandParameter="due" />
+
+                            </Label.GestureRecognizers>
+
+                        </Label>
+
+                        <Label Grid.Column="3" Text="{Binding TotalHeaderLabel}" Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="End">
+
+                            <Label.GestureRecognizers>
+
+                                <TapGestureRecognizer Command="{Binding ToggleSortCommand}" CommandParameter="total" />
+
+                            </Label.GestureRecognizers>
+
+                        </Label>
+
+                        <Label Grid.Column="4" Text="{Binding BalanceHeaderLabel}" Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="End">
+
+                            <Label.GestureRecognizers>
+
+                                <TapGestureRecognizer Command="{Binding ToggleSortCommand}" CommandParameter="balance" />
+
+                            </Label.GestureRecognizers>
+
+                        </Label>
+
+                        <Label Grid.Column="5" Text="{Binding StatusHeaderLabel}" Style="{StaticResource DataTableHeaderLabel}">
+
+                            <Label.GestureRecognizers>
+
+                                <TapGestureRecognizer Command="{Binding ToggleSortCommand}" CommandParameter="status" />
+
+                            </Label.GestureRecognizers>
+
+                        </Label>
+
+                    </Grid>
+
+                </kf:EnterpriseTableView.HeaderContent>
+
+
+
+                <kf:EnterpriseTableView.ItemTemplate>
+
+                    <DataTemplate x:DataType="models:FinanceInvoice">
+
+                        <VerticalStackLayout Spacing="0">
+
+                            <Grid ColumnDefinitions="2*,*,*,*,*,Auto" Padding="14,10" Style="{StaticResource DataTableRowPadding}">
+
+                                <Grid.GestureRecognizers>
+
+                                    <TapGestureRecognizer
+
+                                        Command="{Binding Source={RelativeSource AncestorType={x:Type ContentPage}}, Path=BindingContext.OpenCommand}"
+
+                                        CommandParameter="{Binding .}" />
+
+                                </Grid.GestureRecognizers>
+
+                                <Label Grid.Column="0" Text="{Binding NumberDisplay}"
+
+                                       Style="{StaticResource DataTableCellLabel}"
+
+                                       TextColor="{StaticResource Primary}" />
+
+                                <Label Grid.Column="1" Text="{Binding IssueDateDisplay}"
+
+                                       Style="{StaticResource DataTableCellSecondary}" />
+
+                                <Label Grid.Column="2" Text="{Binding DueDateDisplay}"
+
+                                       Style="{StaticResource DataTableCellSecondary}" />
+
+                                <Label Grid.Column="3" Text="{Binding TotalDisplay}"
+
+                                       Style="{StaticResource DataTableCellMoney}" />
+
+                                <Label Grid.Column="4" Text="{Binding BalanceDisplay}"
+
+                                       Style="{StaticResource DataTableCellMoney}"
+
+                                       TextColor="{StaticResource Primary}" />
+
+                                <kf:StatusChip Grid.Column="5"
+
+                                               Text="{Binding StatusLabel}"
+
+                                               Status="{Binding StatusChipKind}"
+
+                                               VerticalOptions="Center" />
+
+                            </Grid>
+
+                            <BoxView Style="{StaticResource DataTableRowDivider}" />
+
+                        </VerticalStackLayout>
+
+                    </DataTemplate>
+
+                </kf:EnterpriseTableView.ItemTemplate>
+
+            </kf:EnterpriseTableView>
+
+        </RefreshView>
+
+    </Grid>
+
+</ContentPage>
+
+

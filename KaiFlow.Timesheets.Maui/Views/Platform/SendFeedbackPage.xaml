@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Platform.SendFeedbackPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Platform"
+    x:DataType="vm:SendFeedbackViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="{Binding Title}">
+
+    <ScrollView Padding="20">
+        <VerticalStackLayout Spacing="16">
+            <Label Text="Help us improve KaiFlow"
+                   Style="{StaticResource HeadlineSmall}" />
+            <Label Text="Report bugs, request features, or contact support. Your message goes directly to the KaiFlow platform team."
+                   Style="{StaticResource BodySmall}" TextColor="{StaticResource TextSecondary}" />
+
+            <Label Text="Category" Style="{StaticResource LabelSection}" />
+            <Picker ItemsSource="{Binding Categories}" SelectedItem="{Binding Category}" />
+
+            <Label Text="Message" Style="{StaticResource LabelSection}" />
+            <Editor Text="{Binding Message}" HeightRequest="140" AutoSize="TextChanges" />
+
+            <Button Text="Submit feedback" Command="{Binding SubmitCommand}" Style="{StaticResource PrimaryButton}" />
+            <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}" Color="{StaticResource Primary}" />
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

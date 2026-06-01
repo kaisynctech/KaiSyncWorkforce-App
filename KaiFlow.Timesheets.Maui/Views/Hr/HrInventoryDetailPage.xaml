@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Hr.HrInventoryDetailPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
+    x:DataType="vm:HrInventoryDetailViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="">
+
+    <Grid RowDefinitions="Auto,*">
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Padding="16,12,16,4" ColumnSpacing="12">
+            <Label Text="{Binding Title}" Style="{StaticResource HeadlineMedium}" VerticalOptions="Center" />
+            <Button Grid.Column="1" Text="Save" Command="{Binding SaveCommand}"
+                    BackgroundColor="{StaticResource Primary}" TextColor="White"
+                    FontFamily="PoppinsSemiBold" FontSize="16"
+                    CornerRadius="8" Padding="20,0" HeightRequest="44" MinimumWidthRequest="96" />
+        </Grid>
+
+        <ScrollView Grid.Row="1">
+            <VerticalStackLayout Padding="16,0,16,24" Spacing="16">
+
+                <Frame Style="{StaticResource CardFrame}">
+                    <VerticalStackLayout Spacing="12">
+                        <Label Text="ITEM DETAILS" Style="{StaticResource LabelSection}" />
+                        <Entry Placeholder="Item name *" Text="{Binding Name, Mode=TwoWay}" Style="{StaticResource DarkEntry}" />
+                        <Entry Placeholder="SKU / code" Text="{Binding Sku, Mode=TwoWay}" Style="{StaticResource DarkEntry}" />
+                        <Editor Placeholder="Description" Text="{Binding Description, Mode=TwoWay}"
+                                AutoSize="TextChanges" MinimumHeightRequest="64" TextColor="{StaticResource TextPrimary}" />
+                        <Entry Placeholder="Unit (each, box, kg…)" Text="{Binding UnitOfMeasure, Mode=TwoWay}" Style="{StaticResource DarkEntry}" />
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                            <VerticalStackLayout Grid.Column="0" Spacing="4">
+                                <Label Text="Unit cost (R)" Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                                <Entry Text="{Binding UnitCostText, Mode=TwoWay}" Keyboard="Numeric" Style="{StaticResource DarkEntry}" />
+                            </VerticalStackLayout>
+                            <VerticalStackLayout Grid.Column="1" Spacing="4">
+                                <Label Text="Selling price (R)" Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                                <Entry Text="{Binding SellingPriceText, Mode=TwoWay}" Keyboard="Numeric" Style="{StaticResource DarkEntry}" />
+                            </VerticalStackLayout>
+                        </Grid>
+                    </VerticalStackLayout>
+                </Frame>
+
+                <Frame Style="{StaticResource CardFrame}">
+                    <VerticalStackLayout Spacing="12">
+                        <Label Text="SUPPLIER" Style="{StaticResource LabelSection}" />
+                        <Label Text="Where you purchase this item (used on jobs and costing)." FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                        <Grid ColumnDefinitions="*,Auto">
+                            <Picker Title="Select supplier" ItemsSource="{Binding Suppliers}" ItemDisplayBinding="{Binding Name}"
+                                    SelectedItem="{Binding SelectedSupplier}" TitleColor="{StaticResource TextSecondary}" TextColor="{StaticResource TextPrimary}" />
+                            <Button Grid.Column="1" Text="+ New" Command="{Binding AddSupplierCommand}" Style="{StaticResource TextButton}" FontSize="12" />
+                        </Grid>
+                    </VerticalStackLayout>
+                </Frame>
+
+                <Frame Style="{StaticResource CardFrame}">
+                    <VerticalStackLayout Spacing="12">
+                        <Label Text="STOCK" Style="{StaticResource LabelSection}" />
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                            <VerticalStackLayout Spacing="4">
+                                <Label Text="Quantity on hand" Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                                <Entry Text="{Binding QuantityOnHandText, Mode=TwoWay}" Keyboard="Numeric" Style="{StaticResource DarkEntry}" />
+                            </VerticalStackLayout>
+                            <VerticalStackLayout Spacing="4">
+                                <Label Text="Reorder level" Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                                <Entry Text="{Binding ReorderLevelText, Mode=TwoWay}" Keyboard="Numeric" Style="{StaticResource DarkEntry}" />
+                            </VerticalStackLayout>
+                        </Grid>
+                        <Label Text="{Binding StockValuePreview, StringFormat='Stock value: {0}'}" Style="{StaticResource BodyMedium}" TextColor="{StaticResource Primary}" />
+                        <Grid ColumnDefinitions="*,Auto">
+                            <Label Text="Active item" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                            <Switch Grid.Column="1" IsToggled="{Binding IsActive}" OnColor="{StaticResource Primary}" />
+                        </Grid>
+                    </VerticalStackLayout>
+                </Frame>
+
+                <Button Text="Allocate stock to open job" Command="{Binding AllocateToJobCommand}"
+                        Style="{StaticResource OutlinedButton}" IsVisible="{Binding IsNew, Converter={StaticResource InverseBoolConverter}}" />
+
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
+</ContentPage>

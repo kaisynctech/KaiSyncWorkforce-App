@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Finance.FinanceApprovalsPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Finance"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:FinanceApprovalsViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="Finance Approvals">
+
+    <RefreshView Command="{Binding RefreshCommand}" IsRefreshing="{Binding IsBusy}">
+        <ScrollView>
+            <VerticalStackLayout Spacing="14" Padding="16" MaximumWidthRequest="820" HorizontalOptions="Center">
+
+                <!-- Awaiting approval -->
+                <Grid ColumnDefinitions="*,Auto">
+                    <Label Text="Awaiting approval" FontSize="16" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" />
+                    <Label Grid.Column="1" Text="{Binding PendingApprovalTotal, StringFormat='R{0:N2}'}" FontAttributes="Bold" TextColor="#F59E0B" />
+                </Grid>
+                <CollectionView ItemsSource="{Binding AwaitingApproval}">
+                    <CollectionView.EmptyView>
+                        <Label Text="Nothing awaiting approval." Style="{StaticResource EmptyState}" Margin="0,12" />
+                    </CollectionView.EmptyView>
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="vm:FinanceApprovalItem">
+                            <Border Margin="0,0,0,8" Padding="14" StrokeThickness="0"
+                                    BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 14">
+                                <VerticalStackLayout Spacing="8">
+                                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                                        <BoxView Grid.Column="0" WidthRequest="4" Color="{Binding TypeColor}" CornerRadius="2" />
+                                        <VerticalStackLayout Grid.Column="1" Spacing="2">
+                                            <Label Text="{Binding Title}" FontAttributes="Bold" FontSize="14" TextColor="{StaticResource TextPrimary}" />
+                                            <Label Text="{Binding Subtitle}" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+                                            <Label Text="{Binding TypeLabel}" FontSize="11" TextColor="{Binding TypeColor}" />
+                                        </VerticalStackLayout>
+                                        <Label Grid.Column="2" Text="{Binding AmountDisplay}" FontAttributes="Bold" FontSize="15" TextColor="{StaticResource TextPrimary}" VerticalOptions="Center" />
+                                    </Grid>
+                                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                                        <Button Grid.Column="0" Text="Approve" FontSize="13" BackgroundColor="#16A34A" TextColor="White" CornerRadius="10"
+                                                Command="{Binding Source={RelativeSource AncestorType={x:Type ContentPage}}, Path=BindingContext.ApproveCommand}"
+                                                CommandParameter="{Binding .}" />
+                                        <Button Grid.Column="1" Text="Reject" FontSize="13" BackgroundColor="#DC2626" TextColor="White" CornerRadius="10"
+                                                Command="{Binding Source={RelativeSource AncestorType={x:Type ContentPage}}, Path=BindingContext.RejectCommand}"
+                                                CommandParameter="{Binding .}" />
+                                    </Grid>
+                                </VerticalStackLayout>
+                            </Border>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+
+                <!-- Approved, awaiting payment -->
+                <Grid ColumnDefinitions="*,Auto" Margin="0,8,0,0">
+                    <Label Text="Approved — awaiting payment" FontSize="16" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" />
+                    <Label Grid.Column="1" Text="{Binding PendingPaymentTotal, StringFormat='R{0:N2}'}" FontAttributes="Bold" TextColor="#2563EB" />
+                </Grid>
+                <CollectionView ItemsSource="{Binding AwaitingPayment}">
+                    <CollectionView.EmptyView>
+                        <Label Text="Nothing awaiting payment." Style="{StaticResource EmptyState}" Margin="0,12" />
+                    </CollectionView.EmptyView>
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="vm:FinanceApprovalItem">
+                            <Border Margin="0,0,0,8" Padding="14" StrokeThickness="0"
+                                    BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 14">
+                                <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="10">
+                                    <BoxView Grid.Column="0" WidthRequest="4" Color="{Binding TypeColor}" CornerRadius="2" />
+                                    <VerticalStackLayout Grid.Column="1" Spacing="2">
+                                        <Label Text="{Binding Title}" FontAttributes="Bold" FontSize="14" TextColor="{StaticResource TextPrimary}" />
+                                        <Label Text="{Binding Subtitle}" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+                                    </VerticalStackLayout>
+                                    <Label Grid.Column="2" Text="{Binding AmountDisplay}" FontAttributes="Bold" FontSize="15" TextColor="{StaticResource TextPrimary}" VerticalOptions="Center" />
+                                    <Button Grid.Column="3" Text="Pay" FontSize="13" BackgroundColor="#2563EB" TextColor="White" CornerRadius="10" VerticalOptions="Center"
+                                            Command="{Binding Source={RelativeSource AncestorType={x:Type ContentPage}}, Path=BindingContext.MarkPaidCommand}"
+                                            CommandParameter="{Binding .}" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+
+                <!-- Audit trail -->
+                <Label Text="Audit trail" FontSize="16" FontAttributes="Bold" TextColor="{StaticResource TextPrimary}" Margin="0,8,0,0" />
+                <CollectionView ItemsSource="{Binding AuditEntries}">
+                    <CollectionView.EmptyView>
+                        <Label Text="No finance activity recorded yet." Style="{StaticResource EmptyState}" Margin="0,12" />
+                    </CollectionView.EmptyView>
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="models:FinanceAuditEntry">
+                            <Border Margin="0,0,0,6" Padding="12" StrokeThickness="0"
+                                    BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 12">
+                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                                    <BoxView Grid.Column="0" WidthRequest="4" Color="{Binding ActionColor}" CornerRadius="2" />
+                                    <VerticalStackLayout Grid.Column="1" Spacing="2">
+                                        <Label Text="{Binding Summary}" FontAttributes="Bold" FontSize="13" TextColor="{StaticResource TextPrimary}" />
+                                        <Label Text="{Binding ActorDisplay}" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                                        <Label Text="{Binding WhenDisplay}" FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                                    </VerticalStackLayout>
+                                    <Label Grid.Column="2" Text="{Binding AmountDisplay}" FontSize="13" TextColor="{Binding ActionColor}" VerticalOptions="Center" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+
+            </VerticalStackLayout>
+        </ScrollView>
+    </RefreshView>
+</ContentPage>

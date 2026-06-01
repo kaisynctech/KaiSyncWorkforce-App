@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Auth.IdEntryPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Auth"
+    x:DataType="vm:IdEntryViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Shell.NavBarIsVisible="False">
+
+    <Grid>
+        <!-- Decorative background circles -->
+        <AbsoluteLayout IsClippedToBounds="True">
+            <BoxView
+                AbsoluteLayout.LayoutFlags="None"
+                AbsoluteLayout.LayoutBounds="-80,-120,260,260"
+                BackgroundColor="#3B82F6"
+                Opacity="0.07"
+                CornerRadius="130" />
+            <BoxView
+                AbsoluteLayout.LayoutFlags="None"
+                AbsoluteLayout.LayoutBounds="9999,9999,300,300"
+                BackgroundColor="#7C3AED"
+                Opacity="0.07"
+                CornerRadius="150" />
+        </AbsoluteLayout>
+
+        <!-- Content -->
+        <ScrollView>
+            <Grid RowDefinitions="*,Auto" MinimumHeightRequest="500">
+                <VerticalStackLayout
+                    Grid.Row="0"
+                    VerticalOptions="Center"
+                    HorizontalOptions="Center"
+                    Padding="24"
+                    Spacing="0"
+                    MaximumWidthRequest="480">
+
+                    <!-- Branding card -->
+                    <Frame
+                        BackgroundColor="{StaticResource SurfaceCard}"
+                        BorderColor="{StaticResource Divider}"
+                        CornerRadius="20"
+                        Padding="18"
+                        HasShadow="False">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                            <VerticalStackLayout Grid.Column="0" Spacing="4">
+                                <Label
+                                    Text="KaiSync Workforce"
+                                    FontFamily="PoppinsBold"
+                                    FontSize="17"
+                                    TextColor="{StaticResource TextPrimary}" />
+                                <Label
+                                    Text="Welcome — select your role to continue"
+                                    FontFamily="PoppinsRegular"
+                                    FontSize="12"
+                                    TextColor="{StaticResource TextSecondary}" />
+                            </VerticalStackLayout>
+                            <Frame
+                                Grid.Column="1"
+                                BackgroundColor="{StaticResource SurfaceElevated}"
+                                BorderColor="{StaticResource Divider}"
+                                CornerRadius="999"
+                                Padding="10,6"
+                                HasShadow="False"
+                                VerticalOptions="Center">
+                                <HorizontalStackLayout Spacing="5">
+                                    <Label Text="🔒" FontSize="13" VerticalOptions="Center" />
+                                    <Label
+                                        Text="Secure"
+                                        FontFamily="PoppinsSemiBold"
+                                        FontSize="11"
+                                        TextColor="{StaticResource TextSecondary}"
+                                        VerticalOptions="Center" />
+                                </HorizontalStackLayout>
+                            </Frame>
+                        </Grid>
+                    </Frame>
+
+                    <BoxView HeightRequest="14" Color="Transparent" />
+
+                    <!-- Sign-in card -->
+                    <Frame
+                        BackgroundColor="{StaticResource SurfaceCard}"
+                        BorderColor="{StaticResource Divider}"
+                        CornerRadius="24"
+                        Padding="24"
+                        HasShadow="False">
+                        <VerticalStackLayout Spacing="12">
+                            <Label
+                                Text="Sign in as"
+                                FontFamily="PoppinsSemiBold"
+                                FontSize="14"
+                                TextColor="{StaticResource TextPrimary}" />
+
+                            <!-- Employee button -->
+                            <Button
+                                Text="Employee"
+                                Command="{Binding GoToEmployeeLoginCommand}"
+                                Style="{StaticResource PrimaryButton}"
+                                HorizontalOptions="Fill" />
+
+                            <!-- HR button -->
+                            <Button
+                                Text="HR / Employer"
+                                Command="{Binding GoToHrSignInCommand}"
+                                Style="{StaticResource OutlinedButton}"
+                                HorizontalOptions="Fill" />
+
+                            <!-- Register -->
+                            <Button
+                                Text="Register new company"
+                                Command="{Binding GoToHrRegisterCommand}"
+                                Style="{StaticResource TextButton}"
+                                TextColor="{StaticResource Primary}"
+                                HorizontalOptions="Fill" />
+
+                            <!-- Guest portal -->
+                            <Button
+                                Text="Open job portal (guest)"
+                                Command="{Binding OpenGuestPortalCommand}"
+                                BackgroundColor="Transparent"
+                                TextColor="{StaticResource TextSecondary}"
+                                FontFamily="PoppinsSemiBold"
+                                FontSize="13"
+                                HorizontalOptions="Fill" />
+
+                            <Button
+                                Text="Client portal sign-in"
+                                Command="{Binding OpenClientPortalCommand}"
+                                BackgroundColor="Transparent"
+                                TextColor="{StaticResource TextSecondary}"
+                                FontFamily="PoppinsSemiBold"
+                                FontSize="13"
+                                HorizontalOptions="Fill" />
+
+                            <Button
+                                Text="Contractor portal sign-in"
+                                Command="{Binding OpenContractorPortalCommand}"
+                                BackgroundColor="Transparent"
+                                TextColor="{StaticResource TextSecondary}"
+                                FontFamily="PoppinsSemiBold"
+                                FontSize="13"
+                                HorizontalOptions="Fill" />
+                        </VerticalStackLayout>
+                    </Frame>
+
+                    <BoxView HeightRequest="16" Color="Transparent" />
+
+                    <Label
+                        Text="Employees: login code, or email + password after setup.&#x0a;HR / Employers: use your company account."
+                        FontFamily="PoppinsRegular"
+                        FontSize="12"
+                        TextColor="{StaticResource TextSecondary}"
+                        HorizontalOptions="Center"
+                        HorizontalTextAlignment="Center" />
+                </VerticalStackLayout>
+
+                <!-- Loading overlay -->
+                <ActivityIndicator
+                    Grid.Row="0"
+                    IsRunning="{Binding IsBusy}"
+                    IsVisible="{Binding IsBusy}"
+                    Color="{StaticResource Primary}"
+                    VerticalOptions="Center"
+                    HorizontalOptions="Center" />
+            </Grid>
+        </ScrollView>
+    </Grid>
+</ContentPage>

@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Employee.PaperlessPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Employees"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:PaperlessViewModel"
+    x:Name="Self"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="{Binding Title}">
+
+    <RefreshView Command="{Binding LoadCommand}" IsRefreshing="{Binding IsBusy}">
+        <ScrollView>
+            <VerticalStackLayout Padding="16" Spacing="16">
+
+                <!-- Available Forms -->
+                <Label Text="AVAILABLE FORMS" Style="{StaticResource LabelSection}" />
+                <Label Text="No forms available."
+                       Style="{StaticResource EmptyState}"
+                       IsVisible="{Binding Templates.Count, Converter={StaticResource IsZeroConverter}}" />
+                <CollectionView ItemsSource="{Binding Templates}">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="models:WorkflowFormTemplate">
+                            <Frame Style="{StaticResource CardFrame}" Margin="0,4">
+                                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="4">
+                                    <Label Grid.Row="0" Grid.Column="0"
+                                           Text="{Binding Name}" Style="{StaticResource BodyLarge}" />
+                                    <Label Grid.Row="0" Grid.Column="1"
+                                           Text="{Binding Fields.Count, StringFormat='{0} fields'}"
+                                           Style="{StaticResource Caption}"
+                                           TextColor="{StaticResource TextSecondary}" />
+                                    <Label Grid.Row="1" Grid.ColumnSpan="2"
+                                           Text="{Binding Description}"
+                                           Style="{StaticResource Caption}"
+                                           TextColor="{StaticResource TextSecondary}"
+                                           IsVisible="{Binding Description, Converter={StaticResource IsNotNullConverter}}" />
+                                    <Button Grid.Row="1" Grid.Column="1"
+                                            Text="Fill In"
+                                            Command="{Binding BindingContext.FillFormCommand, Source={x:Reference Self}}"
+                                            CommandParameter="{Binding .}"
+                                            Style="{StaticResource PrimaryButton}"
+                                            HeightRequest="32" FontSize="12"
+                                            IsVisible="{Binding Description, Converter={StaticResource IsNullConverter}}" />
+                                </Grid>
+                                <Frame.GestureRecognizers>
+                                    <TapGestureRecognizer
+                                        Command="{Binding BindingContext.FillFormCommand, Source={x:Reference Self}}"
+                                        CommandParameter="{Binding .}" />
+                                </Frame.GestureRecognizers>
+                            </Frame>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+
+                <!-- Recent Submissions -->
+                <Label Text="MY RECENT SUBMISSIONS" Style="{StaticResource LabelSection}" />
+                <Label Text="No submissions yet."
+                       Style="{StaticResource EmptyState}"
+                       IsVisible="{Binding Submissions.Count, Converter={StaticResource IsZeroConverter}}" />
+                <CollectionView ItemsSource="{Binding Submissions}">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="models:WorkflowFormSubmission">
+                            <Frame Style="{StaticResource CardFrame}" Margin="0,4">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <Label Grid.Column="0"
+                                           Text="{Binding TemplateId, StringFormat='Form #{0}'}"
+                                           Style="{StaticResource BodyMedium}" />
+                                    <Label Grid.Column="1"
+                                           Text="{Binding SubmittedAt, StringFormat='{0:dd MMM HH:mm}'}"
+                                           Style="{StaticResource Caption}"
+                                           TextColor="{StaticResource TextSecondary}" />
+                                </Grid>
+                            </Frame>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+
+            </VerticalStackLayout>
+        </ScrollView>
+    </RefreshView>
+</ContentPage>

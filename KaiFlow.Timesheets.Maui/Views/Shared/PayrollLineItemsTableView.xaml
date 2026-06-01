@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView
+    x:Class="KaiFlow.Timesheets.Views.Shared.PayrollLineItemsTableView"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:payroll="clr-namespace:KaiFlow.Payroll;assembly=KaiFlow.Payroll"
+    x:Name="Self">
+
+    <VerticalStackLayout Spacing="0">
+        <Label x:Name="EmptyStateLabel"
+               Text="{Binding EmptyMessage, Source={x:Reference Self}}"
+               Style="{StaticResource EmptyState}"
+               Margin="0,8"
+               IsVisible="False" />
+
+        <Frame x:Name="TableFrame" Style="{StaticResource DataTableFrame}">
+            <VerticalStackLayout Spacing="0">
+                <Grid ColumnDefinitions="*,110" Padding="12,10"
+                      BackgroundColor="{StaticResource SurfaceElevated}">
+                    <Label Grid.Column="0" Text="Description" Style="{StaticResource DataTableHeaderLabel}" />
+                    <Label Grid.Column="1" Text="Amount" Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="End" />
+                </Grid>
+                <BoxView Style="{StaticResource DataTableRowDivider}" />
+
+                <VerticalStackLayout Spacing="0"
+                                     BindableLayout.ItemsSource="{Binding ItemsSource, Source={x:Reference Self}}">
+                    <BindableLayout.ItemTemplate>
+                        <DataTemplate x:DataType="payroll:PayrollLineItem">
+                            <VerticalStackLayout Spacing="0">
+                                <Grid ColumnDefinitions="*,110" Padding="12,10"
+                                      BackgroundColor="{StaticResource SurfaceCard}">
+                                    <Label Grid.Column="0" Text="{Binding Label}" Style="{StaticResource DataTableCellLabel}">
+                                        <Label.Triggers>
+                                            <DataTrigger TargetType="Label" Binding="{Binding ShowAsDeductions, Source={x:Reference Self}}" Value="True">
+                                                <Setter Property="TextColor" Value="#DC2626" />
+                                            </DataTrigger>
+                                        </Label.Triggers>
+                                    </Label>
+                                    <Label Grid.Column="1" Text="{Binding Amount, StringFormat='R{0:N2}'}"
+                                           Style="{StaticResource DataTableCellLabel}" HorizontalTextAlignment="End">
+                                        <Label.Triggers>
+                                            <DataTrigger TargetType="Label" Binding="{Binding ShowAsDeductions, Source={x:Reference Self}}" Value="True">
+                                                <Setter Property="TextColor" Value="#DC2626" />
+                                            </DataTrigger>
+                                        </Label.Triggers>
+                                    </Label>
+                                </Grid>
+                                <BoxView Style="{StaticResource DataTableRowDivider}" />
+                            </VerticalStackLayout>
+                        </DataTemplate>
+                    </BindableLayout.ItemTemplate>
+                </VerticalStackLayout>
+            </VerticalStackLayout>
+        </Frame>
+    </VerticalStackLayout>
+</ContentView>

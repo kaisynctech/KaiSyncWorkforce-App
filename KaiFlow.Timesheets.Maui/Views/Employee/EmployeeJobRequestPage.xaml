@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Employee.EmployeeJobRequestPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Employees"
+    xmlns:hrvm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
+    x:DataType="vm:EmployeeJobRequestViewModel"
+    x:Name="Self"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="Create Job">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="16" Spacing="16">
+
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="NEW JOB" Style="{StaticResource LabelSection}" />
+
+                    <Label Text="Title" Style="{StaticResource LabelField}" />
+                    <Entry Text="{Binding Title}"
+                           Placeholder="e.g. Plumbing repair, unit inspection..."
+                           PlaceholderColor="{StaticResource TextSecondary}"
+                           TextColor="{StaticResource TextPrimary}"
+                           BackgroundColor="Transparent"
+                           Style="{StaticResource DarkEntry}" />
+
+                    <Label Text="Details" Style="{StaticResource LabelField}" />
+                    <Editor Text="{Binding Description}"
+                            Placeholder="Describe the work, location, access notes..."
+                            PlaceholderColor="{StaticResource TextSecondary}"
+                            TextColor="{StaticResource TextPrimary}"
+                            BackgroundColor="Transparent"
+                            MinimumHeightRequest="80"
+                            AutoSize="TextChanges" />
+
+                    <Label Text="Priority" Style="{StaticResource LabelField}" />
+                    <Picker ItemsSource="{Binding Priorities}"
+                            SelectedItem="{Binding SelectedPriority}"
+                            Title="Select priority..."
+                            TextColor="{StaticResource TextPrimary}"
+                            BackgroundColor="Transparent" />
+
+                    <Label Text="Scheduled start" Style="{StaticResource LabelField}" />
+                    <DatePicker Date="{Binding ScheduledStartDate}"
+                                TextColor="{StaticResource TextPrimary}"
+                                BackgroundColor="Transparent"
+                                Format="dd MMM yyyy" />
+                    <TimePicker Time="{Binding ScheduledStartTime}"
+                                TextColor="{StaticResource TextPrimary}"
+                                BackgroundColor="Transparent" />
+
+                    <Label Text="Notify leadership (optional)" Style="{StaticResource LabelField}" />
+                    <Picker ItemsSource="{Binding ManagerOptions}"
+                            SelectedItem="{Binding SelectedManager}"
+                            ItemDisplayBinding="{Binding DisplayName}"
+                            Title="Select HR, manager, or owner..."
+                            TextColor="{StaticResource TextPrimary}"
+                            BackgroundColor="Transparent" />
+
+                    <Button Text="Create Job"
+                            Command="{Binding SubmitCommand}"
+                            IsEnabled="{Binding IsNotBusy}"
+                            Style="{StaticResource PrimaryButton}"
+                            Margin="0,8,0,0" />
+
+                    <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}"
+                                       Color="{StaticResource Primary}" HorizontalOptions="Center" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="10">
+                    <Label Text="INVITE COWORKERS" Style="{StaticResource LabelSection}" />
+                    <Entry Text="{Binding CoworkerSearch}"
+                           Placeholder="Search teammates..."
+                           PlaceholderColor="{StaticResource TextSecondary}"
+                           TextColor="{StaticResource TextPrimary}"
+                           Style="{StaticResource DarkEntry}" />
+                    <Label Text="No coworkers available."
+                           Style="{StaticResource EmptyState}"
+                           IsVisible="{Binding CoworkerOptions.Count, Converter={StaticResource IsZeroConverter}}" />
+                    <CollectionView ItemsSource="{Binding FilteredCoworkers}">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="hrvm:SelectableEmployee">
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" Padding="4,6">
+                                    <CheckBox Grid.Column="0"
+                                              IsChecked="{Binding IsSelected}"
+                                              Color="{StaticResource Primary}" />
+                                    <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
+                                        <Label Text="{Binding Employee.FullName}"
+                                               FontFamily="PoppinsSemiBold" FontSize="13"
+                                               TextColor="{StaticResource TextPrimary}" />
+                                        <Label Text="{Binding Employee.Position}"
+                                               Style="{StaticResource Caption}"
+                                               TextColor="{StaticResource TextSecondary}"
+                                               IsVisible="{Binding Employee.Position, Converter={StaticResource IsNotNullConverter}}" />
+                                    </VerticalStackLayout>
+                                </Grid>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </VerticalStackLayout>
+            </Frame>
+
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

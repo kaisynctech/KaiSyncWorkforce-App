@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView
+    x:Class="KaiFlow.Timesheets.Views.Shared.EmployeeJobsTableView"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    xmlns:helpers="clr-namespace:KaiFlow.Timesheets.Helpers"
+    x:Name="Self">
+
+    <VerticalStackLayout Spacing="0">
+        <Label x:Name="EmptyStateLabel"
+               Text="{Binding EmptyMessage, Source={x:Reference Self}}"
+               Style="{StaticResource EmptyState}"
+               Margin="0,24,0,0"
+               IsVisible="False" />
+
+        <ScrollView Orientation="Horizontal">
+            <VerticalStackLayout x:Name="TableContent" Spacing="0" IsVisible="False">
+                <Grid ColumnDefinitions="72,*,88,100,72"
+                      ColumnSpacing="{x:Static helpers:EmployeeJobsTableLayout.ColumnSpacing}"
+                      BackgroundColor="#1E293B" Padding="0,10">
+                    <Label Grid.Column="0" Text="Code" Style="{StaticResource AttendanceTableHeaderLabel}" Margin="8,0,0,0" />
+                    <Label Grid.Column="1" Text="Title" Style="{StaticResource AttendanceTableHeaderLabel}" />
+                    <Label Grid.Column="2" Text="Status" Style="{StaticResource AttendanceTableHeaderLabel}" />
+                    <Label Grid.Column="3" Text="Scheduled" Style="{StaticResource AttendanceTableHeaderLabel}" />
+                    <Label Grid.Column="4" Text="Priority" Style="{StaticResource AttendanceTableHeaderLabel}" Margin="0,0,8,0" />
+                </Grid>
+                <BoxView Style="{StaticResource AttendanceTableDivider}" />
+
+                <VerticalStackLayout Spacing="0"
+                                     BindableLayout.ItemsSource="{Binding Jobs, Source={x:Reference Self}}">
+                    <BindableLayout.ItemTemplate>
+                        <DataTemplate x:DataType="models:Job">
+                            <VerticalStackLayout Spacing="0">
+                                <Grid ColumnDefinitions="72,*,88,100,72"
+                                      ColumnSpacing="{x:Static helpers:EmployeeJobsTableLayout.ColumnSpacing}"
+                                      Padding="0,9" BackgroundColor="{StaticResource SurfaceCard}">
+                                    <Grid.GestureRecognizers>
+                                        <TapGestureRecognizer
+                                            Command="{Binding OpenJobCommand, Source={x:Reference Self}}"
+                                            CommandParameter="{Binding .}" />
+                                    </Grid.GestureRecognizers>
+                                    <Label Grid.Column="0" Text="{Binding JobCodeDisplay}"
+                                           Style="{StaticResource AttendanceTableCellLabel}" Margin="8,0,0,0" />
+                                    <Label Grid.Column="1" Text="{Binding Title}"
+                                           Style="{StaticResource AttendanceTableCellPrimary}" />
+                                    <Label Grid.Column="2" Text="{Binding StatusRaw}"
+                                           Style="{StaticResource AttendanceTableCellSecondary}" VerticalOptions="Center" />
+                                    <Label Grid.Column="3"
+                                           Text="{Binding ScheduledStart, StringFormat='{0:dd MMM yyyy}', TargetNullValue='—'}"
+                                           Style="{StaticResource AttendanceTableCellSecondary}" VerticalOptions="Center" />
+                                    <Label Grid.Column="4" Text="{Binding PriorityRaw}"
+                                           Style="{StaticResource AttendanceTableCellLabel}" Margin="0,0,8,0" VerticalOptions="Center" />
+                                </Grid>
+                                <BoxView Style="{StaticResource AttendanceTableDivider}" />
+                            </VerticalStackLayout>
+                        </DataTemplate>
+                    </BindableLayout.ItemTemplate>
+                </VerticalStackLayout>
+            </VerticalStackLayout>
+        </ScrollView>
+    </VerticalStackLayout>
+</ContentView>

@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView
+    x:Class="KaiFlow.Timesheets.Views.Shared.AttendanceSessionTableView"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:Name="Self">
+
+    <VerticalStackLayout Spacing="0">
+
+        <Label x:Name="EmptyStateLabel"
+               Text="{Binding EmptyMessage, Source={x:Reference Self}}"
+               Style="{StaticResource EmptyState}"
+               Margin="0,40,0,0"
+               IsVisible="False" />
+
+        <ScrollView Orientation="Horizontal">
+            <VerticalStackLayout Spacing="0">
+
+                <!-- Multi-employee table (HR attendance overview) -->
+                <VerticalStackLayout x:Name="MultiEmployeeTable" Spacing="0" IsVisible="False">
+                    <Grid ColumnDefinitions="150,110,80,170,80,170,75,75,75,150"
+                          BackgroundColor="#1E293B" Padding="0,10">
+                        <Label Grid.Column="0" Text="Employee"     Style="{StaticResource AttendanceTableHeaderLabel}" Margin="8,0,4,0" />
+                        <Label Grid.Column="1" Text="Date"         Style="{StaticResource AttendanceTableHeaderLabel}" />
+                        <Label Grid.Column="2" Text="Time In"      Style="{StaticResource AttendanceTableHeaderLabel}" />
+                        <Label Grid.Column="3" Text="In Location"  Style="{StaticResource AttendanceTableHeaderLabel}" />
+                        <Label Grid.Column="4" Text="Time Out"     Style="{StaticResource AttendanceTableHeaderLabel}" />
+                        <Label Grid.Column="5" Text="Out Location" Style="{StaticResource AttendanceTableHeaderLabel}" />
+                        <Label Grid.Column="6" Text="Reg hrs"      Style="{StaticResource AttendanceTableHeaderLabel}" />
+                        <Label Grid.Column="7" Text="OT hrs"       Style="{StaticResource AttendanceTableHeaderLabel}" />
+                        <Label Grid.Column="8" Text="Total hrs"    Style="{StaticResource AttendanceTableHeaderLabel}" />
+                        <Label Grid.Column="9" Text="Notes"        Style="{StaticResource AttendanceTableHeaderLabel}" Margin="4,0,8,0" />
+                    </Grid>
+                    <BoxView Style="{StaticResource AttendanceTableDivider}" />
+
+                    <VerticalStackLayout Spacing="0"
+                                         BindableLayout.ItemsSource="{Binding Sessions, Source={x:Reference Self}}">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate x:DataType="models:PunchSession">
+                                <VerticalStackLayout Spacing="0">
+                                    <Grid ColumnDefinitions="150,110,80,170,80,170,75,75,75,150"
+                                          Padding="0,9" BackgroundColor="{StaticResource SurfaceCard}">
+                                        <Label Grid.Column="0" Text="{Binding EmployeeName}"
+                                               Style="{StaticResource AttendanceTableCellPrimary}" Margin="8,0,4,0" />
+                                        <Label Grid.Column="1" Text="{Binding DateDisplay}"
+                                               Style="{StaticResource AttendanceTableCellLabel}" />
+                                        <VerticalStackLayout Grid.Column="2" Spacing="0" VerticalOptions="Center">
+                                            <Label Text="{Binding TimeInDisplay}"
+                                                   FontFamily="Poppins" FontSize="11"
+                                                   TextColor="{Binding TimeInColorHex, Converter={StaticResource HexToColorConverter}}"
+                                                   Margin="4,0" />
+                                            <Label Text="{Binding LateFlag}" IsVisible="{Binding IsLate}"
+                                                   FontFamily="Poppins" FontSize="9" TextColor="#EF4444" Margin="4,0" />
+                                        </VerticalStackLayout>
+                                        <Label Grid.Column="3" Text="{Binding InLocationDisplay}"
+                                               Style="{StaticResource AttendanceTableCellSecondary}" />
+                                        <VerticalStackLayout Grid.Column="4" Spacing="0" VerticalOptions="Center">
+                                            <Label Text="{Binding TimeOutDisplay}"
+                                                   FontFamily="Poppins" FontSize="11"
+                                                   TextColor="{Binding IsOpen, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#F59E0B|#EF4444'}"
+                                                   Margin="4,0" />
+                                            <Label Text="{Binding EarlyFlag}" IsVisible="{Binding IsLeftEarly}"
+                                                   FontFamily="Poppins" FontSize="9" TextColor="#F59E0B" Margin="4,0" />
+                                        </VerticalStackLayout>
+                                        <Label Grid.Column="5" Text="{Binding OutLocationDisplay}"
+                                               Style="{StaticResource AttendanceTableCellSecondary}" />
+                                        <Label Grid.Column="6" Text="{Binding RegularHours, StringFormat='{0:F1}'}"
+                                               Style="{StaticResource AttendanceTableCellLabel}" />
+                                        <Label Grid.Column="7" Text="{Binding OvertimeHours, StringFormat='{0:F1}'}"
+                                               FontFamily="Poppins" FontSize="11"
+                                               TextColor="{Binding OvertimeHours, Converter={StaticResource IsNotZeroConverter}, ConverterParameter='#F59E0B'}"
+                                               Margin="4,0" VerticalOptions="Center" />
+                                        <Label Grid.Column="8" Text="{Binding TotalHrsDisplay}"
+                                               Style="{StaticResource AttendanceTableCellPrimary}" />
+                                        <Label Grid.Column="9" Text="{Binding DisplayNotes}"
+                                               Style="{StaticResource AttendanceTableCellSecondary}" Margin="4,0,8,0" />
+                                    </Grid>
+                                    <BoxView Style="{StaticResource AttendanceTableDivider}" />
+                                </VerticalStackLayout>
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                    </VerticalStackLayout>
+                </VerticalStackLayout>
+
+                <!-- Single-employee table (profile / employee dashboard) -->
+                <VerticalStackLayout x:Name="SingleEmployeeTable" Spacing="0" IsVisible="False">
+                    <Grid ColumnDefinitions="110,80,170,80,170,75,75,75,150"
+                          BackgroundColor="#1E293B" Padding="0,10">
+                        <Label Grid.Column="0" Text="Date"         Style="{StaticResource AttendanceTableHeaderLabel}" Margin="8,0,4,0" />
+                        <Label Grid.Column="1" Text="Time In"      Style="{StaticResource AttendanceTableHeaderLabel}" />
+                        <Label Grid.Column="2" Text="In Location"  Style="{StaticResource AttendanceTableHeaderLabel}" />
+                        <Label Grid.Column="3" Text="Time Out"     Style="{StaticResource AttendanceTableHeaderLabel}" />
+                        <Label Grid.Column="4" Text="Out Location" Style="{StaticResource AttendanceTableHeaderLabel}" />
+                        <Label Grid.Column="5" Text="Reg hrs"      Style="{StaticResource AttendanceTableHeaderLabel}" />
+                        <Label Grid.Column="6" Text="OT hrs"       Style="{StaticResource AttendanceTableHeaderLabel}" />
+                        <Label Grid.Column="7" Text="Total hrs"    Style="{StaticResource AttendanceTableHeaderLabel}" />
+                        <Label Grid.Column="8" Text="Notes"        Style="{StaticResource AttendanceTableHeaderLabel}" Margin="4,0,8,0" />
+                    </Grid>
+                    <BoxView Style="{StaticResource AttendanceTableDivider}" />
+
+                    <VerticalStackLayout Spacing="0"
+                                         BindableLayout.ItemsSource="{Binding Sessions, Source={x:Reference Self}}">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate x:DataType="models:PunchSession">
+                                <VerticalStackLayout Spacing="0">
+                                    <Grid ColumnDefinitions="110,80,170,80,170,75,75,75,150"
+                                          Padding="0,9" BackgroundColor="{StaticResource SurfaceCard}">
+                                        <Label Grid.Column="0" Text="{Binding DateDisplay}"
+                                               Style="{StaticResource AttendanceTableCellLabel}" Margin="8,0,4,0" />
+                                        <VerticalStackLayout Grid.Column="1" Spacing="0" VerticalOptions="Center">
+                                            <Label Text="{Binding TimeInDisplay}"
+                                                   FontFamily="Poppins" FontSize="11"
+                                                   TextColor="{Binding TimeInColorHex, Converter={StaticResource HexToColorConverter}}"
+                                                   Margin="4,0" />
+                                            <Label Text="{Binding LateFlag}" IsVisible="{Binding IsLate}"
+                                                   FontFamily="Poppins" FontSize="9" TextColor="#EF4444" Margin="4,0" />
+                                        </VerticalStackLayout>
+                                        <Label Grid.Column="2" Text="{Binding InLocationDisplay}"
+                                               Style="{StaticResource AttendanceTableCellSecondary}" />
+                                        <VerticalStackLayout Grid.Column="3" Spacing="0" VerticalOptions="Center">
+                                            <Label Text="{Binding TimeOutDisplay}"
+                                                   FontFamily="Poppins" FontSize="11"
+                                                   TextColor="{Binding IsOpen, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#F59E0B|#EF4444'}"
+                                                   Margin="4,0" />
+                                            <Label Text="{Binding EarlyFlag}" IsVisible="{Binding IsLeftEarly}"
+                                                   FontFamily="Poppins" FontSize="9" TextColor="#F59E0B" Margin="4,0" />
+                                        </VerticalStackLayout>
+                                        <Label Grid.Column="4" Text="{Binding OutLocationDisplay}"
+                                               Style="{StaticResource AttendanceTableCellSecondary}" />
+                                        <Label Grid.Column="5" Text="{Binding RegularHours, StringFormat='{0:F1}'}"
+                                               Style="{StaticResource AttendanceTableCellLabel}" />
+                                        <Label Grid.Column="6" Text="{Binding OvertimeHours, StringFormat='{0:F1}'}"
+                                               FontFamily="Poppins" FontSize="11"
+                                               TextColor="{Binding OvertimeHours, Converter={StaticResource IsNotZeroConverter}, ConverterParameter='#F59E0B'}"
+                                               Margin="4,0" VerticalOptions="Center" />
+                                        <Label Grid.Column="7" Text="{Binding TotalHrsDisplay}"
+                                               Style="{StaticResource AttendanceTableCellPrimary}" />
+                                        <Label Grid.Column="8" Text="{Binding DisplayNotes}"
+                                               Style="{StaticResource AttendanceTableCellSecondary}" Margin="4,0,8,0" />
+                                    </Grid>
+                                    <BoxView Style="{StaticResource AttendanceTableDivider}" />
+                                </VerticalStackLayout>
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                    </VerticalStackLayout>
+                </VerticalStackLayout>
+
+            </VerticalStackLayout>
+        </ScrollView>
+    </VerticalStackLayout>
+</ContentView>

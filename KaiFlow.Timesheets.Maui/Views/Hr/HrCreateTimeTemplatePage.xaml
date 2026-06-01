@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Hr.HrCreateTimeTemplatePage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:HrCreateTimeTemplateViewModel"
+    x:Name="Self"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="{Binding Title}">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="16" Spacing="16">
+
+            <!-- Template details -->
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="14">
+                    <Label Text="TEMPLATE DETAILS" Style="{StaticResource LabelSection}" />
+
+                    <VerticalStackLayout Spacing="6">
+                        <Label Text="Template name *" Style="{StaticResource LabelField}" />
+                        <Entry Placeholder="e.g. Office Hours, Night Shift, Cleaners"
+                               Text="{Binding Name}"
+                               Style="{StaticResource DarkEntry}" />
+                    </VerticalStackLayout>
+
+                    <VerticalStackLayout Spacing="6">
+                        <Label Text="Start time" Style="{StaticResource LabelField}" />
+                        <Frame BackgroundColor="{StaticResource SurfaceDark}" BorderColor="Transparent"
+                               CornerRadius="8" Padding="12,4" HasShadow="False">
+                            <TimePicker Time="{Binding StartTime}" Format="HH:mm"
+                                        TextColor="{StaticResource TextPrimary}"
+                                        BackgroundColor="Transparent" />
+                        </Frame>
+                    </VerticalStackLayout>
+
+                    <VerticalStackLayout Spacing="6">
+                        <Label Text="End time" Style="{StaticResource LabelField}" />
+                        <Frame BackgroundColor="{StaticResource SurfaceDark}" BorderColor="Transparent"
+                               CornerRadius="8" Padding="12,4" HasShadow="False">
+                            <TimePicker Time="{Binding EndTime}" Format="HH:mm"
+                                        TextColor="{StaticResource TextPrimary}"
+                                        BackgroundColor="Transparent" />
+                        </Frame>
+                    </VerticalStackLayout>
+
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Breaks -->
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="10">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Grid.Column="0" Text="BREAKS" Style="{StaticResource LabelSection}" VerticalOptions="Center" />
+                        <Button Grid.Column="1" Text="+ Add Break"
+                                Command="{Binding AddBreakCommand}"
+                                IsEnabled="{Binding IsNotBusy}"
+                                BackgroundColor="{StaticResource SurfaceDark}"
+                                TextColor="{StaticResource Primary}"
+                                CornerRadius="8" FontSize="12"
+                                Padding="12,4" HeightRequest="32" />
+                    </Grid>
+
+                    <Label Text="No breaks added. Tap '+ Add Break' to add a tea break, lunch, etc."
+                           FontFamily="Poppins" FontSize="12"
+                           TextColor="{StaticResource TextSecondary}"
+                           IsVisible="{Binding HasBreaks, Converter={StaticResource InverseBoolConverter}}" />
+
+                    <VerticalStackLayout BindableLayout.ItemsSource="{Binding Breaks}" Spacing="6">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate x:DataType="models:BreakSlot">
+                                <Frame BackgroundColor="{StaticResource SurfaceDark}"
+                                       BorderColor="Transparent" CornerRadius="8"
+                                       Padding="12,8" HasShadow="False">
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                        <VerticalStackLayout Grid.Column="0" Spacing="2" VerticalOptions="Center">
+                                            <Label Text="{Binding Label}"
+                                                   FontFamily="PoppinsSemiBold" FontSize="13"
+                                                   TextColor="{StaticResource TextPrimary}" />
+                                            <Label Text="{Binding Minutes, StringFormat='{0} minutes'}"
+                                                   FontFamily="Poppins" FontSize="11"
+                                                   TextColor="{StaticResource TextSecondary}" />
+                                        </VerticalStackLayout>
+                                        <Button Grid.Column="1" Text="✕"
+                                                Command="{Binding BindingContext.RemoveBreakCommand, Source={x:Reference Self}}"
+                                                CommandParameter="{Binding .}"
+                                                BackgroundColor="Transparent"
+                                                TextColor="{StaticResource Error}"
+                                                FontSize="16" Padding="8,0"
+                                                HeightRequest="36" WidthRequest="36" />
+                                    </Grid>
+                                </Frame>
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                    </VerticalStackLayout>
+
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Live paid hours preview -->
+            <Frame BackgroundColor="{StaticResource SurfaceDark}"
+                   BorderColor="{StaticResource Primary}"
+                   CornerRadius="12" Padding="20,14" HasShadow="False">
+                <VerticalStackLayout Spacing="4" HorizontalOptions="Center">
+                    <Label Text="{Binding PaidHoursPreview}"
+                           FontFamily="PoppinsBold" FontSize="20"
+                           TextColor="{StaticResource Primary}"
+                           HorizontalOptions="Center" />
+                    <Label Text="updates as you change times and breaks"
+                           FontFamily="Poppins" FontSize="11"
+                           TextColor="{StaticResource TextSecondary}"
+                           HorizontalOptions="Center" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <Label Text="{Binding ErrorMessage}"
+                   TextColor="{StaticResource Error}"
+                   IsVisible="{Binding ErrorMessage, Converter={StaticResource IsNotNullConverter}}"
+                   FontFamily="Poppins" FontSize="13" />
+
+            <Button Text="Save Template"
+                    Command="{Binding SaveCommand}"
+                    IsEnabled="{Binding IsNotBusy}"
+                    Style="{StaticResource PrimaryButton}" />
+
+            <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}"
+                               Color="{StaticResource Primary}" HorizontalOptions="Center"
+                               Margin="0,0,0,20" />
+
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

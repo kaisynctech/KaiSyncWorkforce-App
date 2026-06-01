@@ -1,0 +1,617 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Employee.EmployeeDashboardPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Employees"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    xmlns:shared="clr-namespace:KaiFlow.Timesheets.Views.Shared"
+    x:DataType="vm:EmployeeDashboardViewModel"
+    x:Name="dashboardPage"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="{Binding Title}">
+
+    <Grid RowDefinitions="*,64">
+
+        <!-- ─────────────────────────────────────────────────── -->
+        <!-- TAB CONTENT                                        -->
+        <!-- ─────────────────────────────────────────────────── -->
+        <Grid Grid.Row="0">
+
+            <!-- ═══════════════════════════ HOME ═══════════════════════════ -->
+            <ScrollView IsVisible="{Binding IsHomeTab}">
+                <VerticalStackLayout Padding="16" Spacing="20">
+
+                    <!-- Header -->
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Padding="0,8,0,0">
+                        <VerticalStackLayout Spacing="3">
+                            <Label Text="{Binding CurrentEmployee.FullName, StringFormat='Hello, {0}'}"
+                                   FontFamily="PoppinsBold" FontSize="22"
+                                   TextColor="{StaticResource TextPrimary}" />
+                            <HorizontalStackLayout Spacing="6">
+                                <Label Text="{Binding CurrentEmployee.Position}"
+                                       FontFamily="Poppins" FontSize="12"
+                                       TextColor="{StaticResource TextSecondary}"
+                                       IsVisible="{Binding CurrentEmployee.Position, Converter={StaticResource IsNotNullConverter}}" />
+                                <Label Text="{Binding CurrentCompany.Name}"
+                                       FontFamily="PoppinsMedium" FontSize="12"
+                                       TextColor="{StaticResource Primary}"
+                                       IsVisible="{Binding CurrentCompany, Converter={StaticResource IsNotNullConverter}}" />
+                            </HorizontalStackLayout>
+                        </VerticalStackLayout>
+
+                        <VerticalStackLayout Grid.Column="1" Spacing="6" HorizontalOptions="End">
+                            <HorizontalStackLayout Spacing="2" HorizontalOptions="End">
+                                <Grid WidthRequest="44" HeightRequest="44">
+                                    <Button Text="🔔" BackgroundColor="Transparent" FontSize="20" Padding="0"
+                                            Command="{Binding GoToNotificationsCommand}" />
+                                    <Frame IsVisible="{Binding NotificationCount, Converter={StaticResource IsNotZeroConverter}}"
+                                           BackgroundColor="{StaticResource Error}" CornerRadius="8"
+                                           Padding="3,0" HasShadow="False" BorderColor="Transparent"
+                                           HorizontalOptions="End" VerticalOptions="Start"
+                                           WidthRequest="18" HeightRequest="18">
+                                        <Label Text="{Binding NotificationCount}" FontSize="9"
+                                               TextColor="White" HorizontalOptions="Center" VerticalOptions="Center" />
+                                    </Frame>
+                                </Grid>
+                                <Button Text="Sign Out" Style="{StaticResource TextButton}"
+                                        FontSize="12" Command="{Binding SignOutCommand}" />
+                            </HorizontalStackLayout>
+                            <Button Text="My Companies" Style="{StaticResource TextButton}"
+                                    FontSize="12" HorizontalOptions="End"
+                                    Command="{Binding GoToCompaniesCommand}" />
+                        </VerticalStackLayout>
+                    </Grid>
+
+                    <Frame Style="{StaticResource CardFrame}" Padding="14" IsVisible="{Binding HasTodayPaTasks}">
+                        <VerticalStackLayout Spacing="8">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <Label Text="My PA today" FontFamily="PoppinsSemiBold" FontSize="14" TextColor="{StaticResource TextPrimary}" />
+                                <Button Grid.Column="1" Text="Open" Command="{Binding GoToPaAsync}" Style="{StaticResource TextButton}" FontSize="11" />
+                            </Grid>
+                            <CollectionView ItemsSource="{Binding TodayPaTasks}" SelectionMode="None">
+                                <CollectionView.ItemTemplate>
+                                    <DataTemplate x:DataType="models:PaTask">
+                                        <Grid ColumnDefinitions="*,Auto" Padding="0,4">
+                                            <Label Text="{Binding Title}" FontSize="12" TextColor="{StaticResource TextPrimary}" LineBreakMode="TailTruncation" />
+                                            <Label Grid.Column="1" Text="{Binding EffectiveDue, StringFormat='{0:HH:mm}', TargetNullValue='—'}"
+                                                   FontSize="11" TextColor="{StaticResource TextSecondary}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </CollectionView.ItemTemplate>
+                            </CollectionView>
+                        </VerticalStackLayout>
+                    </Frame>
+
+                    <Frame BackgroundColor="#FEF3C7" BorderColor="#F59E0B" CornerRadius="12"
+                           Padding="16,12" HasShadow="False"
+                           IsVisible="{Binding IsPendingMembership}">
+                        <Label Text="{Binding PendingBannerText}"
+                               FontFamily="PoppinsMedium" FontSize="13"
+                               TextColor="#92400E" />
+                    </Frame>
+
+                    <Frame Style="{StaticResource CardFrame}" Padding="16,18"
+                           IsVisible="{Binding IsPendingMembership}">
+                        <Frame.GestureRecognizers>
+                            <TapGestureRecognizer Command="{Binding GoToMyDocumentsCommand}" />
+                        </Frame.GestureRecognizers>
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+                            <Label Grid.Column="0" Text="📁" FontSize="28" VerticalOptions="Center" />
+                            <VerticalStackLayout Grid.Column="1" Spacing="4" VerticalOptions="Center">
+                                <Label Text="Upload Documents" FontFamily="PoppinsSemiBold" FontSize="15"
+                                       TextColor="{StaticResource TextPrimary}" />
+                                <Label Text="Share ID, contracts, and other files with this company's HR team."
+                                       FontFamily="Poppins" FontSize="12"
+                                       TextColor="{StaticResource TextSecondary}" />
+                            </VerticalStackLayout>
+                            <Label Grid.Column="2" Text="›" FontSize="22"
+                                   TextColor="{StaticResource TextDisabled}" VerticalOptions="Center" />
+                        </Grid>
+                    </Frame>
+
+                    <!-- ── HERO: Clock In / Out ── -->
+                    <Frame Style="{StaticResource CardFrame}" Padding="20,24"
+                           IsVisible="{Binding ShowClockCard}">
+                        <VerticalStackLayout Spacing="16">
+
+                            <!-- Status pill -->
+                            <Frame BackgroundColor="{Binding IsClockedIn, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#DCFCE7|#FEE2E2'}"
+                                   BorderColor="Transparent" CornerRadius="20" Padding="14,8"
+                                   HasShadow="False" HorizontalOptions="Center">
+                                <HorizontalStackLayout Spacing="8" VerticalOptions="Center">
+                                    <BoxView WidthRequest="10" HeightRequest="10" CornerRadius="5"
+                                             Color="{Binding IsClockedIn, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#22C55E|#EF4444'}"
+                                             VerticalOptions="Center" />
+                                    <Label Text="{Binding ClockStatus}"
+                                           FontFamily="PoppinsBold" FontSize="15"
+                                           TextColor="{Binding IsClockedIn, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#166534|#991B1B'}" />
+                                </HorizontalStackLayout>
+                            </Frame>
+
+                            <!-- Last punch time -->
+                            <Label Text="{Binding LastPunchTime}"
+                                   FontFamily="Poppins" FontSize="13"
+                                   TextColor="{StaticResource TextSecondary}"
+                                   HorizontalOptions="Center" />
+                            <Label Text="Clock In/Out is your attendance. To report you are on a job site, open that job and use On Site on the job card."
+                                   FontFamily="Poppins" FontSize="11"
+                                   TextColor="{StaticResource TextSecondary}"
+                                   HorizontalOptions="Center"
+                                   HorizontalTextAlignment="Center" />
+
+                            <!-- Branch geofence banner -->
+                            <Frame BackgroundColor="#FEF3C7" BorderColor="#F59E0B" CornerRadius="10"
+                                   Padding="14,10" HasShadow="False"
+                                   IsVisible="{Binding ShowBranchGeofenceBanner}">
+                                <Label Text="{Binding BranchGeofenceMessage}"
+                                       FontFamily="PoppinsRegular" FontSize="12"
+                                       TextColor="#92400E" />
+                            </Frame>
+
+                            <!-- Big primary action button -->
+                            <Button Text="{Binding ClockButtonLabel}"
+                                    Command="{Binding GoToPunchCommand}"
+                                    BackgroundColor="{Binding IsClockedIn, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#EF4444|#22C55E'}"
+                                    TextColor="White"
+                                    FontFamily="PoppinsBold" FontSize="18"
+                                    CornerRadius="16" HeightRequest="64"
+                                    HorizontalOptions="Fill" />
+                        </VerticalStackLayout>
+                    </Frame>
+
+                    <VerticalStackLayout Spacing="20" IsVisible="{Binding IsCompanyWorkspaceActive}">
+                    <!-- On leave banner -->
+                    <Frame BackgroundColor="#FEF3C7" BorderColor="#F59E0B" CornerRadius="10"
+                           Padding="14,10" HasShadow="False"
+                           IsVisible="{Binding ShowOnLeaveBanner}">
+                        <HorizontalStackLayout Spacing="10">
+                            <Label Text="🏖️" FontSize="20" VerticalOptions="Center" />
+                            <VerticalStackLayout Spacing="2" VerticalOptions="Center">
+                                <Label Text="On Leave Today" FontFamily="PoppinsSemiBold"
+                                       FontSize="13" TextColor="#92400E" />
+                                <Label Text="{Binding OnLeaveLabel}" FontFamily="Poppins"
+                                       FontSize="12" TextColor="#B45309" />
+                            </VerticalStackLayout>
+                        </HorizontalStackLayout>
+                    </Frame>
+
+                    <!-- Absence reported pill (already reported today) -->
+                    <Frame BackgroundColor="#FEF3C7" BorderColor="#F59E0B" CornerRadius="10"
+                           Padding="14,10" HasShadow="False"
+                           IsVisible="{Binding IsAbsentToday}">
+                        <HorizontalStackLayout Spacing="10">
+                            <Label Text="🤒" FontSize="20" VerticalOptions="Center" />
+                            <VerticalStackLayout Spacing="2" VerticalOptions="Center">
+                                <Label Text="Absence Reported" FontFamily="PoppinsSemiBold"
+                                       FontSize="13" TextColor="#92400E" />
+                                <Label Text="{Binding AbsenceReason}" FontFamily="Poppins"
+                                       FontSize="12" TextColor="#B45309" />
+                            </VerticalStackLayout>
+                        </HorizontalStackLayout>
+                    </Frame>
+
+                    <!-- Report Absence button (not yet reported today) -->
+                    <Button Text="🤒  Report Absence Today"
+                            Command="{Binding ReportAbsenceCommand}"
+                            IsVisible="{Binding IsNotAbsentToday}"
+                            BackgroundColor="#FEF3C7" TextColor="#92400E"
+                            FontFamily="PoppinsMedium" FontSize="13"
+                            BorderColor="#F59E0B" BorderWidth="1"
+                            CornerRadius="10" HeightRequest="44" />
+
+                    <!-- Quick Actions 2×2 -->
+                    <Label Text="QUICK ACTIONS" Style="{StaticResource LabelSection}" />
+                    <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto"
+                          ColumnSpacing="12" RowSpacing="12">
+                        <Frame Grid.Row="0" Grid.Column="0" Style="{StaticResource CardFrame}"
+                               Padding="16,18" HasShadow="False"
+                               IsVisible="{Binding ShowLeaveModule}">
+                            <Frame.GestureRecognizers>
+                                <TapGestureRecognizer Command="{Binding GoToMyLeaveCommand}" />
+                            </Frame.GestureRecognizers>
+                            <VerticalStackLayout Spacing="8" HorizontalOptions="Center">
+                                <Label Text="📅" FontSize="28" HorizontalOptions="Center" />
+                                <Label Text="Leave" FontFamily="PoppinsMedium" FontSize="13"
+                                       TextColor="{StaticResource TextPrimary}" HorizontalOptions="Center" />
+                            </VerticalStackLayout>
+                        </Frame>
+                        <Frame Grid.Row="0" Grid.Column="1" Style="{StaticResource CardFrame}"
+                               Padding="16,18" HasShadow="False"
+                               IsVisible="{Binding ShowSchedulingModule}">
+                            <Frame.GestureRecognizers>
+                                <TapGestureRecognizer Command="{Binding GoToMyShiftsCommand}" />
+                            </Frame.GestureRecognizers>
+                            <VerticalStackLayout Spacing="8" HorizontalOptions="Center">
+                                <Label Text="🗓" FontSize="28" HorizontalOptions="Center" />
+                                <Label Text="My Shifts" FontFamily="PoppinsMedium" FontSize="13"
+                                       TextColor="{StaticResource TextPrimary}" HorizontalOptions="Center" />
+                            </VerticalStackLayout>
+                        </Frame>
+                        <Frame Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Style="{StaticResource CardFrame}"
+                               Padding="16,18" HasShadow="False"
+                               IsVisible="{Binding ShowIncidentsModule}">
+                            <Frame.GestureRecognizers>
+                                <TapGestureRecognizer Command="{Binding GoToIncidentsCommand}" />
+                            </Frame.GestureRecognizers>
+                            <HorizontalStackLayout Spacing="12" HorizontalOptions="Center">
+                                <Label Text="⚠️" FontSize="28" VerticalOptions="Center" />
+                                <Label Text="Incidents" FontFamily="PoppinsMedium" FontSize="13"
+                                       TextColor="{StaticResource TextPrimary}" VerticalOptions="Center" />
+                            </HorizontalStackLayout>
+                        </Frame>
+                    </Grid>
+
+                    <!-- Who's on Leave Today -->
+                    <Frame BackgroundColor="#DCFCE7" BorderColor="#86EFAC" CornerRadius="12"
+                           Padding="14,12" HasShadow="False"
+                           IsVisible="{Binding HasColleaguesOnLeave}">
+                        <VerticalStackLayout Spacing="6">
+                            <Label Text="🏖 ON LEAVE TODAY" FontFamily="PoppinsSemiBold" FontSize="11"
+                                   TextColor="#166534" />
+                            <VerticalStackLayout Spacing="3" BindableLayout.ItemsSource="{Binding ColleaguesOnLeave}">
+                                <BindableLayout.ItemTemplate>
+                                    <DataTemplate x:DataType="x:String">
+                                        <Label Text="{Binding .}" FontFamily="Poppins" FontSize="12"
+                                               TextColor="#15803D" />
+                                    </DataTemplate>
+                                </BindableLayout.ItemTemplate>
+                            </VerticalStackLayout>
+                        </VerticalStackLayout>
+                    </Frame>
+
+                    <!-- My Attendance -->
+                    <Label Text="MY ATTENDANCE" Style="{StaticResource LabelSection}" />
+
+                    <!-- Range filter + export row -->
+                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                        <ScrollView Grid.Column="0" Orientation="Horizontal">
+                            <HorizontalStackLayout Spacing="8">
+                                <Button Text="Today" Command="{Binding SetAttendanceRangeCommand}" CommandParameter="today"
+                                        CornerRadius="20" HeightRequest="32" FontFamily="PoppinsMedium" FontSize="12" Padding="14,0"
+                                        BackgroundColor="{Binding AttendanceRange, Converter={StaticResource EqToStyleConverter}, ConverterParameter='today|#3B82F6,#FFFFFF'}"
+                                        TextColor="{Binding AttendanceRange, Converter={StaticResource EqToStyleConverter}, ConverterParameter='today|#FFFFFF,#6B7280'}" />
+                                <Button Text="Past Week" Command="{Binding SetAttendanceRangeCommand}" CommandParameter="week"
+                                        CornerRadius="20" HeightRequest="32" FontFamily="PoppinsMedium" FontSize="12" Padding="14,0"
+                                        BackgroundColor="{Binding AttendanceRange, Converter={StaticResource EqToStyleConverter}, ConverterParameter='week|#3B82F6,#FFFFFF'}"
+                                        TextColor="{Binding AttendanceRange, Converter={StaticResource EqToStyleConverter}, ConverterParameter='week|#FFFFFF,#6B7280'}" />
+                                <Button Text="Past Month" Command="{Binding SetAttendanceRangeCommand}" CommandParameter="month"
+                                        CornerRadius="20" HeightRequest="32" FontFamily="PoppinsMedium" FontSize="12" Padding="14,0"
+                                        BackgroundColor="{Binding AttendanceRange, Converter={StaticResource EqToStyleConverter}, ConverterParameter='month|#3B82F6,#FFFFFF'}"
+                                        TextColor="{Binding AttendanceRange, Converter={StaticResource EqToStyleConverter}, ConverterParameter='month|#FFFFFF,#6B7280'}" />
+                                <Button Text="All" Command="{Binding SetAttendanceRangeCommand}" CommandParameter="all"
+                                        CornerRadius="20" HeightRequest="32" FontFamily="PoppinsMedium" FontSize="12" Padding="14,0"
+                                        BackgroundColor="{Binding AttendanceRange, Converter={StaticResource EqToStyleConverter}, ConverterParameter='all|#3B82F6,#FFFFFF'}"
+                                        TextColor="{Binding AttendanceRange, Converter={StaticResource EqToStyleConverter}, ConverterParameter='all|#FFFFFF,#6B7280'}" />
+                                <Button Text="Custom" Command="{Binding SetAttendanceRangeCommand}" CommandParameter="custom"
+                                        CornerRadius="20" HeightRequest="32" FontFamily="PoppinsMedium" FontSize="12" Padding="14,0"
+                                        BackgroundColor="{Binding AttendanceRange, Converter={StaticResource EqToStyleConverter}, ConverterParameter='custom|#8B5CF6,#FFFFFF'}"
+                                        TextColor="{Binding AttendanceRange, Converter={StaticResource EqToStyleConverter}, ConverterParameter='custom|#FFFFFF,#6B7280'}" />
+                            </HorizontalStackLayout>
+                        </ScrollView>
+                        <Button Grid.Column="1" Text="Excel" Command="{Binding ExportAttendanceExcelCommand}"
+                                BackgroundColor="#16A34A" TextColor="White"
+                                FontFamily="PoppinsMedium" FontSize="11"
+                                CornerRadius="8" Padding="10,0" HeightRequest="32" />
+                        <Button Grid.Column="2" Text="PDF" Command="{Binding ExportAttendancePdfCommand}"
+                                BackgroundColor="#DC2626" TextColor="White"
+                                FontFamily="PoppinsMedium" FontSize="11"
+                                CornerRadius="8" Padding="10,0" HeightRequest="32" />
+                    </Grid>
+
+                    <!-- Custom date range pickers -->
+                    <Grid IsVisible="{Binding IsCustomRange}"
+                          ColumnDefinitions="*,*,Auto" ColumnSpacing="8">
+                        <Frame Grid.Column="0" Padding="10,4" CornerRadius="8"
+                               BackgroundColor="{StaticResource SurfaceCard}" BorderColor="{StaticResource Divider}" HasShadow="False">
+                            <DatePicker Date="{Binding CustomAttendanceFrom}"
+                                        Format="dd MMM yyyy" FontFamily="Poppins" FontSize="12"
+                                        TextColor="{StaticResource TextPrimary}" />
+                        </Frame>
+                        <Frame Grid.Column="1" Padding="10,4" CornerRadius="8"
+                               BackgroundColor="{StaticResource SurfaceCard}" BorderColor="{StaticResource Divider}" HasShadow="False">
+                            <DatePicker Date="{Binding CustomAttendanceTo}"
+                                        Format="dd MMM yyyy" FontFamily="Poppins" FontSize="12"
+                                        TextColor="{StaticResource TextPrimary}" />
+                        </Frame>
+                        <Button Grid.Column="2" Text="Apply" Command="{Binding ApplyCustomRangeCommand}"
+                                BackgroundColor="{StaticResource Primary}" TextColor="White"
+                                FontFamily="PoppinsMedium" FontSize="12"
+                                CornerRadius="8" Padding="14,0" HeightRequest="40" />
+                    </Grid>
+
+                    <!-- Attendance session table -->
+                    <shared:AttendanceSessionTableView Sessions="{Binding MyAttendanceSessions}"
+                                                         EmptyMessage="No attendance records yet." />
+
+                    <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}"
+                                       Color="{StaticResource Primary}" HorizontalOptions="Center"
+                                       Margin="0,8,0,24" />
+                    </VerticalStackLayout>
+
+                </VerticalStackLayout>
+            </ScrollView>
+
+            <!-- ═══════════════════════════ MORE ═══════════════════════════ -->
+            <ScrollView IsVisible="{Binding IsMoreTab}">
+                <VerticalStackLayout Padding="16" Spacing="10">
+
+                    <Frame Style="{StaticResource CardFrame}" Padding="0">
+                        <VerticalStackLayout Spacing="0">
+                            <!-- My PA -->
+                            <Grid ColumnDefinitions="Auto,*,Auto" Padding="16,14" ColumnSpacing="14"
+                                  IsVisible="{Binding ShowPaModule}">
+                                <Grid.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding GoToPaCommand}" />
+                                </Grid.GestureRecognizers>
+                                <Label Grid.Column="0" Text="📋" FontSize="22" VerticalOptions="Center" />
+                                <Label Grid.Column="1" Text="My PA" FontFamily="PoppinsMedium" FontSize="14"
+                                       TextColor="{StaticResource TextPrimary}" VerticalOptions="Center" />
+                                <Label Grid.Column="2" Text="›" FontSize="20"
+                                       TextColor="{StaticResource TextDisabled}" VerticalOptions="Center" />
+                            </Grid>
+                            <BoxView HeightRequest="1" Color="{StaticResource Divider}" Margin="16,0"
+                                     IsVisible="{Binding ShowPaModule}" />
+
+                            <!-- Leave -->
+                            <Grid ColumnDefinitions="Auto,*,Auto" Padding="16,14" ColumnSpacing="14"
+                                  IsVisible="{Binding ShowLeaveModule}">
+                                <Grid.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding GoToMyLeaveCommand}" />
+                                </Grid.GestureRecognizers>
+                                <Label Grid.Column="0" Text="📅" FontSize="22" VerticalOptions="Center" />
+                                <Label Grid.Column="1" Text="Leave" FontFamily="PoppinsMedium" FontSize="14"
+                                       TextColor="{StaticResource TextPrimary}" VerticalOptions="Center" />
+                                <Label Grid.Column="2" Text="›" FontSize="20"
+                                       TextColor="{StaticResource TextDisabled}" VerticalOptions="Center" />
+                            </Grid>
+                            <BoxView HeightRequest="1" Color="{StaticResource Divider}" Margin="16,0"
+                                     IsVisible="{Binding ShowLeaveModule}" />
+
+                            <!-- My Shifts -->
+                            <Grid ColumnDefinitions="Auto,*,Auto" Padding="16,14" ColumnSpacing="14"
+                                  IsVisible="{Binding ShowSchedulingModule}">
+                                <Grid.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding GoToMyShiftsCommand}" />
+                                </Grid.GestureRecognizers>
+                                <Label Grid.Column="0" Text="🗓" FontSize="22" VerticalOptions="Center" />
+                                <Label Grid.Column="1" Text="My Shifts" FontFamily="PoppinsMedium" FontSize="14"
+                                       TextColor="{StaticResource TextPrimary}" VerticalOptions="Center" />
+                                <Label Grid.Column="2" Text="›" FontSize="20"
+                                       TextColor="{StaticResource TextDisabled}" VerticalOptions="Center" />
+                            </Grid>
+                            <BoxView HeightRequest="1" Color="{StaticResource Divider}" Margin="16,0"
+                                     IsVisible="{Binding ShowSchedulingModule}" />
+
+                            <!-- Forms -->
+                            <Grid ColumnDefinitions="Auto,*,Auto" Padding="16,14" ColumnSpacing="14"
+                                  IsVisible="{Binding ShowPaperlessModule}">
+                                <Grid.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding GoToPaperlessCommand}" />
+                                </Grid.GestureRecognizers>
+                                <Label Grid.Column="0" Text="📄" FontSize="22" VerticalOptions="Center" />
+                                <Label Grid.Column="1" Text="Forms" FontFamily="PoppinsMedium" FontSize="14"
+                                       TextColor="{StaticResource TextPrimary}" VerticalOptions="Center" />
+                                <Label Grid.Column="2" Text="›" FontSize="20"
+                                       TextColor="{StaticResource TextDisabled}" VerticalOptions="Center" />
+                            </Grid>
+                            <BoxView HeightRequest="1" Color="{StaticResource Divider}" Margin="16,0"
+                                     IsVisible="{Binding ShowPaperlessModule}" />
+
+                            <!-- Jobs -->
+                            <Grid ColumnDefinitions="Auto,*,Auto" Padding="16,14" ColumnSpacing="14"
+                                  IsVisible="{Binding ShowJobsModule}">
+                                <Grid.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding GoToMyJobsCommand}" />
+                                </Grid.GestureRecognizers>
+                                <Label Grid.Column="0" Text="📋" FontSize="22" VerticalOptions="Center" />
+                                <Label Grid.Column="1" Text="Jobs" FontFamily="PoppinsMedium" FontSize="14"
+                                       TextColor="{StaticResource TextPrimary}" VerticalOptions="Center" />
+                                <Label Grid.Column="2" Text="›" FontSize="20"
+                                       TextColor="{StaticResource TextDisabled}" VerticalOptions="Center" />
+                            </Grid>
+                            <BoxView HeightRequest="1" Color="{StaticResource Divider}" Margin="16,0"
+                                     IsVisible="{Binding ShowJobsModule}" />
+
+                            <!-- Incidents -->
+                            <Grid ColumnDefinitions="Auto,*,Auto" Padding="16,14" ColumnSpacing="14"
+                                  IsVisible="{Binding ShowIncidentsModule}">
+                                <Grid.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding GoToIncidentsCommand}" />
+                                </Grid.GestureRecognizers>
+                                <Label Grid.Column="0" Text="⚠️" FontSize="22" VerticalOptions="Center" />
+                                <Label Grid.Column="1" Text="Incidents" FontFamily="PoppinsMedium" FontSize="14"
+                                       TextColor="{StaticResource TextPrimary}" VerticalOptions="Center" />
+                                <Label Grid.Column="2" Text="›" FontSize="20"
+                                       TextColor="{StaticResource TextDisabled}" VerticalOptions="Center" />
+                            </Grid>
+                            <BoxView HeightRequest="1" Color="{StaticResource Divider}" Margin="16,0"
+                                     IsVisible="{Binding ShowIncidentsModule}" />
+
+                            <!-- Contractor Profile -->
+                            <Grid ColumnDefinitions="Auto,*,Auto" Padding="16,14" ColumnSpacing="14"
+                                  IsVisible="{Binding ShowContractorsModule}">
+                                <Grid.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding GoToContractorAdminCommand}" />
+                                </Grid.GestureRecognizers>
+                                <Label Grid.Column="0" Text="👷" FontSize="22" VerticalOptions="Center" />
+                                <Label Grid.Column="1" Text="Contractor Profile" FontFamily="PoppinsMedium" FontSize="14"
+                                       TextColor="{StaticResource TextPrimary}" VerticalOptions="Center" />
+                                <Label Grid.Column="2" Text="›" FontSize="20"
+                                       TextColor="{StaticResource TextDisabled}" VerticalOptions="Center" />
+                            </Grid>
+                            <BoxView HeightRequest="1" Color="{StaticResource Divider}" Margin="16,0"
+                                     IsVisible="{Binding ShowContractorsModule}" />
+
+                            <!-- My Payslips -->
+                            <Grid ColumnDefinitions="Auto,*,Auto" Padding="16,14" ColumnSpacing="14"
+                                  IsVisible="{Binding ShowPayrollModule}">
+                                <Grid.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding GoToMyPayslipsCommand}" />
+                                </Grid.GestureRecognizers>
+                                <Label Grid.Column="0" Text="💰" FontSize="22" VerticalOptions="Center" />
+                                <Label Grid.Column="1" Text="My Payslips" FontFamily="PoppinsMedium" FontSize="14"
+                                       TextColor="{StaticResource TextPrimary}" VerticalOptions="Center" />
+                                <Label Grid.Column="2" Text="›" FontSize="20"
+                                       TextColor="{StaticResource TextDisabled}" VerticalOptions="Center" />
+                            </Grid>
+                            <BoxView HeightRequest="1" Color="{StaticResource Divider}" Margin="16,0"
+                                     IsVisible="{Binding ShowPayrollModule}" />
+
+                            <!-- My Documents -->
+                            <Grid ColumnDefinitions="Auto,*,Auto" Padding="16,14" ColumnSpacing="14">
+                                <Grid.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding GoToMyDocumentsCommand}" />
+                                </Grid.GestureRecognizers>
+                                <Label Grid.Column="0" Text="📁" FontSize="22" VerticalOptions="Center" />
+                                <Label Grid.Column="1" Text="My Documents" FontFamily="PoppinsMedium" FontSize="14"
+                                       TextColor="{StaticResource TextPrimary}" VerticalOptions="Center" />
+                                <Label Grid.Column="2" Text="›" FontSize="20"
+                                       TextColor="{StaticResource TextDisabled}" VerticalOptions="Center" />
+                            </Grid>
+
+                            <BoxView HeightRequest="1" Color="{StaticResource Divider}" />
+
+                            <!-- My Profile -->
+                            <Grid ColumnDefinitions="Auto,*,Auto" Padding="16,14" ColumnSpacing="14">
+                                <Grid.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding GoToMyProfileCommand}" />
+                                </Grid.GestureRecognizers>
+                                <Label Grid.Column="0" Text="👤" FontSize="22" VerticalOptions="Center" />
+                                <Label Grid.Column="1" Text="My Profile" FontFamily="PoppinsMedium" FontSize="14"
+                                       TextColor="{StaticResource TextPrimary}" VerticalOptions="Center" />
+                                <Label Grid.Column="2" Text="›" FontSize="20"
+                                       TextColor="{StaticResource TextDisabled}" VerticalOptions="Center" />
+                            </Grid>
+                        </VerticalStackLayout>
+                    </Frame>
+
+                    <!-- Teams section -->
+                    <Label Text="MY TEAMS" Style="{StaticResource LabelSection}" Margin="0,8,0,4" />
+                    <Label Text="You're not a member of any teams yet."
+                           Style="{StaticResource EmptyState}"
+                           IsVisible="{Binding MyTeams.Count, Converter={StaticResource IsZeroConverter}}" />
+                    <VerticalStackLayout Spacing="8" BindableLayout.ItemsSource="{Binding MyTeams}">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate x:DataType="models:WorkTeam">
+                                <Frame Style="{StaticResource CardFrame}" Padding="14,12">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <VerticalStackLayout Spacing="4">
+                                            <Label Text="{Binding Name}"
+                                                   FontFamily="PoppinsSemiBold" FontSize="14"
+                                                   TextColor="{StaticResource TextPrimary}" />
+                                            <Label Text="{Binding Description}"
+                                                   FontFamily="Poppins" FontSize="12"
+                                                   TextColor="{StaticResource TextSecondary}"
+                                                   IsVisible="{Binding Description, Converter={StaticResource IsNotNullConverter}}" />
+                                        </VerticalStackLayout>
+                                        <Label Grid.Column="1"
+                                               Text="{Binding MemberCount, StringFormat='{0} members'}"
+                                               FontFamily="Poppins" FontSize="12"
+                                               TextColor="{StaticResource TextSecondary}"
+                                               VerticalOptions="Center" />
+                                    </Grid>
+                                </Frame>
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                    </VerticalStackLayout>
+
+                    <Button Text="Sign Out" Command="{Binding SignOutCommand}"
+                            Style="{StaticResource DangerButton}"
+                            Margin="0,8,0,24" />
+
+                </VerticalStackLayout>
+            </ScrollView>
+
+        </Grid>
+
+        <!-- ─────────────────────────────────────────────────── -->
+        <!-- BOTTOM TAB BAR                                     -->
+        <!-- ─────────────────────────────────────────────────── -->
+        <Grid Grid.Row="1" ColumnDefinitions="*,*,*,*,*"
+              BackgroundColor="{StaticResource SurfaceDark}">
+            <BoxView Grid.ColumnSpan="5" HeightRequest="1" VerticalOptions="Start"
+                     Color="{StaticResource Divider}" />
+
+            <!-- Home -->
+            <VerticalStackLayout Grid.Column="0" Spacing="3" VerticalOptions="Center" Padding="4,8">
+                <VerticalStackLayout.GestureRecognizers>
+                    <TapGestureRecognizer Command="{Binding SetTabCommand}" CommandParameter="0" />
+                </VerticalStackLayout.GestureRecognizers>
+                <Label Text="🏠" FontSize="20" HorizontalOptions="Center"
+                       TextColor="{Binding IsHomeTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#3B82F6|#9CA3AF'}" />
+                <Label Text="Home" FontFamily="PoppinsMedium" FontSize="10" HorizontalOptions="Center"
+                       TextColor="{Binding IsHomeTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#3B82F6|#9CA3AF'}" />
+            </VerticalStackLayout>
+
+            <!-- My Jobs (single jobs screen) -->
+            <VerticalStackLayout Grid.Column="1" Spacing="3" VerticalOptions="Center" Padding="4,8"
+                                 IsVisible="{Binding ShowJobsModule}">
+                <VerticalStackLayout.GestureRecognizers>
+                    <TapGestureRecognizer Command="{Binding GoToMyJobsCommand}" />
+                </VerticalStackLayout.GestureRecognizers>
+                <Grid HeightRequest="28" WidthRequest="40" HorizontalOptions="Center">
+                    <Label Text="📋" FontSize="20" HorizontalOptions="Center" VerticalOptions="Center"
+                           TextColor="#9CA3AF" />
+                    <Frame IsVisible="{Binding MyJobCount, Converter={StaticResource IsNotZeroConverter}}"
+                           BackgroundColor="#EF4444" BorderColor="Transparent" CornerRadius="8"
+                           Padding="3,0" HasShadow="False"
+                           HorizontalOptions="End" VerticalOptions="Start"
+                           WidthRequest="18" HeightRequest="18">
+                        <Label Text="{Binding MyJobCount}" FontSize="9"
+                               TextColor="White" HorizontalOptions="Center" VerticalOptions="Center" />
+                    </Frame>
+                </Grid>
+                <Label Text="My Jobs" FontFamily="PoppinsMedium" FontSize="10" HorizontalOptions="Center"
+                       TextColor="#9CA3AF" />
+            </VerticalStackLayout>
+
+            <!-- Messages (navigates to chat page) -->
+            <VerticalStackLayout Grid.Column="2" Spacing="3" VerticalOptions="Center" Padding="4,8"
+                                 IsVisible="{Binding ShowMessagingModule}">
+                <VerticalStackLayout.GestureRecognizers>
+                    <TapGestureRecognizer Command="{Binding GoToMessagesCommand}" />
+                </VerticalStackLayout.GestureRecognizers>
+                <Label Text="💬" FontSize="20" HorizontalOptions="Center"
+                       TextColor="#9CA3AF" />
+                <Label Text="Messages" FontFamily="PoppinsMedium" FontSize="10" HorizontalOptions="Center"
+                       TextColor="#9CA3AF" />
+            </VerticalStackLayout>
+
+            <!-- Notifications (navigates to notifications page) -->
+            <VerticalStackLayout Grid.Column="3" Spacing="3" VerticalOptions="Center" Padding="4,8">
+                <VerticalStackLayout.GestureRecognizers>
+                    <TapGestureRecognizer Command="{Binding GoToNotificationsCommand}" />
+                </VerticalStackLayout.GestureRecognizers>
+                <Grid HeightRequest="28" WidthRequest="40" HorizontalOptions="Center">
+                    <Label Text="🔔" FontSize="20" HorizontalOptions="Center" VerticalOptions="Center"
+                           TextColor="#9CA3AF" />
+                    <Frame IsVisible="{Binding NotificationCount, Converter={StaticResource IsNotZeroConverter}}"
+                           BackgroundColor="#EF4444" BorderColor="Transparent" CornerRadius="8"
+                           Padding="3,0" HasShadow="False"
+                           HorizontalOptions="End" VerticalOptions="Start"
+                           WidthRequest="18" HeightRequest="18">
+                        <Label Text="{Binding NotificationCount}" FontSize="9"
+                               TextColor="White" HorizontalOptions="Center" VerticalOptions="Center" />
+                    </Frame>
+                </Grid>
+                <Label Text="Notifs" FontFamily="PoppinsMedium" FontSize="10" HorizontalOptions="Center"
+                       TextColor="#9CA3AF" />
+            </VerticalStackLayout>
+
+            <!-- More -->
+            <VerticalStackLayout Grid.Column="4" Spacing="3" VerticalOptions="Center" Padding="4,8">
+                <VerticalStackLayout.GestureRecognizers>
+                    <TapGestureRecognizer Command="{Binding SetTabCommand}" CommandParameter="4" />
+                </VerticalStackLayout.GestureRecognizers>
+                <Label Text="⋯" FontSize="22" HorizontalOptions="Center"
+                       TextColor="{Binding IsMoreTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#3B82F6|#9CA3AF'}" />
+                <Label Text="More" FontFamily="PoppinsMedium" FontSize="10" HorizontalOptions="Center"
+                       TextColor="{Binding IsMoreTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#3B82F6|#9CA3AF'}" />
+            </VerticalStackLayout>
+
+        </Grid>
+
+    </Grid>
+
+</ContentPage>

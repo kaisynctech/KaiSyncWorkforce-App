@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Hr.HrPayrollSettingsPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
+    x:DataType="vm:HrPayrollSettingsViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="{Binding Title}">
+
+    <ScrollView>
+        <VerticalStackLayout Spacing="16" Padding="16">
+
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="PAYROLL ENGINE" Style="{StaticResource LabelSection}" />
+                    <Label Text="Configure how payslips are calculated, taxed, and released. These settings apply company-wide."
+                           Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Pay calculation -->
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="PAY CALCULATION" Style="{StaticResource LabelSection}" />
+                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8">
+                        <Label Grid.Row="0" Grid.Column="0" Text="Default pay basis" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                        <Picker Grid.Row="0" Grid.Column="1" ItemsSource="{Binding PayBasisOptions}" SelectedItem="{Binding PayrollDefaultPayBasis}" WidthRequest="140" />
+                        <Label Grid.Row="1" Grid.Column="0" Text="Default hourly rate (R)" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                        <Entry Grid.Row="1" Grid.Column="1" Text="{Binding DefaultHourlyRate, StringFormat='{0:F2}'}" Keyboard="Numeric" WidthRequest="80" Style="{StaticResource DarkEntry}" HorizontalTextAlignment="End" />
+                        <Label Grid.Row="2" Grid.Column="0" Text="OT multiplier" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                        <Entry Grid.Row="2" Grid.Column="1" Text="{Binding OvertimeMultiplier, StringFormat='{0:F1}'}" Keyboard="Numeric" WidthRequest="80" Style="{StaticResource DarkEntry}" HorizontalTextAlignment="End" />
+                        <Label Grid.Row="3" Grid.Column="0" Text="Daily OT threshold (hrs)" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                        <Entry Grid.Row="3" Grid.Column="1" Text="{Binding OvertimeThresholdHours}" Keyboard="Numeric" WidthRequest="80" Style="{StaticResource DarkEntry}" HorizontalTextAlignment="End" />
+                        <Label Grid.Row="4" Grid.Column="0" Text="OT for salary staff" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                        <Switch Grid.Row="4" Grid.Column="1" IsToggled="{Binding AllowOvertimeForSalary}" HorizontalOptions="End" />
+                        <Label Grid.Row="5" Grid.Column="0" Text="Full salary for mid-month joiners" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                        <Switch Grid.Row="5" Grid.Column="1" IsToggled="{Binding PayFullSalaryForMidMonthJoiners}" HorizontalOptions="End" />
+                        <Label Grid.Row="6" Grid.Column="0" Text="Pay salary on public holidays" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                        <Switch Grid.Row="6" Grid.Column="1" IsToggled="{Binding PaySalaryOnPublicHolidays}" HorizontalOptions="End" />
+                        <Label Grid.Row="7" Grid.Column="0" Text="Pay hourly on public holidays" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                        <Switch Grid.Row="7" Grid.Column="1" IsToggled="{Binding PayHourlyOnPublicHolidays}" HorizontalOptions="End" />
+                    </Grid>
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Time inputs -->
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="TIME &amp; ATTENDANCE" Style="{StaticResource LabelSection}" />
+                    <Label Text="Used when building sessions and calculating late/OT for payroll."
+                           Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="8">
+                        <Label Grid.Row="0" Grid.Column="0" Text="Sign-in grace period (minutes)" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                        <Entry Grid.Row="0" Grid.Column="1" Text="{Binding LateThresholdMinutes}" Keyboard="Numeric" WidthRequest="80" Style="{StaticResource DarkEntry}" HorizontalTextAlignment="End" />
+                        <Label Grid.Row="1" Grid.Column="0" Text="OT starts after (minutes past shift end)" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                        <Entry Grid.Row="1" Grid.Column="1" Text="{Binding OtStartAfterMinutes}" Keyboard="Numeric" WidthRequest="80" Style="{StaticResource DarkEntry}" HorizontalTextAlignment="End" />
+                        <Label Grid.Row="2" Grid.Column="0" Text="Deduct absent days from pay" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                        <Switch Grid.Row="2" Grid.Column="1" IsToggled="{Binding DeductAbsentFromPay}" HorizontalOptions="End" />
+                        <Label Grid.Row="3" Grid.Column="0" Text="Salary staff: ignore attendance penalties" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                        <Switch Grid.Row="3" Grid.Column="1" IsToggled="{Binding SalaryIgnoreAttendanceDeductions}" HorizontalOptions="End" />
+                    </Grid>
+                    <Button Text="Manage Time Templates"
+                            Command="{Binding GoToShiftTemplatesCommand}"
+                            BackgroundColor="{StaticResource SurfaceDark}"
+                            TextColor="{StaticResource Primary}"
+                            CornerRadius="8" FontSize="13" Padding="14,10" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Penalties -->
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="ATTENDANCE PENALTIES" Style="{StaticResource LabelSection}" />
+                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8">
+                        <Label Grid.Row="0" Grid.Column="0" Text="Absent penalty mode" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                        <Picker Grid.Row="0" Grid.Column="1" ItemsSource="{Binding PenaltyModeOptions}" SelectedItem="{Binding AbsentPenaltyMode}" WidthRequest="140" />
+                        <Label Grid.Row="1" Grid.Column="0" Text="Absent threshold / deduct days" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                        <HorizontalStackLayout Grid.Row="1" Grid.Column="1" Spacing="6">
+                            <Entry Text="{Binding AbsentPenaltyThreshold}" Keyboard="Numeric" WidthRequest="50" Style="{StaticResource DarkEntry}" HorizontalTextAlignment="Center" />
+                            <Entry Text="{Binding AbsentPenaltyDeductDays}" Keyboard="Numeric" WidthRequest="50" Style="{StaticResource DarkEntry}" HorizontalTextAlignment="Center" />
+                        </HorizontalStackLayout>
+                        <Label Grid.Row="2" Grid.Column="0" Text="Late penalty mode" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                        <Picker Grid.Row="2" Grid.Column="1" ItemsSource="{Binding PenaltyModeOptions}" SelectedItem="{Binding LatePenaltyMode}" WidthRequest="140" />
+                        <Label Grid.Row="3" Grid.Column="0" Text="Late threshold / deduct hrs" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                        <HorizontalStackLayout Grid.Row="3" Grid.Column="1" Spacing="6">
+                            <Entry Text="{Binding LatePenaltyThreshold}" Keyboard="Numeric" WidthRequest="50" Style="{StaticResource DarkEntry}" HorizontalTextAlignment="Center" />
+                            <Entry Text="{Binding LatePenaltyDeductHours}" Keyboard="Numeric" WidthRequest="50" Style="{StaticResource DarkEntry}" HorizontalTextAlignment="Center" />
+                        </HorizontalStackLayout>
+                        <Label Grid.Row="4" Grid.Column="0" Text="Early penalty mode" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                        <Picker Grid.Row="4" Grid.Column="1" ItemsSource="{Binding PenaltyModeOptions}" SelectedItem="{Binding EarlyPenaltyMode}" WidthRequest="140" />
+                        <Label Grid.Row="5" Grid.Column="0" Text="Early threshold / deduct hrs" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                        <HorizontalStackLayout Grid.Row="5" Grid.Column="1" Spacing="6">
+                            <Entry Text="{Binding EarlyPenaltyThreshold}" Keyboard="Numeric" WidthRequest="50" Style="{StaticResource DarkEntry}" HorizontalTextAlignment="Center" />
+                            <Entry Text="{Binding EarlyPenaltyDeductHours}" Keyboard="Numeric" WidthRequest="50" Style="{StaticResource DarkEntry}" HorizontalTextAlignment="Center" />
+                        </HorizontalStackLayout>
+                    </Grid>
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Statutory & SARS -->
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="STATUTORY &amp; TAX (SARS)" Style="{StaticResource LabelSection}" />
+                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8">
+                        <Label Grid.Row="0" Grid.Column="0" Text="UIF enabled" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                        <Switch Grid.Row="0" Grid.Column="1" IsToggled="{Binding UifEnabled}" HorizontalOptions="End" />
+                        <Label Grid.Row="1" Grid.Column="0" Text="UIF rate % / ceiling (R)" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                        <HorizontalStackLayout Grid.Row="1" Grid.Column="1" Spacing="6">
+                            <Entry Text="{Binding UifRatePercent}" Keyboard="Numeric" WidthRequest="50" Style="{StaticResource DarkEntry}" HorizontalTextAlignment="Center" />
+                            <Entry Text="{Binding UifCeilingMonthly}" Keyboard="Numeric" WidthRequest="80" Style="{StaticResource DarkEntry}" HorizontalTextAlignment="End" />
+                        </HorizontalStackLayout>
+                        <Label Grid.Row="2" Grid.Column="0" Text="PAYE enabled" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                        <Switch Grid.Row="2" Grid.Column="1" IsToggled="{Binding PayeEnabled}" HorizontalOptions="End" />
+                        <Label Grid.Row="3" Grid.Column="0" Text="Default PAYE rate (%)" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                        <Entry Grid.Row="3" Grid.Column="1" Text="{Binding DefaultPayeRatePercent}" Keyboard="Numeric" WidthRequest="80" Style="{StaticResource DarkEntry}" HorizontalTextAlignment="End" />
+                        <Label Grid.Row="4" Grid.Column="0" Text="Use SARS PAYE tax tables" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                        <Switch Grid.Row="4" Grid.Column="1" IsToggled="{Binding UseSarsTaxTables}" HorizontalOptions="End" />
+                        <Label Grid.Row="5" Grid.ColumnSpan="2" Text="When SARS tables are on, employee DOB and tax directive on their profile drive PAYE. Otherwise use employee PAYE rate/fixed or default % above."
+                               Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                    </Grid>
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Payslip release -->
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="PAYSLIPS &amp; RELEASE" Style="{StaticResource LabelSection}" />
+                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto" RowSpacing="8">
+                        <Label Grid.Row="0" Grid.Column="0" Text="Payslip release day (0 = manual)" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                        <Entry Grid.Row="0" Grid.Column="1" Text="{Binding PayslipReleaseDay}" Keyboard="Numeric" WidthRequest="80" Style="{StaticResource DarkEntry}" HorizontalTextAlignment="End" Placeholder="25" />
+                        <Label Grid.Row="1" Grid.Column="0" Text="Auto-release on release day" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                        <Switch Grid.Row="1" Grid.Column="1" IsToggled="{Binding AutoReleasePayslipsOnReleaseDay}" HorizontalOptions="End" />
+                        <Label Grid.Row="2" Grid.Column="0" Text="Public holidays (yyyy-MM-dd, comma-separated)" Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                        <Entry Grid.Row="2" Grid.Column="1" Text="{Binding PublicHolidaysText}" Style="{StaticResource DarkEntry}" WidthRequest="160" />
+                    </Grid>
+                </VerticalStackLayout>
+            </Frame>
+
+            <Label Text="{Binding ErrorMessage}"
+                   TextColor="{StaticResource Error}"
+                   IsVisible="{Binding ErrorMessage, Converter={StaticResource IsNotNullConverter}}"
+                   HorizontalOptions="Center" />
+
+            <Button Text="Save Payroll Settings"
+                    Command="{Binding SaveCommand}"
+                    Style="{StaticResource PrimaryButton}"
+                    IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBoolConverter}}" />
+
+            <ActivityIndicator IsRunning="{Binding IsBusy}"
+                               IsVisible="{Binding IsBusy}"
+                               Color="{StaticResource Primary}"
+                               HorizontalOptions="Center" />
+
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

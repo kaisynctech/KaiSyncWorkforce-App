@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Hr.HrImportEmployeesPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:HrImportEmployeesViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="Import Employees">
+
+    <Grid RowDefinitions="*,Auto">
+
+        <ScrollView Grid.Row="0">
+            <VerticalStackLayout Padding="16" Spacing="16">
+
+                <!-- Step 1: Download template -->
+                <Frame Style="{StaticResource CardFrame}">
+                    <VerticalStackLayout Spacing="10">
+                        <Label Text="STEP 1 — DOWNLOAD TEMPLATE" Style="{StaticResource LabelSection}" />
+                        <Label Text="Download the blank Excel template, fill in your employees, then import the file."
+                               Style="{StaticResource BodyMedium}" TextColor="{StaticResource TextSecondary}" />
+                        <Label Text="{Binding DefaultTemplateHint}"
+                               Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}"
+                               IsVisible="{Binding DefaultTemplateHint, Converter={StaticResource IsNotNullConverter}}" />
+                        <Button Text="📥  Download Blank Template"
+                                Command="{Binding DownloadTemplateCommand}"
+                                BackgroundColor="{StaticResource Primary}" TextColor="White"
+                                FontFamily="PoppinsSemiBold" CornerRadius="10" HeightRequest="46" />
+                    </VerticalStackLayout>
+                </Frame>
+
+                <!-- Step 2: Pick file -->
+                <Frame Style="{StaticResource CardFrame}">
+                    <VerticalStackLayout Spacing="10">
+                        <Label Text="STEP 2 — SELECT YOUR FILE" Style="{StaticResource LabelSection}" />
+                        <Label Text="Select your completed .xlsx file — use our template or your own spreadsheet with similar column names (Name, Surname, ID Number, Access Level, etc.)."
+                               Style="{StaticResource BodyMedium}" TextColor="{StaticResource TextSecondary}" />
+                        <Button Text="📂  Browse File"
+                                Command="{Binding PickFileCommand}"
+                                BackgroundColor="{StaticResource SurfaceElevated}"
+                                TextColor="{StaticResource TextPrimary}"
+                                BorderColor="{StaticResource Divider}" BorderWidth="1"
+                                FontFamily="PoppinsSemiBold" CornerRadius="10" HeightRequest="46" />
+                    </VerticalStackLayout>
+                </Frame>
+
+                <!-- Error -->
+                <Frame BackgroundColor="#FEE2E2" BorderColor="#FCA5A5" CornerRadius="10"
+                       Padding="14,10" HasShadow="False"
+                       IsVisible="{Binding ErrorMessage, Converter={StaticResource IsNotNullConverter}}">
+                    <Label Text="{Binding ErrorMessage}" TextColor="{StaticResource Error}"
+                           FontFamily="PoppinsMedium" FontSize="13" />
+                </Frame>
+
+                <!-- Parse warnings -->
+                <Frame BackgroundColor="#EFF6FF" BorderColor="#93C5FD" CornerRadius="10"
+                       Padding="14,10" HasShadow="False"
+                       IsVisible="{Binding HasParseWarnings}">
+                    <VerticalStackLayout Spacing="6">
+                        <Label Text="NOTES" FontFamily="PoppinsSemiBold" FontSize="11" TextColor="#1D4ED8" />
+                        <VerticalStackLayout Spacing="4" BindableLayout.ItemsSource="{Binding ParseWarnings}">
+                            <BindableLayout.ItemTemplate>
+                                <DataTemplate>
+                                    <Label Text="{Binding .}" FontFamily="Poppins" FontSize="11" TextColor="#1E40AF" />
+                                </DataTemplate>
+                            </BindableLayout.ItemTemplate>
+                        </VerticalStackLayout>
+                    </VerticalStackLayout>
+                </Frame>
+
+                <!-- Parse errors -->
+                <Frame BackgroundColor="#FEF3C7" BorderColor="#FCD34D" CornerRadius="10"
+                       Padding="14,10" HasShadow="False"
+                       IsVisible="{Binding HasParseErrors}">
+                    <VerticalStackLayout Spacing="6">
+                        <Label Text="ROWS SKIPPED OR ISSUES" FontFamily="PoppinsSemiBold" FontSize="11" TextColor="#92400E" />
+                        <VerticalStackLayout Spacing="4" BindableLayout.ItemsSource="{Binding ParseErrors}">
+                            <BindableLayout.ItemTemplate>
+                                <DataTemplate>
+                                    <Label Text="{Binding .}" FontFamily="Poppins" FontSize="11" TextColor="#B45309" />
+                                </DataTemplate>
+                            </BindableLayout.ItemTemplate>
+                        </VerticalStackLayout>
+                    </VerticalStackLayout>
+                </Frame>
+
+                <!-- Step 3: Preview -->
+                <Frame Style="{StaticResource CardFrame}" IsVisible="{Binding ShowPreview}">
+                    <VerticalStackLayout Spacing="10">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <Label Text="STEP 3 — PREVIEW" Style="{StaticResource LabelSection}" />
+                            <Label Grid.Column="1" Text="{Binding PreviewSummary}"
+                                   Style="{StaticResource Caption}" TextColor="{StaticResource Primary}"
+                                   VerticalOptions="Center" />
+                        </Grid>
+                        <Label Text="{Binding MappingSummary}" Style="{StaticResource Caption}"
+                               TextColor="{StaticResource TextSecondary}"
+                               IsVisible="{Binding MappingSummary, Converter={StaticResource IsNotNullConverter}}" />
+
+                        <VerticalStackLayout Spacing="6"
+                                             BindableLayout.ItemsSource="{Binding Preview}">
+                            <BindableLayout.ItemTemplate>
+                                <DataTemplate x:DataType="models:Employee">
+                                    <Frame BackgroundColor="{StaticResource SurfaceElevated}"
+                                           BorderColor="{StaticResource Divider}"
+                                           CornerRadius="8" Padding="12,8" HasShadow="False">
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <VerticalStackLayout Spacing="2">
+                                                <Label Text="{Binding FullName}"
+                                                       FontFamily="PoppinsMedium" FontSize="13"
+                                                       TextColor="{StaticResource TextPrimary}" />
+                                                <HorizontalStackLayout Spacing="8">
+                                                    <Label Text="{Binding Email, FallbackValue='No email', TargetNullValue='No email'}"
+                                                           FontFamily="Poppins" FontSize="11"
+                                                           TextColor="{StaticResource TextSecondary}" />
+                                                    <Label Text="{Binding Position, FallbackValue='', TargetNullValue=''}"
+                                                           FontFamily="Poppins" FontSize="11"
+                                                           TextColor="{StaticResource TextSecondary}"
+                                                           IsVisible="{Binding Position, Converter={StaticResource IsNotNullConverter}}" />
+                                                    <Label Text="{Binding ImportTimeTemplateName, StringFormat='· {0}'}"
+                                                           FontFamily="Poppins" FontSize="11"
+                                                           TextColor="{StaticResource Primary}"
+                                                           IsVisible="{Binding ImportTimeTemplateName, Converter={StaticResource IsNotNullConverter}}" />
+                                                </HorizontalStackLayout>
+                                            </VerticalStackLayout>
+                                            <Frame Grid.Column="1"
+                                                   BackgroundColor="#DCFCE7" BorderColor="Transparent"
+                                                   CornerRadius="6" Padding="6,3" HasShadow="False"
+                                                   VerticalOptions="Center">
+                                                <Label Text="{Binding EmploymentTypeRaw}"
+                                                       FontFamily="Poppins" FontSize="10"
+                                                       TextColor="#166534" />
+                                            </Frame>
+                                        </Grid>
+                                    </Frame>
+                                </DataTemplate>
+                            </BindableLayout.ItemTemplate>
+                        </VerticalStackLayout>
+                    </VerticalStackLayout>
+                </Frame>
+
+            </VerticalStackLayout>
+        </ScrollView>
+
+        <!-- Import button -->
+        <VerticalStackLayout Grid.Row="1" Padding="16,8" Spacing="0"
+                             IsVisible="{Binding HasPreview}">
+            <Button Text="{Binding Preview.Count, StringFormat='Import {0} Employee(s)'}"
+                    Command="{Binding ImportCommand}"
+                    BackgroundColor="#16A34A" TextColor="White"
+                    FontFamily="PoppinsBold" FontSize="16"
+                    CornerRadius="12" HeightRequest="52" />
+        </VerticalStackLayout>
+
+        <!-- Busy overlay -->
+        <ActivityIndicator Grid.RowSpan="2"
+                           IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}"
+                           Color="{StaticResource Primary}"
+                           VerticalOptions="Center" HorizontalOptions="Center" />
+    </Grid>
+</ContentPage>

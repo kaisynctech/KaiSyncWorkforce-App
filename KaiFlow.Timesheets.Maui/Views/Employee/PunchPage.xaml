@@ -1,0 +1,196 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Employee.PunchPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Employees"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:PunchViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="Time Clock">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="16" Spacing="16">
+
+            <!-- Missed sign-out recovery banner -->
+            <Frame BackgroundColor="#FEF3C7" BorderColor="#F59E0B" CornerRadius="12"
+                   IsVisible="{Binding HasMissedSignOut}" Padding="14,10">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                    <VerticalStackLayout Grid.Column="0" Spacing="2">
+                        <Label Text="Open shift detected" FontFamily="PoppinsSemiBold" FontSize="13"
+                               TextColor="#92400E" />
+                        <Label Text="{Binding LastPunch.DateTime, StringFormat='Signed in {0:dd MMM} at {0:HH:mm} — did you forget to sign out?'}"
+                               FontSize="12" TextColor="#78350F" />
+                    </VerticalStackLayout>
+                    <Button Grid.Column="1" Text="Recover"
+                            Command="{Binding RecoverMissedSignOutCommand}"
+                            BackgroundColor="#F59E0B" TextColor="White"
+                            CornerRadius="8" FontSize="12" Padding="10,6" />
+                </Grid>
+            </Frame>
+
+            <!-- Leave warning -->
+            <Frame BackgroundColor="#FEE2E2" BorderColor="#EF4444" CornerRadius="12"
+                   IsVisible="{Binding ShowLeaveWarning}" Padding="14,10">
+                <VerticalStackLayout Spacing="2">
+                    <Label Text="On approved leave today" FontFamily="PoppinsSemiBold" FontSize="13"
+                           TextColor="#991B1B" />
+                    <Label Text="You cannot clock in while on approved leave."
+                           FontSize="12" TextColor="#7F1D1D" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Absent today banner -->
+            <Frame BackgroundColor="#FEF3C7" BorderColor="#F59E0B" CornerRadius="12"
+                   IsVisible="{Binding IsAbsentToday}" Padding="14,10">
+                <VerticalStackLayout Spacing="2">
+                    <Label Text="Reported absent today" FontFamily="PoppinsSemiBold" FontSize="13"
+                           TextColor="#92400E" />
+                    <Label Text="Your absence has been recorded for today."
+                           FontSize="12" TextColor="#78350F" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Geofence warning -->
+            <Frame BackgroundColor="#FEF3C7" BorderColor="#F59E0B" CornerRadius="12"
+                   IsVisible="{Binding IsOutsideRadius}" Padding="14,10">
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                    <Label Grid.Column="0" Text="⚠️" FontSize="18" VerticalOptions="Center" />
+                    <VerticalStackLayout Grid.Column="1" Spacing="2">
+                        <Label Text="Outside work area" FontFamily="PoppinsSemiBold" FontSize="13"
+                               TextColor="#92400E" />
+                        <Label Text="Your location does not match any registered work site."
+                               FontSize="12" TextColor="#78350F" />
+                    </VerticalStackLayout>
+                </Grid>
+            </Frame>
+
+            <!-- Status card -->
+            <Frame Style="{StaticResource CardFrame}"
+                   BackgroundColor="{Binding IsClockedIn, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#DCFCE7|#FEE2E2'}">
+                <VerticalStackLayout Spacing="8" HorizontalOptions="Center">
+                    <Label Text="{Binding IsClockedIn, Converter={StaticResource BoolToStringConverter}, ConverterParameter='Clocked In|Clocked Out'}"
+                           Style="{StaticResource HeadlineLarge}"
+                           TextColor="{Binding IsClockedIn, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#166534|#991B1B'}"
+                           HorizontalOptions="Center" />
+                    <Label Text="{Binding CurrentAddress}" Style="{StaticResource BodySmall}"
+                           TextColor="{StaticResource TextSecondary}" HorizontalOptions="Center"
+                           HorizontalTextAlignment="Center" MaxLines="2" />
+                    <Label Text="{Binding LocationStatus}" Style="{StaticResource Caption}"
+                           TextColor="{StaticResource TextSecondary}" HorizontalOptions="Center" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Job selector (attendance only — not the same as "I'm on this job" on the job card) -->
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="Link to Job (optional)" Style="{StaticResource LabelField}" />
+                    <Label Text="For your time record only. To report you are physically on a job site, open that job and use On Site there."
+                           Style="{StaticResource Caption}"
+                           TextColor="{StaticResource TextSecondary}" />
+                    <Picker ItemsSource="{Binding AvailableJobs}"
+                            SelectedItem="{Binding SelectedJob}"
+                            ItemDisplayBinding="{Binding Title}"
+                            Title="Select job..."
+                            TextColor="{StaticResource TextPrimary}"
+                            BackgroundColor="Transparent" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Notes -->
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="Notes" Style="{StaticResource LabelField}" />
+                    <Editor Text="{Binding Notes}" Placeholder="Optional note..."
+                            PlaceholderColor="{StaticResource TextSecondary}"
+                            TextColor="{StaticResource TextPrimary}"
+                            BackgroundColor="Transparent"
+                            MinimumHeightRequest="80"
+                            AutoSize="TextChanges" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Punch button -->
+            <Button Text="{Binding ClockButtonLabel}"
+                    Command="{Binding PunchCommand}"
+                    IsEnabled="{Binding IsNotBusy}"
+                    Style="{StaticResource PrimaryButton}"
+                    HeightRequest="56" />
+
+            <!-- Report absent (only when not clocked in, not on leave, not already reported) -->
+            <Button Text="Report Absent Today"
+                    Command="{Binding ReportAbsentCommand}"
+                    IsVisible="{Binding CanReportAbsent}"
+                    IsEnabled="{Binding IsNotBusy}"
+                    BackgroundColor="{StaticResource SurfaceElevated}"
+                    TextColor="{StaticResource TextSecondary}"
+                    BorderColor="{StaticResource Divider}" BorderWidth="1"
+                    CornerRadius="12"
+                    FontFamily="PoppinsMedium" FontSize="13"
+                    HeightRequest="44" />
+
+            <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}"
+                               Color="{StaticResource Primary}" HorizontalOptions="Center" />
+
+            <!-- Punch history with date filter -->
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="10">
+                    <Label Text="PUNCH HISTORY" Style="{StaticResource LabelSection}" />
+
+                    <!-- Date filter -->
+                    <Grid ColumnDefinitions="*,Auto,*,Auto" ColumnSpacing="8">
+                        <DatePicker Grid.Column="0" Date="{Binding FilterFrom}"
+                                    TextColor="{StaticResource TextPrimary}"
+                                    BackgroundColor="Transparent" Format="dd MMM yyyy" />
+                        <Label Grid.Column="1" Text="–" TextColor="{StaticResource TextSecondary}" VerticalOptions="Center" />
+                        <DatePicker Grid.Column="2" Date="{Binding FilterTo}"
+                                    TextColor="{StaticResource TextPrimary}"
+                                    BackgroundColor="Transparent" Format="dd MMM yyyy" />
+                        <Button Grid.Column="3" Text="Filter"
+                                Command="{Binding ApplyDateFilterCommand}"
+                                BackgroundColor="{StaticResource SurfaceElevated}"
+                                TextColor="{StaticResource TextSecondary}"
+                                BorderColor="{StaticResource Divider}"
+                                BorderWidth="1" CornerRadius="8"
+                                FontFamily="PoppinsMedium" FontSize="12"
+                                Padding="10,0" HeightRequest="40" />
+                    </Grid>
+
+                    <Label Text="No punches in this period." Style="{StaticResource EmptyState}"
+                           IsVisible="{Binding PunchHistory.Count, Converter={StaticResource IsZeroConverter}}" />
+                    <VerticalStackLayout Spacing="0" BindableLayout.ItemsSource="{Binding PunchHistory}">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate x:DataType="models:TimePunch">
+                                <Grid ColumnDefinitions="6,*,Auto" Padding="0,8" ColumnSpacing="12">
+                                    <BoxView Grid.Column="0"
+                                             Color="{Binding IsClockIn, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#22C55E|#EF4444'}"
+                                             CornerRadius="3" WidthRequest="6" VerticalOptions="Fill" />
+                                    <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
+                                        <Label Text="{Binding TypeRaw, StringFormat='Clock {0}'}"
+                                               FontFamily="PoppinsMedium" FontSize="13"
+                                               TextColor="{StaticResource TextPrimary}" />
+                                        <Label Text="{Binding Address}" Style="{StaticResource Caption}"
+                                               TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation"
+                                               IsVisible="{Binding Address, Converter={StaticResource IsNotNullConverter}}" />
+                                        <Label Text="{Binding Notes}" Style="{StaticResource Caption}"
+                                               TextColor="{StaticResource TextSecondary}" LineBreakMode="TailTruncation"
+                                               IsVisible="{Binding Notes, Converter={StaticResource IsNotNullConverter}}" />
+                                    </VerticalStackLayout>
+                                    <VerticalStackLayout Grid.Column="2" HorizontalOptions="End" VerticalOptions="Center">
+                                        <Label Text="{Binding DateTime, StringFormat='{0:HH:mm}'}"
+                                               FontFamily="PoppinsSemiBold" FontSize="13"
+                                               TextColor="{StaticResource TextPrimary}" HorizontalOptions="End" />
+                                        <Label Text="{Binding DateTime, StringFormat='{0:dd MMM}'}"
+                                               Style="{StaticResource Caption}"
+                                               TextColor="{StaticResource TextSecondary}" HorizontalOptions="End" />
+                                    </VerticalStackLayout>
+                                </Grid>
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                    </VerticalStackLayout>
+                </VerticalStackLayout>
+            </Frame>
+
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

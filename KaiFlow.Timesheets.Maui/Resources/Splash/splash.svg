@@ -1,0 +1,6 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <rect width="128" height="128" fill="#0D1117"/>
+  <text x="64" y="56" font-size="28" font-family="sans-serif" font-weight="bold" fill="#1D4ED8" text-anchor="middle">KaiFlow</text>
+  <text x="64" y="80" font-size="13" font-family="sans-serif" fill="#9CA3AF" text-anchor="middle">Timesheets</text>
+</svg>

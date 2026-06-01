@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Hr.HrPropertiesPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:HrPropertiesViewModel"
+    x:Name="Self"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="{Binding Title}">
+
+    <Grid RowDefinitions="Auto,Auto,*">
+
+        <!-- Header -->
+        <Grid Grid.Row="0" Padding="16,12" ColumnDefinitions="*,Auto"
+              BackgroundColor="{StaticResource SurfaceDark}">
+            <Label Grid.Column="0" Text="Properties &amp; Sites"
+                   Style="{StaticResource HeadlineMedium}" VerticalOptions="Center" />
+            <Button Grid.Column="1" Text="+" WidthRequest="40" HeightRequest="40"
+                    CornerRadius="20"
+                    Command="{Binding CreateSiteCommand}"
+                    BackgroundColor="{StaticResource Primary}"
+                    TextColor="White" FontSize="20" Padding="0" />
+        </Grid>
+
+        <!-- Expiring Compliance Banner -->
+        <Frame Grid.Row="1"
+               BackgroundColor="#FEE2E2"
+               BorderColor="{StaticResource Error}"
+               CornerRadius="0" Padding="12,8"
+               IsVisible="{Binding ExpiringCompliance.Count, Converter={StaticResource IsNotZeroConverter}}">
+            <HorizontalStackLayout Spacing="8">
+                <Label Text="⚠" TextColor="{StaticResource Error}" FontSize="16" VerticalOptions="Center" />
+                <Label TextColor="{StaticResource Error}" VerticalOptions="Center">
+                    <Label.FormattedText>
+                        <FormattedString>
+                            <Span Text="{Binding ExpiringCompliance.Count}" FontAttributes="Bold" />
+                            <Span Text=" compliance item(s) expiring soon or overdue" />
+                        </FormattedString>
+                    </Label.FormattedText>
+                </Label>
+            </HorizontalStackLayout>
+        </Frame>
+
+        <!-- Sites List -->
+        <RefreshView Grid.Row="2"
+                     IsRefreshing="{Binding IsBusy}"
+                     Command="{Binding RefreshCommand}">
+            <CollectionView ItemsSource="{Binding Sites}"
+                            Margin="16,8">
+                <CollectionView.EmptyView>
+                    <VerticalStackLayout VerticalOptions="Center" Spacing="12" Padding="32">
+                        <Label Text="🏢" FontSize="48" HorizontalOptions="Center" />
+                        <Label Text="No properties yet" Style="{StaticResource EmptyState}" />
+                        <Label Text="Add your first site to start tracking properties"
+                               Style="{StaticResource BodySmall}"
+                               TextColor="{StaticResource TextSecondary}"
+                               HorizontalOptions="Center" HorizontalTextAlignment="Center" />
+                    </VerticalStackLayout>
+                </CollectionView.EmptyView>
+                <CollectionView.ItemTemplate>
+                    <DataTemplate x:DataType="models:Site">
+                        <Frame Style="{StaticResource CardFrame}" Margin="0,4">
+                            <Frame.GestureRecognizers>
+                                <TapGestureRecognizer
+                                    Command="{Binding BindingContext.ViewSiteCommand, Source={x:Reference Self}}"
+                                    CommandParameter="{Binding .}" />
+                            </Frame.GestureRecognizers>
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+
+                                <!-- Icon -->
+                                <Frame Grid.Column="0"
+                                       BackgroundColor="{StaticResource Primary}"
+                                       CornerRadius="8" Padding="10"
+                                       WidthRequest="44" HeightRequest="44">
+                                    <Label Text="🏢" FontSize="18"
+                                           VerticalOptions="Center" HorizontalOptions="Center" />
+                                </Frame>
+
+                                <!-- Details -->
+                                <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
+                                    <Label Text="{Binding Name}"
+                                           Style="{StaticResource BodyLarge}" />
+                                    <Label Text="{Binding Address}"
+                                           Style="{StaticResource BodySmall}"
+                                           TextColor="{StaticResource TextSecondary}"
+                                           IsVisible="{Binding Address, Converter={StaticResource IsNotNullConverter}}" />
+                                    <Label TextColor="{StaticResource TextSecondary}" FontSize="12">
+                                        <Label.FormattedText>
+                                            <FormattedString>
+                                                <Span Text="Radius: " />
+                                                <Span Text="{Binding RadiusMeters, StringFormat='{0:0}m'}" FontAttributes="Bold" />
+                                            </FormattedString>
+                                        </Label.FormattedText>
+                                    </Label>
+                                </VerticalStackLayout>
+
+                                <!-- GPS Badge -->
+                                <Frame Grid.Column="2"
+                                       BackgroundColor="{Binding HasCoordinates, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#DCFCE7|#F3F4F6'}"
+                                       CornerRadius="12" Padding="8,4"
+                                       VerticalOptions="Center">
+                                    <Label Text="{Binding HasCoordinates, Converter={StaticResource BoolToStringConverter}, ConverterParameter='GPS|No GPS'}"
+                                           TextColor="{Binding HasCoordinates, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#166534|#6B7280'}"
+                                           FontSize="11" FontAttributes="Bold" />
+                                </Frame>
+                            </Grid>
+                        </Frame>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+        </RefreshView>
+
+        <!-- Busy Overlay -->
+        <ActivityIndicator Grid.RowSpan="3"
+                           IsRunning="{Binding IsBusy}"
+                           IsVisible="{Binding IsBusy}"
+                           Color="{StaticResource Primary}"
+                           VerticalOptions="Center" HorizontalOptions="Center" />
+    </Grid>
+</ContentPage>

@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView
+    x:Class="KaiFlow.Timesheets.Views.Shared.HrProjectsTableView"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
+    xmlns:helpers="clr-namespace:KaiFlow.Timesheets.Helpers"
+    x:Name="Self">
+
+    <VerticalStackLayout Spacing="0">
+
+        <Label x:Name="EmptyStateLabel"
+               Text="No projects match this view. Try All projects or adjust filters."
+               Style="{StaticResource EmptyState}"
+               Margin="0,24,0,0"
+               IsVisible="False" />
+
+        <VerticalStackLayout x:Name="TableContent" Spacing="0" IsVisible="False">
+            <Grid ColumnDefinitions="72,*,88,108,128,92,84,56,80,72"
+                  ColumnSpacing="{x:Static helpers:HrProjectsTableLayout.ColumnSpacing}"
+                  BackgroundColor="#1E293B" Padding="0,10">
+                <Label Grid.Column="0" Text="Code" Style="{StaticResource AttendanceTableHeaderLabel}" Margin="8,0,0,0" />
+                <Label Grid.Column="1" Text="Project" Style="{StaticResource AttendanceTableHeaderLabel}" />
+                <Label Grid.Column="2" Text="Client" Style="{StaticResource AttendanceTableHeaderLabel}" />
+                <Label Grid.Column="3" Text="Manager" Style="{StaticResource AttendanceTableHeaderLabel}" />
+                <Label Grid.Column="4" Text="Status" Style="{StaticResource AttendanceTableHeaderLabel}" />
+                <Label Grid.Column="5" Text="Offer" Style="{StaticResource AttendanceTableHeaderLabel}" HorizontalTextAlignment="End" />
+                <Label Grid.Column="6" Text="Paid" Style="{StaticResource AttendanceTableHeaderLabel}" HorizontalTextAlignment="End" />
+                <Label Grid.Column="7" Text="Progress" Style="{StaticResource AttendanceTableHeaderLabel}" HorizontalTextAlignment="End" />
+                <Label Grid.Column="8" Text="Jobs" Style="{StaticResource AttendanceTableHeaderLabel}" />
+                <Label Grid.Column="9" Text="Pay" Style="{StaticResource AttendanceTableHeaderLabel}" HorizontalTextAlignment="Center" Margin="0,0,8,0" />
+            </Grid>
+            <BoxView Style="{StaticResource AttendanceTableDivider}" />
+
+            <VerticalStackLayout Spacing="0"
+                                 BindableLayout.ItemsSource="{Binding Projects, Source={x:Reference Self}}">
+                <BindableLayout.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ProjectRowItem">
+                        <VerticalStackLayout Spacing="0">
+                            <Grid ColumnDefinitions="72,*,88,108,128,92,84,56,80,72"
+                                  ColumnSpacing="{x:Static helpers:HrProjectsTableLayout.ColumnSpacing}"
+                                  Padding="0,9" BackgroundColor="{StaticResource SurfaceCard}">
+                                <Label Grid.Column="0" Text="{Binding ProjectCodeDisplay}"
+                                       Style="{StaticResource AttendanceTableCellLabel}" Margin="8,0,0,0">
+                                    <Label.GestureRecognizers>
+                                        <TapGestureRecognizer Command="{Binding ViewProjectCommand, Source={x:Reference Self}}"
+                                                            CommandParameter="{Binding .}" />
+                                    </Label.GestureRecognizers>
+                                </Label>
+                                <Label Grid.Column="1" Text="{Binding Title}"
+                                       Style="{StaticResource AttendanceTableCellPrimary}">
+                                    <Label.GestureRecognizers>
+                                        <TapGestureRecognizer Command="{Binding ViewProjectCommand, Source={x:Reference Self}}"
+                                                            CommandParameter="{Binding .}" />
+                                    </Label.GestureRecognizers>
+                                </Label>
+                                <Label Grid.Column="2" Text="{Binding ClientName}"
+                                       Style="{StaticResource AttendanceTableCellSecondary}" />
+                                <Label Grid.Column="3" Text="{Binding ManagerName}"
+                                       Style="{StaticResource AttendanceTableCellSecondary}" />
+                                <Picker Grid.Column="4" ItemsSource="{Binding StatusOptions}"
+                                        SelectedItem="{Binding SelectedStatusLabel, Mode=TwoWay}"
+                                        FontSize="11" HeightRequest="36" HorizontalOptions="Fill"
+                                        TextColor="{StaticResource TextPrimary}" />
+                                <Label Grid.Column="5" Text="{Binding OfferDisplay}"
+                                       Style="{StaticResource AttendanceTableCellSecondary}"
+                                       HorizontalTextAlignment="End" VerticalOptions="Center" />
+                                <Label Grid.Column="6" Text="{Binding PaidDisplay}"
+                                       Style="{StaticResource AttendanceTableCellSecondary}"
+                                       HorizontalTextAlignment="End" VerticalOptions="Center" />
+                                <Label Grid.Column="7" Text="{Binding ProgressDisplay}"
+                                       Style="{StaticResource AttendanceTableCellLabel}"
+                                       HorizontalTextAlignment="End" VerticalOptions="Center" />
+                                <Label Grid.Column="8" Text="{Binding JobCountLabel}"
+                                       Style="{StaticResource AttendanceTableCellSecondary}" VerticalOptions="Center" />
+                                <Button Grid.Column="9" Text="+ Pay" FontSize="10" HeightRequest="32" Padding="8,0" Margin="0,0,8,0"
+                                        HorizontalOptions="Center"
+                                        Command="{Binding AddClientPaymentCommand, Source={x:Reference Self}}"
+                                        CommandParameter="{Binding .}"
+                                        BackgroundColor="{StaticResource Primary}" TextColor="White" CornerRadius="8" />
+                            </Grid>
+                            <BoxView Style="{StaticResource AttendanceTableDivider}" />
+                        </VerticalStackLayout>
+                    </DataTemplate>
+                </BindableLayout.ItemTemplate>
+            </VerticalStackLayout>
+        </VerticalStackLayout>
+    </VerticalStackLayout>
+</ContentView>

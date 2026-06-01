@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Border
+    x:Class="KaiFlow.Timesheets.Views.Hr.Controls.ProjectKanbanCardView"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:Name="Root"
+    x:DataType="models:ClientDeal"
+    BackgroundColor="{StaticResource SurfaceDark}"
+    StrokeThickness="1"
+    Stroke="{StaticResource Divider}"
+    Padding="0"
+    Margin="0">
+
+    <Border.StrokeShape>
+        <RoundRectangle CornerRadius="8" />
+    </Border.StrokeShape>
+
+    <Border.GestureRecognizers>
+        <TapGestureRecognizer Tapped="OnCardTapped" NumberOfTapsRequired="1" />
+    </Border.GestureRecognizers>
+
+    <Grid ColumnDefinitions="22,*" RowDefinitions="Auto,Auto,Auto,Auto">
+        <!-- Drag handle (drag + tap to move) -->
+        <Border Grid.RowSpan="4" Grid.Column="0" BackgroundColor="{StaticResource SurfaceElevated}" Padding="0">
+            <Label Text="⋮⋮" FontSize="12" TextColor="{StaticResource TextSecondary}" HorizontalOptions="Center" VerticalOptions="Center"
+                   ToolTipProperties.Text="Drag to another column, or tap to pick a stage" />
+            <Border.GestureRecognizers>
+                <DragGestureRecognizer CanDrag="True" DragStarting="OnDragStarting" />
+                <TapGestureRecognizer Tapped="OnMoveHandleTapped" NumberOfTapsRequired="1" />
+            </Border.GestureRecognizers>
+        </Border>
+
+        <BoxView Grid.Column="1" Grid.Row="0" HeightRequest="3" HorizontalOptions="Fill"
+                 Color="{Binding Source={x:Reference Root}, Path=AccentColor}" />
+
+        <Grid Grid.Column="1" Grid.Row="1" ColumnDefinitions="*,Auto" Padding="8,6,8,2">
+            <Label Text="{Binding ProjectCodeDisplay}" FontSize="9" FontFamily="PoppinsSemiBold" TextColor="{StaticResource Primary}" />
+            <Label Grid.Column="1" Text="{Binding ProgressDisplay}" FontSize="9" TextColor="{StaticResource TextSecondary}" />
+        </Grid>
+
+        <Label Grid.Column="1" Grid.Row="2" Text="{Binding Title}" FontFamily="PoppinsSemiBold" FontSize="12"
+               TextColor="{StaticResource TextPrimary}" LineBreakMode="TailTruncation" MaxLines="2" Margin="8,0,8,4" />
+
+        <VerticalStackLayout Grid.Column="1" Grid.Row="3" Spacing="4" Margin="8,0,8,8">
+            <Grid ColumnDefinitions="*,*">
+                <Label Text="{Binding OfferDisplay}" FontSize="10" TextColor="{StaticResource TextSecondary}" />
+                <Label Grid.Column="1" Text="{Binding BalanceDisplay}" FontSize="10" TextColor="{StaticResource Primary}" HorizontalTextAlignment="End" />
+            </Grid>
+            <ProgressBar Progress="{Binding Source={x:Reference Root}, Path=ProgressFraction}"
+                         ProgressColor="{Binding Source={x:Reference Root}, Path=AccentColor}"
+                         HeightRequest="3" BackgroundColor="{StaticResource SurfaceElevated}" />
+            <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="4">
+                <Label Grid.Column="0" Text="{Binding Source={x:Reference Root}, Path=JobBadgeText}"
+                       FontSize="9" TextColor="{Binding Source={x:Reference Root}, Path=JobBadgeForeground}" VerticalOptions="Center" />
+                <Button Grid.Column="1" Text="📎" FontSize="10" WidthRequest="28" HeightRequest="26" Padding="0" CornerRadius="6"
+                        Clicked="OnUploadDocClicked"
+                        BackgroundColor="{StaticResource SurfaceElevated}" TextColor="{StaticResource TextPrimary}" />
+                <Button Grid.Column="2" Text="+J" FontSize="9" WidthRequest="28" HeightRequest="26" Padding="0" CornerRadius="6"
+                        IsVisible="{Binding Source={x:Reference Root}, Path=ShowCreateJob}"
+                        Clicked="OnCreateJobClicked"
+                        BackgroundColor="{StaticResource Primary}" TextColor="White" />
+                <Button Grid.Column="3" Text="→" FontSize="10" WidthRequest="28" HeightRequest="26" Padding="0" CornerRadius="6"
+                        Clicked="OnAdvanceClicked"
+                        BackgroundColor="{StaticResource SurfaceElevated}" TextColor="{StaticResource TextSecondary}" />
+            </Grid>
+        </VerticalStackLayout>
+    </Grid>
+</Border>

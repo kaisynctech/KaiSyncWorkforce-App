@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Auth.HrRegistrationSuccessPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Auth"
+    x:DataType="vm:HrRegistrationSuccessViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Shell.NavBarIsVisible="False">
+
+    <ScrollView>
+        <VerticalStackLayout VerticalOptions="Center" Padding="32" Spacing="24" MinimumHeightRequest="600">
+
+            <!-- Success icon -->
+            <Frame CornerRadius="50" WidthRequest="100" HeightRequest="100"
+                   BackgroundColor="{StaticResource Primary}" HorizontalOptions="Center"
+                   Padding="0" HasShadow="False">
+                <Label Text="✓" FontSize="48" TextColor="White"
+                       HorizontalOptions="Center" VerticalOptions="Center"
+                       FontFamily="PoppinsBold" />
+            </Frame>
+
+            <Label Text="Company Created!" Style="{StaticResource HeadlineLarge}"
+                   HorizontalTextAlignment="Center" />
+
+            <Label Text="{Binding CompanyName}" Style="{StaticResource HeadlineSmall}"
+                   TextColor="{StaticResource Primary}" HorizontalTextAlignment="Center" />
+
+            <Label Text="Share this code with your employees so they can log in."
+                   Style="{StaticResource BodyMedium}" TextColor="{StaticResource TextSecondary}"
+                   HorizontalTextAlignment="Center" />
+
+            <!-- Company code card -->
+            <Frame Style="{StaticResource CardFrame}" HorizontalOptions="Center" Padding="32,20">
+                <VerticalStackLayout Spacing="6" HorizontalOptions="Center">
+                    <Label Text="COMPANY CODE" Style="{StaticResource Caption}"
+                           TextColor="{StaticResource TextSecondary}" HorizontalTextAlignment="Center"
+                           CharacterSpacing="2" />
+                    <Label Text="{Binding CompanyCode}" Style="{StaticResource HeadlineMedium}"
+                           TextColor="{StaticResource Primary}" HorizontalTextAlignment="Center"
+                           FontFamily="PoppinsBold" CharacterSpacing="4" />
+                    <Button Text="Copy Code" Command="{Binding CopyCodeCommand}"
+                            BackgroundColor="Transparent" TextColor="{StaticResource Primary}"
+                            FontFamily="PoppinsRegular" FontSize="13" Padding="0" HeightRequest="32" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <Label Text="You can find this code again in HR Settings → Company Info."
+                   Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}"
+                   HorizontalTextAlignment="Center" />
+
+            <Button Text="Continue to Sign In" Command="{Binding ContinueCommand}"
+                    Style="{StaticResource PrimaryButton}" Margin="0,16,0,0" />
+
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView
+    x:Class="KaiFlow.Timesheets.Controls.ChartCard"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
+
+    <Border BackgroundColor="{StaticResource SurfaceCard}"
+            Stroke="{StaticResource Divider}"
+            StrokeThickness="1"
+            Padding="16"
+            StrokeShape="RoundRectangle 16">
+        <Grid RowDefinitions="Auto,*" RowSpacing="12">
+            <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                <VerticalStackLayout Grid.Column="0" Spacing="2" VerticalOptions="Center">
+                    <Label x:Name="TitleLabel"
+                           FontFamily="PoppinsSemiBold"
+                           FontSize="15"
+                           TextColor="{StaticResource TextPrimary}" />
+                    <Label x:Name="SubtitleLabel"
+                           FontFamily="PoppinsRegular"
+                           FontSize="12"
+                           IsVisible="False"
+                           TextColor="{StaticResource TextSecondary}" />
+                </VerticalStackLayout>
+                <ContentView x:Name="TrailingHost" Grid.Column="1" VerticalOptions="Center" />
+            </Grid>
+
+            <ContentView x:Name="ChartHost" Grid.Row="1" MinimumHeightRequest="180" />
+        </Grid>
+    </Border>
+
+</ContentView>

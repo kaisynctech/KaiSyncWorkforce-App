@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+    ═══════════════════════════════════════════════════════════════════════════
+    KAIFLOW DESIGN SYSTEM — TOKENS
+    ───────────────────────────────────────────────────────────────────────────
+    Centralised, additive design tokens that extend Colors.xaml / Styles.xaml.
+    Nothing here redefines an existing key, so every current screen keeps working.
+    Design language: Xero / Stripe / Linear — spacious, clean, data-rich, premium.
+
+    Scales:
+      • Spacing  — Space{Xs..Xxl}  (4 → 48 on an 8pt-ish grid)
+      • Radius   — Radius{Sm..Pill}
+      • Padding  — Pad{Card,Page,Tight,Chip} (Thickness)
+      • Chip tints + new component styles (filter chip, search entry, skeleton, chart card)
+    ═══════════════════════════════════════════════════════════════════════════
+-->
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
+
+    <!-- ═══════════════ Spacing scale (8pt grid) ═══════════════ -->
+    <x:Double x:Key="SpaceXs">4</x:Double>
+    <x:Double x:Key="SpaceSm">8</x:Double>
+    <x:Double x:Key="SpaceMd">12</x:Double>
+    <x:Double x:Key="SpaceLg">16</x:Double>
+    <x:Double x:Key="SpaceXl">24</x:Double>
+    <x:Double x:Key="SpaceXxl">32</x:Double>
+    <x:Double x:Key="Space3Xl">48</x:Double>
+
+    <!-- ═══════════════ Radius scale ═══════════════ -->
+    <x:Double x:Key="RadiusSm">8</x:Double>
+    <x:Double x:Key="RadiusMd">12</x:Double>
+    <x:Double x:Key="RadiusLg">16</x:Double>
+    <x:Double x:Key="RadiusXl">20</x:Double>
+    <x:Double x:Key="RadiusPill">999</x:Double>
+
+    <!-- ═══════════════ Standard paddings ═══════════════ -->
+    <Thickness x:Key="PadPage">20</Thickness>
+    <Thickness x:Key="PadCard">16</Thickness>
+    <Thickness x:Key="PadTight">12,10</Thickness>
+    <Thickness x:Key="PadChip">10,4</Thickness>
+
+    <!-- ═══════════════ Icon sizing ═══════════════ -->
+    <x:Double x:Key="IconSm">16</x:Double>
+    <x:Double x:Key="IconMd">20</x:Double>
+    <x:Double x:Key="IconLg">28</x:Double>
+
+    <!-- ═══════════════ Status chip tints (bg already in Colors.xaml; add fg) ═══════════════ -->
+    <Color x:Key="ChipSuccessText">#15803D</Color>
+    <Color x:Key="ChipWarningText">#B45309</Color>
+    <Color x:Key="ChipErrorText">#B91C1C</Color>
+    <Color x:Key="ChipInfoText">#1D4ED8</Color>
+    <Color x:Key="ChipNeutralBg">#EEF2F7</Color>
+    <Color x:Key="ChipNeutralText">#475569</Color>
+    <Color x:Key="ChipInfoBg">#DBEAFE</Color>
+
+    <!-- Chart palette (consistent series colours across all dashboards) -->
+    <Color x:Key="Chart1">#3B82F6</Color>
+    <Color x:Key="Chart2">#22C55E</Color>
+    <Color x:Key="Chart3">#F59E0B</Color>
+    <Color x:Key="Chart4">#8B5CF6</Color>
+    <Color x:Key="Chart5">#EC4899</Color>
+    <Color x:Key="Chart6">#14B8A6</Color>
+    <Color x:Key="ChartAxis">#94A3B8</Color>
+    <Color x:Key="ChartTrack">#EEF2F7</Color>
+
+    <!-- ═══════════════ Page scaffolding ═══════════════ -->
+    <!-- Section title above a group of cards/table -->
+    <Style x:Key="SectionTitle" TargetType="Label">
+        <Setter Property="FontFamily" Value="PoppinsSemiBold" />
+        <Setter Property="FontSize" Value="16" />
+        <Setter Property="TextColor" Value="{StaticResource TextPrimary}" />
+    </Style>
+
+    <!-- Elevated enterprise card (Border, supports soft shadow + rounded corners) -->
+    <Style x:Key="ElevatedCard" TargetType="Border">
+        <Setter Property="BackgroundColor" Value="{StaticResource SurfaceCard}" />
+        <Setter Property="Stroke" Value="{StaticResource Divider}" />
+        <Setter Property="StrokeThickness" Value="1" />
+        <Setter Property="Padding" Value="16" />
+        <Setter Property="StrokeShape" Value="RoundRectangle 16" />
+    </Style>
+
+    <Style x:Key="ChartCardBorder" TargetType="Border">
+        <Setter Property="BackgroundColor" Value="{StaticResource SurfaceCard}" />
+        <Setter Property="Stroke" Value="{StaticResource Divider}" />
+        <Setter Property="StrokeThickness" Value="1" />
+        <Setter Property="Padding" Value="16" />
+        <Setter Property="StrokeShape" Value="RoundRectangle 16" />
+    </Style>
+
+    <!-- ═══════════════ Filter / toolbar controls ═══════════════ -->
+    <Style x:Key="FilterChip" TargetType="Border">
+        <Setter Property="BackgroundColor" Value="{StaticResource SurfaceElevated}" />
+        <Setter Property="Stroke" Value="{StaticResource Divider}" />
+        <Setter Property="StrokeThickness" Value="1" />
+        <Setter Property="Padding" Value="12,7" />
+        <Setter Property="StrokeShape" Value="RoundRectangle 999" />
+    </Style>
+
+    <Style x:Key="FilterChipActive" TargetType="Border" BasedOn="{StaticResource FilterChip}">
+        <Setter Property="BackgroundColor" Value="{StaticResource ChipInfoBg}" />
+        <Setter Property="Stroke" Value="{StaticResource Primary}" />
+    </Style>
+
+    <Style x:Key="SearchEntry" TargetType="Entry">
+        <Setter Property="BackgroundColor" Value="{StaticResource SurfaceElevated}" />
+        <Setter Property="TextColor" Value="{StaticResource TextPrimary}" />
+        <Setter Property="PlaceholderColor" Value="{StaticResource TextDisabled}" />
+        <Setter Property="FontFamily" Value="PoppinsRegular" />
+        <Setter Property="FontSize" Value="14" />
+        <Setter Property="HeightRequest" Value="44" />
+    </Style>
+
+    <!-- ═══════════════ Loading skeleton block ═══════════════ -->
+    <Style x:Key="SkeletonBlock" TargetType="BoxView">
+        <Setter Property="Color" Value="{StaticResource SurfaceElevated}" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="HeightRequest" Value="16" />
+    </Style>
+
+    <!-- ═══════════════ Caption muted (delta / sublabels) ═══════════════ -->
+    <Style x:Key="CaptionMuted" TargetType="Label">
+        <Setter Property="FontFamily" Value="PoppinsRegular" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="TextColor" Value="{StaticResource TextDisabled}" />
+    </Style>
+
+</ResourceDictionary>

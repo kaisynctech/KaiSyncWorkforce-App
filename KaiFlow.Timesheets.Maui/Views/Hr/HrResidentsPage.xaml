@@ -1,0 +1,202 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Hr.HrResidentsPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:HrResidentsViewModel"
+    x:Name="residentsPage"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="{Binding Title}">
+
+    <Grid RowDefinitions="Auto,Auto,Auto,*">
+
+        <!-- Header -->
+        <Grid Grid.Row="0" Padding="16,12" ColumnDefinitions="*,Auto"
+              BackgroundColor="{StaticResource SurfaceDark}">
+            <Label Grid.Column="0" Text="Residents &amp; Units"
+                   Style="{StaticResource HeadlineMedium}" VerticalOptions="Center" />
+            <HorizontalStackLayout Grid.Column="1" Spacing="8">
+                <Button Text="+ Resident" Padding="12,8" CornerRadius="16" FontSize="12"
+                        BackgroundColor="{StaticResource Primary}" TextColor="White"
+                        Command="{Binding CreateResidentCommand}"
+                        IsVisible="{Binding ShowResidents}" />
+                <Button Text="+ Unit" Padding="12,8" CornerRadius="16" FontSize="12"
+                        BackgroundColor="{StaticResource Primary}" TextColor="White"
+                        Command="{Binding CreateUnitCommand}"
+                        IsVisible="{Binding ShowUnits}" />
+            </HorizontalStackLayout>
+        </Grid>
+
+        <!-- Site Picker -->
+        <Frame Grid.Row="1"
+               BackgroundColor="{StaticResource SurfaceDark}"
+               BorderColor="{StaticResource Divider}"
+               CornerRadius="0" Padding="12,8">
+            <Grid ColumnDefinitions="Auto,*">
+                <Label Grid.Column="0" Text="Site:" Style="{StaticResource LabelField}"
+                       VerticalOptions="Center" Margin="0,0,8,0" />
+                <Picker Grid.Column="1"
+                        ItemsSource="{Binding Sites}"
+                        SelectedItem="{Binding SelectedSite}"
+                        ItemDisplayBinding="{Binding Name}"
+                        Title="Select a site..."
+                        TextColor="{StaticResource TextPrimary}"
+                        TitleColor="{StaticResource TextSecondary}"
+                        BackgroundColor="Transparent" />
+            </Grid>
+        </Frame>
+
+        <!-- Tab toggle -->
+        <ScrollView Grid.Row="2" Orientation="Horizontal" Margin="8,8,8,0">
+            <HorizontalStackLayout Spacing="8">
+                <Button Text="Residents"
+                        Command="{Binding SetTabCommand}" CommandParameter="residents"
+                        CornerRadius="16" HeightRequest="32" FontSize="12"
+                        BackgroundColor="{Binding ActiveTab, Converter={StaticResource EqToStyleConverter}, ConverterParameter='residents|#3B82F6,#FFFFFF'}"
+                        TextColor="{Binding ActiveTab, Converter={StaticResource EqToStyleConverter}, ConverterParameter='residents|#FFFFFF,#6B7280'}" />
+                <Button Text="Units"
+                        Command="{Binding SetTabCommand}" CommandParameter="units"
+                        CornerRadius="16" HeightRequest="32" FontSize="12"
+                        BackgroundColor="{Binding ActiveTab, Converter={StaticResource EqToStyleConverter}, ConverterParameter='units|#3B82F6,#FFFFFF'}"
+                        TextColor="{Binding ActiveTab, Converter={StaticResource EqToStyleConverter}, ConverterParameter='units|#FFFFFF,#6B7280'}" />
+                <Button Text="Compliance"
+                        Command="{Binding SetTabCommand}" CommandParameter="compliance"
+                        CornerRadius="16" HeightRequest="32" FontSize="12"
+                        BackgroundColor="{Binding ActiveTab, Converter={StaticResource EqToStyleConverter}, ConverterParameter='compliance|#3B82F6,#FFFFFF'}"
+                        TextColor="{Binding ActiveTab, Converter={StaticResource EqToStyleConverter}, ConverterParameter='compliance|#FFFFFF,#6B7280'}" />
+            </HorizontalStackLayout>
+        </ScrollView>
+
+        <!-- Residents List -->
+        <CollectionView Grid.Row="3"
+                        ItemsSource="{Binding Residents}"
+                        Margin="16,8"
+                        IsVisible="{Binding ShowResidents}">
+            <CollectionView.EmptyView>
+                <VerticalStackLayout VerticalOptions="Center" Spacing="12" Padding="32">
+                    <Label Text="👥" FontSize="48" HorizontalOptions="Center" />
+                    <Label Text="No residents found." Style="{StaticResource EmptyState}" />
+                </VerticalStackLayout>
+            </CollectionView.EmptyView>
+            <CollectionView.ItemTemplate>
+                <DataTemplate x:DataType="models:Resident">
+                    <Frame Style="{StaticResource CardFrame}" Margin="0,4">
+                        <Frame.GestureRecognizers>
+                            <TapGestureRecognizer
+                                Command="{Binding BindingContext.EditResidentCommand, Source={x:Reference residentsPage}}"
+                                CommandParameter="{Binding .}" />
+                        </Frame.GestureRecognizers>
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                            <Frame Grid.Column="0"
+                                   BackgroundColor="{StaticResource Primary}"
+                                   CornerRadius="22" Padding="0"
+                                   WidthRequest="44" HeightRequest="44">
+                                <Label VerticalOptions="Center" HorizontalOptions="Center"
+                                       FontSize="16" FontAttributes="Bold" TextColor="White">
+                                    <Label.FormattedText>
+                                        <FormattedString>
+                                            <Span Text="{Binding Name, Converter={StaticResource InitialsConverter}}" />
+                                        </FormattedString>
+                                    </Label.FormattedText>
+                                </Label>
+                            </Frame>
+                            <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
+                                <Label Text="{Binding FullName}" Style="{StaticResource BodyLarge}" />
+                                <Label Text="{Binding Phone}" Style="{StaticResource BodySmall}"
+                                       TextColor="{StaticResource TextSecondary}"
+                                       IsVisible="{Binding Phone, Converter={StaticResource IsNotNullConverter}}" />
+                                <Label Text="{Binding MoveInDate, StringFormat='Moved in: {0:dd MMM yyyy}'}"
+                                       Style="{StaticResource BodySmall}"
+                                       TextColor="{StaticResource TextSecondary}"
+                                       IsVisible="{Binding MoveInDate, Converter={StaticResource IsNotNullConverter}}" />
+                            </VerticalStackLayout>
+                            <Frame Grid.Column="2"
+                                   BackgroundColor="{Binding IsCurrentResident, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#DCFCE7|#F3F4F6'}"
+                                   CornerRadius="12" Padding="8,4" VerticalOptions="Center">
+                                <Label Text="{Binding IsCurrentResident, Converter={StaticResource BoolToStringConverter}, ConverterParameter='Active|Moved Out'}"
+                                       TextColor="{Binding IsCurrentResident, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#166534|#6B7280'}"
+                                       FontSize="11" FontAttributes="Bold" />
+                            </Frame>
+                        </Grid>
+                    </Frame>
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+        </CollectionView>
+
+        <!-- Units List -->
+        <CollectionView Grid.Row="3"
+                        ItemsSource="{Binding Units}"
+                        Margin="16,8"
+                        IsVisible="{Binding ShowUnits}">
+            <CollectionView.EmptyView>
+                <Label Text="No units found." Style="{StaticResource EmptyState}" />
+            </CollectionView.EmptyView>
+            <CollectionView.ItemTemplate>
+                <DataTemplate x:DataType="models:Unit">
+                    <Frame Style="{StaticResource CardFrame}" Margin="0,4">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <VerticalStackLayout Spacing="2">
+                                <Label Text="{Binding DisplayName}" Style="{StaticResource BodyLarge}" />
+                                <Label Text="{Binding UnitType}" Style="{StaticResource Caption}"
+                                       TextColor="{StaticResource TextSecondary}"
+                                       IsVisible="{Binding UnitType, Converter={StaticResource IsNotNullConverter}}" />
+                            </VerticalStackLayout>
+                            <Frame Grid.Column="1"
+                                   BackgroundColor="{Binding IsOccupied, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#DCFCE7|#F3F4F6'}"
+                                   CornerRadius="12" Padding="8,4" VerticalOptions="Center">
+                                <Label Text="{Binding IsOccupied, Converter={StaticResource BoolToStringConverter}, ConverterParameter='Occupied|Vacant'}"
+                                       TextColor="{Binding IsOccupied, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#166534|#6B7280'}"
+                                       FontSize="11" FontAttributes="Bold" />
+                            </Frame>
+                        </Grid>
+                    </Frame>
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+        </CollectionView>
+
+        <!-- Compliance List -->
+        <CollectionView Grid.Row="3"
+                        ItemsSource="{Binding Compliance}"
+                        Margin="16,8"
+                        IsVisible="{Binding ShowCompliance}">
+            <CollectionView.EmptyView>
+                <Label Text="No compliance items." Style="{StaticResource EmptyState}" />
+            </CollectionView.EmptyView>
+            <CollectionView.ItemTemplate>
+                <DataTemplate x:DataType="models:ComplianceEntry">
+                    <Frame Style="{StaticResource CardFrame}" Margin="0,4">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <VerticalStackLayout Spacing="2">
+                                <Label Text="{Binding Title}" Style="{StaticResource BodyLarge}" />
+                                <Label Text="{Binding Category}" Style="{StaticResource Caption}"
+                                       TextColor="{StaticResource TextSecondary}" />
+                                <Label Text="{Binding ExpiryDate, StringFormat='Expires: {0:dd MMM yyyy}'}"
+                                       Style="{StaticResource Caption}"
+                                       TextColor="{StaticResource TextSecondary}"
+                                       IsVisible="{Binding ExpiryDate, Converter={StaticResource IsNotNullConverter}}" />
+                            </VerticalStackLayout>
+                            <Frame Grid.Column="1"
+                                   CornerRadius="10" Padding="8,3" HasShadow="False"
+                                   BorderColor="Transparent"
+                                   BackgroundColor="{StaticResource SurfaceDark}"
+                                   VerticalOptions="Center">
+                                <Label Text="{Binding Status}"
+                                       FontSize="11" FontAttributes="Bold"
+                                       TextColor="{StaticResource TextPrimary}" />
+                            </Frame>
+                        </Grid>
+                    </Frame>
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+        </CollectionView>
+
+        <!-- Busy Overlay -->
+        <ActivityIndicator Grid.RowSpan="4"
+                           IsRunning="{Binding IsBusy}"
+                           IsVisible="{Binding IsBusy}"
+                           Color="{StaticResource Primary}"
+                           VerticalOptions="Center" HorizontalOptions="Center" />
+    </Grid>
+</ContentPage>

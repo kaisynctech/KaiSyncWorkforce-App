@@ -1,0 +1,1623 @@
+version=1
+
+# This file caches language service data to improve the performance of C# Dev Kit.
+# It is not intended for manual editing. It can safely be deleted and will be
+# regenerated automatically. For more information, see https://aka.ms/lscache
+#
+# To control where cache files are stored, use the following VS Code setting:
+#   "dotnet.projectsystem.cacheInProjectFolder": true
+
+[project]
+language=C#
+primary
+lastDtbSucceeded
+
+[sliceDimensions]
+TargetFramework=net8.0-android
+
+[properties]
+AssemblyName=KaiFlow.Timesheets.Maui
+CommandLineArgsForDesignTimeEvaluation=-langversion:12.0 -define:TRACE
+CompilerGeneratedFilesOutputPath=
+MaxSupportedLangVersion=12.0
+ProjectAssetsFile=<PATH>obj/project.assets.json
+RootNamespace=KaiFlow.Timesheets
+RunAnalyzers=
+RunAnalyzersDuringLiveAnalysis=
+SolutionPath=<PATH>KaiFlow.Timesheets.Maui.sln
+TargetFrameworkIdentifier=.NETCoreApp
+TargetPath=<PATH>bin/Debug/net8.0-android/KaiFlow.Timesheets.Maui.dll
+TargetRefPath=<PATH>obj/Debug/net8.0-android/ref/KaiFlow.Timesheets.Maui.dll
+TemporaryDependencyNodeTargetIdentifier=net8.0-android
+
+[commandLineArguments]
+/noconfig
+/unsafe-
+/checked-
+/nowarn:1701,1702,1701,1702
+/fullpaths
+/nostdlib+
+/errorreport:prompt
+/warn:8
+/define:TRACE;DEBUG;NET;NET8_0;NETCOREAPP;ANDROID;ANDROID21_0;NET5_0_OR_GREATER;NET6_0_OR_GREATER;NET7_0_OR_GREATER;NET8_0_OR_GREATER;NETCOREAPP1_0_OR_GREATER;NETCOREAPP1_1_OR_GREATER;NETCOREAPP2_0_OR_GREATER;NETCOREAPP2_1_OR_GREATER;NETCOREAPP2_2_OR_GREATER;NETCOREAPP3_0_OR_GREATER;NETCOREAPP3_1_OR_GREATER;ANDROID21_0_OR_GREATER
+/highentropyva+
+/nullable:enable
+/debug+
+/debug:portable
+/filealign:512
+/optimize-
+/out:obj\Debug\net8.0-android\KaiFlow.Timesheets.Maui.dll
+/refout:obj\Debug\net8.0-android\refint\KaiFlow.Timesheets.Maui.dll
+/target:exe
+/warnaserror-
+/utf8output
+/deterministic+
+/langversion:12.0
+/warnaserror+:NU1605,NETSDK1202,SYSLIB0011
+
+[sourceFiles]
+App.xaml.cs
+AppShell.xaml.cs
+Constants/
+ GeoapifyConfig.cs
+ SupabaseConfig.cs
+Converters/
+ BoolToColorConverter.cs
+ BoolToStringConverter.cs
+ EqConverter.cs
+ EqToStyleConverter.cs
+ InitialsConverter.cs
+ InverseBoolConverter.cs
+ IsNotNullConverter.cs
+ IsZeroConverter.cs
+MauiProgram.cs
+Models/
+ AppMessage.cs
+ Asset.cs
+ CalendarEvent.cs
+ Client.cs
+ Company.cs
+ CompanyRelationship.cs
+ ComplianceEntry.cs
+ Contractor.cs
+ ContractorMemberLink.cs
+ Employee.cs
+ IncidentReport.cs
+ InventoryAllocation.cs
+ InventoryItem.cs
+ InventoryUsage.cs
+ Job.cs
+ JobCard.cs
+ JobChecklistItem.cs
+ JobCode.cs
+ LaborEntry.cs
+ LeaveRequest.cs
+ MessageThread.cs
+ PagedResult.cs
+ PaTask.cs
+ PaTaskTemplate.cs
+ PaymentApproval.cs
+ PunchSession.cs
+ Resident.cs
+ Site.cs
+ TimePunch.cs
+ Unit.cs
+ WorkflowFormSubmission.cs
+ WorkflowFormTemplate.cs
+ WorkTeam.cs
+obj/Debug/net8.0-android/
+ .NETCoreApp,Version=v8.0.AssemblyAttributes.cs
+ KaiFlow.Timesheets.Maui.AssemblyInfo.cs
+ KaiFlow.Timesheets.Maui.GlobalUsings.g.cs
+Platforms/Android/
+ MainActivity.cs
+ MainApplication.cs
+Platforms/iOS/
+ AppDelegate.cs
+ Program.cs
+Platforms/
+ MacCatalyst/AppDelegate.cs
+ Windows/App.xaml.cs
+Services/
+ AppTelemetry.cs
+ ExportService.cs
+ IExportService.cs
+ ILocationService.cs
+ IOfflineQueueService.cs
+ IPermissionsService.cs
+ IStorageService.cs
+ LocationService.cs
+ MauiSupabaseSessionHandler.cs
+ OfflineQueueService.cs
+ PermissionsService.cs
+ SupabaseStorageService.cs
+ TimesheetStateService.cs
+ViewModels/Auth/
+ EmployeeCompanySelectorViewModel.cs
+ EmployeeEmailOtpViewModel.cs
+ EmployeeLoginViewModel.cs
+ HrRegisterCompanyDetailsViewModel.cs
+ HrRegisterViewModel.cs
+ HrSignInViewModel.cs
+ IdEntryViewModel.cs
+ RoleSelectionViewModel.cs
+ViewModels/
+ Base/BaseViewModel.cs
+ Employee/
+  EmployeeDashboardViewModel.cs
+  EmployeeThreadChatViewModel.cs
+  IncidentReportViewModel.cs
+  JobCardViewModel.cs
+  MyIncidentsViewModel.cs
+  MyJobsViewModel.cs
+  MyLeaveViewModel.cs
+  MyPaSectionViewModel.cs
+  MyShiftsViewModel.cs
+  PunchViewModel.cs
+ Hr/
+  ClientDetailViewModel.cs
+  HrActivityLogViewModel.cs
+  HrAssetsViewModel.cs
+  HrAttendanceViewModel.cs
+  HrClientsViewModel.cs
+  HrContractorDetailsViewModel.cs
+  HrContractorsViewModel.cs
+  HrCreateEmployeeViewModel.cs
+  HrCreateJobViewModel.cs
+  HrDashboardViewModel.cs
+  HrEditEmployeeViewModel.cs
+  HrEmployeeDashboardViewModel.cs
+  HrEmployeesViewModel.cs
+  HrIncidentsViewModel.cs
+  HrInventoryViewModel.cs
+  HrJobDetailsViewModel.cs
+  HrJobsViewModel.cs
+  HrNotificationsViewModel.cs
+  HrPaymentsViewModel.cs
+  HrPropertiesViewModel.cs
+  HrReportsViewModel.cs
+  HrResidentsViewModel.cs
+  HrSchedulingViewModel.cs
+  HrSettingsViewModel.cs
+  HrWorkTeamsViewModel.cs
+Views/Auth/
+ EmployeeCompanySelectorPage.xaml.cs
+ EmployeeEmailOtpPage.xaml.cs
+ EmployeeLoginPage.xaml.cs
+ HrRegisterCompanyDetailsPage.xaml.cs
+ HrRegisterPage.xaml.cs
+ HrSignInPage.xaml.cs
+ IdEntryPage.xaml.cs
+ RoleSelectionPage.xaml.cs
+Views/Employee/
+ EmployeeDashboardPage.xaml.cs
+ EmployeeThreadChatPage.xaml.cs
+ IncidentReportPage.xaml.cs
+ JobCardPage.xaml.cs
+ MyIncidentsPage.xaml.cs
+ MyJobsPage.xaml.cs
+ MyLeavePage.xaml.cs
+ MyPaSectionPage.xaml.cs
+ MyShiftsPage.xaml.cs
+ PunchPage.xaml.cs
+Views/Hr/
+ ClientDetailPage.xaml.cs
+ HrActivityLogPage.xaml.cs
+ HrAssetsPage.xaml.cs
+ HrAttendancePage.xaml.cs
+ HrClientsPage.xaml.cs
+ HrContractorDetailsPage.xaml.cs
+ HrContractorsPage.xaml.cs
+ HrCreateEmployeePage.xaml.cs
+ HrCreateJobPage.xaml.cs
+ HrDashboardPage.xaml.cs
+ HrEditEmployeePage.xaml.cs
+ HrEmployeeDashboardPage.xaml.cs
+ HrEmployeesPage.xaml.cs
+ HrIncidentsPage.xaml.cs
+ HrInventoryPage.xaml.cs
+ HrJobDetailsPage.xaml.cs
+ HrJobsPage.xaml.cs
+ HrNotificationsPage.xaml.cs
+ HrPaymentsPage.xaml.cs
+ HrPropertiesPage.xaml.cs
+ HrReportsPage.xaml.cs
+ HrResidentsPage.xaml.cs
+ HrSchedulingPage.xaml.cs
+ HrSettingsPage.xaml.cs
+ HrWorkTeamsPage.xaml.cs
+
+[metadataReferences]
+<DOTNET>/packs/Microsoft.NETCore.App.Ref/8.0.22/ref/net8.0/
+ Microsoft.CSharp.dll
+ Microsoft.VisualBasic.Core.dll
+ Microsoft.VisualBasic.dll
+ Microsoft.Win32.Primitives.dll
+ Microsoft.Win32.Registry.dll
+ mscorlib.dll
+ netstandard.dll
+ System.AppContext.dll
+ System.Buffers.dll
+ System.Collections.Concurrent.dll
+ System.Collections.dll
+ System.Collections.Immutable.dll
+ System.Collections.NonGeneric.dll
+ System.Collections.Specialized.dll
+ System.ComponentModel.Annotations.dll
+ System.ComponentModel.DataAnnotations.dll
+ System.ComponentModel.dll
+ System.ComponentModel.EventBasedAsync.dll
+ System.ComponentModel.Primitives.dll
+ System.ComponentModel.TypeConverter.dll
+ System.Configuration.dll
+ System.Console.dll
+ System.Core.dll
+ System.Data.Common.dll
+ System.Data.DataSetExtensions.dll
+ System.Data.dll
+ System.Diagnostics.Contracts.dll
+ System.Diagnostics.Debug.dll
+ System.Diagnostics.DiagnosticSource.dll
+ System.Diagnostics.FileVersionInfo.dll
+ System.Diagnostics.Process.dll
+ System.Diagnostics.StackTrace.dll
+ System.Diagnostics.TextWriterTraceListener.dll
+ System.Diagnostics.Tools.dll
+ System.Diagnostics.TraceSource.dll
+ System.Diagnostics.Tracing.dll
+ System.dll
+ System.Drawing.dll
+ System.Drawing.Primitives.dll
+ System.Dynamic.Runtime.dll
+ System.Formats.Asn1.dll
+ System.Formats.Tar.dll
+ System.Globalization.Calendars.dll
+ System.Globalization.dll
+ System.Globalization.Extensions.dll
+ System.IO.Compression.Brotli.dll
+ System.IO.Compression.dll
+ System.IO.Compression.FileSystem.dll
+ System.IO.Compression.ZipFile.dll
+ System.IO.dll
+ System.IO.FileSystem.AccessControl.dll
+ System.IO.FileSystem.dll
+ System.IO.FileSystem.DriveInfo.dll
+ System.IO.FileSystem.Primitives.dll
+ System.IO.FileSystem.Watcher.dll
+ System.IO.IsolatedStorage.dll
+ System.IO.MemoryMappedFiles.dll
+ System.IO.Pipes.AccessControl.dll
+ System.IO.Pipes.dll
+ System.IO.UnmanagedMemoryStream.dll
+ System.Linq.dll
+ System.Linq.Expressions.dll
+ System.Linq.Parallel.dll
+ System.Linq.Queryable.dll
+ System.Memory.dll
+ System.Net.dll
+ System.Net.Http.dll
+ System.Net.Http.Json.dll
+ System.Net.HttpListener.dll
+ System.Net.Mail.dll
+ System.Net.NameResolution.dll
+ System.Net.NetworkInformation.dll
+ System.Net.Ping.dll
+ System.Net.Primitives.dll
+ System.Net.Quic.dll
+ System.Net.Requests.dll
+ System.Net.Security.dll
+ System.Net.ServicePoint.dll
+ System.Net.Sockets.dll
+ System.Net.WebClient.dll
+ System.Net.WebHeaderCollection.dll
+ System.Net.WebProxy.dll
+ System.Net.WebSockets.Client.dll
+ System.Net.WebSockets.dll
+ System.Numerics.dll
+ System.Numerics.Vectors.dll
+ System.ObjectModel.dll
+ System.Reflection.DispatchProxy.dll
+ System.Reflection.dll
+ System.Reflection.Emit.dll
+ System.Reflection.Emit.ILGeneration.dll
+ System.Reflection.Emit.Lightweight.dll
+ System.Reflection.Extensions.dll
+ System.Reflection.Metadata.dll
+ System.Reflection.Primitives.dll
+ System.Reflection.TypeExtensions.dll
+ System.Resources.Reader.dll
+ System.Resources.ResourceManager.dll
+ System.Resources.Writer.dll
+ System.Runtime.CompilerServices.Unsafe.dll
+ System.Runtime.CompilerServices.VisualC.dll
+ System.Runtime.dll
+ System.Runtime.Extensions.dll
+ System.Runtime.Handles.dll
+ System.Runtime.InteropServices.dll
+ System.Runtime.InteropServices.JavaScript.dll
+ System.Runtime.InteropServices.RuntimeInformation.dll
+ System.Runtime.Intrinsics.dll
+ System.Runtime.Loader.dll
+ System.Runtime.Numerics.dll
+ System.Runtime.Serialization.dll
+ System.Runtime.Serialization.Formatters.dll
+ System.Runtime.Serialization.Json.dll
+ System.Runtime.Serialization.Primitives.dll
+ System.Runtime.Serialization.Xml.dll
+ System.Security.AccessControl.dll
+ System.Security.Claims.dll
+ System.Security.Cryptography.Algorithms.dll
+ System.Security.Cryptography.Cng.dll
+ System.Security.Cryptography.Csp.dll
+ System.Security.Cryptography.dll
+ System.Security.Cryptography.Encoding.dll
+ System.Security.Cryptography.OpenSsl.dll
+ System.Security.Cryptography.Primitives.dll
+ System.Security.Cryptography.X509Certificates.dll
+ System.Security.dll
+ System.Security.Principal.dll
+ System.Security.Principal.Windows.dll
+ System.Security.SecureString.dll
+ System.ServiceModel.Web.dll
+ System.ServiceProcess.dll
+ System.Text.Encoding.CodePages.dll
+ System.Text.Encoding.dll
+ System.Text.Encoding.Extensions.dll
+ System.Text.Encodings.Web.dll
+ System.Text.Json.dll
+ System.Text.RegularExpressions.dll
+ System.Threading.Channels.dll
+ System.Threading.dll
+ System.Threading.Overlapped.dll
+ System.Threading.Tasks.Dataflow.dll
+ System.Threading.Tasks.dll
+ System.Threading.Tasks.Extensions.dll
+ System.Threading.Tasks.Parallel.dll
+ System.Threading.Thread.dll
+ System.Threading.ThreadPool.dll
+ System.Threading.Timer.dll
+ System.Transactions.dll
+ System.Transactions.Local.dll
+ System.ValueTuple.dll
+ System.Web.dll
+ System.Web.HttpUtility.dll
+ System.Windows.dll
+ System.Xml.dll
+ System.Xml.Linq.dll
+ System.Xml.ReaderWriter.dll
+ System.Xml.Serialization.dll
+ System.Xml.XDocument.dll
+ System.Xml.XmlDocument.dll
+ System.Xml.XmlSerializer.dll
+ System.Xml.XPath.dll
+ System.Xml.XPath.XDocument.dll
+ WindowsBase.dll
+
+[analyzerReferences]
+<DOTNET>/packs/Microsoft.NETCore.App.Ref/8.0.22/analyzers/dotnet/cs/
+ Microsoft.Interop.ComInterfaceGenerator.dll
+ Microsoft.Interop.JavaScript.JSImportGenerator.dll
+ Microsoft.Interop.LibraryImportGenerator.dll
+ Microsoft.Interop.SourceGeneration.dll
+ System.Text.Json.SourceGeneration.dll
+ System.Text.RegularExpressions.Generator.dll
+<DOTNET>/sdk/10.0.100/Sdks/Microsoft.NET.Sdk/analyzers/
+ Microsoft.CodeAnalysis.CSharp.NetAnalyzers.dll
+ Microsoft.CodeAnalysis.NetAnalyzers.dll
+
+[analyzerConfigFiles]
+<DOTNET>/sdk/10.0.100/Sdks/Microsoft.NET.Sdk/analyzers/build/config/analysislevel_8_default.globalconfig
+obj/Debug/net8.0-android/KaiFlow.Timesheets.Maui.GeneratedMSBuildEditorConfig.editorconfig
+
+---
+
+[project]
+language=C#
+lastDtbSucceeded
+
+[sliceDimensions]
+TargetFramework=net8.0-ios
+
+[properties]
+AssemblyName=KaiFlow.Timesheets.Maui
+CommandLineArgsForDesignTimeEvaluation=-langversion:12.0 -define:TRACE
+CompilerGeneratedFilesOutputPath=
+MaxSupportedLangVersion=12.0
+ProjectAssetsFile=<PATH>obj/project.assets.json
+RootNamespace=KaiFlow.Timesheets
+RunAnalyzers=
+RunAnalyzersDuringLiveAnalysis=
+SolutionPath=<PATH>KaiFlow.Timesheets.Maui.sln
+TargetFrameworkIdentifier=.NETCoreApp
+TargetPath=<PATH>bin/Debug/net8.0-ios/KaiFlow.Timesheets.Maui.dll
+TargetRefPath=<PATH>obj/Debug/net8.0-ios/ref/KaiFlow.Timesheets.Maui.dll
+TemporaryDependencyNodeTargetIdentifier=net8.0-ios
+
+[commandLineArguments]
+/noconfig
+/unsafe-
+/checked-
+/nowarn:1701,1702,1701,1702
+/fullpaths
+/nostdlib+
+/errorreport:prompt
+/warn:8
+/define:TRACE;DEBUG;NET;NET8_0;NETCOREAPP;IOS;IOS1_0;NET5_0_OR_GREATER;NET6_0_OR_GREATER;NET7_0_OR_GREATER;NET8_0_OR_GREATER;NETCOREAPP1_0_OR_GREATER;NETCOREAPP1_1_OR_GREATER;NETCOREAPP2_0_OR_GREATER;NETCOREAPP2_1_OR_GREATER;NETCOREAPP2_2_OR_GREATER;NETCOREAPP3_0_OR_GREATER;NETCOREAPP3_1_OR_GREATER
+/highentropyva+
+/nullable:enable
+/debug+
+/debug:portable
+/filealign:512
+/optimize-
+/out:obj\Debug\net8.0-ios\KaiFlow.Timesheets.Maui.dll
+/refout:obj\Debug\net8.0-ios\refint\KaiFlow.Timesheets.Maui.dll
+/target:exe
+/warnaserror-
+/utf8output
+/deterministic+
+/langversion:12.0
+/warnaserror+:NU1605,NETSDK1202,SYSLIB0011
+
+[sourceFiles]
+App.xaml.cs
+AppShell.xaml.cs
+Constants/
+ GeoapifyConfig.cs
+ SupabaseConfig.cs
+Converters/
+ BoolToColorConverter.cs
+ BoolToStringConverter.cs
+ EqConverter.cs
+ EqToStyleConverter.cs
+ InitialsConverter.cs
+ InverseBoolConverter.cs
+ IsNotNullConverter.cs
+ IsZeroConverter.cs
+MauiProgram.cs
+Models/
+ AppMessage.cs
+ Asset.cs
+ CalendarEvent.cs
+ Client.cs
+ Company.cs
+ CompanyRelationship.cs
+ ComplianceEntry.cs
+ Contractor.cs
+ ContractorMemberLink.cs
+ Employee.cs
+ IncidentReport.cs
+ InventoryAllocation.cs
+ InventoryItem.cs
+ InventoryUsage.cs
+ Job.cs
+ JobCard.cs
+ JobChecklistItem.cs
+ JobCode.cs
+ LaborEntry.cs
+ LeaveRequest.cs
+ MessageThread.cs
+ PagedResult.cs
+ PaTask.cs
+ PaTaskTemplate.cs
+ PaymentApproval.cs
+ PunchSession.cs
+ Resident.cs
+ Site.cs
+ TimePunch.cs
+ Unit.cs
+ WorkflowFormSubmission.cs
+ WorkflowFormTemplate.cs
+ WorkTeam.cs
+obj/Debug/net8.0-ios/
+ .NETCoreApp,Version=v8.0.AssemblyAttributes.cs
+ KaiFlow.Timesheets.Maui.AssemblyInfo.cs
+ KaiFlow.Timesheets.Maui.GlobalUsings.g.cs
+Platforms/Android/
+ MainActivity.cs
+ MainApplication.cs
+Platforms/iOS/
+ AppDelegate.cs
+ Program.cs
+Platforms/
+ MacCatalyst/AppDelegate.cs
+ Windows/App.xaml.cs
+Services/
+ AppTelemetry.cs
+ ExportService.cs
+ IExportService.cs
+ ILocationService.cs
+ IOfflineQueueService.cs
+ IPermissionsService.cs
+ IStorageService.cs
+ LocationService.cs
+ MauiSupabaseSessionHandler.cs
+ OfflineQueueService.cs
+ PermissionsService.cs
+ SupabaseStorageService.cs
+ TimesheetStateService.cs
+ViewModels/Auth/
+ EmployeeCompanySelectorViewModel.cs
+ EmployeeEmailOtpViewModel.cs
+ EmployeeLoginViewModel.cs
+ HrRegisterCompanyDetailsViewModel.cs
+ HrRegisterViewModel.cs
+ HrSignInViewModel.cs
+ IdEntryViewModel.cs
+ RoleSelectionViewModel.cs
+ViewModels/
+ Base/BaseViewModel.cs
+ Employee/
+  EmployeeDashboardViewModel.cs
+  EmployeeThreadChatViewModel.cs
+  IncidentReportViewModel.cs
+  JobCardViewModel.cs
+  MyIncidentsViewModel.cs
+  MyJobsViewModel.cs
+  MyLeaveViewModel.cs
+  MyPaSectionViewModel.cs
+  MyShiftsViewModel.cs
+  PunchViewModel.cs
+ Hr/
+  ClientDetailViewModel.cs
+  HrActivityLogViewModel.cs
+  HrAssetsViewModel.cs
+  HrAttendanceViewModel.cs
+  HrClientsViewModel.cs
+  HrContractorDetailsViewModel.cs
+  HrContractorsViewModel.cs
+  HrCreateEmployeeViewModel.cs
+  HrCreateJobViewModel.cs
+  HrDashboardViewModel.cs
+  HrEditEmployeeViewModel.cs
+  HrEmployeeDashboardViewModel.cs
+  HrEmployeesViewModel.cs
+  HrIncidentsViewModel.cs
+  HrInventoryViewModel.cs
+  HrJobDetailsViewModel.cs
+  HrJobsViewModel.cs
+  HrNotificationsViewModel.cs
+  HrPaymentsViewModel.cs
+  HrPropertiesViewModel.cs
+  HrReportsViewModel.cs
+  HrResidentsViewModel.cs
+  HrSchedulingViewModel.cs
+  HrSettingsViewModel.cs
+  HrWorkTeamsViewModel.cs
+Views/Auth/
+ EmployeeCompanySelectorPage.xaml.cs
+ EmployeeEmailOtpPage.xaml.cs
+ EmployeeLoginPage.xaml.cs
+ HrRegisterCompanyDetailsPage.xaml.cs
+ HrRegisterPage.xaml.cs
+ HrSignInPage.xaml.cs
+ IdEntryPage.xaml.cs
+ RoleSelectionPage.xaml.cs
+Views/Employee/
+ EmployeeDashboardPage.xaml.cs
+ EmployeeThreadChatPage.xaml.cs
+ IncidentReportPage.xaml.cs
+ JobCardPage.xaml.cs
+ MyIncidentsPage.xaml.cs
+ MyJobsPage.xaml.cs
+ MyLeavePage.xaml.cs
+ MyPaSectionPage.xaml.cs
+ MyShiftsPage.xaml.cs
+ PunchPage.xaml.cs
+Views/Hr/
+ ClientDetailPage.xaml.cs
+ HrActivityLogPage.xaml.cs
+ HrAssetsPage.xaml.cs
+ HrAttendancePage.xaml.cs
+ HrClientsPage.xaml.cs
+ HrContractorDetailsPage.xaml.cs
+ HrContractorsPage.xaml.cs
+ HrCreateEmployeePage.xaml.cs
+ HrCreateJobPage.xaml.cs
+ HrDashboardPage.xaml.cs
+ HrEditEmployeePage.xaml.cs
+ HrEmployeeDashboardPage.xaml.cs
+ HrEmployeesPage.xaml.cs
+ HrIncidentsPage.xaml.cs
+ HrInventoryPage.xaml.cs
+ HrJobDetailsPage.xaml.cs
+ HrJobsPage.xaml.cs
+ HrNotificationsPage.xaml.cs
+ HrPaymentsPage.xaml.cs
+ HrPropertiesPage.xaml.cs
+ HrReportsPage.xaml.cs
+ HrResidentsPage.xaml.cs
+ HrSchedulingPage.xaml.cs
+ HrSettingsPage.xaml.cs
+ HrWorkTeamsPage.xaml.cs
+
+[metadataReferences]
+<DOTNET>/packs/Microsoft.NETCore.App.Ref/8.0.22/ref/net8.0/
+ Microsoft.CSharp.dll
+ Microsoft.VisualBasic.Core.dll
+ Microsoft.VisualBasic.dll
+ Microsoft.Win32.Primitives.dll
+ Microsoft.Win32.Registry.dll
+ mscorlib.dll
+ netstandard.dll
+ System.AppContext.dll
+ System.Buffers.dll
+ System.Collections.Concurrent.dll
+ System.Collections.dll
+ System.Collections.Immutable.dll
+ System.Collections.NonGeneric.dll
+ System.Collections.Specialized.dll
+ System.ComponentModel.Annotations.dll
+ System.ComponentModel.DataAnnotations.dll
+ System.ComponentModel.dll
+ System.ComponentModel.EventBasedAsync.dll
+ System.ComponentModel.Primitives.dll
+ System.ComponentModel.TypeConverter.dll
+ System.Configuration.dll
+ System.Console.dll
+ System.Core.dll
+ System.Data.Common.dll
+ System.Data.DataSetExtensions.dll
+ System.Data.dll
+ System.Diagnostics.Contracts.dll
+ System.Diagnostics.Debug.dll
+ System.Diagnostics.DiagnosticSource.dll
+ System.Diagnostics.FileVersionInfo.dll
+ System.Diagnostics.Process.dll
+ System.Diagnostics.StackTrace.dll
+ System.Diagnostics.TextWriterTraceListener.dll
+ System.Diagnostics.Tools.dll
+ System.Diagnostics.TraceSource.dll
+ System.Diagnostics.Tracing.dll
+ System.dll
+ System.Drawing.dll
+ System.Drawing.Primitives.dll
+ System.Dynamic.Runtime.dll
+ System.Formats.Asn1.dll
+ System.Formats.Tar.dll
+ System.Globalization.Calendars.dll
+ System.Globalization.dll
+ System.Globalization.Extensions.dll
+ System.IO.Compression.Brotli.dll
+ System.IO.Compression.dll
+ System.IO.Compression.FileSystem.dll
+ System.IO.Compression.ZipFile.dll
+ System.IO.dll
+ System.IO.FileSystem.AccessControl.dll
+ System.IO.FileSystem.dll
+ System.IO.FileSystem.DriveInfo.dll
+ System.IO.FileSystem.Primitives.dll
+ System.IO.FileSystem.Watcher.dll
+ System.IO.IsolatedStorage.dll
+ System.IO.MemoryMappedFiles.dll
+ System.IO.Pipes.AccessControl.dll
+ System.IO.Pipes.dll
+ System.IO.UnmanagedMemoryStream.dll
+ System.Linq.dll
+ System.Linq.Expressions.dll
+ System.Linq.Parallel.dll
+ System.Linq.Queryable.dll
+ System.Memory.dll
+ System.Net.dll
+ System.Net.Http.dll
+ System.Net.Http.Json.dll
+ System.Net.HttpListener.dll
+ System.Net.Mail.dll
+ System.Net.NameResolution.dll
+ System.Net.NetworkInformation.dll
+ System.Net.Ping.dll
+ System.Net.Primitives.dll
+ System.Net.Quic.dll
+ System.Net.Requests.dll
+ System.Net.Security.dll
+ System.Net.ServicePoint.dll
+ System.Net.Sockets.dll
+ System.Net.WebClient.dll
+ System.Net.WebHeaderCollection.dll
+ System.Net.WebProxy.dll
+ System.Net.WebSockets.Client.dll
+ System.Net.WebSockets.dll
+ System.Numerics.dll
+ System.Numerics.Vectors.dll
+ System.ObjectModel.dll
+ System.Reflection.DispatchProxy.dll
+ System.Reflection.dll
+ System.Reflection.Emit.dll
+ System.Reflection.Emit.ILGeneration.dll
+ System.Reflection.Emit.Lightweight.dll
+ System.Reflection.Extensions.dll
+ System.Reflection.Metadata.dll
+ System.Reflection.Primitives.dll
+ System.Reflection.TypeExtensions.dll
+ System.Resources.Reader.dll
+ System.Resources.ResourceManager.dll
+ System.Resources.Writer.dll
+ System.Runtime.CompilerServices.Unsafe.dll
+ System.Runtime.CompilerServices.VisualC.dll
+ System.Runtime.dll
+ System.Runtime.Extensions.dll
+ System.Runtime.Handles.dll
+ System.Runtime.InteropServices.dll
+ System.Runtime.InteropServices.JavaScript.dll
+ System.Runtime.InteropServices.RuntimeInformation.dll
+ System.Runtime.Intrinsics.dll
+ System.Runtime.Loader.dll
+ System.Runtime.Numerics.dll
+ System.Runtime.Serialization.dll
+ System.Runtime.Serialization.Formatters.dll
+ System.Runtime.Serialization.Json.dll
+ System.Runtime.Serialization.Primitives.dll
+ System.Runtime.Serialization.Xml.dll
+ System.Security.AccessControl.dll
+ System.Security.Claims.dll
+ System.Security.Cryptography.Algorithms.dll
+ System.Security.Cryptography.Cng.dll
+ System.Security.Cryptography.Csp.dll
+ System.Security.Cryptography.dll
+ System.Security.Cryptography.Encoding.dll
+ System.Security.Cryptography.OpenSsl.dll
+ System.Security.Cryptography.Primitives.dll
+ System.Security.Cryptography.X509Certificates.dll
+ System.Security.dll
+ System.Security.Principal.dll
+ System.Security.Principal.Windows.dll
+ System.Security.SecureString.dll
+ System.ServiceModel.Web.dll
+ System.ServiceProcess.dll
+ System.Text.Encoding.CodePages.dll
+ System.Text.Encoding.dll
+ System.Text.Encoding.Extensions.dll
+ System.Text.Encodings.Web.dll
+ System.Text.Json.dll
+ System.Text.RegularExpressions.dll
+ System.Threading.Channels.dll
+ System.Threading.dll
+ System.Threading.Overlapped.dll
+ System.Threading.Tasks.Dataflow.dll
+ System.Threading.Tasks.dll
+ System.Threading.Tasks.Extensions.dll
+ System.Threading.Tasks.Parallel.dll
+ System.Threading.Thread.dll
+ System.Threading.ThreadPool.dll
+ System.Threading.Timer.dll
+ System.Transactions.dll
+ System.Transactions.Local.dll
+ System.ValueTuple.dll
+ System.Web.dll
+ System.Web.HttpUtility.dll
+ System.Windows.dll
+ System.Xml.dll
+ System.Xml.Linq.dll
+ System.Xml.ReaderWriter.dll
+ System.Xml.Serialization.dll
+ System.Xml.XDocument.dll
+ System.Xml.XmlDocument.dll
+ System.Xml.XmlSerializer.dll
+ System.Xml.XPath.dll
+ System.Xml.XPath.XDocument.dll
+ WindowsBase.dll
+
+[analyzerReferences]
+<DOTNET>/packs/Microsoft.NETCore.App.Ref/8.0.22/analyzers/dotnet/cs/
+ Microsoft.Interop.ComInterfaceGenerator.dll
+ Microsoft.Interop.JavaScript.JSImportGenerator.dll
+ Microsoft.Interop.LibraryImportGenerator.dll
+ Microsoft.Interop.SourceGeneration.dll
+ System.Text.Json.SourceGeneration.dll
+ System.Text.RegularExpressions.Generator.dll
+<DOTNET>/sdk/10.0.100/Sdks/Microsoft.NET.Sdk/analyzers/
+ Microsoft.CodeAnalysis.CSharp.NetAnalyzers.dll
+ Microsoft.CodeAnalysis.NetAnalyzers.dll
+
+[analyzerConfigFiles]
+<DOTNET>/sdk/10.0.100/Sdks/Microsoft.NET.Sdk/analyzers/build/config/analysislevel_8_default.globalconfig
+obj/Debug/net8.0-ios/KaiFlow.Timesheets.Maui.GeneratedMSBuildEditorConfig.editorconfig
+
+---
+
+[project]
+language=C#
+lastDtbSucceeded
+
+[sliceDimensions]
+TargetFramework=net8.0-maccatalyst
+
+[properties]
+AssemblyName=KaiFlow.Timesheets.Maui
+CommandLineArgsForDesignTimeEvaluation=-langversion:12.0 -define:TRACE
+CompilerGeneratedFilesOutputPath=
+MaxSupportedLangVersion=12.0
+ProjectAssetsFile=<PATH>obj/project.assets.json
+RootNamespace=KaiFlow.Timesheets
+RunAnalyzers=
+RunAnalyzersDuringLiveAnalysis=
+SolutionPath=<PATH>KaiFlow.Timesheets.Maui.sln
+TargetFrameworkIdentifier=.NETCoreApp
+TargetPath=<PATH>bin/Debug/net8.0-maccatalyst/KaiFlow.Timesheets.Maui.dll
+TargetRefPath=<PATH>obj/Debug/net8.0-maccatalyst/ref/KaiFlow.Timesheets.Maui.dll
+TemporaryDependencyNodeTargetIdentifier=net8.0-maccatalyst
+
+[commandLineArguments]
+/noconfig
+/unsafe-
+/checked-
+/nowarn:1701,1702,1701,1702
+/fullpaths
+/nostdlib+
+/errorreport:prompt
+/warn:8
+/define:TRACE;DEBUG;NET;NET8_0;NETCOREAPP;MACCATALYST;MACCATALYST1_0;NET5_0_OR_GREATER;NET6_0_OR_GREATER;NET7_0_OR_GREATER;NET8_0_OR_GREATER;NETCOREAPP1_0_OR_GREATER;NETCOREAPP1_1_OR_GREATER;NETCOREAPP2_0_OR_GREATER;NETCOREAPP2_1_OR_GREATER;NETCOREAPP2_2_OR_GREATER;NETCOREAPP3_0_OR_GREATER;NETCOREAPP3_1_OR_GREATER
+/highentropyva+
+/nullable:enable
+/debug+
+/debug:portable
+/filealign:512
+/optimize-
+/out:obj\Debug\net8.0-maccatalyst\KaiFlow.Timesheets.Maui.dll
+/refout:obj\Debug\net8.0-maccatalyst\refint\KaiFlow.Timesheets.Maui.dll
+/target:exe
+/warnaserror-
+/utf8output
+/deterministic+
+/langversion:12.0
+/warnaserror+:NU1605,NETSDK1202,SYSLIB0011
+
+[sourceFiles]
+App.xaml.cs
+AppShell.xaml.cs
+Constants/
+ GeoapifyConfig.cs
+ SupabaseConfig.cs
+Converters/
+ BoolToColorConverter.cs
+ BoolToStringConverter.cs
+ EqConverter.cs
+ EqToStyleConverter.cs
+ InitialsConverter.cs
+ InverseBoolConverter.cs
+ IsNotNullConverter.cs
+ IsZeroConverter.cs
+MauiProgram.cs
+Models/
+ AppMessage.cs
+ Asset.cs
+ CalendarEvent.cs
+ Client.cs
+ Company.cs
+ CompanyRelationship.cs
+ ComplianceEntry.cs
+ Contractor.cs
+ ContractorMemberLink.cs
+ Employee.cs
+ IncidentReport.cs
+ InventoryAllocation.cs
+ InventoryItem.cs
+ InventoryUsage.cs
+ Job.cs
+ JobCard.cs
+ JobChecklistItem.cs
+ JobCode.cs
+ LaborEntry.cs
+ LeaveRequest.cs
+ MessageThread.cs
+ PagedResult.cs
+ PaTask.cs
+ PaTaskTemplate.cs
+ PaymentApproval.cs
+ PunchSession.cs
+ Resident.cs
+ Site.cs
+ TimePunch.cs
+ Unit.cs
+ WorkflowFormSubmission.cs
+ WorkflowFormTemplate.cs
+ WorkTeam.cs
+obj/Debug/net8.0-maccatalyst/
+ .NETCoreApp,Version=v8.0.AssemblyAttributes.cs
+ KaiFlow.Timesheets.Maui.AssemblyInfo.cs
+ KaiFlow.Timesheets.Maui.GlobalUsings.g.cs
+Platforms/Android/
+ MainActivity.cs
+ MainApplication.cs
+Platforms/iOS/
+ AppDelegate.cs
+ Program.cs
+Platforms/
+ MacCatalyst/AppDelegate.cs
+ Windows/App.xaml.cs
+Services/
+ AppTelemetry.cs
+ ExportService.cs
+ IExportService.cs
+ ILocationService.cs
+ IOfflineQueueService.cs
+ IPermissionsService.cs
+ IStorageService.cs
+ LocationService.cs
+ MauiSupabaseSessionHandler.cs
+ OfflineQueueService.cs
+ PermissionsService.cs
+ SupabaseStorageService.cs
+ TimesheetStateService.cs
+ViewModels/Auth/
+ EmployeeCompanySelectorViewModel.cs
+ EmployeeEmailOtpViewModel.cs
+ EmployeeLoginViewModel.cs
+ HrRegisterCompanyDetailsViewModel.cs
+ HrRegisterViewModel.cs
+ HrSignInViewModel.cs
+ IdEntryViewModel.cs
+ RoleSelectionViewModel.cs
+ViewModels/
+ Base/BaseViewModel.cs
+ Employee/
+  EmployeeDashboardViewModel.cs
+  EmployeeThreadChatViewModel.cs
+  IncidentReportViewModel.cs
+  JobCardViewModel.cs
+  MyIncidentsViewModel.cs
+  MyJobsViewModel.cs
+  MyLeaveViewModel.cs
+  MyPaSectionViewModel.cs
+  MyShiftsViewModel.cs
+  PunchViewModel.cs
+ Hr/
+  ClientDetailViewModel.cs
+  HrActivityLogViewModel.cs
+  HrAssetsViewModel.cs
+  HrAttendanceViewModel.cs
+  HrClientsViewModel.cs
+  HrContractorDetailsViewModel.cs
+  HrContractorsViewModel.cs
+  HrCreateEmployeeViewModel.cs
+  HrCreateJobViewModel.cs
+  HrDashboardViewModel.cs
+  HrEditEmployeeViewModel.cs
+  HrEmployeeDashboardViewModel.cs
+  HrEmployeesViewModel.cs
+  HrIncidentsViewModel.cs
+  HrInventoryViewModel.cs
+  HrJobDetailsViewModel.cs
+  HrJobsViewModel.cs
+  HrNotificationsViewModel.cs
+  HrPaymentsViewModel.cs
+  HrPropertiesViewModel.cs
+  HrReportsViewModel.cs
+  HrResidentsViewModel.cs
+  HrSchedulingViewModel.cs
+  HrSettingsViewModel.cs
+  HrWorkTeamsViewModel.cs
+Views/Auth/
+ EmployeeCompanySelectorPage.xaml.cs
+ EmployeeEmailOtpPage.xaml.cs
+ EmployeeLoginPage.xaml.cs
+ HrRegisterCompanyDetailsPage.xaml.cs
+ HrRegisterPage.xaml.cs
+ HrSignInPage.xaml.cs
+ IdEntryPage.xaml.cs
+ RoleSelectionPage.xaml.cs
+Views/Employee/
+ EmployeeDashboardPage.xaml.cs
+ EmployeeThreadChatPage.xaml.cs
+ IncidentReportPage.xaml.cs
+ JobCardPage.xaml.cs
+ MyIncidentsPage.xaml.cs
+ MyJobsPage.xaml.cs
+ MyLeavePage.xaml.cs
+ MyPaSectionPage.xaml.cs
+ MyShiftsPage.xaml.cs
+ PunchPage.xaml.cs
+Views/Hr/
+ ClientDetailPage.xaml.cs
+ HrActivityLogPage.xaml.cs
+ HrAssetsPage.xaml.cs
+ HrAttendancePage.xaml.cs
+ HrClientsPage.xaml.cs
+ HrContractorDetailsPage.xaml.cs
+ HrContractorsPage.xaml.cs
+ HrCreateEmployeePage.xaml.cs
+ HrCreateJobPage.xaml.cs
+ HrDashboardPage.xaml.cs
+ HrEditEmployeePage.xaml.cs
+ HrEmployeeDashboardPage.xaml.cs
+ HrEmployeesPage.xaml.cs
+ HrIncidentsPage.xaml.cs
+ HrInventoryPage.xaml.cs
+ HrJobDetailsPage.xaml.cs
+ HrJobsPage.xaml.cs
+ HrNotificationsPage.xaml.cs
+ HrPaymentsPage.xaml.cs
+ HrPropertiesPage.xaml.cs
+ HrReportsPage.xaml.cs
+ HrResidentsPage.xaml.cs
+ HrSchedulingPage.xaml.cs
+ HrSettingsPage.xaml.cs
+ HrWorkTeamsPage.xaml.cs
+
+[metadataReferences]
+<DOTNET>/packs/Microsoft.NETCore.App.Ref/8.0.22/ref/net8.0/
+ Microsoft.CSharp.dll
+ Microsoft.VisualBasic.Core.dll
+ Microsoft.VisualBasic.dll
+ Microsoft.Win32.Primitives.dll
+ Microsoft.Win32.Registry.dll
+ mscorlib.dll
+ netstandard.dll
+ System.AppContext.dll
+ System.Buffers.dll
+ System.Collections.Concurrent.dll
+ System.Collections.dll
+ System.Collections.Immutable.dll
+ System.Collections.NonGeneric.dll
+ System.Collections.Specialized.dll
+ System.ComponentModel.Annotations.dll
+ System.ComponentModel.DataAnnotations.dll
+ System.ComponentModel.dll
+ System.ComponentModel.EventBasedAsync.dll
+ System.ComponentModel.Primitives.dll
+ System.ComponentModel.TypeConverter.dll
+ System.Configuration.dll
+ System.Console.dll
+ System.Core.dll
+ System.Data.Common.dll
+ System.Data.DataSetExtensions.dll
+ System.Data.dll
+ System.Diagnostics.Contracts.dll
+ System.Diagnostics.Debug.dll
+ System.Diagnostics.DiagnosticSource.dll
+ System.Diagnostics.FileVersionInfo.dll
+ System.Diagnostics.Process.dll
+ System.Diagnostics.StackTrace.dll
+ System.Diagnostics.TextWriterTraceListener.dll
+ System.Diagnostics.Tools.dll
+ System.Diagnostics.TraceSource.dll
+ System.Diagnostics.Tracing.dll
+ System.dll
+ System.Drawing.dll
+ System.Drawing.Primitives.dll
+ System.Dynamic.Runtime.dll
+ System.Formats.Asn1.dll
+ System.Formats.Tar.dll
+ System.Globalization.Calendars.dll
+ System.Globalization.dll
+ System.Globalization.Extensions.dll
+ System.IO.Compression.Brotli.dll
+ System.IO.Compression.dll
+ System.IO.Compression.FileSystem.dll
+ System.IO.Compression.ZipFile.dll
+ System.IO.dll
+ System.IO.FileSystem.AccessControl.dll
+ System.IO.FileSystem.dll
+ System.IO.FileSystem.DriveInfo.dll
+ System.IO.FileSystem.Primitives.dll
+ System.IO.FileSystem.Watcher.dll
+ System.IO.IsolatedStorage.dll
+ System.IO.MemoryMappedFiles.dll
+ System.IO.Pipes.AccessControl.dll
+ System.IO.Pipes.dll
+ System.IO.UnmanagedMemoryStream.dll
+ System.Linq.dll
+ System.Linq.Expressions.dll
+ System.Linq.Parallel.dll
+ System.Linq.Queryable.dll
+ System.Memory.dll
+ System.Net.dll
+ System.Net.Http.dll
+ System.Net.Http.Json.dll
+ System.Net.HttpListener.dll
+ System.Net.Mail.dll
+ System.Net.NameResolution.dll
+ System.Net.NetworkInformation.dll
+ System.Net.Ping.dll
+ System.Net.Primitives.dll
+ System.Net.Quic.dll
+ System.Net.Requests.dll
+ System.Net.Security.dll
+ System.Net.ServicePoint.dll
+ System.Net.Sockets.dll
+ System.Net.WebClient.dll
+ System.Net.WebHeaderCollection.dll
+ System.Net.WebProxy.dll
+ System.Net.WebSockets.Client.dll
+ System.Net.WebSockets.dll
+ System.Numerics.dll
+ System.Numerics.Vectors.dll
+ System.ObjectModel.dll
+ System.Reflection.DispatchProxy.dll
+ System.Reflection.dll
+ System.Reflection.Emit.dll
+ System.Reflection.Emit.ILGeneration.dll
+ System.Reflection.Emit.Lightweight.dll
+ System.Reflection.Extensions.dll
+ System.Reflection.Metadata.dll
+ System.Reflection.Primitives.dll
+ System.Reflection.TypeExtensions.dll
+ System.Resources.Reader.dll
+ System.Resources.ResourceManager.dll
+ System.Resources.Writer.dll
+ System.Runtime.CompilerServices.Unsafe.dll
+ System.Runtime.CompilerServices.VisualC.dll
+ System.Runtime.dll
+ System.Runtime.Extensions.dll
+ System.Runtime.Handles.dll
+ System.Runtime.InteropServices.dll
+ System.Runtime.InteropServices.JavaScript.dll
+ System.Runtime.InteropServices.RuntimeInformation.dll
+ System.Runtime.Intrinsics.dll
+ System.Runtime.Loader.dll
+ System.Runtime.Numerics.dll
+ System.Runtime.Serialization.dll
+ System.Runtime.Serialization.Formatters.dll
+ System.Runtime.Serialization.Json.dll
+ System.Runtime.Serialization.Primitives.dll
+ System.Runtime.Serialization.Xml.dll
+ System.Security.AccessControl.dll
+ System.Security.Claims.dll
+ System.Security.Cryptography.Algorithms.dll
+ System.Security.Cryptography.Cng.dll
+ System.Security.Cryptography.Csp.dll
+ System.Security.Cryptography.dll
+ System.Security.Cryptography.Encoding.dll
+ System.Security.Cryptography.OpenSsl.dll
+ System.Security.Cryptography.Primitives.dll
+ System.Security.Cryptography.X509Certificates.dll
+ System.Security.dll
+ System.Security.Principal.dll
+ System.Security.Principal.Windows.dll
+ System.Security.SecureString.dll
+ System.ServiceModel.Web.dll
+ System.ServiceProcess.dll
+ System.Text.Encoding.CodePages.dll
+ System.Text.Encoding.dll
+ System.Text.Encoding.Extensions.dll
+ System.Text.Encodings.Web.dll
+ System.Text.Json.dll
+ System.Text.RegularExpressions.dll
+ System.Threading.Channels.dll
+ System.Threading.dll
+ System.Threading.Overlapped.dll
+ System.Threading.Tasks.Dataflow.dll
+ System.Threading.Tasks.dll
+ System.Threading.Tasks.Extensions.dll
+ System.Threading.Tasks.Parallel.dll
+ System.Threading.Thread.dll
+ System.Threading.ThreadPool.dll
+ System.Threading.Timer.dll
+ System.Transactions.dll
+ System.Transactions.Local.dll
+ System.ValueTuple.dll
+ System.Web.dll
+ System.Web.HttpUtility.dll
+ System.Windows.dll
+ System.Xml.dll
+ System.Xml.Linq.dll
+ System.Xml.ReaderWriter.dll
+ System.Xml.Serialization.dll
+ System.Xml.XDocument.dll
+ System.Xml.XmlDocument.dll
+ System.Xml.XmlSerializer.dll
+ System.Xml.XPath.dll
+ System.Xml.XPath.XDocument.dll
+ WindowsBase.dll
+
+[analyzerReferences]
+<DOTNET>/packs/Microsoft.NETCore.App.Ref/8.0.22/analyzers/dotnet/cs/
+ Microsoft.Interop.ComInterfaceGenerator.dll
+ Microsoft.Interop.JavaScript.JSImportGenerator.dll
+ Microsoft.Interop.LibraryImportGenerator.dll
+ Microsoft.Interop.SourceGeneration.dll
+ System.Text.Json.SourceGeneration.dll
+ System.Text.RegularExpressions.Generator.dll
+<DOTNET>/sdk/10.0.100/Sdks/Microsoft.NET.Sdk/analyzers/
+ Microsoft.CodeAnalysis.CSharp.NetAnalyzers.dll
+ Microsoft.CodeAnalysis.NetAnalyzers.dll
+
+[analyzerConfigFiles]
+<DOTNET>/sdk/10.0.100/Sdks/Microsoft.NET.Sdk/analyzers/build/config/analysislevel_8_default.globalconfig
+obj/Debug/net8.0-maccatalyst/KaiFlow.Timesheets.Maui.GeneratedMSBuildEditorConfig.editorconfig
+
+---
+
+[project]
+language=C#
+lastDtbSucceeded
+
+[sliceDimensions]
+TargetFramework=net8.0-windows10.0.19041.0
+
+[properties]
+AssemblyName=KaiFlow.Timesheets.Maui
+CommandLineArgsForDesignTimeEvaluation=-langversion:12.0 -define:TRACE
+CompilerGeneratedFilesOutputPath=
+MaxSupportedLangVersion=12.0
+ProjectAssetsFile=<PATH>obj/project.assets.json
+RootNamespace=KaiFlow.Timesheets
+RunAnalyzers=
+RunAnalyzersDuringLiveAnalysis=
+SolutionPath=<PATH>KaiFlow.Timesheets.Maui.sln
+TargetFrameworkIdentifier=.NETCoreApp
+TargetPath=<PATH>bin/Debug/net8.0-windows10.0.19041.0/KaiFlow.Timesheets.Maui.dll
+TargetRefPath=<PATH>obj/Debug/net8.0-windows10.0.19041.0/ref/KaiFlow.Timesheets.Maui.dll
+TemporaryDependencyNodeTargetIdentifier=net8.0-windows10.0.19041.0
+
+[commandLineArguments]
+/noconfig
+/unsafe-
+/checked-
+/nowarn:1701,1702,1701,1702
+/fullpaths
+/nostdlib+
+/errorreport:prompt
+/warn:8
+/define:TRACE;DEBUG;NET;NET8_0;NETCOREAPP;WINDOWS;WINDOWS10_0_19041_0;NET5_0_OR_GREATER;NET6_0_OR_GREATER;NET7_0_OR_GREATER;NET8_0_OR_GREATER;NETCOREAPP1_0_OR_GREATER;NETCOREAPP1_1_OR_GREATER;NETCOREAPP2_0_OR_GREATER;NETCOREAPP2_1_OR_GREATER;NETCOREAPP2_2_OR_GREATER;NETCOREAPP3_0_OR_GREATER;NETCOREAPP3_1_OR_GREATER;WINDOWS10_0_19041_0_OR_GREATER;WINDOWS10_0_18362_0_OR_GREATER;WINDOWS10_0_17763_0_OR_GREATER;WINDOWS8_0_OR_GREATER;WINDOWS7_0_OR_GREATER
+/highentropyva+
+/nullable:enable
+/debug+
+/debug:portable
+/filealign:512
+/optimize-
+/out:obj\Debug\net8.0-windows10.0.19041.0\KaiFlow.Timesheets.Maui.dll
+/refout:obj\Debug\net8.0-windows10.0.19041.0\refint\KaiFlow.Timesheets.Maui.dll
+/target:exe
+/warnaserror-
+/utf8output
+/deterministic+
+/langversion:12.0
+/warnaserror+:NU1605,SYSLIB0011
+
+[sourceFiles]
+App.xaml.cs
+AppShell.xaml.cs
+Constants/
+ GeoapifyConfig.cs
+ SupabaseConfig.cs
+Converters/
+ BoolToColorConverter.cs
+ BoolToStringConverter.cs
+ EqConverter.cs
+ EqToStyleConverter.cs
+ InitialsConverter.cs
+ InverseBoolConverter.cs
+ IsNotNullConverter.cs
+ IsZeroConverter.cs
+MauiProgram.cs
+Models/
+ AppMessage.cs
+ Asset.cs
+ CalendarEvent.cs
+ Client.cs
+ Company.cs
+ CompanyRelationship.cs
+ ComplianceEntry.cs
+ Contractor.cs
+ ContractorMemberLink.cs
+ Employee.cs
+ IncidentReport.cs
+ InventoryAllocation.cs
+ InventoryItem.cs
+ InventoryUsage.cs
+ Job.cs
+ JobCard.cs
+ JobChecklistItem.cs
+ JobCode.cs
+ LaborEntry.cs
+ LeaveRequest.cs
+ MessageThread.cs
+ PagedResult.cs
+ PaTask.cs
+ PaTaskTemplate.cs
+ PaymentApproval.cs
+ PunchSession.cs
+ Resident.cs
+ Site.cs
+ TimePunch.cs
+ Unit.cs
+ WorkflowFormSubmission.cs
+ WorkflowFormTemplate.cs
+ WorkTeam.cs
+obj/Debug/net8.0-windows10.0.19041.0/
+ .NETCoreApp,Version=v8.0.AssemblyAttributes.cs
+ KaiFlow.Timesheets.Maui.AssemblyInfo.cs
+ KaiFlow.Timesheets.Maui.GlobalUsings.g.cs
+Platforms/Android/
+ MainActivity.cs
+ MainApplication.cs
+Platforms/iOS/
+ AppDelegate.cs
+ Program.cs
+Platforms/
+ MacCatalyst/AppDelegate.cs
+ Windows/App.xaml.cs
+Services/
+ AppTelemetry.cs
+ ExportService.cs
+ IExportService.cs
+ ILocationService.cs
+ IOfflineQueueService.cs
+ IPermissionsService.cs
+ IStorageService.cs
+ LocationService.cs
+ MauiSupabaseSessionHandler.cs
+ OfflineQueueService.cs
+ PermissionsService.cs
+ SupabaseStorageService.cs
+ TimesheetStateService.cs
+ViewModels/Auth/
+ EmployeeCompanySelectorViewModel.cs
+ EmployeeEmailOtpViewModel.cs
+ EmployeeLoginViewModel.cs
+ HrRegisterCompanyDetailsViewModel.cs
+ HrRegisterViewModel.cs
+ HrSignInViewModel.cs
+ IdEntryViewModel.cs
+ RoleSelectionViewModel.cs
+ViewModels/
+ Base/BaseViewModel.cs
+ Employee/
+  EmployeeDashboardViewModel.cs
+  EmployeeThreadChatViewModel.cs
+  IncidentReportViewModel.cs
+  JobCardViewModel.cs
+  MyIncidentsViewModel.cs
+  MyJobsViewModel.cs
+  MyLeaveViewModel.cs
+  MyPaSectionViewModel.cs
+  MyShiftsViewModel.cs
+  PunchViewModel.cs
+ Hr/
+  ClientDetailViewModel.cs
+  HrActivityLogViewModel.cs
+  HrAssetsViewModel.cs
+  HrAttendanceViewModel.cs
+  HrClientsViewModel.cs
+  HrContractorDetailsViewModel.cs
+  HrContractorsViewModel.cs
+  HrCreateEmployeeViewModel.cs
+  HrCreateJobViewModel.cs
+  HrDashboardViewModel.cs
+  HrEditEmployeeViewModel.cs
+  HrEmployeeDashboardViewModel.cs
+  HrEmployeesViewModel.cs
+  HrIncidentsViewModel.cs
+  HrInventoryViewModel.cs
+  HrJobDetailsViewModel.cs
+  HrJobsViewModel.cs
+  HrNotificationsViewModel.cs
+  HrPaymentsViewModel.cs
+  HrPropertiesViewModel.cs
+  HrReportsViewModel.cs
+  HrResidentsViewModel.cs
+  HrSchedulingViewModel.cs
+  HrSettingsViewModel.cs
+  HrWorkTeamsViewModel.cs
+Views/Auth/
+ EmployeeCompanySelectorPage.xaml.cs
+ EmployeeEmailOtpPage.xaml.cs
+ EmployeeLoginPage.xaml.cs
+ HrRegisterCompanyDetailsPage.xaml.cs
+ HrRegisterPage.xaml.cs
+ HrSignInPage.xaml.cs
+ IdEntryPage.xaml.cs
+ RoleSelectionPage.xaml.cs
+Views/Employee/
+ EmployeeDashboardPage.xaml.cs
+ EmployeeThreadChatPage.xaml.cs
+ IncidentReportPage.xaml.cs
+ JobCardPage.xaml.cs
+ MyIncidentsPage.xaml.cs
+ MyJobsPage.xaml.cs
+ MyLeavePage.xaml.cs
+ MyPaSectionPage.xaml.cs
+ MyShiftsPage.xaml.cs
+ PunchPage.xaml.cs
+Views/Hr/
+ ClientDetailPage.xaml.cs
+ HrActivityLogPage.xaml.cs
+ HrAssetsPage.xaml.cs
+ HrAttendancePage.xaml.cs
+ HrClientsPage.xaml.cs
+ HrContractorDetailsPage.xaml.cs
+ HrContractorsPage.xaml.cs
+ HrCreateEmployeePage.xaml.cs
+ HrCreateJobPage.xaml.cs
+ HrDashboardPage.xaml.cs
+ HrEditEmployeePage.xaml.cs
+ HrEmployeeDashboardPage.xaml.cs
+ HrEmployeesPage.xaml.cs
+ HrIncidentsPage.xaml.cs
+ HrInventoryPage.xaml.cs
+ HrJobDetailsPage.xaml.cs
+ HrJobsPage.xaml.cs
+ HrNotificationsPage.xaml.cs
+ HrPaymentsPage.xaml.cs
+ HrPropertiesPage.xaml.cs
+ HrReportsPage.xaml.cs
+ HrResidentsPage.xaml.cs
+ HrSchedulingPage.xaml.cs
+ HrSettingsPage.xaml.cs
+ HrWorkTeamsPage.xaml.cs
+
+[metadataReferences]
+<DOTNET>/packs/Microsoft.NETCore.App.Ref/8.0.22/ref/net8.0/
+ Microsoft.CSharp.dll
+ Microsoft.VisualBasic.Core.dll
+ Microsoft.VisualBasic.dll
+ Microsoft.Win32.Primitives.dll
+ Microsoft.Win32.Registry.dll
+ mscorlib.dll
+ netstandard.dll
+ System.AppContext.dll
+ System.Buffers.dll
+ System.Collections.Concurrent.dll
+ System.Collections.dll
+ System.Collections.Immutable.dll
+ System.Collections.NonGeneric.dll
+ System.Collections.Specialized.dll
+ System.ComponentModel.Annotations.dll
+ System.ComponentModel.DataAnnotations.dll
+ System.ComponentModel.dll
+ System.ComponentModel.EventBasedAsync.dll
+ System.ComponentModel.Primitives.dll
+ System.ComponentModel.TypeConverter.dll
+ System.Configuration.dll
+ System.Console.dll
+ System.Core.dll
+ System.Data.Common.dll
+ System.Data.DataSetExtensions.dll
+ System.Data.dll
+ System.Diagnostics.Contracts.dll
+ System.Diagnostics.Debug.dll
+ System.Diagnostics.DiagnosticSource.dll
+ System.Diagnostics.FileVersionInfo.dll
+ System.Diagnostics.Process.dll
+ System.Diagnostics.StackTrace.dll
+ System.Diagnostics.TextWriterTraceListener.dll
+ System.Diagnostics.Tools.dll
+ System.Diagnostics.TraceSource.dll
+ System.Diagnostics.Tracing.dll
+ System.dll
+ System.Drawing.dll
+ System.Drawing.Primitives.dll
+ System.Dynamic.Runtime.dll
+ System.Formats.Asn1.dll
+ System.Formats.Tar.dll
+ System.Globalization.Calendars.dll
+ System.Globalization.dll
+ System.Globalization.Extensions.dll
+ System.IO.Compression.Brotli.dll
+ System.IO.Compression.dll
+ System.IO.Compression.FileSystem.dll
+ System.IO.Compression.ZipFile.dll
+ System.IO.dll
+ System.IO.FileSystem.AccessControl.dll
+ System.IO.FileSystem.dll
+ System.IO.FileSystem.DriveInfo.dll
+ System.IO.FileSystem.Primitives.dll
+ System.IO.FileSystem.Watcher.dll
+ System.IO.IsolatedStorage.dll
+ System.IO.MemoryMappedFiles.dll
+ System.IO.Pipes.AccessControl.dll
+ System.IO.Pipes.dll
+ System.IO.UnmanagedMemoryStream.dll
+ System.Linq.dll
+ System.Linq.Expressions.dll
+ System.Linq.Parallel.dll
+ System.Linq.Queryable.dll
+ System.Memory.dll
+ System.Net.dll
+ System.Net.Http.dll
+ System.Net.Http.Json.dll
+ System.Net.HttpListener.dll
+ System.Net.Mail.dll
+ System.Net.NameResolution.dll
+ System.Net.NetworkInformation.dll
+ System.Net.Ping.dll
+ System.Net.Primitives.dll
+ System.Net.Quic.dll
+ System.Net.Requests.dll
+ System.Net.Security.dll
+ System.Net.ServicePoint.dll
+ System.Net.Sockets.dll
+ System.Net.WebClient.dll
+ System.Net.WebHeaderCollection.dll
+ System.Net.WebProxy.dll
+ System.Net.WebSockets.Client.dll
+ System.Net.WebSockets.dll
+ System.Numerics.dll
+ System.Numerics.Vectors.dll
+ System.ObjectModel.dll
+ System.Reflection.DispatchProxy.dll
+ System.Reflection.dll
+ System.Reflection.Emit.dll
+ System.Reflection.Emit.ILGeneration.dll
+ System.Reflection.Emit.Lightweight.dll
+ System.Reflection.Extensions.dll
+ System.Reflection.Metadata.dll
+ System.Reflection.Primitives.dll
+ System.Reflection.TypeExtensions.dll
+ System.Resources.Reader.dll
+ System.Resources.ResourceManager.dll
+ System.Resources.Writer.dll
+ System.Runtime.CompilerServices.Unsafe.dll
+ System.Runtime.CompilerServices.VisualC.dll
+ System.Runtime.dll
+ System.Runtime.Extensions.dll
+ System.Runtime.Handles.dll
+ System.Runtime.InteropServices.dll
+ System.Runtime.InteropServices.JavaScript.dll
+ System.Runtime.InteropServices.RuntimeInformation.dll
+ System.Runtime.Intrinsics.dll
+ System.Runtime.Loader.dll
+ System.Runtime.Numerics.dll
+ System.Runtime.Serialization.dll
+ System.Runtime.Serialization.Formatters.dll
+ System.Runtime.Serialization.Json.dll
+ System.Runtime.Serialization.Primitives.dll
+ System.Runtime.Serialization.Xml.dll
+ System.Security.AccessControl.dll
+ System.Security.Claims.dll
+ System.Security.Cryptography.Algorithms.dll
+ System.Security.Cryptography.Cng.dll
+ System.Security.Cryptography.Csp.dll
+ System.Security.Cryptography.dll
+ System.Security.Cryptography.Encoding.dll
+ System.Security.Cryptography.OpenSsl.dll
+ System.Security.Cryptography.Primitives.dll
+ System.Security.Cryptography.X509Certificates.dll
+ System.Security.dll
+ System.Security.Principal.dll
+ System.Security.Principal.Windows.dll
+ System.Security.SecureString.dll
+ System.ServiceModel.Web.dll
+ System.ServiceProcess.dll
+ System.Text.Encoding.CodePages.dll
+ System.Text.Encoding.dll
+ System.Text.Encoding.Extensions.dll
+ System.Text.Encodings.Web.dll
+ System.Text.Json.dll
+ System.Text.RegularExpressions.dll
+ System.Threading.Channels.dll
+ System.Threading.dll
+ System.Threading.Overlapped.dll
+ System.Threading.Tasks.Dataflow.dll
+ System.Threading.Tasks.dll
+ System.Threading.Tasks.Extensions.dll
+ System.Threading.Tasks.Parallel.dll
+ System.Threading.Thread.dll
+ System.Threading.ThreadPool.dll
+ System.Threading.Timer.dll
+ System.Transactions.dll
+ System.Transactions.Local.dll
+ System.ValueTuple.dll
+ System.Web.dll
+ System.Web.HttpUtility.dll
+ System.Windows.dll
+ System.Xml.dll
+ System.Xml.Linq.dll
+ System.Xml.ReaderWriter.dll
+ System.Xml.Serialization.dll
+ System.Xml.XDocument.dll
+ System.Xml.XmlDocument.dll
+ System.Xml.XmlSerializer.dll
+ System.Xml.XPath.dll
+ System.Xml.XPath.XDocument.dll
+ WindowsBase.dll
+<NUGET>/microsoft.windows.sdk.net.ref/10.0.19041.57/lib/net8.0/
+ Microsoft.Windows.SDK.NET.dll
+ WinRT.Runtime.dll
+
+[analyzerReferences]
+<DOTNET>/packs/Microsoft.NETCore.App.Ref/8.0.22/analyzers/dotnet/cs/
+ Microsoft.Interop.ComInterfaceGenerator.dll
+ Microsoft.Interop.JavaScript.JSImportGenerator.dll
+ Microsoft.Interop.LibraryImportGenerator.dll
+ Microsoft.Interop.SourceGeneration.dll
+ System.Text.Json.SourceGeneration.dll
+ System.Text.RegularExpressions.Generator.dll
+<DOTNET>/sdk/10.0.100/Sdks/Microsoft.NET.Sdk/analyzers/
+ Microsoft.CodeAnalysis.CSharp.NetAnalyzers.dll
+ Microsoft.CodeAnalysis.NetAnalyzers.dll
+<NUGET>/microsoft.windows.sdk.net.ref/10.0.19041.57/analyzers/dotnet/cs/WinRT.SourceGenerator.dll
+
+[analyzerConfigFiles]
+<DOTNET>/sdk/10.0.100/Sdks/Microsoft.NET.Sdk/analyzers/build/config/analysislevel_8_default.globalconfig
+obj/Debug/net8.0-windows10.0.19041.0/KaiFlow.Timesheets.Maui.GeneratedMSBuildEditorConfig.editorconfig

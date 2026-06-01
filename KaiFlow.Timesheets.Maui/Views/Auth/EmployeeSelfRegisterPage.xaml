@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Auth.EmployeeSelfRegisterPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Auth"
+    x:DataType="vm:EmployeeSelfRegisterViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="Create Account">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="32" Spacing="16">
+
+            <Label Text="Create Employee Account"
+                   Style="{StaticResource HeadlineMedium}" />
+            <Label Text="Register to access your timesheets, leave, and payslips."
+                   Style="{StaticResource BodySmall}" TextColor="{StaticResource TextSecondary}"
+                   Margin="0,0,0,8" />
+
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                <Entry Grid.Column="0" Placeholder="First name" Text="{Binding FirstName}"
+                       Style="{StaticResource DarkEntry}" />
+                <Entry Grid.Column="1" Placeholder="Last name" Text="{Binding LastName}"
+                       Style="{StaticResource DarkEntry}" />
+            </Grid>
+
+            <Entry Placeholder="Email address" Text="{Binding Email}"
+                   Keyboard="Email" Style="{StaticResource DarkEntry}" />
+
+            <Entry Placeholder="Password (min. 8 characters)" Text="{Binding Password}"
+                   IsPassword="True" Style="{StaticResource DarkEntry}" />
+
+            <Entry Placeholder="Confirm password" Text="{Binding ConfirmPassword}"
+                   IsPassword="True" Style="{StaticResource DarkEntry}" />
+
+            <Label Text="{Binding ErrorMessage}" TextColor="{StaticResource Error}"
+                   IsVisible="{Binding ErrorMessage, Converter={StaticResource IsNotNullConverter}}" />
+
+            <Button Text="Continue"
+                    Command="{Binding RegisterCommand}"
+                    IsEnabled="{Binding IsNotBusy}"
+                    Style="{StaticResource PrimaryButton}"
+                    Margin="0,8,0,0" />
+
+            <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}"
+                               Color="{StaticResource Primary}" HorizontalOptions="Center" />
+
+            <Button Text="Already have an account? Sign in"
+                    Command="{Binding GoBackCommand}"
+                    Style="{StaticResource TextButton}" FontSize="13" />
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

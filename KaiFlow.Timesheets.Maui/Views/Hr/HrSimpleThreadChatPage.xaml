@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Hr.HrSimpleThreadChatPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
+    x:DataType="vm:HrSimpleThreadChatViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="{Binding Title}">
+
+    <Grid RowDefinitions="*,Auto">
+
+        <!-- Message list -->
+        <CollectionView Grid.Row="0"
+                        ItemsSource="{Binding Messages}"
+                        Margin="12,8"
+                        x:Name="messagesList">
+            <CollectionView.EmptyView>
+                <VerticalStackLayout VerticalOptions="Center" HorizontalOptions="Center" Spacing="8" Padding="32">
+                    <Label Text="No messages yet." Style="{StaticResource EmptyState}" />
+                    <Label Text="Messages sent here are visible to crew assigned to this job."
+                           Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}"
+                           HorizontalTextAlignment="Center" />
+                </VerticalStackLayout>
+            </CollectionView.EmptyView>
+            <CollectionView.ItemTemplate>
+                <DataTemplate x:DataType="vm:ChatMessage">
+                    <Grid Padding="0,4">
+                        <!-- Own messages: right-aligned -->
+                        <Frame IsVisible="{Binding IsOwn}"
+                               BackgroundColor="{StaticResource Primary}"
+                               CornerRadius="14" Padding="12,8" HasShadow="False"
+                               HorizontalOptions="End" MaximumWidthRequest="280">
+                            <VerticalStackLayout Spacing="2">
+                                <Label Text="{Binding Body}"
+                                       TextColor="White" FontSize="14" />
+                                <Label Text="{Binding TimeDisplay}"
+                                       TextColor="#E8E8FF" FontSize="11"
+                                       HorizontalOptions="End" />
+                            </VerticalStackLayout>
+                        </Frame>
+
+                        <!-- Others' messages: left-aligned -->
+                        <VerticalStackLayout IsVisible="{Binding IsOwn, Converter={StaticResource InverseBoolConverter}}"
+                                            HorizontalOptions="Start" MaximumWidthRequest="280" Spacing="2">
+                            <Label Text="{Binding SenderName}"
+                                   TextColor="{StaticResource Accent}" FontSize="12"
+                                   FontFamily="PoppinsSemiBold" />
+                            <Frame BackgroundColor="{StaticResource SurfaceDark}"
+                                   CornerRadius="14" Padding="12,8" HasShadow="False">
+                                <VerticalStackLayout Spacing="2">
+                                    <Label Text="{Binding Body}"
+                                           TextColor="{StaticResource TextPrimary}" FontSize="14" />
+                                    <Label Text="{Binding TimeDisplay}"
+                                           TextColor="{StaticResource TextSecondary}" FontSize="11"
+                                           HorizontalOptions="End" />
+                                </VerticalStackLayout>
+                            </Frame>
+                        </VerticalStackLayout>
+                    </Grid>
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+        </CollectionView>
+
+        <!-- Input bar -->
+        <Frame Grid.Row="1"
+               BackgroundColor="{StaticResource SurfaceDark}"
+               BorderColor="{StaticResource Divider}"
+               CornerRadius="0" Padding="12,8">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                <Entry Grid.Column="0"
+                       Text="{Binding NewMessage}"
+                       Placeholder="Type a message..."
+                       PlaceholderColor="{StaticResource TextSecondary}"
+                       TextColor="{StaticResource TextPrimary}"
+                       BackgroundColor="Transparent"
+                       ReturnCommand="{Binding SendCommand}" />
+                <Button Grid.Column="1"
+                        Text="Send"
+                        Command="{Binding SendCommand}"
+                        BackgroundColor="{StaticResource Primary}"
+                        TextColor="White"
+                        CornerRadius="16"
+                        Padding="16,8"
+                        FontSize="13" />
+            </Grid>
+        </Frame>
+
+        <!-- Busy overlay -->
+        <ActivityIndicator Grid.RowSpan="2"
+                           IsRunning="{Binding IsBusy}"
+                           IsVisible="{Binding IsBusy}"
+                           Color="{StaticResource Primary}"
+                           VerticalOptions="Center" HorizontalOptions="Center" />
+    </Grid>
+</ContentPage>

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Auth.HrEmailVerifiedPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Shell.NavBarIsVisible="False">
+
+    <ContentPage.Content>
+        <ScrollView>
+            <VerticalStackLayout VerticalOptions="Center" HorizontalOptions="Center"
+                                 Padding="32" Spacing="24" MinimumHeightRequest="500">
+
+                <!-- Check icon -->
+                <Frame CornerRadius="50" WidthRequest="100" HeightRequest="100"
+                       BackgroundColor="{StaticResource Primary}"
+                       BorderColor="Transparent" HasShadow="False"
+                       HorizontalOptions="Center">
+                    <Label Text="✓" FontSize="48" TextColor="White"
+                           HorizontalOptions="Center" VerticalOptions="Center" />
+                </Frame>
+
+                <!-- Title -->
+                <Label Text="Email Verified!"
+                       FontFamily="PoppinsBold" FontSize="26"
+                       TextColor="{StaticResource TextPrimary}"
+                       HorizontalOptions="Center" HorizontalTextAlignment="Center" />
+
+                <Label Text="Your email address has been confirmed. You can now set up your company."
+                       FontFamily="PoppinsRegular" FontSize="15"
+                       TextColor="{StaticResource TextSecondary}"
+                       HorizontalTextAlignment="Center" />
+
+                <Button Text="Set Up Company"
+                        Clicked="OnContinueClicked"
+                        Style="{StaticResource PrimaryButton}"
+                        Margin="0,16,0,0" />
+
+            </VerticalStackLayout>
+        </ScrollView>
+    </ContentPage.Content>
+</ContentPage>

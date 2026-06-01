@@ -1,0 +1,730 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Hr.HrEmployeeDashboardPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    xmlns:shared="clr-namespace:KaiFlow.Timesheets.Views.Shared"
+    x:DataType="vm:HrEmployeeDashboardViewModel"
+    x:Name="Self"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="{Binding Title}">
+
+    <Grid>
+
+        <Grid RowDefinitions="Auto,Auto,*" IsVisible="{Binding HasEmployee}">
+
+        <!-- ─────────────────────────────────────────────────── -->
+        <!-- HERO HEADER (sticky) -->
+        <!-- ─────────────────────────────────────────────────── -->
+        <VerticalStackLayout Grid.Row="0" Spacing="0"
+                             BackgroundColor="{StaticResource SurfaceDark}">
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14" Padding="16,18,16,16">
+
+                <!-- Avatar -->
+                <Frame Grid.Column="0"
+                       CornerRadius="36" WidthRequest="72" HeightRequest="72"
+                       BackgroundColor="{StaticResource Primary}"
+                       BorderColor="Transparent" Padding="0" HasShadow="False">
+                    <Label Text="{Binding Employee.Initials}"
+                           FontFamily="PoppinsBold" FontSize="24"
+                           TextColor="White"
+                           HorizontalOptions="Center" VerticalOptions="Center" />
+                </Frame>
+
+                <!-- Name + badges -->
+                <VerticalStackLayout Grid.Column="1" Spacing="5" VerticalOptions="Center">
+                    <Label Text="{Binding Employee.FullName}"
+                           FontFamily="PoppinsBold" FontSize="19"
+                           TextColor="{StaticResource TextPrimary}"
+                           LineBreakMode="TailTruncation" />
+                    <Label Text="{Binding Employee.Position}"
+                           FontFamily="Poppins" FontSize="13"
+                           TextColor="{StaticResource TextSecondary}"
+                           IsVisible="{Binding Employee.Position, Converter={StaticResource IsNotNullConverter}}" />
+                    <HorizontalStackLayout Spacing="6">
+                        <Frame BackgroundColor="{Binding Employee.IsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#DCFCE7|#FEE2E2'}"
+                               BorderColor="Transparent" CornerRadius="10" Padding="8,3" HasShadow="False">
+                            <Label Text="{Binding Employee.IsActive, Converter={StaticResource BoolToStringConverter}, ConverterParameter='Active|Inactive'}"
+                                   FontFamily="PoppinsSemiBold" FontSize="11"
+                                   TextColor="{Binding Employee.IsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#166534|#991B1B'}" />
+                        </Frame>
+                        <Frame BackgroundColor="{StaticResource SurfaceElevated}"
+                               BorderColor="{StaticResource Divider}" CornerRadius="10" Padding="8,3" HasShadow="False">
+                            <Label Text="{Binding Employee.EmploymentTypeRaw}"
+                                   FontFamily="Poppins" FontSize="11"
+                                   TextColor="{StaticResource TextSecondary}" />
+                        </Frame>
+                    </HorizontalStackLayout>
+                </VerticalStackLayout>
+
+                <!-- Edit Profile button (prominent, outlined) -->
+                <Button Grid.Column="2"
+                        Text="Edit Profile"
+                        Command="{Binding GoToEditCommand}"
+                        BackgroundColor="Transparent"
+                        BorderColor="{StaticResource Primary}"
+                        BorderWidth="1.5"
+                        TextColor="{StaticResource Primary}"
+                        CornerRadius="8"
+                        HeightRequest="40"
+                        Padding="14,0"
+                        FontFamily="PoppinsMedium"
+                        FontSize="13"
+                        VerticalOptions="Center" />
+            </Grid>
+            <BoxView HeightRequest="1" Color="{StaticResource Divider}" />
+
+            <!-- Payroll readiness -->
+            <Frame Margin="16,8,16,0" Padding="12,10" HasShadow="False" CornerRadius="10"
+                   IsVisible="{Binding CanSeePayrollReadiness}"
+                   BorderColor="{Binding PayrollReadiness.StatusColor, Converter={StaticResource HexToColorConverter}}"
+                   BackgroundColor="{StaticResource SurfaceElevated}">
+                <VerticalStackLayout Spacing="4">
+                    <Label Text="{Binding PayrollReadiness.StatusLabel, StringFormat='Payroll: {0}'}"
+                           FontFamily="PoppinsSemiBold" FontSize="13"
+                           TextColor="{Binding PayrollReadiness.StatusColor, Converter={StaticResource HexToColorConverter}}" />
+                    <VerticalStackLayout Spacing="2"
+                                         BindableLayout.ItemsSource="{Binding PayrollReadiness.Issues}"
+                                         IsVisible="{Binding PayrollReadiness.IsReady, Converter={StaticResource InverseBoolConverter}}">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate x:DataType="x:String">
+                                <Label Text="{Binding ., StringFormat='• {0}'}"
+                                       FontFamily="Poppins" FontSize="12"
+                                       TextColor="{StaticResource TextSecondary}" />
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                    </VerticalStackLayout>
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Info chips row -->
+            <ScrollView Orientation="Horizontal" HorizontalScrollBarVisibility="Never"
+                        Padding="16,8,16,10">
+                <HorizontalStackLayout Spacing="8">
+                    <Frame IsVisible="{Binding Employee.IdNumber, Converter={StaticResource IsNotNullConverter}}"
+                           BackgroundColor="{StaticResource SurfaceElevated}" BorderColor="{StaticResource Divider}"
+                           CornerRadius="6" Padding="8,5" HasShadow="False">
+                        <HorizontalStackLayout Spacing="5">
+                            <Label Text="ID" FontFamily="Poppins" FontSize="11"
+                                   TextColor="{StaticResource TextSecondary}" VerticalOptions="Center" />
+                            <Label Text="{Binding Employee.IdNumber}" FontFamily="PoppinsMedium" FontSize="11"
+                                   TextColor="{StaticResource TextPrimary}" VerticalOptions="Center" />
+                        </HorizontalStackLayout>
+                    </Frame>
+                    <Frame BackgroundColor="{StaticResource SurfaceElevated}" BorderColor="{StaticResource Divider}"
+                           CornerRadius="6" Padding="8,5" HasShadow="False">
+                        <HorizontalStackLayout Spacing="5">
+                            <Label Text="Access" FontFamily="Poppins" FontSize="11"
+                                   TextColor="{StaticResource TextSecondary}" VerticalOptions="Center" />
+                            <Label Text="{Binding Employee.AccessLevelRaw}" FontFamily="PoppinsMedium" FontSize="11"
+                                   TextColor="{StaticResource TextPrimary}" VerticalOptions="Center" />
+                        </HorizontalStackLayout>
+                    </Frame>
+                    <Frame IsVisible="{Binding Employee.EmploymentDate, Converter={StaticResource IsNotNullConverter}}"
+                           BackgroundColor="{StaticResource SurfaceElevated}" BorderColor="{StaticResource Divider}"
+                           CornerRadius="6" Padding="8,5" HasShadow="False">
+                        <HorizontalStackLayout Spacing="5">
+                            <Label Text="Since" FontFamily="Poppins" FontSize="11"
+                                   TextColor="{StaticResource TextSecondary}" VerticalOptions="Center" />
+                            <Label Text="{Binding Employee.EmploymentDate, StringFormat='{0:dd MMM yyyy}'}"
+                                   FontFamily="PoppinsMedium" FontSize="11"
+                                   TextColor="{StaticResource TextPrimary}" VerticalOptions="Center" />
+                        </HorizontalStackLayout>
+                    </Frame>
+                    <Frame IsVisible="{Binding Employee.Branch, Converter={StaticResource IsNotNullConverter}}"
+                           BackgroundColor="{StaticResource SurfaceElevated}" BorderColor="{StaticResource Divider}"
+                           CornerRadius="6" Padding="8,5" HasShadow="False">
+                        <HorizontalStackLayout Spacing="5">
+                            <Label Text="Branch" FontFamily="Poppins" FontSize="11"
+                                   TextColor="{StaticResource TextSecondary}" VerticalOptions="Center" />
+                            <Label Text="{Binding Employee.Branch}" FontFamily="PoppinsMedium" FontSize="11"
+                                   TextColor="{StaticResource TextPrimary}" VerticalOptions="Center" />
+                        </HorizontalStackLayout>
+                    </Frame>
+                    <Frame IsVisible="{Binding Employee.Email, Converter={StaticResource IsNotNullConverter}}"
+                           BackgroundColor="{StaticResource SurfaceElevated}" BorderColor="{StaticResource Divider}"
+                           CornerRadius="6" Padding="8,5" HasShadow="False">
+                        <HorizontalStackLayout Spacing="5">
+                            <Label Text="Email" FontFamily="Poppins" FontSize="11"
+                                   TextColor="{StaticResource TextSecondary}" VerticalOptions="Center" />
+                            <Label Text="{Binding Employee.Email}" FontFamily="PoppinsMedium" FontSize="11"
+                                   TextColor="{StaticResource TextPrimary}" VerticalOptions="Center" />
+                        </HorizontalStackLayout>
+                    </Frame>
+                    <Frame IsVisible="{Binding Employee.Phone, Converter={StaticResource IsNotNullConverter}}"
+                           BackgroundColor="{StaticResource SurfaceElevated}" BorderColor="{StaticResource Divider}"
+                           CornerRadius="6" Padding="8,5" HasShadow="False">
+                        <HorizontalStackLayout Spacing="5">
+                            <Label Text="Phone" FontFamily="Poppins" FontSize="11"
+                                   TextColor="{StaticResource TextSecondary}" VerticalOptions="Center" />
+                            <Label Text="{Binding Employee.Phone}" FontFamily="PoppinsMedium" FontSize="11"
+                                   TextColor="{StaticResource TextPrimary}" VerticalOptions="Center" />
+                        </HorizontalStackLayout>
+                    </Frame>
+                </HorizontalStackLayout>
+            </ScrollView>
+            <BoxView HeightRequest="1" Color="{StaticResource Divider}" />
+        </VerticalStackLayout>
+
+        <!-- ─────────────────────────────────────────────────── -->
+        <!-- TAB BAR (sticky) -->
+        <!-- ─────────────────────────────────────────────────── -->
+        <VerticalStackLayout Grid.Row="1" Spacing="0"
+                             BackgroundColor="{StaticResource SurfaceDark}">
+            <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="6" Padding="12,8">
+                <Button Grid.Column="0" Text="Overview"
+                        Command="{Binding SetTabCommand}" CommandParameter="overview"
+                        CornerRadius="8" HeightRequest="40"
+                        FontFamily="PoppinsMedium" FontSize="12"
+                        BackgroundColor="{Binding SelectedTab, Converter={StaticResource EqToStyleConverter}, ConverterParameter='overview|#3B82F6,#F3F5FB'}"
+                        TextColor="{Binding SelectedTab, Converter={StaticResource EqToStyleConverter}, ConverterParameter='overview|#FFFFFF,#6B7280'}" />
+                <Button Grid.Column="1" Text="Payments"
+                        IsVisible="{Binding CanSeePayroll}"
+                        Command="{Binding SetTabCommand}" CommandParameter="payments"
+                        CornerRadius="8" HeightRequest="40"
+                        FontFamily="PoppinsMedium" FontSize="12"
+                        BackgroundColor="{Binding SelectedTab, Converter={StaticResource EqToStyleConverter}, ConverterParameter='payments|#3B82F6,#F3F5FB'}"
+                        TextColor="{Binding SelectedTab, Converter={StaticResource EqToStyleConverter}, ConverterParameter='payments|#FFFFFF,#6B7280'}" />
+                <Button Grid.Column="2" Text="Leave"
+                        Command="{Binding SetTabCommand}" CommandParameter="leave"
+                        CornerRadius="8" HeightRequest="40"
+                        FontFamily="PoppinsMedium" FontSize="12"
+                        BackgroundColor="{Binding SelectedTab, Converter={StaticResource EqToStyleConverter}, ConverterParameter='leave|#3B82F6,#F3F5FB'}"
+                        TextColor="{Binding SelectedTab, Converter={StaticResource EqToStyleConverter}, ConverterParameter='leave|#FFFFFF,#6B7280'}" />
+                <Button Grid.Column="3" Text="Documents"
+                        Command="{Binding SetTabCommand}" CommandParameter="documents"
+                        CornerRadius="8" HeightRequest="40"
+                        FontFamily="PoppinsMedium" FontSize="12"
+                        BackgroundColor="{Binding SelectedTab, Converter={StaticResource EqToStyleConverter}, ConverterParameter='documents|#3B82F6,#F3F5FB'}"
+                        TextColor="{Binding SelectedTab, Converter={StaticResource EqToStyleConverter}, ConverterParameter='documents|#FFFFFF,#6B7280'}" />
+            </Grid>
+            <BoxView HeightRequest="1" Color="{StaticResource Divider}" />
+        </VerticalStackLayout>
+
+        <!-- ─────────────────────────────────────────────────── -->
+        <!-- TAB CONTENT (scrollable) -->
+        <!-- ─────────────────────────────────────────────────── -->
+        <ScrollView Grid.Row="2">
+            <VerticalStackLayout Padding="16" Spacing="16">
+
+                <!-- ═══════════════════════════════════════════ -->
+                <!-- OVERVIEW TAB                               -->
+                <!-- ═══════════════════════════════════════════ -->
+                <VerticalStackLayout Spacing="16" IsVisible="{Binding IsOverviewTab}">
+
+                    <!-- KPI Row -->
+                    <Grid ColumnDefinitions="*,*,*" ColumnSpacing="10">
+                        <Frame Grid.Column="0" Style="{StaticResource KpiCard}" Padding="12,14">
+                            <VerticalStackLayout Spacing="2">
+                                <Label Text="{Binding TotalHoursThisMonth, StringFormat='{0:F1}h'}"
+                                       FontFamily="PoppinsBold" FontSize="18"
+                                       TextColor="{StaticResource Primary}"
+                                       HorizontalOptions="Center" />
+                                <Label Text="Hours / Month"
+                                       FontFamily="Poppins" FontSize="10"
+                                       TextColor="{StaticResource TextSecondary}"
+                                       HorizontalOptions="Center" HorizontalTextAlignment="Center" />
+                            </VerticalStackLayout>
+                        </Frame>
+                        <Frame Grid.Column="1" Style="{StaticResource KpiCard}" Padding="12,14">
+                            <VerticalStackLayout Spacing="2">
+                                <Label Text="{Binding TotalPayThisMonth, StringFormat='R{0:N0}'}"
+                                       FontFamily="PoppinsBold" FontSize="18"
+                                       TextColor="{StaticResource Success}"
+                                       HorizontalOptions="Center" />
+                                <Label Text="Pay Due"
+                                       FontFamily="Poppins" FontSize="10"
+                                       TextColor="{StaticResource TextSecondary}"
+                                       HorizontalOptions="Center" />
+                            </VerticalStackLayout>
+                        </Frame>
+                        <Frame Grid.Column="2" Style="{StaticResource KpiCard}" Padding="12,14">
+                            <VerticalStackLayout Spacing="2">
+                                <Label Text="{Binding TotalPunchesThisMonth}"
+                                       FontFamily="PoppinsBold" FontSize="18"
+                                       TextColor="{StaticResource TextPrimary}"
+                                       HorizontalOptions="Center" />
+                                <Label Text="Punches"
+                                       FontFamily="Poppins" FontSize="10"
+                                       TextColor="{StaticResource TextSecondary}"
+                                       HorizontalOptions="Center" />
+                            </VerticalStackLayout>
+                        </Frame>
+                    </Grid>
+
+                    <!-- Banking -->
+                    <Label Text="BANKING DETAILS" Style="{StaticResource LabelSection}" />
+                    <Frame Style="{StaticResource CardFrame}" Padding="16">
+                        <VerticalStackLayout Spacing="10">
+                            <Label Text="Payroll banking for this company."
+                                   Style="{StaticResource Caption}"
+                                   TextColor="{StaticResource TextSecondary}" />
+                            <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="12" RowSpacing="10">
+                                <VerticalStackLayout Grid.Row="0" Grid.Column="0" Spacing="2">
+                                    <Label Text="Account" Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                                    <Label Text="{Binding Employee.MaskedBankAccount}" Style="{StaticResource BodyMedium}"
+                                           TextColor="{StaticResource TextPrimary}" />
+                                </VerticalStackLayout>
+                                <VerticalStackLayout Grid.Row="0" Grid.Column="1" Spacing="2">
+                                    <Label Text="Bank" Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                                    <Label Text="{Binding Employee.BankName, FallbackValue='—'}" Style="{StaticResource BodyMedium}"
+                                           TextColor="{StaticResource TextPrimary}" />
+                                </VerticalStackLayout>
+                                <VerticalStackLayout Grid.Row="1" Grid.Column="0" Spacing="2">
+                                    <Label Text="Branch code" Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                                    <Label Text="{Binding Employee.BankBranchCode, FallbackValue='—'}" Style="{StaticResource BodyMedium}"
+                                           TextColor="{StaticResource TextPrimary}" />
+                                </VerticalStackLayout>
+                            </Grid>
+                            <Label Text="{Binding Employee.BankDetailsUpdatedDisplay}"
+                                   Style="{StaticResource Caption}"
+                                   TextColor="{StaticResource TextSecondary}"
+                                   IsVisible="{Binding Employee.HasBankDetailsAudit}" />
+                            <Label Text="No banking details on file yet."
+                                   Style="{StaticResource Caption}"
+                                   TextColor="{StaticResource TextSecondary}"
+                                   IsVisible="{Binding Employee.HasBankingDetails, Converter={StaticResource InverseBoolConverter}}" />
+                            <Button Text="Edit Banking"
+                                    Command="{Binding GoToEditCommand}"
+                                    BackgroundColor="{StaticResource SurfaceElevated}"
+                                    TextColor="{StaticResource Primary}"
+                                    CornerRadius="8" HeightRequest="36" HorizontalOptions="Start" Padding="14,0" />
+                        </VerticalStackLayout>
+                    </Frame>
+
+                    <!-- Attendance header + filter -->
+                    <Label Text="ATTENDANCE" Style="{StaticResource LabelSection}" />
+
+                    <ScrollView Orientation="Horizontal" HorizontalScrollBarVisibility="Never">
+                        <HorizontalStackLayout Spacing="8">
+                            <Button Text="Today"
+                                    Command="{Binding SetAttendancePeriodCommand}" CommandParameter="today"
+                                    CornerRadius="20" HeightRequest="34" FontFamily="PoppinsMedium" FontSize="12" Padding="16,0"
+                                    BackgroundColor="{Binding AttendancePeriod, Converter={StaticResource EqToStyleConverter}, ConverterParameter='today|#3B82F6,#E5E7EB'}"
+                                    TextColor="{Binding AttendancePeriod, Converter={StaticResource EqToStyleConverter}, ConverterParameter='today|#FFFFFF,#6B7280'}" />
+                            <Button Text="This Week"
+                                    Command="{Binding SetAttendancePeriodCommand}" CommandParameter="week"
+                                    CornerRadius="20" HeightRequest="34" FontFamily="PoppinsMedium" FontSize="12" Padding="16,0"
+                                    BackgroundColor="{Binding AttendancePeriod, Converter={StaticResource EqToStyleConverter}, ConverterParameter='week|#3B82F6,#E5E7EB'}"
+                                    TextColor="{Binding AttendancePeriod, Converter={StaticResource EqToStyleConverter}, ConverterParameter='week|#FFFFFF,#6B7280'}" />
+                            <Button Text="This Month"
+                                    Command="{Binding SetAttendancePeriodCommand}" CommandParameter="month"
+                                    CornerRadius="20" HeightRequest="34" FontFamily="PoppinsMedium" FontSize="12" Padding="16,0"
+                                    BackgroundColor="{Binding AttendancePeriod, Converter={StaticResource EqToStyleConverter}, ConverterParameter='month|#3B82F6,#E5E7EB'}"
+                                    TextColor="{Binding AttendancePeriod, Converter={StaticResource EqToStyleConverter}, ConverterParameter='month|#FFFFFF,#6B7280'}" />
+                            <Button Text="Custom"
+                                    Command="{Binding SetAttendancePeriodCommand}" CommandParameter="custom"
+                                    CornerRadius="20" HeightRequest="34" FontFamily="PoppinsMedium" FontSize="12" Padding="16,0"
+                                    BackgroundColor="{Binding AttendancePeriod, Converter={StaticResource EqToStyleConverter}, ConverterParameter='custom|#3B82F6,#E5E7EB'}"
+                                    TextColor="{Binding AttendancePeriod, Converter={StaticResource EqToStyleConverter}, ConverterParameter='custom|#FFFFFF,#6B7280'}" />
+                        </HorizontalStackLayout>
+                    </ScrollView>
+
+                    <Frame Style="{StaticResource CardFrame}" Padding="14,12"
+                           IsVisible="{Binding ShowCustomRange}">
+                        <Grid ColumnDefinitions="*,Auto,*,Auto" ColumnSpacing="8">
+                            <DatePicker Grid.Column="0" Date="{Binding AttendanceFrom}"
+                                        TextColor="{StaticResource TextPrimary}"
+                                        BackgroundColor="Transparent" Format="dd MMM yyyy" />
+                            <Label Grid.Column="1" Text="–"
+                                   TextColor="{StaticResource TextSecondary}" VerticalOptions="Center" />
+                            <DatePicker Grid.Column="2" Date="{Binding AttendanceTo}"
+                                        TextColor="{StaticResource TextPrimary}"
+                                        BackgroundColor="Transparent" Format="dd MMM yyyy" />
+                            <Button Grid.Column="3" Text="Apply"
+                                    Command="{Binding ApplyCustomRangeCommand}"
+                                    Style="{StaticResource PrimaryButton}"
+                                    HeightRequest="40" Padding="12,0" />
+                        </Grid>
+                    </Frame>
+
+                    <!-- Attendance period totals -->
+                    <Grid ColumnDefinitions="*,*,*" ColumnSpacing="10">
+                        <Frame Grid.Column="0" Style="{StaticResource KpiCard}" Padding="10,12">
+                            <VerticalStackLayout Spacing="2">
+                                <Label Text="{Binding AttendanceSessions}"
+                                       FontFamily="PoppinsBold" FontSize="16"
+                                       TextColor="{StaticResource TextPrimary}"
+                                       HorizontalOptions="Center" />
+                                <Label Text="Sessions" FontFamily="Poppins" FontSize="10"
+                                       TextColor="{StaticResource TextSecondary}"
+                                       HorizontalOptions="Center" />
+                            </VerticalStackLayout>
+                        </Frame>
+                        <Frame Grid.Column="1" Style="{StaticResource KpiCard}" Padding="10,12">
+                            <VerticalStackLayout Spacing="2">
+                                <Label Text="{Binding AttendanceTotalHours, StringFormat='{0:F1}h'}"
+                                       FontFamily="PoppinsBold" FontSize="16"
+                                       TextColor="{StaticResource Primary}"
+                                       HorizontalOptions="Center" />
+                                <Label Text="Total Hours" FontFamily="Poppins" FontSize="10"
+                                       TextColor="{StaticResource TextSecondary}"
+                                       HorizontalOptions="Center" />
+                            </VerticalStackLayout>
+                        </Frame>
+                        <Frame Grid.Column="2" Style="{StaticResource KpiCard}" Padding="10,12">
+                            <VerticalStackLayout Spacing="2">
+                                <Label Text="{Binding AttendanceTotalPay, StringFormat='R{0:N0}'}"
+                                       FontFamily="PoppinsBold" FontSize="16"
+                                       TextColor="{StaticResource Success}"
+                                       HorizontalOptions="Center" />
+                                <Label Text="Total Pay" FontFamily="Poppins" FontSize="10"
+                                       TextColor="{StaticResource TextSecondary}"
+                                       HorizontalOptions="Center" />
+                            </VerticalStackLayout>
+                        </Frame>
+                    </Grid>
+
+                    <!-- Session table -->
+                    <shared:AttendanceSessionTableView Sessions="{Binding Sessions}"
+                                                         EmptyMessage="No sessions for this period." />
+
+                </VerticalStackLayout>
+
+                <!-- ═══════════════════════════════════════════ -->
+                <!-- PAYMENTS TAB                               -->
+                <!-- ═══════════════════════════════════════════ -->
+                <VerticalStackLayout Spacing="16" IsVisible="{Binding IsPaymentsTab}">
+
+                    <!-- Compensation -->
+                    <Frame Style="{StaticResource CardFrame}">
+                        <VerticalStackLayout Spacing="12">
+                            <Label Text="COMPENSATION" Style="{StaticResource LabelSection}" />
+                            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
+                                <VerticalStackLayout Grid.Column="0" Spacing="3">
+                                    <Label Text="{Binding Employee.MonthlySalary, StringFormat='R{0:N0}'}"
+                                           FontFamily="PoppinsSemiBold" FontSize="15"
+                                           TextColor="{StaticResource TextPrimary}" />
+                                    <Label Text="Monthly" FontFamily="Poppins" FontSize="11"
+                                           TextColor="{StaticResource TextSecondary}" />
+                                </VerticalStackLayout>
+                                <VerticalStackLayout Grid.Column="1" Spacing="3">
+                                    <Label Text="{Binding Employee.DailyRate, StringFormat='R{0:N2}'}"
+                                           FontFamily="PoppinsSemiBold" FontSize="15"
+                                           TextColor="{StaticResource TextPrimary}" />
+                                    <Label Text="Daily" FontFamily="Poppins" FontSize="11"
+                                           TextColor="{StaticResource TextSecondary}" />
+                                </VerticalStackLayout>
+                                <VerticalStackLayout Grid.Column="2" Spacing="3">
+                                    <Label Text="{Binding Employee.HourlyRate, StringFormat='R{0:N2}'}"
+                                           FontFamily="PoppinsBold" FontSize="15"
+                                           TextColor="{StaticResource Primary}" />
+                                    <Label Text="Hourly" FontFamily="Poppins" FontSize="11"
+                                           TextColor="{StaticResource TextSecondary}" />
+                                </VerticalStackLayout>
+                            </Grid>
+                        </VerticalStackLayout>
+                    </Frame>
+
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Grid.Column="0" Text="PAYMENT RECORDS" Style="{StaticResource LabelSection}" />
+                        <Button Grid.Column="1" Text="+ Generate"
+                                Command="{Binding GeneratePaymentCommand}"
+                                Style="{StaticResource TextButton}" FontSize="13" />
+                    </Grid>
+
+                    <Label Text="No payment records."
+                           Style="{StaticResource EmptyState}"
+                           IsVisible="{Binding Payments.Count, Converter={StaticResource IsZeroConverter}}" />
+
+                    <ScrollView Orientation="Horizontal"
+                                IsVisible="{Binding Payments.Count, Converter={StaticResource IsNotZeroConverter}}">
+                        <VerticalStackLayout WidthRequest="820" Spacing="0">
+                            <Frame Style="{StaticResource DataTableFrame}">
+                                <Grid ColumnDefinitions="120,85,85,85,90,80,100,160" Padding="12,10"
+                                      BackgroundColor="{StaticResource SurfaceElevated}">
+                                    <Label Grid.Column="0" Text="Period" Style="{StaticResource DataTableHeaderLabel}" />
+                                    <Label Grid.Column="1" Text="Gross" Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="End" />
+                                    <Label Grid.Column="2" Text="Deduct." Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="End" />
+                                    <Label Grid.Column="3" Text="Net" Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="End" />
+                                    <Label Grid.Column="4" Text="Hours" Style="{StaticResource DataTableHeaderLabel}" />
+                                    <Label Grid.Column="5" Text="Status" Style="{StaticResource DataTableHeaderLabel}" />
+                                    <Label Grid.Column="6" Text="Visible" Style="{StaticResource DataTableHeaderLabel}" />
+                                    <Label Grid.Column="7" Text="Actions" Style="{StaticResource DataTableHeaderLabel}" />
+                                </Grid>
+                            </Frame>
+
+                            <VerticalStackLayout Spacing="0" BindableLayout.ItemsSource="{Binding Payments}">
+                                <BindableLayout.ItemTemplate>
+                                    <DataTemplate x:DataType="models:PaymentApproval">
+                                        <VerticalStackLayout Spacing="0">
+                                            <Grid ColumnDefinitions="120,85,85,85,90,80,100,160" Padding="12,10"
+                                                  BackgroundColor="{StaticResource SurfaceCard}">
+                                                <Label Grid.Column="0" Text="{Binding PeriodLabel}"
+                                                       Style="{StaticResource DataTableCellLabel}" />
+                                                <Label Grid.Column="1" Text="{Binding GrossDisplay}"
+                                                       Style="{StaticResource DataTableCellLabel}" HorizontalTextAlignment="End" />
+                                                <Label Grid.Column="2" Text="{Binding DeductionsDisplay}"
+                                                       Style="{StaticResource DataTableCellSecondary}" HorizontalTextAlignment="End" />
+                                                <Label Grid.Column="3" Text="{Binding NetDisplay}"
+                                                       Style="{StaticResource DataTableCellLabel}" HorizontalTextAlignment="End"
+                                                       TextColor="{StaticResource Primary}" />
+                                                <Label Grid.Column="4" Text="{Binding HoursDisplay}"
+                                                       Style="{StaticResource DataTableCellSecondary}" />
+                                                <Label Grid.Column="5" Text="{Binding StatusRaw}"
+                                                       Style="{StaticResource DataTableCellLabel}" />
+                                                <Label Grid.Column="6" Text="{Binding EmployeeVisibilityLabel}"
+                                                       Style="{StaticResource DataTableCellSecondary}"
+                                                       FontSize="11"
+                                                       TextColor="{Binding SharedWithEmployee, Converter={StaticResource EqToStyleConverter}, ConverterParameter='True|#16A34A,#6B7280'}" />
+                                                <HorizontalStackLayout Grid.Column="7" Spacing="6" VerticalOptions="Center">
+                                                    <Button Text="View"
+                                                            Command="{Binding Source={RelativeSource AncestorType={x:Type vm:HrEmployeeDashboardViewModel}}, Path=OpenPayslipCommand}"
+                                                            CommandParameter="{Binding .}"
+                                                            BackgroundColor="{StaticResource SurfaceDark}"
+                                                            TextColor="{StaticResource Primary}"
+                                                            CornerRadius="6" HeightRequest="30" FontSize="11" Padding="8,0" />
+                                                    <Button Text="Show"
+                                                            Command="{Binding Source={RelativeSource AncestorType={x:Type vm:HrEmployeeDashboardViewModel}}, Path=ShowPayslipToEmployeeCommand}"
+                                                            CommandParameter="{Binding .}"
+                                                            IsVisible="{Binding CanReleaseToEmployee}"
+                                                            BackgroundColor="#7C3AED" TextColor="White"
+                                                            CornerRadius="6" HeightRequest="30" FontSize="11" Padding="8,0" />
+                                                </HorizontalStackLayout>
+                                            </Grid>
+                                            <BoxView Style="{StaticResource DataTableRowDivider}" />
+                                        </VerticalStackLayout>
+                                    </DataTemplate>
+                                </BindableLayout.ItemTemplate>
+                            </VerticalStackLayout>
+                        </VerticalStackLayout>
+                    </ScrollView>
+
+                </VerticalStackLayout>
+
+                <!-- ═══════════════════════════════════════════ -->
+                <!-- LEAVE TAB                                  -->
+                <!-- ═══════════════════════════════════════════ -->
+                <VerticalStackLayout Spacing="16" IsVisible="{Binding IsLeaveTab}">
+
+                    <!-- Leave Balances -->
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Grid.Column="0" Text="LEAVE BALANCES" Style="{StaticResource LabelSection}" />
+                        <Button Grid.Column="1" Text="+ Apply"
+                                Command="{Binding ApplyLeaveCommand}"
+                                Style="{StaticResource TextButton}" FontSize="13" />
+                    </Grid>
+                    <VerticalStackLayout Spacing="8" BindableLayout.ItemsSource="{Binding LeaveBalances}">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate x:DataType="models:LeaveBalance">
+                                <Frame Style="{StaticResource CardFrame}" Padding="14,12">
+                                    <VerticalStackLayout Spacing="8">
+                                        <Grid ColumnDefinitions="6,*,Auto" ColumnSpacing="10">
+                                            <BoxView Grid.Column="0" CornerRadius="3" WidthRequest="6"
+                                                     BackgroundColor="{Binding Color, Converter={StaticResource HexToColorConverter}}"
+                                                     VerticalOptions="Fill" />
+                                            <VerticalStackLayout Grid.Column="1" Spacing="2" VerticalOptions="Center">
+                                                <Label Text="{Binding Label}"
+                                                       FontFamily="PoppinsMedium" FontSize="13"
+                                                       TextColor="{StaticResource TextPrimary}" />
+                                                <Label Text="{Binding SubText}"
+                                                       Style="{StaticResource Caption}"
+                                                       TextColor="{StaticResource TextSecondary}" />
+                                            </VerticalStackLayout>
+                                            <VerticalStackLayout Grid.Column="2" HorizontalOptions="End" Spacing="1">
+                                                <Label Text="{Binding SummaryText}"
+                                                       FontFamily="PoppinsBold" FontSize="18"
+                                                       TextColor="{Binding Color, Converter={StaticResource HexToColorConverter}}"
+                                                       HorizontalOptions="End" />
+                                                <Label Text="days left"
+                                                       FontFamily="Poppins" FontSize="10"
+                                                       TextColor="{StaticResource TextSecondary}"
+                                                       HorizontalOptions="End" />
+                                            </VerticalStackLayout>
+                                        </Grid>
+                                        <ProgressBar Progress="{Binding ProgressFraction}"
+                                                     ProgressColor="{Binding Color, Converter={StaticResource HexToColorConverter}}"
+                                                     BackgroundColor="{StaticResource SurfaceElevated}"
+                                                     HeightRequest="4" />
+                                    </VerticalStackLayout>
+                                </Frame>
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                    </VerticalStackLayout>
+
+                    <!-- Leave Requests -->
+                    <Label Text="LEAVE REQUESTS" Style="{StaticResource LabelSection}" />
+                    <Label Text="No leave requests."
+                           Style="{StaticResource EmptyState}"
+                           IsVisible="{Binding LeaveRequests.Count, Converter={StaticResource IsZeroConverter}}" />
+                    <VerticalStackLayout Spacing="8" BindableLayout.ItemsSource="{Binding LeaveRequests}">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate x:DataType="models:LeaveRequest">
+                                <Frame Style="{StaticResource CardFrame}" Padding="14,12">
+                                    <VerticalStackLayout Spacing="10">
+                                        <Grid ColumnDefinitions="6,*,Auto" ColumnSpacing="10">
+                                            <BoxView Grid.Column="0" CornerRadius="3" WidthRequest="6"
+                                                     BackgroundColor="{Binding StatusRaw, Converter={StaticResource EqToStyleConverter}, ConverterParameter='approved|#22C55E,declined|#EF4444,#F59E0B'}"
+                                                     VerticalOptions="Fill" />
+                                            <VerticalStackLayout Grid.Column="1" Spacing="3">
+                                                <Label Text="{Binding LeaveType}"
+                                                       FontFamily="PoppinsSemiBold" FontSize="13"
+                                                       TextColor="{StaticResource TextPrimary}" />
+                                                <HorizontalStackLayout Spacing="4">
+                                                    <Label Text="{Binding StartDate, StringFormat='{0:dd MMM}'}"
+                                                           Style="{StaticResource Caption}"
+                                                           TextColor="{StaticResource TextSecondary}" />
+                                                    <Label Text="–" Style="{StaticResource Caption}"
+                                                           TextColor="{StaticResource TextSecondary}" />
+                                                    <Label Text="{Binding EndDate, StringFormat='{0:dd MMM yyyy}'}"
+                                                           Style="{StaticResource Caption}"
+                                                           TextColor="{StaticResource TextSecondary}" />
+                                                    <Label Text="{Binding TotalDays, StringFormat='· {0:F0}d'}"
+                                                           Style="{StaticResource Caption}"
+                                                           TextColor="{StaticResource TextSecondary}" />
+                                                </HorizontalStackLayout>
+                                                <Label Text="{Binding Reason}"
+                                                       Style="{StaticResource Caption}"
+                                                       TextColor="{StaticResource TextSecondary}"
+                                                       IsVisible="{Binding Reason, Converter={StaticResource IsNotNullConverter}}" />
+                                            </VerticalStackLayout>
+                                            <Frame Grid.Column="2"
+                                                   BackgroundColor="{Binding StatusRaw, Converter={StaticResource EqToStyleConverter}, ConverterParameter='approved|#DCFCE7,declined|#FEE2E2,#FEF3C7'}"
+                                                   BorderColor="Transparent" CornerRadius="10"
+                                                   Padding="8,3" HasShadow="False" VerticalOptions="Start">
+                                                <Label Text="{Binding StatusRaw}"
+                                                       FontFamily="PoppinsSemiBold" FontSize="11"
+                                                       TextColor="{StaticResource TextPrimary}" />
+                                            </Frame>
+                                        </Grid>
+                                        <HorizontalStackLayout Spacing="8" IsVisible="{Binding IsPending}">
+                                            <Button Text="Approve"
+                                                    Command="{Binding BindingContext.ApproveLeaveCommand, Source={x:Reference Self}}"
+                                                    CommandParameter="{Binding .}"
+                                                    Style="{StaticResource PrimaryButton}"
+                                                    HeightRequest="36" FontSize="13"
+                                                    HorizontalOptions="Start" />
+                                            <Button Text="Decline"
+                                                    Command="{Binding BindingContext.RejectLeaveCommand, Source={x:Reference Self}}"
+                                                    CommandParameter="{Binding .}"
+                                                    Style="{StaticResource DangerButton}"
+                                                    HeightRequest="36" FontSize="13"
+                                                    HorizontalOptions="Start" />
+                                        </HorizontalStackLayout>
+                                    </VerticalStackLayout>
+                                </Frame>
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                    </VerticalStackLayout>
+
+                </VerticalStackLayout>
+
+                <!-- ═══════════════════════════════════════════ -->
+                <!-- DOCUMENTS TAB                             -->
+                <!-- ═══════════════════════════════════════════ -->
+                <VerticalStackLayout Spacing="12" IsVisible="{Binding IsDocumentsTab}">
+
+                    <Frame BackgroundColor="#FEE2E2" BorderColor="#FCA5A5" CornerRadius="10"
+                           Padding="14,10" HasShadow="False"
+                           IsVisible="{Binding ErrorMessage, Converter={StaticResource IsNotNullConverter}}">
+                        <Label Text="{Binding ErrorMessage}" TextColor="{StaticResource Error}"
+                               FontFamily="PoppinsMedium" FontSize="13" />
+                    </Frame>
+
+                    <Button Text="+ Upload Document"
+                            Command="{Binding UploadDocumentCommand}"
+                            BackgroundColor="{StaticResource Primary}" TextColor="White"
+                            FontFamily="PoppinsSemiBold" FontSize="13"
+                            CornerRadius="10" HeightRequest="44"
+                            HorizontalOptions="Start" Padding="16,0" />
+
+                    <Label Text="No documents uploaded yet."
+                           Style="{StaticResource EmptyState}"
+                           IsVisible="{Binding Documents.Count, Converter={StaticResource IsZeroConverter}}" />
+
+                    <VerticalStackLayout Spacing="8"
+                                         BindableLayout.ItemsSource="{Binding Documents}">
+                        <BindableLayout.ItemTemplate>
+                            <DataTemplate x:DataType="models:EmployeeDocument">
+                                <Frame Style="{StaticResource CardFrame}" Padding="14,12">
+                                    <VerticalStackLayout Spacing="10">
+                                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                                            <Label Grid.Column="0" Text="{Binding TypeIcon}"
+                                                   FontSize="24" VerticalOptions="Center" />
+                                            <VerticalStackLayout Grid.Column="1" Spacing="3" VerticalOptions="Center">
+                                                <Label Text="{Binding DocumentName}"
+                                                       FontFamily="PoppinsMedium" FontSize="13"
+                                                       TextColor="{StaticResource TextPrimary}" />
+                                                <HorizontalStackLayout Spacing="8">
+                                                    <Label Text="{Binding TypeLabel}"
+                                                           FontFamily="Poppins" FontSize="11"
+                                                           TextColor="{StaticResource TextSecondary}" />
+                                                    <Label Text="{Binding UploadedByLabel}"
+                                                           FontFamily="Poppins" FontSize="11"
+                                                           TextColor="{StaticResource Primary}" />
+                                                </HorizontalStackLayout>
+                                                <Label Text="{Binding UploadedDateDisplay}"
+                                                       FontFamily="Poppins" FontSize="10"
+                                                       TextColor="{StaticResource TextDisabled}" />
+                                            </VerticalStackLayout>
+                                        </Grid>
+                                        <FlexLayout Wrap="Wrap" Direction="Row" JustifyContent="Start" AlignItems="Center">
+                                            <Button Text="Open"
+                                                    Command="{Binding BindingContext.OpenDocumentCommand, Source={x:Reference Self}}"
+                                                    CommandParameter="{Binding .}"
+                                                    BackgroundColor="{StaticResource SurfaceElevated}"
+                                                    TextColor="{StaticResource Primary}"
+                                                    FontFamily="PoppinsMedium" FontSize="11"
+                                                    CornerRadius="8" HeightRequest="32" Padding="12,0"
+                                                    Margin="0,0,8,0" />
+                                            <Button Text="Download"
+                                                    Command="{Binding BindingContext.DownloadDocumentCommand, Source={x:Reference Self}}"
+                                                    CommandParameter="{Binding .}"
+                                                    BackgroundColor="{StaticResource SurfaceElevated}"
+                                                    TextColor="{StaticResource TextPrimary}"
+                                                    FontFamily="PoppinsMedium" FontSize="11"
+                                                    CornerRadius="8" HeightRequest="32" Padding="12,0"
+                                                    Margin="0,0,8,0" />
+                                            <Button Text="Replace"
+                                                    Command="{Binding BindingContext.ReplaceDocumentCommand, Source={x:Reference Self}}"
+                                                    CommandParameter="{Binding .}"
+                                                    BackgroundColor="{StaticResource Primary}"
+                                                    TextColor="White"
+                                                    FontFamily="PoppinsMedium" FontSize="11"
+                                                    CornerRadius="8" HeightRequest="32" Padding="12,0"
+                                                    Margin="0,0,8,0" />
+                                            <Button Text="Delete"
+                                                    Command="{Binding BindingContext.DeleteDocumentCommand, Source={x:Reference Self}}"
+                                                    CommandParameter="{Binding .}"
+                                                    BackgroundColor="#FEE2E2"
+                                                    TextColor="#DC2626"
+                                                    FontFamily="PoppinsMedium" FontSize="11"
+                                                    CornerRadius="8" HeightRequest="32" Padding="12,0" />
+                                        </FlexLayout>
+                                    </VerticalStackLayout>
+                                </Frame>
+                            </DataTemplate>
+                        </BindableLayout.ItemTemplate>
+                    </VerticalStackLayout>
+
+                </VerticalStackLayout>
+
+                <!-- Loading indicator -->
+                <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}"
+                                   Color="{StaticResource Primary}" HorizontalOptions="Center"
+                                   Margin="0,8,0,24" />
+
+            </VerticalStackLayout>
+        </ScrollView>
+
+        </Grid>
+
+        <ActivityIndicator IsRunning="{Binding IsProfileLoading}"
+                         IsVisible="{Binding IsProfileLoading}"
+                         Color="{StaticResource Primary}"
+                         VerticalOptions="Center"
+                         HorizontalOptions="Center" />
+
+        <Label Text="{Binding ErrorMessage}"
+               IsVisible="{Binding ErrorMessage, Converter={StaticResource IsNotNullConverter}}"
+               TextColor="{StaticResource Error}"
+               FontFamily="Poppins"
+               FontSize="14"
+               HorizontalOptions="Center"
+               VerticalOptions="Center"
+               Margin="24" />
+
+    </Grid>
+</ContentPage>

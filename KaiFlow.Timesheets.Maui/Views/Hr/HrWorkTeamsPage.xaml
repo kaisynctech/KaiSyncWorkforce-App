@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Hr.HrWorkTeamsPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:HrWorkTeamsViewModel"
+    x:Name="workTeamsPage"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="{Binding Title}">
+
+    <Grid RowDefinitions="Auto,*">
+
+        <!-- Header -->
+        <Grid Grid.Row="0" Padding="16,12" ColumnDefinitions="*,Auto"
+              BackgroundColor="{StaticResource SurfaceDark}">
+            <Label Grid.Column="0" Text="Work Teams"
+                   Style="{StaticResource HeadlineMedium}" VerticalOptions="Center" />
+            <Button Grid.Column="1" Text="+ Team" Padding="12,8"
+                    Command="{Binding CreateTeamCommand}"
+                    Style="{StaticResource PrimaryButton}" />
+        </Grid>
+
+        <!-- Teams List -->
+        <RefreshView Grid.Row="1"
+                     IsRefreshing="{Binding IsBusy}"
+                     Command="{Binding RefreshCommand}">
+            <CollectionView ItemsSource="{Binding Teams}"
+                            Margin="16,8">
+                <CollectionView.EmptyView>
+                    <VerticalStackLayout VerticalOptions="Center" Spacing="12" Padding="32">
+                        <Label Text="👥" FontSize="48" HorizontalOptions="Center" />
+                        <Label Text="No work teams yet" Style="{StaticResource EmptyState}" />
+                        <Label Text="Create teams to organise your workforce by skill, site or function"
+                               Style="{StaticResource BodySmall}"
+                               TextColor="{StaticResource TextSecondary}"
+                               HorizontalOptions="Center" HorizontalTextAlignment="Center" />
+                    </VerticalStackLayout>
+                </CollectionView.EmptyView>
+                <CollectionView.ItemTemplate>
+                    <DataTemplate x:DataType="models:WorkTeam">
+                        <Frame Style="{StaticResource CardFrame}" Margin="0,4">
+                            <Frame.GestureRecognizers>
+                                <TapGestureRecognizer
+                                    Command="{Binding BindingContext.ViewTeamCommand, Source={x:Reference workTeamsPage}}"
+                                    CommandParameter="{Binding .}" />
+                            </Frame.GestureRecognizers>
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+
+                                <!-- Icon -->
+                                <Frame Grid.Column="0"
+                                       BackgroundColor="{Binding IsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1D4ED8|#374151'}"
+                                       CornerRadius="22" Padding="0"
+                                       WidthRequest="44" HeightRequest="44">
+                                    <Label Text="👥"
+                                           FontSize="20"
+                                           VerticalOptions="Center" HorizontalOptions="Center" />
+                                </Frame>
+
+                                <!-- Info -->
+                                <VerticalStackLayout Grid.Column="1" Spacing="4" VerticalOptions="Center">
+                                    <Label Text="{Binding Name}" Style="{StaticResource BodyLarge}" />
+                                    <Label Text="{Binding Description}"
+                                           Style="{StaticResource BodySmall}"
+                                           TextColor="{StaticResource TextSecondary}"
+                                           LineBreakMode="TailTruncation"
+                                           IsVisible="{Binding Description, Converter={StaticResource IsNotNullConverter}}" />
+                                    <Label TextColor="{StaticResource TextSecondary}" FontSize="12">
+                                        <Label.FormattedText>
+                                            <FormattedString>
+                                                <Span Text="{Binding MemberCount}" FontAttributes="Bold"
+                                                      TextColor="{StaticResource Primary}" />
+                                                <Span Text=" member(s)" />
+                                            </FormattedString>
+                                        </Label.FormattedText>
+                                    </Label>
+                                </VerticalStackLayout>
+
+                                <!-- Active Badge -->
+                                <Frame Grid.Column="2"
+                                       BackgroundColor="{Binding IsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#DCFCE7|#F3F4F6'}"
+                                       CornerRadius="12" Padding="8,4" VerticalOptions="Center">
+                                    <Label Text="{Binding IsActive, Converter={StaticResource BoolToStringConverter}, ConverterParameter='Active|Inactive'}"
+                                           TextColor="{Binding IsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#166534|#6B7280'}"
+                                           FontSize="11" FontAttributes="Bold" />
+                                </Frame>
+                            </Grid>
+                        </Frame>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+        </RefreshView>
+    </Grid>
+</ContentPage>

@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView
+    x:Class="KaiFlow.Timesheets.Controls.EnterpriseTableView"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:kf="clr-namespace:KaiFlow.Timesheets.Controls">
+
+    <Border BackgroundColor="{StaticResource SurfaceCard}"
+            Stroke="{StaticResource Divider}"
+            StrokeThickness="1"
+            Padding="0"
+            StrokeShape="RoundRectangle 12">
+        <Grid RowDefinitions="Auto,*,Auto">
+            <!-- Sticky header -->
+            <ContentView x:Name="HeaderHost" Grid.Row="0" />
+
+            <BoxView Grid.Row="0" VerticalOptions="End" HeightRequest="1" Color="{StaticResource Divider}" />
+
+            <!-- Virtualised rows -->
+            <CollectionView x:Name="RowsView"
+                              Grid.Row="1"
+                              SelectionMode="None">
+                <CollectionView.EmptyView>
+                    <kf:EmptyStateView x:Name="EmptyView"
+                                       Glyph="📋"
+                                       Title="No rows"
+                                       Message="Try adjusting your search or filters." />
+                </CollectionView.EmptyView>
+            </CollectionView>
+
+            <!-- Pagination -->
+            <Grid x:Name="PaginationBar"
+                  Grid.Row="2"
+                  Padding="12,10"
+                  ColumnDefinitions="Auto,*,Auto"
+                  ColumnSpacing="12"
+                  BackgroundColor="{StaticResource SurfaceElevated}">
+                <Button Grid.Column="0"
+                        Text="Previous"
+                        Style="{StaticResource SecondaryButton}"
+                        HeightRequest="36"
+                        FontSize="12"
+                        Padding="12,0"
+                        Command="{Binding PreviousPageCommand, Source={x:Reference Self}}"
+                        IsEnabled="{Binding CanGoPrevious, Source={x:Reference Self}}" />
+                <Label Grid.Column="1"
+                       Text="{Binding PageSummary, Source={x:Reference Self}}"
+                       Style="{StaticResource BodySmall}"
+                       HorizontalOptions="Center"
+                       VerticalOptions="Center" />
+                <Button Grid.Column="2"
+                        Text="Next"
+                        Style="{StaticResource SecondaryButton}"
+                        HeightRequest="36"
+                        FontSize="12"
+                        Padding="12,0"
+                        Command="{Binding NextPageCommand, Source={x:Reference Self}}"
+                        IsEnabled="{Binding CanGoNext, Source={x:Reference Self}}" />
+            </Grid>
+        </Grid>
+    </Border>
+
+</ContentView>

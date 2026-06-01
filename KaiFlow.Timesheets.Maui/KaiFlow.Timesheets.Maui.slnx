@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="../KaiFlow.Payroll/KaiFlow.Payroll.csproj" />
+  <Project Path="../KaiFlow.Timesheets.Tests/KaiFlow.Timesheets.Tests.csproj" />
+  <Project Path="KaiFlow.Timesheets.Maui.csproj" />
+</Solution>

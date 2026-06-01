@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Auth.HrRegisterVerifyCodePage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Auth"
+    x:DataType="vm:HrRegisterVerifyCodeViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="Verify Email">
+
+    <ScrollView>
+        <VerticalStackLayout
+            VerticalOptions="Center"
+            HorizontalOptions="Center"
+            Padding="24"
+            Spacing="0"
+            MaximumWidthRequest="480">
+
+            <Label
+                Text="KaiSync Workforce"
+                FontFamily="PoppinsBold"
+                FontSize="22"
+                TextColor="{StaticResource TextPrimary}"
+                HorizontalOptions="Center" />
+
+            <BoxView HeightRequest="8" Color="Transparent" />
+
+            <Label
+                Text="Check your email"
+                FontFamily="PoppinsBold"
+                FontSize="20"
+                TextColor="{StaticResource TextPrimary}"
+                HorizontalOptions="Center" />
+
+            <BoxView HeightRequest="6" Color="Transparent" />
+
+            <Label
+                Text="{Binding Email, StringFormat='We sent a verification code to {0}'}"
+                FontFamily="PoppinsRegular"
+                FontSize="13"
+                TextColor="{StaticResource TextSecondary}"
+                HorizontalOptions="Center"
+                HorizontalTextAlignment="Center" />
+
+            <BoxView HeightRequest="28" Color="Transparent" />
+
+            <Frame
+                BackgroundColor="{StaticResource SurfaceCard}"
+                BorderColor="{StaticResource Divider}"
+                CornerRadius="24"
+                Padding="24"
+                HasShadow="False">
+                <VerticalStackLayout Spacing="16">
+
+                    <VerticalStackLayout Spacing="6">
+                        <Label Text="Verification code" Style="{StaticResource LabelField}" />
+                        <Entry
+                            Placeholder="6-digit code from your email"
+                            Text="{Binding Code}"
+                            Keyboard="Numeric"
+                            IsEnabled="{Binding IsNotBusy}"
+                            Style="{StaticResource DarkEntry}"
+                            ReturnType="Done" />
+                    </VerticalStackLayout>
+
+                    <Label
+                        Text="{Binding ErrorMessage}"
+                        TextColor="{StaticResource Error}"
+                        FontFamily="PoppinsRegular"
+                        FontSize="13"
+                        IsVisible="{Binding ErrorMessage, Converter={StaticResource IsNotNullConverter}}" />
+
+                    <Button
+                        Text="Continue"
+                        Command="{Binding ContinueCommand}"
+                        IsEnabled="{Binding IsNotBusy}"
+                        Style="{StaticResource PrimaryButton}"
+                        HorizontalOptions="Fill" />
+
+                    <Button
+                        Text="Resend code"
+                        Command="{Binding ResendCommand}"
+                        IsEnabled="{Binding IsNotBusy}"
+                        BackgroundColor="Transparent"
+                        TextColor="{StaticResource Primary}"
+                        FontFamily="PoppinsSemiBold"
+                        FontSize="13"
+                        Padding="0"
+                        HorizontalOptions="Center" />
+
+                    <Button
+                        Text="Use a different email"
+                        Command="{Binding UseDifferentEmailCommand}"
+                        IsEnabled="{Binding IsNotBusy}"
+                        BackgroundColor="Transparent"
+                        TextColor="{StaticResource TextSecondary}"
+                        FontFamily="PoppinsRegular"
+                        FontSize="12"
+                        Padding="0"
+                        HorizontalOptions="Center" />
+
+                    <ActivityIndicator
+                        IsRunning="{Binding IsBusy}"
+                        IsVisible="{Binding IsBusy}"
+                        Color="{StaticResource Primary}"
+                        HorizontalOptions="Center" />
+
+                </VerticalStackLayout>
+            </Frame>
+
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

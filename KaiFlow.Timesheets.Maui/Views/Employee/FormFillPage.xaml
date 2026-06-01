@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Employee.FormFillPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Employees"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:FormFillViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="{Binding Title}">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="16" Spacing="16">
+
+            <!-- Description -->
+            <Label Text="{Binding Template.Description}"
+                   Style="{StaticResource BodyMedium}"
+                   TextColor="{StaticResource TextSecondary}"
+                   IsVisible="{Binding Template.Description, Converter={StaticResource IsNotNullConverter}}" />
+
+            <!-- Fields -->
+            <VerticalStackLayout
+                BindableLayout.ItemsSource="{Binding FieldEntries}"
+                Spacing="16">
+                <BindableLayout.ItemTemplate>
+                    <DataTemplate x:DataType="models:FormFieldEntry">
+                        <Frame Style="{StaticResource CardFrame}" Padding="12">
+                            <VerticalStackLayout Spacing="8">
+                                <!-- Label (required indicator) -->
+                                <HorizontalStackLayout Spacing="4">
+                                    <Label Text="{Binding Field.Label}"
+                                           Style="{StaticResource LabelField}" VerticalOptions="Center" />
+                                    <Label Text="*" TextColor="{StaticResource Error}"
+                                           IsVisible="{Binding Field.IsRequired}" VerticalOptions="Center" />
+                                </HorizontalStackLayout>
+
+                                <!-- Text / Number / Signature -->
+                                <Entry Text="{Binding Value}"
+                                       Placeholder="{Binding Field.Label}"
+                                       PlaceholderColor="{StaticResource TextSecondary}"
+                                       Style="{StaticResource DarkEntry}"
+                                       IsVisible="{Binding IsTextType}" />
+
+                                <!-- Checkbox -->
+                                <Grid ColumnDefinitions="*,Auto"
+                                      IsVisible="{Binding IsCheckType}">
+                                    <Label Grid.Column="0" Text="{Binding Field.Label}"
+                                           Style="{StaticResource BodyMedium}" VerticalOptions="Center" />
+                                    <Switch Grid.Column="1" IsToggled="{Binding BoolValue}"
+                                            ThumbColor="{StaticResource Primary}"
+                                            OnColor="{StaticResource Primary}" />
+                                </Grid>
+
+                                <!-- Date -->
+                                <DatePicker Date="{Binding DateValue}"
+                                            TextColor="{StaticResource TextPrimary}"
+                                            BackgroundColor="Transparent"
+                                            Format="dd MMM yyyy"
+                                            IsVisible="{Binding IsDateType}" />
+
+                                <!-- Select / Dropdown -->
+                                <Picker ItemsSource="{Binding Field.Options}"
+                                        SelectedItem="{Binding Value}"
+                                        Title="Select an option..."
+                                        TextColor="{StaticResource TextPrimary}"
+                                        BackgroundColor="Transparent"
+                                        IsVisible="{Binding IsSelectType}" />
+                            </VerticalStackLayout>
+                        </Frame>
+                    </DataTemplate>
+                </BindableLayout.ItemTemplate>
+            </VerticalStackLayout>
+
+            <!-- Error -->
+            <Label Text="{Binding ErrorMessage}"
+                   TextColor="{StaticResource Error}"
+                   IsVisible="{Binding ErrorMessage, Converter={StaticResource IsNotNullConverter}}" />
+
+            <!-- Submit -->
+            <Button Text="Submit Form"
+                    Command="{Binding SubmitCommand}"
+                    IsEnabled="{Binding IsNotBusy}"
+                    Style="{StaticResource PrimaryButton}" />
+
+            <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}"
+                               Color="{StaticResource Primary}" HorizontalOptions="Center" />
+
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

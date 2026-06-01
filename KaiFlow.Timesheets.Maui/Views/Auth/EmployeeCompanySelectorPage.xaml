@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Auth.EmployeeCompanySelectorPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Auth"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:EmployeeCompanySelectorViewModel"
+    x:Name="Self"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Shell.NavBarIsVisible="False">
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto,Auto">
+
+        <VerticalStackLayout Grid.Row="0" Padding="24,48,24,8" Spacing="4">
+            <Grid ColumnDefinitions="*,Auto">
+                <VerticalStackLayout Grid.Column="0" Spacing="4">
+                    <Label Text="KaiSync Workforce"
+                           FontFamily="PoppinsBold" FontSize="20"
+                           TextColor="{StaticResource TextPrimary}" />
+                    <Label Text="{Binding EmployeeName}"
+                           FontFamily="PoppinsSemiBold" FontSize="15"
+                           TextColor="{StaticResource Primary}" />
+                    <Label Text="Select a company to continue"
+                           FontFamily="PoppinsRegular" FontSize="13"
+                           TextColor="{StaticResource TextSecondary}" />
+                </VerticalStackLayout>
+                <Grid Grid.Column="1" WidthRequest="44" HeightRequest="44">
+                    <Button Text="🔔" BackgroundColor="Transparent" FontSize="20" Padding="0"
+                            Command="{Binding GoToNotificationsCommand}" />
+                    <Frame IsVisible="{Binding UnreadNotificationCount, Converter={StaticResource IsNotZeroConverter}}"
+                           BackgroundColor="{StaticResource Error}" CornerRadius="8"
+                           Padding="3,0" HasShadow="False" BorderColor="Transparent"
+                           HorizontalOptions="End" VerticalOptions="Start"
+                           WidthRequest="18" HeightRequest="18">
+                        <Label Text="{Binding UnreadNotificationCount}" FontSize="9"
+                               TextColor="White" HorizontalOptions="Center" VerticalOptions="Center" />
+                    </Frame>
+                </Grid>
+            </Grid>
+        </VerticalStackLayout>
+
+        <Button Grid.Row="1"
+                Text="Back to Dashboard"
+                Command="{Binding BackToDashboardCommand}"
+                IsVisible="{Binding CanReturnToDashboard}"
+                BackgroundColor="{StaticResource SurfaceCard}"
+                TextColor="{StaticResource Primary}"
+                BorderColor="{StaticResource Primary}"
+                BorderWidth="1"
+                FontFamily="PoppinsSemiBold" FontSize="14"
+                CornerRadius="10" HeightRequest="44"
+                Margin="16,0,16,8" />
+
+        <RefreshView Grid.Row="2" Command="{Binding RefreshCommand}" IsRefreshing="{Binding IsBusy}">
+            <CollectionView ItemsSource="{Binding Memberships}" Margin="16,0">
+                <CollectionView.EmptyView>
+                    <VerticalStackLayout Spacing="12" Padding="0,40">
+                        <Label Text="No companies linked yet."
+                               Style="{StaticResource EmptyState}" />
+                        <Label Text="Tap below to join a company with your employer's code."
+                               FontFamily="Poppins" FontSize="13"
+                               TextColor="{StaticResource TextSecondary}"
+                               HorizontalTextAlignment="Center" />
+                    </VerticalStackLayout>
+                </CollectionView.EmptyView>
+                <CollectionView.ItemTemplate>
+                    <DataTemplate x:DataType="models:EmployeeMembership">
+                        <Frame Style="{StaticResource CardFrame}" Margin="0,6">
+                            <Frame.GestureRecognizers>
+                                <TapGestureRecognizer
+                                    Command="{Binding Source={x:Reference Self}, Path=BindingContext.SelectMembershipCommand}"
+                                    CommandParameter="{Binding .}" />
+                            </Frame.GestureRecognizers>
+                            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto" RowSpacing="4">
+                                <Label Grid.Row="0" Grid.Column="0"
+                                       Text="{Binding CompanyName}"
+                                       FontFamily="PoppinsSemiBold" FontSize="15"
+                                       TextColor="{StaticResource TextPrimary}" />
+                                <Frame Grid.Row="0" Grid.Column="1"
+                                       BackgroundColor="{Binding StatusColor, Converter={StaticResource HexToColorConverter}}"
+                                       BorderColor="Transparent" CornerRadius="8"
+                                       Padding="8,3" HasShadow="False">
+                                    <Label Text="{Binding StatusLabel}"
+                                           FontFamily="PoppinsSemiBold" FontSize="10"
+                                           TextColor="White" />
+                                </Frame>
+                                <Label Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                                       Text="{Binding Position, FallbackValue='Employee'}"
+                                       FontFamily="Poppins" FontSize="12"
+                                       TextColor="{StaticResource TextSecondary}" />
+                                <Label Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2"
+                                       Text="{Binding CompanyCode, StringFormat='Code: {0}'}"
+                                       FontFamily="Poppins" FontSize="11"
+                                       TextColor="{StaticResource TextDisabled}" />
+                            </Grid>
+                        </Frame>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+        </RefreshView>
+
+        <Button Grid.Row="3" Text="+ Link Another Company"
+                Command="{Binding LinkAnotherCompanyCommand}"
+                BackgroundColor="{StaticResource Primary}" TextColor="White"
+                FontFamily="PoppinsSemiBold" FontSize="14"
+                CornerRadius="10" HeightRequest="48"
+                Margin="16,8,16,0" />
+
+        <Button Grid.Row="4" Text="Sign Out"
+                Command="{Binding SignOutCommand}"
+                Style="{StaticResource DangerButton}"
+                Margin="16,8,16,32" />
+
+    </Grid>
+</ContentPage>
