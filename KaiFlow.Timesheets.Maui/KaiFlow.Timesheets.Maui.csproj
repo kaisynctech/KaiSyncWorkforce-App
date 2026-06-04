@@ -11,7 +11,7 @@
     <Nullable>enable</Nullable>
 
     <!-- Display name -->
-    <ApplicationTitle>KaiFlow Timesheets</ApplicationTitle>
+    <ApplicationTitle>KaiSync Workforce</ApplicationTitle>
     <ApplicationId>com.kaisynctech.kaiflow.timesheets</ApplicationId>
     <ApplicationVersion>3</ApplicationVersion>
     <ApplicationDisplayVersion>1.0.2</ApplicationDisplayVersion>

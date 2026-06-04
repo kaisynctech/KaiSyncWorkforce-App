@@ -18,12 +18,12 @@ dotnet build
 
 See [docs/README.md](docs/README.md) for architecture, deployment, and pilot go-live guides.
 
-## Downloads (v1.0.0)
+## Downloads (v1.0.2)
 
 | Platform | File |
 |----------|------|
-| Windows | [KaiFlowSetup.exe](https://github.com/kaisynctech/KaiSyncWorkforce-App/releases/download/v1.0.0/KaiFlowSetup.exe) |
-| Android | [KaiFlow-v1.0.0.apk](https://github.com/kaisynctech/KaiSyncWorkforce-App/releases/download/v1.0.0/KaiFlow-v1.0.0.apk) |
+| Windows | [KaiFlowSetup-v1.0.2.exe](https://github.com/kaisynctech/KaiSyncWorkforce-App/releases/download/v1.0.2/KaiFlowSetup-v1.0.2.exe) |
+| Android | [KaiSync-Workforce-v1.0.2.apk](https://github.com/kaisynctech/KaiSyncWorkforce-App/releases/download/v1.0.2/com.kaisynctech.kaiflow.timesheets-Signed.apk) |
 
 ## License
 

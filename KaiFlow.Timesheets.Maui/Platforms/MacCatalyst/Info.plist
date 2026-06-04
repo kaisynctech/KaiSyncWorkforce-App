@@ -5,9 +5,9 @@
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>NSLocationWhenInUseUsageDescription</key>
-    <string>KaiFlow Timesheets uses your location to verify clock-in proximity to work sites.</string>
+    <string>KaiSync Workforce uses your location to verify clock-in proximity to work sites.</string>
     <key>NSCameraUsageDescription</key>
-    <string>KaiFlow Timesheets uses the camera to capture job site photos.</string>
+    <string>KaiSync Workforce uses the camera to capture job site photos.</string>
     <key>CFBundleIdentifier</key>
     <string>com.kaisynctech.kaiflow.timesheets</string>
     <key>CFBundleVersion</key>
@@ -15,6 +15,6 @@
     <key>CFBundleShortVersionString</key>
     <string>1.0.0</string>
     <key>CFBundleDisplayName</key>
-    <string>KaiFlow Timesheets</string>
+    <string>KaiSync Workforce</string>
 </dict>
 </plist>

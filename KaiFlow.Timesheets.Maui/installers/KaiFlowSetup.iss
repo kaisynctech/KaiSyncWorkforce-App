@@ -1,4 +1,4 @@
-; KaiFlow Windows installer — Inno Setup 6
+; KaiSync Workforce Windows installer — Inno Setup 6
 ; Build publish output first: scripts/build_windows_installer.ps1
 
 #ifndef PublishDir
@@ -13,7 +13,7 @@
   #define MyAppBuild "1"
 #endif
 
-#define MyAppName "KaiFlow"
+#define MyAppName "KaiSync Workforce"
 #define MyAppPublisher "KaiSync Tech"
 #define MyAppExeName "KaiFlow.Timesheets.Maui.exe"
 #define MyAppId "{{A7F3C2E1-9B4D-4F8A-8E2C-1D5A0F102026}"
@@ -32,7 +32,7 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=no
 OutputDir=..\dist
-OutputBaseFilename=KaiFlowSetup
+OutputBaseFilename=KaiSyncWorkforceSetup
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
@@ -45,7 +45,7 @@ VersionInfoVersion={#MyAppVersion}.0
 VersionInfoProductVersion={#MyAppVersion}.0
 VersionInfoProductName={#MyAppName}
 VersionInfoCompany={#MyAppPublisher}
-VersionInfoDescription=KaiFlow Workforce Platform
+VersionInfoDescription=KaiSync Workforce Platform
 VersionInfoTextVersion={#MyAppVersion} (build {#MyAppBuild})
 CloseApplications=force
 RestartApplications=yes

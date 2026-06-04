@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Build KaiFlow Windows Release publish output and KaiFlowSetup.exe installer.
+  Build KaiSync Workforce Windows Release publish output and KaiSyncWorkforceSetup.exe installer.
 
 .EXAMPLE
   .\scripts\build_windows_installer.ps1
@@ -23,7 +23,7 @@ $root = Split-Path $PSScriptRoot -Parent
 $csproj = Join-Path $root "KaiFlow.Timesheets.Maui.csproj"
 $publishDir = Join-Path $root "publish\windows"
 $distDir = Join-Path $root "dist"
-$iss = Join-Path $root "installers\KaiFlowSetup.iss"
+$iss = Join-Path $root "installers\KaiFlowSetup.iss"  # filename unchanged — internal only
 
 function Resolve-InnoSetupCompiler {
     param([string]$ExplicitPath)
@@ -60,14 +60,13 @@ if ($Build -le 0) {
     $Build = [int]($proj.Project.PropertyGroup.ApplicationVersion | Select-Object -First 1)
 }
 
-Write-Host "KaiFlow Windows build - v$Version (build $Build)" -ForegroundColor Cyan
+Write-Host "KaiSync Workforce Windows build - v$Version (build $Build)" -ForegroundColor Cyan
 
 if (-not $SkipPublish) {
     Write-Host "Publishing MAUI Windows (win-x64)..." -ForegroundColor Yellow
     dotnet publish $csproj `
         -f net10.0-windows10.0.19041.0 `
         -c $Configuration `
-        -r win-x64 `
         --self-contained false `
         -p:PublishSingleFile=false `
         -o $publishDir
@@ -95,15 +94,15 @@ if (-not $Iscc) {
 
 New-Item -ItemType Directory -Force -Path $distDir | Out-Null
 
-Write-Host "Compiling KaiFlowSetup.exe with: $Iscc" -ForegroundColor Yellow
+Write-Host "Compiling KaiSyncWorkforceSetup.exe with: $Iscc" -ForegroundColor Yellow
 & $Iscc $iss "/DPublishDir=$publishDir" "/DMyAppVersion=$Version" "/DMyAppBuild=$Build"
 
-$setup = Join-Path $distDir "KaiFlowSetup.exe"
+$setup = Join-Path $distDir "KaiSyncWorkforceSetup.exe"
 if (-not (Test-Path $setup)) {
     throw "Installer build failed - file not found: $setup"
 }
 
-$versioned = Join-Path $distDir "KaiFlowSetup-v$Version.exe"
+$versioned = Join-Path $distDir "KaiSyncWorkforceSetup-v$Version.exe"
 Copy-Item $setup $versioned -Force
 
 $hash = Get-FileHash $setup -Algorithm SHA256
@@ -117,7 +116,7 @@ Write-Host "  Version:         $Version (build $Build)"
 Write-Host "  Size:            $sizeMb MB"
 Write-Host "  SHA256:          $($hash.Hash)"
 Write-Host ""
-Write-Host "Next: upload dist/KaiFlowSetup.exe to GitHub Release and update app_versions.download_url_windows"
+Write-Host "Next: upload dist/KaiSyncWorkforceSetup.exe to GitHub Release and update app_versions.download_url_windows"
 
 $manifest = @{
     version       = $Version
@@ -128,8 +127,8 @@ $manifest = @{
     sizeBytes     = (Get-Item $setup).Length
     sha256        = $hash.Hash
     builtAt       = (Get-Date).ToUniversalTime().ToString("o")
-    installDir    = "${env:ProgramFiles}\KaiFlow"
+    installDir    = "${env:ProgramFiles}\KaiSync Workforce"
 }
-$manifestPath = Join-Path $distDir "KaiFlowSetup-build-manifest.json"
+$manifestPath = Join-Path $distDir "KaiSyncWorkforceSetup-build-manifest.json"
 $manifest | ConvertTo-Json -Depth 4 | Set-Content -Path $manifestPath -Encoding UTF8
 Write-Host "  Manifest:        $manifestPath"

@@ -44,7 +44,7 @@ public partial class App : Application
         // needs the UI thread, leaving a running process with no visible window.
         var window = new Window(root)
         {
-            Title = "KaiFlow Timesheets",
+            Title = "KaiSync Workforce",
             Width = 1280,
             Height = 800,
             MinimumWidth = 960,

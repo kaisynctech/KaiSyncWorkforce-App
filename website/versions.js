@@ -1,10 +1,10 @@
 /**
- * KaiFlow website — app_versions integration via Supabase RPCs.
+ * KaiSync Workforce website — app_versions integration via Supabase RPCs.
  */
 (function (global) {
     'use strict';
 
-    var cfg = global.KAIFLOW_CONFIG || {};
+    var cfg = global.KAIFLOW_CONFIG || global.KAISYNC_CONFIG || {};
 
     function rpcUrl(name) {
         return cfg.supabaseUrl + '/rest/v1/rpc/' + name;
@@ -163,7 +163,7 @@
         });
     }
 
-    global.KaiFlowVersions = {
+    global.KaiSyncVersions = global.KaiFlowVersions = {  // KaiFlowVersions kept for backward compat
         fetchLatest: fetchLatest,
         fetchReleaseHistory: fetchReleaseHistory,
         formatDate: formatDate,
