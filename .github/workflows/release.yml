@@ -1,0 +1,96 @@
+name: Release
+on:
+  push:
+    tags:
+      - 'v*'
+env:
+  DOTNET_VERSION: '10.0.x'
+  PROJECT: KaiFlow.Timesheets.Maui/KaiFlow.Timesheets.Maui.csproj
+jobs:
+  # Re-run all five gates on the tagged commit before releasing.
+  gate-build:
+    name: Gate 1 — Build Verification
+    uses: ./.github/workflows/ci.yml
+  release-android:
+    name: Release — Android (signed APK)
+    runs-on: ubuntu-latest
+    needs: gate-build
+    env:
+      KAIFLOW_KEYSTORE_PATH: /tmp/kaiflow.keystore
+      KAIFLOW_KEYSTORE_ALIAS: ${{ secrets.KAIFLOW_KEYSTORE_ALIAS }}
+      KAIFLOW_KEYSTORE_PASSWORD: ${{ secrets.KAIFLOW_KEYSTORE_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Install MAUI Android workload
+        run: dotnet workload install maui-android
+      - name: Decode keystore
+        run: |
+          echo "${{ secrets.KAIFLOW_KEYSTORE_BASE64 }}" | base64 -d > /tmp/kaiflow.keystore
+      - name: Publish Android
+        run: |
+          dotnet publish ${{ env.PROJECT }} \
+            -f net10.0-android \
+            -c Release \
+            -o artifacts/android
+      - name: Find APK
+        id: find-apk
+        run: echo "apk=$(find artifacts/android -name '*.apk' | head -1)" >> $GITHUB_OUTPUT
+      - name: Upload APK to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.find-apk.outputs.apk }}
+          name: KaiSync Workforce ${{ github.ref_name }}
+          draft: false
+  release-windows:
+    name: Release — Windows (signed exe)
+    runs-on: windows-latest
+    needs: gate-build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Install MAUI Windows workload
+        run: dotnet workload install maui-windows
+      - name: Publish Windows
+        run: |
+          dotnet publish ${{ env.PROJECT }} `
+            -f net10.0-windows10.0.19041.0 `
+            -c Release `
+            -r win-x64 `
+            --self-contained false `
+            -o artifacts/windows
+      - name: Sign Windows executable (Authenticode)
+        if: ${{ secrets.WINDOWS_CERT_PFX != '' }}
+        shell: pwsh
+        run: |
+          $pfxBytes = [Convert]::FromBase64String("${{ secrets.WINDOWS_CERT_PFX }}")
+          [IO.File]::WriteAllBytes("$env:TEMP\cert.pfx", $pfxBytes)
+          $signtool = "C:\Program Files (x86)\Windows Kits\10\bin\10.0.19041.0\x64\signtool.exe"
+          & $signtool sign `
+            /fd sha256 `
+            /f "$env:TEMP\cert.pfx" `
+            /p "${{ secrets.WINDOWS_CERT_PASSWORD }}" `
+            /tr http://timestamp.sectigo.com `
+            /td sha256 `
+            "artifacts/windows/KaiSync Workforce.exe"
+          Remove-Item "$env:TEMP\cert.pfx"
+      - name: Require signing (block unsigned release)
+        if: ${{ secrets.WINDOWS_CERT_PFX == '' }}
+        run: |
+          Write-Error "WINDOWS_CERT_PFX secret is not set. Unsigned Windows releases are blocked. Add the certificate secret or set ALLOW_UNSIGNED_WINDOWS=true to override."
+          exit 1
+        shell: pwsh
+      - name: Package Windows
+        run: |
+          Compress-Archive `
+            -Path artifacts/windows/* `
+            -DestinationPath "KaiSync-Workforce-${{ github.ref_name }}-win-x64.zip"
+        shell: pwsh
+      - name: Upload Windows package to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: KaiSync-Workforce-${{ github.ref_name }}-win-x64.zip
