@@ -72,7 +72,7 @@ jobs:
         uses: supabase/setup-cli@v1
         with:
           version: latest
-      - run: supabase db push --db-url "$SUPABASE_DB_URL"
+      - run: supabase db push --db-url "$SUPABASE_DB_URL" --include-all
       - name: Compute staging fingerprint
         run: |
           psql "$SUPABASE_DB_URL" \
@@ -81,7 +81,7 @@ jobs:
             > staging_fingerprint.txt
       - name: Compare against production fingerprint
         run: |
-          if ! diff -u supabase/production_fingerprint.txt staging_fingerprint.txt; then
+          if ! diff -u KaiFlow.Timesheets.Maui/supabase/production_fingerprint.txt staging_fingerprint.txt; then
             echo "::error::Schema fingerprint mismatch — staging schema does not match production."
             exit 1
           fi
