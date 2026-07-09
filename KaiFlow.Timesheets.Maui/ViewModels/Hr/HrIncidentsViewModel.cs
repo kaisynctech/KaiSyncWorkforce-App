@@ -106,5 +106,9 @@ public partial class HrIncidentsViewModel : BaseViewModel, IDisposable
             new Dictionary<string, object> { ["incidentId"] = display.Report.Id.ToString() });
     }
 
+    // Used by the dashboard workspace panel instead of code-behind event handlers.
+    [RelayCommand] private void SetShowOpenOnly() => ShowOpenOnly = true;
+    [RelayCommand] private void SetShowAll()      => ShowOpenOnly = false;
+
     public void Dispose() => _realtime.IncidentChanged -= OnIncidentChanged;
 }

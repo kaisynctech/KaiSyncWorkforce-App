@@ -14,6 +14,7 @@ namespace KaiFlow.Timesheets.ViewModels.Hr;
 public partial class HrPayslipDetailViewModel : BaseViewModel
 {
     private readonly IStorageService _storage;
+    private readonly StepUpVerificationService _stepUp;
     private readonly IExportService _export;
     private readonly TimesheetStateService _state;
 
@@ -80,11 +81,12 @@ public partial class HrPayslipDetailViewModel : BaseViewModel
     public bool CanEditOverrides    => Payment?.CanEditOverrides == true && !IsPeriodLocked;
     private string CompanyName      => _state.CurrentCompany?.Name ?? "KaiSync";
 
-    public HrPayslipDetailViewModel(IStorageService storage, IExportService export, TimesheetStateService state)
+    public HrPayslipDetailViewModel(IStorageService storage, IExportService export, TimesheetStateService state, StepUpVerificationService stepUp)
     {
         _storage = storage;
         _export  = export;
         _state   = state;
+        _stepUp  = stepUp;
         Title = "Payslip Detail";
     }
 
@@ -306,7 +308,8 @@ public partial class HrPayslipDetailViewModel : BaseViewModel
                 await _storage.UpdateEmployeeAsync(emp);
             }
 
-            await _storage.UpdatePaymentStatusAsync(Payment!.Id, "approved");
+            await _stepUp.ExecuteAsync(async () =>
+                await _storage.ApprovePaymentRunAsync(companyId, Payment!.Id));
             Payment.StatusRaw = "approved";
             OnPropertyChanged(nameof(Payment));
             RefreshActionVisibility();
@@ -341,7 +344,7 @@ public partial class HrPayslipDetailViewModel : BaseViewModel
 
         await RunAsync(async () =>
         {
-            await _storage.UpdatePaymentStatusAsync(Payment.Id, "rejected");
+            await _storage.RejectPaymentRunAsync(_state.CurrentEmployee!.CompanyId, Payment!.Id);
             Payment.StatusRaw = "rejected";
             OnPropertyChanged(nameof(Payment));
             RefreshActionVisibility();

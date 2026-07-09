@@ -12,6 +12,7 @@ public interface IExportService
     Task ExportToPdfAsync(string fileName, string title, IEnumerable<string> headers, IEnumerable<IEnumerable<string>> rows, bool downloadToDevice = false);
     Task ExportPayslipPdfAsync(PaymentApproval payment, string employeeName, string companyName, bool downloadToDevice = false);
     Task ExportQuotationPdfAsync(Client? client, ClientDeal deal, IEnumerable<ProjectQuotationLine> lines, string? companyName, bool downloadToDevice = false);
+    Task ExportContractorRemittancePdfAsync(ContractorPayout payout, string contractorName, string companyName, bool downloadToDevice = false);
     Task DeliverRemoteFileAsync(string url, string suggestedFileName);
     Task ExportEmployeeImportTemplateAsync(IReadOnlyList<EmployeeShiftTemplate> templates);
     Task<EmployeeImportParseResult> ParseEmployeeImportFileAsync(

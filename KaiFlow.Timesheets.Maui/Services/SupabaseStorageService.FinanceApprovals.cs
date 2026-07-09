@@ -158,6 +158,7 @@ public partial class SupabaseStorageService
         payout.PayoutStatusRaw = "cancelled";
         payout.ApprovedBy = actorId;
         payout.ApprovedAt = DateTime.UtcNow;
+        payout.RejectionReason = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
         var saved = await UpdateContractorPayoutAsync(payout);
         await LogFinanceAuditAsync(payout.CompanyId, "contractor_payout", payoutId, "rejected",
             payout.NetPayable, actorId, actorName, note);

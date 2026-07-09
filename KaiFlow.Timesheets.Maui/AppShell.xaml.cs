@@ -40,6 +40,8 @@ public partial class AppShell : Shell
         Routing.RegisterRoute(nameof(RoleSelectionPage), typeof(RoleSelectionPage));
         Routing.RegisterRoute(nameof(EmployeeCompanySelectorPage), typeof(EmployeeCompanySelectorPage));
         Routing.RegisterRoute(nameof(EmployeeMandatoryPasswordPage), typeof(EmployeeMandatoryPasswordPage));
+        Routing.RegisterRoute(nameof(EmployeePinSetupPage), typeof(EmployeePinSetupPage));
+        Routing.RegisterRoute(nameof(EmployeePinEntryPage), typeof(EmployeePinEntryPage));
         Routing.RegisterRoute(nameof(HrRegistrationSuccessPage), typeof(HrRegistrationSuccessPage));
         Routing.RegisterRoute(nameof(HrEmailVerifiedPage), typeof(HrEmailVerifiedPage));
         Routing.RegisterRoute(nameof(EmployeeSelfRegisterPage), typeof(EmployeeSelfRegisterPage));
@@ -81,6 +83,8 @@ public partial class AppShell : Shell
         Routing.RegisterRoute(nameof(HrContractorsPage), typeof(HrContractorsPage));
         Routing.RegisterRoute(nameof(HrSuppliersPage), typeof(HrSuppliersPage));
         Routing.RegisterRoute(nameof(HrContractorDetailsPage), typeof(HrContractorDetailsPage));
+        Routing.RegisterRoute(nameof(HrJobContractorDocsPage), typeof(HrJobContractorDocsPage)); // Phase D
+        Routing.RegisterRoute(nameof(HrCompliancePacksPage), typeof(HrCompliancePacksPage)); // Phase 2B.3a
         Routing.RegisterRoute(nameof(HrClientsPage), typeof(HrClientsPage));
         Routing.RegisterRoute(nameof(ClientDetailPage), typeof(ClientDetailPage));
         Routing.RegisterRoute(nameof(ClientPortalPage), typeof(ClientPortalPage));
@@ -105,6 +109,7 @@ public partial class AppShell : Shell
         Routing.RegisterRoute(nameof(HrShiftTemplatesPage), typeof(HrShiftTemplatesPage));
         Routing.RegisterRoute(nameof(HrCreateTimeTemplatePage), typeof(HrCreateTimeTemplatePage));
         Routing.RegisterRoute(nameof(HrSimpleThreadChatPage), typeof(HrSimpleThreadChatPage));
+        Routing.RegisterRoute(nameof(HrActiveSessionsPage), typeof(HrActiveSessionsPage));
 
         // Platform admin
         Routing.RegisterRoute(nameof(PlatformDashboardPage), typeof(PlatformDashboardPage));

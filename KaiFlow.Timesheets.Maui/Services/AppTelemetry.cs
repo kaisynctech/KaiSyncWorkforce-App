@@ -1,4 +1,5 @@
 using KaiFlow.Timesheets.Models;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace KaiFlow.Timesheets.Services;
 
@@ -10,13 +11,15 @@ public class AppTelemetry
 {
     private readonly Supabase.Client _supabase;
     private readonly TimesheetStateService _state;
-    private readonly IStorageService _storage;
+    private readonly IServiceProvider _services;
 
-    public AppTelemetry(Supabase.Client supabase, TimesheetStateService state, IStorageService storage)
+    // Resolve IStorageService lazily from IServiceProvider to avoid a DI circular
+    // dependency: AppTelemetry -> IStorageService(SupabaseStorageService) -> RealtimeService -> AppTelemetry.
+    public AppTelemetry(Supabase.Client supabase, TimesheetStateService state, IServiceProvider services)
     {
         _supabase = supabase;
         _state = state;
-        _storage = storage;
+        _services = services;
     }
 
     public void LogError(Exception ex, string? context = null, Dictionary<string, string>? properties = null)
@@ -90,7 +93,7 @@ public class AppTelemetry
 
             if (string.IsNullOrEmpty(authUserId) && companyId.HasValue && employeeId.HasValue)
             {
-                await _supabase.Rpc("employee_log_app_event", new Dictionary<string, object>
+                var args = new Dictionary<string, object>
                 {
                     ["p_company_id"] = companyId.Value.ToString(),
                     ["p_employee_id"] = employeeId.Value.ToString(),
@@ -100,7 +103,12 @@ public class AppTelemetry
                     ["p_error_text"] = errorText ?? null!,
                     ["p_meta"] = meta != null ? Newtonsoft.Json.JsonConvert.SerializeObject(meta) : null!,
                     ["p_app_version"] = appVersion,
-                });
+                };
+                var token = CodeSessionStore.GetSessionToken();
+                if (string.IsNullOrWhiteSpace(token))
+                    return; // No active worker session — skip telemetry RPC (non-critical).
+                args["p_session_token"] = token;
+                await _supabase.Rpc("employee_log_app_event", args);
                 return;
             }
 
@@ -132,13 +140,21 @@ public class AppTelemetry
         {
             var companyId = _state.CurrentEmployee?.CompanyId ?? _state.CurrentCompany?.Id;
             var employeeId = _state.CurrentEmployee?.Id;
-            await _storage.LogApplicationErrorAsync(
-                module: properties?.GetValueOrDefault("module"),
-                page: context,
-                ex: ex,
-                companyId: companyId,
-                employeeId: employeeId,
-                metadata: properties);
+            try
+            {
+                var storage = _services.GetService<IStorageService>();
+                if (storage != null)
+                {
+                    await storage.LogApplicationErrorAsync(
+                        module: properties?.GetValueOrDefault("module"),
+                        page: context,
+                        ex: ex,
+                        companyId: companyId,
+                        employeeId: employeeId,
+                        metadata: properties);
+                }
+            }
+            catch { /* non-critical */ }
         }
         catch { /* non-critical */ }
     }

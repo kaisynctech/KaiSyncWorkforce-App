@@ -43,3 +43,17 @@ timesheets - Copy (2)/
 
 # NuGet
 *.nupkg
+
+# Local tooling — machine-specific, not repo material
+.claude/
+.codex/
+.mcp.json
+AGENTS.md
+
+# Arch design spec documents — kept locally, not in repo
+ARCH-*.md
+"KaiFlow Web Platform — Phase*.md"
+"KaiFlow Contractor Lifecycle*.md"
+
+# Node
+**/node_modules/

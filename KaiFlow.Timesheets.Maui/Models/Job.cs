@@ -112,6 +112,10 @@ public class Job : BaseModel
     [Column("deal_id")]
     public Guid? DealId { get; set; }
 
+    /// <summary>Phase 2D.4 — the contractor quote this job was converted from (nullable).</summary>
+    [Column("source_quote_id")]
+    public Guid? SourceQuoteId { get; set; }
+
     [Column("job_code")]
     public string? JobCode { get; set; }
 
@@ -130,7 +134,50 @@ public class Job : BaseModel
 
     [JsonIgnore] public string JobCodeDisplay => string.IsNullOrWhiteSpace(JobCode) ? "—" : JobCode!;
     [JsonIgnore] public bool HasProject => DealId.HasValue;
-    [JsonIgnore] public string ContractorCostDisplay => $"R{ContractorCost:N2}";
+    [JsonIgnore] public string ContractorCostDisplay => ContractorCost > 0 ? $"R{ContractorCost:N2}" : "—";
+
+    // ── Contractor-tab display helpers ────────────────────────────────────────
+    [JsonIgnore]
+    public string StatusLabel => Status switch
+    {
+        JobStatus.InProgress => "In Progress",
+        JobStatus.Completed  => "Completed",
+        JobStatus.Cancelled  => "Cancelled",
+        _                    => "Scheduled"
+    };
+
+    [JsonIgnore]
+    public string StatusBadgeBg => Status switch
+    {
+        JobStatus.InProgress => "#292012",   // amber
+        JobStatus.Completed  => "#14532D",   // green
+        JobStatus.Cancelled  => "#7F1D1D",   // red
+        _                    => "#1E3A5F"    // blue
+    };
+
+    [JsonIgnore]
+    public string StatusBadgeFg => Status switch
+    {
+        JobStatus.InProgress => "#FCD34D",
+        JobStatus.Completed  => "#22C55E",
+        JobStatus.Cancelled  => "#FCA5A5",
+        _                    => "#60A5FA"
+    };
+
+    [JsonIgnore]
+    public string PriorityLabel => Priority switch
+    {
+        JobPriority.Critical => "Critical",
+        JobPriority.High     => "High",
+        JobPriority.Medium   => "Medium",
+        JobPriority.Low      => "Low",
+        _                    => "—"
+    };
+
+    [JsonIgnore]
+    public string ScheduledStartDisplay => ScheduledStart.HasValue
+        ? ScheduledStart.Value.ToLocalTime().ToString("dd MMM")
+        : "—";
 
     [JsonIgnore]
     public JobStatus Status => StatusRaw switch

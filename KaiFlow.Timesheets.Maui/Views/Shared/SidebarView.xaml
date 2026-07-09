@@ -1,0 +1,467 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--
+    SidebarView — shared left-nav for ALL top-level module pages.
+    BindingContext is set to NavigationStateService (singleton) in code-behind.
+    Width is driven by NavigationStateService.SidebarWidthRequest (220/56/0).
+    Text labels hide via IsSidebarTextVisible (Expanded only).
+    Active state uses IsXxxActive; commands call GoToXxxCommand on the service.
+-->
+<ContentView
+    x:Class="KaiFlow.Timesheets.Views.Shared.SidebarView"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:services="clr-namespace:KaiFlow.Timesheets.Services"
+    x:DataType="services:NavigationStateService"
+    BackgroundColor="{StaticResource SidebarBackground}"
+    MinimumWidthRequest="0">
+
+    <!-- WidthRequest is set programmatically in SidebarView.xaml.cs so the sidebar
+         is never 0-wide during the window before BindingContext is resolved. -->
+    <Grid BackgroundColor="{StaticResource SidebarBackground}"
+          RowDefinitions="Auto,*">
+
+        <!-- Branding (hidden in Collapsed / Hidden modes) -->
+        <VerticalStackLayout Grid.Row="0" Padding="20,28,20,16"
+                             IsVisible="{Binding IsSidebarTextVisible}">
+            <Label Text="KaiSync" FontFamily="PoppinsBold" FontSize="21" TextColor="#FFFFFF" />
+            <Label Text="Workforce" FontFamily="PoppinsRegular" FontSize="11"
+                   TextColor="#64748B" Margin="0,-3,0,0" />
+            <BoxView HeightRequest="1" Color="#1E293B" Margin="0,14,0,10" />
+            <Label Text="{Binding CurrentCompanyName}" FontFamily="PoppinsSemiBold" FontSize="12"
+                   TextColor="#60A5FA" LineBreakMode="TailTruncation"
+                   IsVisible="{Binding HasCurrentCompany}" />
+            <Label Text="{Binding CurrentCompanyCode, StringFormat='Code: {0}'}"
+                   FontFamily="PoppinsRegular" FontSize="11" TextColor="#475569"
+                   IsVisible="{Binding HasCurrentCompany}" />
+        </VerticalStackLayout>
+
+        <!-- Navigation items -->
+        <ScrollView Grid.Row="1" VerticalScrollBarVisibility="Never">
+            <VerticalStackLayout Spacing="1" Padding="10,0">
+
+                <!-- Sidebar toggle — always visible even in Collapsed mode -->
+                <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                       BackgroundColor="Transparent">
+                    <Frame.GestureRecognizers>
+                        <TapGestureRecognizer Command="{Binding CycleSidebarModeCommand}" />
+                    </Frame.GestureRecognizers>
+                    <HorizontalStackLayout Spacing="10" Padding="12,10">
+                        <Label Text="{Binding SidebarToggleIcon}" FontFamily="MaterialIcons" FontSize="19"
+                               VerticalOptions="Center" TextColor="{StaticResource TextSecondary}" />
+                        <Label Text="{Binding SidebarToggleTooltip}" FontFamily="PoppinsMedium" FontSize="12"
+                               VerticalOptions="Center" TextColor="{StaticResource TextSecondary}"
+                               IsVisible="{Binding IsSidebarTextVisible}" />
+                    </HorizontalStackLayout>
+                </Frame>
+
+                <!-- Overview -->
+                <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                       BackgroundColor="{Binding IsOverviewActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                    <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding GoToOverviewCommand}" /></Frame.GestureRecognizers>
+                    <HorizontalStackLayout Spacing="10" Padding="12,10">
+                        <Label Text="&#xE871;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                               TextColor="{Binding IsOverviewActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                        <Label Text="Overview" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                               TextColor="{Binding IsOverviewActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}"
+                               IsVisible="{Binding IsSidebarTextVisible}" />
+                    </HorizontalStackLayout>
+                </Frame>
+
+                <!-- My Profile -->
+                <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                       BackgroundColor="{Binding IsMyProfileActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                    <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding GoToMyProfileCommand}" /></Frame.GestureRecognizers>
+                    <HorizontalStackLayout Spacing="10" Padding="12,10">
+                        <Label Text="&#xE853;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                               TextColor="{Binding IsMyProfileActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                        <Label Text="My Profile" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                               TextColor="{Binding IsMyProfileActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}"
+                               IsVisible="{Binding IsSidebarTextVisible}" />
+                    </HorizontalStackLayout>
+                </Frame>
+
+                <!-- Messages -->
+                <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                       BackgroundColor="{Binding IsMessagesActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                    <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding GoToMessagesCommand}" /></Frame.GestureRecognizers>
+                    <Grid ColumnDefinitions="*,Auto" Padding="12,10">
+                        <HorizontalStackLayout Grid.Column="0" Spacing="10">
+                            <Label Text="&#xE0BF;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                                   TextColor="{Binding IsMessagesActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                            <Label Text="Messages" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                                   TextColor="{Binding IsMessagesActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}"
+                                   IsVisible="{Binding IsSidebarTextVisible}" />
+                        </HorizontalStackLayout>
+                        <Frame Grid.Column="1" BackgroundColor="#3B82F6" BorderColor="Transparent"
+                               CornerRadius="10" Padding="5,1" HasShadow="False" VerticalOptions="Center"
+                               IsVisible="{Binding MessageThreadCount, Converter={StaticResource IsNotZeroConverter}}">
+                            <Label Text="{Binding MessageThreadCount}" TextColor="White" FontFamily="PoppinsBold" FontSize="10" />
+                        </Frame>
+                    </Grid>
+                </Frame>
+
+                <Label Text="PEOPLE &amp; WORK" FontFamily="PoppinsMedium" FontSize="10"
+                       TextColor="#475569" Margin="12,12,0,2" CharacterSpacing="1"
+                       IsVisible="{Binding ShowPeopleWorkSectionText}" />
+
+                <!-- Employees -->
+                <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                       IsVisible="{Binding ShowEmployeesNav}"
+                       BackgroundColor="{Binding IsEmployeesActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                    <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding GoToEmployeesCommand}" /></Frame.GestureRecognizers>
+                    <HorizontalStackLayout Spacing="10" Padding="12,10">
+                        <Label Text="&#xE7EF;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                               TextColor="{Binding IsEmployeesActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                        <Label Text="Employees" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                               TextColor="{Binding IsEmployeesActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}"
+                               IsVisible="{Binding IsSidebarTextVisible}" />
+                    </HorizontalStackLayout>
+                </Frame>
+
+                <!-- Leave -->
+                <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                       IsVisible="{Binding ShowLeaveNav}"
+                       BackgroundColor="{Binding IsLeaveActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                    <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding GoToLeaveCommand}" /></Frame.GestureRecognizers>
+                    <Grid ColumnDefinitions="*,Auto" Padding="12,10">
+                        <HorizontalStackLayout Grid.Column="0" Spacing="10">
+                            <Label Text="&#xE916;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                                   TextColor="{Binding IsLeaveActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                            <Label Text="Leave" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                                   TextColor="{Binding IsLeaveActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}"
+                                   IsVisible="{Binding IsSidebarTextVisible}" />
+                        </HorizontalStackLayout>
+                        <Frame Grid.Column="1" BackgroundColor="#F59E0B" BorderColor="Transparent"
+                               CornerRadius="10" Padding="5,1" HasShadow="False" VerticalOptions="Center"
+                               IsVisible="{Binding PendingLeaveCount, Converter={StaticResource IsNotZeroConverter}}">
+                            <Label Text="{Binding PendingLeaveCount}" TextColor="White" FontFamily="PoppinsBold" FontSize="10" />
+                        </Frame>
+                    </Grid>
+                </Frame>
+
+                <!-- Attendance -->
+                <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                       IsVisible="{Binding ShowAttendanceNav}"
+                       BackgroundColor="{Binding IsAttendanceActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                    <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding GoToAttendanceTabCommand}" /></Frame.GestureRecognizers>
+                    <HorizontalStackLayout Spacing="10" Padding="12,10">
+                        <Label Text="&#xE192;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                               TextColor="{Binding IsAttendanceActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                        <Label Text="Attendance" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                               TextColor="{Binding IsAttendanceActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}"
+                               IsVisible="{Binding IsSidebarTextVisible}" />
+                    </HorizontalStackLayout>
+                </Frame>
+
+                <!-- Jobs -->
+                <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                       IsVisible="{Binding ShowJobsNav}"
+                       BackgroundColor="{Binding IsJobsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                    <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding GoToJobsTabCommand}" /></Frame.GestureRecognizers>
+                    <Grid ColumnDefinitions="*,Auto" Padding="12,10">
+                        <HorizontalStackLayout Grid.Column="0" Spacing="10">
+                            <Label Text="&#xE8F9;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                                   TextColor="{Binding IsJobsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                            <Label Text="Jobs" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                                   TextColor="{Binding IsJobsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}"
+                                   IsVisible="{Binding IsSidebarTextVisible}" />
+                        </HorizontalStackLayout>
+                        <Frame Grid.Column="1" BackgroundColor="#3B82F6" BorderColor="Transparent"
+                               CornerRadius="10" Padding="5,1" HasShadow="False" VerticalOptions="Center"
+                               IsVisible="{Binding ActiveJobCount, Converter={StaticResource IsNotZeroConverter}}">
+                            <Label Text="{Binding ActiveJobCount}" TextColor="White" FontFamily="PoppinsBold" FontSize="10" />
+                        </Frame>
+                    </Grid>
+                </Frame>
+
+                <!-- Projects -->
+                <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                       IsVisible="{Binding ShowProjectsNav}"
+                       BackgroundColor="{Binding IsProjectsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                    <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding GoToProjectsTabCommand}" /></Frame.GestureRecognizers>
+                    <Grid ColumnDefinitions="*,Auto" Padding="12,10">
+                        <HorizontalStackLayout Grid.Column="0" Spacing="10">
+                            <Label Text="&#xE2C8;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                                   TextColor="{Binding IsProjectsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                            <Label Text="Projects" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                                   TextColor="{Binding IsProjectsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}"
+                                   IsVisible="{Binding IsSidebarTextVisible}" />
+                        </HorizontalStackLayout>
+                        <Frame Grid.Column="1" BackgroundColor="{StaticResource Primary}" BorderColor="Transparent"
+                               CornerRadius="10" Padding="5,1" HasShadow="False" VerticalOptions="Center"
+                               IsVisible="{Binding ProjectCount, Converter={StaticResource IsNotZeroConverter}}">
+                            <Label Text="{Binding ProjectCount}" TextColor="White" FontFamily="PoppinsBold" FontSize="10" />
+                        </Frame>
+                    </Grid>
+                </Frame>
+
+                <Label Text="OPERATIONS" FontFamily="PoppinsMedium" FontSize="10"
+                       TextColor="#475569" Margin="12,12,0,2" CharacterSpacing="1"
+                       IsVisible="{Binding ShowOperationsSectionText}" />
+
+                <!-- Payroll -->
+                <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                       IsVisible="{Binding ShowPayrollNav}"
+                       BackgroundColor="{Binding IsPayrollActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                    <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding GoToPayrollTabCommand}" /></Frame.GestureRecognizers>
+                    <Grid ColumnDefinitions="*,Auto" Padding="12,10">
+                        <HorizontalStackLayout Grid.Column="0" Spacing="10">
+                            <Label Text="&#xE8A1;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                                   TextColor="{Binding IsPayrollActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                            <Label Text="Payroll" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                                   TextColor="{Binding IsPayrollActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}"
+                                   IsVisible="{Binding IsSidebarTextVisible}" />
+                        </HorizontalStackLayout>
+                        <Frame Grid.Column="1" BackgroundColor="#F59E0B" BorderColor="Transparent"
+                               CornerRadius="10" Padding="5,1" HasShadow="False" VerticalOptions="Center"
+                               IsVisible="{Binding PendingPaymentCount, Converter={StaticResource IsNotZeroConverter}}">
+                            <Label Text="{Binding PendingPaymentCount}" TextColor="White" FontFamily="PoppinsBold" FontSize="10" />
+                        </Frame>
+                    </Grid>
+                </Frame>
+
+                <!-- Finance -->
+                <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                       IsVisible="{Binding ShowFinanceNav}" BackgroundColor="Transparent">
+                    <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding GoToFinanceCommand}" /></Frame.GestureRecognizers>
+                    <HorizontalStackLayout Spacing="10" Padding="12,10">
+                        <Label Text="&#xE84F;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center" TextColor="#64748B" />
+                        <Label Text="Finance" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center" TextColor="#94A3B8"
+                               IsVisible="{Binding IsSidebarTextVisible}" />
+                    </HorizontalStackLayout>
+                </Frame>
+
+                <!-- Contractors -->
+                <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                       IsVisible="{Binding ShowContractorsNav}"
+                       BackgroundColor="{Binding IsContractorsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                    <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding GoToContractorsCommand}" /></Frame.GestureRecognizers>
+                    <HorizontalStackLayout Spacing="10" Padding="12,10">
+                        <Label Text="&#xE7EE;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                               TextColor="{Binding IsContractorsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                        <Label Text="Contractors" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                               TextColor="{Binding IsContractorsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}"
+                               IsVisible="{Binding IsSidebarTextVisible}" />
+                    </HorizontalStackLayout>
+                </Frame>
+
+                <!-- Clients -->
+                <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                       IsVisible="{Binding ShowClientsNav}"
+                       BackgroundColor="{Binding IsClientsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                    <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding GoToClientsTabCommand}" /></Frame.GestureRecognizers>
+                    <HorizontalStackLayout Spacing="10" Padding="12,10">
+                        <Label Text="&#xE7FD;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                               TextColor="{Binding IsClientsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                        <Label Text="Clients" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                               TextColor="{Binding IsClientsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}"
+                               IsVisible="{Binding IsSidebarTextVisible}" />
+                    </HorizontalStackLayout>
+                </Frame>
+
+                <!-- Inventory -->
+                <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                       IsVisible="{Binding ShowInventoryNav}"
+                       BackgroundColor="{Binding IsInventoryActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                    <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding GoToInventoryCommand}" /></Frame.GestureRecognizers>
+                    <HorizontalStackLayout Spacing="10" Padding="12,10">
+                        <Label Text="&#xE8D3;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                               TextColor="{Binding IsInventoryActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                        <Label Text="Inventory" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                               TextColor="{Binding IsInventoryActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}"
+                               IsVisible="{Binding IsSidebarTextVisible}" />
+                    </HorizontalStackLayout>
+                </Frame>
+
+                <!-- Suppliers -->
+                <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                       IsVisible="{Binding ShowSuppliersNav}"
+                       BackgroundColor="{Binding IsSuppliersActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                    <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding GoToSuppliersCommand}" /></Frame.GestureRecognizers>
+                    <HorizontalStackLayout Spacing="10" Padding="12,10">
+                        <Label Text="&#xE8CC;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                               TextColor="{Binding IsSuppliersActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                        <Label Text="Suppliers" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                               TextColor="{Binding IsSuppliersActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}"
+                               IsVisible="{Binding IsSidebarTextVisible}" />
+                    </HorizontalStackLayout>
+                </Frame>
+
+                <!-- Assets -->
+                <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                       IsVisible="{Binding ShowAssetsNav}"
+                       BackgroundColor="{Binding IsAssetsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                    <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding GoToAssetsCommand}" /></Frame.GestureRecognizers>
+                    <HorizontalStackLayout Spacing="10" Padding="12,10">
+                        <Label Text="&#xE8D8;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                               TextColor="{Binding IsAssetsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                        <Label Text="Assets" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                               TextColor="{Binding IsAssetsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}"
+                               IsVisible="{Binding IsSidebarTextVisible}" />
+                    </HorizontalStackLayout>
+                </Frame>
+
+                <!-- Properties -->
+                <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                       IsVisible="{Binding ShowPropertiesNav}"
+                       BackgroundColor="{Binding IsPropertiesActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                    <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding GoToPropertiesCommand}" /></Frame.GestureRecognizers>
+                    <HorizontalStackLayout Spacing="10" Padding="12,10">
+                        <Label Text="&#xE88A;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                               TextColor="{Binding IsPropertiesActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                        <Label Text="Properties" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                               TextColor="{Binding IsPropertiesActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}"
+                               IsVisible="{Binding IsSidebarTextVisible}" />
+                    </HorizontalStackLayout>
+                </Frame>
+
+                <Label Text="ANALYTICS" FontFamily="PoppinsMedium" FontSize="10"
+                       TextColor="#475569" Margin="12,12,0,2" CharacterSpacing="1"
+                       IsVisible="{Binding ShowAnalyticsSectionText}" />
+
+                <!-- Incidents -->
+                <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                       IsVisible="{Binding ShowIncidentsNav}"
+                       BackgroundColor="{Binding IsIncidentsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                    <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding GoToIncidentsCommand}" /></Frame.GestureRecognizers>
+                    <Grid ColumnDefinitions="*,Auto" Padding="12,10">
+                        <HorizontalStackLayout Grid.Column="0" Spacing="10">
+                            <Label Text="&#xE7F4;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                                   TextColor="{Binding IsIncidentsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                            <Label Text="Incidents" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                                   TextColor="{Binding IsIncidentsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}"
+                                   IsVisible="{Binding IsSidebarTextVisible}" />
+                        </HorizontalStackLayout>
+                        <Frame Grid.Column="1" BackgroundColor="#EF4444" BorderColor="Transparent"
+                               CornerRadius="10" Padding="5,1" HasShadow="False" VerticalOptions="Center"
+                               IsVisible="{Binding OpenIncidentCount, Converter={StaticResource IsNotZeroConverter}}">
+                            <Label Text="{Binding OpenIncidentCount}" TextColor="White" FontFamily="PoppinsBold" FontSize="10" />
+                        </Frame>
+                    </Grid>
+                </Frame>
+
+                <!-- Reports -->
+                <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                       IsVisible="{Binding ShowReportsNav}"
+                       BackgroundColor="{Binding IsReportsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                    <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding GoToReportsCommand}" /></Frame.GestureRecognizers>
+                    <HorizontalStackLayout Spacing="10" Padding="12,10">
+                        <Label Text="&#xE8EF;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                               TextColor="{Binding IsReportsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                        <Label Text="Reports" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                               TextColor="{Binding IsReportsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}"
+                               IsVisible="{Binding IsSidebarTextVisible}" />
+                    </HorizontalStackLayout>
+                </Frame>
+
+                <!-- Scheduling -->
+                <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                       IsVisible="{Binding ShowSchedulingNav}"
+                       BackgroundColor="{Binding IsSchedulingActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                    <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding GoToSchedulingCommand}" /></Frame.GestureRecognizers>
+                    <HorizontalStackLayout Spacing="10" Padding="12,10">
+                        <Label Text="&#xE878;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                               TextColor="{Binding IsSchedulingActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                        <Label Text="Scheduling" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                               TextColor="{Binding IsSchedulingActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}"
+                               IsVisible="{Binding IsSidebarTextVisible}" />
+                    </HorizontalStackLayout>
+                </Frame>
+
+                <!-- My PA -->
+                <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                       IsVisible="{Binding ShowMyPaNav}"
+                       BackgroundColor="{Binding IsMyPaActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                    <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding GoToMyPaTabCommand}" /></Frame.GestureRecognizers>
+                    <HorizontalStackLayout Spacing="10" Padding="12,10">
+                        <Label Text="&#xE55F;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                               TextColor="{Binding IsMyPaActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                        <Label Text="My PA" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                               TextColor="{Binding IsMyPaActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}"
+                               IsVisible="{Binding IsSidebarTextVisible}" />
+                    </HorizontalStackLayout>
+                </Frame>
+
+                <!-- Work Teams -->
+                <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                       IsVisible="{Binding ShowWorkTeamsNav}"
+                       BackgroundColor="{Binding IsWorkTeamsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                    <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding GoToWorkTeamsCommand}" /></Frame.GestureRecognizers>
+                    <HorizontalStackLayout Spacing="10" Padding="12,10">
+                        <Label Text="&#xE533;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                               TextColor="{Binding IsWorkTeamsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                        <Label Text="Work Teams" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                               TextColor="{Binding IsWorkTeamsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}"
+                               IsVisible="{Binding IsSidebarTextVisible}" />
+                    </HorizontalStackLayout>
+                </Frame>
+
+                <Label Text="COMMS" FontFamily="PoppinsMedium" FontSize="10"
+                       TextColor="#475569" Margin="12,12,0,2" CharacterSpacing="1"
+                       IsVisible="{Binding ShowCommsSectionText}" />
+
+                <!-- Notifications -->
+                <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                       BackgroundColor="{Binding IsNotificationsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                    <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding GoToNotificationsCommand}" /></Frame.GestureRecognizers>
+                    <HorizontalStackLayout Spacing="10" Padding="12,10">
+                        <Label Text="&#xE7F5;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                               TextColor="{Binding IsNotificationsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                        <Label Text="Notifications" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                               TextColor="{Binding IsNotificationsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}"
+                               IsVisible="{Binding IsSidebarTextVisible}" />
+                    </HorizontalStackLayout>
+                </Frame>
+
+                <!-- Activity Log (owner only) -->
+                <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                       IsVisible="{Binding IsOwner}"
+                       BackgroundColor="{Binding IsActivityLogActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                    <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding GoToActivityLogCommand}" /></Frame.GestureRecognizers>
+                    <HorizontalStackLayout Spacing="10" Padding="12,10">
+                        <Label Text="&#xE8EE;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                               TextColor="{Binding IsActivityLogActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                        <Label Text="Activity Log" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                               TextColor="{Binding IsActivityLogActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}"
+                               IsVisible="{Binding IsSidebarTextVisible}" />
+                    </HorizontalStackLayout>
+                </Frame>
+
+                <Label Text="ADMIN" FontFamily="PoppinsMedium" FontSize="10"
+                       TextColor="#475569" Margin="12,12,0,2" CharacterSpacing="1"
+                       IsVisible="{Binding ShowAdminSectionText}" />
+
+                <!-- Settings -->
+                <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                       IsVisible="{Binding ShowAdminSection}"
+                       BackgroundColor="{Binding IsSettingsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|Transparent'}">
+                    <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding GoToSettingsCommand}" /></Frame.GestureRecognizers>
+                    <HorizontalStackLayout Spacing="10" Padding="12,10">
+                        <Label Text="&#xE8B8;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center"
+                               TextColor="{Binding IsSettingsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#60A5FA|#64748B'}" />
+                        <Label Text="Settings" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center"
+                               TextColor="{Binding IsSettingsActive, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#94A3B8'}"
+                               IsVisible="{Binding IsSidebarTextVisible}" />
+                    </HorizontalStackLayout>
+                </Frame>
+
+                <!-- Platform Console (KaiSync operators only) -->
+                <Frame CornerRadius="8" Padding="0" HasShadow="False" BorderColor="Transparent"
+                       IsVisible="{Binding ShowPlatformAdminNav}" BackgroundColor="Transparent">
+                    <Frame.GestureRecognizers><TapGestureRecognizer Command="{Binding GoToPlatformAdminCommand}" /></Frame.GestureRecognizers>
+                    <HorizontalStackLayout Spacing="10" Padding="12,10">
+                        <Label Text="&#xE8AF;" FontFamily="MaterialIcons" FontSize="19" VerticalOptions="Center" TextColor="#A78BFA" />
+                        <Label Text="Platform Console" FontFamily="PoppinsMedium" FontSize="13" VerticalOptions="Center" TextColor="#C4B5FD"
+                               IsVisible="{Binding IsSidebarTextVisible}" />
+                    </HorizontalStackLayout>
+                </Frame>
+
+                <BoxView HeightRequest="16" Color="Transparent" />
+            </VerticalStackLayout>
+        </ScrollView>
+
+    </Grid>
+</ContentView>
+<!-- Back button removed from SidebarView: module pages use the Shell NavBar Back
+     arrow (visible by default); HrDashboardPage has Shell.NavBarIsVisible=False
+     but the dashboard is the root page with no meaningful Back destination. -->

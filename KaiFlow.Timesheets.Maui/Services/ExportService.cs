@@ -514,12 +514,142 @@ public class ExportService : IExportService
         }
     }
 
+    public async Task ExportContractorRemittancePdfAsync(ContractorPayout payout, string contractorName, string companyName, bool downloadToDevice = false)
+    {
+        QuestPDF.Settings.License = LicenseType.Community;
+
+        var safe = string.Concat(contractorName.Select(c => char.IsLetterOrDigit(c) ? c : '_'));
+        var fileName = $"Remittance_{safe}_{DateTime.Now:yyyy-MM-dd}.pdf";
+
+        var paymentDate = payout.PaidAt.HasValue
+            ? payout.PaidAt.Value.ToLocalTime().ToString("dd MMM yyyy")
+            : payout.PayoutDate?.ToString("dd MMM yyyy") ?? DateTime.Today.ToString("dd MMM yyyy");
+
+        var invoiceRef = payout.InvoiceReferenceDisplay != "—" ? payout.InvoiceReferenceDisplay : payout.Id.ToString()[..8].ToUpper();
+
+        var doc = Document.Create(container =>
+        {
+            container.Page(page =>
+            {
+                page.Size(PageSizes.A4);
+                page.Margin(2.2f, QuestUnit.Centimetre);
+                page.DefaultTextStyle(x => x.FontFamily("Arial").FontSize(10).FontColor("#0f172a"));
+
+                page.Content().Column(col =>
+                {
+                    // ── Header ──────────────────────────────────────────────────
+                    col.Item().Row(row =>
+                    {
+                        row.RelativeItem().Column(c =>
+                        {
+                            c.Item().Text(companyName).Bold().FontSize(15).FontColor("#1e3a5f");
+                            c.Item().Text("REMITTANCE ADVICE").Bold().FontSize(22).FontColor("#3b82f6");
+                        });
+                        row.ConstantItem(130).Column(c =>
+                        {
+                            c.Item().AlignRight().Text($"Date: {paymentDate}").FontSize(9).FontColor("#64748b");
+                            c.Item().AlignRight().Text("PAID").Bold().FontSize(10).FontColor("#16a34a");
+                        });
+                    });
+
+                    col.Item().Height(6);
+                    col.Item().LineHorizontal(1.5f).LineColor("#1e3a5f");
+                    col.Item().Height(10);
+
+                    // ── Recipient ───────────────────────────────────────────────
+                    col.Item().Text("TO").Bold().FontSize(8).FontColor("#64748b");
+                    col.Item().Height(3);
+                    col.Item().Text(contractorName).Bold().FontSize(13);
+                    col.Item().Height(14);
+
+                    // ── Reference ───────────────────────────────────────────────
+                    col.Item().Text("PAYMENT DETAILS").Bold().FontSize(8).FontColor("#64748b");
+                    col.Item().Height(3);
+                    col.Item().LineHorizontal(0.5f).LineColor("#e2e8f0");
+                    col.Item().Height(5);
+                    RemittanceRow(col, "Invoice Reference", invoiceRef);
+                    RemittanceRow(col, "Payment Date",      paymentDate);
+                    RemittanceRow(col, "Payment Method",    "EFT");
+                    col.Item().Height(14);
+
+                    // ── Amounts ─────────────────────────────────────────────────
+                    col.Item().Text("AMOUNT BREAKDOWN").Bold().FontSize(8).FontColor("#64748b");
+                    col.Item().Height(3);
+                    col.Item().LineHorizontal(0.5f).LineColor("#e2e8f0");
+                    col.Item().Height(5);
+                    RemittanceRow(col, "Subtotal",          $"R {payout.Subtotal:N2}");
+                    if (payout.VatAmount > 0)
+                        RemittanceRow(col, $"VAT ({payout.VatRate:G}%)", $"R {payout.VatAmount:N2}", "#64748b");
+                    RemittanceRow(col, "Total Amount",      $"R {payout.TotalAmount:N2}");
+                    if (payout.RetentionAmount > 0)
+                        RemittanceRow(col, "Retention Held", $"- R {payout.RetentionAmount:N2}", "#d97706");
+                    col.Item().Height(6);
+                    col.Item().LineHorizontal(1.5f).LineColor("#1e3a5f");
+                    col.Item().Height(8);
+
+                    // ── Net Pay ─────────────────────────────────────────────────
+                    col.Item().Row(row =>
+                    {
+                        row.RelativeItem().Text("NET PAYMENT").Bold().FontSize(14).FontColor("#1e3a5f");
+                        row.ConstantItem(160).AlignRight()
+                            .Text($"R {payout.NetPayable:N2}").Bold().FontSize(16).FontColor("#3b82f6");
+                    });
+
+                    // ── Notes ───────────────────────────────────────────────────
+                    if (!string.IsNullOrWhiteSpace(payout.Notes))
+                    {
+                        col.Item().Height(14);
+                        col.Item().LineHorizontal(0.5f).LineColor("#e2e8f0");
+                        col.Item().Height(6);
+                        col.Item().Text("NOTES").Bold().FontSize(8).FontColor("#64748b");
+                        col.Item().Height(3);
+                        col.Item().Text(payout.Notes).FontSize(9).FontColor("#475569").Italic();
+                    }
+
+                    // ── Footer ──────────────────────────────────────────────────
+                    col.Item().Height(24);
+                    col.Item().LineHorizontal(0.5f).LineColor("#e2e8f0");
+                    col.Item().Height(4);
+                    col.Item().Text($"Generated by KaiSync Workforce  •  {DateTime.Now:dd MMM yyyy HH:mm}")
+                        .FontSize(8).FontColor("#94a3b8");
+                });
+            });
+        });
+
+        if (downloadToDevice)
+        {
+            var dest = GetDownloadPath(fileName);
+            doc.GeneratePdf(dest);
+            await ShowSavedAlert(dest);
+        }
+        else
+        {
+            var path = Path.Combine(FileSystem.CacheDirectory, fileName);
+            doc.GeneratePdf(path);
+            await Share.Default.RequestAsync(new ShareFileRequest
+            {
+                Title = $"Remittance — {contractorName}",
+                File  = new ShareFile(path, "application/pdf")
+            });
+        }
+    }
+
     private static void PayslipRow(ColumnDescriptor col, string label, string value, string? valueColor = null)
     {
         col.Item().Row(row =>
         {
             row.RelativeItem().Text(label).FontSize(10).FontColor("#475569");
             row.ConstantItem(160).AlignRight().Text(value).FontSize(10).FontColor(valueColor ?? "#0f172a");
+        });
+        col.Item().Height(3);
+    }
+
+    private static void RemittanceRow(ColumnDescriptor col, string label, string value, string? valueColor = null)
+    {
+        col.Item().Row(row =>
+        {
+            row.RelativeItem().Text(label).FontSize(10).FontColor("#475569");
+            row.ConstantItem(180).AlignRight().Text(value).FontSize(10).FontColor(valueColor ?? "#0f172a");
         });
         col.Item().Height(3);
     }

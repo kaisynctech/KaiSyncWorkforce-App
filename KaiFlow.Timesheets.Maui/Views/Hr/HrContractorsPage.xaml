@@ -14,30 +14,171 @@
         <ToolbarItem Text="+ Add" Command="{Binding CreateCommand}" />
     </ContentPage.ToolbarItems>
 
-    <Grid RowDefinitions="Auto,Auto,*">
+    <Grid RowDefinitions="Auto,Auto,Auto,*">
         <SearchBar Grid.Row="0" Text="{Binding SearchText}" Placeholder="Search contractors…"
                    BackgroundColor="{StaticResource SurfaceDark}"
                    TextColor="{StaticResource TextPrimary}"
                    PlaceholderColor="{StaticResource TextSecondary}" Margin="8,8,8,0" />
 
-        <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="16,8,16,4">
-            <Label Text="{Binding Contractors.Count, StringFormat='{0} contractors'}" Style="{StaticResource Caption}" VerticalOptions="Center" />
-            <Button Grid.Column="1" Text="Refresh" Command="{Binding RefreshCommand}" Style="{StaticResource TextButton}" FontSize="13" />
+        <!-- Filter chips + count + refresh -->
+        <!-- Using Button (not Frame+TapGestureRecognizer): Button.Command is the reliable
+             WinUI command path. Frame hit-testing on WinUI can silently drop taps. -->
+        <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto" Margin="16,8,16,4" ColumnSpacing="6">
+            <Button Text="Active" Command="{Binding ShowActiveCommand}"
+                    BackgroundColor="{Binding IsActiveFilter, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|#1E293B'}"
+                    TextColor="{Binding IsActiveFilter, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#64748B'}"
+                    FontFamily="PoppinsMedium" FontSize="12" CornerRadius="14"
+                    Padding="12,0" HeightRequest="32" BorderWidth="0" />
+            <Button Grid.Column="1" Text="Inactive" Command="{Binding ShowInactiveCommand}"
+                    BackgroundColor="{Binding IsInactiveFilter, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|#1E293B'}"
+                    TextColor="{Binding IsInactiveFilter, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#64748B'}"
+                    FontFamily="PoppinsMedium" FontSize="12" CornerRadius="14"
+                    Padding="12,0" HeightRequest="32" BorderWidth="0" />
+            <Button Grid.Column="2" Text="All" Command="{Binding ShowAllCommand}"
+                    BackgroundColor="{Binding IsAllFilter, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#1E3A5F|#1E293B'}"
+                    TextColor="{Binding IsAllFilter, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#64748B'}"
+                    FontFamily="PoppinsMedium" FontSize="12" CornerRadius="14"
+                    Padding="12,0" HeightRequest="32" BorderWidth="0" />
+            <Label Grid.Column="3" Text="{Binding Contractors.Count, StringFormat='{0} contractors'}"
+                   Style="{StaticResource Caption}" VerticalOptions="Center" Margin="8,0,0,0" />
+            <!-- Phase 2B.3a: Compliance Packs settings entry point -->
+            <Button Grid.Column="4" Text="⚙ Packs"
+                    Command="{Binding OpenCompliancePacksCommand}"
+                    BackgroundColor="#1E293B" TextColor="#94A3B8"
+                    FontFamily="PoppinsMedium" FontSize="12" CornerRadius="14"
+                    Padding="12,0" HeightRequest="32" BorderWidth="0" />
+            <Button Grid.Column="5" Text="Refresh" Command="{Binding RefreshCommand}" Style="{StaticResource TextButton}" FontSize="13" />
         </Grid>
 
-        <RefreshView Grid.Row="2" Command="{Binding RefreshCommand}" IsRefreshing="{Binding IsBusy}">
+        <!-- ── Action Centre (Phase 2D.3) ─────────────────────────────────── -->
+        <!-- Uses CollectionView.EmptyView — always renders, no IsVisible toggling.
+             This is the reliable WinUI pattern for conditional list/empty states. -->
+        <Frame Grid.Row="2" Style="{StaticResource CardFrame}"
+               Padding="0" Margin="16,4,16,0" HasShadow="False">
+            <VerticalStackLayout>
+
+                <!-- Header (always visible) -->
+                <Grid ColumnDefinitions="Auto,*,Auto" Padding="12,10,8,8" ColumnSpacing="8">
+                    <Label Grid.Column="0" Text="⚡"
+                           FontFamily="PoppinsSemiBold" FontSize="14"
+                           TextColor="{StaticResource Primary}"
+                           VerticalOptions="Center" />
+                    <VerticalStackLayout Grid.Column="1" Spacing="1" VerticalOptions="Center">
+                        <Label Text="ACTION CENTRE"
+                               FontFamily="PoppinsSemiBold" FontSize="12"
+                               TextColor="{StaticResource TextPrimary}" />
+                        <Label Text="{Binding ActionCentreCountLabel}"
+                               FontFamily="PoppinsRegular" FontSize="11"
+                               TextColor="{StaticResource TextSecondary}" />
+                    </VerticalStackLayout>
+                    <Button Grid.Column="2" Text="↻ Refresh"
+                            Command="{Binding RefreshActionCentreCommand}"
+                            BackgroundColor="Transparent"
+                            TextColor="{StaticResource TextSecondary}"
+                            FontFamily="PoppinsRegular" FontSize="11"
+                            BorderWidth="0" HeightRequest="32" Padding="8,0" />
+                </Grid>
+
+                <BoxView HeightRequest="1" Color="{StaticResource Divider}" Opacity="0.4" />
+
+                <!-- Loading indicator (shown while action items are loading) -->
+                <ActivityIndicator IsRunning="{Binding IsBusy}"
+                                   IsVisible="{Binding IsBusy}"
+                                   Color="{StaticResource Primary}"
+                                   HorizontalOptions="Start"
+                                   Margin="12,6" HeightRequest="18" WidthRequest="18" />
+
+                <!-- Action items list.
+                     EmptyView is shown by MAUI automatically when ItemsSource is empty.
+                     No IsVisible bindings needed — this always renders correctly. -->
+                <CollectionView ItemsSource="{Binding ActionItems}" Margin="0,0,0,4">
+
+                    <!-- Empty state -->
+                    <CollectionView.EmptyView>
+                        <Label Text="✓  No pending contractor actions"
+                               FontFamily="PoppinsRegular" FontSize="12"
+                               TextColor="{StaticResource TextSecondary}"
+                               Margin="12,8,12,12"
+                               HorizontalTextAlignment="Start" />
+                    </CollectionView.EmptyView>
+
+                    <!-- Item rows -->
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="models:ContractorActionItem">
+                            <VerticalStackLayout>
+                                <Grid ColumnDefinitions="110,*,90,70"
+                                      ColumnSpacing="8" Padding="12,8">
+                                    <!-- Type badge -->
+                                    <Frame Grid.Column="0" CornerRadius="5" Padding="6,3"
+                                           HasShadow="False" BorderColor="Transparent"
+                                           BackgroundColor="{Binding ActionTypeBadgeBg}"
+                                           VerticalOptions="Center">
+                                        <Label Text="{Binding ActionTypeLabel}"
+                                               FontFamily="PoppinsMedium" FontSize="10"
+                                               TextColor="{Binding ActionTypeBadgeFg}"
+                                               LineBreakMode="NoWrap" />
+                                    </Frame>
+                                    <!-- Contractor + summary -->
+                                    <VerticalStackLayout Grid.Column="1" Spacing="1"
+                                                         VerticalOptions="Center">
+                                        <Label Text="{Binding ContractorName}"
+                                               FontFamily="PoppinsMedium" FontSize="12"
+                                               TextColor="{StaticResource TextPrimary}"
+                                               LineBreakMode="TailTruncation" />
+                                        <Label Text="{Binding Summary}"
+                                               FontFamily="PoppinsRegular" FontSize="11"
+                                               TextColor="{StaticResource TextSecondary}"
+                                               LineBreakMode="TailTruncation" />
+                                    </VerticalStackLayout>
+                                    <!-- Date -->
+                                    <Label Grid.Column="2" Text="{Binding CreatedAtDisplay}"
+                                           FontFamily="PoppinsRegular" FontSize="11"
+                                           TextColor="{StaticResource TextSecondary}"
+                                           VerticalOptions="Center"
+                                           HorizontalTextAlignment="End" />
+                                    <!-- Open button — WinUI reliable: Button.Command not TapGestureRecognizer -->
+                                    <Button Grid.Column="3" Text="Open →"
+                                            Command="{Binding Source={x:Reference Self}, Path=BindingContext.OpenActionItemCommand}"
+                                            CommandParameter="{Binding .}"
+                                            BackgroundColor="Transparent"
+                                            TextColor="{StaticResource Primary}"
+                                            FontFamily="PoppinsMedium" FontSize="11"
+                                            BorderWidth="0" HeightRequest="30"
+                                            Padding="0" />
+                                </Grid>
+                                <BoxView HeightRequest="1" Color="{StaticResource Divider}" Opacity="0.3" />
+                            </VerticalStackLayout>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+
+                </CollectionView>
+
+            </VerticalStackLayout>
+        </Frame>
+
+        <RefreshView Grid.Row="3" Command="{Binding RefreshCommand}" IsRefreshing="{Binding IsBusy}">
             <ScrollView Orientation="Horizontal">
-                <VerticalStackLayout WidthRequest="980" Spacing="0" Margin="16,0">
+                <!-- Refined 10-column table (1100px, horizontal scroll).
+                     Company(185) | Code(90) | Contact(130) | Phone(120) | Email(160) | Rating(70)
+                     | Banking(85) | Payment(80) | Compliance(100) | Status(80)
+                     - Type column removed (all records are contractors).
+                     - Phone and Email are separate columns.
+                     - Each status column shows a two-state badge (no InverseBoolConverter needed).
+                     - ContractorCode is now searchable via the existing search box. -->
+                <VerticalStackLayout WidthRequest="1100" Spacing="0" Margin="16,0">
                     <Frame Style="{StaticResource DataTableFrame}">
-                        <Grid ColumnDefinitions="180,120,140,120,110,90,80" Padding="12,10"
+                        <Grid ColumnDefinitions="185,90,130,120,160,70,85,80,100,80" Padding="12,10"
                               BackgroundColor="{StaticResource SurfaceElevated}">
-                            <Label Grid.Column="0" Text="Company" Style="{StaticResource DataTableHeaderLabel}" />
-                            <Label Grid.Column="1" Text="Contact" Style="{StaticResource DataTableHeaderLabel}" />
-                            <Label Grid.Column="2" Text="Phone / Email" Style="{StaticResource DataTableHeaderLabel}" />
-                            <Label Grid.Column="3" Text="Reg. no." Style="{StaticResource DataTableHeaderLabel}" />
-                            <Label Grid.Column="4" Text="Type" Style="{StaticResource DataTableHeaderLabel}" />
-                            <Label Grid.Column="5" Text="Rating" Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="End" />
-                            <Label Grid.Column="6" Text="Status" Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="End" />
+                            <Label Grid.Column="0" Text="Company"    Style="{StaticResource DataTableHeaderLabel}" />
+                            <Label Grid.Column="1" Text="Code"       Style="{StaticResource DataTableHeaderLabel}" />
+                            <Label Grid.Column="2" Text="Contact"    Style="{StaticResource DataTableHeaderLabel}" />
+                            <Label Grid.Column="3" Text="Phone"      Style="{StaticResource DataTableHeaderLabel}" />
+                            <Label Grid.Column="4" Text="Email"      Style="{StaticResource DataTableHeaderLabel}" />
+                            <Label Grid.Column="5" Text="Rating"     Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="Center" />
+                            <Label Grid.Column="6" Text="Banking"    Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="Center" />
+                            <Label Grid.Column="7" Text="Payment"    Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="Center" />
+                            <Label Grid.Column="8" Text="Compliance" Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="Center" />
+                            <Label Grid.Column="9" Text="Status"     Style="{StaticResource DataTableHeaderLabel}" HorizontalTextAlignment="End" />
                         </Grid>
                     </Frame>
 
@@ -49,21 +190,82 @@
                         <CollectionView.ItemTemplate>
                             <DataTemplate x:DataType="models:Contractor">
                                 <VerticalStackLayout Spacing="0">
-                                    <Grid ColumnDefinitions="180,120,140,120,110,90,80" Padding="12,10"
+                                    <Grid ColumnDefinitions="185,90,130,120,160,70,85,80,100,80" Padding="12,10"
                                           BackgroundColor="{StaticResource SurfaceCard}">
                                         <Grid.GestureRecognizers>
                                             <TapGestureRecognizer
-                                                Command="{Binding Source={RelativeSource AncestorType={x:Type ContentPage}}, Path=BindingContext.OpenCommand}"
+                                                Command="{Binding Source={x:Reference Self}, Path=BindingContext.OpenCommand}"
                                                 CommandParameter="{Binding .}" />
                                         </Grid.GestureRecognizers>
-                                        <Label Grid.Column="0" Text="{Binding Name}" Style="{StaticResource DataTableCellLabel}"
+
+                                        <!-- Company -->
+                                        <Label Grid.Column="0" Text="{Binding Name}"
+                                               Style="{StaticResource DataTableCellLabel}"
                                                TextColor="{StaticResource Primary}" />
-                                        <Label Grid.Column="1" Text="{Binding ContactPerson}" Style="{StaticResource DataTableCellSecondary}" />
-                                        <Label Grid.Column="2" Text="{Binding ContactDisplay}" Style="{StaticResource DataTableCellSecondary}" LineBreakMode="TailTruncation" />
-                                        <Label Grid.Column="3" Text="{Binding RegistrationNumber}" Style="{StaticResource DataTableCellSecondary}" />
-                                        <Label Grid.Column="4" Text="{Binding PartnerKindLabel}" Style="{StaticResource DataTableCellSecondary}" />
-                                        <Label Grid.Column="5" Text="{Binding RatingDisplay}" Style="{StaticResource DataTableCellLabel}" HorizontalTextAlignment="End" />
-                                        <Label Grid.Column="6" Text="{Binding StatusLabel}" Style="{StaticResource DataTableCellSecondary}" HorizontalTextAlignment="End" />
+
+                                        <!-- Code -->
+                                        <Label Grid.Column="1" Text="{Binding ContractorCodeDisplay}"
+                                               Style="{StaticResource DataTableCellSecondary}"
+                                               FontFamily="PoppinsMedium" />
+
+                                        <!-- Contact -->
+                                        <Label Grid.Column="2" Text="{Binding ContactPerson}"
+                                               Style="{StaticResource DataTableCellSecondary}"
+                                               LineBreakMode="TailTruncation" />
+
+                                        <!-- Phone -->
+                                        <Label Grid.Column="3" Text="{Binding Phone, FallbackValue='—'}"
+                                               Style="{StaticResource DataTableCellSecondary}" />
+
+                                        <!-- Email -->
+                                        <Label Grid.Column="4" Text="{Binding Email, FallbackValue='—'}"
+                                               Style="{StaticResource DataTableCellSecondary}"
+                                               LineBreakMode="TailTruncation" />
+
+                                        <!-- Rating -->
+                                        <Label Grid.Column="5" Text="{Binding RatingDisplay}"
+                                               Style="{StaticResource DataTableCellSecondary}"
+                                               HorizontalTextAlignment="Center" />
+
+                                        <!-- Banking: always shows a badge (Verified=green, Pending=grey) -->
+                                        <Frame Grid.Column="6" CornerRadius="8" Padding="8,3"
+                                               HasShadow="False" BorderColor="Transparent"
+                                               BackgroundColor="{Binding BankingStatusBg}"
+                                               HorizontalOptions="Center" VerticalOptions="Center">
+                                            <Label Text="{Binding BankingStatusText}"
+                                                   FontFamily="PoppinsMedium" FontSize="10"
+                                                   TextColor="{Binding BankingStatusFg}" />
+                                        </Frame>
+
+                                        <!-- Payment: always shows a badge (Clear=green, Hold=amber) -->
+                                        <Frame Grid.Column="7" CornerRadius="8" Padding="8,3"
+                                               HasShadow="False" BorderColor="Transparent"
+                                               BackgroundColor="{Binding PaymentStatusBg}"
+                                               HorizontalOptions="Center" VerticalOptions="Center">
+                                            <Label Text="{Binding PaymentStatusText}"
+                                                   FontFamily="PoppinsMedium" FontSize="10"
+                                                   TextColor="{Binding PaymentStatusFg}" />
+                                        </Frame>
+
+                                        <!-- Compliance: always shows a badge (Compliant=green, Hold=red) -->
+                                        <Frame Grid.Column="8" CornerRadius="8" Padding="8,3"
+                                               HasShadow="False" BorderColor="Transparent"
+                                               BackgroundColor="{Binding ComplianceStatusBg}"
+                                               HorizontalOptions="Center" VerticalOptions="Center">
+                                            <Label Text="{Binding ComplianceStatusText}"
+                                                   FontFamily="PoppinsMedium" FontSize="10"
+                                                   TextColor="{Binding ComplianceStatusFg}" />
+                                        </Frame>
+
+                                        <!-- Status: Active / Inactive -->
+                                        <Frame Grid.Column="9" CornerRadius="10" Padding="8,3"
+                                               HasShadow="False" BorderColor="Transparent"
+                                               BackgroundColor="{Binding StatusBadgeBackground}"
+                                               HorizontalOptions="End" VerticalOptions="Center">
+                                            <Label Text="{Binding StatusLabel}"
+                                                   FontFamily="PoppinsMedium" FontSize="11"
+                                                   TextColor="{Binding StatusBadgeTextColor}" />
+                                        </Frame>
                                     </Grid>
                                     <BoxView Style="{StaticResource DataTableRowDivider}" />
                                 </VerticalStackLayout>

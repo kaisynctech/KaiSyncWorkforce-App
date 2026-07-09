@@ -75,6 +75,45 @@
                 </VerticalStackLayout>
             </Frame>
 
+            <!-- Phase E: Invoice submission -->
+            <Frame Style="{StaticResource CardFrame}">
+                <VerticalStackLayout Spacing="10">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Text="SUBMIT INVOICE" Style="{StaticResource LabelSection}" VerticalOptions="Center" />
+                        <ActivityIndicator Grid.Column="1"
+                                           IsRunning="{Binding IsInvoiceBusy}"
+                                           IsVisible="{Binding IsInvoiceBusy}"
+                                           Color="{StaticResource Primary}"
+                                           HeightRequest="22" WidthRequest="22"
+                                           VerticalOptions="Center" />
+                    </Grid>
+                    <Label Text="Submit your invoice for work completed on this job. HR will review and confirm payment."
+                           FontSize="11" TextColor="{StaticResource TextSecondary}" />
+
+                    <Label Text="Invoice amount (R)" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+                    <Entry Text="{Binding InvoiceAmount}"
+                           Keyboard="Numeric"
+                           Placeholder="0.00"
+                           Style="{StaticResource DarkEntry}" />
+
+                    <Label Text="Invoice reference (optional)" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+                    <Entry Text="{Binding InvoiceReference}"
+                           Placeholder="e.g. INV-001"
+                           Style="{StaticResource DarkEntry}" />
+
+                    <Label Text="Notes (optional)" FontSize="12" TextColor="{StaticResource TextSecondary}" />
+                    <Entry Text="{Binding InvoiceNotes}"
+                           Placeholder="Any details for HR..."
+                           Style="{StaticResource DarkEntry}" />
+
+                    <Button Text="Submit Invoice"
+                            Command="{Binding SubmitInvoiceCommand}"
+                            IsEnabled="{Binding IsInvoiceBusy, Converter={StaticResource InverseBoolConverter}}"
+                            Style="{StaticResource PrimaryButton}"
+                            HeightRequest="44" />
+                </VerticalStackLayout>
+            </Frame>
+
         </VerticalStackLayout>
     </ScrollView>
 </ContentPage>

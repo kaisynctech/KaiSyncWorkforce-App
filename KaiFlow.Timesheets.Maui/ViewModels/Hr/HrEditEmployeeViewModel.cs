@@ -12,12 +12,15 @@ namespace KaiFlow.Timesheets.ViewModels.Hr;
 public partial class HrEditEmployeeViewModel : BaseViewModel
 {
     private readonly IStorageService _storage;
+    private readonly StepUpVerificationService _stepUp;
     private readonly TimesheetStateService _state;
     private Employee? _employee;
     private bool _loadingEmployee;
     private string? _originalBankAccount;
     private string? _originalBankName;
     private string? _originalBankBranchCode;
+    private string _originalAccessLevel = "employee";
+    private bool _originalIsActive = true;
 
     [ObservableProperty] private string _employeeId = "";
     [ObservableProperty] private string _name = "";
@@ -74,7 +77,7 @@ public partial class HrEditEmployeeViewModel : BaseViewModel
     }
 
     public List<string> EmploymentTypes { get; } = ["permanent", "part-time", "contract", "student"];
-    public List<string> AccessLevels { get; } = ["employee", "manager", "admin", "hr_admin", "owner"];
+    public List<string> AccessLevels { get; } = ["employee", "manager", "hr", "owner"];
     public List<string> PayBasisOptions { get; } = ["", "monthly_salary", "hourly", "daily"];
 
     public bool UsesAutomaticMonthlyPay => MonthlySalary > 0 && !UseCustomPayBasis;
@@ -115,10 +118,11 @@ public partial class HrEditEmployeeViewModel : BaseViewModel
         HourlyRate = Math.Round(DailyRate / DailyHours, 2);
     }
 
-    public HrEditEmployeeViewModel(IStorageService storage, TimesheetStateService state)
+    public HrEditEmployeeViewModel(IStorageService storage, TimesheetStateService state, StepUpVerificationService stepUp)
     {
         _storage = storage;
         _state = state;
+        _stepUp = stepUp;
         Title = "Edit Employee";
     }
 
@@ -153,6 +157,7 @@ public partial class HrEditEmployeeViewModel : BaseViewModel
             _originalBankBranchCode = _employee.BankBranchCode;
             EmploymentType = _employee.EmploymentTypeRaw;
             AccessLevel = _employee.AccessLevelRaw;
+            _originalAccessLevel = _employee.AccessLevelRaw;
             EmploymentDate = _employee.EmploymentDate.HasValue
                 ? _employee.EmploymentDate.Value.ToDateTime(TimeOnly.MinValue)
                 : DateTime.Today;
@@ -182,6 +187,7 @@ public partial class HrEditEmployeeViewModel : BaseViewModel
             WorkDaysWeekly = _employee.WorkDaysWeekly;
             DailyHours = _employee.DailyHours;
             IsActive = _employee.IsActive;
+            _originalIsActive = _employee.IsActive;
             Title = _employee.FullName;
 
             var templates = await _storage.GetShiftTemplatesAsync(_employee.CompanyId);
@@ -236,9 +242,36 @@ public partial class HrEditEmployeeViewModel : BaseViewModel
                 _employee.BankDetailsUpdatedBy = "hr";
             }
 
+            var isActiveChanged = IsActive != _originalIsActive;
+
             _employee.EmploymentTypeRaw = EmploymentType;
-            _employee.AccessLevelRaw = AccessLevel;
             _employee.EmploymentDate = DateOnly.FromDateTime(EmploymentDate);
+
+            // Role changes go through the server-enforced RPC (validates caller authority,
+            // rejects invalid roles, and syncs company_relationships atomically).
+            if (!string.Equals(AccessLevel, _originalAccessLevel, StringComparison.Ordinal))
+            {
+                await _storage.SetEmployeeRoleAsync(_employee.CompanyId, _employee.Id, AccessLevel);
+                _originalAccessLevel = AccessLevel;
+            }
+
+            _employee.AccessLevelRaw = AccessLevel;
+
+            // Banking changes go through the server-enforced RPC (validates authority, creates audit trail).
+            if (bankChanged)
+            {
+                await _stepUp.ExecuteAsync(async () =>
+                    await _storage.UpdateEmployeeBankingAsync(
+                        _employee.CompanyId, _employee.Id,
+                        _employee.BankAccount, _employee.BankName, _employee.BankBranchCode));
+            }
+
+            // is_active changes go through the server-enforced RPC (syncs company_relationships, creates audit trail).
+            if (isActiveChanged)
+            {
+                await _storage.SetEmployeeActiveAsync(_employee.CompanyId, _employee.Id, IsActive);
+                _originalIsActive = IsActive;
+            }
 
             var salaryChanged = Math.Abs(_employee.MonthlySalary - MonthlySalary) > 0.01
                 || Math.Abs(_employee.HourlyRate - HourlyRate) > 0.01
@@ -308,7 +341,8 @@ public partial class HrEditEmployeeViewModel : BaseViewModel
         {
             _employee.IsActive = false;
             IsActive = false;
-            await _storage.UpdateEmployeeAsync(_employee);
+            await _storage.SetEmployeeActiveAsync(_employee.CompanyId, _employee.Id, false);
+            _originalIsActive = false;
             await ShellNavigation.GoToAsync("..");
         });
     }

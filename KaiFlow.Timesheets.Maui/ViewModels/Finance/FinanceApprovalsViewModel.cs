@@ -19,12 +19,15 @@ public class FinanceApprovalItem
     public string AmountDisplay => $"R{Amount:N2}";
     public string TypeLabel => EntityType == "supplier_invoice" ? "Supplier invoice" : "Contractor payout";
     public string TypeColor => EntityType == "supplier_invoice" ? "#F59E0B" : "#8B5CF6";
+    public string Notes { get; set; } = "";
+    public bool HasNotes => !string.IsNullOrWhiteSpace(Notes);
 }
 
 public partial class FinanceApprovalsViewModel : BaseViewModel
 {
     private readonly IStorageService _storage;
     private readonly TimesheetStateService _state;
+    private readonly IExportService _export;
     private Guid _companyId;
 
     [ObservableProperty] private ObservableCollection<FinanceApprovalItem> _awaitingApproval = new();
@@ -33,10 +36,11 @@ public partial class FinanceApprovalsViewModel : BaseViewModel
     [ObservableProperty] private decimal _pendingApprovalTotal;
     [ObservableProperty] private decimal _pendingPaymentTotal;
 
-    public FinanceApprovalsViewModel(IStorageService storage, TimesheetStateService state)
+    public FinanceApprovalsViewModel(IStorageService storage, TimesheetStateService state, IExportService export)
     {
         _storage = storage;
         _state = state;
+        _export = export;
         Title = "Finance Approvals";
     }
 
@@ -54,6 +58,10 @@ public partial class FinanceApprovalsViewModel : BaseViewModel
 
             var supplierInvoices = await _storage.GetSupplierInvoicesAsync(_companyId);
             var payouts = await _storage.GetContractorPayoutsAsync(_companyId);
+            var jobs = await _storage.GetJobsAsync(_companyId);
+            var jobLabelById = jobs.ToDictionary(
+                j => j.Id,
+                j => string.IsNullOrWhiteSpace(j.JobCode) ? j.Title : $"{j.JobCode} — {j.Title}");
 
             string SupplierName(Guid? id) => id.HasValue && nameById.TryGetValue(id.Value, out var n) ? n : "Supplier";
 
@@ -84,14 +92,18 @@ public partial class FinanceApprovalsViewModel : BaseViewModel
 
             foreach (var p in payouts)
             {
+                var jobLabel = p.JobId.HasValue && jobLabelById.TryGetValue(p.JobId.Value, out var jl) ? jl : null;
+                var subtitle = jobLabel != null ? $"Net {p.NetDisplay} · {jobLabel}" : $"Net {p.NetDisplay}";
+
                 if (p.ApprovalStatusRaw == "pending")
                     approval.Add(new FinanceApprovalItem
                     {
                         EntityType = "contractor_payout",
                         Id = p.Id,
                         Title = SupplierName(p.ContractorId),
-                        Subtitle = $"Net {p.NetDisplay}",
-                        Amount = p.NetPayable
+                        Subtitle = subtitle,
+                        Amount = p.NetPayable,
+                        Notes = p.Notes ?? ""
                     });
                 else if (p.PayoutStatusRaw == "approved")
                     payment.Add(new FinanceApprovalItem
@@ -99,8 +111,9 @@ public partial class FinanceApprovalsViewModel : BaseViewModel
                         EntityType = "contractor_payout",
                         Id = p.Id,
                         Title = SupplierName(p.ContractorId),
-                        Subtitle = $"Net {p.NetDisplay}",
-                        Amount = p.NetPayable
+                        Subtitle = subtitle,
+                        Amount = p.NetPayable,
+                        Notes = p.Notes ?? ""
                     });
             }
 
@@ -148,14 +161,33 @@ public partial class FinanceApprovalsViewModel : BaseViewModel
     private async Task MarkPaidAsync(FinanceApprovalItem? item)
     {
         if (item is null) return;
+
+        ContractorPayout? paidPayout = null;
         await RunAsync(async () =>
         {
             if (item.EntityType == "supplier_invoice")
                 await _storage.MarkSupplierInvoicePaidAsync(item.Id, item.Amount, "EFT", ActorId, ActorName);
             else
-                await _storage.MarkContractorPayoutPaidAsync(item.Id, "EFT", ActorId, ActorName);
+                paidPayout = await _storage.MarkContractorPayoutPaidAsync(item.Id, "EFT", ActorId, ActorName);
         });
-        if (ErrorMessage == null) await LoadAsync();
+        if (ErrorMessage != null) return;
+
+        await LoadAsync();
+
+        if (paidPayout != null)
+        {
+            var generate = await Shell.Current.DisplayAlert(
+                "Payment Recorded",
+                $"Generate remittance advice PDF for {item.Title}?",
+                "Generate PDF", "Skip");
+            if (generate)
+            {
+                var companyName = _state.CurrentCompany?.Name ?? "KaiSync Workforce";
+                var delivery = await _export.AskExportDeliveryAsync("Remittance Advice");
+                if (delivery != null)
+                    await _export.ExportContractorRemittancePdfAsync(paidPayout, item.Title, companyName, delivery.Value);
+            }
+        }
     }
 
     [RelayCommand] private async Task RefreshAsync() => await LoadAsync();

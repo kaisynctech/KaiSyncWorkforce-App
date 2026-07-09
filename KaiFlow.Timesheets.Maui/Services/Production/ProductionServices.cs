@@ -207,6 +207,8 @@ public interface IBackupService
     Task<List<CompanyBackupRecord>> ListBackupsAsync(Guid companyId, int limit = 20, CancellationToken ct = default);
     Task<List<BackupJobRecord>> ListJobsAsync(Guid companyId, int limit = 20, CancellationToken ct = default);
     Task<BackupJobRecord> ScheduleBackupAsync(Guid companyId, string cronExpression, CancellationToken ct = default);
+    Task<CompanyExportJobResult> RequestExportAsync(Guid companyId, CancellationToken ct = default);
+    Task<List<CompanyExportJobRecord>> GetExportJobsAsync(Guid companyId, int limit = 5, CancellationToken ct = default);
 }
 
 public sealed class BackupService : IBackupService
@@ -223,10 +225,10 @@ public sealed class BackupService : IBackupService
     public async Task<CompanyBackupRecord> CreateManualBackupAsync(Guid companyId, string? label = null, CancellationToken ct = default)
     {
         var backup = await _storage.CreateCompanyBackupAsync(companyId, label, ct);
-        _telemetry.LogEvent("backup_created", new()
+        _telemetry.LogEvent("snapshot_created", new()
         {
             ["company_id"] = companyId.ToString(),
-            ["backup_id"] = backup.Id.ToString(),
+            ["snapshot_id"] = backup.Id.ToString(),
         });
         return backup;
     }
@@ -247,4 +249,18 @@ public sealed class BackupService : IBackupService
         });
         return job;
     }
+
+    public async Task<CompanyExportJobResult> RequestExportAsync(Guid companyId, CancellationToken ct = default)
+    {
+        var result = await _storage.InvokeGenerateCompanyExportAsync(companyId, ct);
+        _telemetry.LogEvent("data_export_requested", new()
+        {
+            ["company_id"] = companyId.ToString(),
+            ["job_id"] = result.JobId.ToString(),
+        });
+        return result;
+    }
+
+    public Task<List<CompanyExportJobRecord>> GetExportJobsAsync(Guid companyId, int limit = 5, CancellationToken ct = default)
+        => _storage.GetExportJobsAsync(companyId, limit, ct);
 }

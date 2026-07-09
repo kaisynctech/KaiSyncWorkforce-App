@@ -1,0 +1,317 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Hr.HrCompliancePacksPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:HrCompliancePacksViewModel"
+    x:Name="Self"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="{Binding Title}">
+
+    <ContentPage.ToolbarItems>
+        <ToolbarItem Text="← Back" Command="{Binding GoBackCommand}" />
+    </ContentPage.ToolbarItems>
+
+    <!-- Master-detail layout: pack list on left, editor on right.
+         Left panel (300px) stays fixed; right panel fills remaining space. -->
+    <Grid ColumnDefinitions="300,*" Padding="16,12,16,16" ColumnSpacing="12">
+
+        <!-- ══════════════════════════════════════════════════════════════════ -->
+        <!-- LEFT: Pack list                                                     -->
+        <!-- ══════════════════════════════════════════════════════════════════ -->
+        <Grid Grid.Column="0" RowDefinitions="Auto,Auto,*">
+
+            <!-- Section header -->
+            <Label Grid.Row="0" Text="COMPLIANCE PACKS"
+                   Style="{StaticResource LabelSection}" Margin="0,0,0,8" />
+
+            <!-- Create button -->
+            <Button Grid.Row="1" Text="+ Create Pack"
+                    Command="{Binding StartCreateCommand}"
+                    BackgroundColor="{StaticResource Primary}" TextColor="White"
+                    FontFamily="PoppinsSemiBold" FontSize="13"
+                    CornerRadius="8" HeightRequest="40" Margin="0,0,0,10" />
+
+            <!-- Pack list -->
+            <ScrollView Grid.Row="2">
+                <VerticalStackLayout Spacing="6">
+
+                    <!-- Loading indicator -->
+                    <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}"
+                                       Color="{StaticResource Primary}" HorizontalOptions="Center"
+                                       Margin="0,24" />
+
+                    <!-- Error banner — visible whenever LoadAsync/SeedAsync throws.
+                         ErrorMessage is set by BaseViewModel.RunAsync on any exception.
+                         This is the only HR page that previously didn't surface it. -->
+                    <Frame CornerRadius="8" Padding="12,10" HasShadow="False"
+                           BorderColor="#7F1D1D" BackgroundColor="#2D0A0A"
+                           IsVisible="{Binding ErrorMessage, Converter={StaticResource IsNotNullConverter}}">
+                        <VerticalStackLayout Spacing="8">
+                            <HorizontalStackLayout Spacing="8">
+                                <Label Text="&#xE002;" FontFamily="MaterialIcons" FontSize="16"
+                                       TextColor="#FCA5A5" VerticalOptions="Center" />
+                                <Label Text="{Binding ErrorMessage}"
+                                       FontFamily="PoppinsRegular" FontSize="12" TextColor="#FCA5A5"
+                                       LineBreakMode="WordWrap" VerticalOptions="Center" />
+                            </HorizontalStackLayout>
+                            <Button Text="Retry"
+                                    Command="{Binding RetryLoadCommand}"
+                                    BackgroundColor="#7F1D1D" TextColor="#FCA5A5"
+                                    FontFamily="PoppinsMedium" FontSize="12"
+                                    CornerRadius="6" Padding="12,0" HeightRequest="30"
+                                    BorderWidth="0" HorizontalOptions="Start" />
+                        </VerticalStackLayout>
+                    </Frame>
+
+                    <!-- Empty state (only when not loading and no error) -->
+                    <Label Text="No compliance packs yet. Use + Create Pack to add one."
+                           Style="{StaticResource EmptyState}" Margin="0,24"
+                           IsVisible="{Binding Packs.Count, Converter={StaticResource IsZeroConverter}}" />
+
+                    <CollectionView ItemsSource="{Binding Packs}">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="models:CompliancePack">
+
+                                <Frame Margin="0,0,0,4" Padding="12,10" CornerRadius="10"
+                                       HasShadow="False" BorderColor="{StaticResource Divider}"
+                                       BackgroundColor="{StaticResource SurfaceCard}">
+                                    <VerticalStackLayout Spacing="6">
+
+                                        <!-- Pack name + default badge -->
+                                        <HorizontalStackLayout Spacing="8">
+                                            <Label Text="{Binding Name}"
+                                                   FontFamily="PoppinsSemiBold" FontSize="13"
+                                                   TextColor="{StaticResource TextPrimary}"
+                                                   VerticalOptions="Center" />
+                                            <!-- Default badge — Grid overlay: Frame visual + Button tap -->
+                                            <Frame CornerRadius="8" Padding="7,3" HasShadow="False"
+                                                   BorderColor="Transparent" BackgroundColor="#14532D"
+                                                   IsVisible="{Binding ShowDefaultBadge}"
+                                                   VerticalOptions="Center">
+                                                <Label Text="★ Default" FontFamily="PoppinsMedium"
+                                                       FontSize="10" TextColor="#22C55E" />
+                                            </Frame>
+                                        </HorizontalStackLayout>
+
+                                        <!-- Required / Recommended counts -->
+                                        <HorizontalStackLayout Spacing="8">
+                                            <Frame CornerRadius="6" Padding="6,2" HasShadow="False"
+                                                   BorderColor="Transparent" BackgroundColor="#7F1D1D">
+                                                <Label Text="{Binding RequiredLabel}"
+                                                       FontFamily="PoppinsRegular" FontSize="10"
+                                                       TextColor="#FCA5A5" />
+                                            </Frame>
+                                            <Frame CornerRadius="6" Padding="6,2" HasShadow="False"
+                                                   BorderColor="Transparent" BackgroundColor="#292012"
+                                                   IsVisible="{Binding RecommendedCount, Converter={StaticResource IsNotZeroConverter}}">
+                                                <Label Text="{Binding RecommendedLabel}"
+                                                       FontFamily="PoppinsRegular" FontSize="10"
+                                                       TextColor="#FCD34D" />
+                                            </Frame>
+                                        </HorizontalStackLayout>
+
+                                        <!-- Action buttons row -->
+                                        <HorizontalStackLayout Spacing="6">
+                                            <!-- Set as Default -->
+                                            <Button Text="★ Set Default"
+                                                    Command="{Binding Source={x:Reference Self}, Path=BindingContext.SetDefaultCommand}"
+                                                    CommandParameter="{Binding .}"
+                                                    IsVisible="{Binding ShowDefaultBadge, Converter={StaticResource InverseBoolConverter}}"
+                                                    BackgroundColor="#1E293B" TextColor="#94A3B8"
+                                                    FontFamily="PoppinsMedium" FontSize="10"
+                                                    CornerRadius="6" Padding="8,0" HeightRequest="28"
+                                                    BorderWidth="0" />
+                                            <!-- Edit -->
+                                            <Button Text="Edit"
+                                                    Command="{Binding Source={x:Reference Self}, Path=BindingContext.EditPackCommand}"
+                                                    CommandParameter="{Binding .}"
+                                                    BackgroundColor="{StaticResource Primary}" TextColor="White"
+                                                    FontFamily="PoppinsMedium" FontSize="10"
+                                                    CornerRadius="6" Padding="8,0" HeightRequest="28"
+                                                    BorderWidth="0" />
+                                            <!-- Delete -->
+                                            <Button Text="Delete"
+                                                    Command="{Binding Source={x:Reference Self}, Path=BindingContext.DeletePackCommand}"
+                                                    CommandParameter="{Binding .}"
+                                                    BackgroundColor="Transparent"
+                                                    TextColor="{StaticResource Error}"
+                                                    FontFamily="PoppinsMedium" FontSize="10"
+                                                    CornerRadius="6" Padding="8,0" HeightRequest="28"
+                                                    BorderWidth="0" />
+                                        </HorizontalStackLayout>
+
+                                    </VerticalStackLayout>
+                                </Frame>
+
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </VerticalStackLayout>
+            </ScrollView>
+
+        </Grid>
+
+        <!-- ══════════════════════════════════════════════════════════════════ -->
+        <!-- RIGHT: Edit form (visible when IsEditing=true)                     -->
+        <!-- ══════════════════════════════════════════════════════════════════ -->
+
+        <!-- Empty / idle state -->
+        <VerticalStackLayout Grid.Column="1"
+                             VerticalOptions="Center" HorizontalOptions="Center"
+                             IsVisible="{Binding IsEditing, Converter={StaticResource InverseBoolConverter}}">
+            <Label Text="&#xE8D3;" FontFamily="MaterialIcons" FontSize="48"
+                   TextColor="{StaticResource TextSecondary}" HorizontalOptions="Center" />
+            <Label Text="Select a pack to edit"
+                   FontFamily="PoppinsMedium" FontSize="15"
+                   TextColor="{StaticResource TextSecondary}"
+                   HorizontalOptions="Center" Margin="0,8,0,4" />
+            <Label Text="or create a new pack using the button on the left."
+                   FontFamily="PoppinsRegular" FontSize="12"
+                   TextColor="{StaticResource TextSecondary}"
+                   HorizontalOptions="Center" />
+        </VerticalStackLayout>
+
+        <!-- Edit / Create form -->
+        <Frame Grid.Column="1" Style="{StaticResource CardFrame}"
+               IsVisible="{Binding IsEditing}" Padding="20">
+            <ScrollView>
+                <VerticalStackLayout Spacing="14">
+
+                    <!-- Form header -->
+                    <Label Text="{Binding IsCreating, Converter={StaticResource BoolToStringConverter}, ConverterParameter='Create Compliance Pack|Edit Compliance Pack'}"
+                           Style="{StaticResource HeadlineSmall}" />
+
+                    <!-- Pack name -->
+                    <VerticalStackLayout Spacing="4">
+                        <Label Text="Pack Name *" Style="{StaticResource Caption}" />
+                        <Entry Placeholder="e.g. Security Contractor"
+                               Text="{Binding EditName, Mode=TwoWay}"
+                               Style="{StaticResource DarkEntry}" />
+                    </VerticalStackLayout>
+
+                    <!-- Description -->
+                    <VerticalStackLayout Spacing="4">
+                        <Label Text="Description" Style="{StaticResource Caption}" />
+                        <Editor Placeholder="Short description of when to use this pack…"
+                                Text="{Binding EditDescription, Mode=TwoWay}"
+                                AutoSize="TextChanges" MinimumHeightRequest="60"
+                                TextColor="{StaticResource TextPrimary}"
+                                PlaceholderColor="{StaticResource TextSecondary}" />
+                    </VerticalStackLayout>
+
+                    <!-- Default toggle -->
+                    <Grid ColumnDefinitions="*,Auto">
+                        <VerticalStackLayout Grid.Column="0" Spacing="2" VerticalOptions="Center">
+                            <Label Text="Set as Company Default"
+                                   Style="{StaticResource BodyMedium}" />
+                            <Label Text="Auto-assigned to new contractors when no pack is selected."
+                                   Style="{StaticResource Caption}"
+                                   TextColor="{StaticResource TextSecondary}" />
+                        </VerticalStackLayout>
+                        <Switch Grid.Column="1" IsToggled="{Binding EditIsDefault, Mode=TwoWay}"
+                                OnColor="{StaticResource Primary}" VerticalOptions="Center" />
+                    </Grid>
+
+                    <BoxView HeightRequest="1" Color="{StaticResource Divider}" />
+
+                    <!-- Document requirements header -->
+                    <VerticalStackLayout Spacing="4">
+                        <Label Text="DOCUMENT REQUIREMENTS" Style="{StaticResource LabelSection}" />
+                        <Label Text="Set each document type to Required (counts toward score), Recommended (advisory), or Exclude (not shown)."
+                               Style="{StaticResource Caption}"
+                               TextColor="{StaticResource TextSecondary}"
+                               LineBreakMode="WordWrap" />
+                    </VerticalStackLayout>
+
+                    <!-- Button legend -->
+                    <HorizontalStackLayout Spacing="8">
+                        <Frame CornerRadius="6" Padding="8,3" HasShadow="False"
+                               BorderColor="Transparent" BackgroundColor="#7F1D1D">
+                            <Label Text="Required" FontFamily="PoppinsMedium" FontSize="10" TextColor="#FCA5A5" />
+                        </Frame>
+                        <Frame CornerRadius="6" Padding="8,3" HasShadow="False"
+                               BorderColor="Transparent" BackgroundColor="#78350F">
+                            <Label Text="Recommended" FontFamily="PoppinsMedium" FontSize="10" TextColor="#FCD34D" />
+                        </Frame>
+                        <Frame CornerRadius="6" Padding="8,3" HasShadow="False"
+                               BorderColor="Transparent" BackgroundColor="#1E293B">
+                            <Label Text="Exclude" FontFamily="PoppinsMedium" FontSize="10" TextColor="#475569" />
+                        </Frame>
+                    </HorizontalStackLayout>
+
+                    <!-- Document type checklist -->
+                    <!-- CollectionView with PackItemEditRow items.
+                         Each row carries its own SetRequirementCommand (Button.Command-reliable on WinUI).
+                         x:DataType set to PackItemEditRow so compiled bindings resolve correctly. -->
+                    <CollectionView ItemsSource="{Binding EditRows}">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="vm:PackItemEditRow">
+                                <Grid ColumnDefinitions="*,Auto,Auto,Auto" Padding="2,5"
+                                      ColumnSpacing="4">
+
+                                    <!-- Document type name -->
+                                    <Label Grid.Column="0" Text="{Binding TypeLabel}"
+                                           FontFamily="PoppinsRegular" FontSize="13"
+                                           TextColor="{StaticResource TextPrimary}"
+                                           VerticalOptions="Center" />
+
+                                    <!-- Required toggle button -->
+                                    <Button Grid.Column="1" Text="Required"
+                                            Command="{Binding SetRequirementCommand}"
+                                            CommandParameter="required"
+                                            BackgroundColor="{Binding RequiredBg}"
+                                            TextColor="{Binding RequiredFg}"
+                                            FontFamily="PoppinsMedium" FontSize="10"
+                                            CornerRadius="6" Padding="10,0" HeightRequest="28"
+                                            BorderWidth="0" />
+
+                                    <!-- Recommended toggle button -->
+                                    <Button Grid.Column="2" Text="Recommend"
+                                            Command="{Binding SetRequirementCommand}"
+                                            CommandParameter="recommended"
+                                            BackgroundColor="{Binding RecommendedBg}"
+                                            TextColor="{Binding RecommendedFg}"
+                                            FontFamily="PoppinsMedium" FontSize="10"
+                                            CornerRadius="6" Padding="10,0" HeightRequest="28"
+                                            BorderWidth="0" />
+
+                                    <!-- Exclude toggle button -->
+                                    <Button Grid.Column="3" Text="Exclude"
+                                            Command="{Binding SetRequirementCommand}"
+                                            CommandParameter="none"
+                                            BackgroundColor="{Binding NoneBg}"
+                                            TextColor="{Binding NoneFg}"
+                                            FontFamily="PoppinsMedium" FontSize="10"
+                                            CornerRadius="6" Padding="10,0" HeightRequest="28"
+                                            BorderWidth="0" />
+
+                                </Grid>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+
+                    <BoxView HeightRequest="1" Color="{StaticResource Divider}" />
+
+                    <!-- Save / Cancel buttons -->
+                    <HorizontalStackLayout Spacing="10" HorizontalOptions="End">
+                        <Button Text="Cancel"
+                                Command="{Binding CancelEditCommand}"
+                                Style="{StaticResource SecondaryButton}"
+                                FontSize="13" Padding="20,0" HeightRequest="42" />
+                        <Button Text="Save Pack"
+                                Command="{Binding SaveCommand}"
+                                BackgroundColor="{StaticResource Primary}" TextColor="White"
+                                FontFamily="PoppinsSemiBold" FontSize="13"
+                                CornerRadius="8" Padding="20,0" HeightRequest="42"
+                                IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBoolConverter}}" />
+                    </HorizontalStackLayout>
+
+                </VerticalStackLayout>
+            </ScrollView>
+        </Frame>
+
+    </Grid>
+</ContentPage>

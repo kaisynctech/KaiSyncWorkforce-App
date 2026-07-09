@@ -248,7 +248,7 @@ public partial class HrEmployeeDashboardViewModel : BaseViewModel, IDisposable
     {
         await RunAsync(async () =>
         {
-            await _storage.UpdateLeaveStatusAsync(request.Id, "approved");
+            await _storage.DecideLeaveRequestAsync(_state.CurrentEmployee!.CompanyId, request.Id, "approved");
             request.StatusRaw = "approved";
             var idx = LeaveRequests.IndexOf(request);
             if (idx >= 0) LeaveRequests[idx] = request;
@@ -263,7 +263,7 @@ public partial class HrEmployeeDashboardViewModel : BaseViewModel, IDisposable
         if (note == null) return;
         await RunAsync(async () =>
         {
-            await _storage.UpdateLeaveStatusAsync(request.Id, "declined", note);
+            await _storage.DecideLeaveRequestAsync(_state.CurrentEmployee!.CompanyId, request.Id, "declined", note);
             request.StatusRaw = "declined";
             var idx = LeaveRequests.IndexOf(request);
             if (idx >= 0) LeaveRequests[idx] = request;

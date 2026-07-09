@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Auth.EmployeePinSetupPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Auth"
+    x:DataType="vm:EmployeePinSetupViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="Create PIN"
+    Shell.NavBarIsVisible="False">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="32,48" Spacing="28" VerticalOptions="Center">
+
+            <!-- Heading changes between step 1 and step 2 -->
+            <Label Text="{Binding StepHeading}"
+                   Style="{StaticResource HeadlineLarge}"
+                   HorizontalOptions="Center" />
+
+            <Label Text="{Binding StepSubtext}"
+                   Style="{StaticResource BodyMedium}"
+                   TextColor="{StaticResource TextSecondary}"
+                   HorizontalTextAlignment="Center"
+                   HorizontalOptions="Center" />
+
+            <!-- PIN dot indicators (4 circles) -->
+            <HorizontalStackLayout HorizontalOptions="Center" Spacing="20">
+                <!-- Dot 1 -->
+                <Frame WidthRequest="22" HeightRequest="22" CornerRadius="11"
+                       Padding="0" HasShadow="False"
+                       BackgroundColor="{Binding Dot1Filled,
+                           Converter={StaticResource BoolToColorConverter},
+                           ConverterParameter='#3B82F6|#E5E7EB'}"
+                       BorderColor="{StaticResource Primary}" />
+                <!-- Dot 2 -->
+                <Frame WidthRequest="22" HeightRequest="22" CornerRadius="11"
+                       Padding="0" HasShadow="False"
+                       BackgroundColor="{Binding Dot2Filled,
+                           Converter={StaticResource BoolToColorConverter},
+                           ConverterParameter='#3B82F6|#E5E7EB'}"
+                       BorderColor="{StaticResource Primary}" />
+                <!-- Dot 3 -->
+                <Frame WidthRequest="22" HeightRequest="22" CornerRadius="11"
+                       Padding="0" HasShadow="False"
+                       BackgroundColor="{Binding Dot3Filled,
+                           Converter={StaticResource BoolToColorConverter},
+                           ConverterParameter='#3B82F6|#E5E7EB'}"
+                       BorderColor="{StaticResource Primary}" />
+                <!-- Dot 4 -->
+                <Frame WidthRequest="22" HeightRequest="22" CornerRadius="11"
+                       Padding="0" HasShadow="False"
+                       BackgroundColor="{Binding Dot4Filled,
+                           Converter={StaticResource BoolToColorConverter},
+                           ConverterParameter='#3B82F6|#E5E7EB'}"
+                       BorderColor="{StaticResource Primary}" />
+            </HorizontalStackLayout>
+
+            <!-- Error label -->
+            <Label Text="{Binding ErrorMessage}"
+                   TextColor="{StaticResource Error}"
+                   HorizontalTextAlignment="Center"
+                   IsVisible="{Binding ErrorMessage, Converter={StaticResource IsNotNullConverter}}" />
+
+            <!-- Numpad -->
+            <Grid ColumnDefinitions="*,*,*" RowDefinitions="Auto,Auto,Auto,Auto"
+                  ColumnSpacing="12" RowSpacing="12"
+                  HorizontalOptions="Center" WidthRequest="260">
+
+                <!-- Row 0: 1 2 3 -->
+                <Button Grid.Row="0" Grid.Column="0" Text="1"
+                        Command="{Binding AppendDigitCommand}" CommandParameter="1"
+                        Style="{StaticResource NumpadButton}" />
+                <Button Grid.Row="0" Grid.Column="1" Text="2"
+                        Command="{Binding AppendDigitCommand}" CommandParameter="2"
+                        Style="{StaticResource NumpadButton}" />
+                <Button Grid.Row="0" Grid.Column="2" Text="3"
+                        Command="{Binding AppendDigitCommand}" CommandParameter="3"
+                        Style="{StaticResource NumpadButton}" />
+
+                <!-- Row 1: 4 5 6 -->
+                <Button Grid.Row="1" Grid.Column="0" Text="4"
+                        Command="{Binding AppendDigitCommand}" CommandParameter="4"
+                        Style="{StaticResource NumpadButton}" />
+                <Button Grid.Row="1" Grid.Column="1" Text="5"
+                        Command="{Binding AppendDigitCommand}" CommandParameter="5"
+                        Style="{StaticResource NumpadButton}" />
+                <Button Grid.Row="1" Grid.Column="2" Text="6"
+                        Command="{Binding AppendDigitCommand}" CommandParameter="6"
+                        Style="{StaticResource NumpadButton}" />
+
+                <!-- Row 2: 7 8 9 -->
+                <Button Grid.Row="2" Grid.Column="0" Text="7"
+                        Command="{Binding AppendDigitCommand}" CommandParameter="7"
+                        Style="{StaticResource NumpadButton}" />
+                <Button Grid.Row="2" Grid.Column="1" Text="8"
+                        Command="{Binding AppendDigitCommand}" CommandParameter="8"
+                        Style="{StaticResource NumpadButton}" />
+                <Button Grid.Row="2" Grid.Column="2" Text="9"
+                        Command="{Binding AppendDigitCommand}" CommandParameter="9"
+                        Style="{StaticResource NumpadButton}" />
+
+                <!-- Row 3: [empty] 0 [backspace] -->
+                <BoxView Grid.Row="3" Grid.Column="0" Color="Transparent" />
+                <Button Grid.Row="3" Grid.Column="1" Text="0"
+                        Command="{Binding AppendDigitCommand}" CommandParameter="0"
+                        Style="{StaticResource NumpadButton}" />
+                <Button Grid.Row="3" Grid.Column="2" Text="⌫"
+                        Command="{Binding BackspaceCommand}"
+                        Style="{StaticResource NumpadButton}"
+                        FontSize="20" />
+            </Grid>
+
+            <!-- Busy indicator -->
+            <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}"
+                               Color="{StaticResource Primary}" HorizontalOptions="Center" />
+
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

@@ -42,6 +42,11 @@ public class IncidentReport : BaseModel
     [JsonProperty("site_id")]
     public Guid? SiteId { get; set; }
 
+    /// <summary>Phase A — project (client_deal) context. Backfilled from job.deal_id; may also be set directly.</summary>
+    [Column("deal_id")]
+    [JsonProperty("deal_id")]
+    public Guid? DealId { get; set; }
+
     [Column("title")]
     [JsonProperty("title")]
     public string? Title { get; set; }
@@ -112,10 +117,78 @@ public class IncidentReport : BaseModel
         _ => IncidentSeverity.Low
     };
 
-    [JsonIgnore] public bool HasPhotos => PhotoUrls.Count > 0;
-    [JsonIgnore] public bool IsJobLinked => JobId.HasValue;
-    [JsonIgnore] public bool IsOpen => StatusRaw is "open" or "investigating";
-    [JsonIgnore] public string DisplayTitle => string.IsNullOrWhiteSpace(Title)
+    [JsonIgnore] public bool HasPhotos       => PhotoUrls.Count > 0;
+    [JsonIgnore] public bool IsJobLinked     => JobId.HasValue;
+    [JsonIgnore] public bool IsProjectLinked => DealId.HasValue;
+    [JsonIgnore] public bool IsOpen          => StatusRaw is "open" or "investigating";
+
+    [JsonIgnore]
+    public string DisplayTitle => string.IsNullOrWhiteSpace(Title)
         ? (Description.Length > 60 ? Description[..60] + "…" : Description)
         : Title!;
+
+    // ── Contractor-tab display helpers ────────────────────────────────────────
+
+    [JsonIgnore]
+    public string SeverityLabel => Severity switch
+    {
+        IncidentSeverity.Critical => "Critical",
+        IncidentSeverity.High     => "High",
+        IncidentSeverity.Medium   => "Medium",
+        _                         => "Low"
+    };
+
+    [JsonIgnore]
+    public string SeverityBadgeBg => Severity switch
+    {
+        IncidentSeverity.Critical => "#7F1D1D",   // red
+        IncidentSeverity.High     => "#3B1700",   // orange
+        IncidentSeverity.Medium   => "#292012",   // amber
+        _                         => "#1E293B"    // slate
+    };
+
+    [JsonIgnore]
+    public string SeverityBadgeFg => Severity switch
+    {
+        IncidentSeverity.Critical => "#FCA5A5",
+        IncidentSeverity.High     => "#FB923C",
+        IncidentSeverity.Medium   => "#FCD34D",
+        _                         => "#94A3B8"
+    };
+
+    [JsonIgnore]
+    public string StatusLabel => StatusRaw switch
+    {
+        "investigating" => "Investigating",
+        "resolved"      => "Resolved",
+        "closed"        => "Closed",
+        _               => "Open"
+    };
+
+    [JsonIgnore]
+    public string StatusBadgeBg => StatusRaw switch
+    {
+        "resolved" or "closed" => "#14532D",
+        "investigating"        => "#29200E",
+        _                      => "#1E3A5F"
+    };
+
+    [JsonIgnore]
+    public string StatusBadgeFg => StatusRaw switch
+    {
+        "resolved" or "closed" => "#22C55E",
+        "investigating"        => "#FCD34D",
+        _                      => "#60A5FA"
+    };
+
+    [JsonIgnore]
+    public string OccurredAtDisplay => OccurredAt.HasValue
+        ? OccurredAt.Value.ToLocalTime().ToString("dd MMM yyyy")
+        : CreatedAt.ToLocalTime().ToString("dd MMM yyyy");
+
+    [JsonIgnore]
+    public string JobLinkedDisplay => JobId.HasValue ? "Yes" : "—";
+
+    [JsonIgnore]
+    public string ProjectLinkedDisplay => DealId.HasValue ? "Yes" : "—";
 }

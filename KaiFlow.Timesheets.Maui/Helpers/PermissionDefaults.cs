@@ -8,8 +8,7 @@ public static class PermissionDefaults
         var role = accessLevelRaw switch
         {
             "owner" => "owner",
-            "hr_admin" or "hrAdmin" or "hr" => "hr_admin",
-            "admin" => "admin",
+            "hr_admin" or "hrAdmin" or "hr" => "hr",
             "manager" => "manager",
             _ => "employee"
         };
@@ -19,8 +18,7 @@ public static class PermissionDefaults
 
         return role switch
         {
-            "hr_admin" => HrAdmin(),
-            "admin" => Admin(),
+            "hr" => HrAdmin(),
             "manager" => Manager(),
             _ => Employee()
         };
@@ -42,6 +40,7 @@ public static class PermissionDefaults
         PermissionKeys.ContractorsView, PermissionKeys.ContractorsCreate, PermissionKeys.ContractorsEdit,
         PermissionKeys.ClientsView, PermissionKeys.ClientsEdit,
         PermissionKeys.InventoryView, PermissionKeys.InventoryEdit,
+        PermissionKeys.SuppliersView, PermissionKeys.SuppliersEdit,
         PermissionKeys.AttendanceViewTeam, PermissionKeys.AttendanceViewAll,
         PermissionKeys.LeaveViewAll, PermissionKeys.LeaveApprove,
         PermissionKeys.PaymentsViewPayroll, PermissionKeys.PaymentsApprove,
@@ -69,6 +68,8 @@ public static class PermissionDefaults
         [PermissionKeys.ClientsEdit] = true,
         [PermissionKeys.InventoryView] = true,
         [PermissionKeys.InventoryEdit] = true,
+        [PermissionKeys.SuppliersView] = true,
+        [PermissionKeys.SuppliersEdit] = true,
         [PermissionKeys.AttendanceViewTeam] = true,
         [PermissionKeys.AttendanceViewAll] = true,
         [PermissionKeys.LeaveViewAll] = true,
@@ -79,8 +80,6 @@ public static class PermissionDefaults
         [PermissionKeys.ReportsViewFinancial] = true,
         [PermissionKeys.SettingsView] = true
     };
-
-    private static Dictionary<string, bool> Admin() => HrAdmin();
 
     private static Dictionary<string, bool> Manager() => new(StringComparer.OrdinalIgnoreCase)
     {
@@ -93,8 +92,8 @@ public static class PermissionDefaults
         [PermissionKeys.JobsCreate] = true,
         [PermissionKeys.JobsEdit] = true,
         [PermissionKeys.EmployeesView] = true,
-        [PermissionKeys.EmployeesCreate] = true,
-        [PermissionKeys.EmployeesEdit] = true,
+        [PermissionKeys.EmployeesCreate] = false,
+        [PermissionKeys.EmployeesEdit] = false,
         [PermissionKeys.ContractorsView] = true,
         [PermissionKeys.ContractorsCreate] = true,
         [PermissionKeys.ContractorsEdit] = true,
@@ -104,8 +103,8 @@ public static class PermissionDefaults
         [PermissionKeys.InventoryEdit] = true,
         [PermissionKeys.AttendanceViewTeam] = true,
         [PermissionKeys.AttendanceViewAll] = false,
-        [PermissionKeys.LeaveViewAll] = false,
-        [PermissionKeys.LeaveApprove] = false,
+        [PermissionKeys.LeaveViewAll] = true,
+        [PermissionKeys.LeaveApprove] = true,
         [PermissionKeys.PaymentsViewPayroll] = false,
         [PermissionKeys.ReportsViewOperational] = true,
         [PermissionKeys.ReportsViewFinancial] = false,

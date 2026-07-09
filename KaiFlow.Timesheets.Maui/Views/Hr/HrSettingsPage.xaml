@@ -5,6 +5,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
     xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    xmlns:prod="clr-namespace:KaiFlow.Timesheets.Models.Production"
     x:DataType="vm:HrSettingsViewModel"
     x:Name="settingsPage"
     BackgroundColor="{StaticResource BackgroundDark}"
@@ -351,6 +352,114 @@
                     <Label Text="Report bugs, suggest features, or contact KaiFlow support."
                            Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
                     <Button Text="Send Feedback" Command="{Binding GoToSendFeedbackCommand}" Style="{StaticResource SecondaryButton}" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Data Snapshot (Part A) -->
+            <Frame Style="{StaticResource CardFrame}" IsVisible="{Binding IsOwnerOrAdmin}">
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="DATA SNAPSHOT" Style="{StaticResource LabelSection}" />
+                    <Label Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}"
+                           Text="This snapshot records a count of your company's records. It does not contain your actual data and cannot be used to restore your account." />
+                    <Button Text="Take Snapshot"
+                            Command="{Binding TakeSnapshotCommand}"
+                            IsEnabled="{Binding IsSnapshotBusy, Converter={StaticResource InverseBoolConverter}}"
+                            BackgroundColor="{StaticResource SurfaceElevated}"
+                            TextColor="{StaticResource TextPrimary}"
+                            CornerRadius="10" HeightRequest="44" />
+                    <ActivityIndicator IsRunning="{Binding IsSnapshotBusy}"
+                                      IsVisible="{Binding IsSnapshotBusy}"
+                                      Color="{StaticResource Primary}" HorizontalOptions="Start" />
+                    <Label Text="PAST SNAPSHOTS" Style="{StaticResource LabelSection}"
+                           IsVisible="{Binding Snapshots.Count, Converter={StaticResource IsNotZeroConverter}}" />
+                    <CollectionView ItemsSource="{Binding Snapshots}"
+                                    IsVisible="{Binding Snapshots.Count, Converter={StaticResource IsNotZeroConverter}}"
+                                    HeightRequest="120">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="prod:CompanyBackupRecord">
+                                <VerticalStackLayout Spacing="2" Padding="0,4">
+                                    <Label Text="{Binding CreatedAt, StringFormat='{0:dd MMM yyyy HH:mm}'}"
+                                           Style="{StaticResource BodySmall}" FontAttributes="Bold" />
+                                    <Label Text="Metadata only — not restorable"
+                                           Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                                </VerticalStackLayout>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </VerticalStackLayout>
+            </Frame>
+
+            <!-- Data Export (Part B) -->
+            <Frame Style="{StaticResource CardFrame}" IsVisible="{Binding IsOwnerOrAdmin}">
+                <VerticalStackLayout Spacing="12">
+                    <Label Text="DATA EXPORT" Style="{StaticResource LabelSection}" />
+                    <Label Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}"
+                           Text="Download a complete export of your company data. The link expires after 24 hours." />
+                    <Label Style="{StaticResource Caption}" TextColor="#F59E0B"
+                           Text="⚠ Export includes sensitive data (payroll, banking, ID numbers). Keep it secure." />
+
+                    <!-- Idle / ready to request -->
+                    <Button Text="Request Export"
+                            Command="{Binding RequestExportCommand}"
+                            IsVisible="{Binding IsExportIdle}"
+                            IsEnabled="{Binding IsExportBusy, Converter={StaticResource InverseBoolConverter}}"
+                            BackgroundColor="{StaticResource SurfaceElevated}"
+                            TextColor="{StaticResource TextPrimary}"
+                            CornerRadius="10" HeightRequest="44" />
+
+                    <!-- Processing -->
+                    <VerticalStackLayout IsVisible="{Binding IsExportProcessing}" Spacing="8">
+                        <ActivityIndicator IsRunning="True" Color="{StaticResource Primary}" HorizontalOptions="Start" />
+                        <Label Text="Generating export…" Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                    </VerticalStackLayout>
+
+                    <!-- Completed -->
+                    <VerticalStackLayout IsVisible="{Binding IsExportCompleted}" Spacing="8">
+                        <Label Text="Download ready" Style="{StaticResource BodySmall}" FontAttributes="Bold" />
+                        <Label Text="{Binding ExportExpiryDisplay}" Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                        <Button Text="Download"
+                                Command="{Binding DownloadExportCommand}"
+                                BackgroundColor="{StaticResource Primary}"
+                                TextColor="White"
+                                CornerRadius="10" HeightRequest="44" />
+                        <Button Text="Request New Export"
+                                Command="{Binding RequestExportCommand}"
+                                BackgroundColor="{StaticResource SurfaceElevated}"
+                                TextColor="{StaticResource TextPrimary}"
+                                CornerRadius="10" HeightRequest="36" />
+                    </VerticalStackLayout>
+
+                    <!-- Failed -->
+                    <VerticalStackLayout IsVisible="{Binding IsExportFailed}" Spacing="8">
+                        <Label Text="Export failed. Please try again."
+                               Style="{StaticResource Caption}" TextColor="{StaticResource Error}" />
+                        <Button Text="Retry Export"
+                                Command="{Binding RequestExportCommand}"
+                                BackgroundColor="{StaticResource SurfaceElevated}"
+                                TextColor="{StaticResource TextPrimary}"
+                                CornerRadius="10" HeightRequest="44" />
+                    </VerticalStackLayout>
+
+                    <!-- Past exports list -->
+                    <Label Text="PAST EXPORTS" Style="{StaticResource LabelSection}"
+                           IsVisible="{Binding Exports.Count, Converter={StaticResource IsNotZeroConverter}}" />
+                    <CollectionView ItemsSource="{Binding Exports}"
+                                    IsVisible="{Binding Exports.Count, Converter={StaticResource IsNotZeroConverter}}"
+                                    HeightRequest="100">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="prod:CompanyExportJobRecord">
+                                <Grid ColumnDefinitions="*,Auto" Padding="0,4">
+                                    <Label Grid.Column="0"
+                                           Text="{Binding CreatedAt, StringFormat='{0:dd MMM yyyy HH:mm}'}"
+                                           Style="{StaticResource BodySmall}" VerticalOptions="Center" />
+                                    <Label Grid.Column="1"
+                                           Text="Expired"
+                                           IsVisible="{Binding IsExpired}"
+                                           Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+                                </Grid>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
                 </VerticalStackLayout>
             </Frame>
 

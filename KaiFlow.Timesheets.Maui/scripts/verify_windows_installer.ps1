@@ -1,21 +1,21 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Silent install, upgrade, and uninstall smoke test for KaiFlowSetup.exe.
+  Silent install, upgrade, and uninstall smoke test for KaiSyncWorkforceSetup.exe.
 
 .EXAMPLE
   .\scripts\verify_windows_installer.ps1
-  .\scripts\verify_windows_installer.ps1 -InstallerPath dist\KaiFlowSetup.exe
+  .\scripts\verify_windows_installer.ps1 -InstallerPath dist\KaiSyncWorkforceSetup.exe
 #>
 param(
     [string]$InstallerPath = "",
-    [string]$InstallDir = "${env:ProgramFiles}\KaiFlow"
+    [string]$InstallDir = "${env:ProgramFiles}\KaiSync Workforce"
 )
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path $PSScriptRoot -Parent
 if ([string]::IsNullOrWhiteSpace($InstallerPath)) {
-    $InstallerPath = Join-Path $root "dist\KaiFlowSetup.exe"
+    $InstallerPath = Join-Path $root "dist\KaiSyncWorkforceSetup.exe"
 }
 $InstallerPath = (Resolve-Path $InstallerPath).Path
 $logRoot = Join-Path $root "dist\verify-logs"
@@ -33,18 +33,18 @@ function Test-InstallArtifacts {
     $exe = Join-Path $Dir "KaiFlow.Timesheets.Maui.exe"
     if (-not (Test-Path $exe)) { throw "Missing installed executable: $exe" }
 
-    $startMenu = Join-Path $env:ProgramData "Microsoft\Windows\Start Menu\Programs\KaiFlow"
-    $lnk = Join-Path $startMenu "KaiFlow.lnk"
+    $startMenu = Join-Path $env:ProgramData "Microsoft\Windows\Start Menu\Programs\KaiSync Workforce"
+    $lnk = Join-Path $startMenu "KaiSync Workforce.lnk"
     if (-not (Test-Path $lnk)) { throw "Missing Start Menu shortcut: $lnk" }
 
     $desktop = [Environment]::GetFolderPath("CommonDesktopDirectory")
-    $desktopLnk = Join-Path $desktop "KaiFlow.lnk"
+    $desktopLnk = Join-Path $desktop "KaiSync Workforce.lnk"
     if (-not (Test-Path $desktopLnk)) { throw "Missing desktop shortcut: $desktopLnk" }
 
     Write-Host "  OK artifacts in $Dir" -ForegroundColor Green
 }
 
-Write-Host "KaiFlow installer verification" -ForegroundColor Cyan
+Write-Host "KaiSync Workforce installer verification" -ForegroundColor Cyan
 Write-Host "  Installer: $InstallerPath"
 
 # Clean prior test install

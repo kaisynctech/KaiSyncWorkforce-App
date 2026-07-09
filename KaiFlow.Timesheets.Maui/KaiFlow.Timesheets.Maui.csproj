@@ -13,8 +13,8 @@
     <!-- Display name -->
     <ApplicationTitle>KaiSync Workforce</ApplicationTitle>
     <ApplicationId>com.kaisynctech.kaiflow.timesheets</ApplicationId>
-    <ApplicationVersion>3</ApplicationVersion>
-    <ApplicationDisplayVersion>1.0.2</ApplicationDisplayVersion>
+    <ApplicationVersion>4</ApplicationVersion>
+    <ApplicationDisplayVersion>1.0.3</ApplicationDisplayVersion>
 
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">14.2</SupportedOSPlatformVersion>
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst'">14.0</SupportedOSPlatformVersion>
@@ -23,6 +23,16 @@
     <TargetPlatformMinVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.17763.0</TargetPlatformMinVersion>
     <WindowsPackageType Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">None</WindowsPackageType>
     <RuntimeIdentifier Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">win-x64</RuntimeIdentifier>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'
+      and $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'
+      and '$(KAIFLOW_KEYSTORE_PATH)' != ''">
+    <AndroidKeyStore>true</AndroidKeyStore>
+    <AndroidSigningKeyStore>$(KAIFLOW_KEYSTORE_PATH)</AndroidSigningKeyStore>
+    <AndroidSigningKeyAlias>$(KAIFLOW_KEYSTORE_ALIAS)</AndroidSigningKeyAlias>
+    <AndroidSigningKeyPass>$(KAIFLOW_KEYSTORE_PASSWORD)</AndroidSigningKeyPass>
+    <AndroidSigningStorePass>$(KAIFLOW_KEYSTORE_PASSWORD)</AndroidSigningStorePass>
   </PropertyGroup>
 
   <!-- Visual Studio: prefer Windows when pressing F5 on a Windows dev machine. -->

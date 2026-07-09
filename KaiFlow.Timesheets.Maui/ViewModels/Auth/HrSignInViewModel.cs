@@ -29,7 +29,13 @@ public partial class HrSignInViewModel : BaseViewModel
         {
             await _storage.InitializeSessionAsync();
             var employee = await _storage.GetCurrentEmployeeAsync();
-            if (employee == null) return;
+            if (employee == null)
+            {
+                // Platform owner resumes without an hr_users row — go straight to dashboard.
+                if (await _storage.IsAuthenticatedAsync() && await _storage.IsPlatformAdminAsync())
+                    await ShellNavigation.GoToAsync("//HrDashboard");
+                return;
+            }
 
             _state.SetEmployee(employee);
             if (employee.CompanyId != Guid.Empty)
@@ -62,6 +68,13 @@ public partial class HrSignInViewModel : BaseViewModel
                 // Auth may have succeeded but no employee record yet (incomplete registration)
                 if (await _storage.IsAuthenticatedAsync())
                 {
+                    // Platform owner has no hr_users row — send straight to dashboard
+                    // where ShowPlatformAdminNav will be set by IsPlatformAdminAsync().
+                    if (await _storage.IsPlatformAdminAsync())
+                    {
+                        await ShellNavigation.GoToAsync("//HrDashboard");
+                        return;
+                    }
                     var hasCompany = await _storage.HasCompanyAsync();
                     if (!hasCompany)
                     {

@@ -1,5 +1,7 @@
+using System.Text.Json;
 using KaiFlow.Timesheets.Helpers;
 using KaiFlow.Timesheets.Models;
+using KaiFlow.Timesheets.Models.Production;
 
 namespace KaiFlow.Timesheets.Services;
 
@@ -87,7 +89,7 @@ public partial class SupabaseStorageService : IStorageService
         {
             try
             {
-                await _supabase.Rpc("employee_revoke_code_session", new Dictionary<string, object>
+                await RpcAsync("employee_revoke_code_session", new Dictionary<string, object>
                 {
                     ["p_session_token"] = token
                 });
@@ -142,6 +144,7 @@ public partial class SupabaseStorageService : IStorageService
         return session?.Employee.Id;
     }
 
+    // BOOTSTRAPPING ONLY — do not call after initial company setup.
     public async Task EnsureOwnerAccessLevelAsync(Employee employee, Company company)
     {
         var user = _supabase.Auth.CurrentUser;
@@ -157,7 +160,7 @@ public partial class SupabaseStorageService : IStorageService
 
     public async Task<Dictionary<string, bool>> GetMyPermissionsAsync(Guid companyId)
     {
-        var result = await _supabase.Rpc("my_permissions", new Dictionary<string, object>
+        var result = await RpcAsync("my_permissions", new Dictionary<string, object>
         {
             ["p_company_id"] = companyId.ToString()
         });
@@ -192,7 +195,7 @@ public partial class SupabaseStorageService : IStorageService
         if (string.IsNullOrWhiteSpace(companyCode) || string.IsNullOrWhiteSpace(employeeCode))
             return null;
 
-        var rows = await _supabase.Rpc("employee_resolve_by_code", new Dictionary<string, object>
+        var rows = await RpcAsync("employee_resolve_by_code", new Dictionary<string, object>
         {
             ["p_company_code"] = companyCode.Trim().ToUpperInvariant(),
             ["p_employee_code"] = employeeCode.Trim()
@@ -233,7 +236,7 @@ public partial class SupabaseStorageService : IStorageService
         };
 
         var memberships = ParseMembershipList(
-            (await _supabase.Rpc("employee_get_my_memberships_by_code", new Dictionary<string, object>
+            (await RpcAsync("employee_get_my_memberships_by_code", new Dictionary<string, object>
             {
                 ["p_company_code"] = companyCode.Trim().ToUpperInvariant(),
                 ["p_employee_code"] = employeeCode.Trim()
@@ -251,107 +254,221 @@ public partial class SupabaseStorageService : IStorageService
     {
         if (string.IsNullOrWhiteSpace(companyCode) || string.IsNullOrWhiteSpace(employeeCode))
             return null;
-
-        var result = await _supabase.Rpc("employee_sign_in_with_code", new Dictionary<string, object>
+        try
         {
-            ["p_company_code"] = companyCode.Trim().ToUpperInvariant(),
-            ["p_employee_code"] = employeeCode.Trim()
-        });
+            var result = await RpcAsync("employee_sign_in_with_code", new Dictionary<string, object>
+            {
+                ["p_company_code"] = companyCode.Trim().ToUpperInvariant(),
+                ["p_employee_code"] = employeeCode.Trim()
+            });
 
-        var parsed = ParseCodeLoginResult(result?.Content);
-        if (parsed == null) return null;
+            var parsed = ParseCodeLoginResult(result?.Content);
+            if (parsed == null) return null;
 
-        CodeSessionStore.Save(companyCode, employeeCode, parsed.SessionToken);
-        _telemetry.LogSuccess("code_login", nameof(SignInWithCodeAsync), new Dictionary<string, string>
+            await CodeSessionStore.SaveAsync(parsed.Company.Code, employeeCode.Trim(), parsed.SessionToken);
+
+            _telemetry.LogSuccess("code_login", nameof(SignInWithCodeAsync), new Dictionary<string, string>
+            {
+                ["company_code"] = companyCode,
+            });
+            return parsed;
+        }
+        catch (Exception ex) when (ex.Message.Contains("ACCOUNT_LOCKED"))
         {
-            ["company_code"] = companyCode,
-        });
-        return parsed;
+            throw new InvalidOperationException(
+                "Your account has been locked. Contact your HR administrator to unlock it.", ex);
+        }
+        catch (Exception ex)
+        {
+            _telemetry.LogWarning("code_login_failed", nameof(SignInWithCodeAsync),
+                new Dictionary<string, string> { ["error"] = ex.Message });
+            return null;
+        }
     }
 
     public async Task<CodeLoginResult?> RefreshCodeSessionAsync()
     {
         var token = CodeSessionStore.GetSessionToken();
-        if (!string.IsNullOrWhiteSpace(token))
+        if (string.IsNullOrWhiteSpace(token))
         {
-            try
-            {
-                var result = await _supabase.Rpc("employee_refresh_code_session", new Dictionary<string, object>
-                {
-                    ["p_session_token"] = token
-                });
-                var parsed = ParseCodeLoginResult(result?.Content);
-                if (parsed != null)
-                {
-                    // Token binding (C3 hardening): confirm the session token is bound to the
-                    // resolved company+employee server-side before trusting the restored session.
-                    var bound = await ValidateCodeSessionAsync(
-                        parsed.Employee.CompanyId, parsed.Employee.Id, parsed.SessionToken);
-                    if (!bound)
-                    {
-                        _telemetry.LogWarning("worker_session_invalid", nameof(RefreshCodeSessionAsync),
-                            new Dictionary<string, string>
-                            {
-                                ["company_id"] = parsed.Employee.CompanyId.ToString(),
-                                ["employee_id"] = parsed.Employee.Id.ToString(),
-                                ["reason"] = "token_binding_failed",
-                            });
-                        CodeSessionStore.Clear();
-                        return null;
-                    }
-
-                    var creds = CodeSessionStore.GetCredentials();
-                    if (creds.HasValue)
-                        CodeSessionStore.Save(creds.Value.CompanyCode, creds.Value.EmployeeCode, parsed.SessionToken);
-                    _telemetry.LogSuccess("code_session_refreshed", nameof(RefreshCodeSessionAsync));
-                    return parsed;
-                }
-                _telemetry.LogWarning("code session refresh returned empty", nameof(RefreshCodeSessionAsync));
-            }
-            catch (Exception ex)
-            {
-                _telemetry.LogWarning(
-                    "employee_refresh_code_session failed; will re-sign-in",
-                    context: nameof(RefreshCodeSessionAsync),
-                    properties: new Dictionary<string, string> { ["error"] = ex.Message });
-            }
+            _telemetry.LogWarning("no_session_token", nameof(RefreshCodeSessionAsync));
+            return null;
         }
 
-        var codes = CodeSessionStore.GetCredentials();
-        if (!codes.HasValue) return null;
-        return await SignInWithCodeAsync(codes.Value.CompanyCode, codes.Value.EmployeeCode);
+        try
+        {
+            var result = await RpcAsync("employee_refresh_code_session", new Dictionary<string, object>
+            {
+                ["p_session_token"] = token
+            });
+
+            var parsed = ParseCodeLoginResult(result?.Content);
+            if (parsed == null)
+            {
+                _telemetry.LogWarning("code_session_refresh_empty", nameof(RefreshCodeSessionAsync));
+                CodeSessionStore.Clear();
+                return null;
+            }
+
+            // Token binding (C3 hardening): confirm the session token is bound to the
+            // resolved company+employee server-side before trusting the restored session.
+            var bound = await ValidateCodeSessionAsync(
+                parsed.Employee.CompanyId, parsed.Employee.Id, parsed.SessionToken);
+            if (!bound)
+            {
+                _telemetry.LogWarning("worker_session_invalid", nameof(RefreshCodeSessionAsync),
+                    new Dictionary<string, string>
+                    {
+                        ["company_id"] = parsed.Employee.CompanyId.ToString(),
+                        ["employee_id"] = parsed.Employee.Id.ToString(),
+                        ["reason"]     = "token_binding_failed",
+                    });
+                CodeSessionStore.Clear();
+                return null;
+            }
+
+            // Update the stored session token in case the server rotated it.
+            var creds = CodeSessionStore.GetCredentials();
+            await CodeSessionStore.SaveAsync(
+                parsed.Company.Code,
+                creds?.EmployeeCode ?? string.Empty,
+                parsed.SessionToken);
+
+            _telemetry.LogSuccess("code_session_refreshed", nameof(RefreshCodeSessionAsync));
+            return parsed;
+        }
+        catch (Exception ex)
+        {
+            _telemetry.LogWarning(
+                "code_session_refresh_failed",
+                context: nameof(RefreshCodeSessionAsync),
+                properties: new Dictionary<string, string> { ["error"] = ex.Message });
+            CodeSessionStore.Clear();
+            return null;
+        }
     }
 
     /// <summary>
     /// Server-side token-binding check (C3 hardening). Confirms the session token is bound
-    /// to the given company+employee and is active/unexpired. <b>Fails open</b>: if the
-    /// validation RPC is unavailable (e.g. migration not yet deployed) it returns true so
-    /// existing sessions are never locked out — it only returns false on an explicit
-    /// server "false".
+    /// to the given company+employee and is active/unexpired. Fails closed on missing/invalid tokens.
     /// </summary>
     public async Task<bool> ValidateCodeSessionAsync(Guid companyId, Guid employeeId, string sessionToken)
     {
         if (string.IsNullOrWhiteSpace(sessionToken)) return false;
         try
         {
-            var result = await _supabase.Rpc("employee_validate_session", new Dictionary<string, object>
+            var result = await RpcAsync("employee_validate_session", new Dictionary<string, object>
             {
                 ["p_company_id"] = companyId.ToString(),
                 ["p_employee_id"] = employeeId.ToString(),
                 ["p_session_token"] = sessionToken,
             });
             var content = result?.Content?.Trim();
-            if (string.IsNullOrWhiteSpace(content)) return true; // fail open
-            return content.Equals("true", StringComparison.OrdinalIgnoreCase);
+            return !string.IsNullOrWhiteSpace(content)
+                && content.Equals("true", StringComparison.OrdinalIgnoreCase);
         }
         catch (Exception ex)
         {
-            // Fail open on transport/availability errors to preserve login UX.
-            _telemetry.LogWarning("employee_validate_session unavailable", nameof(ValidateCodeSessionAsync),
+            _telemetry.LogWarning("employee_validate_session failed", nameof(ValidateCodeSessionAsync),
                 new Dictionary<string, string> { ["error"] = ex.Message });
-            return true;
+            return false;
         }
     }
+
+    // ── PIN authentication ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Called immediately after first-login ID verification.
+    /// Sends the plain 4-digit PIN to the server; the server bcrypt-hashes it,
+    /// revokes the identity session, and issues a fresh PIN-authenticated session.
+    /// The PIN is never persisted on the client — only the returned session token is stored.
+    /// </summary>
+    public async Task<CodeLoginResult?> SetEmployeePinAsync(string sessionToken, string pin)
+    {
+        try
+        {
+            var result = await RpcAsync("employee_set_pin", new Dictionary<string, object>
+            {
+                ["p_session_token"] = sessionToken,
+                ["p_pin"]           = pin
+            });
+
+            var parsed = ParseCodeLoginResult(result?.Content);
+            if (parsed == null) return null;
+
+            await CodeSessionStore.SaveAsync(parsed.Company.Code, string.Empty, parsed.SessionToken);
+
+            _telemetry.LogSuccess("employee_pin_set", nameof(SetEmployeePinAsync));
+            return parsed;
+        }
+        catch (Exception ex)
+        {
+            _telemetry.LogWarning("employee_pin_set_failed", nameof(SetEmployeePinAsync),
+                new Dictionary<string, string> { ["error"] = ex.Message });
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Returning employee login: company code + employee UUID + 4-digit PIN.
+    /// UUID lookup eliminates the fragile employee_code string lookup that caused
+    /// "Incorrect PIN" errors for employees whose employee_code was empty.
+    /// Returns null on wrong PIN, lockout, or any server error.
+    /// </summary>
+    public async Task<CodeLoginResult?> SignInWithPinAsync(string companyCode, Guid employeeId, string pin)
+    {
+        try
+        {
+            var result = await RpcAsync("employee_sign_in_with_pin", new Dictionary<string, object>
+            {
+                ["p_company_code"] = companyCode.Trim().ToUpperInvariant(),
+                ["p_employee_id"]  = employeeId.ToString(),
+                ["p_pin"]          = pin
+            });
+
+            var parsed = ParseCodeLoginResult(result?.Content);
+            if (parsed == null) return null;
+
+            await CodeSessionStore.SaveAsync(parsed.Company.Code, string.Empty, parsed.SessionToken);
+
+            _telemetry.LogSuccess("employee_pin_login", nameof(SignInWithPinAsync),
+                new Dictionary<string, string> { ["company_code"] = companyCode });
+            return parsed;
+        }
+        catch (Exception ex) when (ex.Message.Contains("ACCOUNT_LOCKED"))
+        {
+            throw new InvalidOperationException(
+                "Your account has been locked. Contact your HR administrator to unlock it.", ex);
+        }
+        catch (Exception ex)
+        {
+            _telemetry.LogWarning("employee_pin_login_failed", nameof(SignInWithPinAsync),
+                new Dictionary<string, string> { ["error"] = ex.Message });
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// HR action: clears the target employee's PIN and revokes all active sessions.
+    /// The employee must re-authenticate with their ID number on next launch.
+    /// Throws on authorization failure — the caller must surface this to the HR user.
+    /// </summary>
+    public async Task HrResetEmployeePinAsync(Guid employeeId)
+    {
+        await RpcAsync("hr_reset_employee_pin", new Dictionary<string, object>
+        {
+            ["p_employee_id"] = employeeId.ToString()
+        });
+        _telemetry.LogSuccess("hr_reset_employee_pin", nameof(HrResetEmployeePinAsync),
+            new Dictionary<string, string> { ["employee_id"] = employeeId.ToString() });
+    }
+
+    // VerifyPinAsync removed — superseded by SignInWithPinAsync(companyCode, employeeId, pin)
+    // which uses the stored employee UUID from CodeSessionStore. The old session-token-based
+    // approach required passing the token as a query param through navigation, which was
+    // fragile and didn't survive session expiry between launches.
+
+    // ── JSON parsing ──────────────────────────────────────────────────────────
 
     private static CodeLoginResult? ParseCodeLoginResult(string? content)
     {
@@ -403,12 +520,22 @@ public partial class SupabaseStorageService : IStorageService
             ? tok.GetString() ?? ""
             : "";
 
+        // needs_pin_setup is a top-level field on the RPC response.
+        var needsPinSetup = root.TryGetProperty("needs_pin_setup", out var npsEl)
+            && npsEl.ValueKind == System.Text.Json.JsonValueKind.True;
+
+        // pin_set is inside the employee object.
+        var pinSet = employeeEl.TryGetProperty("pin_set", out var psEl)
+            && psEl.ValueKind == System.Text.Json.JsonValueKind.True;
+
         return new CodeLoginResult
         {
-            SessionToken = sessionToken,
-            Employee = employee,
-            Company = company,
-            Memberships = memberships
+            SessionToken  = sessionToken,
+            Employee      = employee,
+            Company       = company,
+            Memberships   = memberships,
+            NeedsPinSetup = needsPinSetup,
+            PinSet        = pinSet
         };
     }
 
@@ -440,27 +567,39 @@ public partial class SupabaseStorageService : IStorageService
         await _supabase.Auth.Update(new Supabase.Gotrue.UserAttributes { Password = newPassword });
     }
 
-    public async Task TransferOwnershipAsync(Guid companyId, Guid targetEmployeeId)
+    public async Task<OwnershipTransferInitiation> InitiateOwnershipTransferAsync(
+        Guid companyId, Guid targetEmployeeId, CancellationToken ct = default)
     {
-        var empResult = await _supabase
-            .From<Employee>()
-            .Filter("id", Supabase.Postgrest.Constants.Operator.Equals, targetEmployeeId.ToString())
-            .Get();
-        var target = empResult.Models.FirstOrDefault();
-        if (target?.UserId == null) return;
+        var result = await _supabase.Rpc(
+            "initiate_ownership_transfer",
+            new Dictionary<string, object>
+            {
+                ["p_company_id"]          = companyId.ToString(),
+                ["p_target_employee_id"]  = targetEmployeeId.ToString()
+            });
+        var json = JsonSerializer.Deserialize<JsonElement>(result.Content ?? "{}");
+        return new OwnershipTransferInitiation(
+            TransferId: Guid.Parse(json.GetProperty("transfer_id").GetString()!),
+            Otp:        json.GetProperty("otp").GetString()!,
+            ExpiresAt:  DateTime.Parse(
+                            json.GetProperty("expires_at").GetString()!,
+                            null,
+                            System.Globalization.DateTimeStyles.RoundtripKind),
+            TargetName: json.GetProperty("target_name").GetString()!
+        );
+    }
 
-        var compResult = await _supabase
-            .From<Company>()
-            .Filter("id", Supabase.Postgrest.Constants.Operator.Equals, companyId.ToString())
-            .Get();
-        var company = compResult.Models.FirstOrDefault();
-        if (company == null) return;
-
-        company.OwnerUserId = target.UserId;
-        await _supabase.From<Company>().Update(company);
-
-        target.AccessLevelRaw = "owner";
-        await _supabase.From<Employee>().Update(target);
+    public async Task VerifyOwnershipTransferAsync(
+        Guid companyId, Guid transferId, string otp, CancellationToken ct = default)
+    {
+        await _supabase.Rpc(
+            "verify_ownership_transfer_otp",
+            new Dictionary<string, object>
+            {
+                ["p_company_id"]  = companyId.ToString(),
+                ["p_transfer_id"] = transferId.ToString(),
+                ["p_otp"]         = otp
+            });
     }
 
     public async Task<bool> SendHrRegistrationOtpAsync(string email, string password)
@@ -532,7 +671,7 @@ public partial class SupabaseStorageService : IStorageService
     public async Task<(Guid companyId, string companyCode)> SelfRegisterCompanyAsync(
         string companyName, string ownerFirstName, string ownerLastName, string role = "owner")
     {
-        var rows = await _supabase.Rpc("self_register_company", new Dictionary<string, object>
+        var rows = await RpcAsync("self_register_company", new Dictionary<string, object>
         {
             ["p_company_name"] = companyName.Trim(),
             ["p_owner_first_name"] = ownerFirstName.Trim(),
@@ -577,7 +716,7 @@ public partial class SupabaseStorageService : IStorageService
         var user = _supabase.Auth.CurrentUser;
         if (user != null)
         {
-            var result = await _supabase.Rpc("employee_get_my_memberships", new Dictionary<string, object>
+            var result = await RpcAsync("employee_get_my_memberships", new Dictionary<string, object>
             {
                 ["p_user_id"] = user.Id!
             });
@@ -589,7 +728,7 @@ public partial class SupabaseStorageService : IStorageService
         var codes = CodeSessionStore.GetCredentials();
         if (codes.HasValue)
         {
-            var result = await _supabase.Rpc("employee_get_my_memberships_by_code", new Dictionary<string, object>
+            var result = await RpcAsync("employee_get_my_memberships_by_code", new Dictionary<string, object>
             {
                 ["p_company_code"] = codes.Value.CompanyCode,
                 ["p_employee_code"] = codes.Value.EmployeeCode
@@ -608,7 +747,7 @@ public partial class SupabaseStorageService : IStorageService
         var user = _supabase.Auth.CurrentUser;
         if (user != null)
         {
-            var result = await _supabase.Rpc("employee_get_my_notifications", new Dictionary<string, object>
+            var result = await RpcAsync("employee_get_my_notifications", new Dictionary<string, object>
             {
                 ["p_user_id"] = user.Id!
             });
@@ -625,7 +764,7 @@ public partial class SupabaseStorageService : IStorageService
 
         try
         {
-            var result = await _supabase.Rpc("employee_get_my_notifications_for_employee", new Dictionary<string, object>
+            var result = await RpcAsync("employee_get_my_notifications_for_employee", new Dictionary<string, object>
             {
                 ["p_employee_id"] = employeeId.Value.ToString()
             });
@@ -646,7 +785,7 @@ public partial class SupabaseStorageService : IStorageService
         var user = _supabase.Auth.CurrentUser;
         if (user != null)
         {
-            await _supabase.Rpc("employee_mark_notification_read", new Dictionary<string, object>
+            await RpcAsync("employee_mark_notification_read", new Dictionary<string, object>
             {
                 ["p_user_id"] = user.Id!,
                 ["p_notification_id"] = notificationId
@@ -660,7 +799,7 @@ public partial class SupabaseStorageService : IStorageService
 
         try
         {
-            await _supabase.Rpc("employee_mark_notification_read_for_employee", new Dictionary<string, object>
+            await RpcAsync("employee_mark_notification_read_for_employee", new Dictionary<string, object>
             {
                 ["p_employee_id"] = employeeId.Value.ToString(),
                 ["p_notification_id"] = notificationId
@@ -701,7 +840,7 @@ public partial class SupabaseStorageService : IStorageService
 
     public async Task<List<EmployeeShiftTemplate>> GetShiftTemplatesAsync(Guid companyId)
     {
-        var json = await _supabase.Rpc("get_employee_shift_templates",
+        var json = await RpcAsync("get_employee_shift_templates",
             new Dictionary<string, object> { ["p_company_id"] = companyId });
         if (string.IsNullOrWhiteSpace(json.Content)) return [];
         var list = Newtonsoft.Json.JsonConvert.DeserializeObject<List<EmployeeShiftTemplate>>(json.Content);
@@ -711,7 +850,7 @@ public partial class SupabaseStorageService : IStorageService
     public async Task<EmployeeShiftTemplate> CreateShiftTemplateAsync(EmployeeShiftTemplate template)
     {
         var breaksArray = Newtonsoft.Json.Linq.JArray.FromObject(template.Breaks ?? []);
-        var json = await _supabase.Rpc("hr_upsert_shift_template", new Dictionary<string, object>
+        var json = await RpcAsync("hr_upsert_shift_template", new Dictionary<string, object>
         {
             ["p_company_id"]    = template.CompanyId,
             ["p_id"]            = null!,
@@ -728,7 +867,7 @@ public partial class SupabaseStorageService : IStorageService
     public async Task<EmployeeShiftTemplate> UpdateShiftTemplateAsync(EmployeeShiftTemplate template)
     {
         var breaksArray = Newtonsoft.Json.Linq.JArray.FromObject(template.Breaks ?? []);
-        await _supabase.Rpc("hr_upsert_shift_template", new Dictionary<string, object>
+        await RpcAsync("hr_upsert_shift_template", new Dictionary<string, object>
         {
             ["p_company_id"]    = template.CompanyId,
             ["p_id"]            = template.Id,
@@ -743,7 +882,7 @@ public partial class SupabaseStorageService : IStorageService
 
     public async Task<EmployeeShiftTemplate> SetDefaultShiftTemplateAsync(Guid companyId, Guid templateId)
     {
-        var json = await _supabase.Rpc("hr_set_default_shift_template", new Dictionary<string, object>
+        var json = await RpcAsync("hr_set_default_shift_template", new Dictionary<string, object>
         {
             ["p_company_id"]  = companyId,
             ["p_template_id"] = templateId
@@ -754,7 +893,7 @@ public partial class SupabaseStorageService : IStorageService
 
     public async Task DeleteShiftTemplateAsync(Guid templateId, Guid companyId)
     {
-        await _supabase.Rpc("hr_delete_shift_template", new Dictionary<string, object>
+        await RpcAsync("hr_delete_shift_template", new Dictionary<string, object>
         {
             ["p_id"]         = templateId,
             ["p_company_id"] = companyId
@@ -783,7 +922,7 @@ public partial class SupabaseStorageService : IStorageService
         {
             try
             {
-                var rpc = await _supabase.Rpc("employee_list_company_peers", new Dictionary<string, object>
+                var rpc = await RpcAsync("employee_list_company_peers", new Dictionary<string, object>
                 {
                     ["p_company_id"] = companyId.ToString(),
                     ["p_employee_id"] = forEmployeeId.Value.ToString()
@@ -859,6 +998,47 @@ public partial class SupabaseStorageService : IStorageService
         return result.Models.First();
     }
 
+    public async Task SetEmployeeRoleAsync(Guid companyId, Guid employeeId, string newRole)
+    {
+        await RpcAsync("set_employee_role", new Dictionary<string, object>
+        {
+            ["p_company_id"]  = companyId.ToString(),
+            ["p_employee_id"] = employeeId.ToString(),
+            ["p_new_role"]    = newRole
+        });
+    }
+
+    public async Task ApprovePaymentRunAsync(Guid companyId, Guid paymentApprovalId)
+    {
+        await RpcAsync("approve_payment_run", new Dictionary<string, object>
+        {
+            ["p_company_id"]           = companyId.ToString(),
+            ["p_payment_approval_id"]  = paymentApprovalId.ToString()
+        });
+    }
+
+    public async Task UpdateEmployeeBankingAsync(Guid companyId, Guid employeeId, string? bankAccount, string? bankName, string? bankBranchCode)
+    {
+        await RpcAsync("update_employee_banking", new Dictionary<string, object?>
+        {
+            ["p_company_id"]        = companyId.ToString(),
+            ["p_employee_id"]       = employeeId.ToString(),
+            ["p_bank_account"]      = bankAccount,
+            ["p_bank_name"]         = bankName,
+            ["p_bank_branch_code"]  = bankBranchCode
+        });
+    }
+
+    public async Task SetEmployeeActiveAsync(Guid companyId, Guid employeeId, bool isActive)
+    {
+        await RpcAsync("set_employee_active", new Dictionary<string, object>
+        {
+            ["p_company_id"]  = companyId.ToString(),
+            ["p_employee_id"] = employeeId.ToString(),
+            ["p_is_active"]   = isActive
+        });
+    }
+
     public async Task DeleteEmployeeAsync(Guid employeeId)
     {
         await _supabase
@@ -867,13 +1047,22 @@ public partial class SupabaseStorageService : IStorageService
             .Delete();
     }
 
+    public async Task DeleteEmployeeAsync(Guid companyId, Guid employeeId)
+    {
+        await RpcAsync("delete_employee", new Dictionary<string, object>
+        {
+            ["p_company_id"]  = companyId.ToString(),
+            ["p_employee_id"] = employeeId.ToString()
+        });
+    }
+
     public async Task<SelfRegisterResult> EmployeeSelfRegisterAsync(
         string email, string firstName, string lastName, string companyCode)
     {
         var user = _supabase.Auth.CurrentUser
             ?? throw new Exception("Not authenticated. Please verify your email first.");
 
-        var rows = await _supabase.Rpc("employee_self_register", new Dictionary<string, object>
+        var rows = await RpcAsync("employee_self_register", new Dictionary<string, object>
         {
             ["p_user_id"]      = user.Id!,
             ["p_email"]        = email.Trim().ToLowerInvariant(),
@@ -917,7 +1106,7 @@ public partial class SupabaseStorageService : IStorageService
         if (bankName     != null) args["p_bank_name"]       = bankName;
         if (bankBranchCode != null) args["p_bank_branch_code"] = bankBranchCode;
 
-        var result = await _supabase.Rpc("employee_update_profile", args);
+        var result = await RpcAsync("employee_update_profile", args);
         if (string.IsNullOrWhiteSpace(result.Content) || result.Content == "null")
             return null;
 
@@ -937,7 +1126,7 @@ public partial class SupabaseStorageService : IStorageService
 
     public async Task<Employee> ApproveEmployeeAsync(Guid employeeId)
     {
-        await _supabase.Rpc("approve_pending_employee", new Dictionary<string, object>
+        await RpcAsync("approve_pending_employee", new Dictionary<string, object>
         {
             ["p_employee_id"] = employeeId.ToString()
         });
@@ -950,10 +1139,125 @@ public partial class SupabaseStorageService : IStorageService
 
     public async Task RejectEmployeeAsync(Guid employeeId)
     {
-        await _supabase.Rpc("reject_pending_employee", new Dictionary<string, object>
+        await RpcAsync("reject_pending_employee", new Dictionary<string, object>
         {
             ["p_employee_id"] = employeeId.ToString()
         });
+    }
+
+    public async Task HrUnlockEmployeeAsync(Guid companyId, Guid employeeId)
+    {
+        await RpcAsync("hr_unlock_employee", new Dictionary<string, object>
+        {
+            ["p_company_id"]  = companyId.ToString(),
+            ["p_employee_id"] = employeeId.ToString()
+        });
+    }
+
+    public async Task<List<LockedEmployee>> HrGetLockedEmployeesAsync(Guid companyId)
+    {
+        var result = await RpcAsync("hr_get_locked_employees", new Dictionary<string, object>
+        {
+            ["p_company_id"] = companyId.ToString()
+        });
+        var content = result?.Content;
+        if (string.IsNullOrWhiteSpace(content) || content == "[]" || content == "null") return [];
+
+        var list = System.Text.Json.JsonSerializer.Deserialize<List<System.Text.Json.JsonElement>>(content);
+        if (list == null) return [];
+
+        return list.Select(el => new LockedEmployee
+        {
+            EmployeeId   = el.TryGetProperty("employee_id",  out var eid)  && eid.ValueKind  != System.Text.Json.JsonValueKind.Null ? Guid.Parse(eid.GetString()!) : Guid.Empty,
+            FullName     = el.TryGetProperty("full_name",    out var fn)   && fn.ValueKind   != System.Text.Json.JsonValueKind.Null ? fn.GetString() ?? "" : "",
+            LockedAt     = el.TryGetProperty("locked_at",    out var lat)  && lat.ValueKind  != System.Text.Json.JsonValueKind.Null ? DateTimeOffset.Parse(lat.GetString()!) : null,
+            LockedReason = el.TryGetProperty("locked_reason", out var lr)  && lr.ValueKind   != System.Text.Json.JsonValueKind.Null ? lr.GetString() : null
+        }).ToList();
+    }
+
+    public async Task<List<ActiveSession>> HrListActiveSessionsAsync(Guid companyId, Guid? employeeId = null)
+    {
+        var parameters = new Dictionary<string, object>
+        {
+            ["p_company_id"] = companyId.ToString()
+        };
+        if (employeeId.HasValue)
+            parameters["p_employee_id"] = employeeId.Value.ToString();
+
+        var result = await RpcAsync("hr_list_active_sessions", parameters);
+        var content = result?.Content;
+        if (string.IsNullOrWhiteSpace(content) || content == "[]" || content == "null") return [];
+
+        var list = System.Text.Json.JsonSerializer.Deserialize<List<System.Text.Json.JsonElement>>(content);
+        if (list == null) return [];
+
+        return list.Select(el => new ActiveSession
+        {
+            SessionId    = el.TryGetProperty("session_id",    out var sid) && sid.ValueKind  != System.Text.Json.JsonValueKind.Null ? Guid.Parse(sid.GetString()!) : Guid.Empty,
+            EmployeeId   = el.TryGetProperty("employee_id",   out var eid) && eid.ValueKind  != System.Text.Json.JsonValueKind.Null ? Guid.Parse(eid.GetString()!) : Guid.Empty,
+            EmployeeName = el.TryGetProperty("employee_name", out var en)  && en.ValueKind   != System.Text.Json.JsonValueKind.Null ? en.GetString()  ?? "" : "",
+            LoginMethod  = el.TryGetProperty("login_method",  out var lm)  && lm.ValueKind   != System.Text.Json.JsonValueKind.Null ? lm.GetString()  ?? "" : "",
+            CreatedAt    = el.TryGetProperty("created_at",    out var cat) && cat.ValueKind  != System.Text.Json.JsonValueKind.Null ? DateTimeOffset.Parse(cat.GetString()!) : default,
+            LastSeenAt   = el.TryGetProperty("last_seen_at",  out var lsa) && lsa.ValueKind  != System.Text.Json.JsonValueKind.Null ? DateTimeOffset.Parse(lsa.GetString()!) : default,
+            ExpiresAt    = el.TryGetProperty("expires_at",    out var ea)  && ea.ValueKind   != System.Text.Json.JsonValueKind.Null ? DateTimeOffset.Parse(ea.GetString()!) : default
+        }).ToList();
+    }
+
+    public async Task HrRevokeSessionAsync(Guid companyId, Guid sessionId)
+    {
+        await RpcAsync("hr_revoke_session", new Dictionary<string, object>
+        {
+            ["p_company_id"] = companyId.ToString(),
+            ["p_session_id"] = sessionId.ToString()
+        });
+    }
+
+    public async Task<int> HrRevokeAllEmployeeSessionsAsync(Guid companyId, Guid employeeId)
+    {
+        var result = await RpcAsync("hr_revoke_all_employee_sessions", new Dictionary<string, object>
+        {
+            ["p_company_id"]  = companyId.ToString(),
+            ["p_employee_id"] = employeeId.ToString()
+        });
+        var content = result?.Content;
+        if (string.IsNullOrWhiteSpace(content)) return 0;
+        return int.TryParse(content.Trim('"'), out var count) ? count : 0;
+    }
+
+    public async Task HrConfirmStepUpAsync(Guid companyId)
+    {
+        await RpcAsync("hr_confirm_step_up", new Dictionary<string, object>
+        {
+            ["p_company_id"] = companyId.ToString()
+        });
+    }
+
+    public async Task<(int FailedAttempts, DateTimeOffset? LockedUntil)> HrRecordStepUpFailureAsync(Guid companyId)
+    {
+        var result = await RpcAsync("hr_record_step_up_failure", new Dictionary<string, object>
+        {
+            ["p_company_id"] = companyId.ToString()
+        });
+        var content = result?.Content;
+        if (string.IsNullOrWhiteSpace(content)) return (0, null);
+
+        using var doc = System.Text.Json.JsonDocument.Parse(content);
+        var root = doc.RootElement;
+        var attempts = root.TryGetProperty("failed_attempts", out var fa) && fa.ValueKind != System.Text.Json.JsonValueKind.Null
+            ? fa.GetInt32() : 0;
+        DateTimeOffset? lockedUntil = root.TryGetProperty("locked_until", out var lu) && lu.ValueKind != System.Text.Json.JsonValueKind.Null
+            ? DateTimeOffset.Parse(lu.GetString()!) : null;
+        return (attempts, lockedUntil);
+    }
+
+    public async Task<bool> HrCheckStepUpValidAsync(Guid companyId)
+    {
+        var result = await RpcAsync("hr_check_step_up_valid", new Dictionary<string, object>
+        {
+            ["p_company_id"] = companyId.ToString()
+        });
+        var content = result?.Content;
+        return content?.Trim('"').Equals("true", StringComparison.OrdinalIgnoreCase) == true;
     }
 
     // ─── Punches ─────────────────────────────────────────────────────────────
@@ -1024,7 +1328,7 @@ public partial class SupabaseStorageService : IStorageService
 
         try
         {
-            var rpc = await _supabase.Rpc("employee_insert_punch", args);
+            var rpc = await RpcAsync("employee_insert_punch", args);
             var json = rpc?.Content;
             if (!string.IsNullOrWhiteSpace(json) && json != "null")
             {
@@ -1095,7 +1399,7 @@ public partial class SupabaseStorageService : IStorageService
 
     public async Task<TimePunch?> GetMyLastPunchAsync(Guid employeeId)
     {
-        var rpc = await _supabase.Rpc("employee_get_last_punch",
+        var rpc = await RpcAsync("employee_get_last_punch",
             new Dictionary<string, object> { ["p_employee_id"] = employeeId.ToString() });
         var json = rpc?.Content;
         if (string.IsNullOrEmpty(json) || json == "null") return null;
@@ -1105,7 +1409,7 @@ public partial class SupabaseStorageService : IStorageService
 
     public async Task<List<TimePunch>> GetMyPunchesAsync(Guid companyId, Guid employeeId, DateOnly from, DateOnly to)
     {
-        var rpc = await _supabase.Rpc("employee_get_my_punches", new Dictionary<string, object>
+        var rpc = await RpcAsync("employee_get_my_punches", new Dictionary<string, object>
         {
             ["p_company_id"]  = companyId.ToString(),
             ["p_employee_id"] = employeeId.ToString(),
@@ -1122,7 +1426,7 @@ public partial class SupabaseStorageService : IStorageService
     {
         if (IsCodeLoginSession() && companyId.HasValue && employeeId.HasValue)
         {
-            await _supabase.Rpc("employee_update_punch_address", new Dictionary<string, object>
+            await RpcAsync("employee_update_punch_address", new Dictionary<string, object>
             {
                 ["p_company_id"] = companyId.Value.ToString(),
                 ["p_employee_id"] = employeeId.Value.ToString(),
@@ -1148,7 +1452,7 @@ public partial class SupabaseStorageService : IStorageService
 
         try
         {
-            var rpc = await _supabase.Rpc("hr_get_employees_last_punch", new Dictionary<string, object>
+            var rpc = await RpcAsync("hr_get_employees_last_punch", new Dictionary<string, object>
             {
                 ["p_company_id"]   = companyId.ToString(),
                 ["p_employee_ids"] = employeeIds.Select(id => id.ToString()).ToArray()
@@ -1213,7 +1517,7 @@ public partial class SupabaseStorageService : IStorageService
 
     public async Task<bool> IsOnLeaveTodayAsync(Guid companyId, Guid employeeId)
     {
-        var result = await _supabase.Rpc("employee_is_on_leave_today", new Dictionary<string, object>
+        var result = await RpcAsync("employee_is_on_leave_today", new Dictionary<string, object>
         {
             ["p_company_id"]  = companyId,
             ["p_employee_id"] = employeeId
@@ -1281,7 +1585,7 @@ public partial class SupabaseStorageService : IStorageService
     {
         try
         {
-            var rpc = await _supabase.Rpc("employee_get_jobs_for_employee", new Dictionary<string, object>
+            var rpc = await RpcAsync("employee_get_jobs_for_employee", new Dictionary<string, object>
             {
                 ["p_company_id"] = companyId.ToString(),
                 ["p_employee_id"] = employeeId.ToString()
@@ -1384,7 +1688,7 @@ public partial class SupabaseStorageService : IStorageService
         {
             try
             {
-                var rpc = await _supabase.Rpc("employee_get_job_for_employee", new Dictionary<string, object>
+                var rpc = await RpcAsync("employee_get_job_for_employee", new Dictionary<string, object>
                 {
                     ["p_company_id"] = companyId.Value.ToString(),
                     ["p_employee_id"] = employeeId.Value.ToString(),
@@ -1423,7 +1727,7 @@ public partial class SupabaseStorageService : IStorageService
         {
             try
             {
-                var rpc = await _supabase.Rpc("employee_get_job_photo_urls", new Dictionary<string, object>
+                var rpc = await RpcAsync("employee_get_job_photo_urls", new Dictionary<string, object>
                 {
                     ["p_company_id"] = companyId.Value.ToString(),
                     ["p_employee_id"] = employeeId.Value.ToString(),
@@ -1439,7 +1743,7 @@ public partial class SupabaseStorageService : IStorageService
 
         try
         {
-            var rpc = await _supabase.Rpc("get_job_photo_urls", new Dictionary<string, object>
+            var rpc = await RpcAsync("get_job_photo_urls", new Dictionary<string, object>
             {
                 ["p_job_id"] = jobId.ToString()
             });
@@ -1547,7 +1851,7 @@ public partial class SupabaseStorageService : IStorageService
             if (request.NotifyManagerEmployeeId.HasValue)
                 args["p_notify_manager_employee_id"] = request.NotifyManagerEmployeeId.Value.ToString();
 
-            var rpc = await _supabase.Rpc("employee_create_job", args);
+            var rpc = await RpcAsync("employee_create_job", args);
             var created = ParseJobsFromRpcContent(rpc?.Content ?? "").FirstOrDefault();
             if (created == null && !string.IsNullOrWhiteSpace(rpc?.Content) && rpc.Content.TrimStart().StartsWith('{'))
                 created = Newtonsoft.Json.JsonConvert.DeserializeObject<Job>(rpc.Content);
@@ -1600,7 +1904,7 @@ public partial class SupabaseStorageService : IStorageService
     {
         try
         {
-            var rpc = await _supabase.Rpc("hr_set_job_assignments", new Dictionary<string, object>
+            var rpc = await RpcAsync("hr_set_job_assignments", new Dictionary<string, object>
             {
                 ["p_job_id"] = jobId.ToString(),
                 ["p_company_id"] = companyId.ToString(),
@@ -1643,7 +1947,7 @@ public partial class SupabaseStorageService : IStorageService
         {
             try
             {
-                var rpc = await _supabase.Rpc("employee_get_job_card_for_employee", new Dictionary<string, object>
+                var rpc = await RpcAsync("employee_get_job_card_for_employee", new Dictionary<string, object>
                 {
                     ["p_company_id"] = companyId.Value.ToString(),
                     ["p_job_id"] = jobId.ToString(),
@@ -1681,7 +1985,7 @@ public partial class SupabaseStorageService : IStorageService
             }
         }
 
-        var rpc = await _supabase.Rpc("employee_upsert_job_card", new Dictionary<string, object>
+        var rpc = await RpcAsync("employee_upsert_job_card", new Dictionary<string, object>
         {
             ["p_company_id"] = card.CompanyId.ToString(),
             ["p_employee_id"] = eid.ToString(),
@@ -1738,7 +2042,7 @@ public partial class SupabaseStorageService : IStorageService
         {
             try
             {
-                var rpc = await _supabase.Rpc("employee_get_checklist_for_job", new Dictionary<string, object>
+                var rpc = await RpcAsync("employee_get_checklist_for_job", new Dictionary<string, object>
                 {
                     ["p_company_id"] = companyId.Value.ToString(),
                     ["p_job_id"] = jobId.ToString(),
@@ -1770,7 +2074,7 @@ public partial class SupabaseStorageService : IStorageService
     {
         if (employeeId.HasValue && item.CompanyId != Guid.Empty)
         {
-            await _supabase.Rpc("employee_update_checklist_item", new Dictionary<string, object>
+            await RpcAsync("employee_update_checklist_item", new Dictionary<string, object>
             {
                 ["p_company_id"] = item.CompanyId.ToString(),
                 ["p_employee_id"] = employeeId.Value.ToString(),
@@ -1807,7 +2111,7 @@ public partial class SupabaseStorageService : IStorageService
     {
         try
         {
-            var rpc = await _supabase.Rpc("employee_insert_checklist_item", new Dictionary<string, object>
+            var rpc = await RpcAsync("employee_insert_checklist_item", new Dictionary<string, object>
             {
                 ["p_company_id"] = companyId.ToString(),
                 ["p_employee_id"] = employeeId.ToString(),
@@ -1889,34 +2193,55 @@ public partial class SupabaseStorageService : IStorageService
         if (string.IsNullOrWhiteSpace(companyCode) || string.IsNullOrWhiteSpace(clientCode))
             return null;
 
-        var rows = await _supabase.Rpc("client_resolve_by_code", new Dictionary<string, object>
+        try
         {
-            ["p_company_code"] = companyCode.Trim().ToUpperInvariant(),
-            ["p_client_code"] = clientCode.Trim().ToUpperInvariant()
+            var rows = await RpcAsync("client_resolve_by_code", new Dictionary<string, object>
+            {
+                ["p_company_code"] = companyCode.Trim().ToUpperInvariant(),
+                ["p_client_code"]  = clientCode.Trim().ToUpperInvariant()
+            });
+
+            var content = rows?.Content;
+            if (string.IsNullOrEmpty(content)) return null;
+
+            var list = System.Text.Json.JsonSerializer.Deserialize<List<System.Text.Json.JsonElement>>(content);
+            if (list == null || list.Count == 0) return null;
+
+            var row = list[0];
+            return new ClientPortalLogin
+            {
+                ClientId    = row.TryGetProperty("client_id",    out var cid)  ? Guid.Parse(cid.GetString()!)  : Guid.Empty,
+                CompanyId   = row.TryGetProperty("company_id",   out var coid) ? Guid.Parse(coid.GetString()!) : Guid.Empty,
+                CompanyCode = row.TryGetProperty("company_code", out var cc)   ? cc.GetString()  ?? "" : "",
+                ClientCode  = row.TryGetProperty("client_code",  out var clc)  ? clc.GetString() ?? "" : "",
+                ClientName  = row.TryGetProperty("client_name",  out var cn)   ? cn.GetString()  ?? "" : "",
+                Email       = row.TryGetProperty("email", out var em) && em.ValueKind != System.Text.Json.JsonValueKind.Null
+                                  ? em.GetString() : null
+            };
+        }
+        catch (Exception ex) when (ex.Message.Contains("PORTAL_CODE_EXPIRED"))
+        {
+            throw new InvalidOperationException(
+                "Your portal code has expired. Contact your administrator.", ex);
+        }
+    }
+
+    public async Task<string> HrRotateClientCodeAsync(Guid companyId, Guid clientId)
+    {
+        var result = await RpcAsync("hr_rotate_client_code", new Dictionary<string, object>
+        {
+            ["p_company_id"] = companyId.ToString(),
+            ["p_client_id"]  = clientId.ToString()
         });
-
-        var content = rows?.Content;
-        if (string.IsNullOrEmpty(content)) return null;
-
-        var list = System.Text.Json.JsonSerializer.Deserialize<List<System.Text.Json.JsonElement>>(content);
-        if (list == null || list.Count == 0) return null;
-
-        var row = list[0];
-        return new ClientPortalLogin
-        {
-            ClientId = row.TryGetProperty("client_id", out var cid) ? Guid.Parse(cid.GetString()!) : Guid.Empty,
-            CompanyId = row.TryGetProperty("company_id", out var coid) ? Guid.Parse(coid.GetString()!) : Guid.Empty,
-            CompanyCode = row.TryGetProperty("company_code", out var cc) ? cc.GetString() ?? "" : "",
-            ClientCode = row.TryGetProperty("client_code", out var clc) ? clc.GetString() ?? "" : "",
-            ClientName = row.TryGetProperty("client_name", out var cn) ? cn.GetString() ?? "" : "",
-            Email = row.TryGetProperty("email", out var em) && em.ValueKind != System.Text.Json.JsonValueKind.Null
-                ? em.GetString() : null
-        };
+        var content = result?.Content;
+        if (string.IsNullOrWhiteSpace(content))
+            throw new InvalidOperationException("Portal code rotation failed.");
+        return content.Trim('"');
     }
 
     public async Task<List<ClientDeal>> GetClientPortalProjectsAsync(string companyCode, string clientCode)
     {
-        var rows = await _supabase.Rpc("client_portal_list_projects", new Dictionary<string, object>
+        var rows = await RpcAsync("client_portal_list_projects", new Dictionary<string, object>
         {
             ["p_company_code"] = companyCode.Trim().ToUpperInvariant(),
             ["p_client_code"] = clientCode.Trim().ToUpperInvariant()
@@ -1927,7 +2252,7 @@ public partial class SupabaseStorageService : IStorageService
     public async Task<List<ClientPortalMessageInboxItem>> GetClientPortalMessageInboxAsync(
         string companyCode, string clientCode)
     {
-        var rows = await _supabase.Rpc("client_portal_list_message_inbox", new Dictionary<string, object>
+        var rows = await RpcAsync("client_portal_list_message_inbox", new Dictionary<string, object>
         {
             ["p_company_code"] = companyCode.Trim().ToUpperInvariant(),
             ["p_client_code"] = clientCode.Trim().ToUpperInvariant()
@@ -1974,7 +2299,7 @@ public partial class SupabaseStorageService : IStorageService
 
     public async Task<ClientDeal?> GetClientPortalProjectAsync(string companyCode, string clientCode, Guid dealId)
     {
-        var rows = await _supabase.Rpc("client_portal_get_project", new Dictionary<string, object>
+        var rows = await RpcAsync("client_portal_get_project", new Dictionary<string, object>
         {
             ["p_company_code"] = companyCode.Trim().ToUpperInvariant(),
             ["p_client_code"] = clientCode.Trim().ToUpperInvariant(),
@@ -2188,7 +2513,7 @@ public partial class SupabaseStorageService : IStorageService
     public async Task<Guid> ClientPortalAddDocumentLinkAsync(
         string companyCode, string clientCode, Guid dealId, string documentName, string fileUrl)
     {
-        var rows = await _supabase.Rpc("client_portal_add_document_link", new Dictionary<string, object>
+        var rows = await RpcAsync("client_portal_add_document_link", new Dictionary<string, object>
         {
             ["p_company_code"] = companyCode.Trim().ToUpperInvariant(),
             ["p_client_code"] = clientCode.Trim().ToUpperInvariant(),
@@ -2205,7 +2530,7 @@ public partial class SupabaseStorageService : IStorageService
     public async Task<Guid> ClientPortalRegisterDocumentAsync(
         string companyCode, string clientCode, Guid dealId, string documentName, string fileUrl)
     {
-        var rows = await _supabase.Rpc("client_portal_register_document", new Dictionary<string, object>
+        var rows = await RpcAsync("client_portal_register_document", new Dictionary<string, object>
         {
             ["p_company_code"] = companyCode.Trim().ToUpperInvariant(),
             ["p_client_code"] = clientCode.Trim().ToUpperInvariant(),
@@ -2225,7 +2550,7 @@ public partial class SupabaseStorageService : IStorageService
         var (bytes, ext) = await ReadPickerFileAsync(file);
         var filePath = $"project_documents/{companyId}/{dealId}/client_{Guid.NewGuid()}{ext}";
         await _supabase.Storage.From("workforce-media").Upload(bytes, filePath);
-        var fileUrl = BuildWorkforceMediaUrl(filePath);
+        var fileUrl = await ResolveWorkforceMediaUrlAsync(filePath);
         var id = await ClientPortalRegisterDocumentAsync(companyCode, clientCode, dealId, documentName, fileUrl);
         return new ProjectDocument
         {
@@ -2242,7 +2567,7 @@ public partial class SupabaseStorageService : IStorageService
     public async Task<AppMessage> ClientPortalSendMessageAsync(
         string companyCode, string clientCode, Guid dealId, string body)
     {
-        var rows = await _supabase.Rpc("client_portal_send_message", new Dictionary<string, object>
+        var rows = await RpcAsync("client_portal_send_message", new Dictionary<string, object>
         {
             ["p_company_code"] = companyCode.Trim().ToUpperInvariant(),
             ["p_client_code"] = clientCode.Trim().ToUpperInvariant(),
@@ -2427,7 +2752,7 @@ public partial class SupabaseStorageService : IStorageService
         var (bytes, ext) = await ReadPickerFileAsync(file);
         var filePath = $"project_documents/{companyId}/{dealId}/{Guid.NewGuid()}{ext}";
         await _supabase.Storage.From("workforce-media").Upload(bytes, filePath);
-        var fileUrl = BuildWorkforceMediaUrl(filePath);
+        var fileUrl = await ResolveWorkforceMediaUrlAsync(filePath);
 
         var doc = new ProjectDocument
         {
@@ -2549,7 +2874,7 @@ public partial class SupabaseStorageService : IStorageService
         {
             try
             {
-                var rpc = await _supabase.Rpc("employee_get_job_documents", new Dictionary<string, object>
+                var rpc = await RpcAsync("employee_get_job_documents", new Dictionary<string, object>
                 {
                     ["p_company_id"] = companyId.Value.ToString(),
                     ["p_employee_id"] = employeeId.Value.ToString(),
@@ -2577,11 +2902,11 @@ public partial class SupabaseStorageService : IStorageService
         var (bytes, ext) = await ReadPickerFileAsync(file);
         var filePath = $"job_documents/{companyId}/{jobId}/{Guid.NewGuid()}{ext}";
         await _supabase.Storage.From("workforce-media").Upload(bytes, filePath);
-        var fileUrl = BuildWorkforceMediaUrl(filePath);
+        var fileUrl = await ResolveWorkforceMediaUrlAsync(filePath);
 
         if (IsCodeLoginSession() && employeeId.HasValue)
         {
-            var rpc = await _supabase.Rpc("employee_insert_job_document", new Dictionary<string, object>
+            var rpc = await RpcAsync("employee_insert_job_document", new Dictionary<string, object>
             {
                 ["p_company_id"] = companyId.ToString(),
                 ["p_employee_id"] = employeeId.Value.ToString(),
@@ -2627,8 +2952,13 @@ public partial class SupabaseStorageService : IStorageService
         var (bytes, ext) = await ReadPickerFileAsync(file);
         var safePhase = string.IsNullOrWhiteSpace(phase) ? "misc" : phase.Trim().ToLowerInvariant();
         var filePath = $"job_photos/{companyId}/{jobId}/{safePhase}/{Guid.NewGuid()}{ext}";
+        var employeeId = _state.CurrentEmployee?.Id ?? Guid.Empty;
+        if (employeeId != Guid.Empty)
+            await PrepareWorkerMediaUploadAsync(companyId, employeeId, filePath, "job_photo");
         await _supabase.Storage.From("workforce-media").Upload(bytes, filePath);
-        return BuildWorkforceMediaUrl(filePath);
+        if (employeeId != Guid.Empty)
+            await ConsumeWorkerMediaUploadAsync(companyId, employeeId, filePath);
+        return await ResolveWorkforceMediaUrlAsync(filePath);
     }
 
     public async Task AppendJobPhotoAsync(Guid companyId, Guid jobId, string phase, string photoUrl, Guid? employeeId = null)
@@ -2638,7 +2968,7 @@ public partial class SupabaseStorageService : IStorageService
         {
             if (employeeId.HasValue)
             {
-                await _supabase.Rpc("employee_append_job_photo", new Dictionary<string, object>
+                await RpcAsync("employee_append_job_photo", new Dictionary<string, object>
                 {
                     ["p_company_id"] = companyId.ToString(),
                     ["p_employee_id"] = employeeId.Value.ToString(),
@@ -2649,7 +2979,7 @@ public partial class SupabaseStorageService : IStorageService
                 return;
             }
 
-            await _supabase.Rpc("append_job_photo", new Dictionary<string, object>
+            await RpcAsync("append_job_photo", new Dictionary<string, object>
             {
                 ["p_company_id"] = companyId.ToString(),
                 ["p_job_id"] = jobId.ToString(),
@@ -2795,7 +3125,7 @@ public partial class SupabaseStorageService : IStorageService
             {
                 try
                 {
-                    var rpc = await _supabase.Rpc("employee_get_company_approved_leave", new Dictionary<string, object>
+                    var rpc = await RpcAsync("employee_get_company_approved_leave", new Dictionary<string, object>
                     {
                         ["p_company_id"] = companyId.ToString(),
                         ["p_employee_id"] = codeEmployeeId.Value.ToString()
@@ -2837,7 +3167,7 @@ public partial class SupabaseStorageService : IStorageService
 
     public async Task<List<LeaveRequest>> GetMyLeaveRequestsAsync(Guid companyId, Guid employeeId)
     {
-        var rpcResult = await _supabase.Rpc("employee_get_leave_requests", new Dictionary<string, object>
+        var rpcResult = await RpcAsync("employee_get_leave_requests", new Dictionary<string, object>
         {
             ["p_company_id"]  = companyId.ToString(),
             ["p_employee_id"] = employeeId.ToString()
@@ -2868,7 +3198,7 @@ public partial class SupabaseStorageService : IStorageService
     public async Task<LeaveRequest> CreateLeaveRequestAsync(LeaveRequest request)
     {
         // Use a SECURITY DEFINER RPC so anon (code-login) employees bypass RLS
-        var rpcResult = await _supabase.Rpc("employee_submit_leave_request", new Dictionary<string, object>
+        var rpcResult = await RpcAsync("employee_submit_leave_request", new Dictionary<string, object>
         {
             ["p_company_id"]      = request.CompanyId.ToString(),
             ["p_employee_id"]     = request.EmployeeId.ToString(),
@@ -2903,7 +3233,7 @@ public partial class SupabaseStorageService : IStorageService
 
     public async Task<LeaveRequest> UpdatePendingLeaveAsync(LeaveRequest request)
     {
-        var rpcResult = await _supabase.Rpc("employee_update_leave_request", new Dictionary<string, object>
+        var rpcResult = await RpcAsync("employee_update_leave_request", new Dictionary<string, object>
         {
             ["p_id"]             = request.Id.ToString(),
             ["p_employee_id"]    = request.EmployeeId.ToString(),
@@ -2943,12 +3273,18 @@ public partial class SupabaseStorageService : IStorageService
             var ext = Path.GetExtension(localFilePath);
             var fileName = $"leave_attachments/{employeeId}/{Guid.NewGuid()}{ext}";
             var bytes = await File.ReadAllBytesAsync(localFilePath);
+            var companyId = _state.CurrentEmployee?.CompanyId ?? Guid.Empty;
+            if (companyId != Guid.Empty)
+                await PrepareWorkerMediaUploadAsync(companyId, employeeId, fileName, "leave_attachment");
 
             await _supabase.Storage
                 .From("workforce-media")
                 .Upload(bytes, fileName);
 
-            return $"{KaiFlow.Timesheets.Constants.SupabaseConfig.Url}/storage/v1/object/public/workforce-media/{fileName}";
+            if (companyId != Guid.Empty)
+                await ConsumeWorkerMediaUploadAsync(companyId, employeeId, fileName);
+
+            return await ResolveWorkforceMediaUrlAsync(fileName);
         }
         catch
         {
@@ -2963,7 +3299,7 @@ public partial class SupabaseStorageService : IStorageService
 
     public async Task<List<EmployeeDocument>> GetMyDocumentsAsync(Guid companyId, Guid employeeId)
     {
-        var result = await _supabase.Rpc("employee_get_documents", new Dictionary<string, object>
+        var result = await RpcAsync("employee_get_documents", new Dictionary<string, object>
         {
             ["p_company_id"]  = companyId.ToString(),
             ["p_employee_id"] = employeeId.ToString()
@@ -2985,17 +3321,19 @@ public partial class SupabaseStorageService : IStorageService
 
         try
         {
+            await PrepareWorkerMediaUploadAsync(companyId, employeeId, filePath, "employee_document");
             await _supabase.Storage.From("workforce-media").Upload(bytes, filePath);
+            await ConsumeWorkerMediaUploadAsync(companyId, employeeId, filePath);
         }
         catch (Exception ex)
         {
             throw new Exception($"Could not upload file to storage: {ex.Message}", ex);
         }
 
-        var fileUrl = BuildWorkforceMediaUrl(filePath);
+        var fileUrl = await ResolveWorkforceMediaUrlAsync(filePath);
         if (uploadedByRole == "employee")
         {
-            var rpcResult = await _supabase.Rpc("employee_submit_document", new Dictionary<string, object>
+            var rpcResult = await RpcAsync("employee_submit_document", new Dictionary<string, object>
             {
                 ["p_company_id"]    = companyId.ToString(),
                 ["p_employee_id"]   = employeeId.ToString(),
@@ -3018,14 +3356,16 @@ public partial class SupabaseStorageService : IStorageService
 
         try
         {
+            await PrepareWorkerMediaUploadAsync(existing.CompanyId, existing.EmployeeId, filePath, "employee_document");
             await _supabase.Storage.From("workforce-media").Upload(bytes, filePath);
+            await ConsumeWorkerMediaUploadAsync(existing.CompanyId, existing.EmployeeId, filePath);
         }
         catch (Exception ex)
         {
             throw new Exception($"Could not upload replacement file: {ex.Message}", ex);
         }
 
-        var fileUrl = BuildWorkforceMediaUrl(filePath);
+        var fileUrl = await ResolveWorkforceMediaUrlAsync(filePath);
         var oldUrl = existing.FileUrl;
 
         EmployeeDocument updated;
@@ -3099,7 +3439,7 @@ public partial class SupabaseStorageService : IStorageService
         Guid documentId, Guid companyId, Guid employeeId,
         string documentType, string documentName, string fileUrl)
     {
-        var rpcResult = await _supabase.Rpc("employee_update_document", new Dictionary<string, object>
+        var rpcResult = await RpcAsync("employee_update_document", new Dictionary<string, object>
         {
             ["p_document_id"]   = documentId.ToString(),
             ["p_company_id"]    = companyId.ToString(),
@@ -3204,7 +3544,7 @@ public partial class SupabaseStorageService : IStorageService
         {
             try
             {
-                var rpc = await _supabase.Rpc("employee_get_daily_absences", new Dictionary<string, object>
+                var rpc = await RpcAsync("employee_get_daily_absences", new Dictionary<string, object>
                 {
                     ["p_company_id"] = companyId.ToString(),
                     ["p_employee_id"] = employeeId.Value.ToString(),
@@ -3235,7 +3575,7 @@ public partial class SupabaseStorageService : IStorageService
 
     public async Task<DailyAbsence> ReportAbsenceAsync(DailyAbsence absence)
     {
-        var rpcResult = await _supabase.Rpc("employee_report_absence", new Dictionary<string, object>
+        var rpcResult = await RpcAsync("employee_report_absence", new Dictionary<string, object>
         {
             ["p_company_id"]  = absence.CompanyId.ToString(),
             ["p_employee_id"] = absence.EmployeeId.ToString(),
@@ -3274,6 +3614,17 @@ public partial class SupabaseStorageService : IStorageService
 
         var result = await _supabase.From<LeaveRequest>().Update(request);
         return result.Models.First();
+    }
+
+    public async Task DecideLeaveRequestAsync(Guid companyId, Guid leaveRequestId, string decision, string? note = null)
+    {
+        await RpcAsync("decide_leave_request", new Dictionary<string, object?>
+        {
+            ["p_company_id"]        = companyId.ToString(),
+            ["p_leave_request_id"]  = leaveRequestId.ToString(),
+            ["p_decision"]          = decision,
+            ["p_note"]              = note
+        });
     }
 
     // ─── Labor ────────────────────────────────────────────────────────────────
@@ -3328,7 +3679,7 @@ public partial class SupabaseStorageService : IStorageService
                 if (jobId.HasValue)
                     args["p_job_id"] = jobId.Value.ToString();
 
-                var rpc = await _supabase.Rpc("employee_get_incidents", args);
+                var rpc = await RpcAsync("employee_get_incidents", args);
                 var list = DeserializeRpcList<IncidentReport>(rpc?.Content);
                 if (list.Count > 0 || IsCodeLoginSession())
                     return list;
@@ -3366,7 +3717,7 @@ public partial class SupabaseStorageService : IStorageService
         {
             try
             {
-                var rpc = await _supabase.Rpc("employee_get_incident", new Dictionary<string, object>
+                var rpc = await RpcAsync("employee_get_incident", new Dictionary<string, object>
                 {
                     ["p_company_id"] = companyId.Value.ToString(),
                     ["p_employee_id"] = employeeId.Value.ToString(),
@@ -3451,7 +3802,7 @@ public partial class SupabaseStorageService : IStorageService
             if (!string.IsNullOrWhiteSpace(incident.LocationText))
                 args["p_location_text"] = incident.LocationText;
 
-            var rpc = await _supabase.Rpc("employee_insert_incident", args);
+            var rpc = await RpcAsync("employee_insert_incident", args);
             var created = ParseIncidentFromRpc(rpc?.Content);
             if (created != null)
             {
@@ -3505,7 +3856,7 @@ public partial class SupabaseStorageService : IStorageService
                 else if (incident.AssigneeId == null && incident.IsClosed)
                     args["p_clear_assignee"] = false;
 
-                var rpc = await _supabase.Rpc("employee_update_incident", args);
+                var rpc = await RpcAsync("employee_update_incident", args);
                 var updated = ParseIncidentFromRpc(rpc?.Content);
                 if (updated != null)
                 {
@@ -3550,7 +3901,7 @@ public partial class SupabaseStorageService : IStorageService
         {
             try
             {
-                var rpc = await _supabase.Rpc("employee_get_incident_comments", new Dictionary<string, object>
+                var rpc = await RpcAsync("employee_get_incident_comments", new Dictionary<string, object>
                 {
                     ["p_company_id"] = companyId.ToString(),
                     ["p_employee_id"] = employeeId.ToString(),
@@ -3577,7 +3928,7 @@ public partial class SupabaseStorageService : IStorageService
     {
         try
         {
-            var rpc = await _supabase.Rpc("employee_add_incident_comment", new Dictionary<string, object>
+            var rpc = await RpcAsync("employee_add_incident_comment", new Dictionary<string, object>
             {
                 ["p_company_id"] = companyId.ToString(),
                 ["p_employee_id"] = employeeId.ToString(),
@@ -3611,7 +3962,7 @@ public partial class SupabaseStorageService : IStorageService
         {
             try
             {
-                var rpc = await _supabase.Rpc("employee_get_incident_status_history", new Dictionary<string, object>
+                var rpc = await RpcAsync("employee_get_incident_status_history", new Dictionary<string, object>
                 {
                     ["p_company_id"] = companyId.ToString(),
                     ["p_employee_id"] = employeeId.ToString(),
@@ -3661,7 +4012,7 @@ public partial class SupabaseStorageService : IStorageService
     {
         try
         {
-            var rpc = await _supabase.Rpc("employee_submit_job_feedback", new Dictionary<string, object>
+            var rpc = await RpcAsync("employee_submit_job_feedback", new Dictionary<string, object>
             {
                 ["p_company_id"] = companyId.ToString(),
                 ["p_employee_id"] = employeeId.ToString(),
@@ -3703,7 +4054,7 @@ public partial class SupabaseStorageService : IStorageService
         {
             try
             {
-                var rpc = await _supabase.Rpc("employee_get_job_feedback", new Dictionary<string, object>
+                var rpc = await RpcAsync("employee_get_job_feedback", new Dictionary<string, object>
                 {
                     ["p_company_id"] = companyId.ToString(),
                     ["p_employee_id"] = employeeId.ToString(),
@@ -3751,7 +4102,7 @@ public partial class SupabaseStorageService : IStorageService
         {
             try
             {
-                var rpc = await _supabase.Rpc("employee_get_inventory_items", new Dictionary<string, object>
+                var rpc = await RpcAsync("employee_get_inventory_items", new Dictionary<string, object>
                 {
                     ["p_company_id"] = companyId.ToString(),
                 });
@@ -3804,7 +4155,7 @@ public partial class SupabaseStorageService : IStorageService
         {
             try
             {
-                var rpc = await _supabase.Rpc("employee_get_inventory_usage_for_job", new Dictionary<string, object>
+                var rpc = await RpcAsync("employee_get_inventory_usage_for_job", new Dictionary<string, object>
                 {
                     ["p_company_id"] = companyId.ToString(),
                     ["p_job_id"] = jobId.Value.ToString(),
@@ -3843,7 +4194,7 @@ public partial class SupabaseStorageService : IStorageService
         {
             try
             {
-                var rpc = await _supabase.Rpc("employee_get_inventory_usage_for_job", new Dictionary<string, object>
+                var rpc = await RpcAsync("employee_get_inventory_usage_for_job", new Dictionary<string, object>
                 {
                     ["p_company_id"] = usage.CompanyId.ToString(),
                     ["p_job_id"] = jobId.ToString(),
@@ -3862,7 +4213,7 @@ public partial class SupabaseStorageService : IStorageService
                     .Select(kv => new { inventory_item_id = kv.Key.ToString(), quantity = kv.Value.ToString() })
                     .ToArray();
 
-                await _supabase.Rpc("employee_set_inventory_usage_for_job", new Dictionary<string, object>
+                await RpcAsync("employee_set_inventory_usage_for_job", new Dictionary<string, object>
                 {
                     ["p_company_id"] = usage.CompanyId.ToString(),
                     ["p_employee_id"] = employeeId.ToString(),
@@ -3899,7 +4250,7 @@ public partial class SupabaseStorageService : IStorageService
         {
             try
             {
-                await _supabase.Rpc("hr_allocate_inventory_to_job", new Dictionary<string, object>
+                await RpcAsync("hr_allocate_inventory_to_job", new Dictionary<string, object>
                 {
                     ["p_company_id"] = companyId.ToString(),
                     ["p_job_id"] = jobId.ToString(),
@@ -3951,13 +4302,23 @@ public partial class SupabaseStorageService : IStorageService
         return result.Models;
     }
 
+    public async Task<Contractor?> GetContractorByIdAsync(Guid companyId, Guid contractorId)
+    {
+        var result = await _supabase
+            .From<Contractor>()
+            .Filter("company_id", Supabase.Postgrest.Constants.Operator.Equals, companyId.ToString())
+            .Filter("id", Supabase.Postgrest.Constants.Operator.Equals, contractorId.ToString())
+            .Get();
+        return result.Models.FirstOrDefault();
+    }
+
     public async Task<List<Contractor>> GetLinkedContractorsForEmployeeAsync(Guid companyId, Guid employeeId)
     {
         if (IsCodeLoginSession())
         {
             try
             {
-                var rpc = await _supabase.Rpc("employee_get_linked_contractors", new Dictionary<string, object>
+                var rpc = await RpcAsync("employee_get_linked_contractors", new Dictionary<string, object>
                 {
                     ["p_company_id"] = companyId.ToString(),
                     ["p_employee_id"] = employeeId.ToString(),
@@ -4007,32 +4368,54 @@ public partial class SupabaseStorageService : IStorageService
         if (string.IsNullOrWhiteSpace(companyCode) || string.IsNullOrWhiteSpace(contractorCode))
             return null;
 
-        var rows = await _supabase.Rpc("contractor_resolve_by_code", new Dictionary<string, object>
+        try
         {
-            ["p_company_code"] = companyCode.Trim().ToUpperInvariant(),
-            ["p_contractor_code"] = contractorCode.Trim().ToUpperInvariant()
+            var rows = await RpcAsync("contractor_resolve_by_code", new Dictionary<string, object>
+            {
+                ["p_company_code"]    = companyCode.Trim().ToUpperInvariant(),
+                ["p_contractor_code"] = contractorCode.Trim().ToUpperInvariant()
+            });
+
+            var content = rows?.Content;
+            if (string.IsNullOrWhiteSpace(content) || content == "[]") return null;
+
+            using var doc = System.Text.Json.JsonDocument.Parse(content);
+            var el = doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Array
+                ? doc.RootElement[0]
+                : doc.RootElement;
+
+            return new ContractorPortalLogin
+            {
+                ContractorId   = el.TryGetProperty("contractor_id",   out var cid)  ? Guid.Parse(cid.GetString()!)  : Guid.Empty,
+                CompanyId      = el.TryGetProperty("company_id",      out var coid) ? Guid.Parse(coid.GetString()!) : Guid.Empty,
+                CompanyCode    = el.TryGetProperty("company_code",    out var cc)   ? cc.GetString()  ?? "" : "",
+                ContractorCode = el.TryGetProperty("contractor_code", out var ctc)  ? ctc.GetString() ?? "" : "",
+                ContractorName = el.TryGetProperty("contractor_name", out var cn)   ? cn.GetString()  ?? "" : ""
+            };
+        }
+        catch (Exception ex) when (ex.Message.Contains("PORTAL_CODE_EXPIRED"))
+        {
+            throw new InvalidOperationException(
+                "Your portal code has expired. Contact your administrator.", ex);
+        }
+    }
+
+    public async Task<string> HrRotateContractorCodeAsync(Guid companyId, Guid contractorId)
+    {
+        var result = await RpcAsync("hr_rotate_contractor_code", new Dictionary<string, object>
+        {
+            ["p_company_id"]    = companyId.ToString(),
+            ["p_contractor_id"] = contractorId.ToString()
         });
-
-        var content = rows?.Content;
-        if (string.IsNullOrWhiteSpace(content) || content == "[]") return null;
-
-        using var doc = System.Text.Json.JsonDocument.Parse(content);
-        var el = doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Array
-            ? doc.RootElement[0]
-            : doc.RootElement;
-
-        return new ContractorPortalLogin
-        {
-            ContractorId = el.TryGetProperty("contractor_id", out var cid) ? Guid.Parse(cid.GetString()!) : Guid.Empty,
-            CompanyId = el.TryGetProperty("company_id", out var coid) ? Guid.Parse(coid.GetString()!) : Guid.Empty,
-            CompanyCode = el.TryGetProperty("company_code", out var cc) ? cc.GetString() ?? "" : "",
-            ContractorCode = el.TryGetProperty("contractor_code", out var ctc) ? ctc.GetString() ?? "" : "",
-            ContractorName = el.TryGetProperty("contractor_name", out var cn) ? cn.GetString() ?? "" : ""
-        };
+        var content = result?.Content;
+        if (string.IsNullOrWhiteSpace(content))
+            throw new InvalidOperationException("Portal code rotation failed.");
+        return content.Trim('"');
     }
 
     public async Task<Contractor> UpdateContractorAsync(Contractor contractor)
     {
+        contractor.UpdatedAt = DateTime.UtcNow;
         var result = await _supabase.From<Contractor>().Update(contractor);
         return result.Models.First();
     }
@@ -4056,7 +4439,7 @@ public partial class SupabaseStorageService : IStorageService
 
     public async Task<List<JobSiteVisit>> GetJobSiteVisitsAsync(Guid jobId)
     {
-        var rows = await _supabase.Rpc("get_job_site_visits", new Dictionary<string, object>
+        var rows = await RpcAsync("get_job_site_visits", new Dictionary<string, object>
         {
             ["p_job_id"] = jobId.ToString()
         });
@@ -4065,7 +4448,7 @@ public partial class SupabaseStorageService : IStorageService
 
     public async Task<JobSiteVisit?> EmployeeJobSiteOpenVisitAsync(Guid companyId, Guid employeeId)
     {
-        var rows = await _supabase.Rpc("employee_job_site_open_visit", new Dictionary<string, object>
+        var rows = await RpcAsync("employee_job_site_open_visit", new Dictionary<string, object>
         {
             ["p_company_id"] = companyId.ToString(),
             ["p_employee_id"] = employeeId.ToString()
@@ -4078,7 +4461,7 @@ public partial class SupabaseStorageService : IStorageService
         double? lat, double? lng, string? address, string? reportedByName = null, string? notes = null)
     {
         var args = BuildSiteVisitArgs(companyId, employeeId, jobId, lat, lng, address, reportedByName, notes);
-        var rows = await _supabase.Rpc("employee_job_site_sign_in", args);
+        var rows = await RpcAsync("employee_job_site_sign_in", args);
         return ParseJobSiteVisit(rows?.Content) ?? throw new InvalidOperationException("Sign-in failed.");
     }
 
@@ -4096,7 +4479,7 @@ public partial class SupabaseStorageService : IStorageService
         if (lng.HasValue) args["p_longitude"] = lng.Value;
         if (address != null) args["p_address"] = address;
         if (notes != null) args["p_notes"] = notes;
-        var rows = await _supabase.Rpc("employee_job_site_sign_out", args);
+        var rows = await RpcAsync("employee_job_site_sign_out", args);
         return ParseJobSiteVisit(rows?.Content) ?? throw new InvalidOperationException("Sign-out failed.");
     }
 
@@ -4111,7 +4494,7 @@ public partial class SupabaseStorageService : IStorageService
                 ["p_employee_id"] = employeeId.ToString()
             };
             if (notes != null) args["p_notes"] = notes;
-            var rows = await _supabase.Rpc("employee_job_site_sign_out_open_visit", args);
+            var rows = await RpcAsync("employee_job_site_sign_out_open_visit", args);
             return ParseJobSiteVisit(rows?.Content);
         }
         catch
@@ -4125,7 +4508,7 @@ public partial class SupabaseStorageService : IStorageService
         double? lat, double? lng, string? address, string? reportedByName = null, string? notes = null)
     {
         var args = BuildSiteVisitArgs(companyId, employeeId, jobId, lat, lng, address, reportedByName, notes);
-        var rows = await _supabase.Rpc("employee_job_site_switch_to_job", args);
+        var rows = await RpcAsync("employee_job_site_switch_to_job", args);
         return ParseJobSiteVisit(rows?.Content) ?? throw new InvalidOperationException("Could not switch to this job site.");
     }
 
@@ -4133,7 +4516,7 @@ public partial class SupabaseStorageService : IStorageService
 
     public async Task<List<Job>> GetContractorPortalJobsAsync(string companyCode, string contractorCode)
     {
-        var rows = await _supabase.Rpc("contractor_portal_list_jobs", new Dictionary<string, object>
+        var rows = await RpcAsync("contractor_portal_list_jobs", new Dictionary<string, object>
         {
             ["p_company_code"] = companyCode.Trim().ToUpperInvariant(),
             ["p_contractor_code"] = contractorCode.Trim().ToUpperInvariant()
@@ -4143,7 +4526,7 @@ public partial class SupabaseStorageService : IStorageService
 
     public async Task<JobSiteVisit?> ContractorPortalOpenVisitAsync(string companyCode, string contractorCode)
     {
-        var rows = await _supabase.Rpc("contractor_portal_open_visit", new Dictionary<string, object>
+        var rows = await RpcAsync("contractor_portal_open_visit", new Dictionary<string, object>
         {
             ["p_company_code"] = companyCode.Trim().ToUpperInvariant(),
             ["p_contractor_code"] = contractorCode.Trim().ToUpperInvariant()
@@ -4166,7 +4549,7 @@ public partial class SupabaseStorageService : IStorageService
         if (address != null) args["p_address"] = address;
         if (reportedByName != null) args["p_reported_by_name"] = reportedByName;
         if (notes != null) args["p_notes"] = notes;
-        var rows = await _supabase.Rpc("contractor_portal_site_sign_in", args);
+        var rows = await RpcAsync("contractor_portal_site_sign_in", args);
         return ParseJobSiteVisit(rows?.Content) ?? throw new InvalidOperationException("Sign-in failed.");
     }
 
@@ -4184,7 +4567,7 @@ public partial class SupabaseStorageService : IStorageService
         if (lng.HasValue) args["p_longitude"] = lng.Value;
         if (address != null) args["p_address"] = address;
         if (notes != null) args["p_notes"] = notes;
-        var rows = await _supabase.Rpc("contractor_portal_site_sign_out", args);
+        var rows = await RpcAsync("contractor_portal_site_sign_out", args);
         return ParseJobSiteVisit(rows?.Content) ?? throw new InvalidOperationException("Sign-out failed.");
     }
 
@@ -4197,7 +4580,7 @@ public partial class SupabaseStorageService : IStorageService
             ["p_contractor_code"] = contractorCode.Trim().ToUpperInvariant()
         };
         if (jobId.HasValue) args["p_job_id"] = jobId.Value.ToString();
-        var rows = await _supabase.Rpc("contractor_portal_visit_history", args);
+        var rows = await RpcAsync("contractor_portal_visit_history", args);
         return ParseJobSiteVisits(rows?.Content);
     }
 
@@ -4205,7 +4588,7 @@ public partial class SupabaseStorageService : IStorageService
         string companyCode, string contractorCode, Guid jobId,
         string description, string severity = "low", string? reportedByName = null)
     {
-        var rows = await _supabase.Rpc("contractor_portal_create_incident", new Dictionary<string, object>
+        var rows = await RpcAsync("contractor_portal_create_incident", new Dictionary<string, object>
         {
             ["p_company_code"] = companyCode.Trim().ToUpperInvariant(),
             ["p_contractor_code"] = contractorCode.Trim().ToUpperInvariant(),
@@ -4223,7 +4606,7 @@ public partial class SupabaseStorageService : IStorageService
     public async Task ContractorPortalAppendJobPhotoAsync(
         string companyCode, string contractorCode, Guid jobId, string phase, string photoUrl)
     {
-        await _supabase.Rpc("contractor_portal_append_job_photo", new Dictionary<string, object>
+        await RpcAsync("contractor_portal_append_job_photo", new Dictionary<string, object>
         {
             ["p_company_code"] = companyCode.Trim().ToUpperInvariant(),
             ["p_contractor_code"] = contractorCode.Trim().ToUpperInvariant(),
@@ -4236,7 +4619,7 @@ public partial class SupabaseStorageService : IStorageService
     public async Task<List<AppMessage>> ContractorPortalGetJobMessagesAsync(
         string companyCode, string contractorCode, Guid jobId)
     {
-        var rows = await _supabase.Rpc("contractor_portal_get_job_messages", new Dictionary<string, object>
+        var rows = await RpcAsync("contractor_portal_get_job_messages", new Dictionary<string, object>
         {
             ["p_company_code"] = companyCode.Trim().ToUpperInvariant(),
             ["p_contractor_code"] = contractorCode.Trim().ToUpperInvariant(),
@@ -4250,7 +4633,7 @@ public partial class SupabaseStorageService : IStorageService
     public async Task<AppMessage> ContractorPortalSendJobMessageAsync(
         string companyCode, string contractorCode, Guid jobId, string body, string? senderName = null)
     {
-        var rows = await _supabase.Rpc("contractor_portal_send_job_message", new Dictionary<string, object>
+        var rows = await RpcAsync("contractor_portal_send_job_message", new Dictionary<string, object>
         {
             ["p_company_code"] = companyCode.Trim().ToUpperInvariant(),
             ["p_contractor_code"] = contractorCode.Trim().ToUpperInvariant(),
@@ -4427,7 +4810,7 @@ public partial class SupabaseStorageService : IStorageService
         {
             try
             {
-                var rpc = await _supabase.Rpc("employee_get_work_teams", new Dictionary<string, object>
+                var rpc = await RpcAsync("employee_get_work_teams", new Dictionary<string, object>
                 {
                     ["p_company_id"] = companyId.ToString(),
                     ["p_employee_id"] = forEmployeeId.Value.ToString()
@@ -4468,7 +4851,7 @@ public partial class SupabaseStorageService : IStorageService
         {
             try
             {
-                var rpc = await _supabase.Rpc("employee_get_message_threads_for_worker", new Dictionary<string, object>
+                var rpc = await RpcAsync("employee_get_message_threads_for_worker", new Dictionary<string, object>
                 {
                     ["p_company_id"] = companyId.ToString(),
                     ["p_employee_id"] = userId.ToString(),
@@ -4582,7 +4965,7 @@ public partial class SupabaseStorageService : IStorageService
                 if (!isCompanyFeed)
                     args["p_thread_id"] = threadId.ToString();
 
-                var rpc = await _supabase.Rpc(rpcName, args);
+                var rpc = await RpcAsync(rpcName, args);
                 var messages = DeserializeRpcList<AppMessage>(rpc?.Content);
                 messages.Reverse();
                 return messages;
@@ -4617,7 +5000,7 @@ public partial class SupabaseStorageService : IStorageService
             {
                 if (isCompanyFeed)
                 {
-                    await _supabase.Rpc("employee_send_company_feed_message", new Dictionary<string, object>
+                    await RpcAsync("employee_send_company_feed_message", new Dictionary<string, object>
                     {
                         ["p_company_id"] = message.CompanyId.ToString(),
                         ["p_sender_employee_id"] = message.SenderId.ToString(),
@@ -4626,7 +5009,7 @@ public partial class SupabaseStorageService : IStorageService
                 }
                 else
                 {
-                    await _supabase.Rpc("employee_send_thread_message", new Dictionary<string, object>
+                    await RpcAsync("employee_send_thread_message", new Dictionary<string, object>
                     {
                         ["p_company_id"] = message.CompanyId.ToString(),
                         ["p_thread_id"] = message.ThreadId.ToString(),
@@ -4666,7 +5049,7 @@ public partial class SupabaseStorageService : IStorageService
             {
                 var creatorId = thread.ParticipantIds[0];
                 var peerId = thread.ParticipantIds[1];
-                var rpc = await _supabase.Rpc("employee_get_or_create_direct_thread_peer", new Dictionary<string, object>
+                var rpc = await RpcAsync("employee_get_or_create_direct_thread_peer", new Dictionary<string, object>
                 {
                     ["p_company_id"] = thread.CompanyId.ToString(),
                     ["p_creator_id"] = creatorId.ToString(),
@@ -4712,7 +5095,7 @@ public partial class SupabaseStorageService : IStorageService
         {
             try
             {
-                var rpc = await _supabase.Rpc("employee_get_job_thread", new Dictionary<string, object>
+                var rpc = await RpcAsync("employee_get_job_thread", new Dictionary<string, object>
                 {
                     ["p_company_id"] = companyId.ToString(),
                     ["p_employee_id"] = employeeId.ToString(),
@@ -4787,6 +5170,15 @@ public partial class SupabaseStorageService : IStorageService
         return result.Models.First();
     }
 
+    public async Task RejectPaymentRunAsync(Guid companyId, Guid paymentApprovalId)
+    {
+        await RpcAsync("reject_payment_run", new Dictionary<string, object>
+        {
+            ["p_company_id"]           = companyId.ToString(),
+            ["p_payment_approval_id"]  = paymentApprovalId.ToString()
+        });
+    }
+
     public async Task<PaymentApproval> UpdatePaymentAsync(PaymentApproval payment)
     {
         var result = await _supabase.From<PaymentApproval>().Update(payment);
@@ -4807,7 +5199,7 @@ public partial class SupabaseStorageService : IStorageService
 
     public async Task<List<PaymentApproval>> GetMyPayslipsAsync(Guid companyId, Guid employeeId)
     {
-        var result = await _supabase.Rpc("employee_get_payslips", new Dictionary<string, object>
+        var result = await RpcAsync("employee_get_payslips", new Dictionary<string, object>
         {
             ["p_company_id"]  = companyId.ToString(),
             ["p_employee_id"] = employeeId.ToString()
@@ -4864,7 +5256,7 @@ public partial class SupabaseStorageService : IStorageService
             var args = new Dictionary<string, object> { ["p_company_id"] = companyId.ToString() };
             if (scopeEmployeeId.HasValue)
                 args["p_scope_employee_id"] = scopeEmployeeId.Value.ToString();
-            var rpc = await _supabase.Rpc("sync_operational_pa_tasks", args);
+            var rpc = await RpcAsync("sync_operational_pa_tasks", args);
             return int.TryParse(rpc?.Content?.Trim(), out var n) ? n : 0;
         }
         catch
@@ -4879,7 +5271,7 @@ public partial class SupabaseStorageService : IStorageService
         {
             try
             {
-                var rpc = await _supabase.Rpc("employee_get_pa_tasks", new Dictionary<string, object>
+                var rpc = await RpcAsync("employee_get_pa_tasks", new Dictionary<string, object>
                 {
                     ["p_company_id"] = companyId.ToString(),
                     ["p_employee_id"] = employeeId.Value.ToString()
@@ -4978,7 +5370,7 @@ public partial class SupabaseStorageService : IStorageService
     {
         try
         {
-            var rpc = await _supabase.Rpc("employee_get_pa_settings", new Dictionary<string, object>
+            var rpc = await RpcAsync("employee_get_pa_settings", new Dictionary<string, object>
             {
                 ["p_company_id"] = companyId.ToString(),
                 ["p_employee_id"] = employeeId.ToString()
@@ -5017,7 +5409,7 @@ public partial class SupabaseStorageService : IStorageService
     {
         try
         {
-            await _supabase.Rpc("upsert_employee_pa_settings", new Dictionary<string, object>
+            await RpcAsync("upsert_employee_pa_settings", new Dictionary<string, object>
             {
                 ["p_employee_id"] = settings.EmployeeId.ToString(),
                 ["p_company_id"] = settings.CompanyId.ToString(),
@@ -5078,7 +5470,7 @@ public partial class SupabaseStorageService : IStorageService
     {
         try
         {
-            return _supabase.Rpc("enqueue_pa_task_notifications", new Dictionary<string, object>
+            return RpcAsync("enqueue_pa_task_notifications", new Dictionary<string, object>
             {
                 ["p_company_id"] = companyId.ToString()
             });
@@ -5117,7 +5509,7 @@ public partial class SupabaseStorageService : IStorageService
             if (draft.MeetingAt.HasValue)
                 args["p_meeting_at"] = draft.MeetingAt.Value.ToString("o");
 
-            var rpc = await _supabase.Rpc("employee_insert_pa_task", args);
+            var rpc = await RpcAsync("employee_insert_pa_task", args);
             if (Guid.TryParse(rpc?.Content?.Trim('"'), out var id))
             {
                 var created = (await GetPaTasksAsync(draft.CompanyId, employeeId)).FirstOrDefault(t => t.Id == id);
@@ -5140,7 +5532,7 @@ public partial class SupabaseStorageService : IStorageService
         {
             try
             {
-                await _supabase.Rpc("employee_update_pa_task_status", new Dictionary<string, object>
+                await RpcAsync("employee_update_pa_task_status", new Dictionary<string, object>
                 {
                     ["p_company_id"] = task.CompanyId.ToString(),
                     ["p_employee_id"] = employeeId.Value.ToString(),
@@ -5175,7 +5567,7 @@ public partial class SupabaseStorageService : IStorageService
         {
             try
             {
-                await _supabase.Rpc("employee_delete_pa_task", new Dictionary<string, object>
+                await RpcAsync("employee_delete_pa_task", new Dictionary<string, object>
                 {
                     ["p_company_id"] = companyId.ToString(),
                     ["p_employee_id"] = actingEmployeeId.Value.ToString(),
@@ -5237,7 +5629,7 @@ public partial class SupabaseStorageService : IStorageService
                     ["completed_at"] = task.CompletedAt?.ToString("o")
                 });
 
-                await _supabase.Rpc("employee_update_pa_task", new Dictionary<string, object>
+                await RpcAsync("employee_update_pa_task", new Dictionary<string, object>
                 {
                     ["p_company_id"] = task.CompanyId.ToString(),
                     ["p_employee_id"] = employeeId.Value.ToString(),
@@ -5261,7 +5653,7 @@ public partial class SupabaseStorageService : IStorageService
     {
         try
         {
-            await _supabase.Rpc("enqueue_pa_task_notifications", new Dictionary<string, object>
+            await RpcAsync("enqueue_pa_task_notifications", new Dictionary<string, object>
             {
                 ["p_company_id"] = companyId.ToString()
             });
@@ -5277,7 +5669,7 @@ public partial class SupabaseStorageService : IStorageService
     {
         try
         {
-            await _supabase.Rpc("employee_notify_manager_job_created", new Dictionary<string, object>
+            await RpcAsync("employee_notify_manager_job_created", new Dictionary<string, object>
             {
                 ["p_company_id"] = companyId.ToString(),
                 ["p_manager_user_id"] = managerUserId.ToString(),
@@ -5376,7 +5768,7 @@ public partial class SupabaseStorageService : IStorageService
             {
                 try
                 {
-                    var rpc = await _supabase.Rpc("employee_get_workflow_form_templates", new Dictionary<string, object>
+                    var rpc = await RpcAsync("employee_get_workflow_form_templates", new Dictionary<string, object>
                     {
                         ["p_company_id"] = companyId.ToString(),
                         ["p_employee_id"] = employeeId.Value.ToString(),
@@ -5420,7 +5812,7 @@ public partial class SupabaseStorageService : IStorageService
                     if (templateId.HasValue)
                         args["p_template_id"] = templateId.Value.ToString();
 
-                    var rpc = await _supabase.Rpc("employee_get_workflow_form_submissions", args);
+                    var rpc = await RpcAsync("employee_get_workflow_form_submissions", args);
                     var submissions = DeserializeRpcList<WorkflowFormSubmission>(rpc?.Content);
                     if (submissions.Count > 0 || !string.IsNullOrWhiteSpace(rpc?.Content))
                         return submissions;
@@ -5453,7 +5845,7 @@ public partial class SupabaseStorageService : IStorageService
         {
             try
             {
-                var rpc = await _supabase.Rpc("employee_submit_workflow_form", new Dictionary<string, object>
+                var rpc = await RpcAsync("employee_submit_workflow_form", new Dictionary<string, object>
                 {
                     ["p_company_id"] = submission.CompanyId.ToString(),
                     ["p_employee_id"] = submission.SubmittedBy.ToString(),
@@ -5512,7 +5904,7 @@ public partial class SupabaseStorageService : IStorageService
         {
             try
             {
-                var rpc = await _supabase.Rpc("employee_get_calendar_events_for_worker", new Dictionary<string, object>
+                var rpc = await RpcAsync("employee_get_calendar_events_for_worker", new Dictionary<string, object>
                 {
                     ["p_company_id"] = companyId.ToString(),
                     ["p_employee_id"] = employeeId.Value.ToString(),
@@ -5565,7 +5957,7 @@ public partial class SupabaseStorageService : IStorageService
     {
         if (IsCodeLoginSession())
         {
-            await _supabase.Rpc("employee_update_calendar_event_attendance", new Dictionary<string, object>
+            await RpcAsync("employee_update_calendar_event_attendance", new Dictionary<string, object>
             {
                 ["p_company_id"] = companyId.ToString(),
                 ["p_employee_id"] = employeeId.ToString(),
@@ -5628,7 +6020,7 @@ public partial class SupabaseStorageService : IStorageService
         {
             try
             {
-                var rpc = await _supabase.Rpc("employee_get_company_feed_thread", new Dictionary<string, object>
+                var rpc = await RpcAsync("employee_get_company_feed_thread", new Dictionary<string, object>
                 {
                     ["p_company_id"] = companyId.ToString(),
                     ["p_employee_id"] = employeeId.Value.ToString(),

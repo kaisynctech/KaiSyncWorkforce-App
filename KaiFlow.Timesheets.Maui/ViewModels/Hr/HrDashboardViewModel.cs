@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using KaiFlow.Timesheets.Helpers;
@@ -33,8 +33,46 @@ public partial class HrDashboardViewModel : BaseViewModel, IDisposable
     private readonly IFeatureFlagService _featureFlags;
     private readonly EmployeeScopeService _scope;
     private readonly MyPaSectionViewModel _myPa;
+    private readonly NavigationStateService _navService;
+
+    // Tracks the previous ActiveTab so OnActiveTabChanged can detect when the
+    // Notifications workspace (tab 15) is being left and unsubscribe realtime.
+    private int _previousActiveTab = 0;
+
+    // ── Workspace sub-ViewModels (one per dashboard workspace tab) ────────────
+    // Named with Vm suffix to avoid collision with existing ObservableCollection
+    // fields (_contractors, _suppliers, _assets, _incidents, _workTeams).
+    private readonly HrContractorsViewModel   _contractorsVm;
+    private readonly HrInventoryViewModel     _inventoryVm;
+    private readonly HrSuppliersViewModel     _suppliersVm;
+    private readonly HrAssetsViewModel        _assetsVm;
+    private readonly HrPropertiesViewModel    _propertiesVm;
+    private readonly HrIncidentsViewModel     _incidentsVm;
+    private readonly HrReportsViewModel       _reportsVm;
+    private readonly HrSchedulingViewModel    _schedulingVm;
+    private readonly HrWorkTeamsViewModel     _workTeamsVm;
+    private readonly HrNotificationsViewModel _notificationsVm;
+    private readonly HrActivityLogViewModel   _activityLogVm;
+    private readonly HrSettingsViewModel      _settingsVm;
+
+    // Public accessors for XAML workspace panel BindingContext bindings
+    public HrContractorsViewModel   ContractorsVm    => _contractorsVm;
+    public HrInventoryViewModel     InventoryVm      => _inventoryVm;
+    public HrSuppliersViewModel     SuppliersVm      => _suppliersVm;
+    public HrAssetsViewModel        AssetsVm         => _assetsVm;
+    public HrPropertiesViewModel    PropertiesVm     => _propertiesVm;
+    public HrIncidentsViewModel     IncidentsVm      => _incidentsVm;
+    public HrReportsViewModel       ReportsVm        => _reportsVm;
+    public HrSchedulingViewModel    SchedulingVm     => _schedulingVm;
+    public HrWorkTeamsViewModel     WorkTeamsVm      => _workTeamsVm;
+    public HrNotificationsViewModel NotificationsVm  => _notificationsVm;
+    public HrActivityLogViewModel   ActivityLogVm    => _activityLogVm;
+    public HrSettingsViewModel      SettingsVm       => _settingsVm;
+
     private readonly HashSet<int> _loadedTabs = new();
     private bool _punchRefreshInFlight;
+    private bool _hasLoadedOnce; // guards full reload: only runs once per session
+
 
     private List<Employee> _allEmployees = new();
     private List<Job> _allJobs = new();
@@ -184,6 +222,11 @@ public partial class HrDashboardViewModel : BaseViewModel, IDisposable
 
     partial void OnActiveTabChanged(int value)
     {
+        // Unsubscribe Notifications realtime when navigating away from tab 15.
+        if (_previousActiveTab == 15 && value != 15)
+            _notificationsVm.UnsubscribeAccountRealtime();
+        _previousActiveTab = value;
+
         OnPropertyChanged(nameof(IsOverviewTab));
         OnPropertyChanged(nameof(IsMyProfileTab));
         OnPropertyChanged(nameof(IsEmployeesTab));
@@ -227,6 +270,25 @@ public partial class HrDashboardViewModel : BaseViewModel, IDisposable
                 _myPa.HrMode = "true";
             _ = _myPa.LoadAsync();
         }
+        // Workspace sub-ViewModel tabs — lazy-load on first activation
+        else if (value ==  6 && !_loadedTabs.Contains( 6)) { _loadedTabs.Add( 6); _ = _contractorsVm.LoadAsync(); }
+        else if (value ==  8 && !_loadedTabs.Contains( 8)) { _loadedTabs.Add( 8); _ = _inventoryVm.LoadAsync(); }
+        else if (value == 21 && !_loadedTabs.Contains(21)) { _loadedTabs.Add(21); _ = _suppliersVm.LoadAsync(); }
+        else if (value ==  9 && !_loadedTabs.Contains( 9)) { _loadedTabs.Add( 9); _ = _assetsVm.LoadAsync(); }
+        else if (value == 10 && !_loadedTabs.Contains(10)) { _loadedTabs.Add(10); _ = _propertiesVm.LoadAsync(); }
+        else if (value == 11 && !_loadedTabs.Contains(11)) { _loadedTabs.Add(11); _ = _incidentsVm.LoadAsync(); }
+        else if (value == 12 && !_loadedTabs.Contains(12)) { _loadedTabs.Add(12); _ = _reportsVm.LoadAsync(); }
+        else if (value == 13 && !_loadedTabs.Contains(13)) { _loadedTabs.Add(13); _ = _schedulingVm.LoadAsync(); }
+        else if (value == 14 && !_loadedTabs.Contains(14)) { _loadedTabs.Add(14); _ = _workTeamsVm.LoadAsync(); }
+        else if (value == 15)
+        {
+            // Subscribe realtime every time the Notifications workspace becomes active
+            // (mirroring HrNotificationsPage.OnAppearing behaviour).
+            _notificationsVm.SubscribeAccountRealtime();
+            if (!_loadedTabs.Contains(15)) { _loadedTabs.Add(15); _ = _notificationsVm.LoadAsync(); }
+        }
+        else if (value == 16 && !_loadedTabs.Contains(16)) { _loadedTabs.Add(16); _ = _activityLogVm.LoadAsync(); }
+        else if (value == 18 && !_loadedTabs.Contains(18)) { _loadedTabs.Add(18); _ = _settingsVm.LoadAsync(); }
         else
             _ = LoadTabDataAsync(value);
     }
@@ -416,7 +478,21 @@ public partial class HrDashboardViewModel : BaseViewModel, IDisposable
         IFeatureAccessService features, IOnboardingService onboarding,
         IReleaseManagementService releases, IUsageMeteringService usage,
         IFeatureFlagService featureFlags,
-        MyPaSectionViewModel myPa)
+        MyPaSectionViewModel myPa,
+        NavigationStateService navService,
+        // Workspace sub-ViewModels injected here so each gets its own DI lifetime
+        HrContractorsViewModel   contractors,
+        HrInventoryViewModel     inventory,
+        HrSuppliersViewModel     suppliers,
+        HrAssetsViewModel        assets,
+        HrPropertiesViewModel    properties,
+        HrIncidentsViewModel     incidents,
+        HrReportsViewModel       reports,
+        HrSchedulingViewModel    scheduling,
+        HrWorkTeamsViewModel     workTeams,
+        HrNotificationsViewModel notifications,
+        HrActivityLogViewModel   activityLog,
+        HrSettingsViewModel      settings)
     {
         _storage = storage;
         _export = export;
@@ -435,6 +511,28 @@ public partial class HrDashboardViewModel : BaseViewModel, IDisposable
         _usage = usage;
         _featureFlags = featureFlags;
         _myPa = myPa;
+        _navService = navService;
+        // Re-raise sidebar toggle properties so the content-area header button
+        // (bound to HrDashboardViewModel) stays in sync with NavigationStateService.
+        _navService.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(NavigationStateService.SidebarToggleIcon)
+                               or nameof(NavigationStateService.SidebarToggleTooltip)
+                               or nameof(NavigationStateService.SidebarWidthRequest))
+                OnPropertyChanged(e.PropertyName);
+        };
+        _contractorsVm   = contractors;
+        _inventoryVm     = inventory;
+        _suppliersVm     = suppliers;
+        _assetsVm        = assets;
+        _propertiesVm    = properties;
+        _incidentsVm     = incidents;
+        _reportsVm       = reports;
+        _schedulingVm    = scheduling;
+        _workTeamsVm     = workTeams;
+        _notificationsVm = notifications;
+        _activityLogVm   = activityLog;
+        _settingsVm      = settings;
         Title = "HR Dashboard";
         _realtime.PunchChanged += OnPunchChanged;
     }
@@ -454,6 +552,10 @@ public partial class HrDashboardViewModel : BaseViewModel, IDisposable
     {
         _realtime.PunchChanged -= OnPunchChanged;
         UnsubscribeAccountRealtime();
+        // Dispose sub-VMs that subscribe to realtime events
+        _notificationsVm.UnsubscribeAccountRealtime(); // ensure no dangling subscription
+        (_incidentsVm     as IDisposable)?.Dispose();
+        (_notificationsVm as IDisposable)?.Dispose();
     }
 
     private async void OnAccountNotificationChanged(object? sender, EventArgs e)
@@ -500,8 +602,22 @@ public partial class HrDashboardViewModel : BaseViewModel, IDisposable
 
     public async Task LoadAsync()
     {
+        // NavigationStateService restores sidebar mode in its own constructor.
+        if (_hasLoadedOnce)
+        {
+            await ResumeAsync();
+            return;
+        }
         await RunAsync(async () =>
         {
+            // Platform admin check is independent of company affiliation — run first so
+            // a platform owner account (no hr_users row, no company) still sees the
+            // Platform Console button and doesn't crash on CurrentEmployee! below.
+            ShowPlatformAdminNav = await _features.IsPlatformAdminAsync();
+
+            if (_state.CurrentEmployee == null && _state.CurrentCompany == null)
+                return; // Platform owner with no tenant company — nothing else to load.
+
             var companyId = _state.CurrentCompany?.Id ?? _state.CurrentEmployee!.CompanyId;
 
             if (_state.CurrentCompany == null || _state.CurrentCompany.Id != companyId)
@@ -514,7 +630,6 @@ public partial class HrDashboardViewModel : BaseViewModel, IDisposable
             await _permissions.RefreshAsync(companyId, viewer);
             await _features.RefreshAsync(companyId);
             await _featureFlags.RefreshAsync(companyId);
-            ShowPlatformAdminNav = await _features.IsPlatformAdminAsync();
             ShowOnboardingPrompt = IsOwner
                 && !await _onboarding.IsOnboardingCompleteAsync(companyId);
             UpdateSubscriptionBanner();
@@ -608,7 +723,109 @@ public partial class HrDashboardViewModel : BaseViewModel, IDisposable
             // Self-punch status
             await LoadMySelfPunchStatusAsync(companyId, employeeId);
             RefreshModuleNavigation();
+            SyncBadgesToNavService();
+            // Mark the dashboard as the active module on first load.
+            _navService.ActiveModule = ActiveModule.Overview;
+            _hasLoadedOnce = true;
         });
+    }
+
+    /// <summary>
+    /// Lightweight resume: refreshes time-sensitive badge counts only.
+    /// Runs on every subsequent OnAppearing after the first full LoadAsync.
+    /// Heavy data (employees, jobs, templates) is reused from the initial load.
+    /// Call InvalidateCache() to force a full reload on the next appearance.
+    /// </summary>
+    private async Task ResumeAsync()
+    {
+        // Register sidebar tab-swap callback so NavigationStateService commands can
+        // switch the dashboard content area without a Shell navigation round-trip.
+        _navService.SetDashboardTabCallback = tab => ActiveTab = tab;
+
+        // Restore the workspace tab that was active before navigating to a detail page.
+        // e.g. user was in Contractors (tab 6), opened a contractor, saved → returns here.
+        var requestedTab = ActiveModuleToTab(_navService.ActiveModule);
+        if (requestedTab >= 0)
+        {
+            // Remove from loadedTabs so OnActiveTabChanged triggers a data refresh.
+            // Without this, sub-VM lists would show stale data after a save/edit.
+            _loadedTabs.Remove(requestedTab);
+            ActiveTab = requestedTab;
+        }
+
+        await RefreshNotificationBadgeAsync();
+        _ = RefreshTodayPunchSummaryAsync(); // fire-and-forget — non-blocking
+
+        // Sync live badge counts to NavigationStateService for SidebarView.
+        SyncBadgesToNavService();
+    }
+
+    /// <summary>
+    /// Maps an ActiveModule value to its dashboard tab number.
+    /// Covers both original tab-swap modules AND the 12 workspace modules added in Phase 4.
+    /// Returns -1 for shell-navigation modules (Finance, PlatformConsole) which have no tab.
+    /// </summary>
+    private static int ActiveModuleToTab(ActiveModule module) => module switch
+    {
+        // ── Original tab-swap modules ─────────────────────────────────────────
+        ActiveModule.Overview      =>  0,
+        ActiveModule.MyProfile     =>  1,
+        ActiveModule.Employees     =>  2,
+        ActiveModule.Attendance    =>  3,
+        ActiveModule.Jobs          =>  4,
+        ActiveModule.Payroll       =>  5,
+        ActiveModule.Clients       =>  7,
+        ActiveModule.Messages      => 17,
+        ActiveModule.Leave         => 20,
+        ActiveModule.MyPa          => 22,
+        ActiveModule.Projects      => 19,
+        // ── Phase 4 workspace modules (formerly shell-push, now tab-swap) ─────
+        ActiveModule.Contractors   =>  6,
+        ActiveModule.Inventory     =>  8,
+        ActiveModule.Suppliers     => 21,
+        ActiveModule.Assets        =>  9,
+        ActiveModule.Properties    => 10,
+        ActiveModule.Incidents     => 11,
+        ActiveModule.Reports       => 12,
+        ActiveModule.Scheduling    => 13,
+        ActiveModule.WorkTeams     => 14,
+        ActiveModule.Notifications => 15,
+        ActiveModule.ActivityLog   => 16,
+        ActiveModule.Settings      => 18,
+        // ── Shell-navigation modules — no dashboard tab ───────────────────────
+        _ => -1,
+    };
+
+    // ── Sidebar toggle pass-throughs for the content-area header button ─────────
+    // The header in HrDashboardPage.xaml binds against HrDashboardViewModel, but
+    // sidebar state now lives in NavigationStateService. These properties forward
+    // the values and the constructor subscribes to NavService.PropertyChanged to
+    // keep them live so the toggle icon updates as the user cycles sidebar modes.
+
+    /// <summary>MaterialIcons glyph for the current sidebar mode cycle action.</summary>
+    public string SidebarToggleIcon    => _navService.SidebarToggleIcon;
+    public string SidebarToggleTooltip => _navService.SidebarToggleTooltip;
+
+    /// <summary>Cycles sidebar: Expanded → Collapsed → Hidden → Expanded.</summary>
+    public CommunityToolkit.Mvvm.Input.IRelayCommand CycleSidebarModeCommand
+        => _navService.CycleSidebarModeCommand;
+
+    private void SyncBadgesToNavService()
+    {
+        _navService.OpenIncidentCount      = OpenIncidentCount;
+        _navService.PendingLeaveCount      = PendingLeaveCount;
+        _navService.ActiveJobCount         = ActiveJobCount;
+        _navService.UnreadNotificationCount= UnreadNotificationCount;
+        _navService.PendingPaymentCount    = PendingPaymentCount;
+        _navService.MessageThreadCount     = MessageThreadCount;
+        _navService.ProjectCount           = ProjectCount;
+    }
+
+    /// <summary>Forces a full reload on the next OnAppearing (e.g. after adding an employee).</summary>
+    public void InvalidateCache()
+    {
+        _hasLoadedOnce = false;
+        _loadedTabs.Clear();
     }
 
     private void RefreshModuleNavigation()
@@ -650,6 +867,44 @@ public partial class HrDashboardViewModel : BaseViewModel, IDisposable
         OnPropertyChanged(nameof(ShowAnalyticsSection));
         OnPropertyChanged(nameof(ShowCommsSection));
         OnPropertyChanged(nameof(ShowAdminSection));
+        // ShowXxxSectionText notifications are now owned by NavigationStateService
+        // (auto-fired when ShowXxxSection is set on the service below).
+
+        // Push visibility flags into NavigationStateService so SidebarView stays correct
+        // on all module pages that don't call RefreshModuleNavigation themselves.
+        _navService.ShowEmployeesNav     = ShowEmployeesNav;
+        _navService.ShowLeaveNav         = ShowLeaveNav;
+        _navService.ShowAttendanceNav    = ShowAttendanceNav;
+        _navService.ShowJobsNav          = ShowJobsNav;
+        _navService.ShowProjectsNav      = ShowProjectsNav;
+        _navService.ShowPayrollNav       = ShowPayrollNav;
+        _navService.ShowFinanceNav       = ShowFinanceNav;
+        _navService.ShowContractorsNav   = ShowContractorsNav;
+        _navService.ShowClientsNav       = ShowClientsNav;
+        _navService.ShowInventoryNav     = ShowInventoryNav;
+        _navService.ShowSuppliersNav     = ShowSuppliersNav;
+        _navService.ShowAssetsNav        = ShowAssetsNav;
+        _navService.ShowPropertiesNav    = ShowPropertiesNav;
+        _navService.ShowIncidentsNav     = ShowIncidentsNav;
+        _navService.ShowReportsNav       = ShowReportsNav;
+        _navService.ShowSchedulingNav    = ShowSchedulingNav;
+        _navService.ShowMyPaNav          = ShowMyPaNav;
+        _navService.ShowWorkTeamsNav     = ShowWorkTeamsNav;
+        _navService.ShowMessagingNav     = ShowMessagingNav;
+        _navService.ShowPlatformAdminNav = ShowPlatformAdminNav;
+        _navService.ShowPeopleWorkSection= ShowPeopleWorkSection;
+        _navService.ShowOperationsSection= ShowOperationsSection;
+        _navService.ShowAnalyticsSection = ShowAnalyticsSection;
+        _navService.ShowCommsSection     = ShowCommsSection;
+        _navService.ShowAdminSection     = ShowAdminSection;
+        _navService.IsOwner              = IsOwner;
+        // Employee / company display for SidebarView branding
+        _navService.CurrentEmployeeName  = _state.CurrentEmployee?.FullName;
+        _navService.HasCurrentEmployee   = _state.CurrentEmployee != null;
+        _navService.CurrentCompanyName   = _state.CurrentCompany?.Name;
+        _navService.CurrentCompanyCode   = _state.CurrentCompany != null
+            ? $"Code: {_state.CurrentCompany.Code}" : null;
+        _navService.HasCurrentCompany    = _state.CurrentCompany != null;
 
         if (!IsTabAllowed(ActiveTab))
             ActiveTab = 0;
@@ -1118,7 +1373,7 @@ public partial class HrDashboardViewModel : BaseViewModel, IDisposable
 
         await RunAsync(async () =>
         {
-            await _storage.UpdateLeaveStatusAsync(display.Request.Id, "approved",
+            await _storage.DecideLeaveRequestAsync(_state.CurrentEmployee!.CompanyId, display.Request.Id, "approved",
                 string.IsNullOrWhiteSpace(note) ? null : note.Trim());
             var existing = _allDashboardLeave.FirstOrDefault(r => r.Id == display.Request.Id);
             if (existing != null) existing.StatusRaw = "approved";
@@ -1144,7 +1399,7 @@ public partial class HrDashboardViewModel : BaseViewModel, IDisposable
 
         await RunAsync(async () =>
         {
-            await _storage.UpdateLeaveStatusAsync(display.Request.Id, "declined",
+            await _storage.DecideLeaveRequestAsync(_state.CurrentEmployee!.CompanyId, display.Request.Id, "declined",
                 string.IsNullOrWhiteSpace(note) ? "Rejected" : note.Trim());
             var existing = _allDashboardLeave.FirstOrDefault(r => r.Id == display.Request.Id);
             if (existing != null) existing.StatusRaw = "declined";
@@ -1401,11 +1656,16 @@ public partial class HrDashboardViewModel : BaseViewModel, IDisposable
             await Shell.Current.DisplayAlert("Upgrade required", "Finance is not included in your current plan.", "OK");
             return;
         }
+        ActiveTab = 0;
         await ShellNavigation.GoToAsync(ViewModels.Finance.FinanceRoutes.Dashboard);
     }
 
     [RelayCommand]
-    private async Task GoToPlatformAdminAsync() => await ShellNavigation.GoToAsync(nameof(PlatformDashboardPage));
+    private async Task GoToPlatformAdminAsync()
+    {
+        ActiveTab = 0;
+        await ShellNavigation.GoToAsync(nameof(PlatformDashboardPage));
+    }
 
     [RelayCommand]
     private async Task GoToOnboardingAsync() => await ShellNavigation.GoToAsync(nameof(TenantOnboardingPage));
@@ -1462,8 +1722,20 @@ public partial class HrDashboardViewModel : BaseViewModel, IDisposable
         catch { /* non-critical */ }
     }
     [RelayCommand] private async Task GoToTeamPunchAsync() => await ShellNavigation.GoToAsync(nameof(HrTeamPunchPage));
-    [RelayCommand] private async Task GoToContractorsAsync() => await ShellNavigation.GoToAsync(nameof(HrContractorsPage));
-    [RelayCommand] private async Task GoToClientsAsync() => await ShellNavigation.GoToAsync(nameof(HrClientsPage));
+
+    [RelayCommand]
+    private async Task GoToContractorsAsync()
+    {
+        ActiveTab = 0;
+        await ShellNavigation.GoToAsync(nameof(HrContractorsPage));
+    }
+
+    [RelayCommand]
+    private async Task GoToClientsAsync()
+    {
+        ActiveTab = 0;
+        await ShellNavigation.GoToAsync(nameof(HrClientsPage));
+    }
 
     partial void OnClientSearchTextChanged(string value) => ApplyClientSearch();
 
@@ -1507,12 +1779,18 @@ public partial class HrDashboardViewModel : BaseViewModel, IDisposable
 
     [RelayCommand]
     private Task RefreshClientsAsync() => ReloadClientsAsync();
-    [RelayCommand] private async Task GoToInventoryAsync() => await ShellNavigation.GoToAsync(nameof(HrInventoryPage));
-    [RelayCommand] private async Task GoToSuppliersAsync() => await ShellNavigation.GoToAsync(nameof(HrSuppliersPage));
-    [RelayCommand] private async Task GoToAssetsAsync() => await ShellNavigation.GoToAsync(nameof(HrAssetsPage));
-    [RelayCommand] private async Task GoToPropertiesAsync() => await ShellNavigation.GoToAsync(nameof(HrPropertiesPage));
-    [RelayCommand] private async Task GoToReportsAsync() => await ShellNavigation.GoToAsync(nameof(HrReportsPage));
-    [RelayCommand] private async Task GoToSchedulingAsync() => await ShellNavigation.GoToAsync(nameof(HrSchedulingPage));
+    [RelayCommand]
+    private async Task GoToInventoryAsync()  { ActiveTab = 0; await ShellNavigation.GoToAsync(nameof(HrInventoryPage)); }
+    [RelayCommand]
+    private async Task GoToSuppliersAsync()  { ActiveTab = 0; await ShellNavigation.GoToAsync(nameof(HrSuppliersPage)); }
+    [RelayCommand]
+    private async Task GoToAssetsAsync()     { ActiveTab = 0; await ShellNavigation.GoToAsync(nameof(HrAssetsPage)); }
+    [RelayCommand]
+    private async Task GoToPropertiesAsync() { ActiveTab = 0; await ShellNavigation.GoToAsync(nameof(HrPropertiesPage)); }
+    [RelayCommand]
+    private async Task GoToReportsAsync()    { ActiveTab = 0; await ShellNavigation.GoToAsync(nameof(HrReportsPage)); }
+    [RelayCommand]
+    private async Task GoToSchedulingAsync() { ActiveTab = 0; await ShellNavigation.GoToAsync(nameof(HrSchedulingPage)); }
 
     [RelayCommand]
     private async Task GoToMyPaAsync()
@@ -1524,13 +1802,18 @@ public partial class HrDashboardViewModel : BaseViewModel, IDisposable
         await _myPa.LoadAsync();
     }
 
-    [RelayCommand] private async Task GoToIncidentsAsync() => await ShellNavigation.GoToAsync(nameof(HrIncidentsPage));
-    [RelayCommand] private async Task GoToSettingsAsync() => await ShellNavigation.GoToAsync(nameof(HrSettingsPage));
-    [RelayCommand] private async Task GoToMyProfileAsync() => await ShellNavigation.GoToAsync(nameof(MyProfilePage));
-    [RelayCommand] private async Task GoToMyPayslipsAsync() => await ShellNavigation.GoToAsync(nameof(MyPayslipsPage));
-    [RelayCommand] private async Task GoToMyLeaveAsync() => await ShellNavigation.GoToAsync(nameof(MyLeavePage));
+    [RelayCommand]
+    private async Task GoToIncidentsAsync()     { ActiveTab = 0; await ShellNavigation.GoToAsync(nameof(HrIncidentsPage)); }
+    [RelayCommand]
+    private async Task GoToSettingsAsync()      { ActiveTab = 0; await ShellNavigation.GoToAsync(nameof(HrSettingsPage)); }
+    [RelayCommand] private async Task GoToMyProfileAsync()   => await ShellNavigation.GoToAsync(nameof(MyProfilePage));
+    [RelayCommand] private async Task GoToMyPayslipsAsync()  => await ShellNavigation.GoToAsync(nameof(MyPayslipsPage));
+    [RelayCommand] private async Task GoToMyLeaveAsync()     => await ShellNavigation.GoToAsync(nameof(MyLeavePage));
     [RelayCommand] private async Task GoToMyDocumentsAsync() => await ShellNavigation.GoToAsync(nameof(MyDocumentsPage));
-    [RelayCommand] private async Task GoToActivityLogAsync() => await ShellNavigation.GoToAsync(nameof(HrActivityLogPage));
-    [RelayCommand] private async Task GoToNotificationsAsync() => await ShellNavigation.GoToAsync(nameof(HrNotificationsPage));
-    [RelayCommand] private async Task GoToWorkTeamsAsync() => await ShellNavigation.GoToAsync(nameof(HrWorkTeamsPage));
+    [RelayCommand]
+    private async Task GoToActivityLogAsync()   { ActiveTab = 0; await ShellNavigation.GoToAsync(nameof(HrActivityLogPage)); }
+    [RelayCommand]
+    private async Task GoToNotificationsAsync() { ActiveTab = 0; await ShellNavigation.GoToAsync(nameof(HrNotificationsPage)); }
+    [RelayCommand]
+    private async Task GoToWorkTeamsAsync()     { ActiveTab = 0; await ShellNavigation.GoToAsync(nameof(HrWorkTeamsPage)); }
 }

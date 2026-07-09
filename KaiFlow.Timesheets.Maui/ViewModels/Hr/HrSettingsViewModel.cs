@@ -2,8 +2,10 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using KaiFlow.Timesheets.Helpers;
 using KaiFlow.Timesheets.Models;
+using KaiFlow.Timesheets.Models.Production;
 using KaiFlow.Timesheets.Services;
 using KaiFlow.Timesheets.Services.Platform;
+using KaiFlow.Timesheets.Services.Production;
 using KaiFlow.Timesheets.ViewModels.Base;
 using KaiFlow.Timesheets.Views.Auth;
 using KaiFlow.Timesheets.Views.Hr;
@@ -14,9 +16,11 @@ namespace KaiFlow.Timesheets.ViewModels.Hr;
 public partial class HrSettingsViewModel : BaseViewModel
 {
     private readonly IStorageService _storage;
+    private readonly StepUpVerificationService _stepUp;
     private readonly TimesheetStateService _state;
     private readonly ILocationService _location;
     private readonly IFeatureAccessService _features;
+    private readonly IBackupService _backup;
 
     [ObservableProperty] private Company? _company;
     [ObservableProperty] private ObservableCollection<ModuleToggleItem> _moduleToggles = [];
@@ -27,6 +31,13 @@ public partial class HrSettingsViewModel : BaseViewModel
 
     [ObservableProperty] private bool _enforceBranchSignInRadius;
     [ObservableProperty] private double _branchSignInRadiusMeters = 500;
+    [ObservableProperty] private ObservableCollection<CompanyBackupRecord> _snapshots = [];
+    [ObservableProperty] private bool _isSnapshotBusy;
+    [ObservableProperty] private ObservableCollection<CompanyExportJobRecord> _exports = [];
+    [ObservableProperty] private bool _isExportBusy;
+    [ObservableProperty] private string? _exportDownloadUrl;
+    [ObservableProperty] private DateTime? _exportExpiresAt;
+    [ObservableProperty] private string _exportStatus = "idle";
 
     public bool IsOwner => _state.IsOwner;
     public bool IsOwnerOrAdmin => _state.IsOwnerOrAdmin;
@@ -68,14 +79,25 @@ public partial class HrSettingsViewModel : BaseViewModel
     public bool IsBasicPlan => IsStarterPlan;
     public bool IsPremiumPlan => IsEnterprisePlan;
 
-    public HrSettingsViewModel(IStorageService storage, TimesheetStateService state, ILocationService location, IFeatureAccessService features)
+    public HrSettingsViewModel(IStorageService storage, TimesheetStateService state, ILocationService location, IFeatureAccessService features, StepUpVerificationService stepUp, IBackupService backup)
     {
         _storage = storage;
         _state = state;
         _location = location;
         _features = features;
+        _stepUp = stepUp;
+        _backup = backup;
         Title = "Settings";
     }
+
+    public bool HasExportDownloadUrl => !string.IsNullOrEmpty(ExportDownloadUrl) && ExportExpiresAt > DateTime.UtcNow;
+    public string ExportExpiryDisplay => ExportExpiresAt.HasValue
+        ? $"Link expires {ExportExpiresAt.Value.ToLocalTime():dd MMM yyyy HH:mm}"
+        : "";
+    public bool IsExportIdle => ExportStatus == "idle";
+    public bool IsExportProcessing => ExportStatus == "processing";
+    public bool IsExportCompleted => ExportStatus == "completed" && HasExportDownloadUrl;
+    public bool IsExportFailed => ExportStatus == "failed";
 
     public async Task LoadAsync()
     {
@@ -129,7 +151,103 @@ public partial class HrSettingsViewModel : BaseViewModel
                            .OrderBy(e => e.AccessLevelRaw).ThenBy(e => e.FullName).ToList());
             }
             catch { /* ignore */ }
+
+            try
+            {
+                var snaps = await _backup.ListBackupsAsync(Company.Id, 10);
+                Snapshots = new ObservableCollection<CompanyBackupRecord>(snaps);
+            }
+            catch { /* ignore */ }
+
+            try
+            {
+                var exportJobs = await _backup.GetExportJobsAsync(Company.Id, 5);
+                Exports = new ObservableCollection<CompanyExportJobRecord>(exportJobs);
+                var latest = Exports.FirstOrDefault(e => e.IsCompleted);
+                if (latest != null)
+                {
+                    ExportDownloadUrl = latest.DownloadUrl;
+                    ExportExpiresAt = latest.ExpiresAt;
+                    ExportStatus = latest.IsExpired ? "idle" : "completed";
+                    OnPropertyChanged(nameof(HasExportDownloadUrl));
+                    OnPropertyChanged(nameof(ExportExpiryDisplay));
+                    OnPropertyChanged(nameof(IsExportCompleted));
+                    OnPropertyChanged(nameof(IsExportIdle));
+                }
+            }
+            catch { /* ignore */ }
         });
+    }
+
+    [RelayCommand]
+    private async Task TakeSnapshotAsync()
+    {
+        var companyId = _state.CurrentEmployee!.CompanyId;
+        IsSnapshotBusy = true;
+        try
+        {
+            var snap = await _backup.CreateManualBackupAsync(companyId);
+            Snapshots.Insert(0, snap);
+        }
+        catch (Exception ex)
+        {
+            await Shell.Current.DisplayAlert("Error", ex.Message, "OK");
+        }
+        finally
+        {
+            IsSnapshotBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task RequestExportAsync()
+    {
+        var companyId = _state.CurrentEmployee!.CompanyId;
+        var confirmed = await Shell.Current.DisplayAlert(
+            "Data Export",
+            "This will export all your company data to a downloadable file. The link will expire after 24 hours.\n\n⚠ The export includes sensitive data (payroll, banking, ID numbers). Keep it secure.",
+            "Generate Export", "Cancel");
+        if (!confirmed) return;
+
+        ExportStatus = "processing";
+        IsExportBusy = true;
+        ExportDownloadUrl = null;
+        OnPropertyChanged(nameof(IsExportIdle));
+        OnPropertyChanged(nameof(IsExportProcessing));
+        OnPropertyChanged(nameof(IsExportCompleted));
+        OnPropertyChanged(nameof(HasExportDownloadUrl));
+        try
+        {
+            var result = await _backup.RequestExportAsync(companyId);
+            ExportDownloadUrl = result.DownloadUrl;
+            ExportExpiresAt = result.ExpiresAt;
+            ExportStatus = "completed";
+            var fresh = await _backup.GetExportJobsAsync(companyId, 5);
+            Exports = new ObservableCollection<CompanyExportJobRecord>(fresh);
+        }
+        catch (Exception ex)
+        {
+            ExportStatus = "failed";
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsExportBusy = false;
+            OnPropertyChanged(nameof(IsExportIdle));
+            OnPropertyChanged(nameof(IsExportProcessing));
+            OnPropertyChanged(nameof(IsExportCompleted));
+            OnPropertyChanged(nameof(IsExportFailed));
+            OnPropertyChanged(nameof(HasExportDownloadUrl));
+            OnPropertyChanged(nameof(ExportExpiryDisplay));
+        }
+    }
+
+    [RelayCommand]
+    private async Task DownloadExportAsync()
+    {
+        if (string.IsNullOrEmpty(ExportDownloadUrl)) return;
+        try { await Launcher.OpenAsync(new Uri(ExportDownloadUrl)); }
+        catch (Exception ex) { await Shell.Current.DisplayAlert("Error", ex.Message, "OK"); }
     }
 
     [RelayCommand]
@@ -256,65 +374,70 @@ public partial class HrSettingsViewModel : BaseViewModel
         if (Company == null) return;
         var companyId = Company.Id;
         var employees = await _storage.GetEmployeesAsync(companyId);
-        var candidates = employees.Where(e => e.AccessLevelRaw is "admin" or "hr_admin" or "manager").ToList();
-        if (!candidates.Any())
+        var eligible = employees
+            .Where(e => e.AccessLevelRaw is "hr" or "manager" && e.IsActive && e.UserId != null)
+            .ToList();
+        if (!eligible.Any())
         {
-            await Shell.Current.DisplayAlert("No Candidates", "No admin or manager employees found to transfer to.", "OK");
+            await Shell.Current.DisplayAlert("No Eligible Employees",
+                "Ownership can only be transferred to an active HR or manager. Promote an employee to HR first, then initiate the transfer.",
+                "OK");
             return;
         }
 
-        var names = candidates.Select(e => e.FullName).ToArray();
-        var chosen = await Shell.Current.DisplayActionSheet("Transfer ownership to:", "Cancel", null, names);
-        if (string.IsNullOrEmpty(chosen) || chosen == "Cancel") return;
+        var names = eligible.Select(e => e.FullName).ToArray();
+        var selected = await Shell.Current.DisplayActionSheet("Select New Owner", "Cancel", null, names);
+        if (selected is null or "Cancel") return;
 
-        var target = candidates.FirstOrDefault(e => e.FullName == chosen);
+        var target = eligible.FirstOrDefault(e => e.FullName == selected);
         if (target == null) return;
 
-        var confirm = await Shell.Current.DisplayAlert(
-            "Transfer Ownership",
-            $"Transfer company ownership to {target.FullName}?\n\nA confirmation code will be sent to your email address. You will lose owner access after confirming.",
-            "Send Code", "Cancel");
-        if (!confirm) return;
+        var confirmInitiate = await Shell.Current.DisplayAlert("Transfer Ownership",
+            $"You are about to transfer company ownership to {target.FullName}.\n\nYou will be demoted to HR immediately after the transfer. This action cannot be undone.\n\nYou'll need to confirm with a code shown on this screen.",
+            "Continue", "Cancel");
+        if (!confirmInitiate) return;
 
-        var code = new Random().Next(100000, 999999).ToString("D6");
-        var ownerEmail = _state.CurrentEmployee?.Email ?? "";
-
-        try
+        OwnershipTransferInitiation? initiation = null;
+        await RunAsync(async () =>
         {
-            var message = new EmailMessage
+            await _stepUp.ExecuteAsync(async () =>
             {
-                Subject = "KaiFlow: Confirm Ownership Transfer",
-                Body = $"Your confirmation code for transferring ownership of {Company.Name} to {target.FullName}:\n\n{code}\n\nIf you did not request this, ignore this email.",
-                To = [ownerEmail]
-            };
-            await Email.Default.ComposeAsync(message);
-        }
-        catch
-        {
-            // Email client unavailable — show the code in-app
-            await Shell.Current.DisplayAlert("Confirmation Code",
-                $"Your confirmation code is:\n\n{code}\n\nKeep this code — you'll need it to confirm the transfer.",
-                "OK");
-        }
+                initiation = await _storage.InitiateOwnershipTransferAsync(companyId, target.Id);
+            });
+        });
+        if (initiation == null) return;
+
+        var otpToShow = initiation.Otp;
+        var expiryMinutes = (int)(initiation.ExpiresAt - DateTime.UtcNow).TotalMinutes;
+        await Shell.Current.DisplayAlert("Your Confirmation Code",
+            $"Code: {otpToShow}\n\nThis code expires in {expiryMinutes} minutes.\nShare this code with the person receiving ownership through your own channel, then enter it on the next screen to confirm.",
+            "I've noted the code");
+
+        // Discard OTP from memory — store only the transfer ID (BR-3)
+        var transferId = initiation.TransferId;
+        otpToShow = null;
+        initiation = null;
 
         var entered = await Shell.Current.DisplayPromptAsync(
             "Confirm Transfer",
-            $"Enter the 6-digit code sent to {ownerEmail}:",
+            $"Enter the 6-digit confirmation code to transfer ownership to {target.FullName}:",
             "Confirm", "Cancel",
             placeholder: "------",
             keyboard: Keyboard.Numeric,
             maxLength: 6);
-
-        if (entered?.Trim() != code)
-        {
-            if (entered != null)
-                await Shell.Current.DisplayAlert("Incorrect Code", "The code you entered does not match. Transfer cancelled.", "OK");
-            return;
-        }
+        if (string.IsNullOrWhiteSpace(entered)) return;
 
         await RunAsync(async () =>
         {
-            await _storage.TransferOwnershipAsync(companyId, target.Id);
+            try
+            {
+                await _storage.VerifyOwnershipTransferAsync(companyId, transferId, entered.Trim());
+            }
+            catch (Exception ex) when (ex.Message.Contains("STEP_UP_REQUIRED"))
+            {
+                await _stepUp.ExecuteAsync(async () =>
+                    await _storage.VerifyOwnershipTransferAsync(companyId, transferId, entered.Trim()));
+            }
             _state.Clear();
             await ShellNavigation.GoToAsync("//IdEntry");
         });

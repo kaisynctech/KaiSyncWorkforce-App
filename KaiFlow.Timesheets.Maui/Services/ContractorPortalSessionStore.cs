@@ -9,11 +9,30 @@ public static class ContractorPortalSessionStore
     private const string CompanyCodeKey = "contractor_portal_company_code";
     private const string ContractorCodeKey = "contractor_portal_contractor_code";
     private const string LegacyMigratedKey = "contractor_portal_secure_migrated";
+    private const string SigningOutKey = "contractor_portal_signing_out";
 
-    public static void Save(Guid contractorId, Guid companyId, string contractorName, string companyCode, string contractorCode)
+    public static void ClearForSignOut()
     {
-        _ = PersistAsync(contractorId, companyId, contractorName, companyCode, contractorCode);
-        ClearLegacyPrefs();
+        Preferences.Set(SigningOutKey, true);
+        Clear();
+        Preferences.Set("contractor_portal_skip_auto_restore", true);
+    }
+
+    public static bool IsSigningOut => Preferences.Get(SigningOutKey, false);
+
+    public static void CompleteSignOut() => Preferences.Remove(SigningOutKey);
+
+    public static bool ConsumeSkipAutoRestore()
+    {
+        if (!Preferences.Get("contractor_portal_skip_auto_restore", false))
+            return false;
+        Preferences.Remove("contractor_portal_skip_auto_restore");
+        return true;
+    }
+
+    public static async Task SaveAsync(Guid contractorId, Guid companyId, string contractorName, string companyCode, string contractorCode)
+    {
+        await PersistAsync(contractorId, companyId, contractorName, companyCode, contractorCode);
     }
 
     public static void Clear()
@@ -61,15 +80,12 @@ public static class ContractorPortalSessionStore
             await SecureStorage.SetAsync(CompanyCodeKey, companyCode);
             await SecureStorage.SetAsync(ContractorCodeKey, contractorCode);
             Preferences.Set(LegacyMigratedKey, true);
+            ClearLegacyPrefs();
         }
         catch
         {
             AppTelemetrySink.LogSecureStorageFailure("contractor_portal_session");
-            Preferences.Set(ContractorIdKey, contractorId.ToString());
-            Preferences.Set(CompanyIdKey, companyId.ToString());
-            Preferences.Set(ContractorNameKey, contractorName);
-            Preferences.Set(CompanyCodeKey, companyCode);
-            Preferences.Set(ContractorCodeKey, contractorCode);
+            throw;
         }
     }
 

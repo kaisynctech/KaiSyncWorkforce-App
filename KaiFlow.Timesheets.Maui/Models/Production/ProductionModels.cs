@@ -3,6 +3,59 @@ using Supabase.Postgrest.Models;
 
 namespace KaiFlow.Timesheets.Models.Production;
 
+[Table("company_export_jobs")]
+public class CompanyExportJobRecord : BaseModel
+{
+    [PrimaryKey("id")]
+    public Guid Id { get; set; }
+
+    [Column("company_id")]
+    public Guid CompanyId { get; set; }
+
+    [Column("requested_by")]
+    public Guid? RequestedBy { get; set; }
+
+    [Column("status")]
+    public string Status { get; set; } = "processing";
+
+    [Column("storage_path")]
+    public string? StoragePath { get; set; }
+
+    [Column("download_url")]
+    public string? DownloadUrl { get; set; }
+
+    [Column("expires_at")]
+    public DateTime? ExpiresAt { get; set; }
+
+    [Column("error_message")]
+    public string? ErrorMessage { get; set; }
+
+    [Column("record_counts")]
+    public Dictionary<string, object> RecordCounts { get; set; } = [];
+
+    [Column("sensitive_tables")]
+    public List<string> SensitiveTables { get; set; } = [];
+
+    [Column("created_at")]
+    public DateTime CreatedAt { get; set; }
+
+    [Column("completed_at")]
+    public DateTime? CompletedAt { get; set; }
+
+    public bool IsCompleted => Status == "completed" && DownloadUrl != null;
+    public bool IsFailed => Status == "failed";
+    public bool IsExpired => ExpiresAt.HasValue && ExpiresAt.Value < DateTime.UtcNow;
+}
+
+public record CompanyExportJobResult(Guid JobId, string DownloadUrl, DateTime ExpiresAt);
+
+public record OwnershipTransferInitiation(
+    Guid TransferId,
+    string Otp,
+    DateTime ExpiresAt,
+    string TargetName
+);
+
 [Table("app_versions")]
 public class AppVersionRecord : BaseModel
 {

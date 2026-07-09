@@ -377,20 +377,59 @@ public sealed class DomainAnalyticsService : IDomainAnalyticsService
     public Task<ContractorsAnalyticsSnapshot> BuildContractorsAsync(Guid companyId, ReportFilterCriteria filter, CancellationToken ct = default) =>
         Task.Run(async () =>
         {
-            var contractors = await _storage.GetContractorsAsync(companyId);
-            var payouts = (await _storage.GetContractorPayoutsAsync(companyId))
-                .Where(p => p.PayoutDate.HasValue && p.PayoutDate.Value >= filter.From && p.PayoutDate.Value <= filter.To).ToList();
-            var pending = (await _storage.GetContractorPayoutsAsync(companyId))
-                .Where(p => p.PayoutStatusRaw is "pending" or "approved").Sum(p => (double)p.NetPayable);
+            var contractors    = await _storage.GetContractorsAsync(companyId);
+            var allPayouts     = await _storage.GetContractorPayoutsAsync(companyId);
+            var allAssignments = await _storage.GetAllJobContractorsAsync(companyId);
+
+            var periodPayouts = allPayouts
+                .Where(p => p.PayoutDate.HasValue && p.PayoutDate.Value >= filter.From && p.PayoutDate.Value <= filter.To)
+                .ToList();
+
+            var pendingTotal = allPayouts
+                .Where(p => p.PayoutStatusRaw is "pending" or "approved")
+                .Sum(p => (double)p.NetPayable);
+
+            var jobCountById = allAssignments
+                .GroupBy(a => a.ContractorId)
+                .ToDictionary(g => g.Key, g => g.Count());
+
+            var performanceTable = contractors
+                .Where(c => c.IsActive)
+                .OrderBy(c => c.Name)
+                .Select(c =>
+                {
+                    var cp      = allPayouts.Where(p => p.ContractorId == c.Id).ToList();
+                    var agreed  = allAssignments.Where(a => a.ContractorId == c.Id).Sum(a => a.AgreedAmount);
+                    var paid    = cp.Where(p => p.PayoutStatusRaw == "paid").Sum(p => p.TotalAmount);
+                    var pending = cp.Where(p => p.PayoutStatusRaw is "pending" or "approved").Sum(p => p.TotalAmount);
+                    var variance = agreed > 0 ? agreed - paid : 0;
+                    return new ContractorPerformanceRow
+                    {
+                        Name           = c.Name,
+                        Code           = c.ContractorCode ?? "",
+                        JobCount       = jobCountById.TryGetValue(c.Id, out var jc) ? jc : 0,
+                        TotalAgreed    = agreed  > 0 ? $"R{agreed:N2}"  : "—",
+                        TotalPaid      = paid    > 0 ? $"R{paid:N2}"    : "—",
+                        Variance       = agreed  > 0 ? (variance > 0 ? $"Balance R{variance:N2}" : variance < 0 ? $"Over R{Math.Abs(variance):N2}" : "Settled ✓") : "—",
+                        VarianceColor  = variance < 0 ? "#EF4444" : variance == 0 && agreed > 0 ? "#22C55E" : "#F59E0B",
+                        PendingPayouts = pending > 0 ? $"R{pending:N2}" : "—",
+                    };
+                })
+                .ToList();
+
             return new ContractorsAnalyticsSnapshot
             {
                 ActiveContractors = contractors.Count(c => c.IsActive).ToString(),
-                PendingPayouts = $"R{pending:N2}",
-                TotalPaid = $"R{payouts.Where(p => p.PayoutStatusRaw == "paid").Sum(p => p.NetPayable):N2}",
-                PayoutTrend = payouts.GroupBy(p => p.PayoutDate!.Value.ToString("MMM"))
-                    .Select((g, i) => new ChartValue(g.Key, (double)g.Sum(x => x.NetPayable), Palette[i % Palette.Length])).ToList(),
+                PendingPayouts    = $"R{pendingTotal:N2}",
+                TotalPaid         = $"R{periodPayouts.Where(p => p.PayoutStatusRaw == "paid").Sum(p => p.NetPayable):N2}",
+                PayoutTrend       = periodPayouts
+                    .GroupBy(p => p.PayoutDate!.Value.ToString("MMM"))
+                    .Select((g, i) => new ChartValue(g.Key, (double)g.Sum(x => x.NetPayable), Palette[i % Palette.Length]))
+                    .ToList(),
                 PerformanceScores = contractors.Where(c => c.IsActive).Take(6)
-                    .Select((c, i) => new ChartValue(c.Name, payouts.Count(p => p.ContractorId == c.Id), Palette[i % Palette.Length])).ToList(),
+                    .Select((c, i) => new ChartValue(c.Name, allPayouts.Count(p => p.ContractorId == c.Id), Palette[i % Palette.Length]))
+                    .ToList(),
+                PerformanceTable  = performanceTable,
             };
         }, ct);
 

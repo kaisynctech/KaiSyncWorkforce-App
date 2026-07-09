@@ -1,0 +1,519 @@
+'use client'
+
+import { useEffect, useRef, useState } from 'react'
+import { useParams, useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { createClient } from '@/lib/supabase/client'
+import { FormSelect } from '@/components/FormSelect'
+import { StatusBadge } from '@/components/ui/StatusBadge'
+import type { Job, Employee, JobContractor, LaborEntry, JobInventoryItem, JobPhoto } from '@/types/database'
+
+const STATUS_OPTIONS = ['open', 'scheduled', 'in_progress', 'completed', 'cancelled'] as const
+
+const STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
+  completed:   { bg: '#DCFCE7', fg: '#166534' },
+  in_progress: { bg: '#DBEAFE', fg: '#1e40af' },
+  cancelled:   { bg: '#FEE2E2', fg: '#991b1b' },
+  open:        { bg: '#F3F4F6', fg: '#374151' },
+  scheduled:   { bg: '#F3F4F6', fg: '#374151' },
+}
+
+const PRIORITY_COLORS: Record<string, { bg: string; fg: string }> = {
+  high:   { bg: '#FEE2E2', fg: '#991b1b' },
+  medium: { bg: '#FEF3C7', fg: '#92400E' },
+  low:    { bg: '#DCFCE7', fg: '#166534' },
+}
+
+type JobDetail = Job & {
+  clients:  { name: string; code: string | null } | null
+  sites:    { name: string; address: string | null } | null
+  projects: { name: string } | null
+}
+
+const fmtDatetime = (d: string | null) => {
+  if (!d) return '—'
+  return new Intl.DateTimeFormat('en-ZA', {
+    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(new Date(d))
+}
+
+const fmtDate = (d: string) =>
+  new Intl.DateTimeFormat('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(d))
+
+export default function JobDetailPage() {
+  const params = useParams<{ id: string }>()
+  const router = useRouter()
+  const jobId = params.id
+
+  const [job, setJob] = useState<JobDetail | null>(null)
+  const [employees, setEmployees] = useState<Pick<Employee, 'id' | 'name' | 'surname'>[]>([])
+  const [assignedIds, setAssignedIds] = useState<Set<string>>(new Set())
+  const [jobContractors, setJobContractors] = useState<JobContractor[]>([])
+  const [laborEntries, setLaborEntries] = useState<LaborEntry[]>([])
+  const [inventory, setInventory] = useState<JobInventoryItem[]>([])
+  const [photos, setPhotos] = useState<JobPhoto[]>([])
+  const [statusUpdate, setStatusUpdate] = useState<string>('open')
+  const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [photoBusy, setPhotoBusy] = useState(false)
+
+  const beforeInputRef = useRef<HTMLInputElement>(null)
+  const afterInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => { load() }, [jobId])
+
+  async function load() {
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+
+    const { data: me } = await supabase
+      .from('employees')
+      .select('company_id')
+      .eq('user_id', user.id)
+      .eq('is_active', true)
+      .maybeSingle()
+
+    if (!me) return
+
+    const [jobRes, empRes, jcRes, leRes, invRes, photoRes, assignRes] = await Promise.all([
+      supabase.from('jobs').select('*, clients(*), sites(*), projects(*)').eq('id', jobId).single(),
+      supabase.from('employees').select('id, name, surname').eq('company_id', me.company_id).eq('is_active', true).order('name'),
+      supabase.from('job_contractors').select('*, contractors(name, contractor_code)').eq('job_id', jobId),
+      supabase.from('labor_entries').select('*').eq('job_id', jobId).order('work_date'),
+      supabase.from('job_inventory').select('*').eq('job_id', jobId),
+      supabase.from('job_photos').select('*').eq('job_id', jobId),
+      supabase.from('job_employees').select('employee_id').eq('job_id', jobId),
+    ])
+
+    if (jobRes.data) {
+      setJob(jobRes.data as JobDetail)
+      setStatusUpdate(jobRes.data.status)
+    }
+    setEmployees((empRes.data ?? []) as Pick<Employee, 'id' | 'name' | 'surname'>[])
+    setJobContractors((jcRes.data ?? []) as JobContractor[])
+    setLaborEntries((leRes.data ?? []) as LaborEntry[])
+    setInventory((invRes.data ?? []) as JobInventoryItem[])
+    setPhotos((photoRes.data ?? []) as JobPhoto[])
+    setAssignedIds(new Set((assignRes.data ?? []).map((r: { employee_id: string }) => r.employee_id)))
+  }
+
+  function toggleEmployee(empId: string) {
+    setAssignedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(empId)) next.delete(empId)
+      else next.add(empId)
+      return next
+    })
+  }
+
+  async function handleSaveStatus() {
+    if (!job) return
+    setSaving(true)
+    setError(null)
+    const supabase = createClient()
+    const { error: e } = await supabase.from('jobs').update({ status: statusUpdate }).eq('id', jobId)
+    if (e) setError(e.message)
+    else setJob(prev => prev ? { ...prev, status: statusUpdate as Job['status'] } : prev)
+    setSaving(false)
+  }
+
+  async function handleSaveTeam() {
+    setSaving(true)
+    setError(null)
+    const supabase = createClient()
+    await supabase.from('job_employees').delete().eq('job_id', jobId)
+    if (assignedIds.size > 0) {
+      const rows = Array.from(assignedIds).map(emp_id => ({ job_id: jobId, employee_id: emp_id }))
+      const { error: e } = await supabase.from('job_employees').insert(rows)
+      if (e) { setError(e.message); setSaving(false); return }
+    }
+    setSaving(false)
+  }
+
+  async function handleDeleteJob() {
+    if (!window.confirm('Delete this job? This cannot be undone.')) return
+    setDeleting(true)
+    const supabase = createClient()
+    const { error: e } = await supabase.from('jobs').delete().eq('id', jobId)
+    if (e) { setError(e.message); setDeleting(false); return }
+    router.push('/dashboard/jobs')
+  }
+
+  async function handleCloseJob() {
+    if (!window.confirm('Mark this job as completed and close it?')) return
+    setSaving(true)
+    const supabase = createClient()
+    const { error: e } = await supabase.from('jobs')
+      .update({ status: 'completed', closed_at: new Date().toISOString() })
+      .eq('id', jobId)
+    if (e) setError(e.message)
+    else {
+      setJob(prev => prev ? { ...prev, status: 'completed' } : prev)
+      setStatusUpdate('completed')
+    }
+    setSaving(false)
+  }
+
+  async function handleMarkFirstResponse() {
+    setSaving(true)
+    const supabase = createClient()
+    const { error: e } = await supabase.from('jobs')
+      .update({ first_response_at: new Date().toISOString() })
+      .eq('id', jobId)
+    if (e) setError(e.message)
+    else setJob(prev => prev ? { ...prev, first_response_at: new Date().toISOString() } : prev)
+    setSaving(false)
+  }
+
+  async function uploadPhoto(type: 'before' | 'after', file: File) {
+    setPhotoBusy(true)
+    const supabase = createClient()
+    const path = `jobs/${jobId}/${type}/${Date.now()}_${file.name}`
+    const { error: upErr } = await supabase.storage.from('workforce-media').upload(path, file)
+    if (upErr) { setError(upErr.message); setPhotoBusy(false); return }
+    const { data: signed } = await supabase.storage.from('workforce-media').createSignedUrl(path, 3600)
+    const { data: photoData, error: photoErr } = await supabase
+      .from('job_photos')
+      .insert({ job_id: jobId, photo_type: type, storage_path: path, url: signed?.signedUrl ?? path })
+      .select().single()
+    if (!photoErr && photoData) setPhotos(prev => [...prev, photoData as JobPhoto])
+    setPhotoBusy(false)
+  }
+
+  async function handleRemoveContractor(jcId: string) {
+    const supabase = createClient()
+    await supabase.from('job_contractors').delete().eq('id', jcId)
+    setJobContractors(prev => prev.filter(c => c.id !== jcId))
+  }
+
+  if (!job) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <span className="text-text-secondary text-[13px]">Loading…</span>
+      </div>
+    )
+  }
+
+  const statusColor = STATUS_COLORS[job.status] ?? STATUS_COLORS.open
+  const priorityColor = PRIORITY_COLORS[job.priority] ?? PRIORITY_COLORS.low
+  const beforePhotos = photos.filter(p => p.photo_type === 'before')
+  const afterPhotos = photos.filter(p => p.photo_type === 'after')
+  const laborTotal = laborEntries.reduce((s, e) => s + e.total_cost, 0)
+  const inventoryTotal = inventory.reduce((s, i) => s + i.total_cost, 0)
+  const totalCost = (job.labor_cost ?? laborTotal) + (job.inventory_cost ?? inventoryTotal)
+  const isOpen = job.status !== 'completed' && job.status !== 'cancelled'
+
+  return (
+    <div className="p-4 space-y-4 overflow-y-auto pb-8">
+      {/* Action bar */}
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        <button onClick={handleSaveTeam} disabled={saving}
+          className="h-[42px] px-[18px] text-sm min-w-[72px] rounded-xl bg-primary text-white font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors shrink-0">
+          Save
+        </button>
+        <Link href={`/dashboard/jobs/${jobId}/chat`}
+          className="h-[42px] px-[18px] text-sm min-w-[72px] rounded-xl border border-primary text-primary font-semibold hover:bg-primary/5 transition-colors shrink-0 flex items-center justify-center">
+          Chat
+        </Link>
+        <button disabled
+          className="h-[42px] px-[18px] text-sm min-w-[72px] rounded-xl border border-border text-text-disabled font-semibold cursor-not-allowed shrink-0">
+          Edit
+        </button>
+        <button onClick={handleDeleteJob} disabled={deleting}
+          className="h-[42px] px-[18px] text-sm min-w-[72px] rounded-xl border font-semibold disabled:opacity-50 shrink-0"
+          style={{ backgroundColor: '#450A0A', color: '#FCA5A5', borderColor: '#FCA5A5' }}>
+          {deleting ? '…' : 'Delete'}
+        </button>
+      </div>
+
+      {/* Error banner */}
+      {error && <p className="font-semibold text-[13px]" style={{ color: '#FCA5A5' }}>{error}</p>}
+
+      {/* Job header card */}
+      <div className="bg-surface rounded-xl p-4 border border-divider space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <h1 className="text-[18px] font-semibold text-text-primary leading-tight">{job.title}</h1>
+          <span className="rounded-xl px-[10px] py-1 text-[11px] font-semibold shrink-0"
+            style={{ backgroundColor: statusColor.bg, color: statusColor.fg }}>
+            {job.status.replace('_', ' ')}
+          </span>
+        </div>
+        {job.description && (
+          <p className="text-[13px] text-text-secondary">{job.description}</p>
+        )}
+        <div className="border-t border-divider pt-3 space-y-2">
+          <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 items-center">
+            <span className="text-[12px] text-text-secondary">Priority</span>
+            <span className="rounded-xl px-[10px] py-1 text-[11px] font-semibold w-fit"
+              style={{ backgroundColor: priorityColor.bg, color: priorityColor.fg }}>
+              {job.priority}
+            </span>
+
+            <span className="text-[12px] text-text-secondary">Client</span>
+            <span className="text-[13px] text-text-primary">{job.clients?.name ?? '—'}</span>
+
+            <span className="text-[12px] text-text-secondary">Site</span>
+            <span className="text-[13px] text-text-primary">{job.sites?.address ?? job.address ?? '—'}</span>
+
+            <span className="text-[12px] text-text-secondary">Start</span>
+            <span className="text-[13px] text-text-primary">{fmtDatetime(job.scheduled_start)}</span>
+
+            <span className="text-[12px] text-text-secondary">End</span>
+            <span className="text-[13px] text-text-primary">{fmtDatetime(job.scheduled_end)}</span>
+
+            <span className="text-[12px] text-text-secondary">Est. Cost</span>
+            <span className="text-[13px] text-text-primary">R{(job.estimated_cost ?? 0).toFixed(2)}</span>
+
+            <span className="text-[12px] text-text-secondary">Project</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[13px] text-text-primary">{job.projects?.name ?? '—'}</span>
+              {job.projects && (
+                <button className="text-primary text-[11px] h-[28px] px-2 hover:opacity-70 transition-opacity">Open</button>
+              )}
+            </div>
+          </div>
+        </div>
+        {isOpen && (
+          <div className="flex gap-2 pt-1 border-t border-divider flex-wrap">
+            {!job.first_response_at && (
+              <button onClick={handleMarkFirstResponse} disabled={saving}
+                className="h-8 px-3 text-[12px] rounded-lg border border-border text-text-secondary hover:text-text-primary hover:border-text-secondary transition-colors disabled:opacity-50">
+                Mark First Response
+              </button>
+            )}
+            <button onClick={handleCloseJob} disabled={saving}
+              className="h-8 px-4 text-[12px] rounded-lg bg-primary text-white font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors">
+              Close Job
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Status update card */}
+      <div className="bg-surface rounded-xl p-4 border border-divider space-y-3">
+        <p className="text-[11px] font-semibold text-text-secondary tracking-wider uppercase">Update Status</p>
+        <div className="flex gap-2 items-end">
+          <div className="flex-1">
+            <FormSelect value={statusUpdate} onChange={e => setStatusUpdate(e.target.value)}>
+              {STATUS_OPTIONS.map(s => (
+                <option key={s} value={s}>{s.replace('_', ' ')}</option>
+              ))}
+            </FormSelect>
+          </div>
+          <button onClick={handleSaveStatus} disabled={saving}
+            className="h-12 w-20 text-[13px] rounded-lg bg-primary text-white font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors shrink-0">
+            Update
+          </button>
+        </div>
+      </div>
+
+      {/* Team & Contractor card */}
+      <div className="bg-surface rounded-xl border border-divider overflow-hidden">
+        <div className="px-4 py-2.5 border-b border-divider bg-surface-elevated">
+          <p className="text-[11px] font-semibold text-text-secondary tracking-wider uppercase">Team & Contractor</p>
+        </div>
+        <div className="p-4 space-y-3">
+          <p className="text-[12px] text-text-secondary">Assign employees and/or a contractor for this job.</p>
+
+          {/* Employee checklist */}
+          <div className="max-h-[160px] overflow-y-auto space-y-0.5 rounded-lg border border-divider p-2">
+            {employees.length === 0 && (
+              <p className="text-text-disabled text-[12px] px-1 py-1">No employees in company.</p>
+            )}
+            {employees.map(emp => (
+              <label key={emp.id} className="flex items-center gap-2 px-1 py-1.5 rounded cursor-pointer hover:bg-background transition-colors">
+                <input
+                  type="checkbox"
+                  checked={assignedIds.has(emp.id)}
+                  onChange={() => toggleEmployee(emp.id)}
+                  className="rounded border-border accent-primary"
+                />
+                <span className="text-[13px] text-text-primary">{emp.name} {emp.surname}</span>
+              </label>
+            ))}
+          </div>
+
+          {/* Contractor sub-section */}
+          <div className="border-t border-divider pt-3 space-y-2">
+            <p className="text-[13px] font-semibold text-text-primary">Contractors</p>
+            <p className="text-[12px] text-text-secondary">Assign one or more contractors to this job.</p>
+
+            {jobContractors.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-[12px]" style={{ minWidth: 480 }}>
+                  <thead>
+                    <tr className="text-text-secondary text-[11px] border-b border-divider">
+                      <th className="text-left pb-2 pr-2">Contractor</th>
+                      <th className="text-left pb-2 pr-2 w-20">Role</th>
+                      <th className="text-left pb-2 pr-2 w-24">Amount</th>
+                      <th className="pb-2 w-9"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {jobContractors.map(jc => (
+                      <tr key={jc.id} className="border-b border-divider last:border-0">
+                        <td className="py-2 pr-2">
+                          <p className="text-text-primary truncate">{jc.contractors?.name ?? '—'}</p>
+                          {jc.has_compliance_hold && (
+                            <p className="text-[9px]" style={{ color: '#FCA5A5' }}>⚠ Compliance hold</p>
+                          )}
+                        </td>
+                        <td className="py-2 pr-2 text-text-secondary text-[11px]">{jc.role ?? '—'}</td>
+                        <td className="py-2 pr-2 text-text-primary text-[12px]">
+                          {jc.agreed_amount != null ? `R${jc.agreed_amount.toFixed(2)}` : '—'}
+                        </td>
+                        <td className="py-2">
+                          <button onClick={() => handleRemoveContractor(jc.id)}
+                            className="text-text-secondary hover:text-error w-9 h-8 text-[13px] transition-colors">
+                            ✕
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {jobContractors.length === 0 && (
+              <p className="text-text-secondary text-[12px]">No contractors assigned yet.</p>
+            )}
+
+            <button className="h-10 px-4 text-[13px] rounded-lg border border-border text-text-secondary hover:text-text-primary hover:border-primary transition-colors">
+              + Assign Contractor
+            </button>
+          </div>
+
+          <button onClick={handleSaveTeam} disabled={saving}
+            className="w-full h-11 text-[13px] rounded-lg bg-primary text-white font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors">
+            Save team & contractor
+          </button>
+        </div>
+      </div>
+
+      {/* Cost breakdown */}
+      <div className="bg-surface rounded-xl p-4 border border-divider space-y-2">
+        <p className="text-[11px] font-semibold text-text-secondary tracking-wider uppercase mb-3">Cost Breakdown</p>
+        <div className="flex justify-between">
+          <span className="text-[13px] text-text-primary">Labor</span>
+          <span className="text-[13px] text-text-primary">R{(job.labor_cost ?? laborTotal).toFixed(2)}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-[13px] text-text-primary">Inventory</span>
+          <span className="text-[13px] text-text-primary">R{(job.inventory_cost ?? inventoryTotal).toFixed(2)}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-[13px] text-text-primary">Actual</span>
+          <span className="text-[13px] text-text-primary">R{(job.actual_cost ?? 0).toFixed(2)}</span>
+        </div>
+        <div className="border-t border-divider pt-2 flex justify-between">
+          <span className="text-[13px] font-semibold text-text-primary">Total</span>
+          <span className="text-[13px] font-semibold text-primary">R{totalCost.toFixed(2)}</span>
+        </div>
+      </div>
+
+      {/* Labor entries */}
+      <div className="bg-surface rounded-xl p-4 border border-divider space-y-2">
+        <p className="text-[11px] font-semibold text-text-secondary tracking-wider uppercase mb-1">Labor Entries</p>
+        {laborEntries.length === 0 ? (
+          <p className="text-text-secondary text-[12px]">No labor entries.</p>
+        ) : (
+          laborEntries.map(le => (
+            <div key={le.id} className="grid grid-cols-[1fr_auto_auto] gap-x-2 py-1 border-b border-divider last:border-0">
+              <span className="text-[13px] text-text-primary">{fmtDate(le.work_date)}</span>
+              <span className="text-[13px] text-text-secondary">{le.hours}h</span>
+              <span className="text-[13px] text-primary">R{le.total_cost.toFixed(2)}</span>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Inventory */}
+      <div className="bg-surface rounded-xl p-4 border border-divider space-y-2">
+        <div className="flex items-center justify-between mb-1">
+          <p className="text-[11px] font-semibold text-text-secondary tracking-wider uppercase">Inventory</p>
+          <button className="h-9 px-3 text-[12px] rounded-lg border border-border text-text-secondary hover:text-text-primary transition-colors">
+            + Add
+          </button>
+        </div>
+        {inventoryTotal > 0 && (
+          <p className="text-primary text-[12px]">Total inventory cost: R{inventoryTotal.toFixed(2)}</p>
+        )}
+        {inventory.length === 0 ? (
+          <p className="text-text-secondary text-[12px]">No inventory selected yet.</p>
+        ) : (
+          inventory.map(item => (
+            <div key={item.id} className="border-b border-divider pb-2 last:border-0">
+              <div className="grid grid-cols-[1fr_auto] gap-x-2">
+                <span className="text-[13px] text-text-primary">{item.name}</span>
+                <span className="text-[13px] text-primary">R{item.total_cost.toFixed(2)}</span>
+              </div>
+              <p className="text-[11px] text-text-secondary">
+                {item.supplier ? `Supplier: ${item.supplier} · ` : ''}{item.quantity} × R{item.unit_cost.toFixed(2)}
+              </p>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Photos */}
+      <div className="bg-surface rounded-xl p-4 border border-divider space-y-3">
+        <div className="flex items-center gap-2">
+          <p className="text-[11px] font-semibold text-text-secondary tracking-wider uppercase">Job Photos</p>
+          {photoBusy && <span className="material-icons text-[16px] text-text-secondary animate-spin">refresh</span>}
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => beforeInputRef.current?.click()} disabled={photoBusy}
+            className="h-10 px-[14px] text-[12px] rounded-lg bg-primary text-white font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors">
+            Upload Before
+          </button>
+          <button onClick={() => afterInputRef.current?.click()} disabled={photoBusy}
+            className="h-10 px-[14px] text-[12px] rounded-lg border border-primary text-primary font-semibold hover:bg-primary/5 disabled:opacity-50 transition-colors">
+            Upload After
+          </button>
+        </div>
+
+        <input ref={beforeInputRef} type="file" accept="image/*" className="hidden"
+          onChange={async e => {
+            const file = e.target.files?.[0]
+            if (file) { await uploadPhoto('before', file); e.target.value = '' }
+          }} />
+        <input ref={afterInputRef} type="file" accept="image/*" className="hidden"
+          onChange={async e => {
+            const file = e.target.files?.[0]
+            if (file) { await uploadPhoto('after', file); e.target.value = '' }
+          }} />
+
+        {beforePhotos.length > 0 && (
+          <div className="space-y-1">
+            <p className="text-[12px] font-semibold text-text-primary">Before</p>
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {beforePhotos.map(p => (
+                <img key={p.id} src={p.url} alt="Before"
+                  className="w-[72px] h-[72px] object-cover rounded-lg shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={() => window.open(p.url, '_blank')} />
+              ))}
+            </div>
+          </div>
+        )}
+        {afterPhotos.length > 0 && (
+          <div className="space-y-1">
+            <p className="text-[12px] font-semibold" style={{ color: '#22C55E' }}>After</p>
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {afterPhotos.map(p => (
+                <img key={p.id} src={p.url} alt="After"
+                  className="w-[72px] h-[72px] object-cover rounded-lg shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={() => window.open(p.url, '_blank')} />
+              ))}
+            </div>
+          </div>
+        )}
+        {photos.length === 0 && !photoBusy && (
+          <p className="text-text-secondary text-[12px]">No photos uploaded yet.</p>
+        )}
+      </div>
+    </div>
+  )
+}

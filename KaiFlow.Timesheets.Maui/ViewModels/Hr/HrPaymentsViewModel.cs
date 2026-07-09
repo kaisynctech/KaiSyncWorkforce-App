@@ -46,6 +46,7 @@ public record PaymentDisplay(PaymentApproval Payment, string EmployeeName)
 public partial class HrPaymentsViewModel : BaseViewModel
 {
     private readonly IStorageService _storage;
+    private readonly StepUpVerificationService _stepUp;
     private readonly IExportService _export;
     private readonly TimesheetStateService _state;
 
@@ -112,10 +113,11 @@ public partial class HrPaymentsViewModel : BaseViewModel
 
     public bool ShowPayslipReleaseHint => !string.IsNullOrEmpty(PayslipReleaseHint);
 
-    public HrPaymentsViewModel(IStorageService storage, IExportService export, TimesheetStateService state)
+    public HrPaymentsViewModel(IStorageService storage, IExportService export, TimesheetStateService state, StepUpVerificationService stepUp)
     {
         _storage = storage;
         _export = export;
+        _stepUp = stepUp;
         _state = state;
         Title = "Payroll";
     }
@@ -285,7 +287,8 @@ public partial class HrPaymentsViewModel : BaseViewModel
         await RunAsync(async () =>
         {
             PayrollAuditHelper.Append(payment, "approved", _state.CurrentEmployee?.FullName);
-            await _storage.UpdatePaymentStatusAsync(payment.Id, "approved");
+            await _stepUp.ExecuteAsync(async () =>
+                await _storage.ApprovePaymentRunAsync(payment.CompanyId, payment.Id));
             payment.StatusRaw = "approved";
             TotalPending -= payment.GrossPay;
             TotalApproved += payment.GrossPay;
@@ -314,7 +317,8 @@ public partial class HrPaymentsViewModel : BaseViewModel
             foreach (var display in pending)
             {
                 PayrollAuditHelper.Append(display.Payment, "bulk approved", _state.CurrentEmployee?.FullName);
-                await _storage.UpdatePaymentStatusAsync(display.Payment.Id, "approved");
+                await _stepUp.ExecuteAsync(async () =>
+                    await _storage.ApprovePaymentRunAsync(display.Payment.CompanyId, display.Payment.Id));
                 display.Payment.StatusRaw = "approved";
             }
             TotalPending = _all.Where(p => p.Status == PaymentStatus.Pending).Sum(p => p.GrossPay);
@@ -329,7 +333,7 @@ public partial class HrPaymentsViewModel : BaseViewModel
         var payment = display.Payment;
         await RunAsync(async () =>
         {
-            await _storage.UpdatePaymentStatusAsync(payment.Id, "rejected");
+            await _storage.RejectPaymentRunAsync(payment.CompanyId, payment.Id);
             payment.StatusRaw = "rejected";
             ApplyFilter();
         });

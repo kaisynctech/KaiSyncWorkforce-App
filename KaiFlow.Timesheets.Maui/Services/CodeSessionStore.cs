@@ -6,20 +6,52 @@ namespace KaiFlow.Timesheets.Services;
 /// </summary>
 public static class CodeSessionStore
 {
-    private const string CompanyCodeKey = "code_login_company_code";
-    private const string EmployeeCodeKey = "code_login_employee_code";
-    private const string SessionTokenKey = "code_login_session_token";
+    // ── Storage keys ────────────────────────────────────────────────────────
+
+    private const string CompanyCodeKey    = "code_login_company_code";
+    private const string EmployeeCodeKey   = "code_login_employee_code";
+    private const string SessionTokenKey   = "code_login_session_token";
     private const string LegacyMigratedKey = "code_login_secure_migrated";
 
-    public static void Save(string companyCode, string employeeCode, string sessionToken)
+    // ── Write ─────────────────────────────────────────────────────────────────
+
+    public static async Task SaveAsync(string companyCode, string employeeCode, string sessionToken)
     {
-        var company = companyCode.Trim().ToUpperInvariant();
+        var company  = companyCode.Trim().ToUpperInvariant();
         var employee = employeeCode.Trim();
-        _ = PersistAsync(company, employee, sessionToken);
+
+        await PersistAsync(company, employee, sessionToken);
+
+        // Remove any legacy plaintext copies only after the secure write succeeds.
         Preferences.Remove(CompanyCodeKey);
         Preferences.Remove(EmployeeCodeKey);
         Preferences.Remove(SessionTokenKey);
     }
+
+    // ── Read ─────────────────────────────────────────────────────────────────
+
+    public static string? GetSessionToken()
+    {
+        MigrateLegacyIfNeeded();
+        return ReadSecure(SessionTokenKey);
+    }
+
+    public static (string CompanyCode, string EmployeeCode)? GetCredentials()
+    {
+        MigrateLegacyIfNeeded();
+        var companyCode  = ReadSecure(CompanyCodeKey);
+        var employeeCode = ReadSecure(EmployeeCodeKey);
+        if (string.IsNullOrWhiteSpace(companyCode) || string.IsNullOrWhiteSpace(employeeCode))
+            return null;
+        return (companyCode, employeeCode);
+    }
+
+    // ── Status checks ─────────────────────────────────────────────────────────
+
+    public static bool HasCodeSession()
+        => !string.IsNullOrWhiteSpace(GetSessionToken()) || GetCredentials().HasValue;
+
+    // ── Clear ─────────────────────────────────────────────────────────────────
 
     public static void Clear()
     {
@@ -32,24 +64,7 @@ public static class CodeSessionStore
         Preferences.Remove(LegacyMigratedKey);
     }
 
-    public static (string CompanyCode, string EmployeeCode)? GetCredentials()
-    {
-        MigrateLegacyIfNeeded();
-        var companyCode = ReadSecure(CompanyCodeKey);
-        var employeeCode = ReadSecure(EmployeeCodeKey);
-        if (string.IsNullOrWhiteSpace(companyCode) || string.IsNullOrWhiteSpace(employeeCode))
-            return null;
-        return (companyCode, employeeCode);
-    }
-
-    public static string? GetSessionToken()
-    {
-        MigrateLegacyIfNeeded();
-        return ReadSecure(SessionTokenKey);
-    }
-
-    public static bool HasCodeSession()
-        => !string.IsNullOrWhiteSpace(GetSessionToken()) || GetCredentials().HasValue;
+    // ── Private helpers ───────────────────────────────────────────────────────
 
     private static string? ReadSecure(string key)
     {
@@ -70,20 +85,10 @@ public static class CodeSessionStore
 
     private static async Task PersistAsync(string companyCode, string employeeCode, string sessionToken)
     {
-        try
-        {
-            await SecureStorage.SetAsync(CompanyCodeKey, companyCode);
-            await SecureStorage.SetAsync(EmployeeCodeKey, employeeCode);
-            await SecureStorage.SetAsync(SessionTokenKey, sessionToken);
-            Preferences.Set(LegacyMigratedKey, true);
-        }
-        catch
-        {
-            AppTelemetrySink.LogSecureStorageFailure(SessionTokenKey);
-            Preferences.Set(CompanyCodeKey, companyCode);
-            Preferences.Set(EmployeeCodeKey, employeeCode);
-            Preferences.Set(SessionTokenKey, sessionToken);
-        }
+        await SecureStorage.SetAsync(CompanyCodeKey,  companyCode);
+        await SecureStorage.SetAsync(EmployeeCodeKey, employeeCode);
+        await SecureStorage.SetAsync(SessionTokenKey, sessionToken);
+        Preferences.Set(LegacyMigratedKey, true);
     }
 
     private static void MigrateLegacyIfNeeded()
@@ -91,9 +96,10 @@ public static class CodeSessionStore
         if (Preferences.Get(LegacyMigratedKey, false))
             return;
 
-        var legacyCompany = Preferences.Get(CompanyCodeKey, "");
+        var legacyCompany  = Preferences.Get(CompanyCodeKey,  "");
         var legacyEmployee = Preferences.Get(EmployeeCodeKey, "");
-        var legacyToken = Preferences.Get(SessionTokenKey, null as string);
+        var legacyToken    = Preferences.Get(SessionTokenKey, null as string);
+
         if (string.IsNullOrWhiteSpace(legacyCompany)
             && string.IsNullOrWhiteSpace(legacyEmployee)
             && string.IsNullOrWhiteSpace(legacyToken))

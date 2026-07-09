@@ -15,6 +15,7 @@ using KaiFlow.Timesheets.Views.ContractorPortal;
 using KaiFlow.Timesheets.Views.Employee;
 using KaiFlow.Timesheets.Views.Hr;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
 using Supabase;
 
 namespace KaiFlow.Timesheets;
@@ -87,10 +88,13 @@ public static class MauiProgram
         builder.Services.AddSingleton<IBackupService, BackupService>();
         builder.Services.AddSingleton<EmployeeScopeService>();
         builder.Services.AddSingleton<AppTelemetry>();
+        builder.Services.AddSingleton<StepUpVerificationService>();
         builder.Services.AddSingleton<KaiFlow.Finance.TaxCalculationService>();
         builder.Services.AddSingleton<AppUpdateService>();
         builder.Services.AddSingleton<RealtimeService>();
         builder.Services.AddSingleton<AccountNotificationAlertService>();
+        // Phase 4: shared navigation state for SidebarView across all module pages
+        builder.Services.AddSingleton<KaiFlow.Timesheets.Services.NavigationStateService>();
 
         // Auth ViewModels + Pages
         // Finance module ViewModels
@@ -137,6 +141,10 @@ public static class MauiProgram
         builder.Services.AddTransient<EmployeeCompanySelectorPage>();
         builder.Services.AddTransient<EmployeeMandatoryPasswordViewModel>();
         builder.Services.AddTransient<EmployeeMandatoryPasswordPage>();
+        builder.Services.AddTransient<EmployeePinSetupViewModel>();
+        builder.Services.AddTransient<EmployeePinSetupPage>();
+        builder.Services.AddTransient<EmployeePinEntryViewModel>();
+        builder.Services.AddTransient<EmployeePinEntryPage>();
         builder.Services.AddTransient<HrRegistrationSuccessViewModel>();
         builder.Services.AddTransient<HrRegistrationSuccessPage>();
         builder.Services.AddTransient<HrEmailVerifiedPage>();
@@ -225,6 +233,10 @@ public static class MauiProgram
         builder.Services.AddTransient<HrSuppliersPage>();
         builder.Services.AddTransient<HrContractorDetailsViewModel>();
         builder.Services.AddTransient<HrContractorDetailsPage>();
+        builder.Services.AddTransient<HrJobContractorDocsViewModel>(); // Phase D
+        builder.Services.AddTransient<HrJobContractorDocsPage>();      // Phase D
+        builder.Services.AddTransient<HrCompliancePacksViewModel>(); // Phase 2B.3a
+        builder.Services.AddTransient<HrCompliancePacksPage>();      // Phase 2B.3a
         builder.Services.AddTransient<HrSchedulingViewModel>();
         builder.Services.AddTransient<HrSchedulingPage>();
         builder.Services.AddTransient<HrInventoryViewModel>();
@@ -286,12 +298,23 @@ public static class MauiProgram
         builder.Services.AddTransient<HrImportEmployeesPage>();
         builder.Services.AddTransient<HrTeamPunchViewModel>();
         builder.Services.AddTransient<HrTeamPunchPage>();
+        builder.Services.AddTransient<HrActiveSessionsViewModel>();
+        builder.Services.AddTransient<HrActiveSessionsPage>();
 
 #if DEBUG
         builder.Logging.AddDebug();
 #endif
 
+        // NOTE: removed eager DI validation (ValidateOnBuild) because it can
+        // trigger platform SecureStorage access synchronously via the
+        // MauiSupabaseSessionHandler during service validation and cause
+        // startup deadlocks on some platforms (WinUI). This validation was
+        // temporary and can be re-enabled after platform-safe startup checks.
+
         var app = builder.Build();
+
+        var telemetry = app.Services.GetRequiredService<AppTelemetry>();
+        AppTelemetrySink.EventRaised += (name, props) => telemetry.LogEvent(name, props);
 
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
         {

@@ -82,9 +82,11 @@ public partial class EmployeeLoginViewModel : BaseViewModel
 
         await RunAsync(async () =>
         {
+            System.Diagnostics.Debug.WriteLine($"[EmployeeLogin] Attempting code sign-in: {CompanyCode} / {EmployeeCode}");
             var session = await _storage.SignInWithCodeAsync(
                 CompanyCode.Trim().ToUpperInvariant(),
                 EmployeeCode.Trim());
+            System.Diagnostics.Debug.WriteLine($"[EmployeeLogin] SignInWithCodeAsync returned session: {(session == null ? "null" : "ok")}");
 
             if (session == null)
             {
@@ -94,10 +96,19 @@ public partial class EmployeeLoginViewModel : BaseViewModel
 
             ApplyCodeLogin(session);
 
-            var hasAuthSession = await _storage.IsAuthenticatedAsync();
-            if (!session.Employee.LoginPasswordReady && hasAuthSession)
+            System.Diagnostics.Debug.WriteLine($"[EmployeeLogin] Applied code login. Employee.Id={session.Employee?.Id} Company.Id={session.Company?.Id}");
+
+            if (session.Employee == null)
             {
-                await ShellNavigation.GoToAsync($"{nameof(Views.Auth.EmployeeMandatoryPasswordPage)}");
+                ErrorMessage = "Login succeeded but no employee was returned from server.";
+                return;
+            }
+
+            // Guard: ensure Shell is available before attempting navigation
+            if (Shell.Current == null)
+            {
+                System.Diagnostics.Debug.WriteLine("[EmployeeLogin] Shell.Current is null; cannot navigate.");
+                ErrorMessage = "Navigation not available. Try again.";
                 return;
             }
 

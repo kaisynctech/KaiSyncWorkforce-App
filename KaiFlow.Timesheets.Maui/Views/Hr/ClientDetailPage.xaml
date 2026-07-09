@@ -80,6 +80,11 @@
                             <Button Text="Copy portal login credentials" Command="{Binding CopyPortalCredentialsCommand}"
                                     IsEnabled="{Binding HasClientCode}" BackgroundColor="{StaticResource SurfaceDark}"
                                     TextColor="{StaticResource Primary}" CornerRadius="8" HeightRequest="42" FontSize="13" />
+                            <Button Text="Rotate portal code"
+                                    Command="{Binding RotateClientCodeCommand}"
+                                    IsVisible="{Binding HasClientCode}"
+                                    BackgroundColor="{StaticResource SurfaceDark}" TextColor="#F59E0B"
+                                    CornerRadius="8" HeightRequest="40" FontSize="12" />
                             <Label Text="Clients use Home → Client portal sign-in with company code + client code."
                                    FontSize="11" TextColor="{StaticResource TextSecondary}" />
                         </VerticalStackLayout>

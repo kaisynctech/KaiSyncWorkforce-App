@@ -17,10 +17,32 @@ public interface IStorageService
     Task<CodeLoginResult?> SignInWithCodeAsync(string companyCode, string employeeCode);
     Task<CodeLoginResult?> RefreshCodeSessionAsync();
     Task<bool> ValidateCodeSessionAsync(Guid companyId, Guid employeeId, string sessionToken);
+
+    /// <summary>
+    /// Called immediately after first-login ID verification.
+    /// Bcrypt-hashes the 4-digit PIN server-side, revokes the identity session,
+    /// and issues a fresh PIN-authenticated session token.
+    /// </summary>
+    Task<CodeLoginResult?> SetEmployeePinAsync(string sessionToken, string pin);
+
+    /// <summary>
+    /// Returning employee login: company code + employee UUID + 4-digit PIN.
+    /// Uses the employee's UUID (stored in SecureStorage after first login) for lookup —
+    /// never the fragile employee_code string which can be empty.
+    /// Returns null on wrong PIN, lockout, or unknown employee.
+    /// </summary>
+    Task<CodeLoginResult?> SignInWithPinAsync(string companyCode, Guid employeeId, string pin);
+
+    /// <summary>
+    /// HR action: clears the employee's PIN and revokes all active sessions.
+    /// The employee must re-authenticate with their ID number on next launch.
+    /// </summary>
+    Task HrResetEmployeePinAsync(Guid employeeId);
     Task<Company?> GetCurrentCompanyAsync(Guid companyId);
     Task SendPasswordResetEmailAsync(string email);
     Task ChangePasswordAsync(string newPassword);
-    Task TransferOwnershipAsync(Guid companyId, Guid targetEmployeeId);
+    Task<OwnershipTransferInitiation> InitiateOwnershipTransferAsync(Guid companyId, Guid targetEmployeeId, CancellationToken ct = default);
+    Task VerifyOwnershipTransferAsync(Guid companyId, Guid transferId, string otp, CancellationToken ct = default);
     // Returns true = OTP sent (new user), false = already authenticated (existing account, correct password)
     Task<bool> SendHrRegistrationOtpAsync(string email, string password);
     Task VerifyHrRegistrationOtpAsync(string email, string otp);
@@ -42,12 +64,24 @@ public interface IStorageService
     Task<Employee?> GetEmployeeAsync(Guid employeeId);
     Task<Employee> CreateEmployeeAsync(Employee employee);
     Task<Employee> UpdateEmployeeAsync(Employee employee);
+    Task SetEmployeeRoleAsync(Guid companyId, Guid employeeId, string newRole);
+    Task UpdateEmployeeBankingAsync(Guid companyId, Guid employeeId, string? bankAccount, string? bankName, string? bankBranchCode);
+    Task SetEmployeeActiveAsync(Guid companyId, Guid employeeId, bool isActive);
     Task DeleteEmployeeAsync(Guid employeeId);
+    Task DeleteEmployeeAsync(Guid companyId, Guid employeeId);
     Task<SelfRegisterResult> EmployeeSelfRegisterAsync(string email, string firstName, string lastName, string companyCode);
     Task<Employee?> UpdateMyProfileAsync(Guid employeeId, Guid companyId, string? firstName, string? lastName, string? phone, string? idNumber, string? bankAccount, string? bankName, string? bankBranchCode);
     Task<List<Employee>> GetPendingEmployeesAsync(Guid companyId);
     Task<Employee> ApproveEmployeeAsync(Guid employeeId);
     Task RejectEmployeeAsync(Guid employeeId);
+    Task HrUnlockEmployeeAsync(Guid companyId, Guid employeeId);
+    Task<List<LockedEmployee>> HrGetLockedEmployeesAsync(Guid companyId);
+    Task<List<ActiveSession>> HrListActiveSessionsAsync(Guid companyId, Guid? employeeId = null);
+    Task HrRevokeSessionAsync(Guid companyId, Guid sessionId);
+    Task<int> HrRevokeAllEmployeeSessionsAsync(Guid companyId, Guid employeeId);
+    Task HrConfirmStepUpAsync(Guid companyId);
+    Task<(int FailedAttempts, DateTimeOffset? LockedUntil)> HrRecordStepUpFailureAsync(Guid companyId);
+    Task<bool> HrCheckStepUpValidAsync(Guid companyId);
 
     // Punches / Attendance
     Task<List<TimePunch>> GetPunchesAsync(Guid companyId, DateOnly from, DateOnly to, Guid? employeeId = null);
@@ -96,6 +130,7 @@ public interface IStorageService
     Task<string> GenerateNextProjectCodeAsync(Guid companyId);
     Task<string> GenerateNextJobCodeAsync(Guid companyId);
     Task<ClientPortalLogin?> ResolveClientByCodeAsync(string companyCode, string clientCode);
+    Task<string> HrRotateClientCodeAsync(Guid companyId, Guid clientId);
     Task<List<ClientDeal>> GetClientPortalProjectsAsync(string companyCode, string clientCode);
     Task<List<ClientPortalMessageInboxItem>> GetClientPortalMessageInboxAsync(string companyCode, string clientCode);
     Task<ClientDeal?> GetClientPortalProjectAsync(string companyCode, string clientCode, Guid dealId);
@@ -183,6 +218,13 @@ public interface IStorageService
     Task<List<JobDocument>> GetJobDocumentsAsync(Guid jobId, Guid? companyId = null, Guid? employeeId = null);
     Task<JobDocument> UploadJobDocumentAsync(Guid companyId, Guid jobId, FileResult file, string documentType, string documentName, Guid? employeeId = null);
     Task DeleteJobDocumentAsync(JobDocument document);
+
+    // Phase D — job-contractor-level documents
+    Task<JobContractor?> GetJobContractorByIdAsync(Guid jobContractorId, Guid companyId);
+    Task<List<JobContractorDocument>> GetJobContractorDocumentsAsync(Guid companyId, Guid jobContractorId);
+    Task<JobContractorDocument> UploadJobContractorDocumentAsync(Guid companyId, Guid jobId, Guid contractorId, Guid jobContractorId, FileResult file, string documentType, string documentName, Guid? createdBy = null);
+    Task DeleteJobContractorDocumentAsync(JobContractorDocument document);
+
     Task<JobChecklistItem> CreateChecklistItemForJobAsync(Guid companyId, Guid employeeId, Guid jobId, string description);
     Task<string> UploadJobPhotoAsync(Guid companyId, Guid jobId, FileResult file, string phase);
     Task AppendJobPhotoAsync(Guid companyId, Guid jobId, string phase, string photoUrl, Guid? employeeId = null);
@@ -214,6 +256,7 @@ public interface IStorageService
     Task<List<LeaveRequest>> GetMyLeaveRequestsAsync(Guid companyId, Guid employeeId);
     Task<LeaveRequest> CreateLeaveRequestAsync(LeaveRequest request);
     Task<LeaveRequest> UpdateLeaveStatusAsync(Guid requestId, string status, string? decisionNote = null);
+    Task DecideLeaveRequestAsync(Guid companyId, Guid leaveRequestId, string decision, string? note = null);
     Task<LeaveRequest> UpdatePendingLeaveAsync(LeaveRequest request);
     Task<string?> UploadLeaveAttachmentAsync(Guid employeeId, string localFilePath);
 
@@ -223,6 +266,143 @@ public interface IStorageService
     Task<EmployeeDocument> UploadEmployeeDocumentAsync(Guid companyId, Guid employeeId, FileResult file, string documentType, string documentName, string uploadedByRole = "hr");
     Task<EmployeeDocument> ReplaceEmployeeDocumentAsync(EmployeeDocument existing, FileResult file, string documentType, string documentName, string uploadedByRole);
     Task DeleteEmployeeDocumentAsync(EmployeeDocument document);
+
+    // Contractor Documents (Phase 2B.1 — HR upload/manage only)
+    Task<List<ContractorDocument>> GetContractorDocumentsAsync(Guid companyId, Guid contractorId);
+    Task<ContractorDocument> UploadContractorDocumentAsync(Guid companyId, Guid contractorId, FileResult file, string documentType, string documentName, DateOnly? issueDate, DateOnly? expiryDate, bool isRequired);
+    Task<ContractorDocument> ApproveContractorDocumentAsync(Guid documentId, Guid approvedByEmployeeId);
+    Task<ContractorDocument> RejectContractorDocumentAsync(Guid documentId, string reason);
+    Task DeleteContractorDocumentAsync(ContractorDocument document);
+
+    // Contractor Quotes (Phase 2D.2)
+    Task<List<ContractorQuote>> ContractorPortalListQuotesAsync(Guid contractorId, Guid companyId);
+    Task<ContractorQuote?> ContractorPortalGetQuoteAsync(Guid contractorId, Guid companyId, Guid quoteId);
+    Task<Guid> ContractorPortalSaveQuoteDraftAsync(Guid contractorId, Guid companyId, Guid? quoteId, string title, string description, string quoteNumber, DateOnly? validUntil, string vatMode, decimal vatRate, decimal discount, decimal freight, decimal duty, decimal levies, decimal otherCharges, string terms, string contractorNotes, List<KaiFlow.Timesheets.ViewModels.ContractorPortal.QuoteLineItemRow> items);
+    Task ContractorPortalSubmitQuoteAsync(Guid contractorId, Guid companyId, Guid quoteId);
+    Task<Guid> ContractorPortalUploadQuoteAsync(Guid contractorId, Guid companyId, FileResult file, string title, string description, string quoteNumber, string vatMode, decimal vatRate, decimal amount, decimal discount, decimal freight, decimal duty, decimal levies, decimal otherCharges, DateOnly? validUntil, string contractorNotes);
+    Task ContractorPortalDeleteDraftAsync(Guid contractorId, Guid companyId, Guid quoteId);
+    /// <summary>Portal: resubmit a revision_requested quote back to submitted.</summary>
+    Task ContractorPortalResubmitQuoteAsync(Guid contractorId, Guid companyId, Guid quoteId);
+
+    // Phase E — portal invoice submission
+    Task<Guid> ContractorPortalSubmitInvoiceAsync(string companyCode, string contractorCode, Guid jobId, decimal amount, string? invoiceReference, string? notes);
+    /// <summary>Phase P — portal contractor resubmits a rejected invoice with corrected amount/notes.</summary>
+    Task ContractorPortalResubmitPayoutAsync(string companyCode, string contractorCode, Guid payoutId, decimal amount, string? invoiceReference, string? notes);
+
+    Task<List<ContractorQuote>> GetContractorQuotesAsync(Guid companyId, Guid contractorId);
+    Task<List<ContractorQuoteItem>> GetContractorQuoteItemsAsync(Guid quoteId);
+    Task<List<ContractorQuoteAttachment>> GetContractorQuoteAttachmentsAsync(Guid quoteId);
+
+    // HR Quote Review (Phase 2D.3)
+    /// <summary>HR: mark a submitted quote as under_review (auto-fires when HR opens it).</summary>
+    Task HrStartQuoteReviewAsync(Guid companyId, Guid hrUserId, Guid quoteId);
+    /// <summary>HR: approve a submitted/under_review quote.</summary>
+    Task HrApproveContractorQuoteAsync(Guid companyId, Guid hrUserId, Guid quoteId, string? hrNotes);
+    /// <summary>HR: reject a submitted/under_review quote with a mandatory reason.</summary>
+    Task HrRejectContractorQuoteAsync(Guid companyId, Guid hrUserId, Guid quoteId, string rejectionReason);
+    /// <summary>HR: request revision with comments the contractor will see.</summary>
+    Task HrRequestQuoteRevisionAsync(Guid companyId, Guid hrUserId, Guid quoteId, string revisionComments);
+
+    // Quote → Job conversion (Phase 2D.4)
+    /// <summary>
+    /// Atomically creates a job from an approved quote and marks the quote as Converted.
+    /// Writes job_contractors and (if dealId provided) project_contractors inside the same RPC transaction.
+    /// Returns (JobId, JobCode) on success; throws on duplicate conversion or non-approved status.
+    /// </summary>
+    Task<(Guid JobId, string JobCode)> HrConvertQuoteToJobAsync(
+        Guid companyId, Guid hrUserId, Guid quoteId,
+        string jobTitle, string? description, string priority,
+        DateTime? scheduledStart, DateTime? scheduledEnd,
+        Guid? dealId = null);
+
+    /// <summary>Links an approved quote to an already-existing job. Accumulates cost; sets
+    /// contractor_id only when the job doesn't already have one.</summary>
+    Task HrAssignQuoteToJobAsync(Guid companyId, Guid hrUserId, Guid quoteId, Guid jobId);
+
+    /// <summary>
+    /// Upserts job_contractors (and optionally project_contractors) via SECURITY DEFINER RPC.
+    /// Safe to call from any context — bypasses RLS. Used for the assign-to-existing-job path.
+    /// </summary>
+    Task HrUpsertJobContractorAsync(Guid companyId, Guid jobId, Guid contractorId,
+        Guid? quoteId = null, decimal agreedAmount = 0, Guid? dealId = null);
+
+    // Contractor Action Centre (Phase 2D.3)
+    /// <summary>Returns aggregated action items across all contractors for the given company.</summary>
+    Task<List<ContractorActionItem>> GetContractorActionItemsAsync(Guid companyId);
+    /// <summary>Returns recent contractor-related events for the Activity Feed (Section B).</summary>
+    Task<List<ContractorActivityEvent>> GetContractorActivityAsync(Guid companyId, int limit = 50);
+
+    // Contractor Banking Self-Service (Phase 2C.3)
+    /// <summary>Portal: current banking status with masked account number.</summary>
+    Task<ContractorBankingStatus?> ContractorPortalGetBankingAsync(Guid contractorId, Guid companyId);
+    /// <summary>Portal: submits a pending banking update (replaces any existing pending). Notifies HR.</summary>
+    Task ContractorPortalSubmitBankingAsync(Guid contractorId, Guid companyId, string accountHolder, string bankName, string bankAccount, string branchCode, string accountType, string swiftBic);
+    /// <summary>Portal: returns the contractor's own pending update with masked account (null if none).</summary>
+    Task<ContractorBankingUpdate?> ContractorPortalGetPendingBankingAsync(Guid contractorId, Guid companyId);
+    /// <summary>Portal: returns the most recent banking update regardless of status (pending/approved/rejected). Masked account.</summary>
+    Task<ContractorBankingUpdate?> ContractorPortalGetLatestBankingDecisionAsync(Guid contractorId, Guid companyId);
+    /// <summary>HR: returns the pending banking update for a contractor (full details, authenticated).</summary>
+    Task<ContractorBankingUpdate?> GetContractorPendingBankingAsync(Guid companyId, Guid contractorId);
+    /// <summary>HR: approves a pending banking update — copies fields to contractors, resets banking_verified = false.</summary>
+    Task ApproveContractorBankingAsync(Guid updateId, Guid reviewedByEmployeeId);
+    /// <summary>HR: rejects a pending banking update with a reason. contractors table is not modified.</summary>
+    Task RejectContractorBankingAsync(Guid updateId, Guid reviewedByEmployeeId, string reason);
+
+    // Phase A — Multi-contractor foundation (job_contractors + project_contractors)
+    /// <summary>Returns all contractor assignments for a job (job_contractors with embedded jobs).</summary>
+    Task<List<JobContractor>> GetJobContractorsAsync(Guid jobId);
+    /// <summary>Returns all contractor assignments for a project/deal (project_contractors with embedded client_deals).</summary>
+    Task<List<ProjectContractor>> GetProjectContractorsAsync(Guid dealId);
+    /// <summary>Returns all job assignments for a specific contractor, with embedded job details. Used by Contractor Details → Jobs tab.</summary>
+    Task<List<JobContractor>> GetContractorAssignmentsAsync(Guid companyId, Guid contractorId);
+    /// <summary>Phase H — loads all job_contractors rows for a company in one query for analytics.</summary>
+    Task<List<JobContractor>> GetAllJobContractorsAsync(Guid companyId);
+    /// <summary>Returns all project assignments for a specific contractor, with embedded client_deal details. Used by Contractor Details → Projects tab.</summary>
+    Task<List<ProjectContractor>> GetContractorProjectsAsync(Guid companyId, Guid contractorId);
+    /// <summary>Inserts a job_contractors row if none exists for (job_id, contractor_id). Idempotent — safe to call on every job save.</summary>
+    Task UpsertJobContractorAsync(Guid companyId, Guid jobId, Guid contractorId, Guid? quoteId = null, decimal agreedAmount = 0);
+    /// <summary>Inserts a project_contractors row if none exists for (deal_id, contractor_id). Idempotent — safe to call on every project link.</summary>
+    Task UpsertProjectContractorAsync(Guid companyId, Guid dealId, Guid contractorId);
+    /// <summary>Deletes a single job_contractors row by its primary key. Company-scoped to prevent cross-company deletes.</summary>
+    Task DeleteJobContractorAsync(Guid companyId, Guid jobContractorId);
+    /// <summary>Updates role and agreed_amount on a job_contractors row.</summary>
+    Task UpdateJobContractorAsync(Guid companyId, Guid jobContractorId, string role, decimal agreedAmount);
+
+    // Contractor Activity Feed (Phase 2C — HR Activity tab)
+    /// <summary>Returns contractor-specific app_events newest-first (limit 200).</summary>
+    Task<List<ContractorActivityEntry>> GetContractorActivityFeedAsync(Guid companyId, Guid contractorId);
+    /// <summary>Records a contractor HR action to app_events. Fire-and-forget — never throws.</summary>
+    Task RecordContractorEventAsync(Guid companyId, Guid contractorId, string action, string screen = "HrContractorDetails", Dictionary<string, object>? meta = null);
+
+    // Contractor Portal Profile (Phase 2C.2 — self-service profile via SECURITY DEFINER RPCs)
+    /// <summary>Returns the contractor's full profile. Null when contractor not found or inactive.</summary>
+    Task<ContractorPortalProfile?> ContractorPortalGetProfileAsync(Guid contractorId, Guid companyId);
+    /// <summary>Updates contractor-editable fields only. HR-owned fields are never modified.</summary>
+    Task ContractorPortalUpdateProfileAsync(Guid contractorId, Guid companyId, ContractorPortalProfile profile);
+
+    // Contractor Portal Compliance (Phase 2B.3c — portal document access via SECURITY DEFINER RPCs)
+    /// <summary>Returns all current contractor documents via portal RPC (no JWT required).</summary>
+    Task<List<ContractorDocument>> ContractorPortalGetDocumentsAsync(Guid contractorId, Guid companyId);
+    /// <summary>Returns compliance pack items assigned to the contractor (empty when no pack). No JWT required.</summary>
+    Task<List<CompliancePackItem>> ContractorPortalGetCompliancePackAsync(Guid contractorId, Guid companyId);
+    /// <summary>Uploads a document from the contractor portal. Sets approval_status=pending, uploaded_by_role=contractor_portal.</summary>
+    Task ContractorPortalUploadDocumentAsync(Guid contractorId, Guid companyId, FileResult file, string docType, string docName, DateOnly? expiryDate, Guid? oldDocumentId = null);
+
+    // Compliance Packs (Phase 2B.3a — company-configurable document requirement templates)
+    /// <summary>Returns all active packs for the company. Seeds 6 SA defaults on first call (idempotent).</summary>
+    Task<List<CompliancePack>> GetCompliancePacksAsync(Guid companyId);
+    /// <summary>Returns all items (document type requirements) for a given pack.</summary>
+    Task<List<CompliancePackItem>> GetCompliancePackItemsAsync(Guid packId);
+    /// <summary>
+    /// Saves a pack and its items. Handles INSERT (Id==Guid.Empty) and UPDATE.
+    /// If pack.IsDefault=true, clears any existing default for the company first.
+    /// Returns the saved pack with its generated Id populated.
+    /// </summary>
+    Task<CompliancePack> SaveCompliancePackAsync(CompliancePack pack, List<CompliancePackItem> items);
+    /// <summary>Hard-deletes a pack. Items are cascade-deleted. Contractors assigned to the pack become unassigned (SET NULL).</summary>
+    Task DeleteCompliancePackAsync(Guid packId);
+    /// <summary>Sets the specified pack as the company default, clearing any existing default.</summary>
+    Task SetDefaultPackAsync(Guid companyId, Guid packId);
 
     // Daily Absences
     Task<List<DailyAbsence>> GetDailyAbsencesAsync(Guid companyId, DateOnly date, Guid? employeeId = null);
@@ -257,6 +437,7 @@ public interface IStorageService
 
     // Contractors
     Task<List<Contractor>> GetContractorsAsync(Guid companyId);
+    Task<Contractor?> GetContractorByIdAsync(Guid companyId, Guid contractorId);
     Task<List<Contractor>> GetLinkedContractorsForEmployeeAsync(Guid companyId, Guid employeeId);
     Task<Contractor> CreateContractorAsync(Contractor contractor);
     Task<Contractor> UpdateContractorAsync(Contractor contractor);
@@ -264,6 +445,7 @@ public interface IStorageService
     Task<ContractorMemberLink> CreateContractorMemberLinkAsync(ContractorMemberLink link);
     Task<string> GenerateNextContractorCodeAsync(Guid companyId);
     Task<ContractorPortalLogin?> ResolveContractorByCodeAsync(string companyCode, string contractorCode);
+    Task<string> HrRotateContractorCodeAsync(Guid companyId, Guid contractorId);
 
     // Job site visits
     Task<List<JobSiteVisit>> GetJobSiteVisitsAsync(Guid jobId);
@@ -301,6 +483,8 @@ public interface IStorageService
     Task<List<PaymentApproval>> GetPaymentsAsync(Guid companyId);
     Task<PaymentApproval> CreatePaymentApprovalAsync(PaymentApproval payment);
     Task<PaymentApproval> UpdatePaymentStatusAsync(Guid paymentId, string status);
+    Task ApprovePaymentRunAsync(Guid companyId, Guid paymentApprovalId);
+    Task RejectPaymentRunAsync(Guid companyId, Guid paymentApprovalId);
     Task<PaymentApproval> UpdatePaymentAsync(PaymentApproval payment);
     Task SharePayslipWithEmployeeAsync(Guid paymentId);
     Task<List<PaymentApproval>> GetMyPayslipsAsync(Guid companyId, Guid employeeId);
@@ -402,6 +586,8 @@ public interface IStorageService
     Task<List<CompanyBackupRecord>> GetCompanyBackupsAsync(Guid companyId, int limit = 20, CancellationToken ct = default);
     Task<List<BackupJobRecord>> GetBackupJobsAsync(Guid companyId, int limit = 20, CancellationToken ct = default);
     Task<BackupJobRecord> CreateScheduledBackupJobAsync(Guid companyId, string cronExpression, CancellationToken ct = default);
+    Task<CompanyExportJobResult> InvokeGenerateCompanyExportAsync(Guid companyId, CancellationToken ct = default);
+    Task<List<CompanyExportJobRecord>> GetExportJobsAsync(Guid companyId, int limit = 5, CancellationToken ct = default);
     Task LogApplicationErrorAsync(string? module, string? page, Exception ex, Guid? companyId = null, Guid? employeeId = null, Dictionary<string, string>? metadata = null, CancellationToken ct = default);
     Task<List<ApplicationErrorRecord>> GetApplicationErrorsAsync(Guid companyId, int limit = 50, CancellationToken ct = default);
 }

@@ -33,12 +33,18 @@ public partial class HrJobDetailsViewModel : BaseViewModel
     [ObservableProperty] private ObservableCollection<Contractor> _contractors = [];
     [ObservableProperty] private Contractor? _selectedContractor;
     [ObservableProperty] private string _contractorCostText = "0";
+    [ObservableProperty] private ObservableCollection<JobContractor> _jobContractors = [];
+
+    public bool HasJobContractors  => JobContractors.Count > 0;
+    public bool HasNoJobContractors => JobContractors.Count == 0;
     [ObservableProperty] private string _selectedStatus = "";
     [ObservableProperty] private string _inventoryTotalDisplay = "R0.00";
     [ObservableProperty] private bool _isLoadingPage;
     [ObservableProperty] private bool _isPhotosBusy;
     [ObservableProperty] private bool _isDocumentsBusy;
     [ObservableProperty] private bool _isChecklistBusy;
+    [ObservableProperty] private ClientDeal? _linkedProject;
+    private List<ClientDeal> _allProjects = [];
 
     public List<string> StatusOptions { get; } = ["scheduled", "inProgress", "completed", "cancelled"];
     public IReadOnlyList<string> DocumentTypeLabels => ProjectDocumentTypes.TypeLabels;
@@ -58,6 +64,12 @@ public partial class HrJobDetailsViewModel : BaseViewModel
     {
         OnPropertyChanged(nameof(HasJob));
         OnPropertyChanged(nameof(ShowLifecycleActions));
+    }
+
+    partial void OnJobContractorsChanged(ObservableCollection<JobContractor> value)
+    {
+        OnPropertyChanged(nameof(HasJobContractors));
+        OnPropertyChanged(nameof(HasNoJobContractors));
     }
 
     public HrJobDetailsViewModel(IStorageService storage, TimesheetStateService state)
@@ -119,6 +131,17 @@ public partial class HrJobDetailsViewModel : BaseViewModel
             if (Job?.ClientId.HasValue == true)
                 Client = await _storage.GetClientAsync(Job.ClientId!.Value);
 
+            _allProjects = await _storage.GetClientDealsAsync(companyId);
+            // Enrich all deals with client names so every picker entry shows the full format.
+            var allClients  = await _storage.GetClientsAsync(companyId);
+            var clientById  = allClients.ToDictionary(c => c.Id);
+            foreach (var d in _allProjects)
+                if (d.ClientId.HasValue && clientById.TryGetValue(d.ClientId.Value, out var cl))
+                    d.ClientName = cl.Name;
+            LinkedProject = Job?.DealId.HasValue == true
+                ? _allProjects.FirstOrDefault(d => d.Id == Job.DealId!.Value)
+                : null;
+
             if (Job?.SiteId.HasValue == true)
             {
                 var sites = await _storage.GetSitesAsync(companyId);
@@ -173,16 +196,24 @@ public partial class HrJobDetailsViewModel : BaseViewModel
             if (Job?.ContractorId != null)
                 SelectedContractor = Contractors.FirstOrDefault(c => c.Id == Job.ContractorId);
 
+            var jcRows = await _storage.GetJobContractorsAsync(id);
+            var nameMap = Contractors.ToDictionary(c => c.Id, c => c.Name);
+            foreach (var row in jcRows)
+                row.ContractorDisplayName = nameMap.GetValueOrDefault(row.ContractorId, "Unknown");
+            await EnrichJobContractorFinancialsAsync(jcRows, companyId, id);
+            JobContractors = new ObservableCollection<JobContractor>(jcRows);
+
             try
             {
                 var visits = await _storage.GetJobSiteVisitsAsync(id);
                 SiteSessions = new ObservableCollection<JobSiteSession>(JobSiteSession.Build(visits));
+                var assignedIds = JobContractors.Select(jc => jc.ContractorId).ToHashSet();
+                if (Job?.ContractorId.HasValue == true) assignedIds.Add(Job.ContractorId.Value);
                 var contractorHours = visits
-                    .Where(v => v.IsContractor && v.ContractorId == Job.ContractorId)
+                    .Where(v => v.IsContractor && assignedIds.Contains(v.ContractorId ?? Guid.Empty))
                     .Sum(v => JobSiteSession.Build([v]).Sum(s => s.TotalHours));
-                var rate = Job.ContractorCost;
                 ContractorHoursSummary = contractorHours > 0
-                    ? $"{contractorHours:F1} hrs on site" + (rate > 0 ? $" · est. R{contractorHours * rate:N0}" : "")
+                    ? $"{contractorHours:F1} hrs on site · {JobContractors.Count} contractor(s)"
                     : "No contractor site time yet";
             }
             catch
@@ -225,6 +256,23 @@ public partial class HrJobDetailsViewModel : BaseViewModel
         OnPropertyChanged(nameof(InventoryTotalDisplay));
     }
 
+    private async Task EnrichJobContractorFinancialsAsync(
+        IEnumerable<JobContractor> rows, Guid companyId, Guid jobId)
+    {
+        var allPayouts = await _storage.GetContractorPayoutsAsync(companyId);
+        var jobPayouts = allPayouts.Where(p => p.JobId == jobId).ToList();
+        foreach (var row in rows)
+        {
+            var rp = row.Id != Guid.Empty
+                ? jobPayouts.Where(p => p.JobContractorId == row.Id).ToList()
+                : jobPayouts.Where(p => p.ContractorId == row.ContractorId
+                                     && !p.JobContractorId.HasValue).ToList();
+            row.PaidAmount     = rp.Where(p => p.PayoutStatusRaw == "paid")    .Sum(p => p.TotalAmount);
+            row.ApprovedAmount = rp.Where(p => p.PayoutStatusRaw == "approved").Sum(p => p.TotalAmount);
+            row.PendingAmount  = rp.Where(p => p.PayoutStatusRaw == "pending") .Sum(p => p.TotalAmount);
+        }
+    }
+
     [RelayCommand]
     private async Task SaveJobAsync()
     {
@@ -263,22 +311,193 @@ public partial class HrJobDetailsViewModel : BaseViewModel
     }
 
     [RelayCommand]
-    private async Task AddContractorAsync()
+    private async Task AddContractorToJobAsync()
     {
-        var name = await Shell.Current.DisplayPromptAsync("New contractor", "Company / contractor name:", "Create", "Cancel", "");
-        if (string.IsNullOrWhiteSpace(name)) return;
+        if (Job == null) return;
+
+        // Build list of contractors not already assigned to this job
+        var alreadyAssigned = JobContractors.Select(jc => jc.ContractorId).ToHashSet();
+        var available = Contractors
+            .Where(c => !alreadyAssigned.Contains(c.Id))
+            .OrderBy(c => c.Name)
+            .ToList();
+
+        // Always include the quick-create option as the first entry
+        const string CreateNew = "➕ Create new contractor...";
+        var names  = new[] { CreateNew }.Concat(available.Select(c => c.Name)).ToArray();
+        var picked = await Shell.Current.DisplayActionSheetAsync(
+            "Assign contractor", "Cancel", null, names);
+        if (string.IsNullOrEmpty(picked) || picked == "Cancel") return;
+
+        Contractor contractor;
+        if (picked == CreateNew)
+        {
+            var name = await Shell.Current.DisplayPromptAsync(
+                "New contractor",
+                "Individual or company name:",
+                "Next", "Cancel", "");
+            if (string.IsNullOrWhiteSpace(name)) return;
+
+            contractor = await _storage.CreateContractorAsync(new Contractor
+            {
+                CompanyId      = _state.CurrentEmployee!.CompanyId,
+                Name           = name.Trim(),
+                PartnerKindRaw = PartnerKinds.Contractor,
+                IsActive       = true,
+                CreatedAt      = DateTime.UtcNow
+            });
+            // Add to the in-memory picker collection so it appears in future uses this session
+            Contractors.Add(contractor);
+        }
+        else
+        {
+            contractor = available.FirstOrDefault(c => c.Name == picked)!;
+            if (contractor == null) return;
+        }
+
+        // Phase M — compliance enforcement gate
+        if (contractor.ComplianceHold)
+        {
+            var proceed = await Shell.Current.DisplayAlert(
+                "Compliance Hold Active",
+                $"{contractor.Name} has an active compliance hold.\n\nAssigning them to this job may create a liability risk. Ensure outstanding compliance documents are resolved promptly.\n\nProceed with assignment?",
+                "Proceed Anyway", "Cancel");
+            if (!proceed) return;
+        }
+
+        // Optional role
+        var role = await Shell.Current.DisplayPromptAsync(
+            "Role (optional)",
+            "e.g. Electrical, Plumbing, Civil — or leave blank:",
+            "Assign", "Skip", "");
+
+        // Optional agreed amount
+        var amountStr = await Shell.Current.DisplayPromptAsync(
+            "Agreed amount (optional)",
+            "Contractor cost for this assignment (R):",
+            "Assign", "Skip", "0",
+            keyboard: Keyboard.Numeric);
+        decimal.TryParse(amountStr, out var agreedAmount);
 
         await RunAsync(async () =>
         {
-            var created = await _storage.CreateContractorAsync(new Contractor
+            var companyId = _state.CurrentEmployee!.CompanyId;
+            await _storage.HrUpsertJobContractorAsync(
+                companyId, Job.Id, contractor.Id,
+                quoteId:      null,
+                agreedAmount: agreedAmount,
+                dealId:       Job.DealId);   // writes project_contractors if job has a project
+
+            // Reload join table and enrich with names
+            var jcRows = await _storage.GetJobContractorsAsync(Job.Id);
+            var contractorMap = Contractors.ToDictionary(c => c.Id);
+            foreach (var row in jcRows)
             {
-                CompanyId = _state.CurrentEmployee!.CompanyId,
-                Name = name.Trim(),
-                CreatedAt = DateTime.UtcNow
+                var c = contractorMap.GetValueOrDefault(row.ContractorId);
+                row.ContractorDisplayName   = c?.Name                ?? "Unknown";
+                row.ContractorComplianceHold = c?.ComplianceHold     ?? false;
+            }
+
+            await MainThread.InvokeOnMainThreadAsync(() =>
+            {
+                JobContractors = new ObservableCollection<JobContractor>(jcRows);
+                OnPropertyChanged(nameof(HasJobContractors));
+                OnPropertyChanged(nameof(HasNoJobContractors));
             });
-            Contractors.Add(created);
-            SelectedContractor = created;
+
+            // Backward compat: set legacy contractor_id to the first assignment if currently unset
+            if (Job.ContractorId == null && jcRows.Count > 0)
+            {
+                Job.ContractorId = jcRows[0].ContractorId;
+                await _storage.UpdateJobAsync(Job);
+            }
         });
+    }
+
+    [RelayCommand]
+    private async Task RemoveContractorFromJobAsync(JobContractor assignment)
+    {
+        if (assignment == null || Job == null) return;
+
+        var confirmed = await Shell.Current.DisplayAlert(
+            "Remove contractor",
+            $"Remove {(string.IsNullOrEmpty(assignment.ContractorDisplayName) ? "this contractor" : assignment.ContractorDisplayName)} from the job?",
+            "Remove", "Cancel");
+        if (!confirmed) return;
+
+        await RunAsync(async () =>
+        {
+            var companyId = _state.CurrentEmployee!.CompanyId;
+            await _storage.DeleteJobContractorAsync(companyId, assignment.Id);
+
+            await MainThread.InvokeOnMainThreadAsync(() =>
+            {
+                JobContractors.Remove(assignment);
+                OnPropertyChanged(nameof(HasJobContractors));
+                OnPropertyChanged(nameof(HasNoJobContractors));
+            });
+        });
+    }
+
+    [RelayCommand]
+    private async Task EditContractorAssignmentAsync(JobContractor assignment)
+    {
+        if (assignment == null || Job == null) return;
+
+        // Pre-fill with current values
+        var currentRole   = assignment.Role == "general" ? "" : assignment.Role;
+        var currentAmount = assignment.AgreedAmount.ToString("F2");
+
+        var newRole = await Shell.Current.DisplayPromptAsync(
+            "Edit role",
+            "Contractor role (e.g. Plumbing, Electrical — leave blank for General):",
+            "Next", "Cancel",
+            initialValue: currentRole);
+        if (newRole == null) return;   // user cancelled
+
+        var amountStr = await Shell.Current.DisplayPromptAsync(
+            "Edit amount",
+            "Agreed amount (R):",
+            "Save", "Cancel",
+            initialValue: currentAmount,
+            keyboard: Keyboard.Numeric);
+        if (amountStr == null) return;  // user cancelled
+
+        if (!decimal.TryParse(amountStr.Trim(), out var newAmount) || newAmount < 0)
+        {
+            await Shell.Current.DisplayAlertAsync("Invalid", "Please enter a valid amount.", "OK");
+            return;
+        }
+
+        var finalRole = string.IsNullOrWhiteSpace(newRole) ? "general" : newRole.Trim();
+
+        await RunAsync(async () =>
+        {
+            var companyId = _state.CurrentEmployee!.CompanyId;
+            await _storage.UpdateJobContractorAsync(
+                companyId, assignment.Id, finalRole, newAmount);
+
+            // Reload to reflect changes
+            var jc = await _storage.GetJobContractorsAsync(Job.Id);
+            await EnrichJobContractorFinancialsAsync(jc, _state.CurrentEmployee!.CompanyId, Job.Id);
+            await MainThread.InvokeOnMainThreadAsync(() =>
+            {
+                JobContractors = new ObservableCollection<JobContractor>(jc);
+                // Re-enrich with contractor names
+                var nameMap = Contractors.ToDictionary(c => c.Id, c => c.Name);
+                foreach (var row in JobContractors)
+                    row.ContractorDisplayName =
+                        nameMap.GetValueOrDefault(row.ContractorId, "Unknown");
+                OnPropertyChanged(nameof(HasJobContractors));
+            });
+        });
+    }
+
+    [RelayCommand]
+    private async Task OpenJobContractorDocsAsync(JobContractor assignment)
+    {
+        await Shell.Current.GoToAsync(
+            $"{nameof(Views.Hr.HrJobContractorDocsPage)}?jobContractorId={assignment.Id}");
     }
 
     [RelayCommand]
@@ -534,6 +753,71 @@ public partial class HrJobDetailsViewModel : BaseViewModel
             await _storage.UpdateJobAsync(Job);
             Title = Job.Title;
             OnPropertyChanged(nameof(Job));
+        });
+    }
+
+    [RelayCommand]
+    private async Task OpenLinkedProjectAsync()
+    {
+        if (LinkedProject == null) return;
+        try
+        {
+            await ShellNavigation.GoToAsync(
+                nameof(Views.Hr.HrProjectDetailPage),
+                new Dictionary<string, object> { ["DealId"] = LinkedProject.Id.ToString() });
+        }
+        catch (Exception ex)
+        {
+            await Shell.Current.DisplayAlertAsync("Navigation", $"Could not open project: {ex.Message}", "OK");
+        }
+    }
+
+    [RelayCommand]
+    private async Task ChangeProjectAsync()
+    {
+        if (Job == null) return;
+
+        var active = _allProjects
+            .Where(d => d.StatusRaw is not ("won" or "lost"))
+            .OrderBy(d => d.ProjectCode)
+            .ThenBy(d => d.Title)
+            .ToList();
+
+        var options = active.Select(d => d.PickerDisplay).ToArray();
+        var choices = new[] { "No project (unlink)" }.Concat(options).ToArray();
+
+        var picked = await Shell.Current.DisplayActionSheetAsync("Link to project", "Cancel", null, choices);
+        if (picked == null || picked == "Cancel") return;
+
+        await RunAsync(async () =>
+        {
+            var companyId = _state.CurrentEmployee!.CompanyId;
+
+            if (picked == "No project (unlink)")
+            {
+                Job.DealId = null;
+                LinkedProject = null;
+            }
+            else
+            {
+                var deal = active.FirstOrDefault(d => d.PickerDisplay == picked);
+                Job.DealId = deal?.Id;
+                LinkedProject = deal;
+
+                // Ensure every contractor already on this job is reflected in project_contractors.
+                if (deal != null)
+                {
+                    // Sync ALL assigned contractors to the new project, not just the legacy field
+                    foreach (var jc in JobContractors)
+                        await _storage.UpsertProjectContractorAsync(companyId, deal.Id, jc.ContractorId);
+
+                    // Fallback: also sync legacy field if not already covered by the join table
+                    if (Job.ContractorId.HasValue &&
+                        !JobContractors.Any(jc => jc.ContractorId == Job.ContractorId.Value))
+                        await _storage.UpsertProjectContractorAsync(companyId, deal.Id, Job.ContractorId.Value);
+                }
+            }
+            await _storage.UpdateJobAsync(Job);
         });
     }
 

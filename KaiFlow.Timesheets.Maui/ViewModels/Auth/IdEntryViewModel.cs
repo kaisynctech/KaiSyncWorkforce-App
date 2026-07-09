@@ -29,6 +29,8 @@ public partial class IdEntryViewModel : BaseViewModel
         {
             if (ClientPortalSessionStore.IsSigningOut)
                 ClientPortalSessionStore.CompleteSignOut();
+            if (ContractorPortalSessionStore.IsSigningOut)
+                ContractorPortalSessionStore.CompleteSignOut();
 
             // User tapped "Back" from a dashboard — show the login screen, don't auto-navigate
             if (_state.SuppressAutoLogin)
@@ -55,13 +57,13 @@ public partial class IdEntryViewModel : BaseViewModel
                 return;
             }
 
-            if (ContractorPortalSessionStore.HasSession)
+            if (ContractorPortalSessionStore.HasSession && !ContractorPortalSessionStore.ConsumeSkipAutoRestore())
             {
                 await ShellNavigation.GoToAsync(nameof(ContractorPortalPage));
                 return;
             }
 
-            // No Supabase auth session — restore code login from Supabase server session
+            // No Supabase auth session — try to restore code-login session.
             if (CodeSessionStore.HasCodeSession())
             {
                 var session = await _storage.RefreshCodeSessionAsync();
@@ -72,7 +74,6 @@ public partial class IdEntryViewModel : BaseViewModel
                     await EmployeeAccountRouting.RouteAfterCompanySelectedAsync(session.Employee);
                     return;
                 }
-
                 CodeSessionStore.Clear();
             }
 
@@ -154,7 +155,7 @@ public partial class IdEntryViewModel : BaseViewModel
                 return;
             }
 
-            ClientPortalSessionStore.Save(
+            await ClientPortalSessionStore.SaveAsync(
                 login.ClientId, login.CompanyId, login.ClientName, login.CompanyCode, login.ClientCode);
             await ShellNavigation.GoToAsync(ClientPortalNavigation.PortalRoute);
         });
@@ -186,7 +187,7 @@ public partial class IdEntryViewModel : BaseViewModel
                 return;
             }
 
-            ContractorPortalSessionStore.Save(
+            await ContractorPortalSessionStore.SaveAsync(
                 login.ContractorId, login.CompanyId, login.ContractorName,
                 login.CompanyCode, login.ContractorCode);
             await ShellNavigation.GoToAsync(nameof(ContractorPortalPage));

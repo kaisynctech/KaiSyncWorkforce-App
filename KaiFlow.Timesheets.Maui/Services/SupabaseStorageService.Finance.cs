@@ -445,16 +445,26 @@ public partial class SupabaseStorageService
             {
                 list.Add(new ContractorPayout
                 {
-                    Id = PGuid(r, "id"),
-                    CompanyId = PGuid(r, "company_id"),
-                    ContractorId = PGuidN(r, "contractor_id"),
-                    Subtotal = PDec(r, "subtotal"),
-                    VatRate = PDec(r, "vat_rate"),
-                    VatAmount = PDec(r, "vat_amount"),
-                    TotalAmount = PDec(r, "total_amount"),
-                    RetentionAmount = PDec(r, "retention_amount"),
-                    PayoutStatusRaw = PStr(r, "payout_status") ?? "pending",
-                    PayoutDate = PDateN(r, "payout_date")
+                    Id                = PGuid(r, "id"),
+                    CompanyId         = PGuid(r, "company_id"),
+                    ContractorId      = PGuidN(r, "contractor_id"),
+                    JobId             = PGuidN(r, "job_id"),
+                    JobContractorId   = PGuidN(r, "job_contractor_id"),
+                    Subtotal          = PDec(r, "subtotal"),
+                    VatRate           = PDec(r, "vat_rate"),
+                    VatAmount         = PDec(r, "vat_amount"),
+                    TotalAmount       = PDec(r, "total_amount"),
+                    RetentionAmount   = PDec(r, "retention_amount"),
+                    PayoutStatusRaw   = PStr(r, "payout_status") ?? "pending",
+                    ApprovalStatusRaw = PStr(r, "approval_status") ?? "pending",
+                    RejectionReason   = PStr(r, "rejection_reason"),
+                    Notes             = PStr(r, "notes"),
+                    PayoutDate        = PDateN(r, "payout_date"),
+                    ApprovedAt        = PDateTimeN(r, "approved_at"),
+                    PaidAt            = PDateTimeN(r, "paid_at"),
+                    CreatedAt         = PDateTimeVal(r, "created_at"),
+                    PortalJobTitle    = PStr(r, "job_title") ?? "",
+                    PortalJobCode     = PStr(r, "job_code") ?? "",
                 });
             }
         }
@@ -473,6 +483,19 @@ public partial class SupabaseStorageService
     private static DateOnly? PDate(System.Text.Json.JsonElement e, string name)
         => e.TryGetProperty(name, out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String && DateOnly.TryParse(v.GetString(), out var d) ? d : null;
     private static DateOnly? PDateN(System.Text.Json.JsonElement e, string name) => PDate(e, name);
+    private static DateTime? PDateTimeN(System.Text.Json.JsonElement e, string name)
+    {
+        if (!e.TryGetProperty(name, out var v)) return null;
+        if (v.ValueKind == System.Text.Json.JsonValueKind.Null) return null;
+        if (v.ValueKind == System.Text.Json.JsonValueKind.String
+            && DateTime.TryParse(v.GetString(),
+                   System.Globalization.CultureInfo.InvariantCulture,
+                   System.Globalization.DateTimeStyles.RoundtripKind, out var dt))
+            return dt;
+        return null;
+    }
+    private static DateTime PDateTimeVal(System.Text.Json.JsonElement e, string name)
+        => PDateTimeN(e, name) ?? default;
 
     private async Task<decimal> GetPayrollCostsAsync(Guid companyId, DateOnly periodStart, DateOnly periodEnd)
     {

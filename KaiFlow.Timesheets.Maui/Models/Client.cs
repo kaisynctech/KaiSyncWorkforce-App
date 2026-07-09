@@ -45,6 +45,12 @@ public class Client : BaseModel
     [Column("client_code")]
     public string? ClientCode { get; set; }
 
+    [Column("client_code_expires_at")]
+    public DateTimeOffset? ClientCodeExpiresAt { get; set; }
+
+    [Column("client_code_rotated_at")]
+    public DateTimeOffset? ClientCodeRotatedAt { get; set; }
+
     [Column("created_at")]
     public DateTime CreatedAt { get; set; }
 

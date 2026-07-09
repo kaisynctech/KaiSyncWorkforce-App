@@ -72,13 +72,14 @@ public static class ShellNavigation
     {
         if (Shell.Current == null)
             return;
-
         await MainThread.InvokeOnMainThreadAsync(async () =>
         {
             await Task.Yield();
+            System.Diagnostics.Debug.WriteLine($"[ShellNavigation] Navigating to: {normalized}");
             try
             {
                 await Shell.Current.GoToAsync(normalized);
+                System.Diagnostics.Debug.WriteLine($"[ShellNavigation] Navigation succeeded: {normalized}");
                 NavigationParameterBag.Clear();
             }
             catch (Exception ex)

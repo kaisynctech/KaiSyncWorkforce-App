@@ -145,6 +145,19 @@ public sealed class ContractorsAnalyticsSnapshot
     public string TotalPaid { get; set; } = "—";
     public List<ChartValue> PayoutTrend { get; set; } = [];
     public List<ChartValue> PerformanceScores { get; set; } = [];
+    public List<ContractorPerformanceRow> PerformanceTable { get; set; } = [];
+}
+
+public sealed class ContractorPerformanceRow
+{
+    public string Name { get; set; } = "";
+    public string Code { get; set; } = "";
+    public int JobCount { get; set; }
+    public string TotalAgreed { get; set; } = "—";
+    public string TotalPaid { get; set; } = "—";
+    public string Variance { get; set; } = "—";
+    public string VarianceColor { get; set; } = "#F59E0B";
+    public string PendingPayouts { get; set; } = "—";
 }
 
 public sealed class PropertyAnalyticsSnapshot

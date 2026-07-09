@@ -1,0 +1,388 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--
+    HrReportsView — ContentView used inside the dashboard workspace (Tab 12).
+    Also hosted by the standalone HrReportsPage for deep-link access.
+    Chart x:Names (ExecRevenueChart etc.) live here; the code-behind wires Drawables.
+    BindingContext = HrReportsViewModel (set by caller or code-behind).
+-->
+<ContentView
+    x:Class="KaiFlow.Timesheets.Views.Hr.HrReportsView"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
+    xmlns:kf="clr-namespace:KaiFlow.Timesheets.Controls"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    xmlns:services="clr-namespace:KaiFlow.Timesheets.Services"
+    xmlns:reporting="clr-namespace:KaiFlow.Timesheets.Models.Reporting"
+    x:DataType="vm:HrReportsViewModel">
+
+    <Grid RowDefinitions="Auto,Auto,*" Padding="12">
+
+        <!-- Filter presets -->
+        <VerticalStackLayout Grid.Row="0" Spacing="8" Margin="0,0,0,8">
+            <Label Text="{Binding FilterPeriodLabel}" Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" />
+            <ScrollView Orientation="Horizontal">
+                <HorizontalStackLayout Spacing="8">
+                    <Button Text="7d" Command="{Binding ApplyDatePresetCommand}" CommandParameter="7d"
+                            Style="{StaticResource SecondaryButton}" HeightRequest="32" FontSize="11" Padding="10,0" />
+                    <Button Text="30d" Command="{Binding ApplyDatePresetCommand}" CommandParameter="30d"
+                            Style="{StaticResource SecondaryButton}" HeightRequest="32" FontSize="11" Padding="10,0" />
+                    <Button Text="Month" Command="{Binding ApplyDatePresetCommand}" CommandParameter="month"
+                            Style="{StaticResource SecondaryButton}" HeightRequest="32" FontSize="11" Padding="10,0" />
+                    <Button Text="Year" Command="{Binding ApplyDatePresetCommand}" CommandParameter="year"
+                            Style="{StaticResource SecondaryButton}" HeightRequest="32" FontSize="11" Padding="10,0" />
+                    <Button Text="↻ Refresh" Command="{Binding RefreshCommand}"
+                            Style="{StaticResource SecondaryButton}" HeightRequest="32" FontSize="11" Padding="10,0" />
+                </HorizontalStackLayout>
+            </ScrollView>
+        </VerticalStackLayout>
+
+        <!-- Category tabs -->
+        <Border Grid.Row="1" Margin="0,0,0,12" Padding="4"
+                BackgroundColor="{StaticResource SurfaceCard}"
+                Stroke="{StaticResource Divider}" StrokeThickness="1"
+                StrokeShape="RoundRectangle 12">
+            <ScrollView Orientation="Horizontal">
+                <HorizontalStackLayout Spacing="4">
+                    <Button Text="Executive" Command="{Binding SelectTabCommand}" CommandParameter="executive"
+                            Style="{StaticResource TabButtonInactive}"
+                            BackgroundColor="{Binding IsExecutiveTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#3B82F6|Transparent'}"
+                            TextColor="{Binding IsExecutiveTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#6B7280'}" />
+                    <Button Text="Financial" Command="{Binding SelectTabCommand}" CommandParameter="financial"
+                            Style="{StaticResource TabButtonInactive}"
+                            BackgroundColor="{Binding IsFinancialTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#3B82F6|Transparent'}"
+                            TextColor="{Binding IsFinancialTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#6B7280'}" />
+                    <Button Text="Payroll" Command="{Binding SelectTabCommand}" CommandParameter="payroll"
+                            Style="{StaticResource TabButtonInactive}"
+                            BackgroundColor="{Binding IsPayrollTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#3B82F6|Transparent'}"
+                            TextColor="{Binding IsPayrollTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#6B7280'}" />
+                    <Button Text="Workforce" Command="{Binding SelectTabCommand}" CommandParameter="workforce"
+                            Style="{StaticResource TabButtonInactive}"
+                            BackgroundColor="{Binding IsWorkforceTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#3B82F6|Transparent'}"
+                            TextColor="{Binding IsWorkforceTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#6B7280'}" />
+                    <Button Text="Operational" Command="{Binding SelectTabCommand}" CommandParameter="operational"
+                            Style="{StaticResource TabButtonInactive}"
+                            BackgroundColor="{Binding IsOperationalTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#3B82F6|Transparent'}"
+                            TextColor="{Binding IsOperationalTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#6B7280'}" />
+                    <Button Text="Incidents" Command="{Binding SelectTabCommand}" CommandParameter="incidents"
+                            Style="{StaticResource TabButtonInactive}"
+                            BackgroundColor="{Binding IsIncidentsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#3B82F6|Transparent'}"
+                            TextColor="{Binding IsIncidentsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#6B7280'}" />
+                    <Button Text="Inventory" Command="{Binding SelectTabCommand}" CommandParameter="inventory"
+                            Style="{StaticResource TabButtonInactive}"
+                            BackgroundColor="{Binding IsInventoryTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#3B82F6|Transparent'}"
+                            TextColor="{Binding IsInventoryTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#6B7280'}" />
+                    <Button Text="Contractors" Command="{Binding SelectTabCommand}" CommandParameter="contractors"
+                            Style="{StaticResource TabButtonInactive}"
+                            BackgroundColor="{Binding IsContractorsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#3B82F6|Transparent'}"
+                            TextColor="{Binding IsContractorsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#6B7280'}" />
+                    <Button Text="Property" Command="{Binding SelectTabCommand}" CommandParameter="property"
+                            Style="{StaticResource TabButtonInactive}"
+                            BackgroundColor="{Binding IsPropertyTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#3B82F6|Transparent'}"
+                            TextColor="{Binding IsPropertyTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#6B7280'}" />
+                    <Button Text="Telemetry" Command="{Binding SelectTabCommand}" CommandParameter="telemetry"
+                            Style="{StaticResource TabButtonInactive}"
+                            BackgroundColor="{Binding IsTelemetryTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#3B82F6|Transparent'}"
+                            TextColor="{Binding IsTelemetryTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#6B7280'}" />
+                    <Button Text="Exports" Command="{Binding SelectTabCommand}" CommandParameter="exports"
+                            Style="{StaticResource TabButtonInactive}"
+                            BackgroundColor="{Binding IsExportsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#3B82F6|Transparent'}"
+                            TextColor="{Binding IsExportsTab, Converter={StaticResource BoolToColorConverter}, ConverterParameter='#FFFFFF|#6B7280'}" />
+                </HorizontalStackLayout>
+            </ScrollView>
+        </Border>
+
+        <!-- Tab content -->
+        <Grid Grid.Row="2">
+            <ScrollView IsVisible="{Binding IsExecutiveTab}">
+                <VerticalStackLayout Spacing="16">
+                    <kf:SectionHeader Title="Executive dashboard" Subtitle="Cross-module enterprise snapshot" />
+                    <Label Text="FINANCIAL" Style="{StaticResource LabelSection}" />
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10" RowSpacing="10">
+                        <kf:KpiCard Grid.Column="0" Title="Revenue" Value="{Binding Executive.RevenueThisMonth}" Caption="this month" Accent="{StaticResource Chart1}" />
+                        <kf:KpiCard Grid.Column="1" Title="Outstanding" Value="{Binding Executive.OutstandingInvoices}" Caption="invoices" Accent="{StaticResource Chart3}" />
+                        <kf:KpiCard Grid.Column="0" Title="A/R" Value="{Binding Executive.AccountsReceivable}" Caption="receivable" Accent="{StaticResource Chart2}" />
+                        <kf:KpiCard Grid.Column="1" Title="A/P" Value="{Binding Executive.AccountsPayable}" Caption="payable" Accent="{StaticResource Chart5}" />
+                        <kf:KpiCard Grid.Column="0" Title="Payroll" Value="{Binding Executive.PayrollCosts}" Caption="costs" Accent="{StaticResource Chart4}" />
+                        <kf:KpiCard Grid.Column="1" Title="VAT due" Value="{Binding Executive.VatDue}" Caption="net payable" Accent="{StaticResource Chart6}" />
+                        <kf:KpiCard Grid.Column="0" Title="Cashflow" Value="{Binding Executive.NetCashflow}" Caption="net" Accent="{StaticResource Chart1}" />
+                        <kf:KpiCard Grid.Column="1" Title="Profit est." Value="{Binding Executive.ProfitEstimate}" Caption="period" Accent="{StaticResource Chart2}" />
+                    </Grid>
+                    <Label Text="WORKFORCE" Style="{StaticResource LabelSection}" />
+                    <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8" RowSpacing="8">
+                        <kf:KpiCard Title="Present" Value="{Binding Executive.EmployeesPresentToday}" Caption="today" Accent="{StaticResource Chart2}" />
+                        <kf:KpiCard Grid.Column="1" Title="Late" Value="{Binding Executive.LateArrivals}" Caption="arrivals" Accent="{StaticResource Chart3}" />
+                        <kf:KpiCard Grid.Column="2" Title="Leave" Value="{Binding Executive.LeaveToday}" Caption="today" Accent="{StaticResource Chart4}" />
+                        <kf:KpiCard Title="Incidents" Value="{Binding Executive.OpenIncidents}" Caption="open" Accent="{StaticResource Chart5}" />
+                        <kf:KpiCard Grid.Column="1" Title="Active jobs" Value="{Binding Executive.ActiveJobs}" Caption="in progress" Accent="{StaticResource Chart1}" />
+                        <kf:KpiCard Grid.Column="2" Title="Overtime" Value="{Binding Executive.OvertimeHours}" Caption="period" Accent="{StaticResource Chart6}" />
+                    </Grid>
+                    <Label Text="OPERATIONS &amp; SYSTEM" Style="{StaticResource LabelSection}" />
+                    <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8" RowSpacing="8">
+                        <kf:KpiCard Title="Completion" Value="{Binding Executive.JobCompletionRate}" Caption="jobs" Accent="{StaticResource Chart1}" />
+                        <kf:KpiCard Grid.Column="1" Title="Projects" Value="{Binding Executive.ProjectProfitability}" Caption="avg margin" Accent="{StaticResource Chart2}" />
+                        <kf:KpiCard Grid.Column="2" Title="Inventory" Value="{Binding Executive.InventoryValue}" Caption="on hand" Accent="{StaticResource Chart4}" />
+                        <kf:KpiCard Title="Realtime" Value="{Binding Executive.RealtimeStatus}" Caption="status" Accent="{StaticResource Chart2}" />
+                        <kf:KpiCard Grid.Column="1" Title="Offline Q" Value="{Binding Executive.OfflineQueueCount}" Caption="pending" Accent="{StaticResource Chart3}" />
+                        <kf:KpiCard Grid.Column="2" Title="Errors" Value="{Binding Executive.ErrorRate}" Caption="7d rate" Accent="{StaticResource Chart5}" />
+                    </Grid>
+                    <kf:ChartCard Title="Revenue trend" Subtitle="Monthly" ChartHeight="140">
+                        <kf:ChartCard.ChartContent><GraphicsView x:Name="ExecRevenueChart" HeightRequest="140" /></kf:ChartCard.ChartContent>
+                    </kf:ChartCard>
+                    <kf:ChartCard Title="Attendance trend" Subtitle="Clock-ins" ChartHeight="140">
+                        <kf:ChartCard.ChartContent><GraphicsView x:Name="ExecAttendanceChart" HeightRequest="140" /></kf:ChartCard.ChartContent>
+                    </kf:ChartCard>
+                </VerticalStackLayout>
+            </ScrollView>
+
+            <ScrollView IsVisible="{Binding IsFinancialTab}">
+                <VerticalStackLayout Spacing="16">
+                    <kf:SectionHeader Title="Financial analytics" Subtitle="P&amp;L · cashflow · VAT · aging"
+                                      ActionText="Export P&amp;L" ActionCommand="{Binding ExportFinancePdfCommand}" />
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10" RowSpacing="10">
+                        <kf:KpiCard Title="Revenue" Value="{Binding FinancialSnapshot.Dashboard.RevenueDisplay}" Caption="period" Accent="{StaticResource Chart1}" />
+                        <kf:KpiCard Grid.Column="1" Title="Outstanding" Value="{Binding FinancialSnapshot.Dashboard.OutstandingDisplay}" Caption="A/R" Accent="{StaticResource Chart3}" />
+                        <kf:KpiCard Title="Payables" Value="{Binding FinancialSnapshot.Dashboard.SupplierPayablesDisplay}" Caption="suppliers" Accent="{StaticResource Chart5}" />
+                        <kf:KpiCard Grid.Column="1" Title="Profit" Value="{Binding FinancialSnapshot.Dashboard.ProfitDisplay}" Caption="estimate" Accent="{StaticResource Chart2}" />
+                    </Grid>
+                    <kf:ChartCard Title="Revenue vs expenses" ChartHeight="160">
+                        <kf:ChartCard.ChartContent><GraphicsView x:Name="FinRevenueChart" HeightRequest="160" /></kf:ChartCard.ChartContent>
+                    </kf:ChartCard>
+                    <kf:ChartCard Title="Supplier spend" ChartHeight="140">
+                        <kf:ChartCard.ChartContent><GraphicsView x:Name="FinSupplierChart" HeightRequest="140" /></kf:ChartCard.ChartContent>
+                    </kf:ChartCard>
+                </VerticalStackLayout>
+            </ScrollView>
+
+            <ScrollView IsVisible="{Binding IsPayrollTab}">
+                <VerticalStackLayout Spacing="16">
+                    <kf:SectionHeader Title="Payroll analytics" Subtitle="Cost analysis · overtime" />
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10" RowSpacing="10">
+                        <kf:KpiCard Title="Gross pay" Value="{Binding PayrollSnapshot.TotalGross}" Accent="{StaticResource Chart1}" />
+                        <kf:KpiCard Grid.Column="1" Title="Net pay" Value="{Binding PayrollSnapshot.TotalNet}" Accent="{StaticResource Chart2}" />
+                        <kf:KpiCard Title="OT cost" Value="{Binding PayrollSnapshot.OvertimeCost}" Accent="{StaticResource Chart3}" />
+                        <kf:KpiCard Grid.Column="1" Title="Avg net" Value="{Binding PayrollSnapshot.AvgNetPay}" Accent="{StaticResource Chart4}" />
+                    </Grid>
+                    <kf:ChartCard Title="Payroll trend" ChartHeight="160">
+                        <kf:ChartCard.ChartContent><GraphicsView x:Name="PayrollTrendChart" HeightRequest="160" /></kf:ChartCard.ChartContent>
+                    </kf:ChartCard>
+                </VerticalStackLayout>
+            </ScrollView>
+
+            <ScrollView IsVisible="{Binding IsWorkforceTab}">
+                <VerticalStackLayout Spacing="16">
+                    <kf:SectionHeader Title="Workforce analytics" Subtitle="Attendance · leave · overtime · workload" />
+                    <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8" RowSpacing="8">
+                        <kf:KpiCard Title="Attendance" Value="{Binding WorkforceSnapshot.AttendanceRate}" Accent="{StaticResource Chart2}" />
+                        <kf:KpiCard Grid.Column="1" Title="Lateness" Value="{Binding WorkforceSnapshot.LatenessCount}" Accent="{StaticResource Chart3}" />
+                        <kf:KpiCard Grid.Column="2" Title="Leave days" Value="{Binding WorkforceSnapshot.LeaveDays}" Accent="{StaticResource Chart4}" />
+                        <kf:KpiCard Title="Absenteeism" Value="{Binding WorkforceSnapshot.AbsenteeismRate}" Accent="{StaticResource Chart5}" />
+                        <kf:KpiCard Grid.Column="1" Title="Utilization" Value="{Binding WorkforceSnapshot.ShiftUtilization}" Accent="{StaticResource Chart1}" />
+                        <kf:KpiCard Grid.Column="2" Title="Overtime" Value="{Binding WorkforceSnapshot.OvertimeHours}" Accent="{StaticResource Chart6}" />
+                    </Grid>
+                    <kf:ChartCard Title="Attendance trend" ChartHeight="140">
+                        <kf:ChartCard.ChartContent><GraphicsView x:Name="WorkforceAttChart" HeightRequest="140" /></kf:ChartCard.ChartContent>
+                    </kf:ChartCard>
+                    <kf:ChartCard Title="Leave by type" ChartHeight="140">
+                        <kf:ChartCard.ChartContent><GraphicsView x:Name="WorkforceLeaveChart" HeightRequest="140" /></kf:ChartCard.ChartContent>
+                    </kf:ChartCard>
+                </VerticalStackLayout>
+            </ScrollView>
+
+            <ScrollView IsVisible="{Binding IsOperationalTab}">
+                <VerticalStackLayout Spacing="16">
+                    <kf:SectionHeader Title="Operational analytics" Subtitle="Jobs · projects · sites · inventory" />
+                    <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8" RowSpacing="8">
+                        <kf:KpiCard Title="Completion" Value="{Binding OperationalSnapshot.JobCompletionRate}" Accent="{StaticResource Chart1}" />
+                        <kf:KpiCard Grid.Column="1" Title="SLA breaches" Value="{Binding OperationalSnapshot.SlaBreaches}" Accent="{StaticResource Chart5}" />
+                        <kf:KpiCard Grid.Column="2" Title="Sites" Value="{Binding OperationalSnapshot.ActiveSites}" Accent="{StaticResource Chart2}" />
+                    </Grid>
+                    <kf:ChartCard Title="Jobs by status" ChartHeight="180">
+                        <kf:ChartCard.ChartContent><GraphicsView x:Name="OpsJobsChart" HeightRequest="180" /></kf:ChartCard.ChartContent>
+                    </kf:ChartCard>
+                    <kf:ChartCard Title="Project progress" ChartHeight="140">
+                        <kf:ChartCard.ChartContent><GraphicsView x:Name="OpsProjectChart" HeightRequest="140" /></kf:ChartCard.ChartContent>
+                    </kf:ChartCard>
+                </VerticalStackLayout>
+            </ScrollView>
+
+            <ScrollView IsVisible="{Binding IsIncidentsTab}">
+                <VerticalStackLayout Spacing="16">
+                    <kf:SectionHeader Title="Incident analytics" Subtitle="Severity · resolution · trends" />
+                    <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
+                        <kf:KpiCard Title="Open" Value="{Binding IncidentsSnapshot.OpenCount}" Accent="{StaticResource Chart5}" />
+                        <kf:KpiCard Grid.Column="1" Title="Closed" Value="{Binding IncidentsSnapshot.ClosedCount}" Accent="{StaticResource Chart2}" />
+                        <kf:KpiCard Grid.Column="2" Title="Avg resolution" Value="{Binding IncidentsSnapshot.AvgResolutionDays}" Accent="{StaticResource Chart1}" />
+                    </Grid>
+                    <kf:ChartCard Title="By severity" ChartHeight="140">
+                        <kf:ChartCard.ChartContent><GraphicsView x:Name="IncSeverityChart" HeightRequest="140" /></kf:ChartCard.ChartContent>
+                    </kf:ChartCard>
+                </VerticalStackLayout>
+            </ScrollView>
+
+            <ScrollView IsVisible="{Binding IsInventoryTab}">
+                <VerticalStackLayout Spacing="16">
+                    <kf:SectionHeader Title="Inventory analytics" Subtitle="Stock value · consumption" />
+                    <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
+                        <kf:KpiCard Title="Value" Value="{Binding InventorySnapshot.TotalValue}" Accent="{StaticResource Chart4}" />
+                        <kf:KpiCard Grid.Column="1" Title="Items" Value="{Binding InventorySnapshot.ItemsTracked}" Accent="{StaticResource Chart1}" />
+                        <kf:KpiCard Grid.Column="2" Title="Usage events" Value="{Binding InventorySnapshot.UsageEvents}" Accent="{StaticResource Chart2}" />
+                    </Grid>
+                    <kf:ChartCard Title="Top consumed" ChartHeight="140">
+                        <kf:ChartCard.ChartContent><GraphicsView x:Name="InvTopChart" HeightRequest="140" /></kf:ChartCard.ChartContent>
+                    </kf:ChartCard>
+                </VerticalStackLayout>
+            </ScrollView>
+
+            <ScrollView IsVisible="{Binding IsContractorsTab}">
+                <VerticalStackLayout Spacing="16">
+                    <kf:SectionHeader Title="Contractor analytics" Subtitle="Payouts · performance" />
+                    <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
+                        <kf:KpiCard Title="Active" Value="{Binding ContractorsSnapshot.ActiveContractors}" Accent="{StaticResource Chart1}" />
+                        <kf:KpiCard Grid.Column="1" Title="Pending" Value="{Binding ContractorsSnapshot.PendingPayouts}" Accent="{StaticResource Chart3}" />
+                        <kf:KpiCard Grid.Column="2" Title="Paid" Value="{Binding ContractorsSnapshot.TotalPaid}" Accent="{StaticResource Chart2}" />
+                    </Grid>
+                    <kf:ChartCard Title="Payout trend" ChartHeight="140">
+                        <kf:ChartCard.ChartContent><GraphicsView x:Name="ConPayoutChart" HeightRequest="140" /></kf:ChartCard.ChartContent>
+                    </kf:ChartCard>
+                    <!-- Phase H: per-contractor performance table -->
+                    <Label Text="CONTRACTOR PERFORMANCE" Style="{StaticResource LabelSection}" />
+                    <Border Padding="0" Stroke="{StaticResource Divider}" StrokeThickness="1"
+                            BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 10">
+                        <VerticalStackLayout>
+                            <!-- header row -->
+                            <Grid ColumnDefinitions="*,60,70,70,80,70" ColumnSpacing="8" Padding="12,8"
+                                  BackgroundColor="{StaticResource SurfaceElevated}">
+                                <Label Text="Contractor"   FontSize="11" FontAttributes="Bold" TextColor="{StaticResource TextSecondary}" />
+                                <Label Grid.Column="1" Text="Jobs"     FontSize="11" FontAttributes="Bold" TextColor="{StaticResource TextSecondary}" HorizontalOptions="End" />
+                                <Label Grid.Column="2" Text="Agreed"   FontSize="11" FontAttributes="Bold" TextColor="{StaticResource TextSecondary}" HorizontalOptions="End" />
+                                <Label Grid.Column="3" Text="Paid"     FontSize="11" FontAttributes="Bold" TextColor="{StaticResource TextSecondary}" HorizontalOptions="End" />
+                                <Label Grid.Column="4" Text="Balance"  FontSize="11" FontAttributes="Bold" TextColor="{StaticResource TextSecondary}" HorizontalOptions="End" />
+                                <Label Grid.Column="5" Text="Pending"  FontSize="11" FontAttributes="Bold" TextColor="{StaticResource TextSecondary}" HorizontalOptions="End" />
+                            </Grid>
+                            <BoxView Style="{StaticResource DataTableRowDivider}" />
+                            <CollectionView ItemsSource="{Binding ContractorsSnapshot.PerformanceTable}">
+                                <CollectionView.EmptyView>
+                                    <Label Text="No active contractors" Style="{StaticResource Caption}"
+                                           HorizontalOptions="Center" Margin="0,12" />
+                                </CollectionView.EmptyView>
+                                <CollectionView.ItemTemplate>
+                                    <DataTemplate x:DataType="reporting:ContractorPerformanceRow">
+                                        <VerticalStackLayout>
+                                            <Grid ColumnDefinitions="*,60,70,70,80,70" ColumnSpacing="8" Padding="12,8">
+                                                <VerticalStackLayout Spacing="1">
+                                                    <Label Text="{Binding Name}" FontSize="13" TextColor="{StaticResource TextPrimary}" />
+                                                    <Label Text="{Binding Code}" FontSize="10" TextColor="{StaticResource TextSecondary}" />
+                                                </VerticalStackLayout>
+                                                <Label Grid.Column="1" Text="{Binding JobCount}"      FontSize="12" TextColor="{StaticResource TextPrimary}"   HorizontalOptions="End" VerticalOptions="Center" />
+                                                <Label Grid.Column="2" Text="{Binding TotalAgreed}"   FontSize="12" TextColor="{StaticResource TextSecondary}" HorizontalOptions="End" VerticalOptions="Center" />
+                                                <Label Grid.Column="3" Text="{Binding TotalPaid}"     FontSize="12" TextColor="#22C55E"                        HorizontalOptions="End" VerticalOptions="Center" />
+                                                <Label Grid.Column="4" Text="{Binding Variance}"      FontSize="12" TextColor="{Binding VarianceColor}"        HorizontalOptions="End" VerticalOptions="Center" />
+                                                <Label Grid.Column="5" Text="{Binding PendingPayouts}" FontSize="12" TextColor="#F59E0B"                       HorizontalOptions="End" VerticalOptions="Center" />
+                                            </Grid>
+                                            <BoxView Style="{StaticResource DataTableRowDivider}" />
+                                        </VerticalStackLayout>
+                                    </DataTemplate>
+                                </CollectionView.ItemTemplate>
+                            </CollectionView>
+                        </VerticalStackLayout>
+                    </Border>
+                </VerticalStackLayout>
+            </ScrollView>
+
+            <ScrollView IsVisible="{Binding IsPropertyTab}">
+                <VerticalStackLayout Spacing="16">
+                    <kf:SectionHeader Title="Property analytics" Subtitle="Sites · units · residents" />
+                    <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8" RowSpacing="8">
+                        <kf:KpiCard Title="Sites" Value="{Binding PropertySnapshot.SiteCount}" Accent="{StaticResource Chart1}" />
+                        <kf:KpiCard Grid.Column="1" Title="Units" Value="{Binding PropertySnapshot.UnitCount}" Accent="{StaticResource Chart2}" />
+                        <kf:KpiCard Grid.Column="2" Title="Residents" Value="{Binding PropertySnapshot.ResidentCount}" Accent="{StaticResource Chart4}" />
+                        <kf:KpiCard Title="Assets" Value="{Binding PropertySnapshot.AssetCount}" Accent="{StaticResource Chart3}" />
+                    </Grid>
+                    <kf:ChartCard Title="Site occupancy" ChartHeight="140">
+                        <kf:ChartCard.ChartContent><GraphicsView x:Name="PropOccChart" HeightRequest="140" /></kf:ChartCard.ChartContent>
+                    </kf:ChartCard>
+                </VerticalStackLayout>
+            </ScrollView>
+
+            <ScrollView IsVisible="{Binding IsTelemetryTab}">
+                <VerticalStackLayout Spacing="16">
+                    <kf:SectionHeader Title="Telemetry dashboards" Subtitle="Adoption · errors · module usage" />
+                    <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8" RowSpacing="8">
+                        <kf:KpiCard Title="Events" Value="{Binding TelemetrySnapshot.EventsTotal}" Accent="{StaticResource Chart1}" />
+                        <kf:KpiCard Grid.Column="1" Title="Errors" Value="{Binding TelemetrySnapshot.ErrorsTotal}" Accent="{StaticResource Chart5}" />
+                        <kf:KpiCard Grid.Column="2" Title="Logins" Value="{Binding TelemetrySnapshot.LoginActivity}" Accent="{StaticResource Chart2}" />
+                        <kf:KpiCard Title="Modules" Value="{Binding TelemetrySnapshot.ModuleUsage}" Accent="{StaticResource Chart4}" />
+                        <kf:KpiCard Grid.Column="1" Title="Exports" Value="{Binding TelemetrySnapshot.ExportUsage}" Accent="{StaticResource Chart3}" />
+                        <kf:KpiCard Grid.Column="2" Title="Finance" Value="{Binding TelemetrySnapshot.FinanceActivity}" Accent="{StaticResource Chart6}" />
+                    </Grid>
+                    <kf:ChartCard Title="Top events" ChartHeight="140">
+                        <kf:ChartCard.ChartContent><GraphicsView x:Name="TelTopChart" HeightRequest="140" /></kf:ChartCard.ChartContent>
+                    </kf:ChartCard>
+                    <kf:ChartCard Title="Error trend" ChartHeight="120">
+                        <kf:ChartCard.ChartContent><GraphicsView x:Name="TelErrorChart" HeightRequest="120" /></kf:ChartCard.ChartContent>
+                    </kf:ChartCard>
+                </VerticalStackLayout>
+            </ScrollView>
+
+            <ScrollView IsVisible="{Binding IsExportsTab}">
+                <VerticalStackLayout Spacing="16">
+                    <kf:SectionHeader Title="Export centre" Subtitle="History · queue · CSV data export"
+                                      ActionText="Clear" ActionCommand="{Binding ClearExportHistoryCommand}" />
+                    <Label Text="EXPORT QUEUE" Style="{StaticResource LabelSection}" />
+                    <CollectionView ItemsSource="{Binding ExportQueueItems}" HeightRequest="120">
+                        <CollectionView.EmptyView>
+                            <Label Text="No queued exports" Style="{StaticResource Caption}" HorizontalOptions="Center" />
+                        </CollectionView.EmptyView>
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="services:ExportQueueItem">
+                                <HorizontalStackLayout Spacing="8" Padding="0,4">
+                                    <Label Text="{Binding FileName}" FontSize="12" TextColor="{StaticResource TextPrimary}" />
+                                    <kf:StatusChip Text="{Binding Status}" Status="info" />
+                                </HorizontalStackLayout>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                    <Label Text="RECENT EXPORTS" Style="{StaticResource LabelSection}" />
+                    <CollectionView ItemsSource="{Binding RecentExports}">
+                        <CollectionView.EmptyView>
+                            <kf:EmptyStateView Glyph="📤" Title="No exports yet"
+                                               Message="Exports from Reports, Payroll, Finance appear here." />
+                        </CollectionView.EmptyView>
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="models:ExportRecord">
+                                <Border Margin="0,0,0,8" Padding="12" Stroke="{StaticResource Divider}" StrokeThickness="1"
+                                        BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 12">
+                                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                                        <Label Grid.Row="0" Text="{Binding FileName}" FontFamily="PoppinsSemiBold" FontSize="13" TextColor="{StaticResource TextPrimary}" />
+                                        <kf:StatusChip Grid.Row="0" Grid.Column="1" Text="{Binding FormatLabel}" Status="info" />
+                                        <Label Grid.Row="1" Text="{Binding Source}" Style="{StaticResource Caption}" />
+                                        <Label Grid.Row="1" Grid.Column="1" Text="{Binding ExportedAtDisplay}" Style="{StaticResource Caption}" HorizontalTextAlignment="End" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                    <kf:SectionHeader Title="Data export" Subtitle="Operational CSV" />
+                    <Border Padding="16" Stroke="{StaticResource Divider}" StrokeThickness="1"
+                            BackgroundColor="{StaticResource SurfaceCard}" StrokeShape="RoundRectangle 12">
+                        <VerticalStackLayout Spacing="12">
+                            <Picker ItemsSource="{Binding ReportTypes}" SelectedItem="{Binding ReportType}" Title="Report type" />
+                            <Grid ColumnDefinitions="*,Auto,*" ColumnSpacing="8">
+                                <DatePicker Grid.Column="0" Date="{Binding FromDate}" Format="dd MMM yyyy" />
+                                <Label Grid.Column="1" Text="→" VerticalOptions="Center" />
+                                <DatePicker Grid.Column="2" Date="{Binding ToDate}" Format="dd MMM yyyy" />
+                            </Grid>
+                            <Picker ItemsSource="{Binding Employees}" SelectedItem="{Binding SelectedEmployee}"
+                                    ItemDisplayBinding="{Binding FullName}" Title="All employees" />
+                            <Button Text="Export to CSV" Command="{Binding ExportCommand}" Style="{StaticResource PrimaryButton}" />
+                        </VerticalStackLayout>
+                    </Border>
+                </VerticalStackLayout>
+            </ScrollView>
+
+            <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}"
+                               Color="{StaticResource Primary}" VerticalOptions="Center" HorizontalOptions="Center" />
+        </Grid>
+    </Grid>
+</ContentView>

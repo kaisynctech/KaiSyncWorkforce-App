@@ -296,7 +296,7 @@ public partial class HrEmployeesViewModel : BaseViewModel, IDisposable
     {
         await RunAsync(async () =>
         {
-            await _storage.UpdateLeaveStatusAsync(item.Request.Id, "approved");
+            await _storage.DecideLeaveRequestAsync(_state.CurrentEmployee!.CompanyId, item.Request.Id, "approved");
             await RebuildLeaveDisplaysAsync(_state.CurrentEmployee!.CompanyId, _allEmployees);
             ApplyLeaveFilter();
         });
@@ -312,7 +312,7 @@ public partial class HrEmployeesViewModel : BaseViewModel, IDisposable
 
         await RunAsync(async () =>
         {
-            await _storage.UpdateLeaveStatusAsync(item.Request.Id, "declined", string.IsNullOrWhiteSpace(note) ? null : note);
+            await _storage.DecideLeaveRequestAsync(_state.CurrentEmployee!.CompanyId, item.Request.Id, "declined", string.IsNullOrWhiteSpace(note) ? null : note);
             await RebuildLeaveDisplaysAsync(_state.CurrentEmployee!.CompanyId, _allEmployees);
             ApplyLeaveFilter();
         });
@@ -374,7 +374,7 @@ public partial class HrEmployeesViewModel : BaseViewModel, IDisposable
 
         await RunAsync(async () =>
         {
-            await _storage.DeleteEmployeeAsync(employee.Id);
+            await _storage.DeleteEmployeeAsync(employee.CompanyId, employee.Id);
             Employees.Remove(employee);
             _allEmployees.Remove(employee);
         });

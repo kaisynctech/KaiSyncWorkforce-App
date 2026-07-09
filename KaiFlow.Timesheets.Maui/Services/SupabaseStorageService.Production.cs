@@ -133,15 +133,15 @@ public partial class SupabaseStorageService
                 CompanyId = companyId,
                 BackupJobId = job.Id,
                 Label = string.IsNullOrWhiteSpace(label)
-                    ? $"Manual backup {DateTime.UtcNow:yyyy-MM-dd HH:mm}"
+                    ? $"Data snapshot {DateTime.UtcNow:yyyy-MM-dd HH:mm}"
                     : label.Trim(),
-                StoragePath = $"backups/{companyId}/{DateTime.UtcNow:yyyyMMddHHmmss}.meta.json",
-                SizeBytes = 0,
+                StoragePath = null,
+                SizeBytes = null,
                 RecordCounts = recordCounts,
                 Metadata = new Dictionary<string, object>
                 {
                     ["type"] = "metadata_only",
-                    ["note"] = "Export metadata snapshot — full data export pipeline pending",
+                    ["exported_at"] = DateTime.UtcNow.ToString("O"),
                 },
                 IsRestorable = false,
                 CreatedAt = DateTime.UtcNow,
@@ -199,6 +199,36 @@ public partial class SupabaseStorageService
         };
         await _supabase.From<BackupJobRecord>().Insert(job);
         return job;
+    }
+
+    public async Task<CompanyExportJobResult> InvokeGenerateCompanyExportAsync(Guid companyId, CancellationToken ct = default)
+    {
+        var responseJson = await _supabase.Functions.Invoke(
+            "generate-company-export",
+            System.Text.Json.JsonSerializer.Serialize(new { company_id = companyId.ToString() }));
+        if (string.IsNullOrWhiteSpace(responseJson))
+            throw new InvalidOperationException("Export function returned no response.");
+        using var doc = System.Text.Json.JsonDocument.Parse(responseJson);
+        var root = doc.RootElement;
+        if (!root.TryGetProperty("download_url", out var urlEl) || !root.TryGetProperty("job_id", out var jobEl))
+            throw new InvalidOperationException("Export function response missing required fields.");
+        var jobId = Guid.Parse(jobEl.GetString()!);
+        var downloadUrl = urlEl.GetString()!;
+        var expiresAt = root.TryGetProperty("expires_at", out var expEl)
+            ? DateTime.Parse(expEl.GetString()!, null, System.Globalization.DateTimeStyles.RoundtripKind)
+            : DateTime.UtcNow.AddHours(24);
+        return new CompanyExportJobResult(jobId, downloadUrl, expiresAt);
+    }
+
+    public async Task<List<CompanyExportJobRecord>> GetExportJobsAsync(Guid companyId, int limit = 5, CancellationToken ct = default)
+    {
+        var result = await _supabase
+            .From<CompanyExportJobRecord>()
+            .Filter("company_id", Supabase.Postgrest.Constants.Operator.Equals, companyId.ToString())
+            .Order("created_at", Supabase.Postgrest.Constants.Ordering.Descending)
+            .Limit(limit)
+            .Get();
+        return result.Models ?? [];
     }
 
     public async Task LogApplicationErrorAsync(

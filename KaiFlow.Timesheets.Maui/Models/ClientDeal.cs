@@ -98,6 +98,25 @@ public class ClientDeal : BaseModel
         _ => $"{JobCount} jobs"
     };
     [JsonIgnore] public string ProjectCodeDisplay => string.IsNullOrWhiteSpace(ProjectCode) ? "—" : ProjectCode!;
+
+    // Set by ViewModels after loading the client list — not a DB column.
+    [JsonIgnore] public string ClientName { get; set; } = "";
+
+    [JsonIgnore] public string PickerDisplay
+    {
+        get
+        {
+            var code  = string.IsNullOrWhiteSpace(ProjectCode) ? null : ProjectCode;
+            var client = string.IsNullOrWhiteSpace(ClientName) ? null : ClientName;
+            return (code, client) switch
+            {
+                (not null, not null) => $"{code} — {Title} — {client}",
+                (not null, null)     => $"{code} — {Title}",
+                (null, not null)     => $"{Title} — {client}",
+                _                    => Title,
+            };
+        }
+    }
     [JsonIgnore] public string OfferDisplay => $"R{OfferAmount:N2}";
     [JsonIgnore] public string DepositDisplay => $"R{DepositRequired:N2}";
     [JsonIgnore] public string PaidDisplay => $"R{AmountPaid:N2}";

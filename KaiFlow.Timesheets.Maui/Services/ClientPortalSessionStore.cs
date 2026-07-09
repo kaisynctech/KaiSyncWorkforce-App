@@ -11,10 +11,9 @@ public static class ClientPortalSessionStore
     private const string ClientCodeKey = "client_portal_client_code";
     private const string LegacyMigratedKey = "client_portal_secure_migrated";
 
-    public static void Save(Guid clientId, Guid companyId, string clientName, string companyCode, string clientCode)
+    public static async Task SaveAsync(Guid clientId, Guid companyId, string clientName, string companyCode, string clientCode)
     {
-        _ = PersistAsync(clientId, companyId, clientName, companyCode, clientCode);
-        ClearLegacyPrefs();
+        await PersistAsync(clientId, companyId, clientName, companyCode, clientCode);
     }
 
     public static void Clear()
@@ -95,15 +94,12 @@ public static class ClientPortalSessionStore
             await SecureStorage.SetAsync(CompanyCodeKey, companyCode);
             await SecureStorage.SetAsync(ClientCodeKey, clientCode);
             Preferences.Set(LegacyMigratedKey, true);
+            ClearLegacyPrefs();
         }
         catch
         {
             AppTelemetrySink.LogSecureStorageFailure("client_portal_session");
-            Preferences.Set(ClientIdKey, clientId.ToString());
-            Preferences.Set(CompanyIdKey, companyId.ToString());
-            Preferences.Set(ClientNameKey, clientName);
-            Preferences.Set(CompanyCodeKey, companyCode);
-            Preferences.Set(ClientCodeKey, clientCode);
+            throw;
         }
     }
 

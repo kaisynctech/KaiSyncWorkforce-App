@@ -27,6 +27,12 @@ public partial class ContractorPortalJobDetailViewModel : BaseViewModel
     [ObservableProperty] private string _newMessage = "";
     [ObservableProperty] private string _incidentText = "";
 
+    // ── Phase E: invoice submission ───────────────────────────────────────────
+    [ObservableProperty] private decimal _invoiceAmount;
+    [ObservableProperty] private string  _invoiceReference = "";
+    [ObservableProperty] private string  _invoiceNotes     = "";
+    [ObservableProperty] private bool    _isInvoiceBusy;
+
     private string _companyCode = "";
     private string _contractorCode = "";
 
@@ -159,6 +165,52 @@ public partial class ContractorPortalJobDetailViewModel : BaseViewModel
             NewMessage = "";
             await LoadAsync();
         });
+    }
+
+    [RelayCommand]
+    private async Task SubmitInvoiceAsync()
+    {
+        if (InvoiceAmount <= 0)
+        {
+            await Shell.Current.DisplayAlert("Amount required", "Enter the invoice amount before submitting.", "OK");
+            return;
+        }
+
+        if (!Guid.TryParse(JobId, out var jobGuid)) return;
+
+        var confirm = await Shell.Current.DisplayAlert(
+            "Submit invoice",
+            $"Submit an invoice for R{InvoiceAmount:N2} on this job?",
+            "Submit", "Cancel");
+        if (!confirm) return;
+
+        IsInvoiceBusy = true;
+        try
+        {
+            await _storage.ContractorPortalSubmitInvoiceAsync(
+                _companyCode, _contractorCode,
+                jobGuid,
+                InvoiceAmount,
+                InvoiceReference,
+                InvoiceNotes);
+
+            InvoiceAmount    = 0;
+            InvoiceReference = "";
+            InvoiceNotes     = "";
+
+            await Shell.Current.DisplayAlert(
+                "Invoice submitted",
+                "Your invoice has been sent to the manager for review.",
+                "OK");
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsInvoiceBusy = false;
+        }
     }
 
     private async Task<(double? Lat, double? Lng, string? Address)> CaptureLocationAsync()

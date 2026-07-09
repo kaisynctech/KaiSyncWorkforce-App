@@ -67,15 +67,3 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
-
-[Code]
-function InitializeSetup(): Boolean;
-begin
-  if not DirExists(ExpandConstant('{#PublishDir}')) then
-  begin
-    MsgBox('Publish folder not found. Run scripts\build_windows_installer.ps1 first.', mbError, MB_OK);
-    Result := False;
-  end
-  else
-    Result := True;
-end;

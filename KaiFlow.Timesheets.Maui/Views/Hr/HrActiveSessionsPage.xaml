@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage
+    x:Class="KaiFlow.Timesheets.Views.Hr.HrActiveSessionsPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:KaiFlow.Timesheets.ViewModels.Hr"
+    xmlns:models="clr-namespace:KaiFlow.Timesheets.Models"
+    x:DataType="vm:HrActiveSessionsViewModel"
+    BackgroundColor="{StaticResource BackgroundDark}"
+    Title="">
+
+    <Grid RowDefinitions="Auto,*">
+        <!-- Header -->
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Padding="16,12,16,4" ColumnSpacing="12">
+            <Label Text="{Binding Title}" Style="{StaticResource HeadlineMedium}" VerticalOptions="Center" />
+            <Button Grid.Column="1" Text="Refresh" Command="{Binding RefreshCommand}"
+                    BackgroundColor="{StaticResource SurfaceDark}" TextColor="{StaticResource Primary}"
+                    FontFamily="PoppinsSemiBold" FontSize="13"
+                    CornerRadius="8" Padding="16,0" HeightRequest="40"
+                    IsEnabled="{Binding IsNotBusy}" />
+        </Grid>
+
+        <ScrollView Grid.Row="1">
+            <VerticalStackLayout Padding="16,0,16,24" Spacing="12">
+
+                <Label Text="{Binding ErrorMessage}" TextColor="{StaticResource Error}"
+                       IsVisible="{Binding ErrorMessage, Converter={StaticResource IsNotNullConverter}}"
+                       FontSize="13" Margin="0,4,0,0" />
+
+                <ActivityIndicator IsRunning="{Binding IsBusy}" IsVisible="{Binding IsBusy}"
+                                   Color="{StaticResource Primary}" Margin="0,16,0,0" />
+
+                <!-- Empty state -->
+                <VerticalStackLayout Spacing="8" Margin="0,32,0,0"
+                    IsVisible="{Binding Sessions.Count, Converter={StaticResource IsZeroConverter}}">
+                    <Label Text="No active sessions" Style="{StaticResource BodyMedium}"
+                           TextColor="{StaticResource TextSecondary}" HorizontalOptions="Center" />
+                    <Label Text="All employees are signed out." FontSize="12"
+                           TextColor="{StaticResource TextSecondary}" HorizontalOptions="Center" />
+                </VerticalStackLayout>
+
+                <!-- Sessions list -->
+                <CollectionView ItemsSource="{Binding Sessions}" SelectionMode="None">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="models:ActiveSession">
+                            <Frame Style="{StaticResource CardFrame}" Margin="0,0,0,4">
+                                <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="*,Auto" RowSpacing="4" ColumnSpacing="12">
+
+                                    <!-- Employee + method -->
+                                    <Label Grid.Row="0" Grid.Column="0"
+                                           Text="{Binding EmployeeName}"
+                                           Style="{StaticResource BodyMedium}" FontFamily="PoppinsSemiBold" />
+                                    <Label Grid.Row="0" Grid.Column="1"
+                                           Text="{Binding LoginMethodDisplay}"
+                                           FontSize="11" TextColor="{StaticResource Primary}"
+                                           VerticalOptions="Center" />
+
+                                    <!-- Dates -->
+                                    <VerticalStackLayout Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Spacing="2">
+                                        <Label FontSize="11" TextColor="{StaticResource TextSecondary}">
+                                            <Label.FormattedText>
+                                                <FormattedString>
+                                                    <Span Text="Signed in: " TextColor="{StaticResource TextSecondary}" FontSize="11" />
+                                                    <Span Text="{Binding CreatedAt, StringFormat='{0:dd MMM yyyy HH:mm}'}"
+                                                          TextColor="{StaticResource TextPrimary}" FontSize="11" />
+                                                </FormattedString>
+                                            </Label.FormattedText>
+                                        </Label>
+                                        <Label FontSize="11" TextColor="{StaticResource TextSecondary}">
+                                            <Label.FormattedText>
+                                                <FormattedString>
+                                                    <Span Text="Expires: " TextColor="{StaticResource TextSecondary}" FontSize="11" />
+                                                    <Span Text="{Binding ExpiresAt, StringFormat='{0:dd MMM yyyy HH:mm}'}"
+                                                          TextColor="{StaticResource TextSecondary}" FontSize="11" />
+                                                </FormattedString>
+                                            </Label.FormattedText>
+                                        </Label>
+                                    </VerticalStackLayout>
+
+                                    <!-- Revoke button -->
+                                    <Button Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2"
+                                            Text="Revoke session"
+                                            Command="{Binding Source={RelativeSource AncestorType={x:Type vm:HrActiveSessionsViewModel}}, Path=RevokeSessionCommand}"
+                                            CommandParameter="{Binding SessionId}"
+                                            BackgroundColor="#7F1D1D" TextColor="#FCA5A5"
+                                            CornerRadius="6" HeightRequest="36" FontSize="12"
+                                            HorizontalOptions="Start" Padding="12,0"
+                                            Margin="0,4,0,0" />
+                                </Grid>
+                            </Frame>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
+</ContentPage>

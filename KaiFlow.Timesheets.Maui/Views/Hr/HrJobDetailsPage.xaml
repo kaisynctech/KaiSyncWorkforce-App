@@ -60,7 +60,7 @@
 
                     <BoxView HeightRequest="1" BackgroundColor="{StaticResource Divider}" />
 
-                    <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="12">
+                    <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="12">
                         <Label Grid.Row="0" Grid.Column="0" Text="Priority" Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" VerticalOptions="Center" />
                         <Label Grid.Row="0" Grid.Column="1" Text="{Binding Job.PriorityRaw}" Style="{StaticResource BodySmall}" VerticalOptions="Center" />
 
@@ -78,6 +78,23 @@
 
                         <Label Grid.Row="5" Grid.Column="0" Text="Est. Cost" Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" VerticalOptions="Center" />
                         <Label Grid.Row="5" Grid.Column="1" Text="{Binding Job.EstimatedCost, StringFormat='R{0:N2}'}" Style="{StaticResource BodySmall}" VerticalOptions="Center" />
+
+                        <Label Grid.Row="6" Grid.Column="0" Text="Project" Style="{StaticResource Caption}" TextColor="{StaticResource TextSecondary}" VerticalOptions="Center" />
+                        <Grid Grid.Row="6" Grid.Column="1" ColumnDefinitions="*,Auto,Auto" VerticalOptions="Center">
+                            <Label Text="{Binding LinkedProject.PickerDisplay, FallbackValue='—'}"
+                                   Style="{StaticResource BodySmall}"
+                                   TextColor="{StaticResource Primary}"
+                                   VerticalOptions="Center" />
+                            <Button Grid.Column="1" Text="Open"
+                                    Command="{Binding OpenLinkedProjectCommand}"
+                                    IsVisible="{Binding LinkedProject, Converter={StaticResource IsNotNullConverter}}"
+                                    Style="{StaticResource TextButton}"
+                                    FontSize="11" HeightRequest="28" Padding="8,0" />
+                            <Button Grid.Column="2" Text="Change"
+                                    Command="{Binding ChangeProjectCommand}"
+                                    Style="{StaticResource TextButton}"
+                                    FontSize="11" HeightRequest="28" Padding="8,0" />
+                        </Grid>
                     </Grid>
 
                     <!-- Lifecycle actions -->
@@ -123,14 +140,113 @@
                             </DataTemplate>
                         </CollectionView.ItemTemplate>
                     </CollectionView>
-                    <Grid ColumnDefinitions="*,Auto">
-                        <Picker Title="Contractor (optional)" ItemsSource="{Binding Contractors}" ItemDisplayBinding="{Binding Name}"
-                                SelectedItem="{Binding SelectedContractor}" TitleColor="{StaticResource TextSecondary}" TextColor="{StaticResource TextPrimary}" />
-                        <Button Grid.Column="1" Text="+ New" Command="{Binding AddContractorCommand}"
-                                Style="{StaticResource OutlinedButton}" FontSize="12" HeightRequest="36" Padding="10,6" />
+                    <!-- ── Contractors sub-section ───────────────────────────────────── -->
+                    <BoxView HeightRequest="1" BackgroundColor="{StaticResource Divider}" Margin="0,4,0,4" />
+                    <Label Text="Contractors" FontSize="13" FontAttributes="Bold"
+                           TextColor="{StaticResource TextPrimary}" Margin="0,4,0,2" />
+                    <Label Text="Assign one or more contractors to this job."
+                           FontSize="11" TextColor="{StaticResource TextSecondary}" />
+
+                    <!-- Table header (only when rows exist) -->
+                    <Grid IsVisible="{Binding HasJobContractors}"
+                          ColumnDefinitions="*,80,80,44,32,36"
+                          Padding="0,4,0,2">
+                        <Label Text="Contractor"
+                               FontSize="11" FontAttributes="Bold" TextColor="{StaticResource TextSecondary}" />
+                        <Label Grid.Column="1" Text="Role"
+                               FontSize="11" FontAttributes="Bold" TextColor="{StaticResource TextSecondary}" />
+                        <Label Grid.Column="2" Text="Amount"
+                               FontSize="11" FontAttributes="Bold" TextColor="{StaticResource TextSecondary}" />
+                        <Label Grid.Column="3" Text="Docs"
+                               FontSize="10" TextColor="{StaticResource TextSecondary}"
+                               HorizontalOptions="Center" VerticalOptions="Center" />
                     </Grid>
-                    <Entry Placeholder="Amount paid to contractor (R)" Text="{Binding ContractorCostText, Mode=TwoWay}"
-                           Keyboard="Numeric" Style="{StaticResource DarkEntry}" />
+
+                    <!-- Contractor rows -->
+                    <CollectionView ItemsSource="{Binding JobContractors}"
+                                    IsVisible="{Binding HasJobContractors}">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate x:DataType="models:JobContractor">
+                                <VerticalStackLayout Spacing="0">
+                                    <Grid ColumnDefinitions="*,80,80,44,32,36" Padding="0,4">
+                                        <VerticalStackLayout Grid.Column="0" Spacing="1" VerticalOptions="Center">
+                                            <Label Text="{Binding ContractorDisplayName}"
+                                                   FontSize="12" TextColor="{StaticResource TextPrimary}"
+                                                   LineBreakMode="TailTruncation" />
+                                            <Label Text="⚠ Compliance hold"
+                                                   FontSize="9" TextColor="#FCA5A5"
+                                                   IsVisible="{Binding ContractorComplianceHold}" />
+                                        </VerticalStackLayout>
+                                        <Label Grid.Column="1" Text="{Binding RoleDisplay}"
+                                               FontSize="11" TextColor="{StaticResource TextSecondary}"
+                                               VerticalOptions="Center" />
+                                        <Label Grid.Column="2" Text="{Binding AgreedAmountDisplay}"
+                                               FontSize="12" TextColor="{StaticResource TextPrimary}"
+                                               VerticalOptions="Center" />
+                                        <Button Grid.Column="3"
+                                                Text="📄"
+                                                FontSize="11"
+                                                HeightRequest="28"
+                                                WidthRequest="44"
+                                                Padding="0"
+                                                BackgroundColor="#1A2A1A"
+                                                TextColor="#4ADE80"
+                                                CornerRadius="4"
+                                                Command="{Binding Source={RelativeSource AncestorType={x:Type vm:HrJobDetailsViewModel}}, Path=OpenJobContractorDocsCommand}"
+                                                CommandParameter="{Binding .}" />
+                                        <Button Grid.Column="4"
+                                                Text="✎"
+                                                FontSize="11"
+                                                HeightRequest="28"
+                                                WidthRequest="32"
+                                                Padding="0"
+                                                BackgroundColor="#1E3A5F"
+                                                TextColor="#60A5FA"
+                                                CornerRadius="4"
+                                                Command="{Binding Source={RelativeSource AncestorType={x:Type vm:HrJobDetailsViewModel}}, Path=EditContractorAssignmentCommand}"
+                                                CommandParameter="{Binding .}" />
+                                        <Button Grid.Column="5"
+                                                Text="✕"
+                                                BackgroundColor="Transparent"
+                                                TextColor="{StaticResource TextSecondary}"
+                                                FontSize="12"
+                                                HeightRequest="32"
+                                                WidthRequest="36"
+                                                Padding="0"
+                                                Command="{Binding Source={RelativeSource AncestorType={x:Type vm:HrJobDetailsViewModel}}, Path=RemoveContractorFromJobCommand}"
+                                                CommandParameter="{Binding .}" />
+                                    </Grid>
+                                    <!-- Phase G: financial sub-row, only when any financial data exists -->
+                                    <Grid ColumnDefinitions="Auto,*,*,*" ColumnSpacing="8" Padding="4,0,4,6"
+                                          IsVisible="{Binding HasFinancialSummary}">
+                                        <Label Text="Finance:" FontSize="10" TextColor="{StaticResource TextSecondary}"
+                                               VerticalOptions="Center" />
+                                        <Label Grid.Column="1"
+                                               Text="{Binding PaidAmountDisplay, StringFormat='Paid {0}'}"
+                                               FontSize="10" TextColor="#22C55E" />
+                                        <Label Grid.Column="2"
+                                               Text="{Binding ApprovedAmountDisplay, StringFormat='Approved {0}'}"
+                                               FontSize="10" TextColor="#0EA5E9" />
+                                        <Label Grid.Column="3"
+                                               Text="{Binding VarianceSummary}"
+                                               FontSize="10" TextColor="{Binding VarianceColor}" />
+                                    </Grid>
+                                </VerticalStackLayout>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+
+                    <!-- Empty state -->
+                    <Label IsVisible="{Binding HasNoJobContractors}"
+                           Text="No contractors assigned yet."
+                           FontSize="12" TextColor="{StaticResource TextSecondary}" />
+
+                    <!-- Add contractor -->
+                    <Button Text="+ Assign Contractor"
+                            Command="{Binding AddContractorToJobCommand}"
+                            Style="{StaticResource SecondaryButton}"
+                            HeightRequest="40" FontSize="13" Margin="0,4,0,0" />
+
                     <Button Text="Save team &amp; contractor" Command="{Binding SaveTeamAndContractorCommand}" Style="{StaticResource PrimaryButton}" HeightRequest="44" FontSize="13" />
                     <Label Text="{Binding ContractorHoursSummary}" FontSize="12" TextColor="{StaticResource TextSecondary}" />
                     <CollectionView ItemsSource="{Binding SiteSessions}" HeightRequest="140">

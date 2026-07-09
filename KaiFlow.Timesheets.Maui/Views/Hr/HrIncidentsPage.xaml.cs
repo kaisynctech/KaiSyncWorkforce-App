@@ -18,22 +18,12 @@ public partial class HrIncidentsPage : ContentPage
         await _vm.LoadAsync();
     }
 
-    private async void OnShowOpenOnlyTapped(object sender, EventArgs e)
-    {
-        _vm.ShowOpenOnly = true;
-        await _vm.LoadAsync();
-    }
-
-    private async void OnShowAllTapped(object sender, EventArgs e)
-    {
-        _vm.ShowOpenOnly = false;
-        await _vm.LoadAsync();
-    }
+    private async void OnShowOpenOnlyTapped(object sender, EventArgs e) { _vm.ShowOpenOnly = true; await _vm.LoadAsync(); }
+    private async void OnShowAllTapped(object sender, EventArgs e) { _vm.ShowOpenOnly = false; await _vm.LoadAsync(); }
 
     protected override void OnDisappearing()
     {
         base.OnDisappearing();
-        if (BindingContext is IDisposable disposable)
-            disposable.Dispose();
+        if (BindingContext is IDisposable disposable) disposable.Dispose();
     }
 }

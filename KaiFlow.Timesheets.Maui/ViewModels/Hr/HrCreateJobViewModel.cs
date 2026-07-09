@@ -40,9 +40,13 @@ public partial class HrCreateJobViewModel : BaseViewModel
     [ObservableProperty] private Contractor? _selectedContractor;
     [ObservableProperty] private string _contractorCostText = "0";
     [ObservableProperty] private ClientDeal? _linkedProject;
+    [ObservableProperty] private ObservableCollection<ClientDeal> _projects = [];
+    [ObservableProperty] private ClientDeal? _selectedProject;
 
     public bool HasLinkedProject => LinkedProject != null;
     public bool ClientLocked => Guid.TryParse(ClientId, out _);
+    // True when the form was opened via a project's "Add job" button — project cannot be changed.
+    public bool ProjectLocked => Guid.TryParse(DealId, out var id) && id != Guid.Empty;
 
     public List<string> Priorities { get; } = ["none", "low", "medium", "high", "critical"];
 
@@ -66,22 +70,58 @@ public partial class HrCreateJobViewModel : BaseViewModel
             Contractors = new ObservableCollection<Contractor>(
                 (await _storage.GetContractorsAsync(companyId)).Where(c => c.IsActive).OrderBy(c => c.Name));
 
+            // Load active projects for the optional project picker.
+            var allDeals = await _storage.GetClientDealsAsync(companyId);
+            // Enrich deals with client names so PickerDisplay shows "PRJ-001 — Title — Client".
+            var clientById = clients.ToDictionary(c => c.Id);
+            foreach (var d in allDeals)
+                if (d.ClientId.HasValue && clientById.TryGetValue(d.ClientId.Value, out var cl))
+                    d.ClientName = cl.Name;
+            var activeProjects = allDeals
+                .Where(d => d.StatusRaw is not ("won" or "lost"))
+                .OrderBy(d => d.ProjectCode)
+                .ThenBy(d => d.Title)
+                .ToList();
+            Projects = new ObservableCollection<ClientDeal>(activeProjects);
+
             if (Guid.TryParse(ClientId, out var presetClientId))
                 SelectedClient = clients.FirstOrDefault(c => c.Id == presetClientId);
 
             if (Guid.TryParse(DealId, out var dealId) && dealId != Guid.Empty)
             {
-                LinkedProject = await _storage.GetClientDealAsync(dealId);
+                // Navigated from a project — lock in that project and pre-fill fields.
+                LinkedProject = allDeals.FirstOrDefault(d => d.Id == dealId)
+                    ?? await _storage.GetClientDealAsync(dealId);
                 if (LinkedProject != null)
                 {
+                    SelectedProject = LinkedProject;
                     Title = LinkedProject.Title;
                     if (LinkedProject.ClientId.HasValue)
                         SelectedClient = clients.FirstOrDefault(c => c.Id == LinkedProject.ClientId.Value);
                     Description = $"Project: {LinkedProject.ProjectCodeDisplay}";
                     OnPropertyChanged(nameof(HasLinkedProject));
+                    OnPropertyChanged(nameof(ProjectLocked));
                 }
             }
         });
+    }
+
+    partial void OnSelectedProjectChanged(ClientDeal? value)
+    {
+        LinkedProject = value;
+        OnPropertyChanged(nameof(HasLinkedProject));
+        // Pre-fill client when the user picks a project that has one.
+        if (value?.ClientId.HasValue == true && SelectedClient == null)
+        {
+            var match = Clients.FirstOrDefault(c => c.Id == value.ClientId!.Value);
+            if (match != null) SelectedClient = match;
+        }
+    }
+
+    [RelayCommand]
+    private void ClearProject()
+    {
+        SelectedProject = null;
     }
 
     partial void OnSelectedClientChanged(Client? value)
@@ -160,6 +200,16 @@ public partial class HrCreateJobViewModel : BaseViewModel
             var created = await _storage.CreateJobAsync(job);
             if (LinkedProject != null)
                 await _storage.LinkClientDealToJobAsync(LinkedProject.Id, created.Id);
+
+            if (SelectedContractor != null)
+            {
+                await _storage.UpsertJobContractorAsync(
+                    created.CompanyId, created.Id, SelectedContractor.Id,
+                    agreedAmount: (decimal)contractorCost);
+                if (LinkedProject != null)
+                    await _storage.UpsertProjectContractorAsync(
+                        created.CompanyId, LinkedProject.Id, SelectedContractor.Id);
+            }
 
             await ShellNavigation.GoToAsync("..");
         });

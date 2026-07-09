@@ -216,6 +216,31 @@ public partial class ClientDetailViewModel : BaseViewModel
     }
 
     [RelayCommand]
+    private async Task RotateClientCodeAsync()
+    {
+        if (Client == null || Client.Id == Guid.Empty) return;
+
+        var confirmed = await Shell.Current.DisplayAlert(
+            "Rotate portal code",
+            "The current code will stop working immediately. Display the new code to the client before navigating away. Continue?",
+            "Rotate", "Cancel");
+        if (!confirmed) return;
+
+        await RunAsync(async () =>
+        {
+            var companyId = _state.CurrentEmployee!.CompanyId;
+            var newCode = await _storage.HrRotateClientCodeAsync(companyId, Client.Id);
+            ClientCode = newCode;
+            OnPropertyChanged(nameof(HasClientCode));
+            OnPropertyChanged(nameof(PortalLoginSummary));
+            await Shell.Current.DisplayAlert(
+                "New portal code",
+                $"New code: {newCode}\n\nShare this with the client. The old code no longer works.",
+                "OK");
+        });
+    }
+
+    [RelayCommand]
     private async Task SaveAsync()
     {
         if (string.IsNullOrWhiteSpace(Name))
