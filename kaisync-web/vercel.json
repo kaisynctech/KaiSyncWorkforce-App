@@ -1,5 +1,8 @@
 {
   "cleanUrls": true,
+  "redirects": [
+    { "source": "/login", "destination": "/auth/id-entry", "permanent": false }
+  ],
   "rewrites": [
     { "source": "/", "destination": "/index.html" }
   ]
