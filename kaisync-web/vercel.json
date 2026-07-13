@@ -1,14 +1,1 @@
-{
-  "redirects": [
-    { "source": "/login", "destination": "/auth/id-entry", "permanent": false }
-  ],
-  "rewrites": [
-    { "source": "/",          "destination": "/index.html" },
-    { "source": "/about",     "destination": "/about.html" },
-    { "source": "/features",  "destination": "/features.html" },
-    { "source": "/pricing",   "destination": "/pricing.html" },
-    { "source": "/contact",   "destination": "/contact.html" },
-    { "source": "/download",  "destination": "/download.html" },
-    { "source": "/releases",  "destination": "/releases.html" }
-  ]
-}
+{}
