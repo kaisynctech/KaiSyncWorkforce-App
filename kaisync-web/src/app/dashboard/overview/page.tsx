@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { formatDateTime, timeGreeting } from '@/lib/utils'
 import type { Employee, Company, TimesheetPunch, LeaveRequest } from '@/types/database'
 
@@ -19,6 +20,7 @@ export default function OverviewPage() {
   const [activePunch, setActivePunch] = useState<TimesheetPunch | null>(null)
   const [punchLoading, setPunchLoading] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     load()
@@ -26,31 +28,30 @@ export default function OverviewPage() {
 
   async function load() {
     const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    const member = await resolveCurrentMember(supabase)
+    if (!member) { setError('not_linked'); setLoading(false); return }
 
-    const { data: emp } = await supabase
+    const { data: empData } = await supabase
       .from('employees')
       .select('*, companies(*)')
-      .eq('user_id', user.id)
-      .eq('is_active', true)
+      .eq('id', member.employeeId)
       .maybeSingle()
 
-    if (!emp) { setLoading(false); return }
-    setEmployee(emp as Employee)
-    const co = (emp as { companies: Company }).companies
+    if (!empData) { setLoading(false); return }
+    setEmployee(empData as Employee)
+    const co = (empData as { companies: Company }).companies
     setCompany(co)
 
     const [hcRes, leaveRes, punchesRes, activeRes] = await Promise.all([
       supabase.from('employees').select('id', { count: 'exact', head: true })
-        .eq('company_id', co.id).eq('is_active', true),
+        .eq('company_id', member.companyId).eq('is_active', true),
       supabase.from('leave_requests').select('id', { count: 'exact', head: true })
-        .eq('company_id', co.id).eq('status', 'pending'),
+        .eq('company_id', member.companyId).eq('status', 'pending'),
       supabase.from('timesheet_punches').select('*, employees(name,surname,employee_code)')
-        .eq('company_id', co.id).not('punch_out', 'is', null)
+        .eq('company_id', member.companyId).not('punch_out', 'is', null)
         .order('punch_out', { ascending: false }).limit(5),
       supabase.from('timesheet_punches').select('*')
-        .eq('company_id', co.id).eq('employee_id', emp.id)
+        .eq('company_id', member.companyId).eq('employee_id', member.employeeId)
         .is('punch_out', null).maybeSingle(),
     ])
 
@@ -59,7 +60,7 @@ export default function OverviewPage() {
     const { count: onSite } = await supabase
       .from('timesheet_punches')
       .select('id', { count: 'exact', head: true })
-      .eq('company_id', co.id)
+      .eq('company_id', member.companyId)
       .is('punch_out', null)
       .gte('punch_in', today)
 
@@ -107,6 +108,19 @@ export default function OverviewPage() {
       </div>
     )
   }
+
+  if (error === 'not_linked') return (
+    <div className="flex items-center justify-center h-full">
+      <div className="text-center space-y-2">
+        <span className="material-icons text-[48px] text-text-disabled">person_off</span>
+        <p className="text-[14px] font-semibold text-text-primary">Account not linked</p>
+        <p className="text-[13px] text-text-secondary">
+          Your account is not linked to an active employee record.<br/>
+          Please contact your administrator.
+        </p>
+      </div>
+    </div>
+  )
 
   return (
     <div className="p-6 max-w-5xl mx-auto">

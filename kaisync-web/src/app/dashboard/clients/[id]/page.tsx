@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { ComingSoon } from '@/components/ui/ComingSoon'
 import type { Client, Site, Project } from '@/types/database'
@@ -117,9 +118,9 @@ export default function ClientDetailPage() {
     }
 
     if (isNew) {
-      const { data: { user } } = await supabase.auth.getUser()
-      const { data: me } = await supabase.from('employees').select('company_id').eq('user_id', user!.id).maybeSingle()
-      const { data: nc, error: e } = await supabase.from('clients').insert({ ...payload, company_id: me?.company_id }).select().single()
+      const member = await resolveCurrentMember(supabase)
+      if (!member) { setError('Account not linked to an active employee.'); setSaving(false); return }
+      const { data: nc, error: e } = await supabase.from('clients').insert({ ...payload, company_id: member.companyId }).select().single()
       if (e) { setError(e.message); setSaving(false); return }
       router.push(`/dashboard/clients/${nc.id}`)
     } else {
@@ -153,6 +154,19 @@ export default function ClientDetailPage() {
       </div>
     )
   }
+
+  if (error === 'not_linked') return (
+    <div className="flex items-center justify-center h-full">
+      <div className="text-center space-y-2">
+        <span className="material-icons text-[48px] text-text-disabled">person_off</span>
+        <p className="text-[14px] font-semibold text-text-primary">Account not linked</p>
+        <p className="text-[13px] text-text-secondary">
+          Your account is not linked to an active employee record.<br/>
+          Please contact your administrator.
+        </p>
+      </div>
+    </div>
+  )
 
   return (
     <div className="h-full flex flex-col">

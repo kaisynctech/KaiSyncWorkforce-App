@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import type { PayrollSettings } from '@/types/database'
 
 const BLANK: Partial<PayrollSettings> = {
@@ -76,6 +77,7 @@ export default function PayrollSettingsPage() {
   const router = useRouter()
   const [settings, setSettings] = useState<Partial<PayrollSettings>>(BLANK)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [isBusy, setIsBusy] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [companyId, setCompanyId] = useState<string | null>(null)
@@ -83,12 +85,10 @@ export default function PayrollSettingsPage() {
   const load = useCallback(async () => {
     setLoading(true)
     const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setLoading(false); return }
-    const { data: me } = await supabase.from('employees').select('company_id').eq('user_id', user.id).maybeSingle()
-    if (!me) { setLoading(false); return }
-    setCompanyId(me.company_id)
-    const { data } = await supabase.from('payroll_settings').select('*').eq('company_id', me.company_id).maybeSingle()
+    const member = await resolveCurrentMember(supabase)
+    if (!member) { setError('not_linked'); setLoading(false); return }
+    setCompanyId(member.companyId)
+    const { data } = await supabase.from('payroll_settings').select('*').eq('company_id', member.companyId).maybeSingle()
     if (data) setSettings(data as PayrollSettings)
     setLoading(false)
   }, [])
@@ -110,6 +110,19 @@ export default function PayrollSettingsPage() {
   if (loading) return (
     <div className="flex items-center justify-center h-full">
       <span className="text-text-secondary text-[13px]">Loading…</span>
+    </div>
+  )
+
+  if (error === 'not_linked') return (
+    <div className="flex items-center justify-center h-full">
+      <div className="text-center space-y-2">
+        <span className="material-icons text-[48px] text-text-disabled">person_off</span>
+        <p className="text-[14px] font-semibold text-text-primary">Account not linked</p>
+        <p className="text-[13px] text-text-secondary">
+          Your account is not linked to an active employee record.<br/>
+          Please contact your administrator.
+        </p>
+      </div>
     </div>
   )
 

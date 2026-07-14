@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { Toggle } from '@/components/Toggle'
 import { ComingSoon } from '@/components/ui/ComingSoon'
 import type { Project, Client, Employee, Job, ProjectDocument, ProjectQuotationLine } from '@/types/database'
@@ -142,9 +143,9 @@ export default function ProjectDetailPage() {
     }
 
     if (isNew) {
-      const { data: { user } } = await supabase.auth.getUser()
-      const { data: me } = await supabase.from('employees').select('company_id').eq('user_id', user!.id).maybeSingle()
-      const { data: np, error: e } = await supabase.from('projects').insert({ ...payload, company_id: me?.company_id }).select().single()
+      const member = await resolveCurrentMember(supabase)
+      if (!member) { setError('Your account is not linked to an active employee record. Please contact your administrator.'); setSaving(false); return }
+      const { data: np, error: e } = await supabase.from('projects').insert({ ...payload, company_id: member.companyId }).select().single()
       if (e) { setError(e.message); setSaving(false); return }
       router.push(`/dashboard/projects/${np.id}`)
     } else {

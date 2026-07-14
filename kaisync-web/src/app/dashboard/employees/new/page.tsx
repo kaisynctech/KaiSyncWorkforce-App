@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { SectionCard, FormField, entryClass } from '@/components/SectionCard'
 import { FormSelect } from '@/components/FormSelect'
 import { FormDateInput } from '@/components/FormDateInput'
@@ -61,24 +62,15 @@ export default function CreateEmployeePage() {
 
   async function loadContext() {
     const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-
-    const { data: emp } = await supabase
-      .from('employees')
-      .select('company_id')
-      .eq('user_id', user.id)
-      .eq('is_active', true)
-      .maybeSingle()
-
-    if (!emp) return
-    setCompanyId(emp.company_id)
+    const member = await resolveCurrentMember(supabase)
+    if (!member) { setError('not_linked'); return }
+    setCompanyId(member.companyId)
 
     const [br, tmpl, mgr] = await Promise.all([
-      supabase.from('branches').select('id, name, address').eq('company_id', emp.company_id).order('name'),
-      supabase.from('shift_templates').select('id, name, summary').eq('company_id', emp.company_id).order('name'),
+      supabase.from('branches').select('id, name, address').eq('company_id', member.companyId).order('name'),
+      supabase.from('shift_templates').select('id, name, summary').eq('company_id', member.companyId).order('name'),
       supabase.from('employees').select('id, name, surname')
-        .eq('company_id', emp.company_id)
+        .eq('company_id', member.companyId)
         .eq('is_active', true)
         .in('access_level', ['owner', 'manager', 'hr'])
         .order('name'),
@@ -154,6 +146,19 @@ export default function CreateEmployeePage() {
 
     router.push(`/dashboard/employees/${data.id}`)
   }
+
+  if (error === 'not_linked') return (
+    <div className="flex items-center justify-center h-full">
+      <div className="text-center space-y-2">
+        <span className="material-icons text-[48px] text-text-disabled">person_off</span>
+        <p className="text-[14px] font-semibold text-text-primary">Account not linked</p>
+        <p className="text-[13px] text-text-secondary">
+          Your account is not linked to an active employee record.<br/>
+          Please contact your administrator.
+        </p>
+      </div>
+    </div>
+  )
 
   return (
     <form onSubmit={handleSubmit} className="p-4 space-y-4 max-w-2xl mx-auto pb-8">

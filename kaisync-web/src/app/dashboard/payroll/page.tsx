@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { FilterChip } from '@/components/ui/FilterChip'
 import type { EmployeePayment } from '@/types/database'
@@ -35,6 +36,7 @@ export default function PayrollPage() {
   const router = useRouter()
   const [payments, setPayments] = useState<EmployeePayment[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [dateFrom, setDateFrom] = useState(firstOfMonthStr)
   const [dateTo, setDateTo] = useState(todayDateStr)
   const [search, setSearch] = useState('')
@@ -44,15 +46,13 @@ export default function PayrollPage() {
   const load = useCallback(async () => {
     setLoading(true)
     const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setLoading(false); return }
-    const { data: me } = await supabase.from('employees').select('company_id').eq('user_id', user.id).maybeSingle()
-    if (!me) { setLoading(false); return }
+    const member = await resolveCurrentMember(supabase)
+    if (!member) { setError('not_linked'); setLoading(false); return }
 
     const { data } = await supabase
       .from('employee_payments')
       .select('*, employee:employees(name, surname)')
-      .eq('company_id', me.company_id)
+      .eq('company_id', member.companyId)
       .order('created_at', { ascending: false })
 
     setPayments((data ?? []) as EmployeePayment[])
@@ -101,6 +101,19 @@ export default function PayrollPage() {
     }
     load()
   }
+
+  if (error === 'not_linked') return (
+    <div className="flex items-center justify-center h-full">
+      <div className="text-center space-y-2">
+        <span className="material-icons text-[48px] text-text-disabled">person_off</span>
+        <p className="text-[14px] font-semibold text-text-primary">Account not linked</p>
+        <p className="text-[13px] text-text-secondary">
+          Your account is not linked to an active employee record.<br/>
+          Please contact your administrator.
+        </p>
+      </div>
+    </div>
+  )
 
   return (
     <div className="h-full flex flex-col">

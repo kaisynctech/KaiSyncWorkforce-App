@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { formatDateTime } from '@/lib/utils'
 import type { TimesheetPunch } from '@/types/database'
 
@@ -11,22 +12,16 @@ export default function AttendancePage() {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => { loadCompany() }, [])
   useEffect(() => { if (companyId) loadPunches() }, [companyId, date])
 
   async function loadCompany() {
     const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    const { data: emp } = await supabase
-      .from('employees')
-      .select('company_id')
-      .eq('user_id', user.id)
-      .eq('is_active', true)
-      .maybeSingle()
-    if (emp) setCompanyId(emp.company_id)
-    else setLoading(false)
+    const member = await resolveCurrentMember(supabase)
+    if (!member) { setError('not_linked'); setLoading(false); return }
+    setCompanyId(member.companyId)
   }
 
   async function loadPunches() {
@@ -64,6 +59,19 @@ export default function AttendancePage() {
   const totalHours = punches
     .filter(p => p.hours_worked != null)
     .reduce((sum, p) => sum + (p.hours_worked ?? 0), 0)
+
+  if (error === 'not_linked') return (
+    <div className="flex items-center justify-center h-full">
+      <div className="text-center space-y-2">
+        <span className="material-icons text-[48px] text-text-disabled">person_off</span>
+        <p className="text-[14px] font-semibold text-text-primary">Account not linked</p>
+        <p className="text-[13px] text-text-secondary">
+          Your account is not linked to an active employee record.<br/>
+          Please contact your administrator.
+        </p>
+      </div>
+    </div>
+  )
 
   return (
     <div className="p-6 max-w-5xl mx-auto">

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { formatDateTime } from '@/lib/utils'
 import type { Company, Employee, SecuritySettings, AuditEvent } from '@/types/database'
 
@@ -11,6 +12,7 @@ export default function SettingsPage() {
   const [security, setSecurity] = useState<SecuritySettings | null>(null)
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState<string | null>(null)
   const [companyName, setCompanyName] = useState('')
   const [industry, setIndustry] = useState('')
@@ -19,26 +21,25 @@ export default function SettingsPage() {
 
   async function load() {
     const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    const member = await resolveCurrentMember(supabase)
+    if (!member) { setError('not_linked'); setLoading(false); return }
 
-    const { data: emp } = await supabase
+    const { data: empData } = await supabase
       .from('employees')
       .select('*, companies(*)')
-      .eq('user_id', user.id)
-      .eq('is_active', true)
+      .eq('id', member.employeeId)
       .maybeSingle()
 
-    if (!emp) { setLoading(false); return }
-    setEmployee(emp as Employee)
-    const co = (emp as { companies: Company }).companies
+    if (!empData) { setLoading(false); return }
+    setEmployee(empData as Employee)
+    const co = (empData as { companies: Company }).companies
     setCompany(co)
     setCompanyName(co.name)
     setIndustry(co.industry ?? '')
 
     const [secRes, auditRes] = await Promise.all([
-      supabase.from('security_settings').select('*').eq('company_id', co.id).maybeSingle(),
-      supabase.from('audit_events').select('*').eq('company_id', co.id)
+      supabase.from('security_settings').select('*').eq('company_id', member.companyId).maybeSingle(),
+      supabase.from('audit_events').select('*').eq('company_id', member.companyId)
         .order('created_at', { ascending: false }).limit(20),
     ])
 
@@ -85,6 +86,19 @@ export default function SettingsPage() {
       </div>
     )
   }
+
+  if (error === 'not_linked') return (
+    <div className="flex items-center justify-center h-full">
+      <div className="text-center space-y-2">
+        <span className="material-icons text-[48px] text-text-disabled">person_off</span>
+        <p className="text-[14px] font-semibold text-text-primary">Account not linked</p>
+        <p className="text-[13px] text-text-secondary">
+          Your account is not linked to an active employee record.<br/>
+          Please contact your administrator.
+        </p>
+      </div>
+    </div>
+  )
 
   return (
     <div className="p-6 max-w-3xl mx-auto pb-16">

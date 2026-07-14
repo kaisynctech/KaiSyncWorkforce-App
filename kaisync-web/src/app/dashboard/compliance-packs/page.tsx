@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import type { CompliancePack, CompliancePackItem } from '@/types/database'
 
 interface DocType { id: string; name: string }
@@ -11,6 +12,7 @@ export default function CompliancePacksPage() {
   const [docTypes, setDocTypes] = useState<DocType[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [isEditing, setIsEditing] = useState(false)
   const [editingPackId, setEditingPackId] = useState<string | null>(null)
   const [isBusy, setIsBusy] = useState(false)
@@ -27,17 +29,15 @@ export default function CompliancePacksPage() {
     const supabase = createClient()
 
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { setLoading(false); return }
-      const { data: me } = await supabase.from('employees').select('company_id').eq('user_id', user.id).maybeSingle()
-      if (!me) { setLoading(false); return }
+      const member = await resolveCurrentMember(supabase)
+      if (!member) { setError('not_linked'); setLoading(false); return }
 
       const [packsRes, dtRes] = await Promise.all([
         supabase.from('compliance_packs')
           .select('*, items:compliance_pack_items(doc_type_id, requirement, doc_type:document_types(name))')
-          .eq('company_id', me.company_id)
+          .eq('company_id', member.companyId)
           .order('name'),
-        supabase.from('document_types').select('id, name').eq('company_id', me.company_id).order('name'),
+        supabase.from('document_types').select('id, name').eq('company_id', member.companyId).order('name'),
       ])
 
       if (packsRes.error) { setLoadError(true); setLoading(false); return }
@@ -108,6 +108,19 @@ export default function CompliancePacksPage() {
   function toggleItem(dtId: string, val: 'required' | 'recommended' | 'none') {
     setEditItems(prev => ({ ...prev, [dtId]: val }))
   }
+
+  if (error === 'not_linked') return (
+    <div className="flex items-center justify-center h-full">
+      <div className="text-center space-y-2">
+        <span className="material-icons text-[48px] text-text-disabled">person_off</span>
+        <p className="text-[14px] font-semibold text-text-primary">Account not linked</p>
+        <p className="text-[13px] text-text-secondary">
+          Your account is not linked to an active employee record.<br/>
+          Please contact your administrator.
+        </p>
+      </div>
+    </div>
+  )
 
   return (
     <div className="grid grid-cols-[300px_1fr] gap-0 h-full overflow-hidden">

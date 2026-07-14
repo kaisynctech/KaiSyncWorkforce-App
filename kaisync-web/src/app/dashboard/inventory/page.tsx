@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { Toggle } from '@/components/Toggle'
 import type { InventoryItem } from '@/types/database'
 
@@ -13,21 +14,20 @@ export default function InventoryPage() {
   const router = useRouter()
   const [items, setItems] = useState<InventoryItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [lowStockOnly, setLowStockOnly] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
     const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setLoading(false); return }
-    const { data: me } = await supabase.from('employees').select('company_id').eq('user_id', user.id).maybeSingle()
-    if (!me) { setLoading(false); return }
+    const member = await resolveCurrentMember(supabase)
+    if (!member) { setError('not_linked'); setLoading(false); return }
 
     const { data } = await supabase
       .from('inventory_items')
       .select('*, supplier:suppliers(id, name)')
-      .eq('company_id', me.company_id)
+      .eq('company_id', member.companyId)
       .order('name')
 
     setItems((data ?? []) as InventoryItem[])
@@ -48,6 +48,19 @@ export default function InventoryPage() {
     }
     return true
   })
+
+  if (error === 'not_linked') return (
+    <div className="flex items-center justify-center h-full">
+      <div className="text-center space-y-2">
+        <span className="material-icons text-[48px] text-text-disabled">person_off</span>
+        <p className="text-[14px] font-semibold text-text-primary">Account not linked</p>
+        <p className="text-[13px] text-text-secondary">
+          Your account is not linked to an active employee record.<br/>
+          Please contact your administrator.
+        </p>
+      </div>
+    </div>
+  )
 
   return (
     <div className="h-full flex flex-col">

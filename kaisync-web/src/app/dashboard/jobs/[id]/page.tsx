@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { FormSelect } from '@/components/FormSelect'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import type { Job, Employee, JobContractor, LaborEntry, JobInventoryItem, JobPhoto } from '@/types/database'
@@ -65,21 +66,12 @@ export default function JobDetailPage() {
 
   async function load() {
     const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-
-    const { data: me } = await supabase
-      .from('employees')
-      .select('company_id')
-      .eq('user_id', user.id)
-      .eq('is_active', true)
-      .maybeSingle()
-
-    if (!me) return
+    const member = await resolveCurrentMember(supabase)
+    if (!member) { setError('not_linked'); return }
 
     const [jobRes, empRes, jcRes, leRes, invRes, photoRes, assignRes] = await Promise.all([
       supabase.from('jobs').select('*, clients(*), sites(*), projects(*)').eq('id', jobId).single(),
-      supabase.from('employees').select('id, name, surname').eq('company_id', me.company_id).eq('is_active', true).order('name'),
+      supabase.from('employees').select('id, name, surname').eq('company_id', member.companyId).eq('is_active', true).order('name'),
       supabase.from('job_contractors').select('*, contractors(name, contractor_code)').eq('job_id', jobId),
       supabase.from('labor_entries').select('*').eq('job_id', jobId).order('work_date'),
       supabase.from('job_inventory').select('*').eq('job_id', jobId),
@@ -195,6 +187,19 @@ export default function JobDetailPage() {
       </div>
     )
   }
+
+  if (error === 'not_linked') return (
+    <div className="flex items-center justify-center h-full">
+      <div className="text-center space-y-2">
+        <span className="material-icons text-[48px] text-text-disabled">person_off</span>
+        <p className="text-[14px] font-semibold text-text-primary">Account not linked</p>
+        <p className="text-[13px] text-text-secondary">
+          Your account is not linked to an active employee record.<br/>
+          Please contact your administrator.
+        </p>
+      </div>
+    </div>
+  )
 
   const statusColor = STATUS_COLORS[job.status] ?? STATUS_COLORS.open
   const priorityColor = PRIORITY_COLORS[job.priority] ?? PRIORITY_COLORS.low

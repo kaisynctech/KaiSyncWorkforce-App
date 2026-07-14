@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import type { CalendarEvent } from '@/types/database'
 
 const todayStr = () => new Date().toISOString().split('T')[0]
@@ -16,6 +17,7 @@ export default function SchedulingPage() {
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   // Create form state
   const [newTitle, setNewTitle] = useState('')
@@ -26,16 +28,14 @@ export default function SchedulingPage() {
   const load = useCallback(async (date: string) => {
     setLoading(true)
     const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setLoading(false); return }
-    const { data: me } = await supabase.from('employees').select('company_id').eq('user_id', user.id).maybeSingle()
-    if (!me) { setLoading(false); return }
-    setCompanyId(me.company_id)
+    const member = await resolveCurrentMember(supabase)
+    if (!member) { setError('not_linked'); setLoading(false); return }
+    setCompanyId(member.companyId)
 
     const { data } = await supabase
       .from('calendar_events')
       .select('*')
-      .eq('company_id', me.company_id)
+      .eq('company_id', member.companyId)
       .eq('date', date)
       .order('start_time')
     setEvents((data ?? []) as CalendarEvent[])
@@ -67,6 +67,19 @@ export default function SchedulingPage() {
     setShowCreate(false)
     setBusy(false)
   }
+
+  if (error === 'not_linked') return (
+    <div className="flex items-center justify-center h-full">
+      <div className="text-center space-y-2">
+        <span className="material-icons text-[48px] text-text-disabled">person_off</span>
+        <p className="text-[14px] font-semibold text-text-primary">Account not linked</p>
+        <p className="text-[13px] text-text-secondary">
+          Your account is not linked to an active employee record.<br/>
+          Please contact your administrator.
+        </p>
+      </div>
+    </div>
+  )
 
   return (
     <div className="h-full flex flex-col">

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 
 const fmtPunchDt = (iso: string) =>
   new Intl.DateTimeFormat('en-ZA', {
@@ -29,15 +30,14 @@ export default function ActivityLogPage() {
   const [incidents, setIncidents] = useState<Incident[]>([])
   const [leaves, setLeaves] = useState<LeaveReq[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setLoading(false); return }
-    const { data: me } = await supabase.from('employees').select('company_id').eq('user_id', user.id).maybeSingle()
-    if (!me) { setLoading(false); return }
-    const cid = me.company_id
+    const member = await resolveCurrentMember(supabase)
+    if (!member) { setError('not_linked'); setLoading(false); return }
+    const cid = member.companyId
 
     const [{ data: pData }, { data: iData }, { data: lData }] = await Promise.all([
       supabase.from('attendance_sessions')
@@ -95,6 +95,19 @@ export default function ActivityLogPage() {
     if (s === 'declined') return '#FEE2E2'
     return '#FEF3C7'
   }
+
+  if (error === 'not_linked') return (
+    <div className="flex items-center justify-center h-full">
+      <div className="text-center space-y-2">
+        <span className="material-icons text-[48px] text-text-disabled">person_off</span>
+        <p className="text-[14px] font-semibold text-text-primary">Account not linked</p>
+        <p className="text-[13px] text-text-secondary">
+          Your account is not linked to an active employee record.<br/>
+          Please contact your administrator.
+        </p>
+      </div>
+    </div>
+  )
 
   return (
     <div className="h-full flex flex-col">

@@ -3,25 +3,25 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import type { ShiftTemplate } from '@/types/database'
 
 export default function TimeTemplatesPage() {
   const router = useRouter()
   const [templates, setTemplates] = useState<ShiftTemplate[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setLoading(false); return }
-    const { data: me } = await supabase.from('employees').select('company_id').eq('user_id', user.id).maybeSingle()
-    if (!me) { setLoading(false); return }
+    const member = await resolveCurrentMember(supabase)
+    if (!member) { setError('not_linked'); setLoading(false); return }
 
     const { data } = await supabase
       .from('shift_templates')
       .select('*, breaks:shift_template_breaks(*)')
-      .eq('company_id', me.company_id)
+      .eq('company_id', member.companyId)
       .order('name')
 
     setTemplates((data ?? []) as ShiftTemplate[])
@@ -42,6 +42,19 @@ export default function TimeTemplatesPage() {
     await supabase.from('shift_templates').delete().eq('id', id)
     setTemplates(prev => prev.filter(t => t.id !== id))
   }
+
+  if (error === 'not_linked') return (
+    <div className="flex items-center justify-center h-full">
+      <div className="text-center space-y-2">
+        <span className="material-icons text-[48px] text-text-disabled">person_off</span>
+        <p className="text-[14px] font-semibold text-text-primary">Account not linked</p>
+        <p className="text-[13px] text-text-secondary">
+          Your account is not linked to an active employee record.<br/>
+          Please contact your administrator.
+        </p>
+      </div>
+    </div>
+  )
 
   return (
     <div className="h-full flex flex-col">

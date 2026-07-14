@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import type { Site, Resident, Unit, SiteComplianceEntry } from '@/types/database'
 
 type Tab = 'residents' | 'units' | 'compliance'
@@ -23,14 +24,13 @@ export default function ResidentsPage() {
   const [units, setUnits] = useState<Unit[]>([])
   const [compliance, setCompliance] = useState<SiteComplianceEntry[]>([])
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const loadSites = useCallback(async () => {
     const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    const { data: me } = await supabase.from('employees').select('company_id').eq('user_id', user.id).maybeSingle()
-    if (!me) return
-    const { data } = await supabase.from('sites').select('*').eq('company_id', me.company_id).order('name')
+    const member = await resolveCurrentMember(supabase)
+    if (!member) { setError('not_linked'); return }
+    const { data } = await supabase.from('sites').select('*').eq('company_id', member.companyId).order('name')
     const list = (data ?? []) as Site[]
     setSites(list)
     if (list.length > 0) setSelectedSiteId(list[0].id)
@@ -64,6 +64,19 @@ export default function ResidentsPage() {
     { key: 'units', label: 'Units' },
     { key: 'compliance', label: 'Compliance' },
   ]
+
+  if (error === 'not_linked') return (
+    <div className="flex items-center justify-center h-full">
+      <div className="text-center space-y-2">
+        <span className="material-icons text-[48px] text-text-disabled">person_off</span>
+        <p className="text-[14px] font-semibold text-text-primary">Account not linked</p>
+        <p className="text-[13px] text-text-secondary">
+          Your account is not linked to an active employee record.<br/>
+          Please contact your administrator.
+        </p>
+      </div>
+    </div>
+  )
 
   return (
     <div className="h-full flex flex-col">

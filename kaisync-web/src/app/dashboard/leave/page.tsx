@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { formatDate } from '@/lib/utils'
 import type { LeaveRequest } from '@/types/database'
 
@@ -21,29 +22,21 @@ export default function LeavePage() {
   const [tab, setTab] = useState<Tab>('pending')
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => { load() }, [])
 
   async function load() {
     const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-
-    const { data: emp } = await supabase
-      .from('employees')
-      .select('id, company_id')
-      .eq('user_id', user.id)
-      .eq('is_active', true)
-      .maybeSingle()
-
-    if (!emp) { setLoading(false); return }
-    setCompanyId(emp.company_id)
-    setMyEmployeeId(emp.id)
+    const member = await resolveCurrentMember(supabase)
+    if (!member) { setError('not_linked'); setLoading(false); return }
+    setCompanyId(member.companyId)
+    setMyEmployeeId(member.employeeId)
 
     const { data } = await supabase
       .from('leave_requests')
       .select('*, employees(name, surname, employee_code)')
-      .eq('company_id', emp.company_id)
+      .eq('company_id', member.companyId)
       .order('created_at', { ascending: false })
 
     setRequests((data ?? []) as LeaveRequest[])
@@ -65,6 +58,19 @@ export default function LeavePage() {
   const filtered = tab === 'pending'
     ? requests.filter(r => r.status === 'pending')
     : requests
+
+  if (error === 'not_linked') return (
+    <div className="flex items-center justify-center h-full">
+      <div className="text-center space-y-2">
+        <span className="material-icons text-[48px] text-text-disabled">person_off</span>
+        <p className="text-[14px] font-semibold text-text-primary">Account not linked</p>
+        <p className="text-[13px] text-text-secondary">
+          Your account is not linked to an active employee record.<br/>
+          Please contact your administrator.
+        </p>
+      </div>
+    </div>
+  )
 
   return (
     <div className="p-6 max-w-5xl mx-auto">

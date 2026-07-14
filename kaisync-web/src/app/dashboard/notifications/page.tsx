@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import type { AppNotification, LeaveRequest, IncidentReport, PaymentApproval } from '@/types/database'
 
 const SEVERITY_COLORS: Record<string, { bg: string; fg: string }> = {
@@ -17,27 +18,19 @@ export default function NotificationsPage() {
   const [openIncidents, setOpenIncidents] = useState<IncidentReport[]>([])
   const [pendingPayments, setPendingPayments] = useState<PaymentApproval[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setLoading(false); return }
-
-    const { data: me } = await supabase
-      .from('employees')
-      .select('company_id')
-      .eq('user_id', user.id)
-      .eq('is_active', true)
-      .maybeSingle()
-
-    if (!me) { setLoading(false); return }
+    const member = await resolveCurrentMember(supabase)
+    if (!member) { setError('not_linked'); setLoading(false); return }
 
     const [notifRes, leaveRes, incidentRes, paymentRes] = await Promise.all([
-      supabase.from('notifications').select('*').eq('company_id', me.company_id).eq('is_read', false).order('created_at', { ascending: false }),
-      supabase.from('leave_requests').select('*').eq('company_id', me.company_id).eq('status', 'pending').order('created_at', { ascending: false }),
-      supabase.from('incident_reports').select('*').eq('company_id', me.company_id).eq('status', 'open').order('created_at', { ascending: false }),
-      supabase.from('payment_approvals').select('*').eq('company_id', me.company_id).eq('status', 'pending').order('created_at', { ascending: false }),
+      supabase.from('notifications').select('*').eq('company_id', member.companyId).eq('is_read', false).order('created_at', { ascending: false }),
+      supabase.from('leave_requests').select('*').eq('company_id', member.companyId).eq('status', 'pending').order('created_at', { ascending: false }),
+      supabase.from('incident_reports').select('*').eq('company_id', member.companyId).eq('status', 'open').order('created_at', { ascending: false }),
+      supabase.from('payment_approvals').select('*').eq('company_id', member.companyId).eq('status', 'pending').order('created_at', { ascending: false }),
     ])
 
     setNotifications((notifRes.data ?? []) as AppNotification[])
@@ -51,6 +44,19 @@ export default function NotificationsPage() {
 
   const fmtDate = (d: string) =>
     new Intl.DateTimeFormat('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(d))
+
+  if (error === 'not_linked') return (
+    <div className="flex items-center justify-center h-full">
+      <div className="text-center space-y-2">
+        <span className="material-icons text-[48px] text-text-disabled">person_off</span>
+        <p className="text-[14px] font-semibold text-text-primary">Account not linked</p>
+        <p className="text-[13px] text-text-secondary">
+          Your account is not linked to an active employee record.<br/>
+          Please contact your administrator.
+        </p>
+      </div>
+    </div>
+  )
 
   return (
     <div className="p-4 max-w-3xl mx-auto overflow-y-auto">
