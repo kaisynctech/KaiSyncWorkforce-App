@@ -23,7 +23,15 @@ type PayrollRecord = {
   shared_with_employee: boolean | null
   pay_basis: string | null
   created_at: string | null
-  employee?: { name: string; surname: string }
+  employee?: {
+    name: string
+    surname: string
+    employee_code:   string | null
+    bank_name:       string | null
+    account_number:  string | null
+    bank_branch_code: string | null
+    id_number:       string | null
+  }
 }
 
 type StatusFilter = 'all' | 'pending' | 'approved' | 'paid'
@@ -78,6 +86,8 @@ export default function PayrollPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [isLocked,     setIsLocked]     = useState(false)
   const [generating,   setGenerating]   = useState(false)
+  const [approving,    setApproving]    = useState(false)
+  const [releasing,    setReleasing]    = useState(false)
 
   // Reload whenever the date range changes
   useEffect(() => { loadPayroll(dateFrom, dateTo) }, [dateFrom, dateTo])
@@ -99,7 +109,7 @@ export default function PayrollPage() {
     const [{ data: paymentsData }, { data: locks }] = await Promise.all([
       supabase
         .from('payment_approvals')
-        .select('*, employee:employees(name, surname)')
+        .select('*, employee:employees(name, surname, employee_code, bank_name, account_number, bank_branch_code, id_number)')
         .eq('company_id', cid)
         .gte('period_start', from)
         .lte('period_end', to)
@@ -178,11 +188,104 @@ export default function PayrollPage() {
 
   async function approveAll() {
     const pending = filtered.filter(p => p.status === 'pending')
+    if (!pending.length) return
+    if (!window.confirm(`Approve all ${pending.length} pending payslip${pending.length !== 1 ? 's' : ''}?`)) return
+    setApproving(true)
     const supabase = createClient()
     for (const p of pending) {
       try { await supabase.rpc('approve_payslip', { payment_id: p.id }) } catch {}
     }
-    loadPayroll(dateFrom, dateTo)
+    await loadPayroll(dateFrom, dateTo)
+    setApproving(false)
+  }
+
+  async function releaseAll() {
+    const releasable = filtered.filter(p => p.status === 'approved' && p.shared_with_employee === false)
+    if (!releasable.length) { setError('No approved-but-unreleased payslips in this view.'); return }
+    if (!window.confirm(`Release ${releasable.length} approved payslip${releasable.length !== 1 ? 's' : ''} to employees?`)) return
+    setReleasing(true)
+    const supabase = createClient()
+    for (const p of releasable) {
+      try { await supabase.rpc('release_payslip_to_employee', { payment_id: p.id }) } catch {}
+    }
+    await loadPayroll(dateFrom, dateTo)
+    setReleasing(false)
+  }
+
+  // ── CSV exports ────────────────────────────────────────────────────────────
+
+  function downloadCSV(content: string, filename: string) {
+    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href     = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  function exportRegisterCSV() {
+    const header = 'Employee,Code,Period Start,Period End,Gross (R),Deductions (R),Net (R),Hours,Status'
+    const rows   = filtered.map(p => {
+      const emp   = p.employee
+      const name  = emp ? `${emp.name} ${emp.surname}`.trim() : ''
+      const hours = ((p.regular_hours ?? 0) + (p.overtime_hours ?? 0)).toFixed(2)
+      return [
+        `"${name}"`,
+        emp?.employee_code ?? '',
+        p.period_start,
+        p.period_end,
+        (p.gross_pay   ?? 0).toFixed(2),
+        (p.deductions  ?? 0).toFixed(2),
+        (p.net_pay     ?? 0).toFixed(2),
+        hours,
+        p.status,
+      ].join(',')
+    })
+    downloadCSV([header, ...rows].join('\n'), `payroll_register_${dateFrom}_to_${dateTo}.csv`)
+  }
+
+  function exportBankCSV() {
+    const header = 'Account Holder,Bank Name,Account Number,Branch Code,Account Type,Amount (R),Reference'
+    const rows   = filtered
+      .filter(p => p.status === 'approved' && (p.net_pay ?? 0) > 0)
+      .map(p => {
+        const emp = p.employee
+        const name = emp ? `${emp.name} ${emp.surname}`.trim() : ''
+        return [
+          `"${name}"`,
+          emp?.bank_name        ?? '',
+          emp?.account_number   ?? '',
+          emp?.bank_branch_code ?? '',
+          'Savings',
+          (p.net_pay ?? 0).toFixed(2),
+          `"SALARY ${p.period_start}"`,
+        ].join(',')
+      })
+    downloadCSV([header, ...rows].join('\n'), `bank_payments_${dateFrom}.csv`)
+  }
+
+  function exportIRP5CSV() {
+    // Simplified IRP5 data extract — PAYE/UIF split requires future Mission
+    const taxYear = new Date(dateTo).getFullYear()
+    const header  = 'Employee,ID Number,Period Start,Period End,Gross Income (R),Total Deductions (R),Net Income (R),Tax Year'
+    const rows    = filtered
+      .filter(p => p.status === 'approved')
+      .map(p => {
+        const emp  = p.employee
+        const name = emp ? `${emp.name} ${emp.surname}`.trim() : ''
+        return [
+          `"${name}"`,
+          emp?.id_number ?? '',
+          p.period_start,
+          p.period_end,
+          (p.gross_pay  ?? 0).toFixed(2),
+          (p.deductions ?? 0).toFixed(2),
+          (p.net_pay    ?? 0).toFixed(2),
+          taxYear,
+        ].join(',')
+      })
+    downloadCSV([header, ...rows].join('\n'), `IRP5_${taxYear}.csv`)
   }
 
   // ── Derived ────────────────────────────────────────────────────────────────
@@ -240,9 +343,27 @@ export default function PayrollPage() {
             >
               <span className="material-icons text-[18px]">{isLocked ? 'lock' : 'lock_open'}</span>
             </button>
-            {(['Register', 'IRP5', 'Release All'] as const).map(lbl => (
-              <button key={lbl} className="h-9 px-3 text-[12px] rounded-md bg-surface-dark border border-border text-text-secondary hover:text-text-primary transition-colors">{lbl}</button>
-            ))}
+            <button
+              onClick={exportRegisterCSV}
+              disabled={filtered.length === 0}
+              className="h-9 px-3 text-[12px] rounded-md bg-surface-dark border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-40"
+            >
+              Register
+            </button>
+            <button
+              onClick={exportBankCSV}
+              disabled={filtered.length === 0}
+              className="h-9 px-3 text-[12px] rounded-md bg-surface-dark border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-40"
+            >
+              Bank CSV
+            </button>
+            <button
+              onClick={exportIRP5CSV}
+              disabled={filtered.length === 0}
+              className="h-9 px-3 text-[12px] rounded-md bg-surface-dark border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-40"
+            >
+              IRP5
+            </button>
             {/* Generate — calls hr_generate_payroll RPC */}
             <button
               onClick={handleGenerate}
@@ -251,10 +372,21 @@ export default function PayrollPage() {
             >
               {generating ? 'Generating…' : 'Generate'}
             </button>
-            <button onClick={approveAll} className="btn-primary h-9 px-3 text-[12px]">Approve All</button>
-            {(['Bank CSV', 'Export'] as const).map(lbl => (
-              <button key={lbl} className="h-9 px-3 text-[12px] rounded-md bg-surface-dark border border-border text-text-secondary hover:text-text-primary transition-colors">{lbl}</button>
-            ))}
+            <button
+              onClick={approveAll}
+              disabled={approving}
+              className="btn-primary h-9 px-3 text-[12px] disabled:opacity-50"
+            >
+              {approving ? 'Approving…' : 'Approve All'}
+            </button>
+            <button
+              onClick={releaseAll}
+              disabled={releasing}
+              className="h-9 px-3 text-[12px] rounded-md border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
+              style={{ backgroundColor: '#4C1D95', color: '#C4B5FD', borderColor: '#7C3AED' }}
+            >
+              {releasing ? 'Releasing…' : 'Release All'}
+            </button>
           </div>
         </div>
 
