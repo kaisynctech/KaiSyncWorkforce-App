@@ -22,6 +22,7 @@ interface Session {
 export default function ActiveSessionsPage() {
   const [sessions, setSessions] = useState<Session[]>([])
   const [loading, setLoading] = useState(true)
+  const [companyId, setCompanyId] = useState<string | null>(null)
   const [isBusy, setIsBusy] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -32,6 +33,7 @@ export default function ActiveSessionsPage() {
     const supabase = createClient()
     const member = await resolveCurrentMember(supabase)
     if (!member) { setError('not_linked'); setLoading(false); return }
+    setCompanyId(member.companyId)
 
     const { data, error } = await supabase
       .from('employee_sessions')
@@ -59,14 +61,19 @@ export default function ActiveSessionsPage() {
   useEffect(() => { load() }, [load])
 
   async function revoke(sessionId: string) {
+    if (!companyId) return
+    if (!window.confirm('Revoke this session? The employee will be signed out immediately.')) return
     setIsBusy(true)
     setErrorMessage('')
     const supabase = createClient()
-    try {
-      await supabase.rpc('revoke_employee_session', { session_id: sessionId })
+    const { error } = await supabase.rpc('hr_revoke_session', {
+      p_company_id: companyId,
+      p_session_id: sessionId,
+    })
+    if (error) {
+      setErrorMessage(error.message)
+    } else {
       setSessions(prev => prev.filter(s => s.session_id !== sessionId))
-    } catch (e: unknown) {
-      setErrorMessage(e instanceof Error ? e.message : 'Failed to revoke session.')
     }
     setIsBusy(false)
   }

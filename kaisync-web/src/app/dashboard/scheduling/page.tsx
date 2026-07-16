@@ -5,13 +5,40 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import type { CalendarEvent } from '@/types/database'
 
+type ViewMode = 'day' | 'week'
+
 const todayStr = () => new Date().toISOString().split('T')[0]
 
 const fmtTime = (iso: string) =>
   new Intl.DateTimeFormat('en-ZA', { hour: '2-digit', minute: '2-digit' }).format(new Date(iso))
 
+const fmtShortDate = (dateStr: string) =>
+  new Intl.DateTimeFormat('en-ZA', { weekday: 'short', day: 'numeric' }).format(new Date(dateStr + 'T12:00:00'))
+
+function getWeekRange(dateStr: string): { start: string; end: string } {
+  const d = new Date(dateStr + 'T12:00:00')
+  const day = d.getDay()
+  const diffToMon = day === 0 ? -6 : 1 - day
+  const mon = new Date(d)
+  mon.setDate(d.getDate() + diffToMon)
+  const sun = new Date(mon)
+  sun.setDate(mon.getDate() + 6)
+  const fmt = (dt: Date) => dt.toISOString().split('T')[0]
+  return { start: fmt(mon), end: fmt(sun) }
+}
+
+function getWeekDays(dateStr: string): string[] {
+  const { start } = getWeekRange(dateStr)
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(start + 'T12:00:00')
+    d.setDate(d.getDate() + i)
+    return d.toISOString().split('T')[0]
+  })
+}
+
 export default function SchedulingPage() {
   const [selectedDate, setSelectedDate] = useState(todayStr())
+  const [viewMode, setViewMode] = useState<ViewMode>('day')
   const [events, setEvents] = useState<CalendarEvent[]>([])
   const [loading, setLoading] = useState(true)
   const [companyId, setCompanyId] = useState<string | null>(null)
@@ -19,30 +46,43 @@ export default function SchedulingPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Create form state
   const [newTitle, setNewTitle] = useState('')
   const [newStart, setNewStart] = useState('09:00')
   const [newEnd, setNewEnd] = useState('10:00')
   const [newDesc, setNewDesc] = useState('')
 
-  const load = useCallback(async (date: string) => {
+  const load = useCallback(async (date: string, mode: ViewMode) => {
     setLoading(true)
     const supabase = createClient()
     const member = await resolveCurrentMember(supabase)
     if (!member) { setError('not_linked'); setLoading(false); return }
     setCompanyId(member.companyId)
 
+    let from: string
+    let to: string
+    if (mode === 'week') {
+      const range = getWeekRange(date)
+      from = `${range.start}T00:00:00`
+      to   = `${range.end}T23:59:59`
+    } else {
+      const next = new Date(date + 'T12:00:00')
+      next.setDate(next.getDate() + 1)
+      from = `${date}T00:00:00`
+      to   = `${next.toISOString().split('T')[0]}T00:00:00`
+    }
+
     const { data } = await supabase
       .from('calendar_events')
       .select('*')
       .eq('company_id', member.companyId)
-      .eq('date', date)
+      .gte('start_time', from)
+      .lt('start_time', to)
       .order('start_time')
     setEvents((data ?? []) as CalendarEvent[])
     setLoading(false)
   }, [])
 
-  useEffect(() => { load(selectedDate) }, [load, selectedDate])
+  useEffect(() => { load(selectedDate, viewMode) }, [load, selectedDate, viewMode])
 
   async function createEvent() {
     if (!newTitle.trim()) return
@@ -58,7 +98,6 @@ export default function SchedulingPage() {
         start_time: startIso,
         end_time: endIso,
         description: newDesc.trim() || null,
-        date: selectedDate,
       })
       .select()
       .single()
@@ -80,6 +119,9 @@ export default function SchedulingPage() {
       </div>
     </div>
   )
+
+  const weekDays = viewMode === 'week' ? getWeekDays(selectedDate) : []
+  const today = todayStr()
 
   return (
     <div className="h-full flex flex-col">
@@ -103,7 +145,7 @@ export default function SchedulingPage() {
         </div>
       </div>
 
-      {/* Date picker bar */}
+      {/* Date picker + view toggle bar */}
       <div className="px-4 py-2.5 flex items-center gap-3 bg-surface-dark border-b border-divider shrink-0">
         <label className="text-xs font-medium text-text-secondary">Date:</label>
         <input
@@ -112,18 +154,60 @@ export default function SchedulingPage() {
           onChange={e => setSelectedDate(e.target.value)}
           className="bg-surface-dark border border-divider rounded-lg px-3 py-1.5 text-text-primary text-[13px] outline-none"
         />
+        <div className="ml-auto flex gap-1">
+          <button
+            onClick={() => setViewMode('day')}
+            className={`h-8 px-3 rounded-lg text-[12px] font-semibold transition-colors ${viewMode === 'day' ? 'bg-primary text-white' : 'bg-surface text-text-secondary hover:text-text-primary'}`}
+          >
+            Day
+          </button>
+          <button
+            onClick={() => setViewMode('week')}
+            className={`h-8 px-3 rounded-lg text-[12px] font-semibold transition-colors ${viewMode === 'week' ? 'bg-primary text-white' : 'bg-surface text-text-secondary hover:text-text-primary'}`}
+          >
+            Week
+          </button>
+        </div>
       </div>
 
-      {/* Events list */}
-      <div className="flex-1 overflow-y-auto p-4">
+      {/* Events body */}
+      <div className="flex-1 overflow-auto p-4">
         {loading ? (
           <p className="text-text-secondary text-[13px] text-center py-8">Loading…</p>
+        ) : viewMode === 'week' ? (
+          <div className="grid gap-px" style={{ gridTemplateColumns: 'repeat(7, minmax(0, 1fr))' }}>
+            {weekDays.map(day => {
+              const dayEvents = events.filter(ev => ev.start_time.startsWith(day))
+              const isToday = day === today
+              return (
+                <div key={day} className="flex flex-col gap-1 min-h-[120px]">
+                  <div
+                    className={`text-center py-1 text-[11px] font-semibold rounded ${isToday ? 'bg-primary text-white' : 'bg-surface text-text-secondary'}`}
+                  >
+                    {fmtShortDate(day)}
+                  </div>
+                  <div className="flex flex-col gap-0.5">
+                    {dayEvents.map(ev => (
+                      <div
+                        key={ev.id}
+                        className="rounded px-1 py-0.5 text-[10px] leading-tight truncate"
+                        style={{ backgroundColor: '#1D4ED820', color: '#60A5FA' }}
+                      >
+                        <span className="font-medium">{fmtTime(ev.start_time)}</span>
+                        {' '}{ev.title}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
         ) : events.length === 0 ? (
           <div className="flex flex-col items-center gap-4 py-8">
             <span className="text-[56px]">📅</span>
             <p className="text-text-secondary text-sm font-medium">No events scheduled</p>
             <p className="text-text-secondary text-sm text-center">
-              Use the + Event button to add shifts, meetings or reminders
+              Use the + Shift button to add shifts, meetings or reminders
             </p>
           </div>
         ) : (
@@ -137,7 +221,7 @@ export default function SchedulingPage() {
                     <div className="flex gap-2 items-center mt-0.5">
                       <span className="text-xs text-primary">{fmtTime(ev.start_time)}</span>
                       <span className="text-xs text-text-secondary">–</span>
-                      <span className="text-xs text-text-secondary">{fmtTime(ev.end_time)}</span>
+                      <span className="text-xs text-text-secondary">{ev.end_time ? fmtTime(ev.end_time) : ''}</span>
                     </div>
                     {ev.description && (
                       <p className="text-xs text-text-secondary mt-1">{ev.description}</p>

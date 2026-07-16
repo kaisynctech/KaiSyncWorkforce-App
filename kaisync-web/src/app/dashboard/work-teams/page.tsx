@@ -11,12 +11,18 @@ export default function WorkTeamsPage() {
   const [teams, setTeams] = useState<WorkTeam[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [companyId, setCompanyId] = useState<string | null>(null)
+  const [showCreate, setShowCreate] = useState(false)
+  const [newTeamName, setNewTeamName] = useState('')
+  const [newTeamDesc, setNewTeamDesc] = useState('')
+  const [creating, setCreating] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
     const supabase = createClient()
     const member = await resolveCurrentMember(supabase)
     if (!member) { setError('not_linked'); setLoading(false); return }
+    setCompanyId(member.companyId)
 
     const { data } = await supabase
       .from('work_teams')
@@ -36,6 +42,22 @@ export default function WorkTeamsPage() {
 
   useEffect(() => { load() }, [load])
 
+  async function createTeam() {
+    if (!newTeamName.trim() || !companyId) return
+    setCreating(true)
+    const supabase = createClient()
+    await supabase.from('work_teams').insert({
+      company_id:  companyId,
+      name:        newTeamName.trim(),
+      description: newTeamDesc.trim() || null,
+      is_active:   true,
+    })
+    setNewTeamName(''); setNewTeamDesc('')
+    setShowCreate(false)
+    setCreating(false)
+    load()
+  }
+
   if (error === 'not_linked') return (
     <div className="flex items-center justify-center h-full">
       <div className="text-center space-y-2">
@@ -54,7 +76,7 @@ export default function WorkTeamsPage() {
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 shrink-0 bg-surface-dark">
         <h1 className="text-sm font-semibold uppercase tracking-wider text-text-primary">Work Teams</h1>
-        <button onClick={() => router.push('/dashboard/work-teams/new')} className="btn-primary h-9 px-3 text-[13px]">
+        <button onClick={() => setShowCreate(true)} className="btn-primary h-9 px-3 text-[13px]">
           + Team
         </button>
       </div>
@@ -67,7 +89,7 @@ export default function WorkTeamsPage() {
           <div className="flex flex-col items-center py-12 gap-2">
             <span className="material-icons text-[48px] text-text-disabled">groups</span>
             <p className="text-text-secondary text-[14px]">No teams yet.</p>
-            <button onClick={() => router.push('/dashboard/work-teams/new')} className="btn-primary h-9 px-4 text-[13px] mt-2">
+            <button onClick={() => setShowCreate(true)} className="btn-primary h-9 px-4 text-[13px] mt-2">
               + Team
             </button>
           </div>
@@ -114,6 +136,50 @@ export default function WorkTeamsPage() {
           ))
         )}
       </div>
+
+      {/* Create team modal */}
+      {showCreate && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-surface rounded-xl shadow-lg w-full max-w-sm p-5 space-y-3">
+            <h3 className="font-semibold text-text-primary">New Team</h3>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-text-secondary">Team name *</label>
+              <input
+                value={newTeamName}
+                onChange={e => setNewTeamName(e.target.value)}
+                placeholder="e.g. Site A Crew, Night Shift"
+                className="dark-entry w-full"
+                autoFocus
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-text-secondary">Description (optional)</label>
+              <textarea
+                value={newTeamDesc}
+                onChange={e => setNewTeamDesc(e.target.value)}
+                rows={2}
+                placeholder="Notes…"
+                className="dark-entry w-full resize-none"
+              />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => { setShowCreate(false); setNewTeamName(''); setNewTeamDesc('') }}
+                className="btn-outlined h-9 px-4 text-[13px]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={createTeam}
+                disabled={!newTeamName.trim() || creating}
+                className="btn-primary h-9 px-4 text-[13px] disabled:opacity-50"
+              >
+                {creating ? 'Creating…' : 'Create'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
