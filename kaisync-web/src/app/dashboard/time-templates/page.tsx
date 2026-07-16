@@ -11,16 +11,19 @@ export default function TimeTemplatesPage() {
   const [templates, setTemplates] = useState<ShiftTemplate[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [companyId, setCompanyId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     const supabase = createClient()
     const member = await resolveCurrentMember(supabase)
     if (!member) { setError('not_linked'); setLoading(false); return }
+    setCompanyId(member.companyId)
 
+    // employee_shift_templates is the UUID-based table used by hr_ RPCs
     const { data } = await supabase
-      .from('shift_templates')
-      .select('*, breaks:shift_template_breaks(*)')
+      .from('employee_shift_templates')
+      .select('*')
       .eq('company_id', member.companyId)
       .order('name')
 
@@ -31,15 +34,20 @@ export default function TimeTemplatesPage() {
   useEffect(() => { load() }, [load])
 
   async function setDefault(id: string) {
+    if (!companyId) return
     const supabase = createClient()
-    try { await supabase.rpc('set_default_shift_template', { template_id: id }) } catch {}
+    const { error: rpcErr } = await supabase.rpc('hr_set_default_shift_template', {
+      p_company_id: companyId,
+      p_template_id: id,
+    })
+    if (rpcErr) console.error('set default template:', rpcErr.message)
     load()
   }
 
   async function deleteTemplate(id: string) {
     if (!window.confirm('Delete this template?')) return
     const supabase = createClient()
-    await supabase.from('shift_templates').delete().eq('id', id)
+    await supabase.from('employee_shift_templates').delete().eq('id', id)
     setTemplates(prev => prev.filter(t => t.id !== id))
   }
 
@@ -69,7 +77,7 @@ export default function TimeTemplatesPage() {
       {/* Card list */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {loading ? (
-          <p className="text-text-secondary text-[13px] text-center py-8">Loading…</p>
+          <p className="text-text-secondary text-[13px] text-center py-8">Loading...</p>
         ) : templates.length === 0 ? (
           <div className="flex flex-col items-center py-12 gap-2">
             <span className="material-icons text-[48px] text-text-disabled">access_time</span>
@@ -81,7 +89,6 @@ export default function TimeTemplatesPage() {
         ) : (
           templates.map(t => (
             <div key={t.id} className="card p-4 space-y-2">
-              {/* Row 1: name + default badge */}
               <div className="flex items-center gap-2">
                 <span className="text-sm font-bold text-text-primary flex-1">{t.name}</span>
                 {t.is_default && (
@@ -90,7 +97,6 @@ export default function TimeTemplatesPage() {
                   </span>
                 )}
               </div>
-              {/* Row 2: actions */}
               <div className="flex gap-2">
                 {!t.is_default && (
                   <button onClick={() => setDefault(t.id)}
@@ -98,7 +104,7 @@ export default function TimeTemplatesPage() {
                     Default
                   </button>
                 )}
-                <button onClick={() => router.push(`/dashboard/time-templates/${t.id}/edit`)}
+                <button onClick={() => router.push('/dashboard/time-templates/' + t.id + '/edit')}
                   className="text-primary text-sm px-2 hover:opacity-70 transition-opacity">
                   Edit
                 </button>
@@ -108,7 +114,6 @@ export default function TimeTemplatesPage() {
                   Delete
                 </button>
               </div>
-              {/* Row 3: summary */}
               {t.summary && (
                 <p className="text-xs text-text-secondary">{t.summary}</p>
               )}
