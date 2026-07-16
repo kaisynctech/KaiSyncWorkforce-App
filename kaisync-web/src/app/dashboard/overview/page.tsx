@@ -35,7 +35,11 @@ export default function OverviewPage() {
   const [isClockedIn, setIsClockedIn] = useState(false)
   const [elapsedMs, setElapsedMs] = useState(0)
   const [punchLoading, setPunchLoading] = useState(false)
-  const clockInTimeRef = useRef<string | null>(null)
+  const clockInTimeRef  = useRef<string | null>(null)
+  const baseElapsedRef  = useRef<number>(0)
+  const cIdRef          = useRef<string>('')
+  const eIdRef          = useRef<string>('')
+  const empsRef         = useRef<EmpRow[]>([])
 
   const [kpi, setKpi] = useState({ headcount: 0, clockedIn: 0, activeJobs: 0, pendingLeave: 0, openIncidents: 0, pendingPay: 0 })
   const [allEmployees, setAllEmployees] = useState<EmpRow[]>([])
@@ -52,16 +56,53 @@ export default function OverviewPage() {
     return () => clearInterval(t)
   }, [])
 
-  // Recalc elapsed whenever now or clockInTime changes
+  // Recalc elapsed whenever now changes — uses base + live delta
   useEffect(() => {
     if (!isClockedIn || !clockInTimeRef.current) return
-    const extra = now.getTime() - new Date(clockInTimeRef.current).getTime()
-    setElapsedMs(prev => {
-      // prev already includes accumulated completed sessions; we just update the live portion
-      // Re-derive from scratch is cleaner — store base separately
-      return prev // handled in load()
-    })
+    setElapsedMs(
+      baseElapsedRef.current + (now.getTime() - new Date(clockInTimeRef.current).getTime())
+    )
   }, [now, isClockedIn])
+
+  async function refreshPunchData(cid: string, empList: EmpRow[]) {
+    const supabase = createClient()
+    const { data } = await supabase
+      .from('time_punches')
+      .select('id, employee_id, type, date_time')
+      .eq('company_id', cid)
+      .gte('date_time', todayStart())
+      .order('date_time', { ascending: true })
+    const punches = (data ?? []) as TimePunch[]
+    const latestByEmp = new Map<string, string>()
+    for (const p of punches) latestByEmp.set(p.employee_id, p.type)
+    const clockedInIds = new Set(
+      [...latestByEmp.entries()].filter(([, t]) => t === 'in').map(([id]) => id)
+    )
+    setKpi(prev => ({ ...prev, clockedIn: clockedInIds.size }))
+    setNotClockedInIds(new Set(empList.filter(e => !clockedInIds.has(e.id)).map(e => e.id)))
+    const selfClockedIn = latestByEmp.get(eIdRef.current) === 'in'
+    setIsClockedIn(selfClockedIn)
+  }
+
+  // Realtime subscription for punch events
+  useEffect(() => {
+    if (!companyId) return
+    const supabase = createClient()
+    const channel = supabase
+      .channel('overview-punches-rt')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'time_punches',
+        filter: `company_id=eq.${companyId}`,
+      }, () => {
+        if (cIdRef.current && empsRef.current.length > 0) {
+          refreshPunchData(cIdRef.current, empsRef.current)
+        }
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [companyId])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -71,6 +112,8 @@ export default function OverviewPage() {
 
     setCompanyId(member.companyId)
     setEmployeeId(member.employeeId)
+    cIdRef.current = member.companyId
+    eIdRef.current = member.employeeId
 
     const { data: empData } = await supabase
       .from('employees').select('*, companies(name)').eq('id', member.employeeId).maybeSingle()
@@ -92,26 +135,29 @@ export default function OverviewPage() {
 
     const clockedInIds = new Set([...latestByEmp.entries()].filter(([, t]) => t === 'in').map(([id]) => id))
 
-    // Self punch status + today's elapsed time
+    // Self punch status — base (completed sessions) stored separately from live delta
     const selfPunches = punches.filter(p => p.employee_id === member.employeeId)
-    let accMs = 0
+    let baseMs = 0
     let lastInTime: string | null = null
     for (const p of selfPunches) {
-      if (p.type === 'in') { lastInTime = p.date_time }
-      else if (p.type === 'out' && lastInTime) {
-        accMs += new Date(p.date_time).getTime() - new Date(lastInTime).getTime()
+      if (p.type === 'in') {
+        lastInTime = p.date_time
+      } else if (p.type === 'out' && lastInTime) {
+        baseMs += new Date(p.date_time).getTime() - new Date(lastInTime).getTime()
         lastInTime = null
       }
     }
     const selfClockedIn = latestByEmp.get(member.employeeId) === 'in'
     if (selfClockedIn && lastInTime) {
       clockInTimeRef.current = lastInTime
-      accMs += Date.now() - new Date(lastInTime).getTime()
+      baseElapsedRef.current = baseMs
+      setElapsedMs(baseMs + (Date.now() - new Date(lastInTime).getTime()))
     } else {
       clockInTimeRef.current = null
+      baseElapsedRef.current = baseMs
+      setElapsedMs(baseMs)
     }
     setIsClockedIn(selfClockedIn)
-    setElapsedMs(accMs)
 
     // Parallel KPI queries
     const [hcRes, jobRes, leaveRes, incRes, payRes, empsRes] = await Promise.all([
@@ -140,6 +186,7 @@ export default function OverviewPage() {
 
     const employees = (empsRes.data ?? []) as EmpRow[]
     setAllEmployees(employees)
+    empsRef.current = employees
     setNotClockedInIds(new Set(employees.filter(e => !clockedInIds.has(e.id)).map(e => e.id)))
 
     setLoading(false)
@@ -198,6 +245,8 @@ export default function OverviewPage() {
       </div>
     </div>
   )
+
+  const pct = kpi.headcount > 0 ? Math.round((kpi.clockedIn / kpi.headcount) * 100) : 0
 
   return (
     <div className="h-full overflow-y-auto">
@@ -269,6 +318,25 @@ export default function OverviewPage() {
             <span className="text-[13px] font-bold text-text-secondary">
               {kpi.clockedIn} / {kpi.headcount}
             </span>
+          </div>
+
+          {/* Progress bar */}
+          <div className="px-4 pt-3 pb-1">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[11px] text-text-secondary">
+                {kpi.clockedIn} of {kpi.headcount} clocked in
+              </span>
+              <span className="text-[11px] font-semibold text-text-primary">{pct}%</span>
+            </div>
+            <div className="h-2 w-full rounded-full bg-surface-elevated overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all duration-500"
+                style={{
+                  width: `${kpi.headcount > 0 ? (kpi.clockedIn / kpi.headcount) * 100 : 0}%`,
+                  backgroundColor: kpi.clockedIn === kpi.headcount ? '#22c55e' : '#3b82f6',
+                }}
+              />
+            </div>
           </div>
 
           {notSignedInList.length === 0 ? (

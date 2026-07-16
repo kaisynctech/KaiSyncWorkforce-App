@@ -44,20 +44,21 @@ function fmtTime(d: string | null) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function MessagesPage() {
-  const [threads,        setThreads]        = useState<MessageThread[]>([])
-  const [selected,       setSelected]       = useState<MessageThread | null>(null)
-  const [messages,       setMessages]       = useState<AppMessage[]>([])
-  const [msgText,        setMsgText]        = useState('')
-  const [loading,        setLoading]        = useState(true)
-  const [msgLoading,     setMsgLoading]     = useState(false)
-  const [sending,        setSending]        = useState(false)
-  const [showNew,        setShowNew]        = useState(false)
-  const [employees,      setEmployees]      = useState<EmpPick[]>([])
-  const [empSearch,      setEmpSearch]      = useState('')
-  const [companyId,      setCompanyId]      = useState<string | null>(null)
-  const [employeeId,     setEmployeeId]     = useState<string | null>(null)
-  const [myName,         setMyName]         = useState('')
-  const [notLinked,      setNotLinked]      = useState(false)
+  const [threads,          setThreads]          = useState<MessageThread[]>([])
+  const [selected,         setSelected]         = useState<MessageThread | null>(null)
+  const [messages,         setMessages]         = useState<AppMessage[]>([])
+  const [msgText,          setMsgText]          = useState('')
+  const [loading,          setLoading]          = useState(true)
+  const [msgLoading,       setMsgLoading]       = useState(false)
+  const [sending,          setSending]          = useState(false)
+  const [showNew,          setShowNew]          = useState(false)
+  const [employees,        setEmployees]        = useState<EmpPick[]>([])
+  const [empSearch,        setEmpSearch]        = useState('')
+  const [companyId,        setCompanyId]        = useState<string | null>(null)
+  const [employeeId,       setEmployeeId]       = useState<string | null>(null)
+  const [myName,           setMyName]           = useState('')
+  const [notLinked,        setNotLinked]        = useState(false)
+  const [unreadThreadIds,  setUnreadThreadIds]  = useState<Set<string>>(new Set())
 
   const bottomRef     = useRef<HTMLDivElement>(null)
   const cIdRef        = useRef<string | null>(null)
@@ -86,6 +87,7 @@ export default function MessagesPage() {
     await Promise.all([
       loadThreads(member.companyId, member.employeeId),
       loadEmployees(member.companyId, member.employeeId),
+      loadUnreadThreadIds(member.companyId, member.employeeId),
     ])
     setLoading(false)
   }
@@ -117,11 +119,28 @@ export default function MessagesPage() {
     setEmployees((data ?? []) as EmpPick[])
   }
 
+  async function loadUnreadThreadIds(cid: string, eid: string) {
+    const supabase = createClient()
+    const { data } = await supabase
+      .from('app_messages')
+      .select('thread_id')
+      .eq('company_id', cid)
+      .not('read_by_ids', 'cs', `{"${eid}"}`)
+    const ids = new Set((data ?? []).map((r: { thread_id: string }) => r.thread_id))
+    setUnreadThreadIds(ids)
+  }
+
   // ── Select thread ──────────────────────────────────────────────────────────
   async function selectThread(thread: MessageThread) {
     const cid = cIdRef.current
     const eid = eIdRef.current
     if (!cid || !eid) return
+    // Clear unread immediately on open
+    setUnreadThreadIds(prev => {
+      const next = new Set(prev)
+      next.delete(thread.id)
+      return next
+    })
     setSelected(thread)
     setMsgLoading(true)
     const supabase = createClient()
@@ -166,8 +185,9 @@ export default function MessagesPage() {
         event: 'INSERT', schema: 'public', table: 'app_messages',
         filter: `company_id=eq.${companyId}`,
       }, () => {
-        reloadMessages()
         if (cIdRef.current && eIdRef.current) {
+          loadUnreadThreadIds(cIdRef.current, eIdRef.current)
+          reloadMessages()
           loadThreads(cIdRef.current, eIdRef.current)
         }
       })
@@ -187,6 +207,9 @@ export default function MessagesPage() {
       p_sender_employee_id: employeeId, p_body: body,
     })
     setMsgText('')
+    // Reset textarea height
+    const textarea = document.querySelector<HTMLTextAreaElement>('textarea')
+    if (textarea) textarea.style.height = 'auto'
     await Promise.all([reloadMessages(), loadThreads(companyId, employeeId)])
     setSending(false)
   }
@@ -194,21 +217,35 @@ export default function MessagesPage() {
   // ── Start DM ───────────────────────────────────────────────────────────────
   async function startDM(peer: EmpPick) {
     if (!companyId || !employeeId) return
+    setShowNew(false)
+    setEmpSearch('')
     const peerName = `${peer.name} ${peer.surname}`
     const supabase = createClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: thread } = await (supabase.rpc as any)('employee_get_or_create_direct_thread_peer', {
-      p_company_id: companyId, p_creator_id: employeeId,
-      p_peer_id: peer.id, p_title: `${myName} & ${peerName}`,
+    const { data: result } = await (supabase.rpc as any)('employee_get_or_create_direct_thread_peer', {
+      p_company_id: companyId,
+      p_creator_id: employeeId,
+      p_peer_id:    peer.id,
+      p_title:      `${myName} & ${peerName}`,
     })
-    setShowNew(false)
-    setEmpSearch('')
-    await loadThreads(companyId, employeeId)
-    if (thread?.id) {
-      const t = thread as MessageThread
-      setSelected(t)
-      await selectThread(t)
-    }
+    if (!result?.id) return
+    // Reload thread list to get full thread object
+    const supabase2 = createClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: threadsData } = await (supabase2.rpc as any)('employee_get_message_threads_for_worker', {
+      p_company_id:  companyId,
+      p_employee_id: employeeId,
+    })
+    const refreshed = ((threadsData ?? []) as MessageThread[])
+      .filter(t => !t.is_archived)
+      .sort((a, b) => {
+        if (!a.last_message_at) return 1
+        if (!b.last_message_at) return -1
+        return new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime()
+      })
+    setThreads(refreshed)
+    const fullThread = refreshed.find(t => t.id === result.id)
+    if (fullThread) await selectThread(fullThread)
   }
 
   const filteredEmps = employees.filter(e =>
@@ -258,6 +295,7 @@ export default function MessagesPage() {
             </div>
           ) : threads.map(t => {
             const isActive = selected?.id === t.id
+            const isUnread = unreadThreadIds.has(t.id) && !isActive
             return (
               <button
                 key={t.id}
@@ -267,13 +305,22 @@ export default function MessagesPage() {
                 }`}
               >
                 <div className="flex justify-between items-start gap-2 mb-0.5">
-                  <p className="text-[13px] font-semibold text-text-primary truncate flex-1">
-                    {t.subject ?? 'Untitled'}
-                  </p>
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    {isUnread && (
+                      <span className="w-2 h-2 rounded-full bg-primary shrink-0" />
+                    )}
+                    <p className={`text-[13px] truncate flex-1 ${
+                      isUnread ? 'font-bold text-text-primary' : 'font-semibold text-text-primary'
+                    }`}>
+                      {t.subject ?? 'Untitled'}
+                    </p>
+                  </div>
                   <p className="text-[10px] text-text-disabled shrink-0 mt-0.5">{fmtTime(t.last_message_at)}</p>
                 </div>
                 {t.last_message_preview && (
-                  <p className="text-[12px] text-text-secondary truncate">{t.last_message_preview}</p>
+                  <p className={`text-[12px] truncate ${isUnread ? 'text-text-primary' : 'text-text-secondary'}`}>
+                    {t.last_message_preview}
+                  </p>
                 )}
                 {t.type_raw && t.type_raw !== 'direct' && (
                   <span className="inline-block mt-1 text-[10px] text-text-disabled capitalize bg-background border border-divider rounded px-1.5 py-0.5">
@@ -353,13 +400,18 @@ export default function MessagesPage() {
             <div className="shrink-0 px-4 py-3 border-t border-divider bg-surface flex items-end gap-2">
               <textarea
                 value={msgText}
-                onChange={e => setMsgText(e.target.value)}
+                onChange={e => {
+                  setMsgText(e.target.value)
+                  e.target.style.height = 'auto'
+                  e.target.style.height = `${Math.min(e.target.scrollHeight, 112)}px`
+                }}
                 onKeyDown={e => {
                   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() }
                 }}
                 placeholder="Type a message…"
                 rows={1}
-                className="flex-1 resize-none bg-background border border-border rounded-xl px-3 py-2.5 text-[13px] text-text-primary placeholder:text-text-disabled focus:outline-none focus:ring-2 focus:ring-primary/30 max-h-28 overflow-y-auto"
+                style={{ height: 'auto', minHeight: '40px', maxHeight: '112px' }}
+                className="flex-1 resize-none bg-background border border-border rounded-xl px-3 py-2.5 text-[13px] text-text-primary placeholder:text-text-disabled focus:outline-none focus:ring-2 focus:ring-primary/30 overflow-y-auto"
               />
               <button
                 onClick={sendMessage}

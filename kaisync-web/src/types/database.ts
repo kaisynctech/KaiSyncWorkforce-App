@@ -38,6 +38,10 @@ export interface Employee {
   bank_account: string | null
   bank_branch_code: string | null
   account_type: string | null
+  profile_photo_url: string | null
+  bank_details_updated_at: string | null
+  bank_details_updated_by: string | null
+  date_of_birth: string | null
   created_at: string
 }
 
