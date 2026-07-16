@@ -61,7 +61,7 @@ export default function ProfilePage() {
       setPhone(emp.phone ?? '')
       setIdNumber(emp.id_number ?? '')
       setBankName(emp.bank_name ?? '')
-      setAccountNumber(emp.account_number ?? '')
+      setAccountNumber(emp.bank_account ?? '')
       setBranchCode(emp.bank_branch_code ?? '')
     }
     setLoading(false)
@@ -83,7 +83,7 @@ export default function ProfilePage() {
       p_phone:            phone     !== (employee.phone ?? '')  ? phone          : null,
       p_id_number:        idNumber  !== (employee.id_number ?? '') ? idNumber   : null,
       p_bank_name:        bankName  !== (employee.bank_name ?? '')  ? bankName  : null,
-      p_bank_account:     accountNumber !== (employee.account_number ?? '') ? accountNumber : null,
+      p_bank_account:     accountNumber !== (employee.bank_account ?? '') ? accountNumber : null,
       p_bank_branch_code: branchCode !== (employee.bank_branch_code ?? '') ? branchCode : null,
     })
 

@@ -35,7 +35,7 @@ export interface Employee {
   branch_id: string | null
   shift_template_id: string | null
   bank_name: string | null
-  account_number: string | null
+  bank_account: string | null
   bank_branch_code: string | null
   account_type: string | null
   created_at: string
@@ -253,7 +253,7 @@ export interface Contractor {
   contractor_code_expires_at: string | null
   compliance_pack: string | null
   bank_name: string | null
-  account_number: string | null
+  bank_account: string | null
   account_holder_name: string | null
   branch_code: string | null
   account_type: string | null
@@ -280,7 +280,7 @@ export interface PendingBankingUpdate {
   contractor_id: string
   account_holder_name: string | null
   bank_name: string | null
-  account_number: string | null
+  bank_account: string | null
   account_type: string | null
   submitted_at: string
   status: 'pending' | 'approved' | 'rejected'

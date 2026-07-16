@@ -19,7 +19,7 @@ const ACTION_TYPE_COLORS: Record<string, { bg: string; fg: string }> = {
 function getDefaultColor() { return { bg: '#E5E7EB', fg: '#374151' } }
 
 function getBankingBadge(c: Contractor) {
-  return c.bank_name && c.account_number
+  return c.bank_name && c.bank_account
     ? { bg: '#DCFCE7', fg: '#166534', label: 'Verified' }
     : { bg: '#1E293B', fg: '#94A3B8', label: 'Pending' }
 }
