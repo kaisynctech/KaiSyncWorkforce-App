@@ -109,7 +109,7 @@ export default function EditEmployeePage() {
     setWorkDays(emp.work_days_per_week?.toString() ?? '5')
     setDailyHours(emp.daily_hours?.toString() ?? '8')
     setBankName(emp.bank_name ?? '')
-    setAccountNumber(emp.account_number ?? '')
+    setAccountNumber(emp.bank_account ?? '')
     setBankBranchCode(emp.bank_branch_code ?? '')
     setAccountType(emp.account_type ?? 'Cheque')
 
@@ -159,7 +159,7 @@ export default function EditEmployeePage() {
         hourly_rate: salaryNum ? computedHourlyRate : null,
         daily_rate: salaryNum ? computedDailyRate : null,
         bank_name: bankName.trim() || null,
-        account_number: accountNumber.trim() || null,
+        bank_account: accountNumber.trim() || null,
         bank_branch_code: bankBranchCode.trim() || null,
         account_type: accountType || null,
       })

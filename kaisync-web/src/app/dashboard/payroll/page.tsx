@@ -28,7 +28,7 @@ type PayrollRecord = {
     surname: string
     employee_code:   string | null
     bank_name:       string | null
-    account_number:  string | null
+    bank_account:    string | null
     bank_branch_code: string | null
     id_number:       string | null
   }
@@ -109,7 +109,7 @@ export default function PayrollPage() {
     const [{ data: paymentsData }, { data: locks }] = await Promise.all([
       supabase
         .from('payment_approvals')
-        .select('*, employee:employees(name, surname, employee_code, bank_name, account_number, bank_branch_code, id_number)')
+        .select('*, employee:employees(name, surname, employee_code, bank_name, bank_account, bank_branch_code, id_number)')
         .eq('company_id', cid)
         .gte('period_start', from)
         .lte('period_end', to)
@@ -255,7 +255,7 @@ export default function PayrollPage() {
         return [
           `"${name}"`,
           emp?.bank_name        ?? '',
-          emp?.account_number   ?? '',
+          emp?.bank_account     ?? '',
           emp?.bank_branch_code ?? '',
           'Savings',
           (p.net_pay ?? 0).toFixed(2),

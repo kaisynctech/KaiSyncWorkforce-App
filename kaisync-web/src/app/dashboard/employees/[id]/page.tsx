@@ -55,7 +55,7 @@ interface PayrollReady {
 function checkPayrollReadiness(emp: Employee): PayrollReady {
   const issues: string[] = []
   if (!emp.monthly_salary && !emp.hourly_rate) issues.push('No salary or rate configured')
-  if (!emp.bank_name || !emp.account_number) issues.push('Banking details missing')
+  if (!emp.bank_name || !emp.bank_account) issues.push('Banking details missing')
   if (!emp.id_number) issues.push('ID / Passport number missing')
   return {
     ready: issues.length === 0,
@@ -333,7 +333,7 @@ export default function EmployeeDetailPage() {
               </div>
               {employee.bank_name ? (
                 <div className="p-4 grid grid-cols-2 gap-3">
-                  <InfoCell label="Account" value={employee.account_number ? `****${employee.account_number.slice(-4)}` : '—'} />
+                  <InfoCell label="Account" value={employee.bank_account ? `****${employee.bank_account.slice(-4)}` : '—'} />
                   <InfoCell label="Bank" value={employee.bank_name} />
                   <InfoCell label="Branch code" value={employee.bank_branch_code ?? '—'} />
                   <InfoCell label="Type" value={employee.account_type ?? '—'} />

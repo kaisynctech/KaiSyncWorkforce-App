@@ -192,7 +192,7 @@ export default function ContractorDetailPage() {
 
     setAccHolder(cont.account_holder_name ?? '')
     setPayBankName(cont.bank_name ?? '')
-    setPayAccNumber(cont.account_number ?? '')
+    setPayAccNumber(cont.bank_account ?? '')
     setPayBranchCode(cont.branch_code ?? '')
     setPaySwiftBic(cont.swift_bic ?? '')
     setPayAccountType(cont.account_type ?? '')
@@ -282,7 +282,7 @@ export default function ContractorDetailPage() {
         compliance_pack:             compliancePack || null,
         account_holder_name:         accHolder.trim() || null,
         bank_name:                   payBankName.trim() || null,
-        account_number:              payAccNumber.trim() || null,
+        bank_account:                payAccNumber.trim() || null,
         branch_code:                 payBranchCode.trim() || null,
         swift_bic:                   paySwiftBic.trim() || null,
         account_type:                payAccountType || null,
@@ -389,8 +389,8 @@ export default function ContractorDetailPage() {
   const pendingBankingDisplay = pendingBanking ? {
     ...pendingBanking,
     submittedAtDisplay:  fmtDate(pendingBanking.submitted_at),
-    maskedAccount:       pendingBanking.account_number
-      ? `••••${pendingBanking.account_number.slice(-4)}`
+    maskedAccount:       pendingBanking.bank_account
+      ? `••••${pendingBanking.bank_account.slice(-4)}`
       : '—',
     accountTypeLabel: pendingBanking.account_type ?? '—',
   } : null
