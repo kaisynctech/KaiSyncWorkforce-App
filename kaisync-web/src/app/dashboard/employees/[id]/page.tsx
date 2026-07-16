@@ -1,12 +1,23 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { cn, formatDate, formatDateTime, formatCurrency, getInitials } from '@/lib/utils'
-import type { Employee, LeaveRequest, TimesheetPunch } from '@/types/database'
+import type { Employee, LeaveRequest, TimesheetPunch, AccessLevel } from '@/types/database'
+
+type EmployeeDocument = {
+  id: string
+  company_id: string
+  employee_id: string
+  document_type: string
+  document_name: string
+  file_url: string
+  uploaded_by_role: string
+  created_at: string | null
+}
 
 type Tab = 'overview' | 'payments' | 'leave' | 'documents'
 type Period = 'today' | 'week' | 'month' | 'custom'
@@ -54,6 +65,7 @@ export default function EmployeeDetailPage() {
   const [employee, setEmployee] = useState<Employee | null>(null)
   const [myCompanyId, setMyCompanyId] = useState<string | null>(null)
   const [myEmployeeId, setMyEmployeeId] = useState<string | null>(null)
+  const [myAccessLevel, setMyAccessLevel] = useState<AccessLevel>('employee')
   const [tab, setTab] = useState<Tab>('overview')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -69,14 +81,22 @@ export default function EmployeeDetailPage() {
 
   // Leave
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([])
+  const [leaveLoaded, setLeaveLoaded] = useState(false)
+
+  // Documents
+  const [docs, setDocs] = useState<EmployeeDocument[]>([])
+  const [docsLoaded, setDocsLoaded] = useState(false)
 
   useEffect(() => { loadEmployee() }, [id])
   useEffect(() => {
     if (employee && tab === 'overview') loadAttendance()
   }, [employee, period, appliedCustomFrom, appliedCustomTo])
   useEffect(() => {
-    if (employee && tab === 'leave') loadLeave()
+    if (employee && tab === 'leave' && !leaveLoaded) loadLeave()
   }, [employee, tab])
+  useEffect(() => {
+    if (employee && myCompanyId && tab === 'documents' && !docsLoaded) loadDocs()
+  }, [employee, tab, myCompanyId])
 
   async function loadEmployee() {
     const supabase = createClient()
@@ -85,15 +105,27 @@ export default function EmployeeDetailPage() {
     setMyCompanyId(member.companyId)
     setMyEmployeeId(member.employeeId)
 
-    const { data: emp } = await supabase
-      .from('employees')
-      .select('*')
-      .eq('id', id)
-      .eq('company_id', member.companyId)
-      .maybeSingle()
+    const [{ data: emp }, { data: me }] = await Promise.all([
+      supabase.from('employees').select('*').eq('id', id).eq('company_id', member.companyId).maybeSingle(),
+      supabase.from('employees').select('access_level').eq('id', member.employeeId).single(),
+    ])
 
     setEmployee(emp as Employee | null)
+    setMyAccessLevel(((me as { access_level: AccessLevel } | null)?.access_level) ?? 'employee')
     setLoading(false)
+  }
+
+  async function loadDocs() {
+    if (!employee || !myCompanyId) return
+    const supabase = createClient()
+    const { data } = await supabase
+      .from('employee_documents')
+      .select('*')
+      .eq('employee_id', employee.id)
+      .eq('company_id', myCompanyId)
+      .order('created_at', { ascending: false })
+    setDocs((data ?? []) as EmployeeDocument[])
+    setDocsLoaded(true)
   }
 
   async function loadAttendance() {
@@ -125,6 +157,7 @@ export default function EmployeeDetailPage() {
       .eq('employee_id', employee.id)
       .order('created_at', { ascending: false })
     setLeaveRequests((data ?? []) as LeaveRequest[])
+    setLeaveLoaded(true)
   }
 
   if (loading) {
@@ -358,7 +391,16 @@ export default function EmployeeDetailPage() {
 
         {tab === 'payments' && <PaymentsTab employee={employee} />}
         {tab === 'leave' && <LeaveTab leaveRequests={leaveRequests} employeeId={employee.id} />}
-        {tab === 'documents' && <DocumentsTab />}
+        {tab === 'documents' && (
+          <DocumentsTab
+            employeeId={employee.id}
+            companyId={myCompanyId!}
+            myAccessLevel={myAccessLevel}
+            docs={docs}
+            setDocs={setDocs}
+            reloadDocs={loadDocs}
+          />
+        )}
       </div>
     </div>
   )
@@ -456,15 +498,80 @@ const LEAVE_STATUS_BADGES: Record<string, { label: string; cls: string }> = {
   cancelled: { label: 'Cancelled', cls: 'bg-background text-text-disabled' },
 }
 
+const LEAVE_ANNUAL_DEFAULTS: Record<string, number> = {
+  annual_leave:          15,
+  sick_leave:            30,
+  family_responsibility:  3,
+  maternity_leave:       90,
+  study_leave:            5,
+}
+
 function LeaveTab({ leaveRequests, employeeId }: { leaveRequests: LeaveRequest[]; employeeId: string }) {
+  const yearStart = `${new Date().getFullYear()}-01-01`
+
+  const byType = leaveRequests
+    .filter(r => r.status === 'approved' && r.start_date >= yearStart)
+    .reduce<Record<string, number>>((acc, r) => {
+      acc[r.leave_type] = (acc[r.leave_type] ?? 0) + r.days_requested
+      return acc
+    }, {})
+
+  const leaveTypes = Array.from(new Set(leaveRequests.map(r => r.leave_type))).sort()
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-[15px] font-semibold text-text-primary">Leave History</p>
         <button className="h-9 px-4 rounded-sm bg-primary text-white text-[13px] font-medium hover:bg-primary-dark transition-colors">
           Apply Leave
         </button>
       </div>
+
+      {/* Balance summary */}
+      {leaveTypes.length > 0 && (
+        <div className="bg-surface border border-divider rounded-lg overflow-hidden">
+          <p className="px-4 py-2.5 text-[12px] font-semibold text-text-secondary border-b border-divider uppercase tracking-wide">
+            {new Date().getFullYear()} Balances
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-[12px]">
+              <thead>
+                <tr className="border-b border-divider">
+                  <th className="text-left px-4 py-2 text-text-secondary font-medium">Leave Type</th>
+                  <th className="text-center px-4 py-2 text-text-secondary font-medium">Annual</th>
+                  <th className="text-center px-4 py-2 text-text-secondary font-medium">Used</th>
+                  <th className="text-center px-4 py-2 text-text-secondary font-medium">Remaining</th>
+                </tr>
+              </thead>
+              <tbody>
+                {leaveTypes.map(lt => {
+                  const annual    = LEAVE_ANNUAL_DEFAULTS[lt] ?? 5
+                  const used      = byType[lt] ?? 0
+                  const remaining = Math.max(0, annual - used)
+                  return (
+                    <tr key={lt} className="border-b border-divider last:border-0">
+                      <td className="px-4 py-2.5 font-medium text-text-primary capitalize">
+                        {lt.replace(/_/g, ' ')}
+                      </td>
+                      <td className="px-4 py-2.5 text-center text-text-secondary">{annual}</td>
+                      <td className="px-4 py-2.5 text-center text-text-secondary">{used}</td>
+                      <td className="px-4 py-2.5 text-center font-semibold">
+                        <span className={
+                          remaining <= 0 ? 'text-error' : remaining <= 3 ? 'text-warning' : 'text-success'
+                        }>
+                          {remaining}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Request history */}
       {leaveRequests.length === 0 ? (
         <div className="py-12 text-center">
           <span className="material-icons text-[40px] text-text-disabled block mb-1">event_available</span>
@@ -478,7 +585,7 @@ function LeaveTab({ leaveRequests, employeeId }: { leaveRequests: LeaveRequest[]
               <div key={req.id} className="px-4 py-3 border-b border-divider last:border-0">
                 <div className="flex items-center gap-2">
                   <p className="flex-1 text-[13px] font-medium text-text-primary capitalize">
-                    {req.leave_type.replace('_', ' ')}
+                    {req.leave_type.replace(/_/g, ' ')}
                   </p>
                   <span className={`px-2 py-0.5 rounded-pill text-[11px] font-medium ${badge.cls}`}>
                     {badge.label}
@@ -496,18 +603,177 @@ function LeaveTab({ leaveRequests, employeeId }: { leaveRequests: LeaveRequest[]
   )
 }
 
-function DocumentsTab() {
+// ─── Document types ───────────────────────────────────────────────────────────
+
+const DOC_TYPES = [
+  'ID Document', 'Passport', 'Employment Contract', 'NDA',
+  'Certificate', 'Qualification', 'Bank Letter', 'Tax Certificate', 'Other',
+]
+
+type DocumentsTabProps = {
+  employeeId: string
+  companyId: string
+  myAccessLevel: AccessLevel
+  docs: EmployeeDocument[]
+  setDocs: React.Dispatch<React.SetStateAction<EmployeeDocument[]>>
+  reloadDocs: () => Promise<void>
+}
+
+function DocumentsTab({ employeeId, companyId, myAccessLevel, docs, setDocs, reloadDocs }: DocumentsTabProps) {
+  const fileRef     = useRef<HTMLInputElement>(null)
+  const [docType,        setDocType]        = useState(DOC_TYPES[0])
+  const [uploading,      setUploading]      = useState(false)
+  const [uploadError,    setUploadError]    = useState<string | null>(null)
+  const [confirmDelete,  setConfirmDelete]  = useState<string | null>(null)
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    setUploading(true)
+    setUploadError(null)
+
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+    const path     = `employee-docs/${companyId}/${employeeId}/${Date.now()}_${safeName}`
+    const supabase = createClient()
+
+    const { error: upErr } = await supabase.storage
+      .from('workforce-media')
+      .upload(path, file)
+
+    if (upErr) {
+      setUploadError(upErr.message)
+      setUploading(false)
+      return
+    }
+
+    await supabase.from('employee_documents').insert({
+      employee_id:      employeeId,
+      company_id:       companyId,
+      document_name:    file.name,
+      document_type:    docType,
+      file_url:         path,
+      uploaded_by_role: myAccessLevel,
+    })
+
+    await reloadDocs()
+    setUploading(false)
+  }
+
+  async function openDocument(doc: EmployeeDocument) {
+    const supabase = createClient()
+    const { data } = await supabase.storage
+      .from('workforce-media')
+      .createSignedUrl(doc.file_url, 300)
+    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+  }
+
+  async function deleteDocument(docId: string) {
+    const doc = docs.find(d => d.id === docId)
+    if (!doc) return
+    const supabase = createClient()
+    await supabase.storage.from('workforce-media').remove([doc.file_url])
+    await supabase.from('employee_documents').delete().eq('id', doc.id)
+    setDocs(prev => prev.filter(d => d.id !== docId))
+    setConfirmDelete(null)
+  }
+
   return (
-    <div className="flex flex-col items-center justify-center py-16 gap-3">
-      <span className="material-icons text-[48px] text-text-disabled">description</span>
-      <p className="text-[14px] text-text-secondary">No documents yet.</p>
-      <button
-        disabled
-        className="h-10 px-4 rounded-sm bg-surface border border-border text-[13px] text-text-disabled cursor-not-allowed"
-      >
-        Upload Document
-      </button>
-      <p className="text-[11px] text-text-secondary">File uploads coming in Phase 3</p>
+    <div className="space-y-4">
+      {/* Upload bar */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <select
+          value={docType}
+          onChange={e => setDocType(e.target.value)}
+          className="h-10 px-3 bg-surface border border-border rounded-sm text-[13px] text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 appearance-none flex-1 min-w-[160px]"
+        >
+          {DOC_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <button
+          onClick={() => fileRef.current?.click()}
+          disabled={uploading}
+          className="h-10 px-4 rounded-sm bg-primary text-white text-[13px] font-medium hover:bg-primary-dark disabled:opacity-50 transition-colors flex items-center gap-2"
+        >
+          <span className="material-icons text-[16px]">upload_file</span>
+          {uploading ? 'Uploading…' : 'Upload Document'}
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          className="hidden"
+          onChange={handleFileChange}
+        />
+      </div>
+
+      {uploadError && (
+        <p className="text-[12px] text-error bg-error/10 px-3 py-2 rounded-sm">{uploadError}</p>
+      )}
+
+      {/* Document list */}
+      {docs.length === 0 ? (
+        <div className="py-16 text-center">
+          <span className="material-icons text-[48px] text-text-disabled block mb-2">description</span>
+          <p className="text-[13px] text-text-secondary">No documents uploaded yet</p>
+        </div>
+      ) : (
+        <div className="bg-surface border border-divider rounded-lg overflow-hidden">
+          {docs.map(doc => (
+            <div key={doc.id} className="flex items-center gap-3 px-4 py-3 border-b border-divider last:border-0">
+              <span className="material-icons text-text-disabled text-[22px] shrink-0">
+                {doc.document_name.match(/\.pdf$/i) ? 'picture_as_pdf' : 'insert_drive_file'}
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-[13px] font-medium text-text-primary truncate">{doc.document_name}</p>
+                <p className="text-[11px] text-text-secondary">
+                  {doc.document_type}
+                  {doc.created_at && ` · ${formatDate(doc.created_at)}`}
+                </p>
+              </div>
+              <div className="flex gap-2 shrink-0">
+                <button
+                  onClick={() => openDocument(doc)}
+                  className="h-8 px-3 rounded-sm bg-primary/10 text-primary text-[12px] font-medium hover:bg-primary/20 transition-colors"
+                >
+                  Open
+                </button>
+                <button
+                  onClick={() => setConfirmDelete(doc.id)}
+                  className="h-8 px-3 rounded-sm bg-error/10 text-error text-[12px] font-medium hover:bg-error/20 transition-colors"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Delete confirm dialog */}
+      {confirmDelete && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-surface rounded-xl shadow-xl w-full max-w-sm p-6 space-y-4">
+            <h2 className="text-[16px] font-semibold text-text-primary">Delete document?</h2>
+            <p className="text-[13px] text-text-secondary">
+              {docs.find(d => d.id === confirmDelete)?.document_name} will be permanently removed
+              from storage and cannot be recovered.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmDelete(null)}
+                className="flex-1 h-10 rounded-sm border border-border text-[13px] text-text-secondary hover:bg-background transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => deleteDocument(confirmDelete)}
+                className="flex-1 h-10 rounded-sm bg-error text-white text-[13px] font-semibold hover:bg-error/90 transition-colors"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
