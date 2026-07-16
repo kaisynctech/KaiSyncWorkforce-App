@@ -165,9 +165,13 @@ export default function OverviewPage() {
   async function markAbsent(empId: string) {
     setMarkAbsentLoading(empId)
     const supabase = createClient()
-    const { error: err } = await supabase.rpc('hr_mark_employee_absent_today', {
+    const today = new Date().toISOString().split('T')[0]
+    const { error: err } = await supabase.rpc('employee_report_absence', {
       p_company_id: companyId,
       p_employee_id: empId,
+      p_date: today,
+      p_reason: 'absent',
+      p_note: null,
     })
     if (err) console.error('mark absent:', err.message)
     setMarkAbsentLoading(null)
