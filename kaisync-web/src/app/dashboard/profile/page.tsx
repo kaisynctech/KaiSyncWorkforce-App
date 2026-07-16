@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { getInitials } from '@/lib/utils'
@@ -25,6 +25,12 @@ export default function ProfilePage() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [notLinked, setNotLinked] = useState(false)
 
+  // Photo
+  const [photoUrl,       setPhotoUrl]       = useState<string | null>(null)
+  const [photoUploading, setPhotoUploading] = useState(false)
+  const [photoError,     setPhotoError]     = useState<string | null>(null)
+  const photoInputRef = useRef<HTMLInputElement>(null)
+
   // Personal
   const [firstName,   setFirstName]   = useState('')
   const [lastName,    setLastName]    = useState('')
@@ -39,6 +45,7 @@ export default function ProfilePage() {
   useEffect(() => { init() }, [])
 
   async function init() {
+    setLoading(true)
     const supabase = createClient()
     const member = await resolveCurrentMember(supabase)
     if (!member) { setNotLinked(true); setLoading(false); return }
@@ -63,8 +70,55 @@ export default function ProfilePage() {
       setBankName(emp.bank_name ?? '')
       setAccountNumber(emp.bank_account ?? '')
       setBranchCode(emp.bank_branch_code ?? '')
+
+      // Load signed URL for profile photo
+      if (emp.profile_photo_url) {
+        const { data: signed } = await supabase.storage
+          .from('workforce-media')
+          .createSignedUrl(emp.profile_photo_url, 3600)
+        if (signed?.signedUrl) setPhotoUrl(signed.signedUrl)
+      } else {
+        setPhotoUrl(null)
+      }
     }
     setLoading(false)
+  }
+
+  async function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file || !empId || !companyId) return
+    const allowed = ['image/jpeg', 'image/png', 'image/webp']
+    if (!allowed.includes(file.type)) {
+      setPhotoError('Only JPEG, PNG or WebP images are allowed.')
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setPhotoError('Image must be under 5 MB.')
+      return
+    }
+    setPhotoUploading(true)
+    setPhotoError(null)
+    const ext  = file.name.split('.').pop()?.toLowerCase() ?? 'jpg'
+    const path = `profile-photos/${companyId}/${empId}.${ext}`
+    const supabase = createClient()
+    const { error: upErr } = await supabase.storage
+      .from('workforce-media')
+      .upload(path, file, { upsert: true, contentType: file.type })
+    if (upErr) { setPhotoError(upErr.message); setPhotoUploading(false); return }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error: rpcErr } = await (supabase.rpc as any)('employee_update_profile', {
+      p_employee_id:       empId,
+      p_company_id:        companyId,
+      p_profile_photo_url: path,
+    })
+    if (rpcErr) { setPhotoError(rpcErr.message); setPhotoUploading(false); return }
+    const { data: signed } = await supabase.storage
+      .from('workforce-media')
+      .createSignedUrl(path, 3600)
+    if (signed?.signedUrl) setPhotoUrl(signed.signedUrl)
+    await init()
+    setPhotoUploading(false)
   }
 
   async function save() {
@@ -78,11 +132,11 @@ export default function ProfilePage() {
     const { error } = await (supabase.rpc as any)('employee_update_profile', {
       p_employee_id:      empId,
       p_company_id:       companyId,
-      p_first_name:       firstName !== employee.name          ? firstName      : null,
-      p_last_name:        lastName  !== employee.surname        ? lastName       : null,
-      p_phone:            phone     !== (employee.phone ?? '')  ? phone          : null,
-      p_id_number:        idNumber  !== (employee.id_number ?? '') ? idNumber   : null,
-      p_bank_name:        bankName  !== (employee.bank_name ?? '')  ? bankName  : null,
+      p_first_name:       firstName !== employee.name                ? firstName      : null,
+      p_last_name:        lastName  !== employee.surname             ? lastName       : null,
+      p_phone:            phone     !== (employee.phone ?? '')       ? phone          : null,
+      p_id_number:        idNumber  !== (employee.id_number ?? '')   ? idNumber       : null,
+      p_bank_name:        bankName  !== (employee.bank_name ?? '')   ? bankName       : null,
       p_bank_account:     accountNumber !== (employee.bank_account ?? '') ? accountNumber : null,
       p_bank_branch_code: branchCode !== (employee.bank_branch_code ?? '') ? branchCode : null,
     })
@@ -113,6 +167,16 @@ export default function ProfilePage() {
 
   const fullName = employee ? `${employee.name} ${employee.surname}`.trim() : '—'
 
+  const isDirty = employee !== null && (
+    firstName     !== (employee.name             ?? '') ||
+    lastName      !== (employee.surname          ?? '') ||
+    phone         !== (employee.phone            ?? '') ||
+    idNumber      !== (employee.id_number        ?? '') ||
+    bankName      !== (employee.bank_name        ?? '') ||
+    accountNumber !== (employee.bank_account     ?? '') ||
+    branchCode    !== (employee.bank_branch_code ?? '')
+  )
+
   return (
     <div className="h-full flex flex-col overflow-hidden">
       {/* Header */}
@@ -125,10 +189,40 @@ export default function ProfilePage() {
 
         {/* Avatar card */}
         <div className="bg-surface border border-divider rounded-xl p-4 flex items-center gap-4">
-          <div className="w-16 h-16 rounded-full bg-primary flex items-center justify-center shrink-0">
-            <span className="text-white text-[22px] font-bold">{getInitials(fullName)}</span>
+          <div className="relative shrink-0">
+            <div
+              className="w-16 h-16 rounded-full overflow-hidden cursor-pointer"
+              onClick={() => !photoUploading && photoInputRef.current?.click()}
+            >
+              {photoUrl ? (
+                <img src={photoUrl} alt="Profile" className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full bg-primary flex items-center justify-center">
+                  <span className="text-white text-[22px] font-bold">{getInitials(fullName)}</span>
+                </div>
+              )}
+            </div>
+            <button
+              onClick={() => !photoUploading && photoInputRef.current?.click()}
+              disabled={photoUploading}
+              className="absolute bottom-0 right-0 w-6 h-6 rounded-full bg-primary border-2 border-surface flex items-center justify-center disabled:opacity-50 hover:bg-primary-dark transition-colors"
+              title="Change photo"
+            >
+              {photoUploading ? (
+                <span className="material-icons text-white animate-spin text-[12px]">refresh</span>
+              ) : (
+                <span className="material-icons text-white text-[12px]">photo_camera</span>
+              )}
+            </button>
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={handlePhotoUpload}
+            />
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-[18px] font-bold text-text-primary truncate">{fullName}</p>
             {employee?.position && (
               <p className="text-[13px] text-text-secondary">{employee.position}</p>
@@ -145,8 +239,16 @@ export default function ProfilePage() {
                 </span>
               )}
             </div>
+            <p className="text-[11px] text-text-disabled mt-1.5">Tap photo to change</p>
           </div>
         </div>
+
+        {/* Photo error */}
+        {photoError && (
+          <div className="rounded-xl px-4 py-3 bg-error-dark border border-error/30">
+            <p className="text-[13px] font-semibold text-error">{photoError}</p>
+          </div>
+        )}
 
         {/* Success banner */}
         {saved && (
@@ -187,6 +289,15 @@ export default function ProfilePage() {
               <input className="input" type="text" value={idNumber}
                 onChange={e => setIdNumber(e.target.value)} />
             </FormField>
+            <FormField label="Date of Birth">
+              <p className="text-[13px] text-text-disabled py-2 px-3 bg-surface-elevated rounded-lg border border-divider">
+                {employee?.date_of_birth
+                  ? new Date(employee.date_of_birth + 'T12:00:00').toLocaleDateString(
+                      'en-ZA', { day: '2-digit', month: 'long', year: 'numeric' }
+                    )
+                  : '—'}
+              </p>
+            </FormField>
             <FormField label="Email">
               <p className="text-[13px] text-text-disabled py-2 px-3 bg-surface-elevated rounded-lg border border-divider">
                 {employee?.email ?? '—'}
@@ -204,9 +315,16 @@ export default function ProfilePage() {
         <div className="bg-surface border border-divider rounded-xl overflow-hidden">
           <div className="px-4 py-3 border-b border-divider">
             <p className="section-label">Banking Details</p>
-            <p className="text-[11px] text-text-disabled mt-0.5">
-              Changes to banking details are logged for security
-            </p>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <span className="material-icons text-[13px] text-text-disabled">lock</span>
+              <p className="text-[11px] text-text-disabled">
+                {employee?.bank_details_updated_at
+                  ? `Last updated ${new Date(employee.bank_details_updated_at).toLocaleDateString(
+                      'en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }
+                    )}`
+                  : 'Changes are logged for security'}
+              </p>
+            </div>
           </div>
           <div className="p-4 space-y-4">
             <FormField label="Bank Name">
@@ -224,13 +342,18 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {/* Save button inside scroll area */}
+        {/* Save button */}
         <button
           onClick={save}
-          disabled={saving}
-          className="w-full h-12 rounded-xl font-bold text-[15px] text-white bg-primary disabled:opacity-50 hover:bg-primary-dark transition-colors"
+          disabled={saving || !isDirty}
+          className="w-full h-12 rounded-xl font-bold text-[15px] transition-colors disabled:cursor-not-allowed"
+          style={{
+            backgroundColor: isDirty ? 'var(--color-primary)' : 'var(--color-surface-elevated)',
+            color: isDirty ? '#ffffff' : 'var(--color-text-disabled)',
+            border: isDirty ? 'none' : '1px solid var(--color-divider)',
+          }}
         >
-          {saving ? 'Saving…' : 'Save Changes'}
+          {saving ? 'Saving…' : isDirty ? 'Save Changes' : 'No Changes'}
         </button>
 
         {/* Bottom padding for mobile */}
