@@ -1,29 +1,46 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar,
   XAxis, YAxis, Tooltip, CartesianGrid,
 } from 'recharts'
 import { createClient } from '@/lib/supabase/client'
+import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 
 type Preset = '7d' | '30d' | 'month' | 'year'
 type TabKey = 'executive' | 'financial' | 'payroll' | 'workforce' | 'operational' |
   'incidents' | 'inventory' | 'contractors' | 'property' | 'telemetry' | 'exports'
 
 const TABS: { key: TabKey; label: string }[] = [
-  { key: 'executive', label: 'Executive' },
-  { key: 'financial', label: 'Financial' },
-  { key: 'payroll', label: 'Payroll' },
-  { key: 'workforce', label: 'Workforce' },
+  { key: 'executive',   label: 'Executive' },
+  { key: 'financial',   label: 'Financial' },
+  { key: 'payroll',     label: 'Payroll' },
+  { key: 'workforce',   label: 'Workforce' },
   { key: 'operational', label: 'Operational' },
-  { key: 'incidents', label: 'Incidents' },
-  { key: 'inventory', label: 'Inventory' },
+  { key: 'incidents',   label: 'Incidents' },
+  { key: 'inventory',   label: 'Inventory' },
   { key: 'contractors', label: 'Contractors' },
-  { key: 'property', label: 'Property' },
-  { key: 'telemetry', label: 'Telemetry' },
-  { key: 'exports', label: 'Exports' },
+  { key: 'property',    label: 'Property' },
+  { key: 'telemetry',   label: 'Telemetry' },
+  { key: 'exports',     label: 'Exports' },
 ]
+
+// RPC names — all use signature (p_company_id uuid, p_from date, p_to date) → jsonb
+const RPC_MAP: Partial<Record<TabKey, string>> = {
+  executive:   'hr_get_executive_snapshot',
+  financial:   'hr_get_financial_snapshot',
+  payroll:     'hr_get_payroll_snapshot',
+  workforce:   'hr_get_workforce_snapshot',
+  operational: 'hr_get_operational_snapshot',
+  incidents:   'hr_get_incidents_snapshot',
+  inventory:   'hr_get_inventory_snapshot',
+  contractors: 'hr_get_contractors_snapshot',
+  property:    'hr_get_property_snapshot',
+  telemetry:   'hr_get_telemetry_snapshot',
+}
+
+// ─── Formatters ───────────────────────────────────────────────────────────────
 
 const fmtR = (n: number | null | undefined) =>
   n == null ? 'R —' : `R ${n.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -45,7 +62,7 @@ function getPeriod(preset: Preset): { start: string; end: string } {
   if (preset === 'month') {
     return { start: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`, end }
   }
-  // year = SA tax year, starts March 1
+  // SA tax year starts March 1
   const y = now.getMonth() >= 2 ? now.getFullYear() : now.getFullYear() - 1
   return { start: `${y}-03-01`, end }
 }
@@ -54,6 +71,8 @@ function presetLabel(p: Preset) {
   const { start, end } = getPeriod(p)
   return `${start} → ${end}`
 }
+
+// ─── Shared UI components ─────────────────────────────────────────────────────
 
 function Kpi({ title, value, caption }: { title: string; value: string; caption?: string }) {
   return (
@@ -103,210 +122,221 @@ function ChartBox({ title, data, dataKey, type = 'line', height = 140 }: {
 
 type RpcData = Record<string, unknown>
 
-function useTabData(preset: Preset, activeTab: TabKey) {
-  const [data, setData] = useState<RpcData | null>(null)
-  const [loading, setLoading] = useState(false)
+// ─── Data hook ────────────────────────────────────────────────────────────────
 
-  const RPC_MAP: Partial<Record<TabKey, string>> = {
-    executive: 'get_executive_report',
-    financial: 'get_financial_report',
-    payroll: 'get_payroll_report',
-    workforce: 'get_workforce_report',
-    operational: 'get_operational_report',
-    incidents: 'get_incidents_report',
-    inventory: 'get_inventory_report',
-    contractors: 'get_contractors_report',
-    property: 'get_property_report',
-    telemetry: 'get_telemetry_report',
-  }
+function useTabData(preset: Preset, activeTab: TabKey, companyId: string | null) {
+  const [data, setData]       = useState<RpcData | null>(null)
+  const [loading, setLoading] = useState(false)
 
   const fetch = useCallback(async () => {
     const rpc = RPC_MAP[activeTab]
-    if (!rpc || activeTab === 'exports') return
+    if (!rpc || activeTab === 'exports' || !companyId) return
     setLoading(true)
     const { start, end } = getPeriod(preset)
     const supabase = createClient()
     try {
-      const { data: d } = await supabase.rpc(rpc, { period_start: start, period_end: end })
+      const { data: d } = await supabase.rpc(rpc, {
+        p_company_id: companyId,
+        p_from:       start,
+        p_to:         end,
+      })
       setData(d as RpcData ?? null)
     } catch {
       setData(null)
     }
     setLoading(false)
-  }, [preset, activeTab])
+  }, [preset, activeTab, companyId])
 
   useEffect(() => { fetch() }, [fetch])
 
   return { data, loading, refresh: fetch }
 }
 
+// ─── Tab components ───────────────────────────────────────────────────────────
+
+// Executive — shows totals from our RPC: total_employees, on_site_today,
+// open_jobs, pending_leave, total_hours, total_payroll + two trend charts
 function ExecTab({ data }: { data: RpcData | null }) {
-  const d = data ?? {}
-  const chartRevenue = (d.revenue_trend as Record<string, unknown>[] | null) ?? []
-  const chartAttend = (d.attendance_trend as Record<string, unknown>[] | null) ?? []
+  const d            = data ?? {}
+  const chartRevenue = (d.revenue_trend    as Record<string, unknown>[] | null) ?? []
+  const chartAttend  = (d.attendance_trend as Record<string, unknown>[] | null) ?? []
 
   return (
     <div className="space-y-4">
       <div>
-        <p className="section-label mb-2">FINANCIAL</p>
-        <div className="grid grid-cols-2 gap-2.5">
-          <Kpi title="Revenue" value={fmtR(d.revenue as number)} />
-          <Kpi title="Outstanding" value={fmtR(d.outstanding as number)} />
-          <Kpi title="Accounts Receivable" value={fmtR(d.accounts_receivable as number)} />
-          <Kpi title="Accounts Payable" value={fmtR(d.accounts_payable as number)} />
-          <Kpi title="Payroll" value={fmtR(d.payroll_total as number)} />
-          <Kpi title="VAT Due" value={fmtR(d.vat_due as number)} />
-          <Kpi title="Cashflow" value={fmtR(d.cashflow as number)} />
-          <Kpi title="Profit Est." value={fmtR(d.profit_estimate as number)} />
-        </div>
-      </div>
-      <div>
         <p className="section-label mb-2">WORKFORCE</p>
-        <div className="grid grid-cols-3 gap-2">
-          <Kpi title="Present" value={fmtN(d.present as number)} />
-          <Kpi title="Late" value={fmtN(d.late as number)} />
-          <Kpi title="On Leave" value={fmtN(d.on_leave as number)} />
-          <Kpi title="Incidents" value={fmtN(d.incidents as number)} />
-          <Kpi title="Active Jobs" value={fmtN(d.active_jobs as number)} />
-          <Kpi title="Overtime" value={fmtN(d.overtime_hours as number)} caption="hours" />
+        <div className="grid grid-cols-2 gap-2.5">
+          <Kpi title="Total Employees"  value={fmtN(d.total_employees as number)} />
+          <Kpi title="On Site Today"    value={fmtN(d.on_site_today   as number)} />
+          <Kpi title="Open Jobs"        value={fmtN(d.open_jobs       as number)} />
+          <Kpi title="Pending Leave"    value={fmtN(d.pending_leave   as number)} />
         </div>
       </div>
       <div>
-        <p className="section-label mb-2">OPERATIONS &amp; SYSTEM</p>
-        <div className="grid grid-cols-3 gap-2">
-          <Kpi title="Completion %" value={d.completion_percent != null ? `${d.completion_percent}%` : '—'} />
-          <Kpi title="Projects" value={fmtN(d.project_count as number)} />
-          <Kpi title="Inventory" value={fmtN(d.inventory_items as number)} />
-          <Kpi title="Realtime" value={d.realtime_status as string ?? '—'} />
-          <Kpi title="Offline Queue" value={fmtN(d.offline_queue as number)} />
-          <Kpi title="Errors" value={fmtN(d.error_count as number)} />
+        <p className="section-label mb-2">FINANCIALS</p>
+        <div className="grid grid-cols-2 gap-2.5">
+          <Kpi title="Hours Logged"     value={`${(d.total_hours as number ?? 0).toFixed(1)}h`} />
+          <Kpi title="Payroll Total"    value={fmtR(d.total_payroll   as number)} />
         </div>
       </div>
-      <ChartBox title="Revenue trend" data={chartRevenue} dataKey="value" type="bar" />
-      <ChartBox title="Attendance trend" data={chartAttend} dataKey="value" type="line" />
+      <ChartBox title="Payroll trend"   data={chartRevenue} dataKey="value" type="bar" />
+      <ChartBox title="Attendance trend" data={chartAttend}  dataKey="value" type="line" />
     </div>
   )
 }
 
+// Financial — Phase 2 stub; shows empty state clearly
 function FinancialTab({ data }: { data: RpcData | null }) {
   const d = data ?? {}
+  const hasData = Object.keys(d).length > 0
+  if (!hasData) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 gap-2">
+        <span className="material-icons text-[40px] text-text-disabled">bar_chart</span>
+        <p className="text-[14px] text-text-secondary font-semibold">Financial analytics coming in Phase 2</p>
+      </div>
+    )
+  }
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-2.5">
-        <Kpi title="Revenue" value={fmtR(d.revenue as number)} />
+        <Kpi title="Revenue"     value={fmtR(d.revenue     as number)} />
         <Kpi title="Outstanding" value={fmtR(d.outstanding as number)} />
-        <Kpi title="Payables" value={fmtR(d.payables as number)} />
-        <Kpi title="Profit" value={fmtR(d.profit as number)} />
+        <Kpi title="Payables"    value={fmtR(d.payables    as number)} />
+        <Kpi title="Profit"      value={fmtR(d.profit      as number)} />
       </div>
       <ChartBox title="Revenue vs Expenses" data={(d.revenue_vs_expenses as Record<string, unknown>[] | null) ?? []} dataKey="value" type="bar" height={160} />
     </div>
   )
 }
 
+// Payroll — shows totals from our RPC + payroll_by_employee table
 function PayrollTab({ data }: { data: RpcData | null }) {
-  const d = data ?? {}
-  const rows = (d.periods as Record<string, unknown>[] | null) ?? []
+  const d    = data ?? {}
+  const rows = (d.payroll_by_employee as Record<string, unknown>[] | null) ?? []
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-2.5">
-        <Kpi title="Total Gross" value={fmtR(d.total_gross as number)} />
-        <Kpi title="Total Net" value={fmtR(d.total_net as number)} />
-        <Kpi title="PAYE" value={fmtR(d.paye as number)} />
-        <Kpi title="UIF" value={fmtR(d.uif as number)} />
+        <Kpi title="Total Gross"       value={fmtR(d.total_gross        as number)} />
+        <Kpi title="Total Net"         value={fmtR(d.total_net          as number)} />
+        <Kpi title="Total Deductions"  value={fmtR(d.total_deductions   as number)} />
+        <Kpi title="Total Hours"       value={`${(d.total_hours as number ?? 0).toFixed(1)}h`} />
+        <Kpi title="Payslips"          value={fmtN(d.payslip_count      as number)} />
+        <Kpi title="Approved"          value={fmtN(d.approved_count     as number)} />
       </div>
       {rows.length > 0 && (
         <div className="overflow-x-auto">
           <table className="w-full" style={{ minWidth: 400 }}>
             <thead>
               <tr className="bg-surface-elevated">
-                <th className="data-th text-left">Period</th>
+                <th className="data-th text-left">Employee</th>
                 <th className="data-th text-right">Gross</th>
                 <th className="data-th text-right">Net</th>
-                <th className="data-th text-right">Status</th>
+                <th className="data-th text-right">Hours</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r, i) => (
                 <tr key={i} className="bg-surface-card border-b border-divider last:border-0">
-                  <td className="data-td text-sm text-text-primary">{r.period as string}</td>
+                  <td className="data-td text-sm text-text-primary">{r.employee_name as string}</td>
                   <td className="data-td text-sm text-text-secondary text-right">{fmtR(r.gross as number)}</td>
-                  <td className="data-td text-sm text-text-secondary text-right">{fmtR(r.net as number)}</td>
-                  <td className="data-td text-sm text-text-secondary text-right">{r.status as string}</td>
+                  <td className="data-td text-sm text-text-secondary text-right">{fmtR(r.net   as number)}</td>
+                  <td className="data-td text-sm text-text-secondary text-right">{(r.hours as number ?? 0).toFixed(1)}h</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
+      {rows.length === 0 && data !== null && (
+        <p className="text-[13px] text-text-disabled text-center py-4">No payroll records for this period</p>
+      )}
     </div>
   )
 }
 
+// Workforce — total_employees, leave_days_taken, leave_pending + two trend charts
 function WorkforceTab({ data }: { data: RpcData | null }) {
   const d = data ?? {}
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-2.5">
-        <Kpi title="Headcount" value={fmtN(d.headcount as number)} />
-        <Kpi title="Present Today" value={fmtN(d.present_today as number)} />
-        <Kpi title="On Leave" value={fmtN(d.on_leave as number)} />
-        <Kpi title="Late This Period" value={fmtN(d.late as number)} />
+        <Kpi title="Total Employees"  value={fmtN(d.total_employees  as number)} />
+        <Kpi title="Pending Leave"    value={fmtN(d.leave_pending    as number)} />
+        <Kpi title="Leave Days Taken" value={fmtN(d.leave_days_taken as number)} caption="approved this period" />
       </div>
       <ChartBox title="Attendance trend" data={(d.attendance_trend as Record<string, unknown>[] | null) ?? []} dataKey="value" type="line" />
-      <ChartBox title="Leave trend" data={(d.leave_trend as Record<string, unknown>[] | null) ?? []} dataKey="value" type="bar" height={120} />
+      <ChartBox title="Leave trend"      data={(d.leave_trend      as Record<string, unknown>[] | null) ?? []} dataKey="value" type="bar" height={120} />
     </div>
   )
 }
 
+// Operational — total/completed/open jobs, incidents + completion trend chart
 function OperationalTab({ data }: { data: RpcData | null }) {
   const d = data ?? {}
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-2.5">
-        <Kpi title="Active Jobs" value={fmtN(d.active_jobs as number)} />
-        <Kpi title="Completed" value={fmtN(d.completed as number)} />
-        <Kpi title="On-time %" value={d.on_time_percent != null ? `${d.on_time_percent}%` : '—'} />
-        <Kpi title="Overdue" value={fmtN(d.overdue as number)} />
+        <Kpi title="Total Jobs"       value={fmtN(d.total_jobs      as number)} caption="created this period" />
+        <Kpi title="Completed"        value={fmtN(d.completed_jobs  as number)} />
+        <Kpi title="Open / Active"    value={fmtN(d.open_jobs       as number)} />
+        <Kpi title="Incidents"        value={fmtN(d.total_incidents as number)} />
       </div>
       <ChartBox title="Job completion trend" data={(d.completion_trend as Record<string, unknown>[] | null) ?? []} dataKey="value" type="bar" />
     </div>
   )
 }
 
+// Incidents — Phase 2 stub
 function IncidentsTab({ data }: { data: RpcData | null }) {
-  const d = data ?? {}
+  const d    = data ?? {}
   const list = (d.recent as Record<string, unknown>[] | null) ?? []
+  const hasData = Object.keys(d).length > 0
+  if (!hasData) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 gap-2">
+        <span className="material-icons text-[40px] text-text-disabled">warning</span>
+        <p className="text-[14px] text-text-secondary font-semibold">Incidents analytics coming in Phase 2</p>
+      </div>
+    )
+  }
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-3 gap-2">
-        <Kpi title="Open" value={fmtN(d.open as number)} />
+        <Kpi title="Open"     value={fmtN(d.open     as number)} />
         <Kpi title="Resolved" value={fmtN(d.resolved as number)} />
         <Kpi title="Critical" value={fmtN(d.critical as number)} />
       </div>
-      {list.length > 0 && (
-        <div className="flex flex-col gap-1.5">
-          {list.map((inc, i) => (
-            <div key={i} className="card p-3">
-              <p className="text-[13px] font-medium text-text-primary line-clamp-2">{inc.description as string}</p>
-              <p className="text-[11px] text-text-secondary mt-0.5">{inc.severity as string} · {inc.status as string}</p>
-            </div>
-          ))}
+      {list.map((inc, i) => (
+        <div key={i} className="card p-3">
+          <p className="text-[13px] font-medium text-text-primary line-clamp-2">{inc.description as string}</p>
+          <p className="text-[11px] text-text-secondary mt-0.5">{inc.severity as string} · {inc.status as string}</p>
         </div>
-      )}
+      ))}
     </div>
   )
 }
 
+// Inventory — Phase 2 stub
 function InventoryTab({ data }: { data: RpcData | null }) {
-  const d = data ?? {}
+  const d    = data ?? {}
   const rows = (d.top_items as Record<string, unknown>[] | null) ?? []
+  const hasData = Object.keys(d).length > 0
+  if (!hasData) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 gap-2">
+        <span className="material-icons text-[40px] text-text-disabled">inventory_2</span>
+        <p className="text-[14px] text-text-secondary font-semibold">Inventory analytics coming in Phase 2</p>
+      </div>
+    )
+  }
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-2.5">
         <Kpi title="Total Items" value={fmtN(d.total_items as number)} />
-        <Kpi title="Low Stock" value={fmtN(d.low_stock as number)} />
+        <Kpi title="Low Stock"   value={fmtN(d.low_stock   as number)} />
         <Kpi title="Stock Value" value={fmtR(d.stock_value as number)} />
-        <Kpi title="Items on Jobs" value={fmtN(d.on_jobs as number)} />
+        <Kpi title="On Jobs"     value={fmtN(d.on_jobs     as number)} />
       </div>
       {rows.length > 0 && (
         <div className="overflow-x-auto">
@@ -321,8 +351,8 @@ function InventoryTab({ data }: { data: RpcData | null }) {
             <tbody>
               {rows.map((r, i) => (
                 <tr key={i} className="bg-surface-card border-b border-divider last:border-0">
-                  <td className="data-td text-sm text-text-primary">{r.name as string}</td>
-                  <td className="data-td text-sm text-text-secondary text-right">{fmtN(r.qty as number)}</td>
+                  <td className="data-td text-sm text-text-primary">{r.name  as string}</td>
+                  <td className="data-td text-sm text-text-secondary text-right">{fmtN(r.qty   as number)}</td>
                   <td className="data-td text-sm text-text-secondary text-right">{fmtR(r.value as number)}</td>
                 </tr>
               ))}
@@ -334,15 +364,25 @@ function InventoryTab({ data }: { data: RpcData | null }) {
   )
 }
 
+// Contractors — Phase 2 stub
 function ContractorsTab({ data }: { data: RpcData | null }) {
-  const d = data ?? {}
+  const d    = data ?? {}
   const rows = (d.payment_summary as Record<string, unknown>[] | null) ?? []
+  const hasData = Object.keys(d).length > 0
+  if (!hasData) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 gap-2">
+        <span className="material-icons text-[40px] text-text-disabled">badge</span>
+        <p className="text-[14px] text-text-secondary font-semibold">Contractor analytics coming in Phase 2</p>
+      </div>
+    )
+  }
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-3 gap-2">
-        <Kpi title="Active" value={fmtN(d.active as number)} />
-        <Kpi title="Pending Compliance" value={fmtN(d.pending_compliance as number)} />
-        <Kpi title="Pending Payments" value={fmtN(d.pending_payments as number)} />
+        <Kpi title="Active"              value={fmtN(d.active              as number)} />
+        <Kpi title="Pending Compliance"  value={fmtN(d.pending_compliance  as number)} />
+        <Kpi title="Pending Payments"    value={fmtN(d.pending_payments    as number)} />
       </div>
       {rows.length > 0 && (
         <div className="overflow-x-auto">
@@ -357,9 +397,9 @@ function ContractorsTab({ data }: { data: RpcData | null }) {
             <tbody>
               {rows.map((r, i) => (
                 <tr key={i} className="bg-surface-card border-b border-divider last:border-0">
-                  <td className="data-td text-sm text-text-primary">{r.name as string}</td>
+                  <td className="data-td text-sm text-text-primary">{r.name    as string}</td>
                   <td className="data-td text-sm text-text-secondary text-right">{fmtR(r.agreed as number)}</td>
-                  <td className="data-td text-sm text-text-secondary text-right">{fmtR(r.paid as number)}</td>
+                  <td className="data-td text-sm text-text-secondary text-right">{fmtR(r.paid   as number)}</td>
                 </tr>
               ))}
             </tbody>
@@ -370,24 +410,44 @@ function ContractorsTab({ data }: { data: RpcData | null }) {
   )
 }
 
+// Property — Phase 2 stub
 function PropertyTab({ data }: { data: RpcData | null }) {
-  const d = data ?? {}
+  const d       = data ?? {}
+  const hasData = Object.keys(d).length > 0
+  if (!hasData) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 gap-2">
+        <span className="material-icons text-[40px] text-text-disabled">apartment</span>
+        <p className="text-[14px] text-text-secondary font-semibold">Property analytics coming in Phase 2</p>
+      </div>
+    )
+  }
   return (
     <div className="grid grid-cols-2 gap-2.5">
-      <Kpi title="Total Sites" value={fmtN(d.total_sites as number)} />
-      <Kpi title="Occupied Units" value={fmtN(d.occupied_units as number)} />
-      <Kpi title="Vacant" value={fmtN(d.vacant as number)} />
-      <Kpi title="Expiring Compliance" value={fmtN(d.expiring_compliance as number)} />
+      <Kpi title="Total Sites"          value={fmtN(d.total_sites          as number)} />
+      <Kpi title="Occupied Units"       value={fmtN(d.occupied_units       as number)} />
+      <Kpi title="Vacant"               value={fmtN(d.vacant               as number)} />
+      <Kpi title="Expiring Compliance"  value={fmtN(d.expiring_compliance  as number)} />
     </div>
   )
 }
 
+// Telemetry — Phase 2 stub
 function TelemetryTab({ data }: { data: RpcData | null }) {
-  const d = data ?? {}
+  const d       = data ?? {}
+  const hasData = Object.keys(d).length > 0
+  if (!hasData) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 gap-2">
+        <span className="material-icons text-[40px] text-text-disabled">analytics</span>
+        <p className="text-[14px] text-text-secondary font-semibold">Telemetry analytics coming in Phase 2</p>
+      </div>
+    )
+  }
   const pairs: [string, string][] = [
-    ['Realtime Status', d.realtime_status as string ?? '—'],
-    ['Offline Queue', fmtN(d.offline_queue as number)],
-    ['Error Rate', d.error_rate != null ? `${d.error_rate}%` : '—'],
+    ['Realtime Status',    d.realtime_status as string     ?? '—'],
+    ['Offline Queue',      fmtN(d.offline_queue as number)],
+    ['Error Rate',         d.error_rate != null ? `${d.error_rate}%` : '—'],
     ['Active Connections', fmtN(d.active_connections as number)],
   ]
   return (
@@ -402,54 +462,121 @@ function TelemetryTab({ data }: { data: RpcData | null }) {
   )
 }
 
-function ExportsTab() {
-  const EXPORTS = [
-    { label: 'Export P&L PDF', rpc: 'export_finance_pdf', icon: 'download' },
-    { label: 'Export Payroll CSV', rpc: 'export_payroll_csv', icon: 'download' },
-    { label: 'Export Attendance CSV', rpc: 'export_attendance_csv', icon: 'download' },
-    { label: 'Export Inventory CSV', rpc: 'export_inventory_csv', icon: 'download' },
-  ]
+// ─── CSV export helpers ───────────────────────────────────────────────────────
 
-  async function trigger(rpc: string) {
+function downloadCSV(content: string, filename: string) {
+  const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' })
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href     = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+// Exports tab — fetches payroll data on demand and generates CSV client-side
+function ExportsTab({ companyId, preset }: { companyId: string | null; preset: Preset }) {
+  const [busy, setBusy] = useState<string | null>(null)
+
+  async function exportPayrollCSV() {
+    if (!companyId) return
+    setBusy('payroll')
     const supabase = createClient()
+    const { start, end } = getPeriod(preset)
     try {
-      const { data } = await supabase.rpc(rpc, {})
-      if ((data as Record<string, unknown>)?.download_url) {
-        window.open((data as Record<string, unknown>).download_url as string, '_blank')
-      }
+      const { data } = await supabase.rpc('hr_get_payroll_snapshot', {
+        p_company_id: companyId, p_from: start, p_to: end,
+      })
+      const rows = ((data as RpcData | null)?.payroll_by_employee as Record<string, unknown>[] | null) ?? []
+      const csv  = [
+        'Employee,Gross (R),Net (R),Hours',
+        ...rows.map(r => `"${r.employee_name}",${r.gross},${r.net},${(r.hours as number ?? 0).toFixed(2)}`),
+      ].join('\n')
+      downloadCSV(csv, `payroll_${start}_${end}.csv`)
     } catch {}
+    setBusy(null)
   }
+
+  async function exportAttendanceCSV() {
+    if (!companyId) return
+    setBusy('attendance')
+    const supabase = createClient()
+    const { start, end } = getPeriod(preset)
+    try {
+      const { data } = await supabase.rpc('hr_get_workforce_snapshot', {
+        p_company_id: companyId, p_from: start, p_to: end,
+      })
+      const trend = ((data as RpcData | null)?.attendance_trend as Record<string, unknown>[] | null) ?? []
+      const csv   = [
+        'Date,Present Employees',
+        ...trend.map(r => `"${r.label}",${r.value}`),
+      ].join('\n')
+      downloadCSV(csv, `attendance_${start}_${end}.csv`)
+    } catch {}
+    setBusy(null)
+  }
+
+  const EXPORTS: { label: string; key: string; action: () => void; available: boolean }[] = [
+    { label: 'Export Payroll CSV',    key: 'payroll',    action: exportPayrollCSV,    available: true },
+    { label: 'Export Attendance CSV', key: 'attendance', action: exportAttendanceCSV, available: true },
+    { label: 'Export P&L PDF',        key: 'pl',         action: () => {},             available: false },
+    { label: 'Export Inventory CSV',  key: 'inventory',  action: () => {},             available: false },
+  ]
 
   return (
     <div className="flex flex-col gap-2">
-      {EXPORTS.map(e => (
-        <button key={e.rpc} onClick={() => trigger(e.rpc)}
-          className="btn-outlined h-11 w-full text-[13px] flex items-center gap-2 justify-center">
-          <span className="material-icons text-[16px]">{e.icon}</span>
-          {e.label}
+      {!companyId && (
+        <p className="text-[13px] text-text-disabled text-center py-4">Loading…</p>
+      )}
+      {companyId && EXPORTS.map(e => (
+        <button
+          key={e.key}
+          onClick={e.action}
+          disabled={!e.available || busy === e.key}
+          className="btn-outlined h-11 w-full text-[13px] flex items-center gap-2 justify-center disabled:opacity-50"
+        >
+          <span className="material-icons text-[16px]">
+            {busy === e.key ? 'hourglass_empty' : 'download'}
+          </span>
+          {busy === e.key ? 'Generating…' : e.label}
+          {!e.available && <span className="text-[11px] text-text-disabled ml-1">(Phase 2)</span>}
         </button>
       ))}
     </div>
   )
 }
 
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
 export default function ReportsPage() {
-  const [preset, setPreset] = useState<Preset>('30d')
+  const [preset,    setPreset]    = useState<Preset>('30d')
   const [activeTab, setActiveTab] = useState<TabKey>('executive')
-  const { data, loading, refresh } = useTabData(preset, activeTab)
+  const [companyId, setCompanyId] = useState<string | null>(null)
+
+  // Resolve company ID once on mount
+  useEffect(() => {
+    async function resolve() {
+      const supabase = createClient()
+      const member   = await resolveCurrentMember(supabase)
+      if (member) setCompanyId(member.companyId)
+    }
+    resolve()
+  }, [])
+
+  const { data, loading, refresh } = useTabData(preset, activeTab, companyId)
 
   const TAB_CONTENT: Record<TabKey, React.ReactNode> = {
-    executive: <ExecTab data={data} />,
-    financial: <FinancialTab data={data} />,
-    payroll: <PayrollTab data={data} />,
-    workforce: <WorkforceTab data={data} />,
+    executive:   <ExecTab        data={data} />,
+    financial:   <FinancialTab   data={data} />,
+    payroll:     <PayrollTab     data={data} />,
+    workforce:   <WorkforceTab   data={data} />,
     operational: <OperationalTab data={data} />,
-    incidents: <IncidentsTab data={data} />,
-    inventory: <InventoryTab data={data} />,
+    incidents:   <IncidentsTab   data={data} />,
+    inventory:   <InventoryTab   data={data} />,
     contractors: <ContractorsTab data={data} />,
-    property: <PropertyTab data={data} />,
-    telemetry: <TelemetryTab data={data} />,
-    exports: <ExportsTab />,
+    property:    <PropertyTab    data={data} />,
+    telemetry:   <TelemetryTab   data={data} />,
+    exports:     <ExportsTab     companyId={companyId} preset={preset} />,
   }
 
   return (
@@ -461,37 +588,45 @@ export default function ReportsPage() {
 
       <div className="flex-1 overflow-y-auto p-4">
 
-        {/* Filter preset bar */}
+        {/* Date preset bar */}
         <div className="flex flex-col gap-2 mb-3">
           <p className="text-xs text-text-secondary">{presetLabel(preset)}</p>
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
             {(['7d', '30d', 'month', 'year'] as Preset[]).map(p => (
-              <button key={p} onClick={() => setPreset(p)}
+              <button
+                key={p}
+                onClick={() => setPreset(p)}
                 className="h-[32px] px-2.5 text-[11px] rounded-lg border border-divider whitespace-nowrap shrink-0 font-medium transition-colors"
                 style={preset === p
                   ? { backgroundColor: '#1E3A5F', color: '#fff', borderColor: '#1E3A5F' }
                   : { backgroundColor: 'var(--color-surface-card)', color: 'var(--color-text-secondary)' }
-                }>
+                }
+              >
                 {p === '7d' ? '7d' : p === '30d' ? '30d' : p === 'month' ? 'Month' : 'Year'}
               </button>
             ))}
-            <button onClick={refresh}
-              className="h-[32px] px-2.5 text-[11px] rounded-lg border border-divider whitespace-nowrap shrink-0 font-medium bg-surface-card text-text-secondary hover:opacity-80">
+            <button
+              onClick={refresh}
+              className="h-[32px] px-2.5 text-[11px] rounded-lg border border-divider whitespace-nowrap shrink-0 font-medium bg-surface-card text-text-secondary hover:opacity-80"
+            >
               ↻ Refresh
             </button>
           </div>
         </div>
 
-        {/* Category tab bar */}
+        {/* Tab bar */}
         <div className="bg-surface-card border border-divider rounded-xl p-1 mb-4 overflow-x-auto">
           <div className="flex gap-0.5">
             {TABS.map(t => (
-              <button key={t.key} onClick={() => setActiveTab(t.key)}
+              <button
+                key={t.key}
+                onClick={() => setActiveTab(t.key)}
                 className="text-sm px-3 py-1 rounded-lg whitespace-nowrap transition-colors shrink-0"
                 style={activeTab === t.key
                   ? { backgroundColor: '#3B82F6', color: '#fff' }
                   : { backgroundColor: 'transparent', color: '#6B7280' }
-                }>
+                }
+              >
                 {t.label}
               </button>
             ))}
