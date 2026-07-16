@@ -6,23 +6,57 @@ import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { formatDateTime } from '@/lib/utils'
 import type { Company, Employee, SecuritySettings, AuditEvent } from '@/types/database'
 
+// ─── Local types ──────────────────────────────────────────────────────────────
+
+// Branch has more columns in DB than the exported Branch type
+type BranchRow = {
+  id: string
+  company_id: string
+  name: string
+  is_active: boolean
+}
+
+type HrEmployee = Pick<Employee, 'id' | 'name' | 'surname' | 'email' | 'access_level'>
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
 export default function SettingsPage() {
-  const [company, setCompany] = useState<Company | null>(null)
-  const [employee, setEmployee] = useState<Employee | null>(null)
-  const [security, setSecurity] = useState<SecuritySettings | null>(null)
+  const [company,     setCompany]     = useState<Company | null>(null)
+  const [employee,    setEmployee]    = useState<Employee | null>(null)
+  const [security,    setSecurity]    = useState<SecuritySettings | null>(null)
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [saving, setSaving] = useState<string | null>(null)
+  const [loading,     setLoading]     = useState(true)
+  const [error,       setError]       = useState<string | null>(null)
+  const [saving,      setSaving]      = useState<string | null>(null)
+  const [companyId,   setCompanyId]   = useState<string | null>(null)
+  const [myEmpId,     setMyEmpId]     = useState<string | null>(null)
   const [companyName, setCompanyName] = useState('')
-  const [industry, setIndustry] = useState('')
+  const [industry,    setIndustry]    = useState('')
+
+  // ── Branch state ─────────────────────────────────────────────────────────
+  const [branches,         setBranches]         = useState<BranchRow[]>([])
+  const [newBranchName,    setNewBranchName]    = useState('')
+  const [editingBranchId,  setEditingBranchId]  = useState<string | null>(null)
+  const [editBranchName,   setEditBranchName]   = useState('')
+  const [branchBusy,       setBranchBusy]       = useState(false)
+
+  // ── HR user state ─────────────────────────────────────────────────────────
+  const [hrAdmins,         setHrAdmins]         = useState<HrEmployee[]>([])
+  const [allEmployees,     setAllEmployees]      = useState<HrEmployee[]>([])
+  const [promoteEmployeeId, setPromoteEmployeeId] = useState('')
+  const [hrBusy,           setHrBusy]           = useState(false)
 
   useEffect(() => { load() }, [])
 
+  // ── Load ──────────────────────────────────────────────────────────────────
+
   async function load() {
     const supabase = createClient()
-    const member = await resolveCurrentMember(supabase)
+    const member   = await resolveCurrentMember(supabase)
     if (!member) { setError('not_linked'); setLoading(false); return }
+
+    setCompanyId(member.companyId)
+    setMyEmpId(member.employeeId)
 
     const { data: empData } = await supabase
       .from('employees')
@@ -37,16 +71,28 @@ export default function SettingsPage() {
     setCompanyName(co.name)
     setIndustry(co.industry ?? '')
 
-    const [secRes, auditRes] = await Promise.all([
+    const [secRes, auditRes, branchRes, allEmpRes] = await Promise.all([
       supabase.from('security_settings').select('*').eq('company_id', member.companyId).maybeSingle(),
       supabase.from('audit_events').select('*').eq('company_id', member.companyId)
         .order('created_at', { ascending: false }).limit(20),
+      supabase.from('branches').select('id, company_id, name, is_active')
+        .eq('company_id', member.companyId).order('name'),
+      supabase.from('employees').select('id, name, surname, email, access_level')
+        .eq('company_id', member.companyId).eq('is_active', true).order('name'),
     ])
 
     setSecurity(secRes.data as SecuritySettings | null)
     setAuditEvents((auditRes.data ?? []) as AuditEvent[])
+    setBranches((branchRes.data ?? []) as BranchRow[])
+
+    const emps = (allEmpRes.data ?? []) as HrEmployee[]
+    setAllEmployees(emps)
+    setHrAdmins(emps.filter(e => ['owner', 'hr', 'manager'].includes(e.access_level)))
+
     setLoading(false)
   }
+
+  // ── Company settings ──────────────────────────────────────────────────────
 
   async function saveCompanyName() {
     if (!company || !companyName.trim()) return
@@ -76,8 +122,97 @@ export default function SettingsPage() {
     setSaving(null)
   }
 
-  const isOwner = employee?.access_level === 'owner'
-  const isHrOrAbove = ['owner', 'manager', 'hr'].includes(employee?.access_level ?? '')
+  // ── Branch management ─────────────────────────────────────────────────────
+
+  async function createBranch() {
+    if (!newBranchName.trim() || !companyId) return
+    setBranchBusy(true)
+    const supabase = createClient()
+    const { error: e } = await supabase.from('branches').insert({
+      company_id:    companyId,
+      name:          newBranchName.trim(),
+      is_active:     true,
+      radius_meters: 100,
+    })
+    if (!e) {
+      setNewBranchName('')
+      const { data } = await supabase.from('branches').select('id, company_id, name, is_active')
+        .eq('company_id', companyId).order('name')
+      setBranches((data ?? []) as BranchRow[])
+    }
+    setBranchBusy(false)
+  }
+
+  async function renameBranch(branchId: string) {
+    if (!editBranchName.trim() || !companyId) return
+    setBranchBusy(true)
+    const supabase = createClient()
+    await supabase.from('branches').update({ name: editBranchName.trim() }).eq('id', branchId)
+    setEditingBranchId(null)
+    const { data } = await supabase.from('branches').select('id, company_id, name, is_active')
+      .eq('company_id', companyId).order('name')
+    setBranches((data ?? []) as BranchRow[])
+    setBranchBusy(false)
+  }
+
+  async function deleteBranch(branchId: string) {
+    if (!window.confirm('Delete this branch? Employees in this branch will be unassigned.')) return
+    if (!companyId) return
+    setBranchBusy(true)
+    const supabase = createClient()
+    await supabase.from('branches').delete().eq('id', branchId)
+    const { data } = await supabase.from('branches').select('id, company_id, name, is_active')
+      .eq('company_id', companyId).order('name')
+    setBranches((data ?? []) as BranchRow[])
+    setBranchBusy(false)
+  }
+
+  // ── HR user management ────────────────────────────────────────────────────
+
+  async function promoteToAdmin() {
+    if (!promoteEmployeeId || !companyId) return
+    setHrBusy(true)
+    const supabase = createClient()
+    await supabase.rpc('set_employee_role', {
+      p_company_id:  companyId,
+      p_employee_id: promoteEmployeeId,
+      p_new_role:    'hr',
+    })
+    setPromoteEmployeeId('')
+    const { data } = await supabase.from('employees').select('id, name, surname, email, access_level')
+      .eq('company_id', companyId).eq('is_active', true).order('name')
+    const emps = (data ?? []) as HrEmployee[]
+    setAllEmployees(emps)
+    setHrAdmins(emps.filter(e => ['owner', 'hr', 'manager'].includes(e.access_level)))
+    setHrBusy(false)
+  }
+
+  async function demoteFromAdmin(empId: string) {
+    if (empId === myEmpId) return // self-demotion guard
+    if (!window.confirm('Remove HR admin access for this employee?')) return
+    if (!companyId) return
+    setHrBusy(true)
+    const supabase = createClient()
+    await supabase.rpc('set_employee_role', {
+      p_company_id:  companyId,
+      p_employee_id: empId,
+      p_new_role:    'employee',
+    })
+    const { data } = await supabase.from('employees').select('id, name, surname, email, access_level')
+      .eq('company_id', companyId).eq('is_active', true).order('name')
+    const emps = (data ?? []) as HrEmployee[]
+    setAllEmployees(emps)
+    setHrAdmins(emps.filter(e => ['owner', 'hr', 'manager'].includes(e.access_level)))
+    setHrBusy(false)
+  }
+
+  // ── Derived ───────────────────────────────────────────────────────────────
+
+  const isOwner      = employee?.access_level === 'owner'
+  const isHrOrAbove  = ['owner', 'manager', 'hr'].includes(employee?.access_level ?? '')
+  const promotable   = allEmployees.filter(e => !hrAdmins.find(a => a.id === e.id))
+
+  // ── Guards ────────────────────────────────────────────────────────────────
 
   if (loading) {
     return (
@@ -99,6 +234,10 @@ export default function SettingsPage() {
       </div>
     </div>
   )
+
+  // ── Render ────────────────────────────────────────────────────────────────
+
+  const inputCls = 'w-full h-10 px-3 bg-background border border-border rounded-lg text-[13px] text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30'
 
   return (
     <div className="p-6 max-w-3xl mx-auto pb-16">
@@ -205,7 +344,166 @@ export default function SettingsPage() {
         </div>
       </Section>
 
-      {/* 4. Attendance */}
+      {/* 4. Branch Management */}
+      {isHrOrAbove && (
+        <Section title="Branch Management" icon="account_tree">
+          <div className="flex flex-col gap-3">
+            <p className="text-[13px] text-text-secondary">
+              Branches are physical locations or divisions within your company. Employees can be assigned to a branch.
+            </p>
+
+            {/* Create new branch */}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newBranchName}
+                onChange={e => setNewBranchName(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && createBranch()}
+                placeholder="New branch name…"
+                className={inputCls}
+              />
+              <button
+                onClick={createBranch}
+                disabled={!newBranchName.trim() || branchBusy}
+                className="h-10 px-4 rounded-lg bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors shrink-0"
+              >
+                {branchBusy ? '…' : 'Add'}
+              </button>
+            </div>
+
+            {/* Branch list */}
+            {branches.length === 0 ? (
+              <p className="text-[13px] text-text-disabled py-2">No branches yet.</p>
+            ) : (
+              <div className="border border-divider rounded-lg overflow-hidden">
+                {branches.map(branch => (
+                  <div key={branch.id} className="flex items-center gap-2 px-3 py-2.5 border-b border-divider last:border-0">
+                    {editingBranchId === branch.id ? (
+                      <>
+                        <input
+                          value={editBranchName}
+                          onChange={e => setEditBranchName(e.target.value)}
+                          onKeyDown={e => e.key === 'Enter' && renameBranch(branch.id)}
+                          className="flex-1 h-8 px-2 bg-background border border-border rounded text-[13px] text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                          autoFocus
+                        />
+                        <button
+                          onClick={() => renameBranch(branch.id)}
+                          disabled={!editBranchName.trim() || branchBusy}
+                          className="h-8 px-3 rounded text-[12px] font-semibold bg-primary text-white hover:bg-primary-dark disabled:opacity-50 transition-colors"
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={() => setEditingBranchId(null)}
+                          className="h-8 px-3 rounded text-[12px] text-text-secondary border border-border hover:text-text-primary transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <span className="flex-1 text-[13px] text-text-primary">{branch.name}</span>
+                        {!branch.is_active && (
+                          <span className="text-[11px] text-text-disabled px-1.5 py-0.5 rounded bg-background border border-border">Inactive</span>
+                        )}
+                        <button
+                          onClick={() => { setEditingBranchId(branch.id); setEditBranchName(branch.name) }}
+                          className="h-8 px-3 rounded text-[12px] text-text-secondary border border-border hover:text-primary hover:border-primary transition-colors"
+                        >
+                          Rename
+                        </button>
+                        <button
+                          onClick={() => deleteBranch(branch.id)}
+                          disabled={branchBusy}
+                          className="h-8 px-3 rounded text-[12px] font-medium text-error border border-error/30 hover:bg-error-dark disabled:opacity-50 transition-colors"
+                        >
+                          Delete
+                        </button>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </Section>
+      )}
+
+      {/* 5. HR Users */}
+      {isOwner && (
+        <Section title="HR Admins" icon="admin_panel_settings">
+          <div className="flex flex-col gap-3">
+            <p className="text-[13px] text-text-secondary">
+              Employees with HR or manager access can manage attendance, payroll, and leave.
+            </p>
+
+            {/* Current HR admins */}
+            {hrAdmins.length === 0 ? (
+              <p className="text-[13px] text-text-disabled py-2">No HR admins found.</p>
+            ) : (
+              <div className="border border-divider rounded-lg overflow-hidden">
+                {hrAdmins.map(emp => {
+                  const isMe    = emp.id === myEmpId
+                  const isOwnerRow = emp.access_level === 'owner'
+                  return (
+                    <div key={emp.id} className="flex items-center justify-between px-3 py-2.5 border-b border-divider last:border-0 gap-3">
+                      <div className="min-w-0">
+                        <p className="text-[13px] font-medium text-text-primary truncate">
+                          {emp.name} {emp.surname}
+                          {isMe && <span className="ml-1.5 text-[11px] text-text-disabled font-normal">(you)</span>}
+                        </p>
+                        <p className="text-[11px] text-text-secondary">
+                          {emp.email ?? '—'} · <span className="capitalize">{emp.access_level}</span>
+                        </p>
+                      </div>
+                      {!isOwnerRow && !isMe && (
+                        <button
+                          onClick={() => demoteFromAdmin(emp.id)}
+                          disabled={hrBusy}
+                          className="h-8 px-3 rounded text-[12px] text-error border border-error/30 hover:bg-error-dark disabled:opacity-50 transition-colors shrink-0"
+                        >
+                          Remove admin
+                        </button>
+                      )}
+                      {(isOwnerRow || isMe) && (
+                        <span className="text-[11px] text-text-disabled shrink-0">
+                          {isOwnerRow ? 'Owner' : 'Self'}
+                        </span>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Promote employee */}
+            {promotable.length > 0 && (
+              <div className="flex gap-2 items-center pt-1">
+                <select
+                  value={promoteEmployeeId}
+                  onChange={e => setPromoteEmployeeId(e.target.value)}
+                  className="flex-1 h-10 px-3 bg-background border border-border rounded-lg text-[13px] text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                >
+                  <option value="">Select employee to promote…</option>
+                  {promotable.map(e => (
+                    <option key={e.id} value={e.id}>{e.name} {e.surname}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={promoteToAdmin}
+                  disabled={!promoteEmployeeId || hrBusy}
+                  className="h-10 px-4 rounded-lg bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors shrink-0"
+                >
+                  {hrBusy ? '…' : 'Grant HR'}
+                </button>
+              </div>
+            )}
+          </div>
+        </Section>
+      )}
+
+      {/* 6. Attendance */}
       <Section title="Attendance" icon="schedule">
         <div className="flex flex-col gap-3">
           <RowInfo label="Overtime threshold" value="40 hours/week" />
@@ -216,7 +514,7 @@ export default function SettingsPage() {
         </div>
       </Section>
 
-      {/* 5. Leave */}
+      {/* 7. Leave */}
       <Section title="Leave Policies" icon="event_available">
         <div className="flex flex-col gap-3">
           <RowInfo label="Annual leave days" value="21 days" />
@@ -228,7 +526,7 @@ export default function SettingsPage() {
         </div>
       </Section>
 
-      {/* 6. Payroll */}
+      {/* 8. Payroll */}
       <Section title="Payroll" icon="payments">
         <div className="flex flex-col gap-3">
           <RowInfo label="Pay period" value="Monthly" />
@@ -239,14 +537,14 @@ export default function SettingsPage() {
         </div>
       </Section>
 
-      {/* 7. Notifications */}
+      {/* 9. Notifications */}
       <Section title="Notifications" icon="notifications">
         <p className="text-[13px] text-text-secondary">
           Email notification preferences are managed per-user in the MAUI app.
         </p>
       </Section>
 
-      {/* 8. Integrations */}
+      {/* 10. Integrations */}
       <Section title="Integrations" icon="extension">
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between py-2 border-b border-divider">
@@ -266,7 +564,7 @@ export default function SettingsPage() {
         </div>
       </Section>
 
-      {/* 9. Backup & Export */}
+      {/* 11. Backup & Export */}
       <Section title="Backup & Export" icon="backup">
         <div className="flex flex-col gap-3">
           <p className="text-[13px] text-text-secondary">
@@ -280,7 +578,7 @@ export default function SettingsPage() {
         </div>
       </Section>
 
-      {/* 10. Audit Log */}
+      {/* 12. Audit Log */}
       <Section title="Audit Log" icon="history">
         {auditEvents.length === 0 ? (
           <p className="text-[13px] text-text-secondary">No audit events found.</p>
@@ -302,14 +600,14 @@ export default function SettingsPage() {
         )}
       </Section>
 
-      {/* 11. Active Sessions */}
+      {/* 13. Active Sessions */}
       <Section title="Active Sessions" icon="devices">
         <p className="text-[13px] text-text-secondary">
           Session management is available in the MAUI HR app under Settings → Active Sessions.
         </p>
       </Section>
 
-      {/* 12. Ownership Transfer */}
+      {/* 14. Ownership Transfer */}
       {isOwner && (
         <Section title="Ownership Transfer" icon="swap_horiz">
           <div className="flex flex-col gap-3">
@@ -324,7 +622,7 @@ export default function SettingsPage() {
         </Section>
       )}
 
-      {/* 13. Danger Zone */}
+      {/* 15. Danger Zone */}
       {isOwner && (
         <Section title="Danger Zone" icon="warning" danger>
           <div className="flex flex-col gap-4">
@@ -348,6 +646,8 @@ export default function SettingsPage() {
     </div>
   )
 }
+
+// ─── Shared sub-components ───────────────────────────────────────────────────
 
 function Section({
   title,
