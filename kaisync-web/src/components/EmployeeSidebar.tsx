@@ -9,14 +9,18 @@ import type { Company, Employee } from '@/types/database'
 interface NavItem { label: string; href: string; icon: string }
 
 const EMP_NAV_ITEMS: NavItem[] = [
-  { label: 'Dashboard',     href: '/dashboard/employee/overview',     icon: 'home' },
-  { label: 'My Jobs',       href: '/dashboard/employee/jobs',         icon: 'work' },
-  { label: 'My Leave',      href: '/dashboard/employee/leave',        icon: 'beach_access' },
-  { label: 'Attendance',    href: '/dashboard/employee/attendance',   icon: 'schedule' },
-  { label: 'My Incidents',  href: '/dashboard/employee/incidents',    icon: 'warning' },
-  { label: 'Messages',      href: '/dashboard/messages',              icon: 'chat' },
-  { label: 'Notifications', href: '/dashboard/employee/notifications',icon: 'notifications' },
-  { label: 'My Profile',    href: '/dashboard/profile',               icon: 'person' },
+  { label: 'Dashboard',          href: '/dashboard/employee/overview',     icon: 'home' },
+  { label: 'My Jobs',            href: '/dashboard/employee/jobs',         icon: 'work' },
+  { label: 'My PA',              href: '/dashboard/employee/pa',           icon: 'task_alt' },
+  { label: 'My Shifts',          href: '/dashboard/employee/shifts',       icon: 'event' },
+  { label: 'My Leave',           href: '/dashboard/employee/leave',        icon: 'beach_access' },
+  { label: 'Attendance',         href: '/dashboard/employee/attendance',   icon: 'schedule' },
+  { label: 'My Incidents',       href: '/dashboard/employee/incidents',    icon: 'warning' },
+  { label: 'Contractor Profile', href: '/dashboard/employee/contractor',   icon: 'badge' },
+  { label: 'Forms',              href: '/dashboard/employee/forms',        icon: 'description' },
+  { label: 'Messages',           href: '/dashboard/messages',              icon: 'chat' },
+  { label: 'Notifications',      href: '/dashboard/employee/notifications',icon: 'notifications' },
+  { label: 'My Profile',         href: '/dashboard/profile',               icon: 'person' },
 ]
 
 interface SidebarProps {
