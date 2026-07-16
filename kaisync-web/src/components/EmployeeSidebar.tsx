@@ -17,6 +17,8 @@ const EMP_NAV_ITEMS: NavItem[] = [
   { label: 'Attendance',         href: '/dashboard/employee/attendance',   icon: 'schedule' },
   { label: 'My Incidents',       href: '/dashboard/employee/incidents',    icon: 'warning' },
   { label: 'Contractor Profile', href: '/dashboard/employee/contractor',   icon: 'badge' },
+  { label: 'My Payslips',        href: '/dashboard/employee/payslips',     icon: 'payments' },
+  { label: 'My Documents',       href: '/dashboard/employee/documents',    icon: 'folder' },
   { label: 'Forms',              href: '/dashboard/employee/forms',        icon: 'description' },
   { label: 'Messages',           href: '/dashboard/messages',              icon: 'chat' },
   { label: 'Notifications',      href: '/dashboard/employee/notifications',icon: 'notifications' },
