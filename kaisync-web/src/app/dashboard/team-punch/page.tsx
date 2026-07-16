@@ -14,7 +14,7 @@ interface TeamEmployee {
 }
 
 const initials = (name: string, surname: string) =>
-  `${name.charAt(0)}${surname.charAt(0)}`.toUpperCase()
+  (name.charAt(0) + surname.charAt(0)).toUpperCase()
 
 export default function TeamPunchPage() {
   const router = useRouter()
@@ -25,7 +25,7 @@ export default function TeamPunchPage() {
   const [includeSelf, setIncludeSelf] = useState(false)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
-  const [address, setAddress] = useState('Getting location…')
+  const [address, setAddress] = useState('Getting location...')
   const [isGettingLocation, setIsGettingLocation] = useState(true)
   const [lat, setLat] = useState<number | null>(null)
   const [lng, setLng] = useState<number | null>(null)
@@ -40,7 +40,7 @@ export default function TeamPunchPage() {
       pos => {
         setLat(pos.coords.latitude)
         setLng(pos.coords.longitude)
-        setAddress(`${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`)
+        setAddress(pos.coords.latitude.toFixed(5) + ', ' + pos.coords.longitude.toFixed(5))
         setIsGettingLocation(false)
       },
       () => { setAddress('Location unavailable'); setIsGettingLocation(false) }
@@ -73,12 +73,26 @@ export default function TeamPunchPage() {
 
     const empIds = ((data ?? []) as Record<string, unknown>[]).map(r => r.employee_id as string)
 
-    const { data: punches } = empIds.length > 0
-      ? await supabase.from('attendance_sessions').select('employee_id, punch_out')
-          .in('employee_id', empIds).is('punch_out', null)
+    // time_punches uses separate 'in'/'out' rows — derive clocked-in from most recent punch per employee today
+    const { data: recentPunches } = empIds.length > 0
+      ? await supabase
+          .from('time_punches')
+          .select('employee_id, type, date_time')
+          .in('employee_id', empIds)
+          .gte('date_time', new Date(new Date().setHours(0, 0, 0, 0)).toISOString())
+          .order('date_time', { ascending: false })
       : { data: [] }
 
-    const clockedIn = new Set((punches ?? []).map((p: Record<string, unknown>) => p.employee_id as string))
+    // Keep only the most recent punch per employee
+    const latestByEmployee = new Map<string, string>()
+    for (const p of (recentPunches ?? []) as { employee_id: string; type: string }[]) {
+      if (!latestByEmployee.has(p.employee_id)) {
+        latestByEmployee.set(p.employee_id, p.type)
+      }
+    }
+    const clockedIn = new Set(
+      [...latestByEmployee.entries()].filter(([, t]) => t === 'in').map(([id]) => id)
+    )
 
     setMembers(((data ?? []) as Record<string, unknown>[]).map(r => ({
       id: r.id as string,
@@ -100,28 +114,40 @@ export default function TeamPunchPage() {
   }
 
   async function clockIn() {
+    if (!companyId) return
     setBusy(true)
     const supabase = createClient()
     const ids = [...selected]
     if (includeSelf && selfEmployeeId) ids.push(selfEmployeeId)
-    try {
-      await supabase.rpc('team_clock_in', { employee_ids: ids, location: { lat, lng }, address })
-      await loadMembers(selectedTeamId)
-      setSelected(new Set())
-    } catch {}
+    const { error: rpcErr } = await supabase.rpc('hr_team_clock_in', {
+      p_company_id: companyId,
+      p_employee_ids: ids,
+      p_latitude: lat ?? null,
+      p_longitude: lng ?? null,
+      p_address: address ?? null,
+    })
+    if (rpcErr) console.error('team clock in:', rpcErr.message)
+    await loadMembers(selectedTeamId)
+    setSelected(new Set())
     setBusy(false)
   }
 
   async function clockOut() {
+    if (!companyId) return
     setBusy(true)
     const supabase = createClient()
     const ids = [...selected]
     if (includeSelf && selfEmployeeId) ids.push(selfEmployeeId)
-    try {
-      await supabase.rpc('team_clock_out', { employee_ids: ids, location: { lat, lng }, address })
-      await loadMembers(selectedTeamId)
-      setSelected(new Set())
-    } catch {}
+    const { error: rpcErr } = await supabase.rpc('hr_team_clock_out', {
+      p_company_id: companyId,
+      p_employee_ids: ids,
+      p_latitude: lat ?? null,
+      p_longitude: lng ?? null,
+      p_address: address ?? null,
+    })
+    if (rpcErr) console.error('team clock out:', rpcErr.message)
+    await loadMembers(selectedTeamId)
+    setSelected(new Set())
     setBusy(false)
   }
 
@@ -146,16 +172,15 @@ export default function TeamPunchPage() {
       <div className="flex items-center gap-2 px-4 py-2.5 border-b border-divider shrink-0 bg-surface-card">
         <span className="material-icons text-primary text-[18px]">location_on</span>
         <p className="text-[12px] text-text-secondary truncate flex-1">{address}</p>
-        {isGettingLocation && <span className="text-[11px] text-text-secondary">…</span>}
+        {isGettingLocation && <span className="text-[11px] text-text-secondary">...</span>}
       </div>
 
       {/* Controls card */}
       <div className="card mx-4 mt-3 p-3.5 shrink-0 space-y-2.5">
-        {/* Team picker */}
         <div className="grid gap-2.5" style={{ gridTemplateColumns: '1fr auto' }}>
           <select value={selectedTeamId} onChange={e => setSelectedTeamId(e.target.value)}
             className="dark-entry text-[13px] appearance-none rounded-[10px] border border-divider bg-surface-elevated">
-            <option value="">Select a team…</option>
+            <option value="">Select a team...</option>
             {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
           <button onClick={() => router.push('/dashboard/work-teams/new')}
@@ -164,7 +189,6 @@ export default function TeamPunchPage() {
           </button>
         </div>
 
-        {/* Selection controls */}
         <div className="grid gap-2" style={{ gridTemplateColumns: '1fr auto auto auto' }}>
           <button className="border border-divider text-primary text-[12px] h-[34px] px-2.5 rounded-lg bg-surface-elevated hover:opacity-80">
             + Add Members
@@ -186,7 +210,6 @@ export default function TeamPunchPage() {
           )}
         </div>
 
-        {/* Self clock-in toggle */}
         <div className="grid gap-2.5 items-center mt-1" style={{ gridTemplateColumns: 'auto 1fr' }}>
           <input type="checkbox" checked={includeSelf} onChange={e => setIncludeSelf(e.target.checked)}
             className="accent-primary w-4 h-4" />
@@ -200,22 +223,21 @@ export default function TeamPunchPage() {
       {/* Employee list */}
       <div className="flex-1 overflow-y-auto px-4 mt-2 space-y-1">
         {loading ? (
-          <p className="text-text-secondary text-[13px] text-center py-8">Loading…</p>
+          <p className="text-text-secondary text-[13px] text-center py-8">Loading...</p>
         ) : members.length === 0 ? (
           <div className="flex flex-col items-center gap-2 py-10">
             <p className="text-text-secondary text-sm">No employees in this team yet.</p>
             <button onClick={() => router.push('/dashboard/work-teams/new')}
-              className="text-[13px] text-primary hover:opacity-70">Or create a new team →</button>
+              className="text-[13px] text-primary hover:opacity-70">Or create a new team</button>
           </div>
         ) : members.map(m => {
           const emp = m.employee
-          const fullName = emp ? `${emp.name} ${emp.surname}` : '—'
+          const fullName = emp ? (emp.name + ' ' + emp.surname) : '---'
           const isSelected = selected.has(m.employee_id)
           const clockedIn = m.is_clocked_in
 
           return (
-            <div key={m.id} className="card p-3.5"
-              style={{ opacity: 1 }}>
+            <div key={m.id} className="card p-3.5">
               <div className="grid gap-3 items-center" style={{ gridTemplateColumns: 'auto 48px 1fr auto' }}>
                 <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(m.employee_id)}
                   className="accent-primary w-4 h-4" />
@@ -226,7 +248,7 @@ export default function TeamPunchPage() {
                 </div>
                 <div>
                   <p className="font-medium text-[14px] text-text-primary">{fullName}</p>
-                  {emp?.position && <p className="text-[11px] text-text-secondary">{emp.position}</p>}
+                  {emp && emp.position && <p className="text-[11px] text-text-secondary">{emp.position}</p>}
                 </div>
                 <div className="flex flex-col items-end gap-0.5">
                   <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md"
@@ -252,7 +274,7 @@ export default function TeamPunchPage() {
             className="h-[50px] rounded-xl font-semibold text-[14px] text-white disabled:opacity-40 transition-opacity"
             style={{ backgroundColor: '#22C55E' }}
           >
-            Clock In {n > 0 ? `${n} Selected` : ''}
+            {n > 0 ? ('Clock In ' + n + ' Selected') : 'Clock In'}
           </button>
           <button
             onClick={clockOut}
@@ -260,7 +282,7 @@ export default function TeamPunchPage() {
             className="h-[50px] rounded-xl font-semibold text-[14px] text-white disabled:opacity-40 transition-opacity"
             style={{ backgroundColor: '#EF4444' }}
           >
-            Clock Out {n > 0 ? `${n} Selected` : ''}
+            {n > 0 ? ('Clock Out ' + n + ' Selected') : 'Clock Out'}
           </button>
         </div>
       </div>
