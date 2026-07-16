@@ -174,10 +174,10 @@ export default function EmployeeAttendancePage() {
     // Get name for PDF header
     const { data: empRow } = await supabase
       .from('employees')
-      .select('full_name')
+      .select('name, surname')
       .eq('id', member.employeeId)
       .maybeSingle()
-    if (empRow?.full_name) setEmpName(empRow.full_name)
+    if (empRow) setEmpName(`${empRow.name} ${empRow.surname}`)
 
     setLoading(false)
   }

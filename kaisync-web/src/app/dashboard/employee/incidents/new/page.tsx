@@ -7,7 +7,8 @@ import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 
 interface Manager {
   id: string
-  full_name: string
+  name: string
+  surname: string
   position: string | null
 }
 
@@ -70,16 +71,20 @@ export default function NewIncidentPage() {
     empIdRef.current  = member.employeeId
     compIdRef.current = member.companyId
 
+    const { data: { session } } = await supabase.auth.getSession()
+    const tok = session?.access_token ?? null
+
     const [managersRes, jobsRes] = await Promise.all([
       supabase.from('employees')
-        .select('id, full_name, position')
+        .select('id, name, surname, position')
         .eq('company_id', member.companyId)
         .in('access_level', ['manager', 'hr', 'owner'])
-        .order('full_name'),
+        .order('name'),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (supabase.rpc as any)('employee_get_jobs_for_employee', {
-        p_employee_id: member.employeeId,
-        p_company_id:  member.companyId,
+        p_employee_id:   member.employeeId,
+        p_company_id:    member.companyId,
+        p_session_token: tok,
       }),
     ])
 
@@ -109,10 +114,10 @@ export default function NewIncidentPage() {
     const supabase = createClient()
     const { data: { session } } = await supabase.auth.getSession()
 
-    // Get employee full name
+    // Get employee name for reported_by_name
     const { data: empData } = await supabase
       .from('employees')
-      .select('full_name')
+      .select('name, surname')
       .eq('id', empId)
       .single()
 
@@ -146,7 +151,7 @@ export default function NewIncidentPage() {
         p_site_id:          null,
         p_assignee_id:      selectedManagerId || null,
         p_photo_urls:       photoUrls.length > 0 ? photoUrls : null,
-        p_reported_by_name: empData?.full_name ?? null,
+        p_reported_by_name: empData ? `${empData.name} ${empData.surname}` : null,
         p_title:            title.trim() || null,
         p_category:         category || null,
         p_occurred_at:      occurredAt,
@@ -253,7 +258,7 @@ export default function NewIncidentPage() {
               <select className="input" value={selectedManagerId} onChange={e => setSelectedManagerId(e.target.value)}>
                 <option value="">None</option>
                 {managers.map(m => (
-                  <option key={m.id} value={m.id}>{m.full_name}{m.position ? ` — ${m.position}` : ''}</option>
+                  <option key={m.id} value={m.id}>{m.name} {m.surname}{m.position ? ` — ${m.position}` : ''}</option>
                 ))}
               </select>
             </div>
