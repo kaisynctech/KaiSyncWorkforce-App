@@ -92,6 +92,33 @@ export default function JobsPage() {
     return true
   })
 
+  function downloadCSV() {
+    const headers = ['ID', 'Title', 'Client', 'Status', 'Priority', 'Start', 'End', 'Estimated Cost']
+    const rows = filtered.map(job => {
+      const client = (job.clients as { name: string } | undefined)?.name ?? ''
+      return [
+        job.id.slice(0, 8).toUpperCase(),
+        job.title,
+        client,
+        job.status,
+        job.priority,
+        job.scheduled_start ?? '',
+        job.scheduled_end ?? '',
+        job.estimated_cost != null ? String(job.estimated_cost) : '',
+      ]
+    })
+    const csv = [headers, ...rows]
+      .map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
+      .join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'jobs-export.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   if (error === 'not_linked') return (
     <div className="flex items-center justify-center h-full">
       <div className="text-center space-y-2">
@@ -111,7 +138,10 @@ export default function JobsPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-[19px] font-bold text-text-primary">Jobs</h1>
         <div className="flex items-center gap-2">
-          <button className="flex items-center gap-1.5 h-9 px-3 rounded-sm bg-surface-elevated border border-border text-[13px] text-text-secondary font-medium hover:border-primary hover:text-primary transition-colors">
+          <button
+            onClick={downloadCSV}
+            className="flex items-center gap-1.5 h-9 px-3 rounded-sm bg-surface-elevated border border-border text-[13px] text-text-secondary font-medium hover:border-primary hover:text-primary transition-colors"
+          >
             <span className="material-icons text-[16px]">download</span>
             Export
           </button>

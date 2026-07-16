@@ -25,12 +25,22 @@ interface LeaveReq {
   start_date: string; status: string
 }
 
+type ActivityFilter = 'all' | 'punches' | 'incidents' | 'leave'
+
+const ACTIVITY_FILTERS: { value: ActivityFilter; label: string }[] = [
+  { value: 'all',       label: 'All' },
+  { value: 'punches',   label: 'Punches' },
+  { value: 'incidents', label: 'Incidents' },
+  { value: 'leave',     label: 'Leave' },
+]
+
 export default function ActivityLogPage() {
   const [punches, setPunches] = useState<Punch[]>([])
   const [incidents, setIncidents] = useState<Incident[]>([])
   const [leaves, setLeaves] = useState<LeaveReq[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [activityFilter, setActivityFilter] = useState<ActivityFilter>('all')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -119,12 +129,30 @@ export default function ActivityLogPage() {
         </button>
       </div>
 
+      {/* Event type filter chips */}
+      <div className="flex gap-2 px-4 py-2 border-b border-divider shrink-0 overflow-x-auto">
+        {ACTIVITY_FILTERS.map(f => (
+          <button
+            key={f.value}
+            onClick={() => setActivityFilter(f.value)}
+            className="rounded-2xl h-8 px-3 text-[12px] whitespace-nowrap shrink-0 transition-colors"
+            style={{
+              backgroundColor: activityFilter === f.value ? '#3B82F6' : '#FFFFFF',
+              color: activityFilter === f.value ? '#FFFFFF' : '#6B7280',
+            }}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
         {loading ? (
           <p className="text-text-secondary text-[13px] text-center py-8">Loading…</p>
         ) : (
           <>
             {/* RECENT CLOCK INS/OUTS */}
+            {(activityFilter === 'all' || activityFilter === 'punches') && (
             <div>
               <p className="section-label mb-2">RECENT CLOCK INS/OUTS</p>
               {punches.length === 0 ? (
@@ -153,8 +181,10 @@ export default function ActivityLogPage() {
                 </div>
               )}
             </div>
+            )}
 
             {/* RECENT INCIDENTS */}
+            {(activityFilter === 'all' || activityFilter === 'incidents') && (
             <div>
               <p className="section-label mb-2">RECENT INCIDENTS</p>
               {incidents.length === 0 ? (
@@ -182,8 +212,10 @@ export default function ActivityLogPage() {
                 </div>
               )}
             </div>
+            )}
 
             {/* RECENT LEAVE REQUESTS */}
+            {(activityFilter === 'all' || activityFilter === 'leave') && (
             <div>
               <p className="section-label mb-2">RECENT LEAVE REQUESTS</p>
               {leaves.length === 0 ? (
@@ -211,6 +243,7 @@ export default function ActivityLogPage() {
                 </div>
               )}
             </div>
+            )}
           </>
         )}
       </div>

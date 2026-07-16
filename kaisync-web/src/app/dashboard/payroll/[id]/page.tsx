@@ -127,8 +127,17 @@ export default function PayslipDetailPage() {
 
   return (
     <div className="h-full flex flex-col">
+      <style>{`
+        @media print {
+          [data-noprint] { display: none !important; }
+          body { background: white; }
+          .h-full { height: auto; }
+          .overflow-y-auto { overflow: visible; }
+        }
+      `}</style>
+
       {/* Header bar */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-divider shrink-0 bg-surface">
+      <div data-noprint className="flex items-center gap-3 px-4 py-3 border-b border-divider shrink-0 bg-surface">
         <Link href="/dashboard/payroll" className="text-text-secondary hover:text-text-primary transition-colors">
           <span className="material-icons text-[20px]">arrow_back</span>
         </Link>
@@ -137,6 +146,13 @@ export default function PayslipDetailPage() {
           <p className="text-text-secondary text-sm">{payment.period_label}</p>
         </div>
         <StatusBadge label={payment.status} bg={stBg(payment.status)} fg={stFg(payment.status)} />
+        <button
+          onClick={() => window.print()}
+          className="flex items-center gap-1.5 h-9 px-3 rounded-sm bg-surface-elevated border border-border text-[13px] text-text-secondary font-medium hover:border-primary hover:text-primary transition-colors"
+        >
+          <span className="material-icons text-[16px]">print</span>
+          Print
+        </button>
       </div>
 
       {/* Scrollable body */}
@@ -205,7 +221,7 @@ export default function PayslipDetailPage() {
 
         {/* HR Adjustments — shown when payslip is still pending */}
         {payment.status === 'pending' && (
-          <div className="card p-4 space-y-3">
+          <div data-noprint className="card p-4 space-y-3">
             <p className="section-label">HR ADJUSTMENTS</p>
             <p className="text-text-secondary text-xs">
               Override payroll before approving. Tap Recalculate to apply — PAYE and settings save to the employee profile for next month.

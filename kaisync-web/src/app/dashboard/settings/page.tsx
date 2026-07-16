@@ -552,14 +552,14 @@ export default function SettingsPage() {
               <p className="text-[13px] font-medium text-text-primary">SAGE Payroll</p>
               <p className="text-[12px] text-text-secondary">Export payroll data to SAGE</p>
             </div>
-            <span className="px-2 py-0.5 rounded-pill text-[11px] font-medium bg-background text-text-disabled">Not connected</span>
+            <p className="text-[12px] text-text-disabled italic">Configure in MAUI admin app</p>
           </div>
           <div className="flex items-center justify-between py-2">
             <div>
               <p className="text-[13px] font-medium text-text-primary">Xero</p>
               <p className="text-[12px] text-text-secondary">Sync financial records</p>
             </div>
-            <span className="px-2 py-0.5 rounded-pill text-[11px] font-medium bg-background text-text-disabled">Not connected</span>
+            <p className="text-[12px] text-text-disabled italic">Configure in MAUI admin app</p>
           </div>
         </div>
       </Section>

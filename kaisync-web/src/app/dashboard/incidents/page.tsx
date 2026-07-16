@@ -21,6 +21,9 @@ const SCOPE_FILTERS = [
 ] as const
 type ScopeValue = typeof SCOPE_FILTERS[number]['value']
 
+const SEVERITY_FILTERS = ['all', 'critical', 'high', 'medium', 'low'] as const
+type SeverityFilter = typeof SEVERITY_FILTERS[number]
+
 const fmtDate = (d: string) =>
   new Intl.DateTimeFormat('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(d))
 
@@ -35,6 +38,7 @@ export default function IncidentsPage() {
   const [scope, setScope] = useState<ScopeValue>('all')
   const [showOpenOnly, setShowOpenOnly] = useState(true)
   const [searchText, setSearchText] = useState('')
+  const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('all')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -65,6 +69,7 @@ export default function IncidentsPage() {
     if (showOpenOnly && inc.status === 'closed') return false
     if (scope === 'standalone' && inc.job_id) return false
     if (scope === 'job' && !inc.job_id) return false
+    if (severityFilter !== 'all' && inc.severity?.toLowerCase() !== severityFilter) return false
     if (searchText) {
       const q = searchText.toLowerCase()
       if (
@@ -123,6 +128,20 @@ export default function IncidentsPage() {
           style={{ backgroundColor: !showOpenOnly ? '#3B82F6' : '#E5E7EB', color: !showOpenOnly ? 'white' : '#6B7280' }}>
           All
         </button>
+      </div>
+
+      {/* Severity filter chips */}
+      <div className="flex gap-2 px-4 py-2 border-b border-divider shrink-0 overflow-x-auto">
+        {SEVERITY_FILTERS.map(s => (
+          <button key={s} onClick={() => setSeverityFilter(s)}
+            className="rounded-2xl h-8 px-3 text-[12px] whitespace-nowrap shrink-0 capitalize transition-colors"
+            style={{
+              backgroundColor: severityFilter === s ? (s === 'all' ? '#3B82F6' : (SEVERITY_COLORS[s]?.bg ?? '#3B82F6')) : '#F3F4F6',
+              color: severityFilter === s ? (s === 'all' ? '#FFFFFF' : (SEVERITY_COLORS[s]?.fg ?? '#FFFFFF')) : '#6B7280',
+            }}>
+            {s === 'all' ? 'All Severity' : s}
+          </button>
+        ))}
       </div>
 
       {/* Search */}

@@ -193,6 +193,7 @@ export default function EmployeeDetailPage() {
 
   const totalHours = punches.reduce((s, p) => s + (p.hours_worked ?? 0), 0)
   const sessions = punches.length
+  const daysWorked = new Set(punches.map(p => p.punch_in.split('T')[0])).size
   const payDue = (employee.hourly_rate ?? 0) * totalHours
 
   return (
@@ -288,7 +289,8 @@ export default function EmployeeDetailPage() {
         {tab === 'overview' && (
           <>
             {/* KPI row */}
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-4 gap-3">
+              <KpiCard label="Days Worked" value={String(daysWorked)} color="text-primary" />
               <KpiCard label="Hours / Month" value={`${totalHours.toFixed(1)}h`} color="text-primary" />
               <KpiCard label="Pay Due" value={formatCurrency(payDue)} color="text-success" />
               <KpiCard label="Punches" value={String(sessions)} color="text-text-primary" />

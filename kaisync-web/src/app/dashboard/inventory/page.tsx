@@ -94,6 +94,22 @@ export default function InventoryPage() {
         </div>
       </div>
 
+      {/* Low stock banner */}
+      {(() => {
+        const lowItems = items.filter(i => i.needs_reorder)
+        if (lowItems.length === 0) return null
+        return (
+          <div className="mx-4 mt-2 mb-1 px-3 py-2 rounded-lg border border-[#F87171] bg-[#FEF2F2] flex items-center gap-2 shrink-0">
+            <span className="material-icons text-[16px]" style={{ color: '#F87171' }}>warning</span>
+            <p className="text-[12px] font-medium" style={{ color: '#B91C1C' }}>
+              {lowItems.length} item{lowItems.length !== 1 ? 's' : ''} below reorder level:{' '}
+              {lowItems.slice(0, 3).map(i => i.name).join(', ')}
+              {lowItems.length > 3 ? ` +${lowItems.length - 3} more` : ''}
+            </p>
+          </div>
+        )
+      })()}
+
       {/* Table */}
       <div className="flex-1 overflow-y-auto">
         <div className="overflow-x-auto">
