@@ -1,5 +1,9 @@
 'use client'
 
+// AUDIT MIS-2026-00013: Found 3 gaps vs HrIncidentDetailsViewModel.
+// Fixed: (1) Assign button wired with employee picker modal, (2) Resolved/Close now prompt for resolution notes, (3) employees loaded for assign picker
+// Deferred: status history timeline (incident_status_history table existence not confirmed)
+
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -42,6 +46,9 @@ export default function IncidentDetailPage() {
   const [loading, setLoading] = useState(true)
   const [newComment, setNewComment] = useState('')
   const [posting, setPosting] = useState(false)
+  const [employees, setEmployees] = useState<{ id: string; name: string; surname: string }[]>([])
+  const [showAssignModal, setShowAssignModal] = useState(false)
+  const [assigningEmpId, setAssigningEmpId] = useState('')
 
   useEffect(() => { load() }, [incidentId])
 
@@ -61,18 +68,45 @@ export default function IncidentDetailPage() {
     if (!incRes.data) { router.push('/dashboard/incidents'); return }
     setIncident(incRes.data as IncidentReport)
     setComments((commRes.data ?? []) as IncidentComment[])
+    const compId = (incRes.data as Record<string, unknown>).company_id as string | undefined
+    if (compId) {
+      const empRes = await supabase.from('employees').select('id, name, surname')
+        .eq('company_id', compId).eq('is_active', true).order('name')
+      setEmployees((empRes.data ?? []) as { id: string; name: string; surname: string }[])
+    }
     setLoading(false)
   }
 
-  async function setStatus(newStatus: string) {
+  async function setStatus(newStatus: string, resolutionNotes?: string) {
     const supabase = createClient()
-    await supabase.from('incident_reports').update({ status: newStatus }).eq('id', incidentId)
-    setIncident(prev => prev ? { ...prev, status: newStatus } : prev)
+    const payload: Record<string, unknown> = { status: newStatus }
+    if (resolutionNotes !== undefined) payload.resolution_notes = resolutionNotes
+    await supabase.from('incident_reports').update(payload).eq('id', incidentId)
+    setIncident(prev => prev ? {
+      ...prev,
+      status: newStatus,
+      ...(resolutionNotes !== undefined ? { resolution_notes: resolutionNotes } : {}),
+    } : prev)
   }
 
-  async function closeIncident() {
-    if (!window.confirm('Close this incident?')) return
-    await setStatus('closed')
+  async function resolveOrClose(newStatus: 'resolved' | 'closed') {
+    const label = newStatus === 'closed' ? 'close' : 'resolve'
+    const notes = window.prompt(`Resolution notes (${label} incident, optional):`)
+    if (notes === null) return
+    await setStatus(newStatus, notes)
+  }
+
+  async function assignIncident() {
+    const supabase = createClient()
+    await supabase.from('incident_reports').update({ assigned_to: assigningEmpId || null }).eq('id', incidentId)
+    const emp = employees.find(e => e.id === assigningEmpId)
+    setIncident(prev => prev ? {
+      ...prev,
+      assigned_to: assigningEmpId || null,
+      employees: emp ? { name: emp.name, surname: emp.surname } : null,
+    } : prev)
+    setShowAssignModal(false)
+    setAssigningEmpId('')
   }
 
   async function addComment() {
@@ -178,7 +212,8 @@ export default function IncidentDetailPage() {
             </p>
           </div>
           {canManage && (
-            <button className="bg-surface-elevated border border-border text-text-primary rounded-lg px-3 py-1.5 text-[12px] hover:bg-background transition-colors">
+            <button onClick={() => { setAssigningEmpId(incident.assigned_to ?? ''); setShowAssignModal(true) }}
+              className="bg-surface-elevated border border-border text-text-primary rounded-lg px-3 py-1.5 text-[12px] hover:bg-background transition-colors">
               Assign
             </button>
           )}
@@ -188,8 +223,8 @@ export default function IncidentDetailPage() {
         {canManage && (
           <div className="flex gap-2">
             <button onClick={() => setStatus('investigating')} className="btn-outlined text-[11px] h-9 px-3">Investigating</button>
-            <button onClick={() => setStatus('resolved')}      className="btn-outlined text-[11px] h-9 px-3">Resolved</button>
-            <button onClick={closeIncident}                    className="btn-primary  text-[11px] h-9 px-3">Close</button>
+            <button onClick={() => resolveOrClose('resolved')} className="btn-outlined text-[11px] h-9 px-3">Resolved</button>
+            <button onClick={() => resolveOrClose('closed')}   className="btn-primary  text-[11px] h-9 px-3">Close</button>
           </div>
         )}
 
@@ -220,6 +255,29 @@ export default function IncidentDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* Assign employee modal */}
+      {showAssignModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-surface rounded-xl shadow-lg w-full max-w-sm p-5 space-y-3">
+            <h3 className="font-semibold text-text-primary">Assign Incident</h3>
+            <select value={assigningEmpId} onChange={e => setAssigningEmpId(e.target.value)}
+              className="dark-entry w-full appearance-none">
+              <option value="">Unassigned</option>
+              {employees.map(e => (
+                <option key={e.id} value={e.id}>{e.name} {e.surname}</option>
+              ))}
+            </select>
+            {employees.length === 0 && (
+              <p className="text-text-secondary text-[12px]">No employees loaded — save the incident first.</p>
+            )}
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setShowAssignModal(false)} className="btn-outlined h-9 px-4 text-[13px]">Cancel</button>
+              <button onClick={assignIncident} className="btn-primary h-9 px-4 text-[13px]">Assign</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -1,5 +1,9 @@
 'use client'
 
+// AUDIT MIS-2026-00013: Found 1 gap vs HrContractorDetailsViewModel.
+// Fixed: partner_kind + registration_number now loaded in load() and persisted in handleSave()
+// Deferred: activity feed (get_contractor_activity_feed RPC not confirmed), quote approve/reject workflow
+
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -182,6 +186,9 @@ export default function ContractorDetailPage() {
     setAddress(cont.address ?? '')
     setNotes(cont.notes ?? '')
     setCompliancePack(cont.compliance_pack ?? '')
+    const _raw = cont as unknown as Record<string, unknown>
+    setPartnerKind((_raw.partner_kind as string) ?? '')
+    setRegNumber((_raw.registration_number as string) ?? '')
 
     setAccHolder(cont.account_holder_name ?? '')
     setPayBankName(cont.bank_name ?? '')
@@ -284,6 +291,8 @@ export default function ContractorDetailPage() {
         is_banking_verified:         bankingVerified,
         payment_hold:                paymentHold,
         compliance_hold:             complianceHold,
+        ...( partnerKind ? { partner_kind: partnerKind } : {} ),
+        ...( regNumber.trim() ? { registration_number: regNumber.trim() } : {} ),
       })
       .eq('id', contractorId)
 

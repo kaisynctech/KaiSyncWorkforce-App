@@ -1,5 +1,9 @@
 'use client'
 
+// AUDIT MIS-2026-00013: Found 1 minor gap vs HrWorkTeamDetailsViewModel.
+// Fixed: hasMixedBranches now computed from actual member branch data instead of hardcoded false
+// Deferred: branch cross-warning UX detail (requires branch data loaded per member)
+
 import { useCallback, useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -32,7 +36,12 @@ export default function WorkTeamDetailPage() {
   const [showAddMember, setShowAddMember] = useState(false)
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('')
 
-  const hasMixedBranches = false // computed from members if needed
+  const hasMixedBranches = (() => {
+    const branchIds = members
+      .map(m => (m.employee as Record<string, unknown> | undefined)?.branch_id)
+      .filter(Boolean)
+    return new Set(branchIds).size > 1
+  })()
 
   const load = useCallback(async () => {
     const supabase = createClient()
@@ -48,7 +57,7 @@ export default function WorkTeamDetailPage() {
 
     const { data } = await supabase
       .from('work_teams')
-      .select('*, members:work_team_members(id, employee_id, is_leader, employee:employees(name, surname))')
+      .select('*, members:work_team_members(id, employee_id, is_leader, employee:employees(name, surname, branch_id))')
       .eq('id', teamId)
       .single()
 

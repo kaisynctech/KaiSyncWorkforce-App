@@ -1,5 +1,9 @@
 'use client'
 
+// AUDIT MIS-2026-00013: Found 1 gap vs ClientDetailViewModel.
+// Fixed: Jobs tab now loads and renders client jobs table (was ComingSoon)
+// Deferred: kanban board view for projects tab (projects board already marked ComingSoon)
+
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -16,6 +20,16 @@ const CLIENT_TYPES = ['individual', 'company', 'government', 'ngo']
 const CLIENT_TYPE_LABELS: Record<string, string> = {
   individual: 'Individual', company: 'Company', government: 'Government', ngo: 'NGO',
 }
+type ClientJob = { id: string; title: string; status: string; created_at: string }
+
+const JOB_STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
+  open:        { bg: '#DBEAFE', fg: '#1E40AF' },
+  scheduled:   { bg: '#E0E7FF', fg: '#3730A3' },
+  in_progress: { bg: '#FEF3C7', fg: '#92400E' },
+  completed:   { bg: '#DCFCE7', fg: '#166534' },
+  cancelled:   { bg: '#E5E7EB', fg: '#6B7280' },
+}
+
 const PROJECT_STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
   draft:       { bg: '#E5E7EB', fg: '#6B7280' },
   sent:        { bg: '#DBEAFE', fg: '#1E40AF' },
@@ -38,6 +52,7 @@ export default function ClientDetailPage() {
   const [client, setClient] = useState<Client | null>(null)
   const [sites, setSites] = useState<Site[]>([])
   const [projects, setProjects] = useState<Project[]>([])
+  const [clientJobs, setClientJobs] = useState<ClientJob[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -71,10 +86,11 @@ export default function ClientDetailPage() {
 
     if (isNew) { setLoading(false); return }
 
-    const [cRes, sRes, pRes] = await Promise.all([
+    const [cRes, sRes, pRes, jRes] = await Promise.all([
       supabase.from('clients').select('*').eq('id', clientId).single(),
       supabase.from('sites').select('*').eq('client_id', clientId),
       supabase.from('projects').select('*, employees(name, surname)').eq('client_id', clientId).order('created_at', { ascending: false }),
+      supabase.from('jobs').select('id, title, status, created_at').eq('client_id', clientId).order('created_at', { ascending: false }),
     ])
 
     if (!cRes.data) { router.push('/dashboard/clients'); return }
@@ -92,6 +108,7 @@ export default function ClientDetailPage() {
 
     setSites((sRes.data ?? []) as Site[])
     setProjects((pRes.data ?? []) as Project[])
+    setClientJobs((jRes.data ?? []) as ClientJob[])
     setLoading(false)
   }
 
@@ -363,7 +380,50 @@ export default function ClientDetailPage() {
         )}
 
         {/* ── JOBS ── */}
-        {showRelatedTabs && tab === 'jobs' && <ComingSoon />}
+        {showRelatedTabs && tab === 'jobs' && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="section-label">JOBS</p>
+              <button onClick={() => router.push(`/dashboard/jobs/new?clientId=${clientId}`)}
+                className="btn-primary h-9 px-[14px] text-[13px]">+ Job</button>
+            </div>
+            <div className="overflow-x-auto bg-surface rounded-lg border border-divider">
+              <table style={{ minWidth: 420 }} className="w-full">
+                <thead>
+                  <tr className="bg-surface-elevated border-b border-divider">
+                    <th className="data-th">Title</th>
+                    <th style={{ width: 120 }} className="data-th text-center">Status</th>
+                    <th style={{ width: 72  }} className="data-th"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {clientJobs.length === 0 ? (
+                    <tr><td colSpan={3} className="text-text-secondary text-center py-6 text-[13px]">No jobs for this client.</td></tr>
+                  ) : (
+                    clientJobs.map(j => {
+                      const sc = JOB_STATUS_COLORS[j.status] ?? { bg: '#E5E7EB', fg: '#6B7280' }
+                      return (
+                        <tr key={j.id} className="bg-surface border-b border-divider last:border-0">
+                          <td className="data-td text-text-primary text-[13px] truncate">{j.title}</td>
+                          <td className="data-td text-center">
+                            <span className="inline-block rounded-lg px-2 py-[3px] text-[10px] font-medium"
+                              style={{ backgroundColor: sc.bg, color: sc.fg }}>
+                              {j.status.replace('_', ' ')}
+                            </span>
+                          </td>
+                          <td className="data-td">
+                            <button onClick={() => router.push(`/dashboard/jobs/${j.id}`)}
+                              className="text-primary text-[11px] font-medium h-[30px]">Open →</button>
+                          </td>
+                        </tr>
+                      )
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

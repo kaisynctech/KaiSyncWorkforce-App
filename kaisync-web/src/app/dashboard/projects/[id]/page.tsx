@@ -1,5 +1,9 @@
 'use client'
 
+// AUDIT MIS-2026-00013: Found 1 gap vs HrProjectDetailViewModel.
+// Fixed: Pipeline tab now shows visual stage chip selector (replaced ComingSoon)
+// Deferred: client messaging thread, payment recording/receipt attachment, post-update timeline entries
+
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -562,8 +566,43 @@ export default function ProjectDetailPage() {
           </div>
         )}
 
-        {/* ── PIPELINE & PAYMENTS ── */}
-        {!isNew && (tab === 'pipeline' || tab === 'payments') && <ComingSoon />}
+        {/* ── PIPELINE ── */}
+        {!isNew && tab === 'pipeline' && (
+          <div className="space-y-4">
+            <p className="section-label">PIPELINE STAGE</p>
+            <p className="text-text-secondary text-[12px]">Select a stage below, then click Save to update the project status.</p>
+            <div className="flex flex-wrap gap-2">
+              {STATUS_OPTIONS.map((s, i) => {
+                const isCurrent = status === s
+                const isPast    = STATUS_OPTIONS.indexOf(status) > i && status !== 'lost'
+                return (
+                  <button
+                    key={s}
+                    onClick={() => setStatus(s)}
+                    className="flex items-center gap-2 rounded-xl px-4 h-10 text-[13px] font-semibold transition-colors border shrink-0"
+                    style={{
+                      backgroundColor: isCurrent ? '#1D4ED8' : isPast ? '#0F2918' : '#1E293B',
+                      borderColor:     isCurrent ? '#3B82F6' : isPast ? '#166534' : '#334155',
+                      color:           isCurrent ? '#FFFFFF'  : isPast ? '#4ADE80' : '#94A3B8',
+                    }}
+                  >
+                    {isPast  && <span className="material-icons text-[14px]" style={{ color: '#4ADE80' }}>check_circle</span>}
+                    {isCurrent && <span className="w-2 h-2 rounded-full bg-white shrink-0" />}
+                    {s.replace('_', ' ')}
+                  </button>
+                )
+              })}
+            </div>
+            {project?.status !== status && (
+              <p className="text-[12px]" style={{ color: '#FCD34D' }}>
+                Stage changed — click Save in the header to persist.
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* ── PAYMENTS ── */}
+        {!isNew && tab === 'payments' && <ComingSoon />}
       </div>
     </div>
   )

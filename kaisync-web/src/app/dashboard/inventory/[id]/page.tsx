@@ -1,5 +1,9 @@
 'use client'
 
+// AUDIT MIS-2026-00013: Found 1 gap vs HrInventoryDetailViewModel.
+// Fixed: Allocate button wired with job picker modal calling allocate_inventory_to_job RPC
+// Deferred: usage history list (no confirmed table name)
+
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -24,6 +28,11 @@ export default function InventoryDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [companyId, setCompanyId] = useState<string | null>(null)
+  const [showAllocate, setShowAllocate] = useState(false)
+  const [openJobs, setOpenJobs] = useState<{ id: string; title: string }[]>([])
+  const [selectedJobId, setSelectedJobId] = useState('')
+  const [allocateQty, setAllocateQty] = useState('1')
+  const [allocating, setAllocating] = useState(false)
 
   // Form state
   const [name, setName] = useState('')
@@ -80,6 +89,40 @@ export default function InventoryDetailPage() {
     setIsActive(item.is_active ?? true)
     setSupplierId(item.supplier_id ?? '')
     setLoading(false)
+  }
+
+  async function openAllocateModal() {
+    if (!companyId) return
+    const supabase = createClient()
+    const { data } = await supabase
+      .from('jobs')
+      .select('id, title')
+      .eq('company_id', companyId)
+      .in('status', ['open', 'scheduled', 'in_progress'])
+      .order('created_at', { ascending: false })
+    setOpenJobs((data ?? []) as { id: string; title: string }[])
+    setSelectedJobId('')
+    setAllocateQty('1')
+    setShowAllocate(true)
+  }
+
+  async function doAllocate() {
+    if (!selectedJobId) return
+    const qty = parseFloat(allocateQty)
+    if (!qty || qty <= 0) { setError('Enter a valid quantity.'); return }
+    setAllocating(true)
+    const supabase = createClient()
+    const { error: e } = await supabase.rpc('allocate_inventory_to_job', {
+      p_company_id: companyId,
+      p_job_id: selectedJobId,
+      p_item_id: itemId,
+      p_quantity: qty,
+      p_unit_cost: parseFloat(unitCost) || 0,
+    })
+    if (e) { setError(e.message); setAllocating(false); return }
+    setQuantityOnHand(prev => String(Math.max(0, (parseFloat(prev) || 0) - qty)))
+    setShowAllocate(false)
+    setAllocating(false)
   }
 
   async function save() {
@@ -213,11 +256,40 @@ export default function InventoryDetailPage() {
 
         {/* Allocate button (hidden for new items) */}
         {!isNew && (
-          <button className="btn-outlined w-full h-11 text-[13px]">
+          <button onClick={openAllocateModal} className="btn-outlined w-full h-11 text-[13px]">
             Allocate stock to open job
           </button>
         )}
       </div>
+
+      {/* Allocate to job modal */}
+      {showAllocate && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-surface rounded-xl shadow-lg w-full max-w-sm p-5 space-y-3">
+            <h3 className="font-semibold text-text-primary">Allocate to Job</h3>
+            <select value={selectedJobId} onChange={e => setSelectedJobId(e.target.value)}
+              className="dark-entry w-full appearance-none">
+              <option value="">Select job…</option>
+              {openJobs.map(j => <option key={j.id} value={j.id}>{j.title}</option>)}
+            </select>
+            {openJobs.length === 0 && (
+              <p className="text-text-secondary text-[12px]">No open jobs found for this company.</p>
+            )}
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-text-secondary">Quantity</label>
+              <input type="number" value={allocateQty} onChange={e => setAllocateQty(e.target.value)}
+                min="1" step="1" className="dark-entry w-full" />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setShowAllocate(false)} className="btn-outlined h-9 px-4 text-[13px]">Cancel</button>
+              <button onClick={doAllocate} disabled={!selectedJobId || allocating}
+                className="btn-primary h-9 px-4 text-[13px] disabled:opacity-50">
+                {allocating ? 'Allocating…' : 'Allocate'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
