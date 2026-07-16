@@ -24,11 +24,37 @@ export async function proxy(request: NextRequest) {
   )
 
   const { data: { user } } = await supabase.auth.getUser()
+  const pathname = request.nextUrl.pathname
 
-  if (!user && request.nextUrl.pathname.startsWith('/dashboard')) {
+  if (!user && pathname.startsWith('/dashboard')) {
     const url = request.nextUrl.clone()
     url.pathname = '/auth/hr-sign-in'
     return NextResponse.redirect(url)
+  }
+
+  // Access-level routing guard
+  if (user && pathname.startsWith('/dashboard')) {
+    const { data: emp } = await supabase
+      .from('employees')
+      .select('access_level, is_active, registration_status')
+      .eq('user_id', user.id)
+      .maybeSingle()
+
+    const isEmployee = emp?.access_level === 'employee'
+    const isHR = emp?.access_level &&
+      ['owner', 'hr_admin', 'admin', 'hr', 'manager'].includes(emp.access_level)
+
+    // Pure employees can only access employee portal + shared pages
+    if (isEmployee &&
+        !pathname.startsWith('/dashboard/employee') &&
+        !pathname.startsWith('/dashboard/profile') &&
+        !pathname.startsWith('/dashboard/messages')) {
+      return NextResponse.redirect(new URL('/dashboard/employee/overview', request.url))
+    }
+    // HR/managers cannot access employee portal routes
+    if (isHR && pathname.startsWith('/dashboard/employee')) {
+      return NextResponse.redirect(new URL('/dashboard/overview', request.url))
+    }
   }
 
   return supabaseResponse
