@@ -1,14 +1,34 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { FilterChip } from '@/components/ui/FilterChip'
-import type { EmployeePayment } from '@/types/database'
+
+// Matches actual `payment_approvals` table columns
+type PayrollRecord = {
+  id: string
+  employee_id: string
+  company_id: string
+  period_start: string
+  period_end: string
+  regular_hours: number | null
+  overtime_hours: number | null
+  gross_pay: number
+  deductions: number
+  net_pay: number
+  status: string
+  shared_with_employee: boolean | null
+  pay_basis: string | null
+  created_at: string | null
+  employee?: { name: string; surname: string }
+}
 
 type StatusFilter = 'all' | 'pending' | 'approved' | 'paid'
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const fmtR = (n: number) =>
   `R ${(n ?? 0).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -32,66 +52,129 @@ function firstOfMonthStr() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
 }
 
+function fmtPeriod(start: string, end: string) {
+  const s = new Date(`${start}T00:00:00`)
+  const e = new Date(`${end}T00:00:00`)
+  const sLabel = s.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short' })
+  const eLabel = e.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })
+  return `${sLabel} – ${eLabel}`
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
 export default function PayrollPage() {
   const router = useRouter()
-  const [payments, setPayments] = useState<EmployeePayment[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [dateFrom, setDateFrom] = useState(firstOfMonthStr)
-  const [dateTo, setDateTo] = useState(todayDateStr)
-  const [search, setSearch] = useState('')
+
+  // persist company across re-renders without triggering re-fetch
+  const companyIdRef = useRef<string | null>(null)
+
+  const [payments,     setPayments]     = useState<PayrollRecord[]>([])
+  const [loading,      setLoading]      = useState(true)
+  const [error,        setError]        = useState<string | null>(null)
+  const [success,      setSuccess]      = useState<string | null>(null)
+  const [dateFrom,     setDateFrom]     = useState(firstOfMonthStr)
+  const [dateTo,       setDateTo]       = useState(todayDateStr)
+  const [search,       setSearch]       = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
-  const [isLocked, setIsLocked] = useState(false)
+  const [isLocked,     setIsLocked]     = useState(false)
+  const [generating,   setGenerating]   = useState(false)
 
-  const load = useCallback(async () => {
+  // Reload whenever the date range changes
+  useEffect(() => { loadPayroll(dateFrom, dateTo) }, [dateFrom, dateTo])
+
+  async function loadPayroll(from: string, to: string) {
     setLoading(true)
+    setSuccess(null)
     const supabase = createClient()
-    const member = await resolveCurrentMember(supabase)
-    if (!member) { setError('not_linked'); setLoading(false); return }
 
-    const { data } = await supabase
-      .from('employee_payments')
-      .select('*, employee:employees(name, surname)')
-      .eq('company_id', member.companyId)
-      .order('created_at', { ascending: false })
+    // Resolve company once
+    if (!companyIdRef.current) {
+      const member = await resolveCurrentMember(supabase)
+      if (!member) { setError('not_linked'); setLoading(false); return }
+      companyIdRef.current = member.companyId
+    }
 
-    setPayments((data ?? []) as EmployeePayment[])
+    const cid = companyIdRef.current!
+
+    const [{ data: paymentsData }, { data: locks }] = await Promise.all([
+      supabase
+        .from('payment_approvals')
+        .select('*, employee:employees(name, surname)')
+        .eq('company_id', cid)
+        .gte('period_start', from)
+        .lte('period_end', to)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('payroll_period_locks')
+        .select('period_start, period_end')
+        .eq('company_id', cid),
+    ])
+
+    setPayments((paymentsData ?? []) as PayrollRecord[])
+    setIsLocked(
+      (locks ?? []).some(l => l.period_start === from && l.period_end === to)
+    )
     setLoading(false)
-  }, [])
+  }
 
-  useEffect(() => { load() }, [load])
+  async function toggleLock() {
+    const cid = companyIdRef.current
+    if (!cid) return
+    const supabase = createClient()
+    if (isLocked) {
+      await supabase.rpc('hr_unlock_payroll_period', {
+        p_company_id:   cid,
+        p_period_start: dateFrom,
+        p_period_end:   dateTo,
+      })
+    } else {
+      await supabase.rpc('hr_lock_payroll_period', {
+        p_company_id:   cid,
+        p_period_start: dateFrom,
+        p_period_end:   dateTo,
+      })
+    }
+    await loadPayroll(dateFrom, dateTo)
+  }
+
+  async function handleGenerate() {
+    const cid = companyIdRef.current
+    if (!cid) return
+    if (!window.confirm(`Generate payroll for ${dateFrom} to ${dateTo}?`)) return
+    setGenerating(true)
+    setError(null)
+    const supabase = createClient()
+    const { data, error: rpcErr } = await supabase.rpc('hr_generate_payroll', {
+      p_company_id:   cid,
+      p_period_start: dateFrom,
+      p_period_end:   dateTo,
+    })
+    if (rpcErr) {
+      setError(rpcErr.message)
+    } else {
+      setSuccess(`Generated ${data ?? 0} payslip${(data ?? 0) !== 1 ? 's' : ''}`)
+      await loadPayroll(dateFrom, dateTo)
+    }
+    setGenerating(false)
+  }
 
   async function approvePayslip(id: string) {
     const supabase = createClient()
     try { await supabase.rpc('approve_payslip', { payment_id: id }) } catch {}
-    load()
+    loadPayroll(dateFrom, dateTo)
   }
 
   async function rejectPayslip(id: string) {
     const supabase = createClient()
     try { await supabase.rpc('reject_payslip', { payment_id: id }) } catch {}
-    load()
+    loadPayroll(dateFrom, dateTo)
   }
 
   async function releasePayslip(id: string) {
     const supabase = createClient()
     try { await supabase.rpc('release_payslip_to_employee', { payment_id: id }) } catch {}
-    load()
+    loadPayroll(dateFrom, dateTo)
   }
-
-  const filtered = payments.filter(p => {
-    if (statusFilter !== 'all' && p.status !== statusFilter) return false
-    if (search) {
-      const q = search.toLowerCase()
-      const emp = p.employee as { name: string; surname: string } | undefined
-      const name = emp ? `${emp.name} ${emp.surname}`.toLowerCase() : ''
-      if (!name.includes(q) && !(p.period_label ?? '').toLowerCase().includes(q)) return false
-    }
-    return true
-  })
-
-  const pendingGross  = filtered.filter(p => p.status === 'pending').reduce((s, p) => s + (p.gross_pay ?? 0), 0)
-  const approvedGross = filtered.filter(p => p.status === 'approved' || p.status === 'paid').reduce((s, p) => s + (p.gross_pay ?? 0), 0)
 
   async function approveAll() {
     const pending = filtered.filter(p => p.status === 'pending')
@@ -99,8 +182,29 @@ export default function PayrollPage() {
     for (const p of pending) {
       try { await supabase.rpc('approve_payslip', { payment_id: p.id }) } catch {}
     }
-    load()
+    loadPayroll(dateFrom, dateTo)
   }
+
+  // ── Derived ────────────────────────────────────────────────────────────────
+
+  const filtered = payments.filter(p => {
+    if (statusFilter !== 'all' && p.status !== statusFilter) return false
+    if (search) {
+      const q   = search.toLowerCase()
+      const emp = p.employee
+      const name = emp ? `${emp.name} ${emp.surname}`.toLowerCase() : ''
+      const period = fmtPeriod(p.period_start, p.period_end).toLowerCase()
+      if (!name.includes(q) && !period.includes(q)) return false
+    }
+    return true
+  })
+
+  const pendingGross  = filtered.filter(p => p.status === 'pending')
+    .reduce((s, p) => s + (p.gross_pay ?? 0), 0)
+  const approvedGross = filtered.filter(p => p.status === 'approved' || p.status === 'paid')
+    .reduce((s, p) => s + (p.gross_pay ?? 0), 0)
+
+  // ── Guards ─────────────────────────────────────────────────────────────────
 
   if (error === 'not_linked') return (
     <div className="flex items-center justify-center h-full">
@@ -115,6 +219,8 @@ export default function PayrollPage() {
     </div>
   )
 
+  // ── Render ─────────────────────────────────────────────────────────────────
+
   return (
     <div className="h-full flex flex-col">
       {/* ── Header ── */}
@@ -125,18 +231,40 @@ export default function PayrollPage() {
             <button className="bg-surface-dark rounded-md h-9 w-9 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors">
               <span className="material-icons text-[18px]">settings</span>
             </button>
-            <button onClick={() => setIsLocked(l => !l)} className="bg-surface-dark rounded-md h-9 w-9 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors">
+            {/* Lock/Unlock — writes to payroll_period_locks */}
+            <button
+              onClick={toggleLock}
+              title={isLocked ? 'Unlock period' : 'Lock period'}
+              className="bg-surface-dark rounded-md h-9 w-9 flex items-center justify-center transition-colors hover:text-text-primary"
+              style={{ color: isLocked ? '#DC2626' : undefined }}
+            >
               <span className="material-icons text-[18px]">{isLocked ? 'lock' : 'lock_open'}</span>
             </button>
-            {(['Register', 'IRP5', 'Release All', 'Generate'] as const).map(lbl => (
+            {(['Register', 'IRP5', 'Release All'] as const).map(lbl => (
               <button key={lbl} className="h-9 px-3 text-[12px] rounded-md bg-surface-dark border border-border text-text-secondary hover:text-text-primary transition-colors">{lbl}</button>
             ))}
+            {/* Generate — calls hr_generate_payroll RPC */}
+            <button
+              onClick={handleGenerate}
+              disabled={generating || isLocked}
+              className="h-9 px-3 text-[12px] rounded-md bg-surface-dark border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
+            >
+              {generating ? 'Generating…' : 'Generate'}
+            </button>
             <button onClick={approveAll} className="btn-primary h-9 px-3 text-[12px]">Approve All</button>
             {(['Bank CSV', 'Export'] as const).map(lbl => (
               <button key={lbl} className="h-9 px-3 text-[12px] rounded-md bg-surface-dark border border-border text-text-secondary hover:text-text-primary transition-colors">{lbl}</button>
             ))}
           </div>
         </div>
+
+        {/* Feedback banners */}
+        {success && (
+          <p className="text-success text-[13px] font-medium">{success}</p>
+        )}
+        {error && error !== 'not_linked' && (
+          <p className="text-error text-[13px] font-medium">{error}</p>
+        )}
 
         {/* KPI tiles */}
         <div className="grid grid-cols-2 gap-4">
@@ -150,7 +278,7 @@ export default function PayrollPage() {
           </div>
         </div>
 
-        {/* Date range */}
+        {/* Date range — changes trigger DB query reload */}
         <div className="grid grid-cols-2 gap-4">
           <div className="flex flex-col gap-1">
             <label className="text-[11px] text-text-secondary font-medium">From</label>
@@ -179,7 +307,12 @@ export default function PayrollPage() {
             />
           </div>
           {(['all', 'pending', 'approved', 'paid'] as StatusFilter[]).map(s => (
-            <FilterChip key={s} label={s.charAt(0).toUpperCase() + s.slice(1)} active={statusFilter === s} onClick={() => setStatusFilter(s)} />
+            <FilterChip
+              key={s}
+              label={s.charAt(0).toUpperCase() + s.slice(1)}
+              active={statusFilter === s}
+              onClick={() => setStatusFilter(s)}
+            />
           ))}
         </div>
       </div>
@@ -191,7 +324,7 @@ export default function PayrollPage() {
             <thead>
               <tr className="bg-surface-elevated border-b border-divider">
                 <th style={{ width: 150 }} className="data-th cursor-pointer select-none">Employee</th>
-                <th style={{ width: 120 }} className="data-th">Period</th>
+                <th style={{ width: 160 }} className="data-th">Period</th>
                 <th style={{ width: 85 }}  className="data-th text-right cursor-pointer select-none">Gross</th>
                 <th style={{ width: 85 }}  className="data-th text-right">Deduct.</th>
                 <th style={{ width: 85 }}  className="data-th text-right cursor-pointer select-none">Net</th>
@@ -208,8 +341,9 @@ export default function PayrollPage() {
                 <tr><td colSpan={9} className="text-center py-10 text-text-secondary text-[13px]">No payslips found.</td></tr>
               ) : (
                 filtered.map(p => {
-                  const emp = p.employee as { name: string; surname: string } | undefined
+                  const emp     = p.employee
                   const empName = emp ? `${emp.name} ${emp.surname}` : '—'
+                  const totalHours = (p.regular_hours ?? 0) + (p.overtime_hours ?? 0)
                   return (
                     <tr
                       key={p.id}
@@ -217,16 +351,18 @@ export default function PayrollPage() {
                       className="bg-surface-card border-b border-divider cursor-pointer hover:bg-background transition-colors"
                     >
                       <td className="data-td text-text-primary text-sm font-medium">{empName}</td>
-                      <td className="data-td text-text-secondary text-sm">{p.period_label}</td>
+                      <td className="data-td text-text-secondary text-sm">
+                        {fmtPeriod(p.period_start, p.period_end)}
+                      </td>
                       <td className="data-td text-sm text-right">{fmtR(p.gross_pay)}</td>
                       <td className="data-td text-text-secondary text-sm text-right">{fmtR(p.deductions)}</td>
                       <td className="data-td text-text-primary text-sm text-right font-medium">{fmtR(p.net_pay)}</td>
-                      <td className="data-td text-text-secondary text-sm">{(p.hours ?? 0).toFixed(1)}h</td>
+                      <td className="data-td text-text-secondary text-sm">{totalHours.toFixed(1)}h</td>
                       <td className="data-td">
                         <StatusBadge label={p.status} bg={stBg(p.status)} fg={stFg(p.status)} />
                       </td>
-                      <td className="data-td text-[11px]" style={{ color: p.is_visible_to_employee ? '#16A34A' : '#6B7280' }}>
-                        {p.is_visible_to_employee ? 'Shown' : 'Hidden'}
+                      <td className="data-td text-[11px]" style={{ color: p.shared_with_employee ? '#16A34A' : '#6B7280' }}>
+                        {p.shared_with_employee ? 'Shown' : 'Hidden'}
                       </td>
                       <td className="data-td">
                         <div
@@ -240,11 +376,14 @@ export default function PayrollPage() {
                             Open
                           </button>
                           {p.status === 'pending' && (
-                            <button onClick={() => approvePayslip(p.id)} className="btn-primary h-[30px] px-2 text-[11px]">
+                            <button
+                              onClick={() => approvePayslip(p.id)}
+                              className="btn-primary h-[30px] px-2 text-[11px]"
+                            >
                               Approve
                             </button>
                           )}
-                          {p.can_release_to_employee && (
+                          {p.shared_with_employee === false && p.status === 'approved' && (
                             <button
                               onClick={() => releasePayslip(p.id)}
                               className="h-[30px] px-2 text-[11px] rounded-md text-white"

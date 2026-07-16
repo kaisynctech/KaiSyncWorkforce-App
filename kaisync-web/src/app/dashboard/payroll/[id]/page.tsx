@@ -54,25 +54,28 @@ export default function PayslipDetailPage() {
   async function load() {
     setLoading(true)
     const supabase = createClient()
+    // Query payment_approvals (actual table); JSONB columns hold breakdown data
     const { data } = await supabase
-      .from('employee_payments')
-      .select('*, employee:employees(name, surname), earnings_lines(*), deduction_lines(*), ytd_totals(*), audit_entries(*)')
+      .from('payment_approvals')
+      .select('*, employee:employees(name, surname)')
       .eq('id', paymentId)
       .single()
 
     if (!data) { router.push('/dashboard/payroll'); return }
 
     const p = data as EmployeePayment & {
-      earnings_lines: PayrollLineItem[]
-      deduction_lines: PayrollLineItem[]
-      ytd_totals: YtdTotals | null
-      audit_entries: PayrollAuditEntry[]
+      earnings_breakdown:   PayrollLineItem[] | null
+      deductions_breakdown: PayrollLineItem[] | null
+      ytd_json:             YtdTotals | null
+      audit_log:            PayrollAuditEntry[] | null
+      leave_days:           number | null
+      working_days:         number | null
     }
     setPayment(p)
-    setEarningsLines(p.earnings_lines ?? [])
-    setDeductionLines(p.deduction_lines ?? [])
-    setYtd(p.ytd_totals ?? null)
-    setAuditEntries(p.audit_entries ?? [])
+    setEarningsLines(p.earnings_breakdown ?? [])
+    setDeductionLines(p.deductions_breakdown ?? [])
+    setYtd(p.ytd_json ?? null)
+    setAuditEntries(p.audit_log ?? [])
 
     setPayFullSalary(p.pay_full_base_salary ?? false)
     setWaivePenalties(p.waive_penalties ?? false)
@@ -89,18 +92,21 @@ export default function PayslipDetailPage() {
     if (!payment) return
     setBusy(true)
     const supabase = createClient()
+    // 1. Persist override fields to the row first
+    await supabase.from('payment_approvals').update({
+      pay_full_base_salary: payFullSalary,
+      waive_penalties:      waivePenalties,
+      manual_paye_override: manualPaye ? parseFloat(manualPaye) : null,
+      manual_adjustment:    extraDeduction ? parseFloat(extraDeduction) : null,
+      adjustment_note:      adjustmentNote || null,
+      bonus_amount:         bonusAmount ? parseFloat(bonusAmount) : null,
+      bonus_note:           bonusNote || null,
+    }).eq('id', paymentId)
+    // 2. Recalculate from time_punches
     try {
-      await supabase.rpc('recalculate_payslip', {
-        payment_id: paymentId,
-        overrides: {
-          pay_full_base_salary: payFullSalary,
-          waive_penalties: waivePenalties,
-          manual_paye_override: manualPaye ? parseFloat(manualPaye) : null,
-          manual_adjustment: extraDeduction ? parseFloat(extraDeduction) : null,
-          adjustment_note: adjustmentNote || null,
-          bonus_amount: bonusAmount ? parseFloat(bonusAmount) : null,
-          bonus_note: bonusNote || null,
-        },
+      await supabase.rpc('hr_recalculate_payslip', {
+        p_company_id: payment.company_id,
+        p_payment_id: paymentId,
       })
     } catch {}
     setBusy(false)
@@ -141,12 +147,16 @@ export default function PayslipDetailPage() {
           <table className="w-full">
             <tbody>
               <tr className="bg-surface-card border-b border-divider">
-                <td className="data-td text-text-primary text-[13px]">Days Worked</td>
-                <td className="data-td text-right text-[13px] w-[110px]">{payment.days_worked ?? 0}</td>
+                <td className="data-td text-text-primary text-[13px]">Working Days</td>
+                <td className="data-td text-right text-[13px] w-[110px]">
+                  {(payment as unknown as { working_days?: number }).working_days ?? 0}
+                </td>
               </tr>
               <tr className="bg-surface-card border-b border-divider">
-                <td className="data-td text-text-primary text-[13px]">Approved Leave</td>
-                <td className="data-td text-right text-[13px] w-[110px] text-text-primary">{payment.approved_leave ?? 0}</td>
+                <td className="data-td text-text-primary text-[13px]">Leave Days</td>
+                <td className="data-td text-right text-[13px] w-[110px] text-text-primary">
+                  {(payment as unknown as { leave_days?: number }).leave_days ?? 0}
+                </td>
               </tr>
               {(payment.absent_days ?? 0) > 0 && (
                 <tr className="bg-surface-card border-b border-divider">
@@ -193,17 +203,8 @@ export default function PayslipDetailPage() {
           </table>
         </div>
 
-        {/* Period locked banner */}
-        {payment.is_period_locked && (
-          <div className="rounded-xl p-4 border" style={{ backgroundColor: '#FEE2E2', borderColor: '#DC2626' }}>
-            <p className="text-sm" style={{ color: '#DC2626' }}>
-              This pay period is locked — recalculation and overrides are disabled.
-            </p>
-          </div>
-        )}
-
-        {/* HR Adjustments */}
-        {payment.can_edit_overrides && (
+        {/* HR Adjustments — shown when payslip is still pending */}
+        {payment.status === 'pending' && (
           <div className="card p-4 space-y-3">
             <p className="section-label">HR ADJUSTMENTS</p>
             <p className="text-text-secondary text-xs">
@@ -243,7 +244,7 @@ export default function PayslipDetailPage() {
         )}
 
         {/* Earnings Breakdown */}
-        {(payment.has_earnings_lines || earningsLines.length > 0) && (
+        {earningsLines.length > 0 && (
           <div className="card p-4 space-y-2">
             <p className="section-label">EARNINGS BREAKDOWN</p>
             <PayrollLineItemsTable items={earningsLines} />
@@ -251,7 +252,7 @@ export default function PayslipDetailPage() {
         )}
 
         {/* Deductions Breakdown */}
-        {(payment.has_deduction_lines || deductionLines.length > 0) && (
+        {deductionLines.length > 0 && (
           <div className="card p-4 space-y-2">
             <p className="section-label">DEDUCTIONS BREAKDOWN</p>
             <PayrollLineItemsTable items={deductionLines} showAsDeductions />
@@ -259,7 +260,7 @@ export default function PayslipDetailPage() {
         )}
 
         {/* Year to Date */}
-        {(payment.has_ytd || ytd) && ytd && (
+        {ytd && (
           <div className="card p-4 space-y-2">
             <p className="section-label">YEAR TO DATE (TAX YEAR)</p>
             <table className="w-full">
@@ -285,16 +286,8 @@ export default function PayslipDetailPage() {
           </div>
         )}
 
-        {/* Policy at generation */}
-        {(payment.has_policy_snapshot || payment.policy_snapshot_summary) && (
-          <div className="card p-4 space-y-2">
-            <p className="section-label">POLICY AT GENERATION</p>
-            <p className="text-text-secondary text-sm">{payment.policy_snapshot_summary}</p>
-          </div>
-        )}
-
         {/* Audit Trail */}
-        {(payment.has_audit_entries || auditEntries.length > 0) && auditEntries.length > 0 && (
+        {auditEntries.length > 0 && (
           <div className="card p-4 space-y-2">
             <p className="section-label">AUDIT TRAIL</p>
             <table className="w-full">
