@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { FormSelect } from '@/components/FormSelect'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import type { Project } from '@/types/database'
@@ -30,28 +31,38 @@ export default function ProjectsPage() {
   const [scope, setScope] = useState<'all' | 'mine'>('all')
   const [searchText, setSearchText] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [companyId, setCompanyId] = useState<string | null>(null)
+  const [myEmployeeId, setMyEmployeeId] = useState<string | null>(null)
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [scope])
 
   async function load() {
     setLoading(true)
     const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (user) setCurrentUserId(user.id)
+    const member = await resolveCurrentMember(supabase)
+    if (!member) { setLoading(false); return }
+    setCompanyId(member.companyId)
+    setMyEmployeeId(member.employeeId)
 
-    const { data } = await supabase
-      .from('projects')
+    let query = supabase
+      .from('client_deals')
       .select('*, clients(id, name), employees(id, name, surname)')
+      .eq('company_id', member.companyId)
       .order('created_at', { ascending: false })
 
+    if (scope === 'mine') {
+      query = query.eq('assignee_employee_id', member.employeeId)
+    }
+
+    const { data } = await query
     setProjects((data ?? []) as Project[])
     setLoading(false)
   }
 
   async function updateStatus(p: Project, newStatus: string) {
+    if (!companyId) return
     const supabase = createClient()
-    await supabase.from('projects').update({ status: newStatus }).eq('id', p.id)
+    await supabase.from('client_deals').update({ status: newStatus }).eq('id', p.id).eq('company_id', companyId)
     setProjects(prev => prev.map(x => x.id === p.id ? { ...x, status: newStatus } : x))
   }
 

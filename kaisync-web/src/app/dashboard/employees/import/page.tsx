@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import * as XLSX from 'xlsx'
 
 interface PreviewEmployee {
@@ -120,17 +121,74 @@ export default function ImportEmployeesPage() {
     setIsBusy(true)
     setErrorMessage(null)
     const supabase = createClient()
-    try {
-      await supabase.rpc('import_employees', { rows: preview.map(e => e.raw) })
+    const member = await resolveCurrentMember(supabase)
+    if (!member) { setErrorMessage('Account not linked. Cannot import.'); setIsBusy(false); return }
+
+    let imported = 0
+    const errs: string[] = []
+
+    for (const emp of preview) {
+      const get = (...keys: string[]) => {
+        for (const k of keys) {
+          const v = emp.raw[k] ?? emp.raw[k.toLowerCase()] ?? emp.raw[k.toUpperCase()]
+          if (v != null && String(v).trim()) return String(v).trim()
+        }
+        return null
+      }
+      const name    = get('Name', 'First Name', 'FirstName') ?? ''
+      const surname = get('Surname', 'Last Name', 'LastName') ?? ''
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase.from('employees') as any).insert({
+        company_id:              member.companyId,
+        name,
+        surname,
+        email:                   get('Email', 'Email Address') ?? null,
+        id_number:               get('ID Number', 'IDNumber', 'ID') ?? null,
+        position:                get('Position', 'Job Title', 'JobTitle', 'Role') ?? null,
+        department:              get('Department') ?? null,
+        access_level:            (get('Access Level', 'AccessLevel') ?? 'employee').toLowerCase(),
+        employment_type:         (get('Employment Type', 'EmploymentType', 'Type') ?? 'permanent').toLowerCase(),
+        worker_type:             'employee',
+        is_active:               true,
+        registration_status:     'active',
+        hourly_rate:             0,
+        daily_rate:              0,
+        weekly_rate:             0,
+        monthly_salary:          0,
+        overtime_rate:           0,
+        double_time_rate:        0,
+        daily_hours:             8,
+        work_days_weekly:        5,
+        uif_exempt:              false,
+        medical_aid_deduction:   0,
+        pension_deduction:       0,
+        union_deduction:         0,
+        pay_full_monthly_salary: false,
+        paye_fixed_amount:       0,
+        uif_fixed_amount:        0,
+        pin_reset_required:      false,
+        pin_failed_attempts:     0,
+        login_failed_attempts:   0,
+        is_account_locked:       false,
+      })
+      if (error) {
+        errs.push(`${name} ${surname}: ${error.message}`)
+      } else {
+        imported++
+      }
+    }
+
+    setIsBusy(false)
+    if (errs.length > 0) {
+      setErrorMessage(`${imported} imported; ${errs.length} failed:\n${errs.slice(0, 3).join('\n')}`)
+    } else {
       setPreview([])
       setShowPreview(false)
       setParseWarnings([])
       setParseErrors([])
-      alert(`${preview.length} employee(s) imported successfully.`)
-    } catch (e: unknown) {
-      setErrorMessage(e instanceof Error ? e.message : 'Import failed.')
+      alert(`${imported} employee(s) imported successfully.`)
     }
-    setIsBusy(false)
   }
 
   return (

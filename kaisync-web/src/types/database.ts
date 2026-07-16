@@ -190,17 +190,19 @@ export interface LeaveRequest {
   employees?: Pick<Employee, 'name' | 'surname' | 'employee_code'>
 }
 
-export interface TimesheetPunch {
+export interface TimePunch {
   id: string
   company_id: string
   employee_id: string
-  punch_in: string
-  punch_out: string | null
-  hours_worked: number | null
-  is_manual: boolean
+  type: 'in' | 'out'
+  date_time: string
+  latitude: number | null
+  longitude: number | null
+  address: string | null
+  job_id: string | null
   notes: string | null
   created_at: string
-  employees?: Pick<Employee, 'name' | 'surname' | 'employee_code'>
+  punched_by_manager_id: string | null
 }
 
 export interface SecuritySettings {
@@ -354,9 +356,10 @@ export interface JobMessage {
 export interface AppNotification {
   id: string
   company_id: string
+  recipient_employee_id: string | null
+  type: string | null
   title: string
   body: string
-  color: string | null
   is_read: boolean
   created_at: string
 }
@@ -391,7 +394,8 @@ export interface IncidentComment {
 export interface PaymentApproval {
   id: string
   company_id: string
-  period_label: string
+  period_start: string
+  period_end: string
   gross_pay: number
   status: string
   created_at: string

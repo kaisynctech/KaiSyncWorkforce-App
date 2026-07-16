@@ -219,6 +219,7 @@ export default function EmployeesPage() {
     const { data } = await supabase
       .from('work_teams')
       .select('*')
+      .eq('company_id', companyId)
       .order('name')
     setTeams((data ?? []) as WorkTeam[])
     setTeamsLoaded(true)
@@ -275,7 +276,7 @@ export default function EmployeesPage() {
       .from('employees')
       .select('id, name, surname, email, created_at')
       .eq('company_id', companyId)
-      .eq('is_active', false)
+      .eq('registration_status', 'pending')
       .order('created_at', { ascending: false })
     setPending((data ?? []) as PendingEmployee[])
     setPendingLoaded(true)
