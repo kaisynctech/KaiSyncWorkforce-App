@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Sidebar from '@/components/Sidebar'
+import EmployeeSidebar from '@/components/EmployeeSidebar'
 import type { Company, Employee } from '@/types/database'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -28,7 +29,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         .select('*, companies(*)')
         .eq('user_id', user.id)
         .eq('is_active', true)
-        .in('access_level', ['owner', 'manager', 'hr'])
         .maybeSingle()
 
       if (emp) {
@@ -40,6 +40,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
     init()
   }, [router])
+
+  const isEmployee = employee?.access_level === 'employee'
 
   if (loading) {
     return (
@@ -54,12 +56,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <Sidebar
-        open={sidebarOpen}
-        onToggle={() => setSidebarOpen(v => !v)}
-        company={company}
-        employee={employee}
-      />
+      {isEmployee ? (
+        <EmployeeSidebar
+          open={sidebarOpen}
+          onToggle={() => setSidebarOpen(v => !v)}
+          company={company}
+          employee={employee}
+        />
+      ) : (
+        <Sidebar
+          open={sidebarOpen}
+          onToggle={() => setSidebarOpen(v => !v)}
+          company={company}
+          employee={employee}
+        />
+      )}
 
       <div className="flex flex-col flex-1 overflow-hidden bg-background">
         {/* Top bar */}
