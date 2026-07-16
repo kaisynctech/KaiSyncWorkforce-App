@@ -66,7 +66,7 @@ export default function JobsPage() {
       .order('created_at', { ascending: false })
 
     if (scope === 'mine') {
-      query = query.eq('assigned_employee_id', member.employeeId)
+      query = query.or(`assignee_employee_id.eq.${member.employeeId},assigned_employee_ids.cs.{${member.employeeId}}`)
     }
 
     const { data } = await query

@@ -6,7 +6,31 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { cn, formatDate, formatDateTime, formatCurrency, getInitials } from '@/lib/utils'
-import type { Employee, LeaveRequest, TimesheetPunch, AccessLevel } from '@/types/database'
+import type { Employee, LeaveRequest, TimePunch, AccessLevel } from '@/types/database'
+
+type PairSession = {
+  punchIn: string
+  punchOut: string | null
+  hoursWorked: number
+}
+
+function buildPairs(raw: TimePunch[]): PairSession[] {
+  const pairs: PairSession[] = []
+  let i = 0
+  while (i < raw.length) {
+    const p = raw[i]
+    if (p.type === 'in') {
+      const nextOut = raw.slice(i + 1).find(x => x.type === 'out') ?? null
+      const hours = nextOut
+        ? (new Date(nextOut.date_time).getTime() - new Date(p.date_time).getTime()) / 3600000
+        : 0
+      pairs.push({ punchIn: p.date_time, punchOut: nextOut?.date_time ?? null, hoursWorked: hours })
+      i = nextOut ? raw.indexOf(nextOut) + 1 : raw.length
+    } else { i++ }
+  }
+  pairs.sort((a, b) => new Date(b.punchIn).getTime() - new Date(a.punchIn).getTime())
+  return pairs
+}
 
 type EmployeeDocument = {
   id: string
@@ -76,7 +100,7 @@ export default function EmployeeDetailPage() {
   const [customTo, setCustomTo] = useState('')
   const [appliedCustomFrom, setAppliedCustomFrom] = useState('')
   const [appliedCustomTo, setAppliedCustomTo] = useState('')
-  const [punches, setPunches] = useState<TimesheetPunch[]>([])
+  const [punches, setPunches] = useState<PairSession[]>([])
   const [punchLoading, setPunchLoading] = useState(false)
 
   // Leave
@@ -137,14 +161,14 @@ export default function EmployeeDetailPage() {
     nextDay.setDate(nextDay.getDate() + 1)
 
     const { data } = await supabase
-      .from('timesheet_punches')
-      .select('*')
+      .from('time_punches')
+      .select('id, employee_id, type, date_time')
       .eq('employee_id', employee.id)
-      .gte('punch_in', from)
-      .lt('punch_in', nextDay.toISOString().split('T')[0])
-      .order('punch_in', { ascending: false })
+      .gte('date_time', from)
+      .lt('date_time', nextDay.toISOString().split('T')[0])
+      .order('date_time', { ascending: true })
 
-    setPunches((data ?? []) as TimesheetPunch[])
+    setPunches(buildPairs((data ?? []) as TimePunch[]))
     setPunchLoading(false)
   }
 
@@ -191,9 +215,9 @@ export default function EmployeeDetailPage() {
   const initials = getInitials(fullName)
   const payrollReadiness = checkPayrollReadiness(employee)
 
-  const totalHours = punches.reduce((s, p) => s + (p.hours_worked ?? 0), 0)
+  const totalHours = punches.reduce((s, p) => s + p.hoursWorked, 0)
   const sessions = punches.length
-  const daysWorked = new Set(punches.map(p => p.punch_in.split('T')[0])).size
+  const daysWorked = new Set(punches.map(p => p.punchIn.split('T')[0])).size
   const payDue = (employee.hourly_rate ?? 0) * totalHours
 
   return (
@@ -374,15 +398,15 @@ export default function EmployeeDetailPage() {
               ) : punches.length === 0 ? (
                 <div className="py-8 text-center text-[13px] text-text-disabled">No records for this period</div>
               ) : (
-                punches.map(p => (
-                  <div key={p.id} className="flex items-center gap-3 px-4 py-3 border-b border-divider last:border-0">
+                punches.map((p, i) => (
+                  <div key={p.punchIn + i} className="flex items-center gap-3 px-4 py-3 border-b border-divider last:border-0">
                     <span className="material-icons text-text-disabled text-[18px]">schedule</span>
                     <div className="flex-1">
-                      <p className="text-[13px] text-text-primary">{formatDateTime(p.punch_in)}</p>
-                      {p.punch_out && <p className="text-[11px] text-text-secondary">→ {formatDateTime(p.punch_out)}</p>}
+                      <p className="text-[13px] text-text-primary">{formatDateTime(p.punchIn)}</p>
+                      {p.punchOut && <p className="text-[11px] text-text-secondary">→ {formatDateTime(p.punchOut)}</p>}
                     </div>
-                    {p.hours_worked != null && (
-                      <span className="text-[12px] font-semibold text-text-secondary">{p.hours_worked.toFixed(1)}h</span>
+                    {p.hoursWorked > 0 && (
+                      <span className="text-[12px] font-semibold text-text-secondary">{p.hoursWorked.toFixed(1)}h</span>
                     )}
                   </div>
                 ))
@@ -431,7 +455,7 @@ function PaymentsTab({ employee }: { employee: Employee }) {
     const d = new Date()
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
   })
-  const [punches, setPunches] = useState<TimesheetPunch[]>([])
+  const [punches, setPunches] = useState<PairSession[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -442,19 +466,19 @@ function PaymentsTab({ employee }: { employee: Employee }) {
       const start = new Date(year, mon - 1, 1).toISOString()
       const end = new Date(year, mon, 0, 23, 59, 59).toISOString()
       const { data } = await supabase
-        .from('timesheet_punches')
-        .select('*')
+        .from('time_punches')
+        .select('id, employee_id, type, date_time')
         .eq('employee_id', employee.id)
-        .gte('punch_in', start)
-        .lte('punch_in', end)
-        .not('hours_worked', 'is', null)
-      setPunches((data ?? []) as TimesheetPunch[])
+        .gte('date_time', start)
+        .lte('date_time', end)
+        .order('date_time', { ascending: true })
+      setPunches(buildPairs((data ?? []) as TimePunch[]))
       setLoading(false)
     }
     load()
   }, [employee.id, month])
 
-  const totalHours = punches.reduce((s, p) => s + (p.hours_worked ?? 0), 0)
+  const totalHours = punches.reduce((s, p) => s + p.hoursWorked, 0)
   const rate = employee.hourly_rate ?? 0
   const gross = rate * totalHours
 
@@ -476,14 +500,14 @@ function PaymentsTab({ employee }: { employee: Employee }) {
         <p className="text-center text-[13px] text-text-disabled py-8">No payroll data for this period</p>
       ) : (
         <div className="bg-surface border border-divider rounded-lg overflow-hidden">
-          {punches.map(p => (
-            <div key={p.id} className="flex items-center gap-3 px-4 py-3 border-b border-divider last:border-0">
+          {punches.map((p, i) => (
+            <div key={p.punchIn + i} className="flex items-center gap-3 px-4 py-3 border-b border-divider last:border-0">
               <span className="material-icons text-text-disabled text-[16px]">schedule</span>
               <div className="flex-1">
-                <p className="text-[13px] text-text-primary">{formatDateTime(p.punch_in)}</p>
+                <p className="text-[13px] text-text-primary">{formatDateTime(p.punchIn)}</p>
               </div>
               <span className="text-[13px] font-semibold text-text-secondary">
-                {p.hours_worked?.toFixed(1)}h = {formatCurrency((p.hours_worked ?? 0) * rate)}
+                {p.hoursWorked.toFixed(1)}h = {formatCurrency(p.hoursWorked * rate)}
               </span>
             </div>
           ))}

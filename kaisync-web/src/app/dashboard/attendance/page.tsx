@@ -4,14 +4,13 @@ import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { formatDateTime } from '@/lib/utils'
-import type { TimesheetPunch } from '@/types/database'
+import type { TimePunch } from '@/types/database'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Preset = 'today' | 'week' | 'month' | 'all' | 'custom'
 
 type PunchSession = {
-  id: string
   employeeId: string
   employeeName: string
   employeeCode: string
@@ -22,11 +21,6 @@ type PunchSession = {
   isLate: boolean
   isOvertime: boolean
   status: 'active' | 'completed'
-}
-
-type PayrollSettings = {
-  late_threshold_minutes: number | null
-  overtime_threshold_hours: number | null
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -54,42 +48,50 @@ function getRange(
   return { from: customFrom, to: customTo }
 }
 
+type EmpRow = { id: string; name: string; surname: string; employee_code: string | null; hourly_rate: number | null }
+
 function buildSessions(
-  punches: TimesheetPunch[],
-  ps: PayrollSettings | null
+  punches: TimePunch[],
+  employees: Map<string, EmpRow>,
+  lateThreshold: number,
+  otThreshold: number
 ): PunchSession[] {
-  const lateThreshold = ps?.late_threshold_minutes ?? 30
-  const otThreshold   = ps?.overtime_threshold_hours ?? 8
-
-  return punches.map(p => {
-    const emp = p.employees as {
-      name: string
-      surname: string
-      employee_code: string | null
-      hourly_rate: number | null
-    } | undefined
-
-    const hours      = p.hours_worked ?? 0
-    const rate       = emp?.hourly_rate ?? 0
-    const shiftStart = (p as unknown as Record<string, unknown>).shift_start_time as string | null | undefined
-    const isLate     = shiftStart
-      ? (new Date(p.punch_in).getTime() - new Date(shiftStart).getTime()) / 60000 > lateThreshold
-      : false
-
-    return {
-      id:           p.id,
-      employeeId:   p.employee_id,
-      employeeName: `${emp?.name ?? ''} ${emp?.surname ?? ''}`.trim() || 'Unknown',
-      employeeCode: emp?.employee_code ?? '',
-      punchIn:      p.punch_in,
-      punchOut:     p.punch_out ?? null,
-      hoursWorked:  hours,
-      pay:          rate * hours,
-      isLate,
-      isOvertime:   hours > otThreshold,
-      status:       p.punch_out ? 'completed' : 'active',
+  const byEmployee = new Map<string, TimePunch[]>()
+  for (const p of punches) {
+    if (!byEmployee.has(p.employee_id)) byEmployee.set(p.employee_id, [])
+    byEmployee.get(p.employee_id)!.push(p)
+  }
+  const sessions: PunchSession[] = []
+  for (const [empId, empPunches] of byEmployee) {
+    empPunches.sort((a, b) => new Date(a.date_time).getTime() - new Date(b.date_time).getTime())
+    const emp = employees.get(empId)
+    let i = 0
+    while (i < empPunches.length) {
+      const p = empPunches[i]
+      if (p.type === 'in') {
+        const nextOut = empPunches.slice(i + 1).find(x => x.type === 'out') ?? null
+        const hours = nextOut
+          ? (new Date(nextOut.date_time).getTime() - new Date(p.date_time).getTime()) / 3600000
+          : 0
+        sessions.push({
+          employeeId:   empId,
+          employeeName: emp ? `${emp.name} ${emp.surname}` : 'Unknown',
+          employeeCode: emp?.employee_code ?? '',
+          punchIn:      p.date_time,
+          punchOut:     nextOut?.date_time ?? null,
+          hoursWorked:  hours,
+          pay:          hours * (emp?.hourly_rate ?? 0),
+          isLate:       false,
+          isOvertime:   hours > otThreshold,
+          status:       nextOut ? 'completed' : 'active',
+        })
+        i = nextOut ? empPunches.indexOf(nextOut) + 1 : empPunches.length
+      } else { i++ }
     }
-  })
+  }
+  sessions.sort((a, b) => new Date(b.punchIn).getTime() - new Date(a.punchIn).getTime())
+  return sessions
+  void lateThreshold
 }
 
 function exportCSV(sessions: PunchSession[], from: string, to: string) {
@@ -139,7 +141,6 @@ export default function AttendancePage() {
   // Refs keep the realtime callback pointing at current values without
   // requiring the subscription to be torn down on every range change.
   const companyIdRef  = useRef<string | null>(null)
-  const settingsRef   = useRef<PayrollSettings | null>(null)
   const presetRef     = useRef<Preset>('today')
   const customFromRef = useRef(todayStr())
   const customToRef   = useRef(todayStr())
@@ -158,15 +159,7 @@ export default function AttendancePage() {
 
     companyIdRef.current = member.companyId
     setCompanyId(member.companyId)
-
-    const { data: ps } = await supabase
-      .from('payroll_settings')
-      .select('late_threshold_minutes, overtime_threshold_hours')
-      .eq('company_id', member.companyId)
-      .maybeSingle()
-    settingsRef.current = ps ?? null
-
-    await fetchPunchesWithParams(member.companyId, ps ?? null)
+    await fetchPunchesWithParams(member.companyId)
   }
 
   // ── Re-load when range changes ────────────────────────────────────────────
@@ -185,7 +178,7 @@ export default function AttendancePage() {
         {
           event:  '*',
           schema: 'public',
-          table:  'timesheet_punches',
+          table:  'time_punches',
           filter: `company_id=eq.${companyId}`,
         },
         () => { fetchPunches() }
@@ -197,23 +190,29 @@ export default function AttendancePage() {
   // ── Data fetch ────────────────────────────────────────────────────────────
   function fetchPunches() {
     if (!companyIdRef.current) return
-    fetchPunchesWithParams(companyIdRef.current, settingsRef.current)
+    fetchPunchesWithParams(companyIdRef.current)
   }
 
-  async function fetchPunchesWithParams(cid: string, ps: PayrollSettings | null) {
+  async function fetchPunchesWithParams(cid: string) {
     setLoading(true)
-    const supabase      = createClient()
-    const { from, to }  = getRange(presetRef.current, customFromRef.current, customToRef.current)
+    const supabase     = createClient()
+    const { from, to } = getRange(presetRef.current, customFromRef.current, customToRef.current)
 
-    const { data } = await supabase
-      .from('timesheet_punches')
-      .select('*, employees(name, surname, employee_code, hourly_rate)')
-      .eq('company_id', cid)
-      .gte('punch_in', `${from}T00:00:00`)
-      .lte('punch_in', `${to}T23:59:59`)
-      .order('punch_in', { ascending: false })
+    const [{ data: empData }, { data: punchData }] = await Promise.all([
+      supabase.from('employees')
+        .select('id, name, surname, employee_code, hourly_rate')
+        .eq('company_id', cid)
+        .eq('is_active', true),
+      supabase.from('time_punches')
+        .select('id, employee_id, type, date_time, created_at')
+        .eq('company_id', cid)
+        .gte('date_time', `${from}T00:00:00`)
+        .lte('date_time', `${to}T23:59:59`)
+        .order('date_time', { ascending: true }),
+    ])
 
-    setSessions(buildSessions((data ?? []) as TimesheetPunch[], ps))
+    const empMap = new Map((empData ?? []).map(e => [e.id, e as EmpRow]))
+    setSessions(buildSessions((punchData ?? []) as TimePunch[], empMap, 30, 8))
     setLoading(false)
   }
 
@@ -362,7 +361,7 @@ export default function AttendancePage() {
               </thead>
               <tbody>
                 {filtered.map(s => (
-                  <tr key={s.id} className="border-b border-divider last:border-0 hover:bg-background transition-colors">
+                  <tr key={`${s.employeeId}_${s.punchIn}`} className="border-b border-divider last:border-0 hover:bg-background transition-colors">
                     <td className="px-5 py-3">
                       <p className="font-medium text-text-primary">{s.employeeName}</p>
                       {s.employeeCode && (

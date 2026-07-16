@@ -12,6 +12,13 @@ const SEVERITY_COLORS: Record<string, { bg: string; fg: string }> = {
   low: { bg: '#DCFCE7', fg: '#166534' },
 }
 
+const TYPE_COLORS: Record<string, string> = {
+  leave_request: '#F59E0B',
+  incident:      '#EF4444',
+  payment:       '#10B981',
+  job:           '#3B82F6',
+}
+
 export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<AppNotification[]>([])
   const [pendingLeave, setPendingLeave] = useState<LeaveRequest[]>([])
@@ -27,7 +34,7 @@ export default function NotificationsPage() {
     if (!member) { setError('not_linked'); setLoading(false); return }
 
     const [notifRes, leaveRes, incidentRes, paymentRes] = await Promise.all([
-      supabase.from('notifications').select('*').eq('company_id', member.companyId).eq('is_read', false).order('created_at', { ascending: false }),
+      supabase.from('app_notifications').select('*').eq('company_id', member.companyId).eq('recipient_employee_id', member.employeeId).eq('is_read', false).order('created_at', { ascending: false }),
       supabase.from('leave_requests').select('*').eq('company_id', member.companyId).eq('status', 'pending').order('created_at', { ascending: false }),
       supabase.from('incident_reports').select('*').eq('company_id', member.companyId).eq('status', 'open').order('created_at', { ascending: false }),
       supabase.from('payment_approvals').select('*').eq('company_id', member.companyId).eq('status', 'pending').order('created_at', { ascending: false }),
@@ -83,7 +90,7 @@ export default function NotificationsPage() {
             <div className="space-y-2">
               {notifications.map(n => (
                 <div key={n.id} className="bg-surface rounded-lg border border-divider flex gap-[10px] p-3 cursor-pointer hover:bg-surface-elevated transition-colors">
-                  <div className="w-1 rounded-full self-stretch shrink-0" style={{ background: n.color ?? '#3B82F6' }} />
+                  <div className="w-1 rounded-full self-stretch shrink-0" style={{ background: TYPE_COLORS[n.type ?? ''] ?? '#3B82F6' }} />
                   <div className="flex-1 space-y-1">
                     <p className="font-semibold text-[14px] text-text-primary">{n.title}</p>
                     <p className="text-text-secondary text-[12px]">{n.body}</p>
@@ -152,7 +159,7 @@ export default function NotificationsPage() {
               {pendingPayments.map(p => (
                 <div key={p.id} className="bg-surface rounded-lg border border-divider p-3 flex justify-between items-center">
                   <div>
-                    <p className="font-semibold text-[13px] text-text-primary">{p.period_label}</p>
+                    <p className="font-semibold text-[13px] text-text-primary">{fmtDate(p.period_start)} – {fmtDate(p.period_end)}</p>
                     <p className="text-text-secondary text-[12px]">R {p.gross_pay.toFixed(2)}</p>
                   </div>
                   <span className="rounded-[10px] px-2 py-[3px] text-[11px] font-semibold" style={{ background: '#FEF3C7', color: '#92400E' }}>
