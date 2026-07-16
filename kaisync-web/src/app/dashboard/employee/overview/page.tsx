@@ -51,7 +51,7 @@ interface ColleagueOnLeave {
   employee_id: string
   leave_type: string
   end_date: string
-  employees: { full_name: string }
+  employees: { name: string; surname: string }
 }
 
 interface RegistrationStatus {
@@ -170,9 +170,9 @@ export default function EmployeeOverviewPage() {
       regRes, paRes,
     ] = await Promise.all([
       rpc('employee_get_last_punch', { p_employee_id: member.employeeId, p_session_token: tok }),
-      rpc('employee_get_jobs_for_employee', { p_employee_id: member.employeeId, p_company_id: member.companyId }),
-      rpc('employee_get_leave_requests', { p_employee_id: member.employeeId, p_company_id: member.companyId }),
-      rpc('employee_is_on_leave_today', { p_employee_id: member.employeeId, p_company_id: member.companyId }),
+      rpc('employee_get_jobs_for_employee', { p_employee_id: member.employeeId, p_company_id: member.companyId, p_session_token: tok }),
+      rpc('employee_get_leave_requests', { p_employee_id: member.employeeId, p_company_id: member.companyId, p_session_token: tok }),
+      rpc('employee_is_on_leave_today', { p_employee_id: member.employeeId, p_company_id: member.companyId, p_session_token: tok }),
       rpc('employee_get_own_incidents', { p_employee_id: member.employeeId, p_company_id: member.companyId, p_session_token: tok }),
       rpc('employee_get_my_punches', {
         p_company_id:    member.companyId,
@@ -225,7 +225,7 @@ export default function EmployeeOverviewPage() {
     try {
       const { data: colleaguesData } = await supabase
         .from('leave_requests')
-        .select('employee_id, leave_type, end_date, employees!inner(full_name)')
+        .select('employee_id, leave_type, end_date, employees!inner(name, surname)')
         .eq('company_id', member.companyId)
         .eq('status', 'approved')
         .lte('start_date', todayStr)
@@ -524,7 +524,7 @@ export default function EmployeeOverviewPage() {
               {colleagues.map((c, i) => (
                 <div key={i} className="px-4 py-3 flex items-center justify-between">
                   <div>
-                    <p className="text-[13px] font-semibold text-text-primary">{c.employees?.full_name ?? '—'}</p>
+                    <p className="text-[13px] font-semibold text-text-primary">{c.employees ? `${c.employees.name} ${c.employees.surname}` : '—'}</p>
                     <p className="text-[11px] text-text-secondary">{fmtLeaveType(c.leave_type)}</p>
                   </div>
                   <p className="text-[11px] text-text-disabled">Back: {fmtDate(c.end_date + 'T12:00:00')}</p>

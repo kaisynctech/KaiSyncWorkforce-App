@@ -36,6 +36,7 @@ export default function DocumentsPage() {
   const [companyId,     setCompanyId]     = useState<string | null>(null)
   const [employeeId,    setEmployeeId]    = useState<string | null>(null)
   const [tok,           setTok]           = useState<string | null>(null)
+  const [companyName,   setCompanyName]   = useState<string>('')
 
   // Upload modal
   const [showUpload,    setShowUpload]    = useState(false)
@@ -74,6 +75,14 @@ export default function DocumentsPage() {
       p_session_token: token,
     })
     setDocs((data as EmployeeDocument[]) ?? [])
+
+    const { data: companyRow } = await supabase
+      .from('companies')
+      .select('name')
+      .eq('id', member.companyId)
+      .maybeSingle()
+    if (companyRow?.name) setCompanyName(companyRow.name)
+
     setLoading(false)
   }
 
@@ -221,6 +230,7 @@ export default function DocumentsPage() {
                   <p className="text-[14px] font-semibold text-text-primary truncate">{doc.document_name}</p>
                   <p className="text-[11px] text-text-secondary">{fmtDocType(doc.document_type)}</p>
                   <p className="text-[11px] text-text-disabled mt-0.5">
+                    {companyName && <span>{companyName} · </span>}
                     {fmtDate(doc.created_at)}
                     {doc.uploaded_by_role === 'employee' && (
                       <span className="ml-1 text-warning">(pending review)</span>

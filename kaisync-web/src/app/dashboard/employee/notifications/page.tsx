@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 
@@ -104,6 +105,7 @@ function incidentToItem(i: IncidentRow): UnifiedItem {
 
 // ── Component ──────────────────────────────────────────────────────────────
 export default function EmployeeNotificationsPage() {
+  const router = useRouter()
   const [items,   setItems]   = useState<UnifiedItem[]>([])
   const [loading, setLoading] = useState(true)
   const [empId,   setEmpId]   = useState<string | null>(null)
@@ -230,8 +232,16 @@ export default function EmployeeNotificationsPage() {
                 key={n.key}
                 className={`flex gap-3 px-4 py-4 hover:bg-surface-elevated transition-colors ${
                   !n.is_read ? 'bg-primary/5' : ''
-                } ${n.source === 'app' && !n.is_read ? 'cursor-pointer' : ''}`}
-                onClick={() => n.source === 'app' && !n.is_read && markRead(n)}
+                } ${n.source === 'app' ? 'cursor-pointer' : ''}`}
+                onClick={() => {
+                  if (n.source === 'app') {
+                    if (n.notification_type === 'registration_approved' || n.notification_type === 'registration_rejected') {
+                      router.push('/auth/hr-sign-in')
+                      return
+                    }
+                    if (!n.is_read) markRead(n)
+                  }
+                }}
               >
                 {/* Colored dot */}
                 <div className="flex flex-col items-center pt-1.5 gap-1 shrink-0">
