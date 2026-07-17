@@ -4,61 +4,89 @@ import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 
-interface LeaveBalance {
-  leave_type: string
-  days_taken: number
-  days_allowed: number
-  days_remaining: number
-}
-
 interface LeaveRequest {
   id: string
   leave_type: string
   start_date: string
   end_date: string
+  total_days: number
   status: string
   reason: string | null
   created_at: string
-  days_requested: number
 }
 
+interface LeaveSummary {
+  leave_type:    string
+  days_approved: number
+  days_pending:  number
+}
+
+const LEAVE_TYPES = [
+  'Annual Leave',
+  'Sick Leave',
+  'Family Responsibility',
+  'Unpaid Leave',
+  'Study Leave',
+  'Maternity Leave',
+  'Paternity Leave',
+]
+
 const LEAVE_TYPE_ICONS: Record<string, string> = {
-  annual:     'beach_access',
-  sick:       'local_hospital',
-  family:     'family_restroom',
-  unpaid:     'money_off',
-  study:      'school',
-  maternity:  'pregnant_woman',
-  paternity:  'child_friendly',
+  'Annual Leave':          'beach_access',
+  'Sick Leave':            'local_hospital',
+  'Family Responsibility': 'family_restroom',
+  'Unpaid Leave':          'money_off',
+  'Study Leave':           'school',
+  'Maternity Leave':       'pregnant_woman',
+  'Paternity Leave':       'child_friendly',
 }
 
 const STATUS_STYLES: Record<string, string> = {
-  pending:  'bg-warning/10 text-warning',
-  approved: 'bg-success/10 text-success',
-  rejected: 'bg-error/10 text-error',
-  cancelled:'bg-surface-elevated text-text-secondary',
+  pending:   'bg-warning/10 text-warning',
+  approved:  'bg-success/10 text-success',
+  rejected:  'bg-error/10 text-error',
+  cancelled: 'bg-surface-elevated text-text-secondary',
 }
 
 function fmtDate(iso: string): string {
   return new Date(iso + 'T12:00:00').toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
+function computeSummary(requests: LeaveRequest[]): LeaveSummary[] {
+  const map: Record<string, LeaveSummary> = {}
+  for (const r of requests) {
+    if (!map[r.leave_type]) {
+      map[r.leave_type] = { leave_type: r.leave_type, days_approved: 0, days_pending: 0 }
+    }
+    if (r.status === 'approved') map[r.leave_type].days_approved += r.total_days
+    if (r.status === 'pending')  map[r.leave_type].days_pending  += r.total_days
+  }
+  return Object.values(map)
+}
+
+function calcTotalDays(start: string, end: string): number {
+  if (!start || !end) return 1
+  return Math.max(
+    1,
+    Math.round((new Date(end).getTime() - new Date(start).getTime()) / 86400000) + 1
+  )
+}
+
 export default function EmployeeLeavePage() {
-  const [balances, setBalances]     = useState<LeaveBalance[]>([])
-  const [requests, setRequests]     = useState<LeaveRequest[]>([])
-  const [loading, setLoading]       = useState(true)
-  const [showForm, setShowForm]     = useState(false)
+  const [requests,  setRequests]   = useState<LeaveRequest[]>([])
+  const [loading,   setLoading]    = useState(true)
+  const [showForm,  setShowForm]   = useState(false)
   const [editRequest, setEditRequest] = useState<LeaveRequest | null>(null)
   const [submitting, setSubmitting] = useState(false)
-  const [formError, setFormError]   = useState<string | null>(null)
-  const [companyId, setCompanyId]   = useState<string | null>(null)
-  const [empId, setEmpId]           = useState<string | null>(null)
+  const [formError,  setFormError] = useState<string | null>(null)
+  const [companyId, setCompanyId]  = useState<string | null>(null)
+  const [empId,     setEmpId]      = useState<string | null>(null)
 
   // Form fields
-  const [leaveType,  setLeaveType]  = useState('annual')
-  const [startDate,  setStartDate]  = useState('')
-  const [endDate,    setEndDate]    = useState('')
-  const [reason,     setReason]     = useState('')
+  const [leaveType, setLeaveType] = useState('Annual Leave')
+  const [startDate, setStartDate] = useState('')
+  const [endDate,   setEndDate]   = useState('')
+  const [reason,    setReason]    = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { init() }, [])
@@ -71,20 +99,16 @@ export default function EmployeeLeavePage() {
     setCompanyId(member.companyId)
     setEmpId(member.employeeId)
 
-    const [balRes, reqRes] = await Promise.all([
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (supabase.rpc as any)('employee_get_company_approved_leave', {
-        p_employee_id: member.employeeId,
-        p_company_id:  member.companyId,
-      }),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (supabase.rpc as any)('employee_get_leave_requests', {
-        p_employee_id: member.employeeId,
-        p_company_id:  member.companyId,
-      }),
-    ])
-    setBalances((balRes.data as LeaveBalance[]) ?? [])
-    setRequests((reqRes.data as LeaveRequest[]) ?? [])
+    const { data: { session } } = await supabase.auth.getSession()
+    const tok = session?.access_token ?? null
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, error } = await (supabase.rpc as any)('employee_get_leave_requests', {
+      p_company_id:    member.companyId,
+      p_employee_id:   member.employeeId,
+      p_session_token: tok,
+    })
+    if (!error) setRequests((data as LeaveRequest[]) ?? [])
     setLoading(false)
   }
 
@@ -97,12 +121,13 @@ export default function EmployeeLeavePage() {
       setReason(req.reason ?? '')
     } else {
       setEditRequest(null)
-      setLeaveType('annual')
+      setLeaveType('Annual Leave')
       setStartDate('')
       setEndDate('')
       setReason('')
     }
     setFormError(null)
+    if (fileRef.current) fileRef.current.value = ''
     setShowForm(true)
   }
 
@@ -113,7 +138,10 @@ export default function EmployeeLeavePage() {
     }
     setSubmitting(true)
     setFormError(null)
+
     const supabase = createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    const tok = session?.access_token ?? null
 
     let attachmentUrl: string | null = null
     const file = fileRef.current?.files?.[0]
@@ -127,29 +155,34 @@ export default function EmployeeLeavePage() {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rpc = supabase.rpc as any
+    const totalDays = calcTotalDays(startDate, endDate)
+
     let error: { message: string } | null = null
 
     if (editRequest) {
       const res = await rpc('employee_update_leave_request', {
-        p_leave_request_id: editRequest.id,
-        p_employee_id:  empId,
-        p_company_id:   companyId,
-        p_leave_type:   leaveType,
-        p_start_date:   startDate,
-        p_end_date:     endDate,
-        p_reason:       reason || null,
+        p_id:             editRequest.id,
+        p_employee_id:    empId,
+        p_leave_type:     leaveType,
+        p_start_date:     startDate,
+        p_end_date:       endDate,
+        p_total_days:     totalDays,
+        p_reason:         reason || null,
         p_attachment_url: attachmentUrl,
+        p_session_token:  tok,
       })
       error = res.error
     } else {
       const res = await rpc('employee_submit_leave_request', {
-        p_employee_id:  empId,
-        p_company_id:   companyId,
-        p_leave_type:   leaveType,
-        p_start_date:   startDate,
-        p_end_date:     endDate,
-        p_reason:       reason || null,
+        p_company_id:     companyId,
+        p_employee_id:    empId,
+        p_leave_type:     leaveType,
+        p_start_date:     startDate,
+        p_end_date:       endDate,
+        p_total_days:     totalDays,
+        p_reason:         reason || null,
         p_attachment_url: attachmentUrl,
+        p_session_token:  tok,
       })
       error = res.error
     }
@@ -173,6 +206,8 @@ export default function EmployeeLeavePage() {
     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   })
 
+  const summary = computeSummary(requests)
+
   return (
     <div className="h-full flex flex-col overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 border-b border-divider shrink-0 bg-surface">
@@ -185,34 +220,31 @@ export default function EmployeeLeavePage() {
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
 
-        {/* Leave balances */}
-        {balances.length > 0 && (
+        {/* Leave summary — computed from requests */}
+        {summary.length > 0 && (
           <div>
-            <p className="section-label mb-2">Leave Balances</p>
+            <p className="section-label mb-2">Leave Summary</p>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {balances.map(b => (
-                <div key={b.leave_type} className="bg-surface border border-divider rounded-xl p-3">
+              {summary.map(s => (
+                <div key={s.leave_type} className="bg-surface border border-divider rounded-xl p-3">
                   <div className="flex items-center gap-2 mb-2">
                     <span className="material-icons text-primary text-[18px]">
-                      {LEAVE_TYPE_ICONS[b.leave_type] ?? 'event_busy'}
+                      {LEAVE_TYPE_ICONS[s.leave_type] ?? 'event_busy'}
                     </span>
-                    <p className="text-[12px] font-semibold text-text-primary capitalize truncate">
-                      {b.leave_type.replace(/_/g, ' ')}
-                    </p>
+                    <p className="text-[12px] font-semibold text-text-primary truncate">{s.leave_type}</p>
                   </div>
-                  <p className="text-[22px] font-bold text-text-primary">{b.days_remaining}</p>
-                  <p className="text-[11px] text-text-disabled">of {b.days_allowed} days remaining</p>
-                  <div className="mt-2 h-1.5 rounded-full bg-divider overflow-hidden">
-                    <div className="h-full rounded-full bg-primary transition-all"
-                      style={{ width: `${Math.max(0, Math.min(100, (b.days_remaining / b.days_allowed) * 100))}%` }} />
-                  </div>
+                  <p className="text-[22px] font-bold text-text-primary">{s.days_approved}</p>
+                  <p className="text-[11px] text-text-disabled">days approved</p>
+                  {s.days_pending > 0 && (
+                    <p className="text-[11px] text-warning mt-0.5">{s.days_pending}d pending</p>
+                  )}
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {/* Requests */}
+        {/* Requests list */}
         <div>
           <p className="section-label mb-2">Leave Requests</p>
           {sorted.length === 0 ? (
@@ -226,8 +258,8 @@ export default function EmployeeLeavePage() {
                 <div key={req.id} className="bg-surface border border-divider rounded-xl p-4 flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-[14px] font-semibold text-text-primary capitalize">
-                        {req.leave_type.replace(/_/g, ' ')}
+                      <p className="text-[14px] font-semibold text-text-primary">
+                        {req.leave_type}
                       </p>
                       <span className={`text-[11px] font-semibold px-2 py-[2px] rounded-full capitalize ${STATUS_STYLES[req.status] ?? 'bg-surface-elevated text-text-secondary'}`}>
                         {req.status}
@@ -235,7 +267,7 @@ export default function EmployeeLeavePage() {
                     </div>
                     <p className="text-[12px] text-text-secondary mt-0.5">
                       {fmtDate(req.start_date)} → {fmtDate(req.end_date)}
-                      <span className="ml-1 text-text-disabled">({req.days_requested}d)</span>
+                      <span className="ml-1 text-text-disabled">({req.total_days}d)</span>
                     </p>
                     {req.reason && <p className="text-[12px] text-text-disabled mt-0.5 italic">"{req.reason}"</p>}
                   </div>
@@ -257,7 +289,9 @@ export default function EmployeeLeavePage() {
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/50">
           <div className="bg-surface rounded-2xl w-full max-w-md p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between">
-              <h2 className="text-[17px] font-bold text-text-primary">{editRequest ? 'Edit Leave Request' : 'Apply for Leave'}</h2>
+              <h2 className="text-[17px] font-bold text-text-primary">
+                {editRequest ? 'Edit Leave Request' : 'Apply for Leave'}
+              </h2>
               <button onClick={() => setShowForm(false)} className="text-text-secondary hover:text-text-primary">
                 <span className="material-icons">close</span>
               </button>
@@ -273,8 +307,8 @@ export default function EmployeeLeavePage() {
               <div className="flex flex-col gap-1.5">
                 <label className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide">Leave Type</label>
                 <select className="input" value={leaveType} onChange={e => setLeaveType(e.target.value)}>
-                  {['annual','sick','family','unpaid','study','maternity','paternity'].map(t => (
-                    <option key={t} value={t} className="capitalize">{t.charAt(0).toUpperCase() + t.slice(1)}</option>
+                  {LEAVE_TYPES.map(t => (
+                    <option key={t} value={t}>{t}</option>
                   ))}
                 </select>
               </div>
@@ -288,6 +322,11 @@ export default function EmployeeLeavePage() {
                   <input className="input" type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
                 </div>
               </div>
+              {startDate && endDate && endDate >= startDate && (
+                <p className="text-[12px] text-text-secondary">
+                  Duration: <span className="font-semibold text-text-primary">{calcTotalDays(startDate, endDate)} day{calcTotalDays(startDate, endDate) !== 1 ? 's' : ''}</span>
+                </p>
+              )}
               <div className="flex flex-col gap-1.5">
                 <label className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide">Reason (optional)</label>
                 <textarea className="input resize-none" rows={3} value={reason} onChange={e => setReason(e.target.value)} />
