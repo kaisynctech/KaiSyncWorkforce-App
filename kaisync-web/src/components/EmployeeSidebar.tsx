@@ -38,8 +38,11 @@ export default function EmployeeSidebar({ open, onToggle, company, employee }: S
 
   async function handleSignOut() {
     const supabase = createClient()
+    // Clear JWT session (no-op if code-auth, harmless)
     await supabase.auth.signOut()
-    router.push('/auth/hr-sign-in')
+    // Clear code session
+    localStorage.removeItem('kf_cs')
+    router.push('/auth/id-entry')
     router.refresh()
   }
 

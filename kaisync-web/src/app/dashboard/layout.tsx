@@ -18,23 +18,45 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     const supabase = createClient()
 
     async function init() {
+      // ── Path 1: Supabase JWT session (HR users + email-auth employees) ──
       const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        router.replace('/auth/hr-sign-in')
+      if (user) {
+        const { data: emp } = await supabase
+          .from('employees')
+          .select('*, companies(*)')
+          .eq('user_id', user.id)
+          .eq('is_active', true)
+          .maybeSingle()
+        if (emp) {
+          setEmployee(emp as Employee)
+          setCompany((emp as { companies: Company }).companies)
+        }
+        setLoading(false)
         return
       }
-
-      const { data: emp } = await supabase
-        .from('employees')
-        .select('*, companies(*)')
-        .eq('user_id', user.id)
-        .eq('is_active', true)
-        .maybeSingle()
-
-      if (emp) {
-        setEmployee(emp as Employee)
-        setCompany((emp as { companies: Company }).companies)
+      // ── Path 2: Code session (code-authenticated employees) ──
+      try {
+        const raw = typeof window !== 'undefined' ? localStorage.getItem('kf_cs') : null
+        if (raw) {
+          const cs = JSON.parse(raw) as {
+            employee?: { id: string; name: string; surname: string; access_level: string; employee_code?: string; position?: string }
+            company?:  { id: string; name: string; code: string }
+            employee_id?: string
+            company_id?: string
+          }
+          if (cs.employee?.id && cs.company?.id) {
+            setEmployee(cs.employee as unknown as Employee)
+            setCompany(cs.company as unknown as Company)
+            setLoading(false)
+            return
+          }
+        }
+      } catch {
+        // Corrupt localStorage — clear and fall through to redirect
+        localStorage.removeItem('kf_cs')
       }
+      // ── No valid session ──
+      router.replace('/auth/id-entry')
       setLoading(false)
     }
 
