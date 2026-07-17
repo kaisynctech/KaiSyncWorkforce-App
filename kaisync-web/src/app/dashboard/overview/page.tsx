@@ -79,7 +79,8 @@ export default function OverviewPage() {
       [...latestByEmp.entries()].filter(([, t]) => t === 'in').map(([id]) => id)
     )
     setKpi(prev => ({ ...prev, clockedIn: clockedInIds.size }))
-    setNotClockedInIds(new Set(empList.filter(e => !clockedInIds.has(e.id)).map(e => e.id)))
+    const punchedTodayIds = new Set(punches.map(p => p.employee_id))
+    setNotClockedInIds(new Set(empList.filter(e => !punchedTodayIds.has(e.id)).map(e => e.id)))
     const selfClockedIn = latestByEmp.get(eIdRef.current) === 'in'
     setIsClockedIn(selfClockedIn)
   }
@@ -187,7 +188,8 @@ export default function OverviewPage() {
     const employees = (empsRes.data ?? []) as EmpRow[]
     setAllEmployees(employees)
     empsRef.current = employees
-    setNotClockedInIds(new Set(employees.filter(e => !clockedInIds.has(e.id)).map(e => e.id)))
+    const punchedTodayIds = new Set(punches.map(p => p.employee_id))
+    setNotClockedInIds(new Set(employees.filter(e => !punchedTodayIds.has(e.id)).map(e => e.id)))
 
     setLoading(false)
   }, [])
