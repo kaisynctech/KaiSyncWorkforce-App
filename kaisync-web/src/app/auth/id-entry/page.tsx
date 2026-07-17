@@ -34,8 +34,21 @@ export default function IdEntryPage() {
       if (!data) throw new Error('Invalid company code or login code')
       localStorage.setItem('kf_cs', JSON.stringify({
         session_token: data.session_token,
-        employee_id: data.employee?.id,
-        company_id: data.employee?.company_id,
+        employee_id:   data.employee?.id,
+        company_id:    data.employee?.company_id,
+        employee: {
+          id:            data.employee?.id,
+          name:          data.employee?.name,
+          surname:       data.employee?.surname,
+          access_level:  data.employee?.access_level,
+          employee_code: data.employee?.employee_code,
+          position:      data.employee?.position,
+        },
+        company: {
+          id:   data.company?.id,
+          name: data.company?.name,
+          code: data.company?.code,
+        },
       }))
       router.push('/dashboard/employee/attendance')
     } catch (err: unknown) {
