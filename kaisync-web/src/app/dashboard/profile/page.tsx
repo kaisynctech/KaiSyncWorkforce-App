@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { getInitials } from '@/lib/utils'
@@ -23,7 +24,8 @@ export default function ProfilePage() {
   const [saving, setSaving]       = useState(false)
   const [saved, setSaved]         = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
-  const [notLinked, setNotLinked] = useState(false)
+  const [notLinked,    setNotLinked]    = useState(false)
+  const [companyName,  setCompanyName]  = useState<string>('')
 
   // Photo
   const [photoUrl,       setPhotoUrl]       = useState<string | null>(null)
@@ -52,6 +54,13 @@ export default function ProfilePage() {
 
     setCompanyId(member.companyId)
     setEmpId(member.employeeId)
+
+    const { data: companyRow } = await supabase
+      .from('companies')
+      .select('name')
+      .eq('id', member.companyId)
+      .maybeSingle()
+    if (companyRow?.name) setCompanyName(companyRow.name)
 
     const { data } = await supabase
       .from('employees')
@@ -102,6 +111,7 @@ export default function ProfilePage() {
     const ext  = file.name.split('.').pop()?.toLowerCase() ?? 'jpg'
     const path = `profile-photos/${companyId}/${empId}.${ext}`
     const supabase = createClient()
+    const { data: { session: photoSession } } = await supabase.auth.getSession()
     const { error: upErr } = await supabase.storage
       .from('workforce-media')
       .upload(path, file, { upsert: true, contentType: file.type })
@@ -111,6 +121,7 @@ export default function ProfilePage() {
       p_employee_id:       empId,
       p_company_id:        companyId,
       p_profile_photo_url: path,
+      p_session_token:     photoSession?.access_token ?? null,
     })
     if (rpcErr) { setPhotoError(rpcErr.message); setPhotoUploading(false); return }
     const { data: signed } = await supabase.storage
@@ -128,6 +139,7 @@ export default function ProfilePage() {
     setSaveError(null)
 
     const supabase = createClient()
+    const { data: { session: saveSession } } = await supabase.auth.getSession()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error } = await (supabase.rpc as any)('employee_update_profile', {
       p_employee_id:      empId,
@@ -139,6 +151,7 @@ export default function ProfilePage() {
       p_bank_name:        bankName  !== (employee.bank_name ?? '')   ? bankName       : null,
       p_bank_account:     accountNumber !== (employee.bank_account ?? '') ? accountNumber : null,
       p_bank_branch_code: branchCode !== (employee.bank_branch_code ?? '') ? branchCode : null,
+      p_session_token:    saveSession?.access_token ?? null,
     })
 
     if (error) {
@@ -318,11 +331,7 @@ export default function ProfilePage() {
             <div className="flex items-center gap-1.5 mt-0.5">
               <span className="material-icons text-[13px] text-text-disabled">lock</span>
               <p className="text-[11px] text-text-disabled">
-                {employee?.bank_details_updated_at
-                  ? `Last updated ${new Date(employee.bank_details_updated_at).toLocaleDateString(
-                      'en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }
-                    )}`
-                  : 'Changes are logged for security'}
+                Banking details for {companyName || 'your company'}
               </p>
             </div>
           </div>
@@ -339,6 +348,29 @@ export default function ProfilePage() {
               <input className="input" type="text" value={branchCode}
                 onChange={e => setBranchCode(e.target.value)} />
             </FormField>
+          </div>
+        </div>
+
+        {/* My Record */}
+        <div className="bg-surface border border-divider rounded-xl overflow-hidden">
+          <div className="px-4 py-3 border-b border-divider">
+            <p className="section-label">My Record</p>
+          </div>
+          <div className="divide-y divide-divider">
+            {[
+              { label: 'My Payslips',  href: '/dashboard/employee/payslips',  icon: 'payments' },
+              { label: 'My Leave',     href: '/dashboard/employee/leave',      icon: 'event_available' },
+              { label: 'My Documents', href: '/dashboard/employee/documents',  icon: 'folder' },
+            ].map(item => (
+              <Link key={item.href} href={item.href}
+                className="flex items-center justify-between px-4 py-3 hover:bg-surface-elevated transition-colors">
+                <div className="flex items-center gap-3">
+                  <span className="material-icons text-text-secondary text-[20px]">{item.icon}</span>
+                  <p className="text-[14px] font-medium text-text-primary">{item.label}</p>
+                </div>
+                <span className="material-icons text-text-disabled text-[18px]">chevron_right</span>
+              </Link>
+            ))}
           </div>
         </div>
 
