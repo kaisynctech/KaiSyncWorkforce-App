@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 
 export default function HrSignInPage() {
   const router = useRouter()
@@ -21,6 +22,12 @@ export default function HrSignInPage() {
       const supabase = createClient()
       const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
       if (signInError) throw signInError
+      // Authenticated but no employee record = incomplete registration — resume company setup
+      const member = await resolveCurrentMember(supabase)
+      if (!member) {
+        router.push('/auth/hr-register-company')
+        return
+      }
       router.push('/dashboard/overview')
       router.refresh()
     } catch (err: unknown) {
