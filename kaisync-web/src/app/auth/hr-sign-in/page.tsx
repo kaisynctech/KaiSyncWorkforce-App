@@ -70,7 +70,7 @@ export default function HrSignInPage() {
       </div>
 
       {/* Right panel */}
-      <div className="flex-1 flex flex-col items-center justify-center px-6 py-12 bg-[#0f172a] lg:bg-background">
+      <div className="flex-1 flex flex-col items-center justify-center px-6 py-12 bg-[#0f172a]">
         <div className="lg:hidden flex items-center gap-2 mb-10">
           <div className="w-9 h-9 rounded-xl flex items-center justify-center"
             style={{ background: 'linear-gradient(135deg, #3b82f6, #6366f1)' }}>

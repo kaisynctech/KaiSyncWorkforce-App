@@ -6,12 +6,16 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 
 type Step = 'role' | 'employee'
+type AuthMethod = 'code' | 'email'
 
 export default function IdEntryPage() {
   const router = useRouter()
   const [step, setStep] = useState<Step>('role')
+  const [authMethod, setAuthMethod] = useState<AuthMethod>('code')
   const [companyCode, setCompanyCode] = useState('')
   const [portalCode, setPortalCode] = useState('')
+  const [email, setEmail] = useState('')
+  const [emailPassword, setEmailPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -22,15 +26,37 @@ export default function IdEntryPage() {
     setError(null)
     try {
       const supabase = createClient()
-      const { data, error: rpcError } = await supabase.rpc('authenticate_portal_code', {
+      const { data, error: rpcError } = await supabase.rpc('employee_sign_in_with_code', {
         p_company_code: companyCode.trim().toUpperCase(),
-        p_portal_code: portalCode.trim(),
+        p_employee_code: portalCode.trim(),
       })
       if (rpcError) throw rpcError
-      if (!data) throw new Error('Invalid credentials')
-      router.push('/dashboard/overview')
+      if (!data) throw new Error('Invalid company code or login code')
+      localStorage.setItem('kf_cs', JSON.stringify({
+        session_token: data.session_token,
+        employee_id: data.employee?.id,
+        company_id: data.employee?.company_id,
+      }))
+      router.push('/dashboard/employee/attendance')
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Invalid company or portal code')
+      setError(err instanceof Error ? err.message : 'Invalid company code or login code')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleEmailSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!email.trim() || !emailPassword) return
+    setLoading(true)
+    setError(null)
+    try {
+      const supabase = createClient()
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email: email.trim(), password: emailPassword })
+      if (signInError) throw signInError
+      router.push('/dashboard/employee/attendance')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Invalid email or password')
     } finally {
       setLoading(false)
     }
@@ -87,7 +113,7 @@ export default function IdEntryPage() {
       </div>
 
       {/* ── Right panel: auth ── */}
-      <div className="flex-1 flex flex-col items-center justify-center px-6 py-12 bg-[#0f172a] lg:bg-background">
+      <div className="flex-1 flex flex-col items-center justify-center px-6 py-12 bg-[#0f172a]">
 
         {/* Mobile logo */}
         <div className="flex lg:hidden items-center gap-2 mb-10">
@@ -104,8 +130,8 @@ export default function IdEntryPage() {
           {step === 'role' && (
             <div className="space-y-6">
               <div>
-                <h1 className="text-[26px] font-bold text-white lg:text-text-primary">Welcome back</h1>
-                <p className="text-slate-400 lg:text-text-secondary text-[14px] mt-1">Select your portal to continue</p>
+                <h1 className="text-[26px] font-bold text-white">Welcome back</h1>
+                <p className="text-slate-400 text-[14px] mt-1">Select your portal to continue</p>
               </div>
 
               {/* Primary portals */}
@@ -122,8 +148,8 @@ export default function IdEntryPage() {
                     <span className="material-icons text-white text-[20px]">badge</span>
                   </div>
                   <div className="flex-1">
-                    <p className="text-white lg:text-text-primary text-[15px] font-semibold">Employee</p>
-                    <p className="text-slate-400 lg:text-text-secondary text-[12px] mt-0.5">Sign in with company &amp; portal code</p>
+                    <p className="text-white text-[15px] font-semibold">Employee</p>
+                    <p className="text-slate-400 text-[12px] mt-0.5">Sign in with company &amp; login code</p>
                   </div>
                   <span className="material-icons text-slate-500 group-hover:text-blue-400 transition-colors text-[20px]">arrow_forward_ios</span>
                 </button>
@@ -138,8 +164,8 @@ export default function IdEntryPage() {
                     <span className="material-icons text-white text-[20px]">manage_accounts</span>
                   </div>
                   <div className="flex-1">
-                    <p className="text-white lg:text-text-primary text-[15px] font-semibold">HR / Employer</p>
-                    <p className="text-slate-400 lg:text-text-secondary text-[12px] mt-0.5">Sign in with email and password</p>
+                    <p className="text-white text-[15px] font-semibold">HR / Employer</p>
+                    <p className="text-slate-400 text-[12px] mt-0.5">Sign in with email and password</p>
                   </div>
                   <span className="material-icons text-slate-500 group-hover:text-indigo-400 transition-colors text-[20px]">arrow_forward_ios</span>
                 </Link>
@@ -196,9 +222,29 @@ export default function IdEntryPage() {
                   <span className="material-icons text-slate-400 text-[18px]">arrow_back</span>
                 </button>
                 <div>
-                  <h1 className="text-[22px] font-bold text-white lg:text-text-primary">Employee sign in</h1>
-                  <p className="text-slate-400 text-[13px]">Enter your company and portal codes</p>
+                  <h1 className="text-[22px] font-bold text-white">Employee sign in</h1>
+                  <p className="text-slate-400 text-[13px]">Choose how you&apos;d like to sign in</p>
                 </div>
+              </div>
+
+              {/* Auth method tabs */}
+              <div className="flex rounded-xl overflow-hidden" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}>
+                <button
+                  onClick={() => { setAuthMethod('code'); setError(null) }}
+                  className="flex-1 py-2.5 text-[13px] font-semibold transition-all"
+                  style={authMethod === 'code'
+                    ? { background: 'linear-gradient(135deg, #3b82f6, #2563eb)', color: '#fff' }
+                    : { background: 'transparent', color: '#94a3b8' }}>
+                  Login Code
+                </button>
+                <button
+                  onClick={() => { setAuthMethod('email'); setError(null) }}
+                  className="flex-1 py-2.5 text-[13px] font-semibold transition-all"
+                  style={authMethod === 'email'
+                    ? { background: 'linear-gradient(135deg, #3b82f6, #2563eb)', color: '#fff' }
+                    : { background: 'transparent', color: '#94a3b8' }}>
+                  Email
+                </button>
               </div>
 
               {error && (
@@ -209,46 +255,93 @@ export default function IdEntryPage() {
                 </div>
               )}
 
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-[12px] font-medium text-slate-400 mb-2">Company Code</label>
-                  <input
-                    type="text"
-                    value={companyCode}
-                    onChange={e => setCompanyCode(e.target.value)}
-                    placeholder="e.g. KAI-001"
-                    className="w-full h-12 px-4 rounded-xl text-[14px] text-white placeholder:text-slate-600 focus:outline-none transition-all"
-                    style={{ backgroundColor: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
-                    onFocus={e => { (e.target as HTMLInputElement).style.borderColor = '#3b82f6'; (e.target as HTMLInputElement).style.backgroundColor = 'rgba(59,130,246,0.08)' }}
-                    onBlur={e => { (e.target as HTMLInputElement).style.borderColor = 'rgba(255,255,255,0.1)'; (e.target as HTMLInputElement).style.backgroundColor = 'rgba(255,255,255,0.06)' }}
-                    autoCapitalize="characters"
-                    autoComplete="off"
-                  />
-                </div>
+              {/* Login Code form */}
+              {authMethod === 'code' && (
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  <div>
+                    <label className="block text-[12px] font-medium text-slate-400 mb-2">Company Code</label>
+                    <input
+                      type="text"
+                      value={companyCode}
+                      onChange={e => setCompanyCode(e.target.value)}
+                      placeholder="e.g. KAI-001"
+                      className="w-full h-12 px-4 rounded-xl text-[14px] text-white placeholder:text-slate-600 focus:outline-none transition-all"
+                      style={{ backgroundColor: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                      onFocus={e => { (e.target as HTMLInputElement).style.borderColor = '#3b82f6'; (e.target as HTMLInputElement).style.backgroundColor = 'rgba(59,130,246,0.08)' }}
+                      onBlur={e => { (e.target as HTMLInputElement).style.borderColor = 'rgba(255,255,255,0.1)'; (e.target as HTMLInputElement).style.backgroundColor = 'rgba(255,255,255,0.06)' }}
+                      autoCapitalize="characters"
+                      autoComplete="off"
+                    />
+                  </div>
 
-                <div>
-                  <label className="block text-[12px] font-medium text-slate-400 mb-2">Portal Code</label>
-                  <input
-                    type="password"
-                    value={portalCode}
-                    onChange={e => setPortalCode(e.target.value)}
-                    placeholder="Enter your portal code"
-                    className="w-full h-12 px-4 rounded-xl text-[14px] text-white placeholder:text-slate-600 focus:outline-none transition-all"
-                    style={{ backgroundColor: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
-                    onFocus={e => { (e.target as HTMLInputElement).style.borderColor = '#3b82f6'; (e.target as HTMLInputElement).style.backgroundColor = 'rgba(59,130,246,0.08)' }}
-                    onBlur={e => { (e.target as HTMLInputElement).style.borderColor = 'rgba(255,255,255,0.1)'; (e.target as HTMLInputElement).style.backgroundColor = 'rgba(255,255,255,0.06)' }}
-                    autoComplete="current-password"
-                  />
-                </div>
+                  <div>
+                    <label className="block text-[12px] font-medium text-slate-400 mb-2">Login Code</label>
+                    <input
+                      type="password"
+                      value={portalCode}
+                      onChange={e => setPortalCode(e.target.value)}
+                      placeholder="Enter your login code"
+                      className="w-full h-12 px-4 rounded-xl text-[14px] text-white placeholder:text-slate-600 focus:outline-none transition-all"
+                      style={{ backgroundColor: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                      onFocus={e => { (e.target as HTMLInputElement).style.borderColor = '#3b82f6'; (e.target as HTMLInputElement).style.backgroundColor = 'rgba(59,130,246,0.08)' }}
+                      onBlur={e => { (e.target as HTMLInputElement).style.borderColor = 'rgba(255,255,255,0.1)'; (e.target as HTMLInputElement).style.backgroundColor = 'rgba(255,255,255,0.06)' }}
+                      autoComplete="current-password"
+                    />
+                  </div>
 
-                <button
-                  type="submit"
-                  disabled={loading || !companyCode.trim() || !portalCode.trim()}
-                  className="w-full h-12 rounded-xl text-white text-[15px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
-                  style={{ background: 'linear-gradient(135deg, #3b82f6, #2563eb)' }}>
-                  {loading ? 'Signing in...' : 'Continue'}
-                </button>
-              </form>
+                  <button
+                    type="submit"
+                    disabled={loading || !companyCode.trim() || !portalCode.trim()}
+                    className="w-full h-12 rounded-xl text-white text-[15px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+                    style={{ background: 'linear-gradient(135deg, #3b82f6, #2563eb)' }}>
+                    {loading ? 'Signing in...' : 'Continue'}
+                  </button>
+                </form>
+              )}
+
+              {/* Email form */}
+              {authMethod === 'email' && (
+                <form onSubmit={handleEmailSubmit} className="space-y-4">
+                  <div>
+                    <label className="block text-[12px] font-medium text-slate-400 mb-2">Email address</label>
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={e => setEmail(e.target.value)}
+                      placeholder="you@company.com"
+                      required
+                      className="w-full h-12 px-4 rounded-xl text-[14px] text-white placeholder:text-slate-600 focus:outline-none transition-all"
+                      style={{ backgroundColor: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                      onFocus={e => { (e.target as HTMLInputElement).style.borderColor = '#3b82f6'; (e.target as HTMLInputElement).style.backgroundColor = 'rgba(59,130,246,0.08)' }}
+                      onBlur={e => { (e.target as HTMLInputElement).style.borderColor = 'rgba(255,255,255,0.1)'; (e.target as HTMLInputElement).style.backgroundColor = 'rgba(255,255,255,0.06)' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[12px] font-medium text-slate-400 mb-2">Password</label>
+                    <input
+                      type="password"
+                      value={emailPassword}
+                      onChange={e => setEmailPassword(e.target.value)}
+                      placeholder="Enter your password"
+                      required
+                      className="w-full h-12 px-4 rounded-xl text-[14px] text-white placeholder:text-slate-600 focus:outline-none transition-all"
+                      style={{ backgroundColor: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                      onFocus={e => { (e.target as HTMLInputElement).style.borderColor = '#3b82f6'; (e.target as HTMLInputElement).style.backgroundColor = 'rgba(59,130,246,0.08)' }}
+                      onBlur={e => { (e.target as HTMLInputElement).style.borderColor = 'rgba(255,255,255,0.1)'; (e.target as HTMLInputElement).style.backgroundColor = 'rgba(255,255,255,0.06)' }}
+                      autoComplete="current-password"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={loading || !email.trim() || !emailPassword}
+                    className="w-full h-12 rounded-xl text-white text-[15px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+                    style={{ background: 'linear-gradient(135deg, #3b82f6, #2563eb)' }}>
+                    {loading ? 'Signing in...' : 'Continue'}
+                  </button>
+                </form>
+              )}
 
               <p className="text-center text-[13px] text-slate-500">
                 HR / Manager?{' '}
