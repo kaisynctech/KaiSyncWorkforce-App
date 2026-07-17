@@ -75,7 +75,7 @@ function nextSnoozeDate(option: string): string {
 }
 
 function TaskRow({ task, empId, companyId, token, onRefresh }: {
-  task: PATask; empId: string; companyId: string; token: string; onRefresh: () => void
+  task: PATask; empId: string; companyId: string; token: string | null; onRefresh: () => void
 }) {
   const [snoozeOpen, setSnoozeOpen] = useState(false)
   const overdue = isOverdue(task)
@@ -328,7 +328,7 @@ export default function MyPAPage() {
   const [quickOpen,  setQuickOpen]  = useState(false)
   const [empId,      setEmpId]      = useState<string | null>(null)
   const [companyId,  setCompanyId]  = useState<string | null>(null)
-  const [token,      setToken]      = useState('')
+  const [token,      setToken]      = useState<string | null>(null)
   const searchRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => { init() }, [])
@@ -341,8 +341,9 @@ export default function MyPAPage() {
     setEmpId(member.employeeId)
     setCompanyId(member.companyId)
 
-    const { data: { session } } = await supabase.auth.getSession()
-    const tok = session?.access_token ?? ''
+    const tok = member.sessionToken
+      ?? (await supabase.auth.getSession()).data.session?.access_token
+      ?? null
     setToken(tok)
 
     try {

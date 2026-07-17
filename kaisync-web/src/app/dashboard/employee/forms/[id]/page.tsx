@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
@@ -33,6 +33,7 @@ export default function FormFillPage() {
   const [error,      setError]      = useState<string | null>(null)
   const [companyId,  setCompanyId]  = useState<string | null>(null)
   const [empId,      setEmpId]      = useState<string | null>(null)
+  const tokRef = useRef<string | null>(null)
 
   useEffect(() => { init() }, [tmplId])
 
@@ -44,16 +45,21 @@ export default function FormFillPage() {
     setCompanyId(member.companyId)
     setEmpId(member.employeeId)
 
+    const tok = member.sessionToken
+      ?? (await supabase.auth.getSession()).data.session?.access_token
+      ?? null
+    tokRef.current = tok
     try {
-      const { data, error: qErr } = await supabase
-        .from('workflow_form_templates')
-        .select('id, name, description, fields')
-        .eq('id', tmplId)
-        .eq('company_id', member.companyId)
-        .maybeSingle()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: tmplList, error: qErr } = await (supabase.rpc as any)('employee_get_workflow_form_templates', {
+        p_company_id:    member.companyId,
+        p_employee_id:   member.employeeId,
+        p_session_token: tok,
+      })
       if (qErr) throw qErr
+      const data = ((tmplList as FormTemplate[]) ?? []).find((t: FormTemplate) => t.id === tmplId)
       if (!data) { setNotFound(true); setLoading(false); return }
-      const tmpl = data as FormTemplate
+      const tmpl = data
       setTemplate(tmpl)
       // Initialise values
       const init: Record<string, unknown> = {}
@@ -92,8 +98,7 @@ export default function FormFillPage() {
     setSubmitting(true)
     const supabase = createClient()
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const token = session?.access_token ?? ''
+      const token = tokRef.current
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error: rpcErr } = await (supabase.rpc as any)('employee_submit_workflow_form', {
         p_company_id:    companyId,

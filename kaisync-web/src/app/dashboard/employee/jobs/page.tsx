@@ -57,12 +57,14 @@ export default function EmployeeJobsPage() {
     if (!member) { setLoading(false); return }
 
     try {
-      const { data: { session } } = await supabase.auth.getSession()
+      const tok = member.sessionToken
+        ?? (await supabase.auth.getSession()).data.session?.access_token
+        ?? null
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data, error } = await (supabase.rpc as any)('employee_get_jobs_for_employee', {
         p_employee_id:   member.employeeId,
         p_company_id:    member.companyId,
-        p_session_token: session?.access_token ?? null,
+        p_session_token: tok,
       })
       if (error) throw error
       setJobs((data as Job[]) ?? [])

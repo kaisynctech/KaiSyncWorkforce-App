@@ -141,8 +141,9 @@ export default function EmployeeAttendancePage() {
     const member = await resolveCurrentMember(supabase)
     if (!member) { setLoading(false); return }
 
-    const { data: { session } } = await supabase.auth.getSession()
-    const tok = session?.access_token ?? null
+    const tok = member.sessionToken
+      ?? (await supabase.auth.getSession()).data.session?.access_token
+      ?? null
 
     const now = new Date()
     let fromDate: string
