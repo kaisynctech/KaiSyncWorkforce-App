@@ -23,7 +23,14 @@ export async function proxy(request: NextRequest) {
     }
   )
 
-  const { data: { user } } = await supabase.auth.getUser()
+  let user = null
+  try {
+    const { data } = await supabase.auth.getUser()
+    user = data.user
+  } catch {
+    // Network error or invalid token — treat as unauthenticated and let
+    // client-side auth handle it rather than crashing the middleware.
+  }
   const pathname = request.nextUrl.pathname
 
   if (!user && pathname.startsWith('/dashboard')) {
