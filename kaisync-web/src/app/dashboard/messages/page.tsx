@@ -95,10 +95,12 @@ export default function MessagesPage() {
   // ── Thread / employee loaders ──────────────────────────────────────────────
   async function loadThreads(cid: string, eid: string) {
     const supabase = createClient()
+    const { data: { session } } = await supabase.auth.getSession()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data } = await (supabase.rpc as any)('employee_get_message_threads_for_worker', {
-      p_company_id: cid,
-      p_employee_id: eid,
+      p_company_id:    cid,
+      p_employee_id:   eid,
+      p_session_token: session?.access_token ?? null,
     })
     const sorted = ((data ?? []) as MessageThread[])
       .filter(t => !t.is_archived)
@@ -144,15 +146,23 @@ export default function MessagesPage() {
     setSelected(thread)
     setMsgLoading(true)
     const supabase = createClient()
+    const { data: { session: selSession } } = await supabase.auth.getSession()
+    const selTok = selSession?.access_token ?? null
     const [msgRes] = await Promise.all([
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (supabase.rpc as any)('employee_get_thread_messages_for_worker', {
-        p_company_id: cid, p_thread_id: thread.id,
-        p_employee_id: eid, p_limit: 200,
+        p_company_id:    cid,
+        p_thread_id:     thread.id,
+        p_employee_id:   eid,
+        p_limit:         200,
+        p_session_token: selTok,
       }),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (supabase.rpc as any)('employee_mark_thread_read_for_worker', {
-        p_company_id: cid, p_thread_id: thread.id, p_employee_id: eid,
+        p_company_id:    cid,
+        p_thread_id:     thread.id,
+        p_employee_id:   eid,
+        p_session_token: selTok,
       }),
     ])
     setMessages((msgRes.data ?? []) as AppMessage[])
@@ -166,10 +176,14 @@ export default function MessagesPage() {
     const eid = eIdRef.current
     if (!thread || !cid || !eid) return
     const supabase = createClient()
+    const { data: { session: reloadSession } } = await supabase.auth.getSession()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data } = await (supabase.rpc as any)('employee_get_thread_messages_for_worker', {
-      p_company_id: cid, p_thread_id: thread.id,
-      p_employee_id: eid, p_limit: 200,
+      p_company_id:    cid,
+      p_thread_id:     thread.id,
+      p_employee_id:   eid,
+      p_limit:         200,
+      p_session_token: reloadSession?.access_token ?? null,
     })
     setMessages((data ?? []) as AppMessage[])
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
@@ -201,10 +215,14 @@ export default function MessagesPage() {
     if (!body || !selected || !companyId || !employeeId) return
     setSending(true)
     const supabase = createClient()
+    const { data: { session: sendSession } } = await supabase.auth.getSession()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (supabase.rpc as any)('employee_send_thread_message', {
-      p_company_id: companyId, p_thread_id: selected.id,
-      p_sender_employee_id: employeeId, p_body: body,
+      p_company_id:         companyId,
+      p_thread_id:          selected.id,
+      p_sender_employee_id: employeeId,
+      p_body:               body,
+      p_session_token:      sendSession?.access_token ?? null,
     })
     setMsgText('')
     // Reset textarea height
@@ -221,20 +239,24 @@ export default function MessagesPage() {
     setEmpSearch('')
     const peerName = `${peer.name} ${peer.surname}`
     const supabase = createClient()
+    const { data: { session: dmSession } } = await supabase.auth.getSession()
+    const dmTok = dmSession?.access_token ?? null
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: result } = await (supabase.rpc as any)('employee_get_or_create_direct_thread_peer', {
-      p_company_id: companyId,
-      p_creator_id: employeeId,
-      p_peer_id:    peer.id,
-      p_title:      `${myName} & ${peerName}`,
+      p_company_id:    companyId,
+      p_creator_id:    employeeId,
+      p_peer_id:       peer.id,
+      p_title:         `${myName} & ${peerName}`,
+      p_session_token: dmTok,
     })
     if (!result?.id) return
     // Reload thread list to get full thread object
     const supabase2 = createClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: threadsData } = await (supabase2.rpc as any)('employee_get_message_threads_for_worker', {
-      p_company_id:  companyId,
-      p_employee_id: employeeId,
+      p_company_id:    companyId,
+      p_employee_id:   employeeId,
+      p_session_token: dmTok,
     })
     const refreshed = ((threadsData ?? []) as MessageThread[])
       .filter(t => !t.is_archived)

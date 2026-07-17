@@ -53,15 +53,14 @@ export default function NewJobPage() {
     setCompanyId(member.companyId)
 
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const token = session?.access_token ?? ''
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error: rpcErr } = await (supabase.rpc as any)('employee_get_employees', {
-        p_company_id:    member.companyId,
-        p_session_token: token,
-      })
+      const { data: employeesData, error: rpcErr } = await supabase
+        .from('employees')
+        .select('id, name, surname, position, access_level')
+        .eq('company_id', member.companyId)
+        .eq('is_active', true)
+        .order('name')
       if (rpcErr) throw rpcErr
-      const emps = (data as Employee[]) ?? []
+      const emps = (employeesData ?? []) as Employee[]
       setAllEmps(emps)
 
       // Pre-select line manager — look for manager access level, prefer the first one found
