@@ -10,8 +10,8 @@ interface Incident {
   title: string
   severity: string | null
   status: string | null
-  incident_date: string | null
-  location: string | null
+  occurred_at: string | null
+  location_text: string | null
   description: string | null
   created_at: string
   photo_urls: string[] | null
@@ -74,15 +74,23 @@ export default function IncidentDetailPage() {
     setEmpId(member.employeeId)
     setCompanyId(member.companyId)
 
+    const { data: { session } } = await supabase.auth.getSession()
+    const tok = session?.access_token ?? null
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rpc = supabase.rpc as any
     const [incRes, cRes, hRes] = await Promise.all([
-      rpc('employee_get_incident_detail', { p_incident_id: incId, p_employee_id: member.employeeId, p_company_id: member.companyId }),
-      rpc('employee_get_incident_comments', { p_incident_id: incId, p_employee_id: member.employeeId, p_company_id: member.companyId }),
-      rpc('employee_get_incident_status_history', { p_incident_id: incId, p_employee_id: member.employeeId, p_company_id: member.companyId }),
+      supabase
+        .from('incident_reports')
+        .select('id, title, severity, status, occurred_at, location_text, description, created_at, photo_urls')
+        .eq('id', incId)
+        .eq('company_id', member.companyId)
+        .maybeSingle(),
+      rpc('employee_get_incident_comments', { p_incident_id: incId, p_employee_id: member.employeeId, p_company_id: member.companyId, p_session_token: tok }),
+      rpc('employee_get_incident_status_history', { p_incident_id: incId, p_employee_id: member.employeeId, p_company_id: member.companyId, p_session_token: tok }),
     ])
 
-    const inc = (incRes.data as Incident[] | null)?.[0] ?? null
+    const inc = incRes.data as Incident | null
     setIncident(inc)
     setComments((cRes.data as Comment[]) ?? [])
     setHistory((hRes.data as StatusEntry[]) ?? [])
@@ -101,12 +109,15 @@ export default function IncidentDetailPage() {
   async function addComment() {
     if (!comment.trim() || !empId || !companyId) return
     setSending(true)
+    const supabase = createClient()
+    const { data: { session } } = await supabase.auth.getSession()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (supabase.rpc as any)('employee_add_incident_comment', {
-      p_incident_id: incId,
-      p_employee_id: empId,
-      p_company_id:  companyId,
-      p_body:        comment.trim(),
+      p_incident_id:   incId,
+      p_employee_id:   empId,
+      p_company_id:    companyId,
+      p_body:          comment.trim(),
+      p_session_token: session?.access_token ?? null,
     })
     setComment('')
     await init()
@@ -126,12 +137,14 @@ export default function IncidentDetailPage() {
       paths.push(path)
     }
     if (paths.length > 0) {
+      const { data: { session } } = await supabase.auth.getSession()
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await (supabase.rpc as any)('employee_append_incident_photos', {
-        p_incident_id: incId,
-        p_employee_id: empId,
-        p_company_id:  companyId,
-        p_photo_urls:  paths,
+        p_incident_id:   incId,
+        p_employee_id:   empId,
+        p_company_id:    companyId,
+        p_photo_urls:    paths,
+        p_session_token: session?.access_token ?? null,
       })
       await init()
     }
@@ -143,8 +156,6 @@ export default function IncidentDetailPage() {
   if (!incident) return (
     <div className="flex items-center justify-center h-64 text-text-secondary text-[14px]">Incident not found.</div>
   )
-
-  const supabase = createClient()
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
@@ -175,23 +186,23 @@ export default function IncidentDetailPage() {
             <p className="section-label">Details</p>
           </div>
           <div className="p-4 space-y-3">
-            {incident.incident_date && (
+            {incident.occurred_at && (
               <div className="flex gap-3">
                 <span className="material-icons text-text-disabled text-[18px] mt-0.5">event</span>
                 <div>
                   <p className="text-[11px] text-text-disabled uppercase font-semibold">Incident Date</p>
                   <p className="text-[13px] text-text-primary mt-0.5">
-                    {new Date(incident.incident_date).toLocaleDateString('en-ZA', { day: '2-digit', month: 'long', year: 'numeric' })}
+                    {new Date(incident.occurred_at).toLocaleDateString('en-ZA', { day: '2-digit', month: 'long', year: 'numeric' })}
                   </p>
                 </div>
               </div>
             )}
-            {incident.location && (
+            {incident.location_text && (
               <div className="flex gap-3">
                 <span className="material-icons text-text-disabled text-[18px] mt-0.5">location_on</span>
                 <div>
                   <p className="text-[11px] text-text-disabled uppercase font-semibold">Location</p>
-                  <p className="text-[13px] text-text-primary mt-0.5">{incident.location}</p>
+                  <p className="text-[13px] text-text-primary mt-0.5">{incident.location_text}</p>
                 </div>
               </div>
             )}

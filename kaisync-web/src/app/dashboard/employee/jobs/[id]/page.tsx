@@ -42,6 +42,7 @@ interface JobDocument {
   document_type: string
   file_url: string
   created_at: string
+  signedUrl?: string | null
 }
 
 interface SiteVisit {
@@ -181,14 +182,14 @@ export default function JobCardPage() {
       const rpc = supabase.rpc as any
 
       const [jobsRes, cardRes, checkRes, docsRes, visitRes, invRes, fbRes, incRes] = await Promise.all([
-        rpc('employee_get_jobs_for_employee', { p_employee_id: member.employeeId, p_company_id: member.companyId }),
+        rpc('employee_get_jobs_for_employee', { p_employee_id: member.employeeId, p_company_id: member.companyId, p_session_token: tok }),
         rpc('employee_get_job_card_for_job',  { p_company_id: member.companyId, p_job_id: jobId, p_employee_id: member.employeeId, p_session_token: tok }),
         rpc('employee_get_checklist_for_job', { p_company_id: member.companyId, p_job_id: jobId, p_employee_id: member.employeeId, p_session_token: tok }),
         supabase.from('job_documents').select('*').eq('company_id', member.companyId).eq('job_id', jobId),
         rpc('employee_job_site_open_visit',   { p_company_id: member.companyId, p_employee_id: member.employeeId, p_session_token: tok }),
         rpc('employee_get_inventory_usage_for_job', { p_company_id: member.companyId, p_job_id: jobId, p_employee_id: member.employeeId, p_session_token: tok }),
         rpc('employee_get_job_feedback',      { p_company_id: member.companyId, p_employee_id: member.employeeId, p_job_id: jobId, p_session_token: tok }),
-        supabase.from('incidents').select('id,title,severity,status').eq('company_id', member.companyId).eq('job_id', jobId).eq('employee_id', member.employeeId),
+        supabase.from('incident_reports').select('id,title,severity,status').eq('company_id', member.companyId).eq('job_id', jobId).eq('employee_id', member.employeeId),
       ])
 
       const foundJob = ((jobsRes.data as Job[]) ?? []).find(j => j.id === jobId)
@@ -214,7 +215,12 @@ export default function JobCardPage() {
       }
 
       setChecklist(((checkRes.data as ChecklistItem[]) ?? []).sort((a,b) => a.sort_order - b.sort_order))
-      setDocs((docsRes.data as JobDocument[]) ?? [])
+      const rawDocs = (docsRes.data as JobDocument[]) ?? []
+      const docsWithUrls = await Promise.all(rawDocs.map(async d => {
+        const { data: s } = await supabase.storage.from('workforce-media').createSignedUrl(d.file_url, 3600)
+        return { ...d, signedUrl: s?.signedUrl ?? null }
+      }))
+      setDocs(docsWithUrls)
       setSiteVisit((visitRes.data as SiteVisit[] | null)?.[0] ?? null)
       setInventory((invRes.data as InventoryUsage[]) ?? [])
       setFeedback((fbRes.data as Feedback[] | null)?.[0] ?? null)
@@ -306,10 +312,9 @@ export default function JobCardPage() {
     const path = `jobs/${companyId}/${jobId}/${phase}/${crypto.randomUUID()}.${ext}`
     const { error: upErr } = await supabase.storage.from('workforce-media').upload(path, file, { upsert: true, contentType: file.type })
     if (upErr) { setError(upErr.message); return }
-    const { data: urlData } = await supabase.storage.from('workforce-media').getPublicUrl(path)
     await supabase.from('job_documents').insert({
       company_id: companyId, job_id: jobId,
-      document_name: file.name, document_type: phase, file_url: urlData.publicUrl
+      document_name: file.name, document_type: phase, file_url: path,
     })
     if (ref.current) ref.current.value = ''
     await init()
@@ -324,10 +329,9 @@ export default function JobCardPage() {
     const path = `jobs/${companyId}/${jobId}/docs/${crypto.randomUUID()}.${ext}`
     const { error: upErr } = await supabase.storage.from('workforce-media').upload(path, file, { upsert: true })
     if (upErr) { setError(upErr.message); return }
-    const { data: urlData } = await supabase.storage.from('workforce-media').getPublicUrl(path)
     await supabase.from('job_documents').insert({
       company_id: companyId, job_id: jobId,
-      document_name: name, document_type: 'other', file_url: urlData.publicUrl
+      document_name: name, document_type: 'other', file_url: path,
     })
     if (docRef.current) docRef.current.value = ''
     await init()
@@ -629,8 +633,8 @@ export default function JobCardPage() {
               <p className="text-[12px] font-semibold text-text-secondary mb-2">Before</p>
               <div className="grid grid-cols-3 gap-2 mb-2">
                 {beforePhotos.map(d => (
-                  <a key={d.id} href={d.file_url} target="_blank" rel="noopener noreferrer">
-                    <img src={d.file_url} alt={d.document_name} className="w-full aspect-square object-cover rounded-lg" />
+                  <a key={d.id} href={d.signedUrl ?? '#'} target="_blank" rel="noopener noreferrer">
+                    <img src={d.signedUrl ?? ''} alt={d.document_name} className="w-full aspect-square object-cover rounded-lg" />
                   </a>
                 ))}
               </div>
@@ -646,8 +650,8 @@ export default function JobCardPage() {
               <p className="text-[12px] font-semibold text-text-secondary mb-2">After</p>
               <div className="grid grid-cols-3 gap-2 mb-2">
                 {afterPhotos.map(d => (
-                  <a key={d.id} href={d.file_url} target="_blank" rel="noopener noreferrer">
-                    <img src={d.file_url} alt={d.document_name} className="w-full aspect-square object-cover rounded-lg" />
+                  <a key={d.id} href={d.signedUrl ?? '#'} target="_blank" rel="noopener noreferrer">
+                    <img src={d.signedUrl ?? ''} alt={d.document_name} className="w-full aspect-square object-cover rounded-lg" />
                   </a>
                 ))}
               </div>
@@ -680,7 +684,7 @@ export default function JobCardPage() {
                   <p className="text-[13px] font-medium text-text-primary truncate">{d.document_name}</p>
                   <p className="text-[11px] text-text-disabled capitalize">{d.document_type.replace(/_/g,' ')}</p>
                 </div>
-                <button onClick={() => window.open(d.file_url, '_blank')}
+                <button onClick={() => d.signedUrl && window.open(d.signedUrl, '_blank')}
                   className="text-[12px] font-semibold text-primary hover:underline shrink-0">Open</button>
               </div>
             ))}
