@@ -63,6 +63,7 @@ export default function MessagesPage() {
   const bottomRef     = useRef<HTMLDivElement>(null)
   const cIdRef        = useRef<string | null>(null)
   const eIdRef        = useRef<string | null>(null)
+  const tokRef        = useRef<string | null>(null)
   const selectedRef   = useRef<MessageThread | null>(null)
   selectedRef.current = selected
 
@@ -76,13 +77,28 @@ export default function MessagesPage() {
 
     cIdRef.current = member.companyId
     eIdRef.current = member.employeeId
+    tokRef.current = member.sessionToken
+      ?? (await supabase.auth.getSession()).data.session?.access_token
+      ?? null
     setCompanyId(member.companyId)
     setEmployeeId(member.employeeId)
 
-    const { data: me } = await supabase
-      .from('employees').select('name, surname')
-      .eq('id', member.employeeId).single()
-    if (me) setMyName(`${me.name} ${me.surname}`)
+    let resolvedName = ''
+    try {
+      const raw = typeof window !== 'undefined' ? localStorage.getItem('kf_cs') : null
+      if (raw) {
+        const cs = JSON.parse(raw) as { employee?: { name?: string; surname?: string } }
+        if (cs.employee?.name) resolvedName = `${cs.employee.name} ${cs.employee.surname ?? ''}`.trim()
+      }
+    } catch { /* ignore */ }
+    if (!resolvedName) {
+      try {
+        const { data: me } = await supabase.from('employees').select('name, surname')
+          .eq('id', member.employeeId).single()
+        if (me) resolvedName = `${me.name} ${me.surname}`
+      } catch { /* non-critical */ }
+    }
+    setMyName(resolvedName)
 
     await Promise.all([
       loadThreads(member.companyId, member.employeeId),
@@ -95,12 +111,11 @@ export default function MessagesPage() {
   // ── Thread / employee loaders ──────────────────────────────────────────────
   async function loadThreads(cid: string, eid: string) {
     const supabase = createClient()
-    const { data: { session } } = await supabase.auth.getSession()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data } = await (supabase.rpc as any)('employee_get_message_threads_for_worker', {
       p_company_id:    cid,
       p_employee_id:   eid,
-      p_session_token: session?.access_token ?? null,
+      p_session_token: tokRef.current,
     })
     const sorted = ((data ?? []) as MessageThread[])
       .filter(t => !t.is_archived)
@@ -114,22 +129,26 @@ export default function MessagesPage() {
 
   async function loadEmployees(cid: string, myId: string) {
     const supabase = createClient()
-    const { data } = await supabase
-      .from('employees').select('id, name, surname')
-      .eq('company_id', cid).eq('is_active', true)
-      .neq('id', myId).order('name')
-    setEmployees((data ?? []) as EmpPick[])
+    try {
+      const { data } = await supabase
+        .from('employees').select('id, name, surname')
+        .eq('company_id', cid).eq('is_active', true)
+        .neq('id', myId).order('name')
+      setEmployees((data ?? []) as EmpPick[])
+    } catch { /* non-critical for code-auth users */ }
   }
 
   async function loadUnreadThreadIds(cid: string, eid: string) {
     const supabase = createClient()
-    const { data } = await supabase
-      .from('app_messages')
-      .select('thread_id')
-      .eq('company_id', cid)
-      .not('read_by_ids', 'cs', `{"${eid}"}`)
-    const ids = new Set((data ?? []).map((r: { thread_id: string }) => r.thread_id))
-    setUnreadThreadIds(ids)
+    try {
+      const { data } = await supabase
+        .from('app_messages')
+        .select('thread_id')
+        .eq('company_id', cid)
+        .not('read_by_ids', 'cs', `{"${eid}"}`)
+      const ids = new Set((data ?? []).map((r: { thread_id: string }) => r.thread_id))
+      setUnreadThreadIds(ids)
+    } catch { /* non-critical */ }
   }
 
   // ── Select thread ──────────────────────────────────────────────────────────
@@ -146,8 +165,7 @@ export default function MessagesPage() {
     setSelected(thread)
     setMsgLoading(true)
     const supabase = createClient()
-    const { data: { session: selSession } } = await supabase.auth.getSession()
-    const selTok = selSession?.access_token ?? null
+    const tok = tokRef.current
     const [msgRes] = await Promise.all([
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (supabase.rpc as any)('employee_get_thread_messages_for_worker', {
@@ -155,14 +173,14 @@ export default function MessagesPage() {
         p_thread_id:     thread.id,
         p_employee_id:   eid,
         p_limit:         200,
-        p_session_token: selTok,
+        p_session_token: tok,
       }),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (supabase.rpc as any)('employee_mark_thread_read_for_worker', {
         p_company_id:    cid,
         p_thread_id:     thread.id,
         p_employee_id:   eid,
-        p_session_token: selTok,
+        p_session_token: tok,
       }),
     ])
     setMessages((msgRes.data ?? []) as AppMessage[])
@@ -176,14 +194,13 @@ export default function MessagesPage() {
     const eid = eIdRef.current
     if (!thread || !cid || !eid) return
     const supabase = createClient()
-    const { data: { session: reloadSession } } = await supabase.auth.getSession()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data } = await (supabase.rpc as any)('employee_get_thread_messages_for_worker', {
       p_company_id:    cid,
       p_thread_id:     thread.id,
       p_employee_id:   eid,
       p_limit:         200,
-      p_session_token: reloadSession?.access_token ?? null,
+      p_session_token: tokRef.current,
     })
     setMessages((data ?? []) as AppMessage[])
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
@@ -215,14 +232,13 @@ export default function MessagesPage() {
     if (!body || !selected || !companyId || !employeeId) return
     setSending(true)
     const supabase = createClient()
-    const { data: { session: sendSession } } = await supabase.auth.getSession()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (supabase.rpc as any)('employee_send_thread_message', {
       p_company_id:         companyId,
       p_thread_id:          selected.id,
       p_sender_employee_id: employeeId,
       p_body:               body,
-      p_session_token:      sendSession?.access_token ?? null,
+      p_session_token:      tokRef.current,
     })
     setMsgText('')
     // Reset textarea height
@@ -239,8 +255,7 @@ export default function MessagesPage() {
     setEmpSearch('')
     const peerName = `${peer.name} ${peer.surname}`
     const supabase = createClient()
-    const { data: { session: dmSession } } = await supabase.auth.getSession()
-    const dmTok = dmSession?.access_token ?? null
+    const dmTok = tokRef.current
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: result } = await (supabase.rpc as any)('employee_get_or_create_direct_thread_peer', {
       p_company_id:    companyId,

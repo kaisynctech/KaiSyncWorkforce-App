@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 export type CurrentMember = {
   employeeId: string
   companyId: string
+  sessionToken: string | null
 }
 
 export async function resolveCurrentMember(
@@ -17,7 +18,7 @@ export async function resolveCurrentMember(
       .eq('is_active', true)
       .maybeSingle()
     if (data?.company_id) {
-      return { employeeId: data.id, companyId: data.company_id }
+      return { employeeId: data.id, companyId: data.company_id, sessionToken: null }
     }
   }
   if (typeof window !== 'undefined') {
@@ -30,7 +31,7 @@ export async function resolveCurrentMember(
           session_token?: string
         }
         if (cs.employee_id && cs.company_id) {
-          return { employeeId: cs.employee_id, companyId: cs.company_id }
+          return { employeeId: cs.employee_id, companyId: cs.company_id, sessionToken: cs.session_token ?? null }
         }
       }
     } catch {

@@ -132,6 +132,7 @@ export default function EmployeeOverviewPage() {
   const clockInTimeRef  = useRef<string | null>(null)
   const empIdRef        = useRef<string | null>(null)
   const companyIdRef    = useRef<string | null>(null)
+  const tokRef          = useRef<string | null>(null)
   const tickerRef       = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => { init() }, [])
@@ -157,8 +158,10 @@ export default function EmployeeOverviewPage() {
     empIdRef.current     = member.employeeId
     companyIdRef.current = member.companyId
 
-    const { data: { session } } = await supabase.auth.getSession()
-    const tok = session?.access_token ?? null
+    const tok = member.sessionToken
+      ?? (await supabase.auth.getSession()).data.session?.access_token
+      ?? null
+    tokRef.current = tok
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rpc = supabase.rpc as any
@@ -263,7 +266,6 @@ export default function EmployeeOverviewPage() {
     setClockError(null)
 
     const supabase = createClient()
-    const { data: { session } } = await supabase.auth.getSession()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rpc = supabase.rpc as any
 
@@ -279,7 +281,7 @@ export default function EmployeeOverviewPage() {
       p_notes:                 clockNote || null,
       p_punched_by_manager_id: null,
       p_idempotency_key:       crypto.randomUUID(),
-      p_session_token:         session?.access_token ?? null,
+      p_session_token:         tokRef.current,
     })
 
     if (error) { setClockError(error.message); setClockLoading(false); return }
@@ -308,7 +310,6 @@ export default function EmployeeOverviewPage() {
     setAbsenceError(null)
 
     const supabase = createClient()
-    const { data: { session } } = await supabase.auth.getSession()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rpc = supabase.rpc as any
 
@@ -319,7 +320,7 @@ export default function EmployeeOverviewPage() {
         p_date:          absenceDate,
         p_reason:        absenceReason,
         p_note:          absenceNote.trim() || null,
-        p_session_token: session?.access_token ?? null,
+        p_session_token: tokRef.current,
       })
       if (rpcErr) throw rpcErr
       setAbsenceSuccess(true)

@@ -63,6 +63,7 @@ export default function EmployeeShiftsPage() {
   const [empId,     setEmpId]     = useState<string | null>(null)
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [responding, setResponding] = useState<string | null>(null)
+  const tokRef = useRef<string | null>(null)
 
   useEffect(() => { init() }, [])
   useEffect(() => { if (empId && companyId) loadEvents() }, [weekStart, empId, companyId])
@@ -74,6 +75,9 @@ export default function EmployeeShiftsPage() {
     if (!member) { setLoading(false); return }
     setEmpId(member.employeeId)
     setCompanyId(member.companyId)
+    tokRef.current = member.sessionToken
+      ?? (await supabase.auth.getSession()).data.session?.access_token
+      ?? null
     await loadEventsFor(member.employeeId, member.companyId, weekStart)
     setLoading(false)
   }
@@ -91,8 +95,7 @@ export default function EmployeeShiftsPage() {
     const to   = addDays(ws, 13).toISOString().split('T')[0]
 
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const token = session?.access_token ?? ''
+      const token = tokRef.current
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data, error: rpcErr } = await (supabase.rpc as any)('employee_get_calendar_events_for_worker', {
         p_company_id:    cid,
@@ -113,8 +116,7 @@ export default function EmployeeShiftsPage() {
     setResponding(eventId)
     const supabase = createClient()
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const token = session?.access_token ?? ''
+      const token = tokRef.current
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error: rpcErr } = await (supabase.rpc as any)('employee_update_calendar_event_attendance', {
         p_company_id:    companyId,

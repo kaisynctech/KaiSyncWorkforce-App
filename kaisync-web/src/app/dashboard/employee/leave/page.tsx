@@ -44,7 +44,7 @@ const LEAVE_TYPE_ICONS: Record<string, string> = {
 const STATUS_STYLES: Record<string, string> = {
   pending:   'bg-warning/10 text-warning',
   approved:  'bg-success/10 text-success',
-  rejected:  'bg-error/10 text-error',
+  declined:  'bg-error/10 text-error',
   cancelled: 'bg-surface-elevated text-text-secondary',
 }
 
@@ -88,6 +88,7 @@ export default function EmployeeLeavePage() {
   const [endDate,   setEndDate]   = useState('')
   const [reason,    setReason]    = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
+  const tokRef  = useRef<string | null>(null)
 
   useEffect(() => { init() }, [])
 
@@ -99,8 +100,10 @@ export default function EmployeeLeavePage() {
     setCompanyId(member.companyId)
     setEmpId(member.employeeId)
 
-    const { data: { session } } = await supabase.auth.getSession()
-    const tok = session?.access_token ?? null
+    const tok = member.sessionToken
+      ?? (await supabase.auth.getSession()).data.session?.access_token
+      ?? null
+    tokRef.current = tok
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data, error } = await (supabase.rpc as any)('employee_get_leave_requests', {
@@ -140,8 +143,7 @@ export default function EmployeeLeavePage() {
     setFormError(null)
 
     const supabase = createClient()
-    const { data: { session } } = await supabase.auth.getSession()
-    const tok = session?.access_token ?? null
+    const tok = tokRef.current
 
     let attachmentUrl: string | null = null
     const file = fileRef.current?.files?.[0]

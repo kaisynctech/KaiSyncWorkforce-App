@@ -33,8 +33,9 @@ export default function FormsPage() {
     if (!member) { setLoading(false); return }
 
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const token = session?.access_token ?? ''
+      const token = member.sessionToken
+        ?? (await supabase.auth.getSession()).data.session?.access_token
+        ?? null
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const rpc = supabase.rpc as any
 
