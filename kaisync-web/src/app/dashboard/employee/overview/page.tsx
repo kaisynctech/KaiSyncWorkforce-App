@@ -164,7 +164,7 @@ export default function EmployeeOverviewPage() {
 
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rpc = supabase.rpc as any
+      const rpc = (fn: string, args: Record<string, unknown>, opts?: Record<string, unknown>) => (supabase.rpc as any)(fn, args, opts)
       const todayStr = new Date().toISOString().split('T')[0]
 
       const [
@@ -272,7 +272,7 @@ export default function EmployeeOverviewPage() {
 
     const supabase = createClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rpc = supabase.rpc as any
+    const rpc = (fn: string, args: Record<string, unknown>, opts?: Record<string, unknown>) => (supabase.rpc as any)(fn, args, opts)
 
     const { error } = await rpc('employee_insert_punch', {
       p_company_id:            compId,
@@ -316,7 +316,7 @@ export default function EmployeeOverviewPage() {
 
     const supabase = createClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rpc = supabase.rpc as any
+    const rpc = (fn: string, args: Record<string, unknown>, opts?: Record<string, unknown>) => (supabase.rpc as any)(fn, args, opts)
 
     try {
       const { error: rpcErr } = await rpc('employee_report_absence', {

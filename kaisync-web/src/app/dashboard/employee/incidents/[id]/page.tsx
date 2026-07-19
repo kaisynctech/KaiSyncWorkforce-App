@@ -78,7 +78,7 @@ export default function IncidentDetailPage() {
     const tok = session?.access_token ?? null
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rpc = supabase.rpc as any
+    const rpc = (fn: string, args: Record<string, unknown>, opts?: Record<string, unknown>) => (supabase.rpc as any)(fn, args, opts)
     const [incRes, cRes, hRes] = await Promise.all([
       supabase
         .from('incident_reports')

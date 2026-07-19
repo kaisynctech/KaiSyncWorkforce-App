@@ -37,7 +37,7 @@ export default function FormsPage() {
         ?? (await supabase.auth.getSession()).data.session?.access_token
         ?? null
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rpc = supabase.rpc as any
+      const rpc = (fn: string, args: Record<string, unknown>, opts?: Record<string, unknown>) => (supabase.rpc as any)(fn, args, opts)
 
       const [tmplRes, subRes] = await Promise.all([
         rpc('employee_get_workflow_form_templates', {
