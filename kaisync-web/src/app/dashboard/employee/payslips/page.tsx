@@ -121,38 +121,57 @@ export default function PayslipsPage() {
             <p className="text-[14px]">No payslips yet.</p>
           </div>
         ) : (
-          <div className="divide-y divide-divider">
-            {payslips.map(p => (
-              <div key={p.id} className="flex items-center gap-3 px-4 py-4">
-                <div className="flex-1 min-w-0">
-                  <p className="text-[12px] text-text-secondary">{fmtPeriod(p.period_start, p.period_end)}</p>
-                  <p className="text-[22px] font-bold text-text-primary mt-0.5">{fmtMoney(p.net_pay)}</p>
-                  <div className="flex items-center gap-2 mt-1 flex-wrap">
-                    <span className={`text-[11px] font-semibold px-2 py-[2px] rounded-full capitalize ${STATUS_STYLES[p.status] ?? 'bg-surface-elevated text-text-secondary'}`}>
-                      {p.status}
-                    </span>
-                    {p.regular_hours != null && (
-                      <span className="text-[11px] text-text-disabled">{p.regular_hours}h regular</span>
-                    )}
-                    {p.overtime_hours != null && p.overtime_hours > 0 && (
-                      <span className="text-[11px] text-text-disabled">{p.overtime_hours}h OT</span>
-                    )}
-                    {p.deductions != null && p.deductions > 0 && (
-                      <span className="text-[11px] text-text-disabled">Deductions: {fmtMoney(p.deductions)}</span>
-                    )}
-                  </div>
-                </div>
-                <button onClick={() => downloadPDF(p)} disabled={downloading === p.id}
-                  className="flex items-center justify-center w-10 h-10 rounded-xl border border-divider text-text-secondary hover:border-primary hover:text-primary transition-colors disabled:opacity-50 shrink-0"
-                  title="Download PDF">
-                  {downloading === p.id ? (
-                    <span className="material-icons animate-spin text-[18px]">refresh</span>
-                  ) : (
-                    <span className="material-icons text-[18px]">download</span>
-                  )}
-                </button>
-              </div>
-            ))}
+          <div className="overflow-x-auto">
+            <table className="w-full text-[13px]">
+              <thead>
+                <tr className="border-b border-divider bg-surface-elevated">
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Period</th>
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Gross Pay</th>
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Deductions</th>
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Net Pay</th>
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Status</th>
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Paid At</th>
+                  <th className="px-4 py-2.5" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-divider">
+                {payslips.map(p => (
+                  <tr key={p.id} className="hover:bg-surface-elevated transition-colors">
+                    <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
+                      {fmtPeriod(p.period_start, p.period_end)}
+                    </td>
+                    <td className="px-4 py-3 font-medium text-text-primary whitespace-nowrap">
+                      {fmtMoney(p.gross_pay)}
+                    </td>
+                    <td className="px-4 py-3 text-text-secondary whitespace-nowrap">
+                      {fmtMoney(p.deductions)}
+                    </td>
+                    <td className="px-4 py-3 font-bold text-text-primary whitespace-nowrap">
+                      {fmtMoney(p.net_pay)}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <span className={`text-[11px] font-semibold px-2 py-[2px] rounded-full capitalize ${STATUS_STYLES[p.status] ?? 'bg-surface-elevated text-text-secondary'}`}>
+                        {p.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
+                      {p.paid_at
+                        ? new Date(p.paid_at).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })
+                        : '—'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <button onClick={() => downloadPDF(p)} disabled={downloading === p.id}
+                        className="flex items-center justify-center w-8 h-8 rounded-lg border border-divider text-text-secondary hover:border-primary hover:text-primary transition-colors disabled:opacity-50"
+                        title="Download PDF">
+                        {downloading === p.id
+                          ? <span className="material-icons animate-spin text-[16px]">refresh</span>
+                          : <span className="material-icons text-[16px]">download</span>}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
