@@ -179,7 +179,7 @@ export default function JobCardPage() {
 
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rpc = supabase.rpc as any
+      const rpc = (fn: string, args: Record<string, unknown>, opts?: Record<string, unknown>) => (supabase.rpc as any)(fn, args, opts)
 
       const [jobsRes, cardRes, checkRes, docsRes, visitRes, invRes, fbRes, incRes] = await Promise.all([
         rpc('employee_get_jobs_for_employee', { p_employee_id: member.employeeId, p_company_id: member.companyId, p_session_token: tok }),
@@ -354,7 +354,7 @@ export default function JobCardPage() {
     setSiteLoading(true)
     const supabase = createClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rpc = supabase.rpc as any
+    const rpc = (fn: string, args: Record<string, unknown>, opts?: Record<string, unknown>) => (supabase.rpc as any)(fn, args, opts)
     try {
       if (siteAction === 'sign_in') {
         const { error: rpcErr } = await rpc('employee_job_site_sign_in', {

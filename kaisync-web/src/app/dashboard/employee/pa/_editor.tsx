@@ -186,7 +186,7 @@ export default function PATaskEditor({ mode, taskId }: Props) {
     const supabase = createClient()
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rpc = supabase.rpc as any
+      const rpc = (fn: string, args: Record<string, unknown>, opts?: Record<string, unknown>) => (supabase.rpc as any)(fn, args, opts)
       if (mode === 'new') {
         const { error: rpcErr } = await rpc('employee_insert_pa_task', params)
         if (rpcErr) throw rpcErr

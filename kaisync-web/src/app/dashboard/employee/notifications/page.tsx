@@ -126,7 +126,7 @@ export default function EmployeeNotificationsPage() {
     setTok(token)
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rpc = supabase.rpc as any
+    const rpc = (fn: string, args: Record<string, unknown>, opts?: Record<string, unknown>) => (supabase.rpc as any)(fn, args, opts)
 
     const [notifRes, leaveRes, incRes] = await Promise.all([
       rpc('employee_get_my_notifications_for_employee', {

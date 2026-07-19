@@ -156,7 +156,7 @@ export default function EmployeeLeavePage() {
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rpc = supabase.rpc as any
+    const rpc = (fn: string, args: Record<string, unknown>, opts?: Record<string, unknown>) => (supabase.rpc as any)(fn, args, opts)
     const totalDays = calcTotalDays(startDate, endDate)
 
     let error: { message: string } | null = null
