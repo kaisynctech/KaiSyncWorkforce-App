@@ -10,6 +10,7 @@ interface Incident {
   title: string | null
   description: string
   severity: string | null
+  category: string | null
   status: string | null
   occurred_at: string | null
   location_text: string | null
@@ -171,43 +172,61 @@ export default function EmployeeIncidentsPage() {
             <p className="text-[14px]">{emptyMessage()}</p>
           </div>
         ) : (
-          <div className="divide-y divide-divider">
-            {filtered.map(inc => (
-              <Link key={inc.id} href={`/dashboard/employee/incidents/${inc.id}`}
-                className="flex items-start gap-3 px-4 py-4 hover:bg-surface-elevated transition-colors">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-[14px] font-semibold text-text-primary truncate">
-                      {inc.title ?? inc.description}
-                    </p>
-                    {inc.severity && (
-                      <span className={`text-[11px] font-semibold px-2 py-[2px] rounded-full capitalize ${SEVERITY_STYLES[inc.severity] ?? 'bg-surface-elevated text-text-secondary'}`}>
-                        {inc.severity}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-3 mt-1 flex-wrap">
-                    {inc.status && (
-                      <span className={`text-[11px] font-semibold px-2 py-[2px] rounded-full capitalize ${STATUS_STYLES[inc.status] ?? 'bg-surface-elevated text-text-secondary'}`}>
-                        {inc.status.replace(/_/g, ' ')}
-                      </span>
-                    )}
-                    {(inc.occurred_at ?? inc.created_at) && (
-                      <span className="text-[12px] text-text-disabled">
-                        {fmtDate(inc.occurred_at ?? inc.created_at)}
-                      </span>
-                    )}
-                    {inc.location_text && (
-                      <span className="text-[12px] text-text-disabled truncate">{inc.location_text}</span>
-                    )}
-                  </div>
-                  {inc.title && inc.description && (
-                    <p className="text-[12px] text-text-secondary mt-1 line-clamp-2">{inc.description}</p>
-                  )}
-                </div>
-                <span className="material-icons text-text-disabled text-[20px] shrink-0 mt-1">chevron_right</span>
-              </Link>
-            ))}
+          <div className="overflow-x-auto">
+            <table className="w-full text-[13px]">
+              <thead>
+                <tr className="border-b border-divider bg-surface-elevated">
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Title</th>
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Severity</th>
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Category</th>
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Status</th>
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Date</th>
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Job</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-divider">
+                {filtered.map(inc => (
+                  <tr key={inc.id} className="hover:bg-surface-elevated transition-colors">
+                    <td className="px-4 py-3">
+                      <Link href={`/dashboard/employee/incidents/${inc.id}`}
+                        className="text-[13px] font-semibold text-primary hover:underline">
+                        {inc.title ?? inc.description}
+                      </Link>
+                      {inc.title && inc.description && (
+                        <p className="text-[11px] text-text-disabled mt-0.5 line-clamp-1">{inc.description}</p>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {inc.severity ? (
+                        <span className={`text-[11px] font-semibold px-2 py-[2px] rounded-full capitalize ${SEVERITY_STYLES[inc.severity] ?? 'bg-surface-elevated text-text-secondary'}`}>
+                          {inc.severity}
+                        </span>
+                      ) : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-[12px] text-text-secondary capitalize">
+                      {inc.category ?? '—'}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {inc.status ? (
+                        <span className={`text-[11px] font-semibold px-2 py-[2px] rounded-full capitalize ${STATUS_STYLES[inc.status] ?? 'bg-surface-elevated text-text-secondary'}`}>
+                          {inc.status.replace(/_/g, ' ')}
+                        </span>
+                      ) : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
+                      {fmtDate(inc.occurred_at ?? inc.created_at)}
+                    </td>
+                    <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
+                      {inc.job_id ? (
+                        <span className="text-[11px] font-semibold px-2 py-[2px] rounded-full bg-primary/10 text-primary">Linked</span>
+                      ) : (
+                        <span className="text-text-disabled">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

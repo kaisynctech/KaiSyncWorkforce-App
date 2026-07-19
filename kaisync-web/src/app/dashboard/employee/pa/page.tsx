@@ -557,8 +557,83 @@ export default function MyPAPage() {
                 <p className="text-[14px]">No tasks.</p>
               </div>
             ) : (
-              <div className="space-y-2">
-                {filteredTasks.map(t => <TaskRow key={t.id} task={t} {...rowProps} />)}
+              <div className="overflow-x-auto">
+                <table className="w-full text-[13px]">
+                  <thead>
+                    <tr className="border-b border-divider bg-surface-elevated">
+                      <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Title</th>
+                      <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Priority</th>
+                      <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Status</th>
+                      <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Due</th>
+                      <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Linked</th>
+                      <th className="px-4 py-2.5" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-divider">
+                    {filteredTasks.map(t => {
+                      const overdue = isOverdue(t)
+                      return (
+                        <tr key={t.id} className={`hover:bg-surface-elevated transition-colors ${overdue ? 'bg-error/5' : ''}`}>
+                          <td className="px-4 py-3">
+                            <Link href={`/dashboard/employee/pa/${t.id}`}
+                              className={`text-[13px] font-semibold hover:underline ${overdue ? 'text-error' : 'text-primary'}`}>
+                              {t.title}
+                            </Link>
+                            {t.notes && (
+                              <p className="text-[11px] text-text-disabled mt-0.5 line-clamp-1">{t.notes}</p>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <span className={`text-[10px] font-bold px-2 py-[2px] rounded-full capitalize ${PRIORITY_BADGE[t.priority] ?? 'bg-surface-elevated text-text-disabled'}`}>
+                              {t.priority}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <span className="text-[11px] text-text-secondary capitalize">
+                              {t.status.replace(/_/g, ' ')}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            {t.due_at ? (
+                              <span className={`text-[12px] font-medium ${overdue ? 'text-error' : 'text-text-secondary'}`}>
+                                {fmtDue(t.due_at)}
+                              </span>
+                            ) : '—'}
+                          </td>
+                          <td className="px-4 py-3 text-[12px] text-text-disabled">
+                            {t.linked_label ?? '—'}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-1 justify-end">
+                              <button onClick={() => {
+                                const supabase = createClient()
+                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                ;(supabase.rpc as any)('employee_update_pa_task_status', {
+                                  p_company_id: companyId!, p_employee_id: empId!,
+                                  p_task_id: t.id, p_status: 'done', p_snoozed_until: null, p_session_token: token,
+                                }).then(() => init())
+                              }} title="Complete" className="p-1 rounded hover:bg-success/10">
+                                <span className="material-icons text-[16px] text-success">check_circle</span>
+                              </button>
+                              <button onClick={async () => {
+                                if (!confirm(`Delete '${t.title}'?`)) return
+                                const supabase = createClient()
+                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                await (supabase.rpc as any)('employee_delete_pa_task', {
+                                  p_company_id: companyId!, p_employee_id: empId!,
+                                  p_task_id: t.id, p_session_token: token,
+                                })
+                                init()
+                              }} title="Delete" className="p-1 rounded hover:bg-error/10">
+                                <span className="material-icons text-[16px] text-error">delete</span>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>

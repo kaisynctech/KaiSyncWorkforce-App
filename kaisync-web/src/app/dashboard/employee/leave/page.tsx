@@ -12,6 +12,7 @@ interface LeaveRequest {
   total_days: number
   status: string
   reason: string | null
+  attachment_url: string | null
   created_at: string
 }
 
@@ -255,32 +256,66 @@ export default function EmployeeLeavePage() {
               <p className="text-[14px]">No leave requests yet</p>
             </div>
           ) : (
-            <div className="space-y-2">
-              {sorted.map(req => (
-                <div key={req.id} className="bg-surface border border-divider rounded-xl p-4 flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-[14px] font-semibold text-text-primary">
+            <div className="overflow-x-auto">
+              <table className="w-full text-[13px]">
+                <thead>
+                  <tr className="border-b border-divider bg-surface-elevated">
+                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Type</th>
+                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Start</th>
+                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">End</th>
+                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Days</th>
+                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Status</th>
+                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Reason</th>
+                    <th className="px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide text-center">Doc</th>
+                    <th className="px-4 py-2.5" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-divider">
+                  {sorted.map(req => (
+                    <tr key={req.id} className="hover:bg-surface-elevated transition-colors">
+                      <td className="px-4 py-3 text-[13px] font-semibold text-text-primary whitespace-nowrap">
                         {req.leave_type}
-                      </p>
-                      <span className={`text-[11px] font-semibold px-2 py-[2px] rounded-full capitalize ${STATUS_STYLES[req.status] ?? 'bg-surface-elevated text-text-secondary'}`}>
-                        {req.status}
-                      </span>
-                    </div>
-                    <p className="text-[12px] text-text-secondary mt-0.5">
-                      {fmtDate(req.start_date)} → {fmtDate(req.end_date)}
-                      <span className="ml-1 text-text-disabled">({req.total_days}d)</span>
-                    </p>
-                    {req.reason && <p className="text-[12px] text-text-disabled mt-0.5 italic">"{req.reason}"</p>}
-                  </div>
-                  {req.status === 'pending' && (
-                    <button onClick={() => openForm(req)}
-                      className="text-[12px] text-primary font-semibold hover:underline shrink-0">
-                      Edit
-                    </button>
-                  )}
-                </div>
-              ))}
+                      </td>
+                      <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
+                        {fmtDate(req.start_date)}
+                      </td>
+                      <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
+                        {fmtDate(req.end_date)}
+                      </td>
+                      <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
+                        {req.total_days}d
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <span className={`text-[11px] font-semibold px-2 py-[2px] rounded-full capitalize ${STATUS_STYLES[req.status] ?? 'bg-surface-elevated text-text-secondary'}`}>
+                          {req.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-[12px] text-text-disabled max-w-[160px] truncate">
+                        {req.reason ? <span className="italic">&ldquo;{req.reason}&rdquo;</span> : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {req.attachment_url ? (
+                          <a href={req.attachment_url} target="_blank" rel="noopener noreferrer"
+                            className="inline-flex items-center justify-center w-7 h-7 rounded-lg border border-divider text-text-secondary hover:border-primary hover:text-primary transition-colors"
+                            title="View attachment">
+                            <span className="material-icons text-[14px]">attach_file</span>
+                          </a>
+                        ) : (
+                          <span className="text-text-disabled">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {req.status === 'pending' && (
+                          <button onClick={() => openForm(req)}
+                            className="text-[12px] text-primary font-semibold hover:underline whitespace-nowrap">
+                            Edit
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </div>

@@ -10,10 +10,13 @@ interface Job {
   title: string
   status: string | null
   priority: string | null
-  due_date: string | null
+  scheduled_end: string | null
+  job_code: string | null
   description: string | null
   created_at: string
-  scope?: 'assigned' | 'created'
+  assignee_employee_id: string | null
+  assigned_employee_ids: string[] | null
+  created_by_employee_id: string | null
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -47,6 +50,7 @@ export default function EmployeeJobsPage() {
   const [loading, setLoading] = useState(true)
   const [tab, setTab]         = useState<Tab>('assigned')
   const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [empId, setEmpId]     = useState<string | null>(null)
 
   useEffect(() => { init() }, [])
 
@@ -55,6 +59,7 @@ export default function EmployeeJobsPage() {
     const supabase = createClient()
     const member = await resolveCurrentMember(supabase)
     if (!member) { setLoading(false); return }
+    setEmpId(member.employeeId)
 
     try {
       const tok = member.sessionToken
@@ -77,8 +82,13 @@ export default function EmployeeJobsPage() {
   const statuses = ['all', ...Array.from(new Set(jobs.map(j => j.status ?? 'open').filter(Boolean)))]
 
   const filtered = jobs.filter(j => {
-    if (tab === 'assigned' && j.scope === 'created') return false
-    if (tab === 'created'  && j.scope !== 'created') return false
+    const iAssigned = Array.isArray(j.assigned_employee_ids)
+      ? j.assigned_employee_ids.includes(empId ?? '')
+      : j.assignee_employee_id === empId
+    const iCreated = j.created_by_employee_id === empId
+    if (tab === 'assigned' && !iAssigned) return false
+    if (tab === 'created'  && !iCreated)  return false
+    if (tab === 'all'      && !iAssigned && !iCreated) return false
     if (statusFilter !== 'all' && j.status !== statusFilter) return false
     return true
   })
@@ -124,36 +134,55 @@ export default function EmployeeJobsPage() {
             <p className="text-[14px]">{EMPTY_MESSAGES[tab]}</p>
           </div>
         ) : (
-          <div className="divide-y divide-divider">
-            {filtered.map(job => (
-              <Link key={job.id} href={`/dashboard/employee/jobs/${job.id}`}
-                className="flex items-start justify-between gap-3 px-4 py-4 hover:bg-surface-elevated transition-colors">
-                <div className="flex-1 min-w-0">
-                  <p className="text-[14px] font-semibold text-text-primary truncate">{job.title}</p>
-                  {job.description && (
-                    <p className="text-[12px] text-text-secondary mt-0.5 line-clamp-2">{job.description}</p>
-                  )}
-                  <div className="flex items-center gap-2 mt-2 flex-wrap">
-                    {job.status && (
-                      <span className={`text-[11px] font-semibold px-2 py-[3px] rounded-full capitalize ${STATUS_COLORS[job.status] ?? 'bg-surface-elevated text-text-secondary'}`}>
-                        {statusLabel(job.status)}
-                      </span>
-                    )}
-                    {job.priority && (
-                      <span className={`text-[11px] font-medium capitalize ${PRIORITY_COLORS[job.priority] ?? 'text-text-secondary'}`}>
-                        {job.priority} priority
-                      </span>
-                    )}
-                    {job.due_date && (
-                      <span className="text-[11px] text-text-disabled">
-                        Due {new Date(job.due_date + 'T12:00:00').toLocaleDateString('en-ZA', { day: '2-digit', month: 'short' })}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <span className="material-icons text-text-disabled text-[20px] shrink-0 mt-1">chevron_right</span>
-              </Link>
-            ))}
+          <div className="overflow-x-auto">
+            <table className="w-full text-[13px]">
+              <thead>
+                <tr className="border-b border-divider bg-surface-elevated">
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Code</th>
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Title</th>
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Status</th>
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Priority</th>
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Scheduled End</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-divider">
+                {filtered.map(job => (
+                  <tr key={job.id} className="hover:bg-surface-elevated transition-colors">
+                    <td className="px-4 py-3 text-[12px] text-text-disabled whitespace-nowrap">
+                      {job.job_code ?? '—'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <Link href={`/dashboard/employee/jobs/${job.id}`}
+                        className="text-[13px] font-semibold text-primary hover:underline">
+                        {job.title}
+                      </Link>
+                      {job.description && (
+                        <p className="text-[11px] text-text-disabled mt-0.5 line-clamp-1">{job.description}</p>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {job.status ? (
+                        <span className={`text-[11px] font-semibold px-2 py-[3px] rounded-full capitalize ${STATUS_COLORS[job.status] ?? 'bg-surface-elevated text-text-secondary'}`}>
+                          {statusLabel(job.status)}
+                        </span>
+                      ) : '—'}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {job.priority ? (
+                        <span className={`text-[12px] font-medium capitalize ${PRIORITY_COLORS[job.priority] ?? 'text-text-secondary'}`}>
+                          {job.priority}
+                        </span>
+                      ) : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
+                      {job.scheduled_end
+                        ? new Date(job.scheduled_end).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })
+                        : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
