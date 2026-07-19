@@ -38,7 +38,7 @@ export async function proxy(request: NextRequest) {
     // Server-side middleware cannot read localStorage, so these routes must be
     // allowed through. The client-side dashboard/layout.tsx handles the auth
     // check and will redirect truly unauthenticated users.
-    if (pathname.startsWith('/dashboard/employee') || pathname.startsWith('/dashboard/messages')) {
+    if (pathname.startsWith('/dashboard/employee') || pathname.startsWith('/dashboard/messages') || pathname.startsWith('/dashboard/profile')) {
       return supabaseResponse
     }
     // HR/admin routes require a JWT — redirect to role picker if missing.

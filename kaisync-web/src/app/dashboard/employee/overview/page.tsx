@@ -54,9 +54,6 @@ interface ColleagueOnLeave {
   employees: { name: string; surname: string }
 }
 
-interface RegistrationStatus {
-  registration_status: string | null
-}
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 function fmtElapsed(ms: number): string {
@@ -95,6 +92,7 @@ export default function EmployeeOverviewPage() {
   const router = useRouter()
 
   const [loading, setLoading]           = useState(true)
+  const [initError, setInitError]       = useState(false)
   const [registrationStatus, setRegStatus] = useState<string | null>(null)
   const [hasMissedSignOut, setHasMissedSignOut] = useState(false)
 
@@ -151,6 +149,7 @@ export default function EmployeeOverviewPage() {
   // ── Init ─────────────────────────────────────────────────────────────────
   async function init() {
     setLoading(true)
+    setInitError(false)
     const supabase = createClient()
     const member = await resolveCurrentMember(supabase)
     if (!member) { setLoading(false); return }
@@ -163,82 +162,88 @@ export default function EmployeeOverviewPage() {
       ?? null
     tokRef.current = tok
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rpc = supabase.rpc as any
-    const todayStr = new Date().toISOString().split('T')[0]
-
-    const [
-      lastPunchRes, jobsRes, leaveRes,
-      onLeaveRes, incRes, punchesRes,
-      regRes, paRes,
-    ] = await Promise.all([
-      rpc('employee_get_last_punch', { p_employee_id: member.employeeId, p_session_token: tok }),
-      rpc('employee_get_jobs_for_employee', { p_employee_id: member.employeeId, p_company_id: member.companyId, p_session_token: tok }),
-      rpc('employee_get_leave_requests', { p_employee_id: member.employeeId, p_company_id: member.companyId, p_session_token: tok }),
-      rpc('employee_is_on_leave_today', { p_employee_id: member.employeeId, p_company_id: member.companyId, p_session_token: tok }),
-      rpc('employee_get_own_incidents', { p_employee_id: member.employeeId, p_company_id: member.companyId, p_session_token: tok }),
-      rpc('employee_get_my_punches', {
-        p_company_id:    member.companyId,
-        p_employee_id:   member.employeeId,
-        p_from:          todayStr,
-        p_to:            todayStr,
-        p_session_token: tok,
-      }),
-      supabase.from('employees').select('registration_status').eq('id', member.employeeId).maybeSingle(),
-      rpc('employee_get_pa_tasks', { p_company_id: member.companyId, p_employee_id: member.employeeId, p_session_token: tok }),
-    ])
-
-    // Last punch
-    const lp = lastPunchRes.data as LastPunch | null
-    setLastPunch(lp)
-
-    if (lp?.type === 'in') {
-      setIsClockedIn(true)
-      clockInTimeRef.current = lp.date_time
-      baseElapsedRef.current = 0
-      setElapsedMs(Date.now() - new Date(lp.date_time).getTime())
-      // Check missed sign-out
-      const punchDate = lp.date_time.split('T')[0]
-      if (punchDate < todayStr) {
-        setHasMissedSignOut(true)
-      }
-    } else {
-      setIsClockedIn(false)
-      clockInTimeRef.current = null
-      baseElapsedRef.current = 0
-      setElapsedMs(0)
-    }
-
-    setJobs((jobsRes.data as Job[]) ?? [])
-    setLeaveRequests((leaveRes.data as LeaveRequest[]) ?? [])
-    setIsOnLeave(onLeaveRes.data === true || (Array.isArray(onLeaveRes.data) && onLeaveRes.data?.[0]?.is_on_leave === true))
-    setIncidents((incRes.data as Incident[]) ?? [])
-    setPunchesToday(((punchesRes.data as unknown[] | null) ?? []).length)
-    setRegStatus((regRes.data as RegistrationStatus | null)?.registration_status ?? null)
-
-    // PA tasks: due today, not done/snoozed
-    const allTasks = (paRes.data as PATask[]) ?? []
-    const todayTasks = allTasks.filter(t =>
-      t.status !== 'done' && t.status !== 'snoozed' &&
-      (!t.due_at || t.due_at.split('T')[0] === todayStr)
-    )
-    setPATasks(todayTasks)
-
-    // Colleagues on leave
     try {
-      const { data: colleaguesData } = await supabase
-        .from('leave_requests')
-        .select('employee_id, leave_type, end_date, employees!inner(name, surname)')
-        .eq('company_id', member.companyId)
-        .eq('status', 'approved')
-        .lte('start_date', todayStr)
-        .gte('end_date', todayStr)
-        .neq('employee_id', member.employeeId)
-        .limit(10)
-      setColleagues((colleaguesData as unknown as ColleagueOnLeave[]) ?? [])
-    } catch { /* non-critical */ }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rpc = supabase.rpc as any
+      const todayStr = new Date().toISOString().split('T')[0]
 
-    setLoading(false)
+      const [
+        lastPunchRes, jobsRes, leaveRes,
+        onLeaveRes, incRes, punchesRes,
+        paRes,
+      ] = await Promise.all([
+        rpc('employee_get_last_punch', { p_employee_id: member.employeeId, p_session_token: tok }),
+        rpc('employee_get_jobs_for_employee', { p_employee_id: member.employeeId, p_company_id: member.companyId, p_session_token: tok }),
+        rpc('employee_get_leave_requests', { p_employee_id: member.employeeId, p_company_id: member.companyId, p_session_token: tok }),
+        rpc('employee_is_on_leave_today', { p_employee_id: member.employeeId, p_company_id: member.companyId, p_session_token: tok }),
+        rpc('employee_get_own_incidents', { p_employee_id: member.employeeId, p_company_id: member.companyId, p_session_token: tok }),
+        rpc('employee_get_my_punches', {
+          p_company_id:    member.companyId,
+          p_employee_id:   member.employeeId,
+          p_from:          todayStr,
+          p_to:            todayStr,
+          p_session_token: tok,
+        }),
+        rpc('employee_get_pa_tasks', { p_company_id: member.companyId, p_employee_id: member.employeeId, p_session_token: tok }),
+      ])
+
+      // Last punch
+      const lp = lastPunchRes.data as LastPunch | null
+      setLastPunch(lp)
+
+      if (lp?.type === 'in') {
+        setIsClockedIn(true)
+        clockInTimeRef.current = lp.date_time
+        baseElapsedRef.current = 0
+        setElapsedMs(Date.now() - new Date(lp.date_time).getTime())
+        const punchDate = lp.date_time.split('T')[0]
+        if (punchDate < todayStr) {
+          setHasMissedSignOut(true)
+        }
+      } else {
+        setIsClockedIn(false)
+        clockInTimeRef.current = null
+        baseElapsedRef.current = 0
+        setElapsedMs(0)
+      }
+
+      setJobs((jobsRes.data as Job[]) ?? [])
+      setLeaveRequests((leaveRes.data as LeaveRequest[]) ?? [])
+      setIsOnLeave(onLeaveRes.data === true || (Array.isArray(onLeaveRes.data) && onLeaveRes.data?.[0]?.is_on_leave === true))
+      setIncidents((incRes.data as Incident[]) ?? [])
+      setPunchesToday(((punchesRes.data as unknown[] | null) ?? []).length)
+      setRegStatus(null)
+
+      // PA tasks: due today, not done/snoozed
+      const allTasks = (paRes.data as PATask[]) ?? []
+      const todayTasks = allTasks.filter(t =>
+        t.status !== 'done' && t.status !== 'snoozed' &&
+        (!t.due_at || t.due_at.split('T')[0] === todayStr)
+      )
+      setPATasks(todayTasks)
+
+      // Colleagues on leave — JWT employees only (code-auth users can't read leave_requests via RLS)
+      if (member.sessionToken === null) {
+        try {
+          const { data: colleaguesData } = await supabase
+            .from('leave_requests')
+            .select('employee_id, leave_type, end_date, employees!inner(name, surname)')
+            .eq('company_id', member.companyId)
+            .eq('status', 'approved')
+            .lte('start_date', todayStr)
+            .gte('end_date', todayStr)
+            .neq('employee_id', member.employeeId)
+            .limit(10)
+          setColleagues((colleaguesData as unknown as ColleagueOnLeave[]) ?? [])
+        } catch { /* non-critical */ }
+      }
+
+    } catch (e) {
+      console.error('[Dashboard] init failed:', e)
+      setInitError(true)
+    } finally {
+      setLoading(false)
+    }
   }
 
   // ── Clock modal ────────────────────────────────────────────────────────
@@ -358,6 +363,19 @@ export default function EmployeeOverviewPage() {
 
   if (loading) return (
     <div className="flex items-center justify-center h-64 text-text-secondary text-[14px]">Loading…</div>
+  )
+
+  if (initError) return (
+    <div className="flex flex-col items-center justify-center h-64 gap-3">
+      <span className="material-icons text-[48px] text-text-disabled">error_outline</span>
+      <p className="text-[14px] text-text-secondary">Failed to load dashboard. Please refresh.</p>
+      <button
+        onClick={() => init()}
+        className="text-[13px] font-semibold text-primary hover:underline"
+      >
+        Try again
+      </button>
+    </div>
   )
 
   return (
