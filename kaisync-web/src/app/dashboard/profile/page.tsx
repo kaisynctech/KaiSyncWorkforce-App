@@ -32,6 +32,7 @@ export default function ProfilePage() {
   const [photoUploading, setPhotoUploading] = useState(false)
   const [photoError,     setPhotoError]     = useState<string | null>(null)
   const photoInputRef = useRef<HTMLInputElement>(null)
+  const tokRef        = useRef<string | null>(null)
 
   // Personal
   const [firstName,   setFirstName]   = useState('')
@@ -55,39 +56,63 @@ export default function ProfilePage() {
     setCompanyId(member.companyId)
     setEmpId(member.employeeId)
 
-    const { data: companyRow } = await supabase
-      .from('companies')
-      .select('name')
-      .eq('id', member.companyId)
-      .maybeSingle()
-    if (companyRow?.name) setCompanyName(companyRow.name)
+    const tok = member.sessionToken
+      ?? (await supabase.auth.getSession()).data.session?.access_token
+      ?? null
+    tokRef.current = tok
 
-    const { data } = await supabase
-      .from('employees')
-      .select('*')
-      .eq('id', member.employeeId)
-      .eq('company_id', member.companyId)
-      .maybeSingle()
+    if (member.sessionToken !== null) {
+      // Code-auth: read limited data from kf_cs localStorage
+      try {
+        const raw = typeof window !== 'undefined' ? localStorage.getItem('kf_cs') : null
+        if (raw) {
+          const cs = JSON.parse(raw) as {
+            employee?: { name?: string; surname?: string; position?: string; access_level?: string }
+            company?: { name?: string }
+          }
+          if (cs.company?.name) setCompanyName(cs.company.name)
+          if (cs.employee) {
+            setFirstName(cs.employee.name ?? '')
+            setLastName(cs.employee.surname ?? '')
+            setEmployee({ name: cs.employee.name ?? null, surname: cs.employee.surname ?? null, position: cs.employee.position ?? null, access_level: cs.employee.access_level ?? null } as unknown as Employee)
+          }
+        }
+      } catch { /* ignore */ }
+    } else {
+      // JWT path: query tables directly
+      const { data: companyRow } = await supabase
+        .from('companies')
+        .select('name')
+        .eq('id', member.companyId)
+        .maybeSingle()
+      if (companyRow?.name) setCompanyName(companyRow.name)
 
-    if (data) {
-      const emp = data as Employee
-      setEmployee(emp)
-      setFirstName(emp.name ?? '')
-      setLastName(emp.surname ?? '')
-      setPhone(emp.phone ?? '')
-      setIdNumber(emp.id_number ?? '')
-      setBankName(emp.bank_name ?? '')
-      setAccountNumber(emp.bank_account ?? '')
-      setBranchCode(emp.bank_branch_code ?? '')
+      const { data } = await supabase
+        .from('employees')
+        .select('*')
+        .eq('id', member.employeeId)
+        .eq('company_id', member.companyId)
+        .maybeSingle()
 
-      // Load signed URL for profile photo
-      if (emp.profile_photo_url) {
-        const { data: signed } = await supabase.storage
-          .from('workforce-media')
-          .createSignedUrl(emp.profile_photo_url, 3600)
-        if (signed?.signedUrl) setPhotoUrl(signed.signedUrl)
-      } else {
-        setPhotoUrl(null)
+      if (data) {
+        const emp = data as Employee
+        setEmployee(emp)
+        setFirstName(emp.name ?? '')
+        setLastName(emp.surname ?? '')
+        setPhone(emp.phone ?? '')
+        setIdNumber(emp.id_number ?? '')
+        setBankName(emp.bank_name ?? '')
+        setAccountNumber(emp.bank_account ?? '')
+        setBranchCode(emp.bank_branch_code ?? '')
+
+        if (emp.profile_photo_url) {
+          const { data: signed } = await supabase.storage
+            .from('workforce-media')
+            .createSignedUrl(emp.profile_photo_url, 3600)
+          if (signed?.signedUrl) setPhotoUrl(signed.signedUrl)
+        } else {
+          setPhotoUrl(null)
+        }
       }
     }
     setLoading(false)

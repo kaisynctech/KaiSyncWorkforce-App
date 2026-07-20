@@ -63,6 +63,7 @@ export default function IncidentDetailPage() {
   const [empId,      setEmpId]      = useState<string | null>(null)
   const [companyId,  setCompanyId]  = useState<string | null>(null)
   const photoRef = useRef<HTMLInputElement>(null)
+  const tokRef   = useRef<string | null>(null)
 
   useEffect(() => { init() }, [incId])
 
@@ -74,23 +75,20 @@ export default function IncidentDetailPage() {
     setEmpId(member.employeeId)
     setCompanyId(member.companyId)
 
-    const { data: { session } } = await supabase.auth.getSession()
-    const tok = session?.access_token ?? null
+    const tok = member.sessionToken
+      ?? (await supabase.auth.getSession()).data.session?.access_token
+      ?? null
+    tokRef.current = tok
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rpc = (fn: string, args: Record<string, unknown>, opts?: Record<string, unknown>) => (supabase.rpc as any)(fn, args, opts)
     const [incRes, cRes, hRes] = await Promise.all([
-      supabase
-        .from('incident_reports')
-        .select('id, title, severity, status, occurred_at, location_text, description, created_at, photo_urls')
-        .eq('id', incId)
-        .eq('company_id', member.companyId)
-        .maybeSingle(),
+      rpc('employee_get_incident', { p_incident_id: incId, p_employee_id: member.employeeId, p_company_id: member.companyId, p_session_token: tok }),
       rpc('employee_get_incident_comments', { p_incident_id: incId, p_employee_id: member.employeeId, p_company_id: member.companyId, p_session_token: tok }),
       rpc('employee_get_incident_status_history', { p_incident_id: incId, p_employee_id: member.employeeId, p_company_id: member.companyId, p_session_token: tok }),
     ])
 
-    const inc = incRes.data as Incident | null
+    const inc = ((incRes.data as Incident[] | null)?.[0]) ?? null
     setIncident(inc)
     setComments((cRes.data as Comment[]) ?? [])
     setHistory((hRes.data as StatusEntry[]) ?? [])
@@ -110,14 +108,13 @@ export default function IncidentDetailPage() {
     if (!comment.trim() || !empId || !companyId) return
     setSending(true)
     const supabase = createClient()
-    const { data: { session } } = await supabase.auth.getSession()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (supabase.rpc as any)('employee_add_incident_comment', {
       p_incident_id:   incId,
       p_employee_id:   empId,
       p_company_id:    companyId,
       p_body:          comment.trim(),
-      p_session_token: session?.access_token ?? null,
+      p_session_token: tokRef.current,
     })
     setComment('')
     await init()
@@ -137,14 +134,13 @@ export default function IncidentDetailPage() {
       paths.push(path)
     }
     if (paths.length > 0) {
-      const { data: { session } } = await supabase.auth.getSession()
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await (supabase.rpc as any)('employee_append_incident_photos', {
         p_incident_id:   incId,
         p_employee_id:   empId,
         p_company_id:    companyId,
         p_photo_urls:    paths,
-        p_session_token: session?.access_token ?? null,
+        p_session_token: tokRef.current,
       })
       await init()
     }

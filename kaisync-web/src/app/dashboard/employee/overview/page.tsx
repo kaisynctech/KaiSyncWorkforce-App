@@ -19,6 +19,9 @@ interface Job {
   id: string
   title: string
   status: string | null
+  site_id: string | null
+  site_radius_mode: boolean | null
+  site_radius_meters: number | null
 }
 
 interface LeaveRequest {
@@ -56,6 +59,16 @@ interface ColleagueOnLeave {
 
 
 // ── Helpers ────────────────────────────────────────────────────────────────
+function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000
+  const φ1 = lat1 * Math.PI / 180
+  const φ2 = lat2 * Math.PI / 180
+  const Δφ = (lat2 - lat1) * Math.PI / 180
+  const Δλ = (lng2 - lng1) * Math.PI / 180
+  const a = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
 function fmtElapsed(ms: number): string {
   const hrs  = Math.floor(ms / 3600000)
   const mins = Math.floor((ms % 3600000) / 60000)
@@ -105,6 +118,12 @@ export default function EmployeeOverviewPage() {
   const [clockJobId,     setClockJobId]     = useState<string | null>(null)
   const [geoLat,         setGeoLat]         = useState<number | null>(null)
   const [geoLng,         setGeoLng]         = useState<number | null>(null)
+  const [geoAddress,     setGeoAddress]     = useState<string | null>(null)
+  const [geofenceData,   setGeofenceData]   = useState<{
+    latitude: number
+    longitude: number
+    radius_meters: number
+  } | null>(null)
   const [clockLoading,   setClockLoading]   = useState(false)
   const [clockError,     setClockError]     = useState<string | null>(null)
 
@@ -253,13 +272,49 @@ export default function EmployeeOverviewPage() {
     setClockJobId(null)
     setGeoLat(null)
     setGeoLng(null)
+    setGeoAddress(null)
+    setGeofenceData(null)
     setShowClockModal(true)
 
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        pos => { setGeoLat(pos.coords.latitude); setGeoLng(pos.coords.longitude) },
+        async pos => {
+          const lat = pos.coords.latitude
+          const lng = pos.coords.longitude
+          setGeoLat(lat)
+          setGeoLng(lng)
+          try {
+            const res = await fetch(
+              `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
+              { headers: { 'Accept-Language': 'en' } }
+            )
+            const json = await res.json()
+            setGeoAddress((json as { display_name?: string }).display_name ?? null)
+          } catch {
+            // reverse geocode failed — address stays null, punch still goes through
+          }
+        },
         () => {}
       )
+    }
+  }
+
+  async function onJobSelect(jobId: string | null) {
+    setClockJobId(jobId)
+    setGeofenceData(null)
+    if (!jobId) return
+    const job = jobs.find(j => j.id === jobId)
+    if (!job?.site_radius_mode || !job?.site_id) return
+    const supabase = createClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (supabase.rpc as any)('employee_get_job_geofence', {
+      p_company_id:    companyIdRef.current,
+      p_employee_id:   empIdRef.current,
+      p_job_id:        jobId,
+      p_session_token: tokRef.current,
+    })
+    if (data) {
+      setGeofenceData(data as { latitude: number; longitude: number; radius_meters: number })
     }
   }
 
@@ -269,6 +324,17 @@ export default function EmployeeOverviewPage() {
     if (!empId || !compId) return
     setClockLoading(true)
     setClockError(null)
+
+    if (!isClockedIn && geofenceData && geoLat !== null && geoLng !== null) {
+      const distM = haversineMeters(geoLat, geoLng, geofenceData.latitude, geofenceData.longitude)
+      if (distM > geofenceData.radius_meters) {
+        setClockError(
+          `Outside work zone — you are ${Math.round(distM)}m from the site (limit: ${Math.round(geofenceData.radius_meters)}m). Move closer and try again.`
+        )
+        setClockLoading(false)
+        return
+      }
+    }
 
     const supabase = createClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -281,7 +347,7 @@ export default function EmployeeOverviewPage() {
       p_date_time:             new Date().toISOString(),
       p_latitude:              geoLat,
       p_longitude:             geoLng,
-      p_address:               null,
+      p_address:               geoAddress,
       p_job_id:                clockJobId || null,
       p_notes:                 clockNote || null,
       p_punched_by_manager_id: null,
@@ -625,7 +691,7 @@ export default function EmployeeOverviewPage() {
             {!isClockedIn && activeJobs.length > 0 && (
               <div className="flex flex-col gap-1.5">
                 <label className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide">Job (optional)</label>
-                <select className="input" value={clockJobId ?? ''} onChange={e => setClockJobId(e.target.value || null)}>
+                <select className="input" value={clockJobId ?? ''} onChange={e => onJobSelect(e.target.value || null)}>
                   <option value="">No job selected</option>
                   {activeJobs.map(j => (
                     <option key={j.id} value={j.id}>{j.title}</option>
@@ -640,12 +706,48 @@ export default function EmployeeOverviewPage() {
                 value={clockNote} onChange={e => setClockNote(e.target.value)} />
             </div>
 
-            <div className="flex items-center gap-2 text-[12px] text-text-secondary">
-              <span className={`material-icons text-[16px] ${geoLat != null ? 'text-success' : 'text-text-disabled'}`}>
-                {geoLat != null ? 'location_on' : 'location_off'}
-              </span>
-              {geoLat != null ? `GPS: ${geoLat.toFixed(4)}, ${geoLng!.toFixed(4)}` : 'Location not available'}
+            {/* Location feedback */}
+            <div className="mb-3">
+              {geoLat ? (
+                <p className="text-[12px] text-text-secondary flex items-center gap-1">
+                  <span className="material-icons text-[14px] text-success">location_on</span>
+                  {geoAddress ?? `${geoLat.toFixed(5)}, ${geoLng?.toFixed(5)}`}
+                </p>
+              ) : (
+                <p className="text-[12px] text-text-disabled flex items-center gap-1">
+                  <span className="material-icons text-[14px]">location_searching</span>
+                  Getting location…
+                </p>
+              )}
             </div>
+
+            {/* Leave warning */}
+            {!isClockedIn && isOnLeave && (
+              <div className="rounded-lg px-3 py-2.5 bg-warning/10 border border-warning/30 mb-3">
+                <p className="text-[12px] font-semibold text-warning">You are on approved leave today</p>
+                <p className="text-[12px] text-text-secondary mt-0.5">You can still clock in — HR will see this in the attendance report.</p>
+              </div>
+            )}
+
+            {/* Geofence status */}
+            {geofenceData && geoLat !== null && geoLng !== null && (() => {
+              const distM = haversineMeters(geoLat, geoLng!, geofenceData.latitude, geofenceData.longitude)
+              const inside = distM <= geofenceData.radius_meters
+              return (
+                <div className={`rounded-lg px-3 py-2.5 mb-3 ${
+                  inside
+                    ? 'bg-success/10 border border-success/30'
+                    : 'bg-error/10 border border-error/30'
+                }`}>
+                  <p className={`text-[12px] font-semibold ${inside ? 'text-success' : 'text-error'}`}>
+                    {inside ? 'Within work zone' : 'Outside work zone'}
+                  </p>
+                  <p className="text-[12px] text-text-secondary mt-0.5">
+                    {Math.round(distM)}m from site center · limit {Math.round(geofenceData.radius_meters)}m
+                  </p>
+                </div>
+              )
+            })()}
 
             <div className="flex gap-3 pt-1">
               <button onClick={() => setShowClockModal(false)} disabled={clockLoading}

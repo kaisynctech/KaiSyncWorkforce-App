@@ -79,6 +79,7 @@ interface Incident {
   title: string
   severity: string | null
   status: string | null
+  job_id: string | null
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -173,8 +174,9 @@ export default function JobCardPage() {
     setEmpId(member.employeeId)
     setCompanyId(member.companyId)
 
-    const { data: { session } } = await supabase.auth.getSession()
-    const tok = session?.access_token ?? ''
+    const tok = member.sessionToken
+      ?? (await supabase.auth.getSession()).data.session?.access_token
+      ?? ''
     setToken(tok)
 
     try {
@@ -185,11 +187,11 @@ export default function JobCardPage() {
         rpc('employee_get_jobs_for_employee', { p_employee_id: member.employeeId, p_company_id: member.companyId, p_session_token: tok }),
         rpc('employee_get_job_card_for_job',  { p_company_id: member.companyId, p_job_id: jobId, p_employee_id: member.employeeId, p_session_token: tok }),
         rpc('employee_get_checklist_for_job', { p_company_id: member.companyId, p_job_id: jobId, p_employee_id: member.employeeId, p_session_token: tok }),
-        supabase.from('job_documents').select('*').eq('company_id', member.companyId).eq('job_id', jobId),
+        rpc('employee_get_job_documents', { p_company_id: member.companyId, p_job_id: jobId, p_employee_id: member.employeeId, p_session_token: tok }),
         rpc('employee_job_site_open_visit',   { p_company_id: member.companyId, p_employee_id: member.employeeId, p_session_token: tok }),
         rpc('employee_get_inventory_usage_for_job', { p_company_id: member.companyId, p_job_id: jobId, p_employee_id: member.employeeId, p_session_token: tok }),
         rpc('employee_get_job_feedback',      { p_company_id: member.companyId, p_employee_id: member.employeeId, p_job_id: jobId, p_session_token: tok }),
-        supabase.from('incident_reports').select('id,title,severity,status').eq('company_id', member.companyId).eq('job_id', jobId).eq('employee_id', member.employeeId),
+        rpc('employee_get_own_incidents', { p_company_id: member.companyId, p_employee_id: member.employeeId, p_session_token: tok }),
       ])
 
       const foundJob = ((jobsRes.data as Job[]) ?? []).find(j => j.id === jobId)
@@ -224,7 +226,7 @@ export default function JobCardPage() {
       setSiteVisit((visitRes.data as SiteVisit[] | null)?.[0] ?? null)
       setInventory((invRes.data as InventoryUsage[]) ?? [])
       setFeedback((fbRes.data as Feedback[] | null)?.[0] ?? null)
-      setIncidents((incRes.data as Incident[]) ?? [])
+      setIncidents(((incRes.data as Incident[]) ?? []).filter(i => i.job_id === jobId))
 
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load job.')
@@ -401,9 +403,14 @@ export default function JobCardPage() {
 
   // ── Inventory ──────────────────────────────────────────────────────────
   async function openInvModal() {
-    if (!companyId) return
+    if (!companyId || !empId) return
     const supabase = createClient()
-    const { data } = await supabase.from('inventory_items').select('id, name, supplier, unit_cost').eq('company_id', companyId)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (supabase.rpc as any)('employee_get_inventory_items', {
+      p_company_id:    companyId,
+      p_employee_id:   empId,
+      p_session_token: token,
+    })
     setInvItems((data as InventoryItem[]) ?? [])
     setInvItemId(''); setInvQty('')
     setInvModalOpen(true)

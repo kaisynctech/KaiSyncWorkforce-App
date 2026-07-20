@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useRef, useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
@@ -49,7 +49,8 @@ interface Props {
 }
 
 export default function PATaskEditor({ mode, taskId }: Props) {
-  const router = useRouter()
+  const router        = useRouter()
+  const isCodeAuthRef = useRef(false)
 
   const [loading,    setLoading]    = useState(mode === 'edit')
   const [notFound,   setNotFound]   = useState(false)
@@ -88,9 +89,11 @@ export default function PATaskEditor({ mode, taskId }: Props) {
     setEmpId(member.employeeId)
     setCompanyId(member.companyId)
 
-    const { data: { session } } = await supabase.auth.getSession()
-    const tok = session?.access_token ?? ''
+    const tok = member.sessionToken
+      ?? (await supabase.auth.getSession()).data.session?.access_token
+      ?? ''
     setToken(tok)
+    isCodeAuthRef.current = member.sessionToken !== null
 
     if (mode === 'edit' && taskId) {
       try {
@@ -131,14 +134,25 @@ export default function PATaskEditor({ mode, taskId }: Props) {
     try {
       let data: LinkOption[] = []
       if (linkedType === 'client') {
-        const { data: rows } = await supabase.from('clients').select('id, name').eq('company_id', companyId)
-        data = (rows ?? []).map(r => ({ id: r.id, label: r.name }))
+        if (!isCodeAuthRef.current) {
+          const { data: rows } = await supabase.from('clients').select('id, name').eq('company_id', companyId)
+          data = (rows ?? []).map(r => ({ id: r.id, label: r.name }))
+        }
       } else if (linkedType === 'job') {
-        const { data: rows } = await supabase.from('jobs').select('id, title').eq('company_id', companyId)
-        data = (rows ?? []).map(r => ({ id: r.id, label: r.title }))
+        if (empId) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data: rows } = await (supabase.rpc as any)('employee_get_jobs_for_employee', {
+            p_employee_id:   empId,
+            p_company_id:    companyId,
+            p_session_token: token,
+          })
+          data = ((rows ?? []) as { id: string; title: string }[]).map(r => ({ id: r.id, label: r.title }))
+        }
       } else if (linkedType === 'deal') {
-        const { data: rows } = await supabase.from('client_deals').select('id, title').eq('company_id', companyId)
-        data = (rows ?? []).map(r => ({ id: r.id, label: r.title }))
+        if (!isCodeAuthRef.current) {
+          const { data: rows } = await supabase.from('client_deals').select('id, title').eq('company_id', companyId)
+          data = (rows ?? []).map(r => ({ id: r.id, label: r.title }))
+        }
       }
       setLinkOptions(data)
     } catch (e) { console.error(e) }

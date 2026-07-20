@@ -64,6 +64,7 @@ export default function MessagesPage() {
   const cIdRef        = useRef<string | null>(null)
   const eIdRef        = useRef<string | null>(null)
   const tokRef        = useRef<string | null>(null)
+  const isCodeAuthRef = useRef(false)
   const selectedRef   = useRef<MessageThread | null>(null)
   selectedRef.current = selected
 
@@ -80,6 +81,7 @@ export default function MessagesPage() {
     tokRef.current = member.sessionToken
       ?? (await supabase.auth.getSession()).data.session?.access_token
       ?? null
+    isCodeAuthRef.current = member.sessionToken !== null
     setCompanyId(member.companyId)
     setEmployeeId(member.employeeId)
 
@@ -130,15 +132,18 @@ export default function MessagesPage() {
   async function loadEmployees(cid: string, myId: string) {
     const supabase = createClient()
     try {
-      const { data } = await supabase
-        .from('employees').select('id, name, surname')
-        .eq('company_id', cid).eq('is_active', true)
-        .neq('id', myId).order('name')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data } = await (supabase.rpc as any)('employee_list_company_peers', {
+        p_company_id:    cid,
+        p_employee_id:   myId,
+        p_session_token: tokRef.current,
+      })
       setEmployees((data ?? []) as EmpPick[])
-    } catch { /* non-critical for code-auth users */ }
+    } catch { /* non-critical */ }
   }
 
   async function loadUnreadThreadIds(cid: string, eid: string) {
+    if (isCodeAuthRef.current) return
     const supabase = createClient()
     try {
       const { data } = await supabase
