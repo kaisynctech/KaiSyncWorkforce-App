@@ -234,8 +234,8 @@ export default function EmployeeNotificationsPage() {
                 onClick={() => {
                   if (n.source === 'app') {
                     if (n.notification_type === 'registration_approved' || n.notification_type === 'registration_rejected') {
-                      // Registration status notification — mark as read and stay on notifications
                       if (!n.is_read) markRead(n)
+                      router.push('/auth/id-entry')
                       return
                     }
                     if (!n.is_read) markRead(n)

@@ -59,6 +59,7 @@ export default function MessagesPage() {
   const [myName,           setMyName]           = useState('')
   const [notLinked,        setNotLinked]        = useState(false)
   const [unreadThreadIds,  setUnreadThreadIds]  = useState<Set<string>>(new Set())
+  const [activeTab,        setActiveTab]        = useState<'direct' | 'feed' | 'teams'>('direct')
 
   const bottomRef     = useRef<HTMLDivElement>(null)
   const cIdRef        = useRef<string | null>(null)
@@ -294,6 +295,15 @@ export default function MessagesPage() {
     `${e.name} ${e.surname}`.toLowerCase().includes(empSearch.toLowerCase())
   )
 
+  const filteredThreads = threads.filter(t => {
+    const isFeed    = t.type_raw === 'company_feed'
+    const isJobTeam = !isFeed && (t.subject?.startsWith('Job:') || (t.participant_ids?.length ?? 0) > 2)
+    const isDirect  = !isFeed && !isJobTeam
+    if (activeTab === 'feed')  return isFeed
+    if (activeTab === 'teams') return isJobTeam
+    return isDirect
+  })
+
   // ── Not linked guard ───────────────────────────────────────────────────────
   if (notLinked) return (
     <div className="flex items-center justify-center h-full">
@@ -323,11 +333,25 @@ export default function MessagesPage() {
           </button>
         </div>
 
+        {/* Tab filter */}
+        <div className="flex border-b border-divider shrink-0">
+          {(['direct', 'feed', 'teams'] as const).map(tab => (
+            <button key={tab} onClick={() => setActiveTab(tab)}
+              className={`flex-1 py-2 text-[12px] font-semibold capitalize transition-colors ${
+                activeTab === tab
+                  ? 'text-primary border-b-2 border-primary'
+                  : 'text-text-secondary hover:text-text-primary'
+              }`}>
+              {tab === 'direct' ? 'Direct' : tab === 'feed' ? 'Feed' : 'Teams'}
+            </button>
+          ))}
+        </div>
+
         {/* List */}
         <div className="flex-1 overflow-y-auto">
           {loading ? (
             <div className="py-16 text-center text-[13px] text-text-disabled">Loading…</div>
-          ) : threads.length === 0 ? (
+          ) : filteredThreads.length === 0 ? (
             <div className="py-16 text-center px-4">
               <span className="material-icons text-[44px] text-text-disabled block mb-2">chat_bubble_outline</span>
               <p className="text-[13px] text-text-secondary">No conversations yet</p>
@@ -335,7 +359,7 @@ export default function MessagesPage() {
                 Start a conversation
               </button>
             </div>
-          ) : threads.map(t => {
+          ) : filteredThreads.map(t => {
             const isActive = selected?.id === t.id
             const isUnread = unreadThreadIds.has(t.id) && !isActive
             return (

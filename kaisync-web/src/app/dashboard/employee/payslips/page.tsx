@@ -131,6 +131,9 @@ export default function PayslipsPage() {
                   <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Net Pay</th>
                   <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Status</th>
                   <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Paid At</th>
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Reg Hrs</th>
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">OT Hrs</th>
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Days</th>
                   <th className="px-4 py-2.5" />
                 </tr>
               </thead>
@@ -158,6 +161,15 @@ export default function PayslipsPage() {
                       {p.paid_at
                         ? new Date(p.paid_at).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })
                         : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
+                      {p.regular_hours != null ? p.regular_hours.toFixed(1) : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
+                      {p.overtime_hours != null ? p.overtime_hours.toFixed(1) : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
+                      {p.working_days != null ? p.working_days : '—'}
                     </td>
                     <td className="px-4 py-3">
                       <button onClick={() => downloadPDF(p)} disabled={downloading === p.id}

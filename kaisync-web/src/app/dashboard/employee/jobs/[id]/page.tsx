@@ -16,6 +16,8 @@ interface Job {
   description: string | null
   client_id: string | null
   site_id: string | null
+  client_name: string | null
+  site_name: string | null
 }
 
 interface JobCard {
@@ -184,7 +186,7 @@ export default function JobCardPage() {
       const rpc = (fn: string, args: Record<string, unknown>, opts?: Record<string, unknown>) => (supabase.rpc as any)(fn, args, opts)
 
       const [jobsRes, cardRes, checkRes, docsRes, visitRes, invRes, fbRes, incRes] = await Promise.all([
-        rpc('employee_get_jobs_for_employee', { p_employee_id: member.employeeId, p_company_id: member.companyId, p_session_token: tok }),
+        rpc('employee_get_job_for_employee', { p_company_id: member.companyId, p_employee_id: member.employeeId, p_job_id: jobId, p_session_token: tok }),
         rpc('employee_get_job_card_for_job',  { p_company_id: member.companyId, p_job_id: jobId, p_employee_id: member.employeeId, p_session_token: tok }),
         rpc('employee_get_checklist_for_job', { p_company_id: member.companyId, p_job_id: jobId, p_employee_id: member.employeeId, p_session_token: tok }),
         rpc('employee_get_job_documents', { p_company_id: member.companyId, p_job_id: jobId, p_employee_id: member.employeeId, p_session_token: tok }),
@@ -194,7 +196,7 @@ export default function JobCardPage() {
         rpc('employee_get_own_incidents', { p_company_id: member.companyId, p_employee_id: member.employeeId, p_session_token: tok }),
       ])
 
-      const foundJob = ((jobsRes.data as Job[]) ?? []).find(j => j.id === jobId)
+      const foundJob = ((jobsRes.data as Job[]) ?? [])[0] ?? null
       if (!foundJob) { setNotFound(true); setLoading(false); return }
       setJob(foundJob)
 
@@ -494,6 +496,11 @@ export default function JobCardPage() {
           </button>
           <div className="flex-1 min-w-0">
             <h1 className="text-[18px] font-semibold text-text-primary truncate">{job.title}</h1>
+            {(job.client_name || job.site_name) && (
+              <p className="text-[12px] text-text-secondary mt-0.5 truncate">
+                {[job.client_name, job.site_name].filter(Boolean).join(' · ')}
+              </p>
+            )}
           </div>
           {job.status && (
             <span className={`text-[11px] font-semibold px-2 py-[3px] rounded-full capitalize shrink-0 ${STATUS_STYLES[job.status] ?? 'bg-surface-elevated text-text-secondary'}`}>
