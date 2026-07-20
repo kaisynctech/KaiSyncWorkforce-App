@@ -17,9 +17,21 @@ interface LeaveRequest {
 }
 
 interface LeaveSummary {
-  leave_type:    string
-  days_approved: number
-  days_pending:  number
+  leave_type:     string
+  annual_days:    number
+  days_approved:  number
+  days_pending:   number
+  days_remaining: number
+}
+
+const LEAVE_QUOTA: Record<string, number> = {
+  'Annual Leave':          15,
+  'Sick Leave':            10,
+  'Family Responsibility':  3,
+  'Maternity Leave':       60,
+  'Paternity Leave':       10,
+  'Study Leave':            5,
+  'Unpaid Leave':         365,
 }
 
 const LEAVE_TYPES = [
@@ -54,15 +66,21 @@ function fmtDate(iso: string): string {
 }
 
 function computeSummary(requests: LeaveRequest[]): LeaveSummary[] {
-  const map: Record<string, LeaveSummary> = {}
-  for (const r of requests) {
-    if (!map[r.leave_type]) {
-      map[r.leave_type] = { leave_type: r.leave_type, days_approved: 0, days_pending: 0 }
+  const thisYear = new Date().getFullYear()
+  const yearly = requests.filter(r => new Date(r.start_date).getFullYear() === thisYear)
+  return LEAVE_TYPES.map(leaveType => {
+    const forType  = yearly.filter(r => r.leave_type === leaveType)
+    const approved = forType.filter(r => r.status === 'approved').reduce((s, r) => s + r.total_days, 0)
+    const pending  = forType.filter(r => r.status === 'pending').reduce((s, r) => s + r.total_days, 0)
+    const annual   = LEAVE_QUOTA[leaveType] ?? 0
+    return {
+      leave_type:     leaveType,
+      annual_days:    annual,
+      days_approved:  approved,
+      days_pending:   pending,
+      days_remaining: Math.max(0, annual - approved),
     }
-    if (r.status === 'approved') map[r.leave_type].days_approved += r.total_days
-    if (r.status === 'pending')  map[r.leave_type].days_pending  += r.total_days
-  }
-  return Object.values(map)
+  }).filter(s => s.days_approved > 0 || s.days_pending > 0 || s.annual_days > 0)
 }
 
 function calcTotalDays(start: string, end: string): number {
@@ -236,11 +254,14 @@ export default function EmployeeLeavePage() {
                     </span>
                     <p className="text-[12px] font-semibold text-text-primary truncate">{s.leave_type}</p>
                   </div>
-                  <p className="text-[22px] font-bold text-text-primary">{s.days_approved}</p>
-                  <p className="text-[11px] text-text-disabled">days approved</p>
-                  {s.days_pending > 0 && (
-                    <p className="text-[11px] text-warning mt-0.5">{s.days_pending}d pending</p>
-                  )}
+                  <p className="text-[22px] font-bold text-text-primary">
+                    {s.days_remaining}<span className="text-[14px] text-text-disabled font-normal"> / {s.annual_days}d</span>
+                  </p>
+                  <p className="text-[11px] text-text-disabled">days remaining</p>
+                  <p className="text-[11px] text-text-secondary mt-0.5">
+                    {s.days_approved}d taken
+                    {s.days_pending > 0 ? ` · ${s.days_pending}d pending` : ''}
+                  </p>
                 </div>
               ))}
             </div>
