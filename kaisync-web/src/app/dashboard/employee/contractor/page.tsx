@@ -185,8 +185,10 @@ export default function ContractorProfilePage() {
     if (!member) { setLoading(false); return }
 
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const token = session?.access_token ?? ''
+      const tok = member.sessionToken
+        ?? (await supabase.auth.getSession()).data.session?.access_token
+        ?? null
+      const token = tok ?? ''
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data, error: rpcErr } = await (supabase.rpc as any)('employee_get_linked_contractors', {
         p_company_id:   member.companyId,

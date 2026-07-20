@@ -10,6 +10,7 @@ interface Manager {
   name: string
   surname: string
   position: string | null
+  access_level?: string | null
 }
 
 interface Job {
@@ -58,8 +59,10 @@ export default function NewIncidentPage() {
   const [error,      setError]      = useState<string | null>(null)
 
   // Member refs for submit
-  const empIdRef  = useRef<string | null>(null)
-  const compIdRef = useRef<string | null>(null)
+  const empIdRef       = useRef<string | null>(null)
+  const compIdRef      = useRef<string | null>(null)
+  const tokRef         = useRef<string | null>(null)
+  const isCodeAuthRef  = useRef<boolean>(false)
 
   useEffect(() => { init() }, [])
 
@@ -68,27 +71,32 @@ export default function NewIncidentPage() {
     const member = await resolveCurrentMember(supabase)
     if (!member) { setLoading(false); return }
 
-    empIdRef.current  = member.employeeId
-    compIdRef.current = member.companyId
+    empIdRef.current      = member.employeeId
+    compIdRef.current     = member.companyId
+    isCodeAuthRef.current = member.sessionToken !== null
 
-    const { data: { session } } = await supabase.auth.getSession()
-    const tok = session?.access_token ?? null
+    const tok = member.sessionToken
+      ?? (await supabase.auth.getSession()).data.session?.access_token
+      ?? null
+    tokRef.current = tok
 
-    const [managersRes, jobsRes] = await Promise.all([
-      supabase.from('employees')
-        .select('id, name, surname, position')
-        .eq('company_id', member.companyId)
-        .in('access_level', ['manager', 'hr', 'owner'])
-        .order('name'),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (supabase.rpc as any)('employee_get_jobs_for_employee', {
+    const MGMT = ['manager', 'hr', 'hr_admin', 'owner', 'admin']
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rpc = (fn: string, args: Record<string, unknown>) => (supabase.rpc as any)(fn, args)
+    const [peersRes, jobsRes] = await Promise.all([
+      rpc('employee_list_company_peers', {
+        p_employee_id:   member.employeeId,
+        p_company_id:    member.companyId,
+        p_session_token: tok,
+      }),
+      rpc('employee_get_jobs_for_employee', {
         p_employee_id:   member.employeeId,
         p_company_id:    member.companyId,
         p_session_token: tok,
       }),
     ])
 
-    setManagers((managersRes.data as Manager[]) ?? [])
+    setManagers(((peersRes.data as Manager[]) ?? []).filter(e => MGMT.includes(e.access_level ?? '')))
     setJobs((jobsRes.data as Job[]) ?? [])
     setLoading(false)
   }
@@ -112,14 +120,23 @@ export default function NewIncidentPage() {
     setError(null)
 
     const supabase = createClient()
-    const { data: { session } } = await supabase.auth.getSession()
 
     // Get employee name for reported_by_name
-    const { data: empData } = await supabase
-      .from('employees')
-      .select('name, surname')
-      .eq('id', empId)
-      .single()
+    let reporterName: string | null = null
+    if (isCodeAuthRef.current) {
+      try {
+        const kfcs = JSON.parse(localStorage.getItem('kf_cs') ?? '{}')
+        const emp = kfcs.employee
+        if (emp?.name) reporterName = `${emp.name}${emp.surname ? ' ' + emp.surname : ''}`
+      } catch { /* ignore */ }
+    } else {
+      const { data: empData } = await supabase
+        .from('employees')
+        .select('name, surname')
+        .eq('id', empId)
+        .single()
+      if (empData) reporterName = `${empData.name} ${empData.surname}`
+    }
 
     // Upload photos
     const photoUrls: string[] = []
@@ -151,14 +168,14 @@ export default function NewIncidentPage() {
         p_site_id:          null,
         p_assignee_id:      selectedManagerId || null,
         p_photo_urls:       photoUrls.length > 0 ? photoUrls : null,
-        p_reported_by_name: empData ? `${empData.name} ${empData.surname}` : null,
+        p_reported_by_name: reporterName,
         p_title:            title.trim() || null,
         p_category:         category || null,
         p_occurred_at:      occurredAt,
         p_latitude:         geoLat,
         p_longitude:        geoLng,
         p_location_text:    location.trim() || null,
-        p_session_token:    session?.access_token ?? null,
+        p_session_token:    tokRef.current,
       })
       if (rpcErr) throw rpcErr
       router.push('/dashboard/employee/incidents')

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
@@ -30,6 +30,7 @@ export default function NewJobPage() {
   const [loading,   setLoading]   = useState(true)
   const [submitting,setSubmitting]= useState(false)
   const [error,     setError]     = useState<string | null>(null)
+  const tokRef = useRef<string | null>(null)
 
   // Form
   const [title,       setTitle]       = useState('')
@@ -52,13 +53,18 @@ export default function NewJobPage() {
     setEmpId(member.employeeId)
     setCompanyId(member.companyId)
 
+    const tok = member.sessionToken
+      ?? (await supabase.auth.getSession()).data.session?.access_token
+      ?? null
+    tokRef.current = tok
+
     try {
-      const { data: employeesData, error: rpcErr } = await supabase
-        .from('employees')
-        .select('id, name, surname, position, access_level')
-        .eq('company_id', member.companyId)
-        .eq('is_active', true)
-        .order('name')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: employeesData, error: rpcErr } = await (supabase.rpc as any)('employee_list_company_peers', {
+        p_employee_id:   member.employeeId,
+        p_company_id:    member.companyId,
+        p_session_token: tok,
+      })
       if (rpcErr) throw rpcErr
       const emps = (employeesData ?? []) as Employee[]
       setAllEmps(emps)
@@ -91,8 +97,7 @@ export default function NewJobPage() {
 
     const supabase = createClient()
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const token = session?.access_token ?? ''
+      const token = tokRef.current ?? ''
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error: rpcErr } = await (supabase.rpc as any)('employee_create_job', {
         p_company_id:                companyId,
