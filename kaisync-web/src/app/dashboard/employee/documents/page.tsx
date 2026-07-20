@@ -37,6 +37,8 @@ export default function DocumentsPage() {
   const [employeeId,    setEmployeeId]    = useState<string | null>(null)
   const [tok,           setTok]           = useState<string | null>(null)
   const [companyName,   setCompanyName]   = useState<string>('')
+  const tokRef        = useRef<string | null>(null)
+  const isCodeAuthRef = useRef<boolean>(false)
 
   // Upload modal
   const [showUpload,    setShowUpload]    = useState(false)
@@ -64,9 +66,12 @@ export default function DocumentsPage() {
     setCompanyId(member.companyId)
     setEmployeeId(member.employeeId)
 
-    const { data: { session } } = await supabase.auth.getSession()
-    const token = session?.access_token ?? null
+    const token = member.sessionToken
+      ?? (await supabase.auth.getSession()).data.session?.access_token
+      ?? null
     setTok(token)
+    tokRef.current        = token
+    isCodeAuthRef.current = member.sessionToken !== null
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data } = await (supabase.rpc as any)('employee_get_documents', {
@@ -76,12 +81,19 @@ export default function DocumentsPage() {
     })
     setDocs((data as EmployeeDocument[]) ?? [])
 
-    const { data: companyRow } = await supabase
-      .from('companies')
-      .select('name')
-      .eq('id', member.companyId)
-      .maybeSingle()
-    if (companyRow?.name) setCompanyName(companyRow.name)
+    if (isCodeAuthRef.current) {
+      try {
+        const kfcs = JSON.parse(localStorage.getItem('kf_cs') ?? '{}')
+        if (kfcs.company?.name) setCompanyName(kfcs.company.name)
+      } catch { /* ignore */ }
+    } else {
+      const { data: companyRow } = await supabase
+        .from('companies')
+        .select('name')
+        .eq('id', member.companyId)
+        .maybeSingle()
+      if (companyRow?.name) setCompanyName(companyRow.name)
+    }
 
     setLoading(false)
   }
@@ -126,7 +138,6 @@ export default function DocumentsPage() {
     setUploadError(null)
 
     const supabase = createClient()
-    const { data: { session } } = await supabase.auth.getSession()
     const path = `employee-documents/${companyId}/${employeeId}/${Date.now()}_${file.name}`
 
     try {
@@ -140,7 +151,7 @@ export default function DocumentsPage() {
         p_document_type: upDocType,
         p_document_name: upDocName.trim(),
         p_file_url:      path,
-        p_session_token: session?.access_token ?? null,
+        p_session_token: tokRef.current,
       })
       if (rpcErr) throw rpcErr
 
@@ -172,7 +183,6 @@ export default function DocumentsPage() {
     setReplaceError(null)
 
     const supabase = createClient()
-    const { data: { session } } = await supabase.auth.getSession()
     const newPath = `employee-documents/${companyId}/${employeeId}/${Date.now()}_${file.name}`
 
     try {
@@ -187,7 +197,7 @@ export default function DocumentsPage() {
         p_document_type: replaceDoc.document_type,
         p_document_name: repDocName.trim(),
         p_file_url:      newPath,
-        p_session_token: session?.access_token ?? null,
+        p_session_token: tokRef.current,
       })
       if (rpcErr) throw rpcErr
 
