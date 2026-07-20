@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import { type QueuedPunch, getQueue, enqueue, dequeue } from '@/lib/punch-queue'
 
 // ── Interfaces ─────────────────────────────────────────────────────────────
 interface LastPunch {
@@ -144,6 +145,7 @@ export default function EmployeeOverviewPage() {
   const [colleagues,    setColleagues]    = useState<ColleagueOnLeave[]>([])
   const [isOnLeave,     setIsOnLeave]     = useState(false)
   const [punchesToday,  setPunchesToday]  = useState(0)
+  const [pendingPunches, setPendingPunches] = useState<QueuedPunch[]>([])
 
   const baseElapsedRef  = useRef<number>(0)
   const clockInTimeRef  = useRef<string | null>(null)
@@ -153,6 +155,13 @@ export default function EmployeeOverviewPage() {
   const tickerRef       = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => { init() }, [])
+
+  useEffect(() => {
+    setPendingPunches(getQueue())
+    const handleOnline = () => { syncQueue() }
+    window.addEventListener('online', handleOnline)
+    return () => window.removeEventListener('online', handleOnline)
+  }, [])
 
   useEffect(() => {
     if (isClockedIn && clockInTimeRef.current) {
@@ -262,6 +271,7 @@ export default function EmployeeOverviewPage() {
       setInitError(true)
     } finally {
       setLoading(false)
+      syncQueue()
     }
   }
 
@@ -318,6 +328,34 @@ export default function EmployeeOverviewPage() {
     }
   }
 
+  async function syncQueue() {
+    const queue = getQueue()
+    if (queue.length === 0) return
+    const supabase = createClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rpc = (fn: string, args: Record<string, unknown>) => (supabase.rpc as any)(fn, args)
+    for (const punch of queue) {
+      const { error } = await rpc('employee_insert_punch', {
+        p_company_id:            punch.company_id,
+        p_employee_id:           punch.employee_id,
+        p_type:                  punch.type,
+        p_date_time:             punch.date_time,
+        p_latitude:              punch.latitude,
+        p_longitude:             punch.longitude,
+        p_address:               punch.address,
+        p_job_id:                punch.job_id,
+        p_notes:                 punch.notes,
+        p_punched_by_manager_id: null,
+        p_idempotency_key:       punch.idempotency_key,
+        p_session_token:         tokRef.current,
+      })
+      if (!error) {
+        dequeue(punch.idempotency_key)
+      }
+    }
+    setPendingPunches(getQueue())
+  }
+
   async function submitClock() {
     const empId  = empIdRef.current
     const compId = companyIdRef.current
@@ -340,22 +378,48 @@ export default function EmployeeOverviewPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rpc = (fn: string, args: Record<string, unknown>, opts?: Record<string, unknown>) => (supabase.rpc as any)(fn, args, opts)
 
+    const idempotencyKey = crypto.randomUUID()
+    const punchDateTime  = new Date().toISOString()
+
     const { error } = await rpc('employee_insert_punch', {
       p_company_id:            compId,
       p_employee_id:           empId,
       p_type:                  isClockedIn ? 'out' : 'in',
-      p_date_time:             new Date().toISOString(),
+      p_date_time:             punchDateTime,
       p_latitude:              geoLat,
       p_longitude:             geoLng,
       p_address:               geoAddress,
       p_job_id:                clockJobId || null,
       p_notes:                 clockNote || null,
       p_punched_by_manager_id: null,
-      p_idempotency_key:       crypto.randomUUID(),
+      p_idempotency_key:       idempotencyKey,
       p_session_token:         tokRef.current,
     })
 
-    if (error) { setClockError(error.message); setClockLoading(false); return }
+    if (error) {
+      if (!navigator.onLine) {
+        enqueue({
+          idempotency_key: idempotencyKey,
+          company_id:      compId,
+          employee_id:     empId,
+          type:            isClockedIn ? 'out' : 'in',
+          date_time:       punchDateTime,
+          latitude:        geoLat,
+          longitude:       geoLng,
+          address:         geoAddress,
+          job_id:          clockJobId || null,
+          notes:           clockNote || null,
+          queued_at:       new Date().toISOString(),
+        })
+        setPendingPunches(getQueue())
+        setShowClockModal(false)
+        setClockLoading(false)
+        return
+      }
+      setClockError(error.message)
+      setClockLoading(false)
+      return
+    }
 
     setShowClockModal(false)
     setHasMissedSignOut(false)
@@ -449,6 +513,25 @@ export default function EmployeeOverviewPage() {
       <div className="px-4 py-3 border-b border-divider shrink-0 bg-surface">
         <h1 className="text-[18px] font-semibold text-text-primary">Dashboard</h1>
       </div>
+
+      {/* Offline punch queue banner */}
+      {pendingPunches.length > 0 && (
+        <div className="mx-4 mt-3 shrink-0 rounded-xl px-4 py-3 bg-warning/10 border border-warning/30 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[13px] font-semibold text-warning">
+              {pendingPunches.length} punch{pendingPunches.length > 1 ? 'es' : ''} saved offline
+            </p>
+            <p className="text-[12px] text-text-secondary mt-0.5">
+              Will sync automatically when you reconnect.
+            </p>
+          </div>
+          <button
+            onClick={syncQueue}
+            className="text-[12px] font-semibold text-warning border border-warning/40 px-3 py-1.5 rounded-lg hover:bg-warning/10 transition-colors">
+            Retry now
+          </button>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
 
@@ -726,6 +809,16 @@ export default function EmployeeOverviewPage() {
               <div className="rounded-lg px-3 py-2.5 bg-warning/10 border border-warning/30 mb-3">
                 <p className="text-[12px] font-semibold text-warning">You are on approved leave today</p>
                 <p className="text-[12px] text-text-secondary mt-0.5">You can still clock in — HR will see this in the attendance report.</p>
+              </div>
+            )}
+
+            {/* Duplicate shift warning */}
+            {!isClockedIn && punchesToday >= 2 && (
+              <div className="rounded-lg px-3 py-2.5 bg-warning/10 border border-warning/30 mb-3">
+                <p className="text-[12px] font-semibold text-warning">Shift already recorded today</p>
+                <p className="text-[12px] text-text-secondary mt-0.5">
+                  You have {punchesToday} punches today. Clock in again only if starting a second shift.
+                </p>
               </div>
             )}
 
