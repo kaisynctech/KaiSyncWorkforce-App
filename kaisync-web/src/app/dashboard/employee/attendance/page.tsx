@@ -128,13 +128,22 @@ export default function EmployeeAttendancePage() {
     )
     setPunches(sorted)
 
-    // Get name for PDF header
-    const { data: empRow } = await supabase
-      .from('employees')
-      .select('name, surname')
-      .eq('id', member.employeeId)
-      .maybeSingle()
-    if (empRow) setEmpName(`${empRow.name} ${empRow.surname}`)
+    // Get name for PDF header — code-auth: read from kf_cs; JWT: direct query
+    if (member.sessionToken) {
+      try {
+        const cs = JSON.parse(localStorage.getItem('kf_cs') ?? '{}')
+        if (cs?.employee?.name && cs?.employee?.surname) {
+          setEmpName(`${cs.employee.name} ${cs.employee.surname}`)
+        }
+      } catch { /* use default */ }
+    } else {
+      const { data: empRow } = await supabase
+        .from('employees')
+        .select('name, surname')
+        .eq('id', member.employeeId)
+        .maybeSingle()
+      if (empRow) setEmpName(`${empRow.name} ${empRow.surname}`)
+    }
 
     setLoading(false)
   }
