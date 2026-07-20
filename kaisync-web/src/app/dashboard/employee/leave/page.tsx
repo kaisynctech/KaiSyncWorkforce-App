@@ -295,11 +295,18 @@ export default function EmployeeLeavePage() {
                       </td>
                       <td className="px-4 py-3 text-center">
                         {req.attachment_url ? (
-                          <a href={req.attachment_url} target="_blank" rel="noopener noreferrer"
+                          <button
+                            onClick={async () => {
+                              const supabase = createClient()
+                              const { data: urlData } = await supabase.storage
+                                .from('workforce-media')
+                                .createSignedUrl(req.attachment_url!, 60)
+                              if (urlData?.signedUrl) window.open(urlData.signedUrl, '_blank')
+                            }}
                             className="inline-flex items-center justify-center w-7 h-7 rounded-lg border border-divider text-text-secondary hover:border-primary hover:text-primary transition-colors"
                             title="View attachment">
                             <span className="material-icons text-[14px]">attach_file</span>
-                          </a>
+                          </button>
                         ) : (
                           <span className="text-text-disabled">—</span>
                         )}

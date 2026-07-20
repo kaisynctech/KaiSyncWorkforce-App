@@ -50,7 +50,7 @@ export default function IdEntryPage() {
           code: data.company?.code,
         },
       }))
-      router.push('/dashboard/employee/attendance')
+      router.push('/dashboard/employee/overview')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Invalid company code or login code')
     } finally {
@@ -67,7 +67,7 @@ export default function IdEntryPage() {
       const supabase = createClient()
       const { error: signInError } = await supabase.auth.signInWithPassword({ email: email.trim(), password: emailPassword })
       if (signInError) throw signInError
-      router.push('/dashboard/employee/attendance')
+      router.push('/dashboard/employee/overview')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Invalid email or password')
     } finally {

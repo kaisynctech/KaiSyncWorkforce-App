@@ -121,8 +121,9 @@ export default function EmployeeNotificationsPage() {
 
     setEmpId(member.employeeId)
 
-    const { data: { session } } = await supabase.auth.getSession()
-    const token = session?.access_token ?? null
+    const token = member.sessionToken
+      ?? (await supabase.auth.getSession()).data.session?.access_token
+      ?? null
     setTok(token)
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -133,13 +134,11 @@ export default function EmployeeNotificationsPage() {
         p_employee_id:   member.employeeId,
         p_session_token: token,
       }),
-      supabase
-        .from('leave_requests')
-        .select('id, leave_type, status, decided_at, created_at, start_date, end_date')
-        .eq('company_id', member.companyId)
-        .eq('employee_id', member.employeeId)
-        .order('created_at', { ascending: false })
-        .limit(20),
+      rpc('employee_get_leave_requests', {
+        p_company_id:    member.companyId,
+        p_employee_id:   member.employeeId,
+        p_session_token: token,
+      }),
       rpc('employee_get_own_incidents', {
         p_company_id:    member.companyId,
         p_employee_id:   member.employeeId,
@@ -178,13 +177,12 @@ export default function EmployeeNotificationsPage() {
     if (!empId) return
 
     const supabase = createClient()
-    const { data: { session } } = await supabase.auth.getSession()
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await (supabase.rpc as any)('employee_mark_notification_read_for_employee', {
         p_employee_id:      empId,
         p_notification_id:  item.id as number,
-        p_session_token:    session?.access_token ?? null,
+        p_session_token:    tok,
       })
       setItems(prev => prev.map(n => n.key === item.key ? { ...n, is_read: true } : n))
     } catch { /* non-critical */ }

@@ -8,15 +8,10 @@ interface Punch {
   id: string
   type: 'in' | 'out'
   date_time: string
+  latitude: number | null
+  longitude: number | null
+  address: string | null
   job_id: string | null
-  notes: string | null
-}
-
-interface Session {
-  date: string
-  clockIn: string
-  clockOut: string | null
-  durationMs: number | null
   notes: string | null
 }
 
@@ -28,54 +23,16 @@ function fmt(iso: string): string {
 function fmtDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-ZA', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })
 }
-function fmtDuration(ms: number): string {
-  const hrs  = Math.floor(ms / 3600000)
-  const mins = Math.floor((ms % 3600000) / 60000)
-  return `${hrs}h ${mins}m`
-}
 function toDateStr(d: Date): string { return d.toISOString().split('T')[0] }
 
-function buildSessions(punches: Punch[]): Session[] {
-  const sorted = [...punches].sort((a, b) => new Date(a.date_time).getTime() - new Date(b.date_time).getTime())
-  const sessions: Session[] = []
-  let pending: Punch | null = null
-
-  for (const p of sorted) {
-    if (p.type === 'in') {
-      pending = p
-    } else if (p.type === 'out' && pending) {
-      const inMs  = new Date(pending.date_time).getTime()
-      const outMs = new Date(p.date_time).getTime()
-      sessions.push({
-        date:       pending.date_time.split('T')[0],
-        clockIn:    pending.date_time,
-        clockOut:   p.date_time,
-        durationMs: outMs - inMs,
-        notes:      pending.notes,
-      })
-      pending = null
-    }
-  }
-  if (pending) {
-    sessions.push({
-      date:       pending.date_time.split('T')[0],
-      clockIn:    pending.date_time,
-      clockOut:   null,
-      durationMs: null,
-      notes:      pending.notes,
-    })
-  }
-  return sessions.reverse()
-}
-
-function exportCSV(sessions: Session[]) {
-  const headers = ['Date', 'Clock In', 'Clock Out', 'Duration', 'Notes']
-  const rows = sessions.map(s => [
-    s.date,
-    fmt(s.clockIn),
-    s.clockOut ? fmt(s.clockOut) : '',
-    s.durationMs != null ? fmtDuration(s.durationMs) : '',
-    s.notes ?? '',
+function exportCSV(punches: Punch[]) {
+  const headers = ['Date', 'Time', 'Type', 'Address', 'Notes']
+  const rows = punches.map(p => [
+    fmtDate(p.date_time),
+    fmt(p.date_time),
+    p.type === 'in' ? 'Clock In' : 'Clock Out',
+    p.address ?? (p.latitude != null ? `${p.latitude.toFixed(5)}, ${p.longitude?.toFixed(5)}` : ''),
+    p.notes ?? '',
   ])
   const csv = [headers, ...rows]
     .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
@@ -89,18 +46,16 @@ function exportCSV(sessions: Session[]) {
   URL.revokeObjectURL(url)
 }
 
-function printPDF(sessions: Session[], empName: string, fromLabel: string, toLabel: string) {
-  const rows = sessions.map(s => `
+function printPDF(punches: Punch[], empName: string, fromLabel: string, toLabel: string) {
+  const rows = punches.map(p => `
     <tr>
-      <td>${fmtDate(s.clockIn)}</td>
-      <td>${fmt(s.clockIn)}</td>
-      <td>${s.clockOut ? fmt(s.clockOut) : '—'}</td>
-      <td>${s.durationMs != null ? fmtDuration(s.durationMs) : 'In progress'}</td>
-      <td>${s.notes ?? ''}</td>
+      <td>${fmtDate(p.date_time)}</td>
+      <td>${fmt(p.date_time)}</td>
+      <td>${p.type === 'in' ? 'Clock In' : 'Clock Out'}</td>
+      <td>${p.address ?? (p.latitude != null ? `${p.latitude.toFixed(5)}, ${p.longitude?.toFixed(5)}` : '—')}</td>
+      <td>${p.notes ?? ''}</td>
     </tr>
   `).join('')
-
-  const totalMs = sessions.reduce((sum, s) => sum + (s.durationMs ?? 0), 0)
   const w = window.open('', '_blank')
   if (!w) return
   w.document.write(`<!DOCTYPE html><html><head><title>Attendance Report</title><style>
@@ -110,15 +65,13 @@ function printPDF(sessions: Session[], empName: string, fromLabel: string, toLab
     table { width: 100%; border-collapse: collapse; }
     th, td { border: 1px solid #ddd; padding: 6px 10px; text-align: left; }
     th { background: #f5f5f5; font-weight: 600; }
-    tfoot td { font-weight: bold; }
     @media print { button { display: none; } }
   </style></head><body>
     <h2>Attendance Report — ${empName}</h2>
     <p>Period: ${fromLabel} to ${toLabel}</p>
     <table>
-      <thead><tr><th>Date</th><th>Clock In</th><th>Clock Out</th><th>Duration</th><th>Notes</th></tr></thead>
+      <thead><tr><th>Date</th><th>Time</th><th>Type</th><th>Location</th><th>Notes</th></tr></thead>
       <tbody>${rows}</tbody>
-      <tfoot><tr><td colspan="3">Total</td><td>${fmtDuration(totalMs)}</td><td></td></tr></tfoot>
     </table>
     <br><button onclick="window.print()">Print / Save PDF</button>
   </body></html>`)
@@ -126,7 +79,7 @@ function printPDF(sessions: Session[], empName: string, fromLabel: string, toLab
 }
 
 export default function EmployeeAttendancePage() {
-  const [sessions,   setSessions]   = useState<Session[]>([])
+  const [punches,    setPunches]    = useState<Punch[]>([])
   const [loading,    setLoading]    = useState(true)
   const [range,      setRange]      = useState<Range>('7d')
   const [customFrom, setCustomFrom] = useState('')
@@ -170,7 +123,10 @@ export default function EmployeeAttendancePage() {
       p_to:            toDate,
       p_session_token: tok,
     })
-    setSessions(buildSessions((data as Punch[]) ?? []))
+    const sorted = ((data as Punch[]) ?? []).slice().sort(
+      (a, b) => new Date(b.date_time).getTime() - new Date(a.date_time).getTime()
+    )
+    setPunches(sorted)
 
     // Get name for PDF header
     const { data: empRow } = await supabase
@@ -182,8 +138,6 @@ export default function EmployeeAttendancePage() {
 
     setLoading(false)
   }
-
-  const totalMs = sessions.reduce((sum, s) => sum + (s.durationMs ?? 0), 0)
 
   function rangeLabel(): [string, string] {
     const now = new Date()
@@ -200,15 +154,15 @@ export default function EmployeeAttendancePage() {
         <div className="flex items-center justify-between">
           <h1 className="text-[18px] font-semibold text-text-primary">Attendance</h1>
           <div className="flex gap-2">
-            <button onClick={() => exportCSV(sessions)} title="Export Excel (CSV)"
+            <button onClick={() => exportCSV(punches)} title="Export Excel (CSV)"
               className="flex items-center gap-1 text-[12px] font-semibold text-text-secondary border border-divider px-2.5 py-1.5 rounded-lg hover:border-primary hover:text-primary transition-colors"
-              disabled={sessions.length === 0}>
+              disabled={punches.length === 0}>
               <span className="material-icons text-[16px]">table_chart</span>
             </button>
-            <button onClick={() => { const [f, t] = rangeLabel(); printPDF(sessions, empName, f, t) }}
+            <button onClick={() => { const [f, t] = rangeLabel(); printPDF(punches, empName, f, t) }}
               title="Export PDF"
               className="flex items-center gap-1 text-[12px] font-semibold text-text-secondary border border-divider px-2.5 py-1.5 rounded-lg hover:border-primary hover:text-primary transition-colors"
-              disabled={sessions.length === 0}>
+              disabled={punches.length === 0}>
               <span className="material-icons text-[16px]">picture_as_pdf</span>
             </button>
           </div>
@@ -234,15 +188,11 @@ export default function EmployeeAttendancePage() {
       </div>
 
       {/* Summary bar */}
-      {!loading && sessions.length > 0 && (
+      {!loading && punches.length > 0 && (
         <div className="flex gap-6 px-4 py-3 bg-surface-elevated border-b border-divider shrink-0">
           <div>
-            <p className="text-[11px] text-text-disabled uppercase font-semibold">Sessions</p>
-            <p className="text-[18px] font-bold text-text-primary">{sessions.length}</p>
-          </div>
-          <div>
-            <p className="text-[11px] text-text-disabled uppercase font-semibold">Total Hours</p>
-            <p className="text-[18px] font-bold text-text-primary">{fmtDuration(totalMs)}</p>
+            <p className="text-[11px] text-text-disabled uppercase font-semibold">Punches</p>
+            <p className="text-[18px] font-bold text-text-primary">{punches.length}</p>
           </div>
         </div>
       )}
@@ -250,33 +200,55 @@ export default function EmployeeAttendancePage() {
       <div className="flex-1 overflow-y-auto">
         {loading ? (
           <div className="flex items-center justify-center h-48 text-text-secondary text-[14px]">Loading…</div>
-        ) : sessions.length === 0 ? (
+        ) : punches.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 gap-2 text-text-secondary">
             <span className="material-icons text-[48px] text-text-disabled">schedule</span>
             <p className="text-[14px]">No attendance records</p>
           </div>
         ) : (
-          <div className="divide-y divide-divider">
-            {sessions.map((s, i) => (
-              <div key={i} className="px-4 py-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-[13px] font-semibold text-text-primary">{fmtDate(s.clockIn)}</p>
-                    <p className="text-[12px] text-text-secondary mt-1">
-                      {fmt(s.clockIn)} → {s.clockOut ? fmt(s.clockOut) : <span className="text-primary font-semibold">Active</span>}
-                    </p>
-                    {s.notes && <p className="text-[12px] text-text-disabled mt-1 italic">"{s.notes}"</p>}
-                  </div>
-                  <div className="text-right shrink-0">
-                    {s.durationMs != null ? (
-                      <span className="text-[13px] font-bold text-text-primary">{fmtDuration(s.durationMs)}</span>
-                    ) : (
-                      <span className="text-[12px] font-semibold px-2 py-1 rounded-full bg-success/10 text-success">In progress</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
+          <div className="overflow-x-auto">
+            <table className="w-full text-[13px]">
+              <thead>
+                <tr className="border-b border-divider bg-surface-elevated">
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Date</th>
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Time</th>
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Type</th>
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Location</th>
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Notes</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-divider">
+                {punches.map(p => (
+                  <tr key={p.id} className="hover:bg-surface-elevated transition-colors">
+                    <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
+                      {fmtDate(p.date_time)}
+                    </td>
+                    <td className="px-4 py-3 text-[13px] font-medium text-text-primary whitespace-nowrap">
+                      {fmt(p.date_time)}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <span className={`text-[11px] font-semibold px-2 py-[2px] rounded-full ${
+                        p.type === 'in'
+                          ? 'bg-success/10 text-success'
+                          : 'bg-surface-elevated text-text-secondary border border-divider'
+                      }`}>
+                        {p.type === 'in' ? 'Clock In' : 'Clock Out'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-[12px] text-text-secondary max-w-[200px] truncate">
+                      {p.address ?? (
+                        p.latitude != null
+                          ? <span className="text-text-disabled">{p.latitude.toFixed(5)}, {p.longitude?.toFixed(5)}</span>
+                          : <span className="text-text-disabled">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-[12px] text-text-disabled italic">
+                      {p.notes ?? '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

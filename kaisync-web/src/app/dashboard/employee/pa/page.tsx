@@ -389,11 +389,11 @@ export default function MyPAPage() {
 
   const openCount      = tasks.filter(t => ['todo','in_progress'].includes(t.status)).length
   const overdueCount   = tasks.filter(isOverdue).length
-  const dueTodayCount  = tasks.filter(t => t.status !== 'done' && t.due_date === todayStr).length
+  const dueTodayCount  = tasks.filter(t => t.status !== 'done' && t.due_at?.startsWith(todayStr)).length
   const doneTodayCount = tasks.filter(t => t.status === 'done' && t.completed_at?.startsWith(todayStr)).length
 
   const todayTasks = tasks.filter(t =>
-    t.due_date === todayStr || t.meeting_at?.startsWith(todayStr) || t.remind_at?.startsWith(todayStr)
+    t.due_at?.startsWith(todayStr) || t.meeting_at?.startsWith(todayStr) || t.remind_at?.startsWith(todayStr)
   )
   const upcomingReminders = tasks.filter(t =>
     t.status !== 'done' && !!t.remind_at &&
@@ -407,7 +407,7 @@ export default function MyPAPage() {
     else if (taskFilter === 'overdue')     list = list.filter(isOverdue)
     else if (taskFilter === 'done')        list = list.filter(t => t.status === 'done')
     if (focusMode) list = list.filter(t =>
-      isOverdue(t) || t.due_date === todayStr || ['high','urgent'].includes(t.priority)
+      isOverdue(t) || t.due_at?.startsWith(todayStr) || ['high','urgent'].includes(t.priority)
     )
     return list
   }, [tasks, taskFilter, focusMode, todayStr])
