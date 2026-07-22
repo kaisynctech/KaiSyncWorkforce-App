@@ -33,6 +33,14 @@ export async function proxy(request: NextRequest) {
   }
   const pathname = request.nextUrl.pathname
 
+  // Client / contractor portals use code-auth (localStorage), not Supabase JWT.
+  if (
+    pathname.startsWith('/client-portal')
+    || pathname.startsWith('/contractor-portal')
+  ) {
+    return supabaseResponse
+  }
+
   if (!user && pathname.startsWith('/dashboard')) {
     // Code-auth sessions live in localStorage (kf_cs) and are invisible to middleware.
     // Allow dashboard through; dashboard/layout.tsx enforces JWT or valid code session.
