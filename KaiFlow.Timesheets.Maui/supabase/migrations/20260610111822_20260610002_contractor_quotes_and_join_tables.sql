@@ -14,8 +14,6 @@
 
 -- ---------------------------------------------------------------------------
 -- TABLE: contractor_quotes
--- HR-submitted quotes from contractors, flowing through draft → submitted →
--- approved / rejected → converted.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.contractor_quotes (
     id                   uuid        NOT NULL DEFAULT gen_random_uuid(),
@@ -92,7 +90,6 @@ $$;
 
 -- ---------------------------------------------------------------------------
 -- TABLE: contractor_quote_items
--- Line items for each contractor quote.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.contractor_quote_items (
     id               uuid        NOT NULL DEFAULT gen_random_uuid(),
@@ -140,7 +137,6 @@ $$;
 
 -- ---------------------------------------------------------------------------
 -- TABLE: contractor_quote_attachments
--- Supporting documents (PDFs, images) attached to a contractor quote.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.contractor_quote_attachments (
     id              uuid        NOT NULL DEFAULT gen_random_uuid(),
@@ -182,10 +178,6 @@ $$;
 
 -- ---------------------------------------------------------------------------
 -- TABLE: job_contractors
--- Many-to-many join between jobs and contractors.
--- Unique constraint on (job_id, contractor_id) prevents duplicate rows.
--- All writes go through hr_convert_quote_to_job or hr_upsert_job_contractor
--- (both SECURITY DEFINER) to bypass the user_company_ids() RLS check.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.job_contractors (
     id           uuid        NOT NULL DEFAULT gen_random_uuid(),
@@ -242,8 +234,6 @@ $$;
 
 -- ---------------------------------------------------------------------------
 -- TABLE: project_contractors
--- Many-to-many join between client_deals (projects) and contractors.
--- Unique constraint on (deal_id, contractor_id) prevents duplicate rows.
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.project_contractors (
     id            uuid        NOT NULL DEFAULT gen_random_uuid(),
@@ -292,9 +282,6 @@ $$;
 
 -- ---------------------------------------------------------------------------
 -- RPC: hr_convert_quote_to_job (9-param, with p_deal_id)
--- Atomically creates a job from an approved contractor quote, writes
--- job_contractors, and (when p_deal_id is provided) project_contractors.
--- SECURITY DEFINER bypasses RLS on the join tables.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.hr_convert_quote_to_job(
     p_company_id     uuid,
@@ -317,7 +304,6 @@ DECLARE
     v_job_id uuid;
     v_code   text;
 BEGIN
-    -- Validate (row lock prevents races)
     SELECT * INTO v_quote
     FROM public.contractor_quotes
     WHERE id = p_quote_id AND company_id = p_company_id
@@ -333,10 +319,8 @@ BEGIN
         RAISE EXCEPTION 'Quote has already been converted to job %', v_quote.converted_to_job_id;
     END IF;
 
-    -- Generate job code
     v_code := public._next_job_code(p_company_id);
 
-    -- Create job (include deal_id if provided)
     INSERT INTO public.jobs (
         company_id, title, description, status, priority,
         contractor_id, contractor_cost, estimated_cost,
@@ -364,7 +348,6 @@ BEGIN
     )
     RETURNING id INTO v_job_id;
 
-    -- Mark quote as converted
     UPDATE public.contractor_quotes SET
         status              = 'converted',
         converted_to_job_id = v_job_id,
@@ -372,7 +355,6 @@ BEGIN
         updated_at          = now()
     WHERE id = p_quote_id AND company_id = p_company_id;
 
-    -- Write job_contractors (idempotent)
     INSERT INTO public.job_contractors (
         company_id, job_id, contractor_id, quote_id,
         role, agreed_amount, quoted_amount, status,
@@ -384,7 +366,6 @@ BEGIN
     )
     ON CONFLICT (job_id, contractor_id) DO NOTHING;
 
-    -- Write project_contractors if deal provided (idempotent)
     IF p_deal_id IS NOT NULL THEN
         INSERT INTO public.project_contractors (
             company_id, deal_id, contractor_id,
@@ -396,7 +377,6 @@ BEGIN
         ON CONFLICT (deal_id, contractor_id) DO NOTHING;
     END IF;
 
-    -- Audit log
     INSERT INTO public.app_events (company_id, auth_user_id, screen, action, level, meta)
     VALUES (
         p_company_id, p_hr_user_id,
@@ -423,9 +403,6 @@ $function$;
 
 -- ---------------------------------------------------------------------------
 -- RPC: hr_upsert_job_contractor
--- Writes job_contractors and (when p_deal_id is provided) project_contractors.
--- Called by AssignToExistingJobAsync after hr_assign_quote_to_job.
--- SECURITY DEFINER bypasses RLS on the join tables.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.hr_upsert_job_contractor(
     p_company_id    uuid,
@@ -441,7 +418,6 @@ SECURITY DEFINER
 SET search_path TO 'public'
 AS $function$
 BEGIN
-    -- Upsert job_contractors
     INSERT INTO public.job_contractors (
         company_id, job_id, contractor_id, quote_id,
         role, agreed_amount, quoted_amount, status,
@@ -453,7 +429,6 @@ BEGIN
     )
     ON CONFLICT (job_id, contractor_id) DO NOTHING;
 
-    -- Upsert project_contractors if deal provided
     IF p_deal_id IS NOT NULL THEN
         INSERT INTO public.project_contractors (
             company_id, deal_id, contractor_id,
@@ -470,10 +445,6 @@ $function$;
 
 -- ---------------------------------------------------------------------------
 -- RPC: hr_assign_quote_to_job
--- Links an approved contractor quote to an existing job.
--- Does NOT write job_contractors — that is handled separately by
--- hr_upsert_job_contractor in the C# AssignToExistingJobAsync flow.
--- SECURITY DEFINER bypasses RLS on contractor_quotes and jobs.
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.hr_assign_quote_to_job(
     p_company_id uuid,
@@ -490,7 +461,6 @@ DECLARE
     v_quote  record;
     v_job    record;
 BEGIN
-    -- Validate quote (lock row to prevent duplicate assignments)
     SELECT * INTO v_quote
     FROM public.contractor_quotes
     WHERE id = p_quote_id AND company_id = p_company_id
@@ -508,7 +478,6 @@ BEGIN
             v_quote.converted_to_job_id;
     END IF;
 
-    -- Validate job (must belong to same company)
     SELECT * INTO v_job
     FROM public.jobs
     WHERE id = p_job_id AND company_id = p_company_id
@@ -518,7 +487,6 @@ BEGIN
         RAISE EXCEPTION 'Job not found or belongs to a different company';
     END IF;
 
-    -- Link quote → job
     UPDATE public.contractor_quotes SET
         status              = 'converted',
         converted_to_job_id = p_job_id,
@@ -526,7 +494,6 @@ BEGIN
         updated_at          = now()
     WHERE id = p_quote_id AND company_id = p_company_id;
 
-    -- Update job
     UPDATE public.jobs SET
         contractor_id   = CASE
                               WHEN contractor_id IS NULL THEN v_quote.contractor_id
@@ -536,7 +503,6 @@ BEGIN
         updated_at      = now()
     WHERE id = p_job_id AND company_id = p_company_id;
 
-    -- Audit log
     INSERT INTO public.app_events (company_id, auth_user_id, screen, action, level, meta)
     VALUES (
         p_company_id,
@@ -555,4 +521,4 @@ BEGIN
         )
     );
 END;
-$function$;
+$function$;;

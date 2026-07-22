@@ -4,7 +4,6 @@
 -- ─── Jobs ───────────────────────────────────────────────────────────────────
 
 DROP FUNCTION IF EXISTS public.employee_update_job_status(bigint, bigint, bigint, text);
-
 CREATE OR REPLACE FUNCTION public.employee_update_job_status(
   p_company_id uuid,
   p_employee_id uuid,
@@ -34,13 +33,10 @@ BEGIN
   END IF;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.employee_update_job_status(uuid, uuid, uuid, text)
   TO anon, authenticated;
-
 -- Legacy name used by older Flutter builds — delegate to uuid implementation.
 DROP FUNCTION IF EXISTS public.employee_get_job_card_for_job(bigint, bigint, bigint);
-
 CREATE OR REPLACE FUNCTION public.employee_get_job_card_for_job(
   p_company_id uuid,
   p_job_id uuid,
@@ -57,16 +53,13 @@ AS $$
     p_company_id, p_job_id, p_employee_id
   );
 $$;
-
 GRANT EXECUTE ON FUNCTION public.employee_get_job_card_for_job(uuid, uuid, uuid)
   TO anon, authenticated;
-
 -- ─── Inventory (uuid) ───────────────────────────────────────────────────────
 
 DROP FUNCTION IF EXISTS public.employee_get_inventory_items(bigint, bigint);
 DROP FUNCTION IF EXISTS public.employee_get_inventory_usage_for_job(bigint, bigint, bigint);
 DROP FUNCTION IF EXISTS public.employee_set_inventory_usage_for_job(bigint, bigint, bigint, jsonb);
-
 CREATE OR REPLACE FUNCTION public.employee_get_inventory_items(
   p_company_id uuid,
   p_employee_id uuid DEFAULT NULL
@@ -83,7 +76,6 @@ AS $$
   WHERE i.company_id = p_company_id
   ORDER BY i.name;
 $$;
-
 CREATE OR REPLACE FUNCTION public.employee_get_inventory_usage_for_job(
   p_company_id uuid,
   p_job_id uuid,
@@ -102,7 +94,6 @@ AS $$
     AND u.job_id = p_job_id
     AND (p_employee_id IS NULL OR u.employee_id = p_employee_id);
 $$;
-
 CREATE OR REPLACE FUNCTION public.employee_set_inventory_usage_for_job(
   p_company_id uuid,
   p_employee_id uuid,
@@ -174,15 +165,12 @@ BEGIN
   FROM _new_usage n;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.employee_get_inventory_items(uuid, uuid) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.employee_get_inventory_usage_for_job(uuid, uuid, uuid) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.employee_set_inventory_usage_for_job(uuid, uuid, uuid, jsonb) TO anon, authenticated;
-
 -- ─── HR delete employee (uuid) ──────────────────────────────────────────────
 
 DROP FUNCTION IF EXISTS public.hr_delete_employee_safe(bigint, bigint);
-
 CREATE OR REPLACE FUNCTION public.hr_delete_employee_safe(
   p_company_id uuid,
   p_employee_id uuid
@@ -209,9 +197,7 @@ BEGIN
   WHERE company_id = p_company_id AND id = p_employee_id;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.hr_delete_employee_safe(uuid, uuid) TO authenticated;
-
 -- ─── Messaging (uuid / message_threads schema) ───────────────────────────────
 
 DROP FUNCTION IF EXISTS public.employee_get_message_threads_for_worker(bigint, bigint);
@@ -227,7 +213,6 @@ DROP FUNCTION IF EXISTS public.employee_get_or_create_direct_thread_peer(bigint,
 DROP FUNCTION IF EXISTS public.message_unread_counts_for_threads(bigint, bigint, bigint[]);
 DROP FUNCTION IF EXISTS public.message_company_feed_unread_count(bigint, bigint);
 DROP FUNCTION IF EXISTS public.ensure_job_team_message_thread(bigint, bigint);
-
 CREATE OR REPLACE FUNCTION public._employee_valid(p_company_id uuid, p_employee_id uuid)
 RETURNS boolean
 LANGUAGE sql
@@ -238,7 +223,6 @@ AS $$
     WHERE e.id = p_employee_id AND e.company_id = p_company_id
   );
 $$;
-
 CREATE OR REPLACE FUNCTION public._company_feed_thread_id(p_company_id uuid)
 RETURNS uuid
 LANGUAGE plpgsql
@@ -259,7 +243,6 @@ BEGIN
   RETURN v_id;
 END;
 $$;
-
 CREATE OR REPLACE FUNCTION public.employee_get_message_threads_for_worker(
   p_company_id uuid,
   p_employee_id uuid
@@ -278,7 +261,6 @@ AS $$
     AND public._employee_valid(p_company_id, p_employee_id)
   ORDER BY coalesce(t.last_message_at, t.created_at) DESC;
 $$;
-
 CREATE OR REPLACE FUNCTION public.employee_get_company_messages_for_worker(
   p_company_id uuid,
   p_employee_id uuid,
@@ -299,7 +281,6 @@ AS $$
   ORDER BY m.created_at DESC
   LIMIT greatest(1, least(coalesce(p_limit, 120), 500));
 $$;
-
 CREATE OR REPLACE FUNCTION public.employee_send_company_feed_message(
   p_company_id uuid,
   p_sender_employee_id uuid,
@@ -325,7 +306,6 @@ BEGIN
   WHERE id = v_thread;
 END;
 $$;
-
 CREATE OR REPLACE FUNCTION public.employee_get_thread_messages_for_worker(
   p_company_id uuid,
   p_thread_id uuid,
@@ -349,7 +329,6 @@ AS $$
   ORDER BY m.created_at DESC
   LIMIT greatest(1, least(coalesce(p_limit, 200), 500));
 $$;
-
 CREATE OR REPLACE FUNCTION public.employee_send_thread_message(
   p_company_id uuid,
   p_thread_id uuid,
@@ -379,7 +358,6 @@ BEGIN
   WHERE id = p_thread_id;
 END;
 $$;
-
 CREATE OR REPLACE FUNCTION public.employee_mark_thread_read_for_worker(
   p_company_id uuid,
   p_thread_id uuid,
@@ -407,7 +385,6 @@ BEGIN
     AND NOT (p_employee_id = ANY(m.read_by_ids));
 END;
 $$;
-
 CREATE OR REPLACE FUNCTION public.employee_mark_company_feed_read_for_worker(
   p_company_id uuid,
   p_employee_id uuid
@@ -426,7 +403,6 @@ BEGIN
   );
 END;
 $$;
-
 CREATE OR REPLACE FUNCTION public.employee_find_direct_thread_peer(
   p_company_id uuid,
   p_from_id uuid,
@@ -449,7 +425,6 @@ AS $$
   ORDER BY t.created_at DESC
   LIMIT 1;
 $$;
-
 CREATE OR REPLACE FUNCTION public.employee_get_direct_peer_thread_map(
   p_company_id uuid,
   p_my_employee_id uuid
@@ -472,7 +447,6 @@ AS $$
     AND other_id <> p_my_employee_id
     AND cardinality(t.participant_ids) = 2;
 $$;
-
 CREATE OR REPLACE FUNCTION public.employee_get_or_create_direct_thread_peer(
   p_company_id uuid,
   p_creator_id uuid,
@@ -505,7 +479,6 @@ BEGIN
   RETURN v_tid;
 END;
 $$;
-
 CREATE OR REPLACE FUNCTION public.message_unread_counts_for_threads(
   p_company_id uuid,
   p_employee_id uuid,
@@ -527,7 +500,6 @@ AS $$
     AND NOT (p_employee_id = ANY(m.read_by_ids))
   GROUP BY m.thread_id;
 $$;
-
 CREATE OR REPLACE FUNCTION public.message_company_feed_unread_count(
   p_company_id uuid,
   p_employee_id uuid
@@ -548,7 +520,6 @@ AS $$
     )
   ), 0);
 $$;
-
 CREATE OR REPLACE FUNCTION public.ensure_job_team_message_thread(
   p_company_id uuid,
   p_job_id uuid
@@ -595,7 +566,6 @@ BEGIN
   RETURN v_tid;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.employee_get_message_threads_for_worker(uuid, uuid) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.employee_get_company_messages_for_worker(uuid, uuid, integer) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.employee_send_company_feed_message(uuid, uuid, text) TO anon, authenticated;

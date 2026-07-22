@@ -19,10 +19,8 @@ CREATE TABLE IF NOT EXISTS public.app_versions (
     created_at               timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT app_versions_version_build_unique UNIQUE (version, build_number)
 );
-
 CREATE INDEX IF NOT EXISTS idx_app_versions_release_date ON public.app_versions (release_date DESC);
 CREATE INDEX IF NOT EXISTS idx_app_versions_active ON public.app_versions (is_active) WHERE is_active = true;
-
 -- Seed launch version
 INSERT INTO public.app_versions (
     version, build_number, release_notes, minimum_required_version,
@@ -32,7 +30,6 @@ INSERT INTO public.app_versions (
     'KaiFlow Workforce launch — attendance, payroll, finance, reports, and full HR suite.',
     '1.0.0', false, true
 ) ON CONFLICT (version, build_number) DO NOTHING;
-
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- feature_flags — per-company operational toggles (distinct from saas entitlements)
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -45,9 +42,7 @@ CREATE TABLE IF NOT EXISTS public.feature_flags (
     updated_at   timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT feature_flags_company_feature_unique UNIQUE (company_id, feature_name)
 );
-
 CREATE INDEX IF NOT EXISTS idx_feature_flags_company ON public.feature_flags (company_id);
-
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- company_settings — structured tenant configuration
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -65,7 +60,6 @@ CREATE TABLE IF NOT EXISTS public.company_settings (
     created_at           timestamptz NOT NULL DEFAULT now(),
     updated_at           timestamptz NOT NULL DEFAULT now()
 );
-
 -- Backfill settings rows for existing companies
 INSERT INTO public.company_settings (company_id, leave_settings, payroll_preferences)
 SELECT c.id,
@@ -76,7 +70,6 @@ SELECT c.id,
        coalesce(c.custom_settings, '{}'::jsonb)
 FROM public.companies c
 ON CONFLICT (company_id) DO NOTHING;
-
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- backup_jobs + company_backups — metadata framework (no destructive restore)
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -94,9 +87,7 @@ CREATE TABLE IF NOT EXISTS public.backup_jobs (
     CONSTRAINT backup_jobs_type_check CHECK (job_type IN ('manual', 'scheduled')),
     CONSTRAINT backup_jobs_status_check CHECK (status IN ('pending', 'running', 'completed', 'failed', 'cancelled'))
 );
-
 CREATE INDEX IF NOT EXISTS idx_backup_jobs_company ON public.backup_jobs (company_id, created_at DESC);
-
 CREATE TABLE IF NOT EXISTS public.company_backups (
     id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     company_id     uuid NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
@@ -110,9 +101,7 @@ CREATE TABLE IF NOT EXISTS public.company_backups (
     created_by     uuid REFERENCES auth.users(id) ON DELETE SET NULL,
     created_at     timestamptz NOT NULL DEFAULT now()
 );
-
 CREATE INDEX IF NOT EXISTS idx_company_backups_company ON public.company_backups (company_id, created_at DESC);
-
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- application_errors — structured exception sink
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -131,10 +120,8 @@ CREATE TABLE IF NOT EXISTS public.application_errors (
     metadata       jsonb NOT NULL DEFAULT '{}'::jsonb,
     created_at     timestamptz NOT NULL DEFAULT now()
 );
-
 CREATE INDEX IF NOT EXISTS idx_application_errors_company ON public.application_errors (company_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_application_errors_created ON public.application_errors (created_at DESC);
-
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- RPC: Latest app version for update checks
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -183,9 +170,7 @@ BEGIN
     );
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.get_latest_app_version(text) TO anon, authenticated;
-
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- RPC: Log application error (HR JWT + worker code-login)
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -230,11 +215,9 @@ BEGIN
     RETURN v_id;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.log_application_error(
     text, text, text, text, text, uuid, uuid, text, text, jsonb
 ) TO anon, authenticated;
-
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- RPC: Company settings read/write
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -260,9 +243,7 @@ BEGIN
     RETURN to_jsonb(v_row);
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.get_company_settings(uuid) TO authenticated;
-
 CREATE OR REPLACE FUNCTION public.upsert_company_settings(p_company_id uuid, p_payload jsonb)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -308,9 +289,7 @@ BEGIN
     RETURN to_jsonb(v_row);
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.upsert_company_settings(uuid, jsonb) TO authenticated;
-
 -- UUID owner check (bigint overload exists from legacy migrations)
 CREATE OR REPLACE FUNCTION public.is_company_owner(p_company_id uuid)
 RETURNS boolean
@@ -331,9 +310,7 @@ AS $$
           AND coalesce(e.is_active, true)
     );
 $$;
-
 GRANT EXECUTE ON FUNCTION public.is_company_owner(uuid) TO authenticated;
-
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- RLS
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -343,57 +320,46 @@ ALTER TABLE public.company_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.backup_jobs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.company_backups ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.application_errors ENABLE ROW LEVEL SECURITY;
-
 -- app_versions: read for all authenticated; write platform admin only
 CREATE POLICY p_app_versions_select ON public.app_versions
     FOR SELECT TO authenticated
     USING (is_active = true OR public.platform_is_admin());
-
 CREATE POLICY p_app_versions_admin ON public.app_versions
     FOR ALL TO authenticated
     USING (public.platform_is_admin())
     WITH CHECK (public.platform_is_admin());
-
 -- feature_flags
 CREATE POLICY p_feature_flags_select ON public.feature_flags
     FOR SELECT TO authenticated
     USING (company_id = ANY(public.user_company_ids()) OR public.platform_is_admin());
-
 CREATE POLICY p_feature_flags_write ON public.feature_flags
     FOR ALL TO authenticated
     USING (public.is_company_owner(company_id) OR public.platform_is_admin())
     WITH CHECK (public.is_company_owner(company_id) OR public.platform_is_admin());
-
 -- company_settings (direct read for members; writes via RPC preferred)
 CREATE POLICY p_company_settings_select ON public.company_settings
     FOR SELECT TO authenticated
     USING (company_id = ANY(public.user_company_ids()) OR public.platform_is_admin());
-
 CREATE POLICY p_company_settings_write ON public.company_settings
     FOR ALL TO authenticated
     USING (public.is_company_owner(company_id) OR public.platform_is_admin())
     WITH CHECK (public.is_company_owner(company_id) OR public.platform_is_admin());
-
 -- backup_jobs
 CREATE POLICY p_backup_jobs_select ON public.backup_jobs
     FOR SELECT TO authenticated
     USING (company_id = ANY(public.user_company_ids()) OR public.platform_is_admin());
-
 CREATE POLICY p_backup_jobs_write ON public.backup_jobs
     FOR ALL TO authenticated
     USING (public.is_company_owner(company_id) OR public.platform_is_admin())
     WITH CHECK (public.is_company_owner(company_id) OR public.platform_is_admin());
-
 -- company_backups
 CREATE POLICY p_company_backups_select ON public.company_backups
     FOR SELECT TO authenticated
     USING (company_id = ANY(public.user_company_ids()) OR public.platform_is_admin());
-
 CREATE POLICY p_company_backups_write ON public.company_backups
     FOR ALL TO authenticated
     USING (public.is_company_owner(company_id) OR public.platform_is_admin())
     WITH CHECK (public.is_company_owner(company_id) OR public.platform_is_admin());
-
 -- application_errors: insert own scope; read company HR
 CREATE POLICY p_application_errors_insert ON public.application_errors
     FOR INSERT TO authenticated
@@ -402,7 +368,6 @@ CREATE POLICY p_application_errors_insert ON public.application_errors
         OR company_id = ANY(public.user_company_ids())
         OR public.platform_is_admin()
     );
-
 CREATE POLICY p_application_errors_select ON public.application_errors
     FOR SELECT TO authenticated
     USING (

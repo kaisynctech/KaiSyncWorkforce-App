@@ -1,13 +1,24 @@
-﻿-- Migration: 20260608163237_hr_contractor_action_items
--- HR action items dashboard for pending contractor submissions
--- Representation file: idempotent (CREATE OR REPLACE FUNCTION throughout)
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Migration: hr_contractor_action_items
+--
+-- Creates hr_get_contractor_action_items(p_company_id) — feeds the
+-- Contractor Action Centre on the main HR Contractors page.
+--
+-- Returns items from:
+--   • contractor_quotes  WHERE status IN ('submitted','under_review')
+--   • contractor_banking_updates WHERE status='pending'
+--   • contractor_documents WHERE approval_status='pending' (contractor-uploaded)
+--   • contractor_documents WHERE expiry_date within 30 days (expiring soon)
+-- ═══════════════════════════════════════════════════════════════════════════
 
-CREATE OR REPLACE FUNCTION public.hr_get_contractor_action_items(p_company_id uuid)
- RETURNS json
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
+CREATE OR REPLACE FUNCTION public.hr_get_contractor_action_items(
+    p_company_id uuid
+)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 BEGIN
     RETURN coalesce((
         SELECT json_agg(row_to_json(a) ORDER BY a.priority ASC, a.created_at DESC)
@@ -101,11 +112,4 @@ BEGIN
         ) a
     ), '[]'::json);
 END;
-$function$
-
-
-REVOKE ALL ON FUNCTION public.hr_get_contractor_action_items(p_company_id uuid) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.hr_get_contractor_action_items(p_company_id uuid) FROM anon;
-GRANT EXECUTE ON FUNCTION public.hr_get_contractor_action_items(p_company_id uuid) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.hr_get_contractor_action_items(p_company_id uuid) TO service_role;
-
+$$;;

@@ -10,18 +10,15 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 set search_path = public;
-
 -- ─── Approval decision metadata on payables ─────────────────────────────────
 alter table public.supplier_invoices
   add column if not exists approved_by uuid references public.employees(id) on delete set null,
   add column if not exists approved_at timestamptz,
   add column if not exists paid_at     timestamptz;
-
 alter table public.contractor_payouts
   add column if not exists approved_by uuid references public.employees(id) on delete set null,
   add column if not exists approved_at timestamptz,
   add column if not exists paid_at     timestamptz;
-
 -- ════════════════════════════════════════════════════════════════════════════
 -- Finance audit log (append-only)
 -- ════════════════════════════════════════════════════════════════════════════
@@ -37,23 +34,18 @@ create table if not exists public.finance_audit_log (
   note         text,
   created_at   timestamptz not null default now()
 );
-
 create index if not exists idx_finance_audit_company_time
   on public.finance_audit_log(company_id, created_at desc);
 create index if not exists idx_finance_audit_entity
   on public.finance_audit_log(entity_type, entity_id, created_at desc) where entity_id is not null;
-
 alter table public.finance_audit_log enable row level security;
-
 -- Insert/select for company members; no update/delete (append-only audit trail).
 drop policy if exists finance_audit_log_select on public.finance_audit_log;
 create policy finance_audit_log_select on public.finance_audit_log for select to authenticated
   using (company_id = any(public.user_company_ids()));
-
 drop policy if exists finance_audit_log_insert on public.finance_audit_log;
 create policy finance_audit_log_insert on public.finance_audit_log for insert to authenticated
   with check (company_id = any(public.user_company_ids()));
-
 -- ════════════════════════════════════════════════════════════════════════════
 -- ROLLBACK NOTES (manual)
 -- ────────────────────────────────────────────────────────────────────────────
@@ -66,4 +58,4 @@ create policy finance_audit_log_insert on public.finance_audit_log for insert to
 --     drop column if exists approved_by,
 --     drop column if exists approved_at,
 --     drop column if exists paid_at;
--- ════════════════════════════════════════════════════════════════════════════
+-- ════════════════════════════════════════════════════════════════════════════;

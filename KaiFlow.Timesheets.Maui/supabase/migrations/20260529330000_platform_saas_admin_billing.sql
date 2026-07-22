@@ -19,7 +19,6 @@ ON CONFLICT (code) DO UPDATE SET
     included_employees = EXCLUDED.included_employees,
     per_employee_price = EXCLUDED.per_employee_price,
     is_active = EXCLUDED.is_active;
-
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- company_subscriptions — billing snapshot (platform admin + invoicing)
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -42,9 +41,7 @@ CREATE TABLE IF NOT EXISTS public.company_subscriptions (
         status IN ('active', 'trialing', 'past_due', 'suspended', 'cancelled')
     )
 );
-
 CREATE INDEX IF NOT EXISTS idx_company_subscriptions_status ON public.company_subscriptions (status);
-
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- platform_feedback — customer feedback & feature requests
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -68,10 +65,8 @@ CREATE TABLE IF NOT EXISTS public.platform_feedback (
         status IN ('New', 'In Review', 'Planned', 'Completed', 'Closed')
     )
 );
-
 CREATE INDEX IF NOT EXISTS idx_platform_feedback_company ON public.platform_feedback (company_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_platform_feedback_status ON public.platform_feedback (status, category);
-
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- Billing calculation (SQL mirror of BillingCalculationService)
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -87,7 +82,6 @@ IMMUTABLE
 AS $$
     SELECT p_base_price + (GREATEST(0, p_employee_count - p_included) * p_per_additional);
 $$;
-
 CREATE OR REPLACE FUNCTION public.platform_refresh_company_subscription(p_company_id uuid)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -160,9 +154,7 @@ BEGIN
     RETURN to_jsonb(v_row);
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.platform_refresh_company_subscription(uuid) TO authenticated;
-
 -- Backfill billing snapshots
 DO $$
 DECLARE r record;
@@ -171,7 +163,6 @@ BEGIN
         PERFORM public.platform_refresh_company_subscription(r.id);
     END LOOP;
 END $$;
-
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- Platform owner seed (kaisynctech@gmail.com)
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -183,7 +174,6 @@ ON CONFLICT (auth_user_id) DO UPDATE SET
     email = EXCLUDED.email,
     role = 'owner',
     is_active = true;
-
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- RPC: Platform admin dashboard (KPIs + trends)
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -285,9 +275,7 @@ BEGIN
     RETURN jsonb_build_object('kpis', v_kpis, 'trends', v_trends);
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.platform_admin_dashboard() TO authenticated;
-
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- RPC: Search companies (platform admin)
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -331,9 +319,7 @@ BEGIN
     LIMIT p_limit OFFSET p_offset;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.platform_search_companies(text, integer, integer) TO authenticated;
-
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- RPC: Customer health score (extended)
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -413,9 +399,7 @@ BEGIN
     );
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.platform_customer_health(uuid) TO authenticated;
-
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- RPC: Platform feedback stats
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -451,34 +435,26 @@ BEGIN
     );
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.platform_feedback_stats() TO authenticated;
-
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- RLS: company_subscriptions
 -- ═══════════════════════════════════════════════════════════════════════════════
 ALTER TABLE public.company_subscriptions ENABLE ROW LEVEL SECURITY;
-
 CREATE POLICY p_company_subscriptions_select ON public.company_subscriptions
     FOR SELECT TO authenticated
     USING (company_id = ANY(public.user_company_ids()) OR public.platform_is_admin());
-
 CREATE POLICY p_company_subscriptions_admin ON public.company_subscriptions
     FOR ALL TO authenticated
     USING (public.platform_is_admin())
     WITH CHECK (public.platform_is_admin());
-
 -- RLS: platform_feedback
 ALTER TABLE public.platform_feedback ENABLE ROW LEVEL SECURITY;
-
 CREATE POLICY p_platform_feedback_select ON public.platform_feedback
     FOR SELECT TO authenticated
     USING (company_id = ANY(public.user_company_ids()) OR public.platform_is_admin());
-
 CREATE POLICY p_platform_feedback_insert ON public.platform_feedback
     FOR INSERT TO authenticated
     WITH CHECK (company_id = ANY(public.user_company_ids()));
-
 CREATE POLICY p_platform_feedback_admin ON public.platform_feedback
     FOR UPDATE TO authenticated
     USING (public.platform_is_admin())

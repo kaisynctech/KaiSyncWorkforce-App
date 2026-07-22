@@ -1,7 +1,6 @@
 -- Rich My PA schema (Flutter parity) + operational sync (job/project assignments → todos).
 
 DROP FUNCTION IF EXISTS public.employee_insert_pa_task(uuid, uuid, text, text, date, text);
-
 ALTER TABLE public.pa_tasks
   ADD COLUMN IF NOT EXISTS due_at timestamptz,
   ADD COLUMN IF NOT EXISTS remind_at timestamptz,
@@ -18,13 +17,10 @@ ALTER TABLE public.pa_tasks
   ADD COLUMN IF NOT EXISTS meeting_follow_up text,
   ADD COLUMN IF NOT EXISTS owner_hr_user_id uuid,
   ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
-
 UPDATE public.pa_tasks
 SET due_at = (due_date::timestamp AT TIME ZONE 'UTC') + interval '9 hours'
 WHERE due_at IS NULL AND due_date IS NOT NULL;
-
 UPDATE public.pa_tasks SET status = 'todo' WHERE status IN ('open', 'pending');
-
 CREATE OR REPLACE FUNCTION public.sync_operational_pa_tasks(
   p_company_id uuid,
   p_scope_employee_id uuid DEFAULT NULL
@@ -190,9 +186,7 @@ BEGIN
   RETURN v_created;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.sync_operational_pa_tasks(uuid, uuid) TO authenticated;
-
 -- Expanded employee insert
 CREATE OR REPLACE FUNCTION public.employee_insert_pa_task(
   p_company_id uuid,
@@ -249,7 +243,6 @@ BEGIN
   RETURN v_id;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.employee_insert_pa_task(
   uuid, uuid, text, text, date, text, timestamptz, timestamptz, text, text, text, text, text, timestamptz, text, text
 ) TO authenticated;

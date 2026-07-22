@@ -12,21 +12,18 @@ ON CONFLICT (id) DO UPDATE SET
     public = EXCLUDED.public,
     file_size_limit = EXCLUDED.file_size_limit,
     allowed_mime_types = EXCLUDED.allowed_mime_types;
-
 -- Public read
 DROP POLICY IF EXISTS "Public read releases" ON storage.objects;
 CREATE POLICY "Public read releases"
 ON storage.objects FOR SELECT
 TO public
 USING (bucket_id = 'releases');
-
 -- Service role / authenticated upload (platform ops)
 DROP POLICY IF EXISTS "Service upload releases" ON storage.objects;
 CREATE POLICY "Service upload releases"
 ON storage.objects FOR INSERT
 TO authenticated
 WITH CHECK (bucket_id = 'releases');
-
 DROP POLICY IF EXISTS "Service update releases" ON storage.objects;
 CREATE POLICY "Service update releases"
 ON storage.objects FOR UPDATE

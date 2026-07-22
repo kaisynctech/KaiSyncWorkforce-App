@@ -17,20 +17,16 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 set search_path = public;
-
 -- ─── 1. Column + dedup index ────────────────────────────────────────────────
 ALTER TABLE public.time_punches
   ADD COLUMN IF NOT EXISTS idempotency_key uuid;
-
 CREATE UNIQUE INDEX IF NOT EXISTS uq_time_punches_company_idempotency
   ON public.time_punches (company_id, idempotency_key)
   WHERE idempotency_key IS NOT NULL;
-
 -- ─── 2. Replace the punch RPC with an idempotent, 11-arg version ────────────
 DROP FUNCTION IF EXISTS public.employee_insert_punch(
   uuid, uuid, text, timestamptz, double precision, double precision, text, uuid, text, uuid
 );
-
 CREATE OR REPLACE FUNCTION public.employee_insert_punch(
     p_company_id  uuid,
     p_employee_id uuid,
@@ -101,11 +97,9 @@ BEGIN
     RETURN row_to_json(v_punch);
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.employee_insert_punch(
   uuid, uuid, text, timestamptz, double precision, double precision, text, uuid, text, uuid, uuid
 ) TO anon, authenticated;
-
 -- ════════════════════════════════════════════════════════════════════════════
 -- ROLLBACK NOTES (manual)
 --   • Recreate the prior 10-arg overload from
@@ -116,4 +110,4 @@ GRANT EXECUTE ON FUNCTION public.employee_insert_punch(
 --       drop index if exists public.uq_time_punches_company_idempotency;
 --       alter table public.time_punches drop column if exists idempotency_key;
 --   • Reverting the RPC requires reverting the C# (InsertPunchAsync sends p_idempotency_key).
--- ════════════════════════════════════════════════════════════════════════════
+-- ════════════════════════════════════════════════════════════════════════════;

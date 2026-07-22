@@ -15,5 +15,4 @@ AS $$
       '{}'::text[])
   );
 $$;
-
 GRANT EXECUTE ON FUNCTION public.get_job_photo_urls(uuid) TO authenticated;

@@ -53,7 +53,6 @@ BEGIN
   RETURN row_to_json(v_row);
 END;
 $$;
-
 CREATE OR REPLACE FUNCTION public.employee_job_site_sign_out_open_visit(
   p_company_id  uuid,
   p_employee_id uuid,
@@ -83,7 +82,6 @@ BEGIN
   RETURN row_to_json(v_row);
 END;
 $$;
-
 CREATE OR REPLACE FUNCTION public.employee_job_site_switch_to_job(
   p_company_id       uuid,
   p_employee_id      uuid,
@@ -115,7 +113,6 @@ BEGIN
   );
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.employee_job_site_sign_out_open_visit(uuid, uuid, text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.employee_job_site_switch_to_job(
   uuid, uuid, uuid, double precision, double precision, text, text, text

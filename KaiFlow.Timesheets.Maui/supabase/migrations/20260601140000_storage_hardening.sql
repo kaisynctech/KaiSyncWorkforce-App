@@ -9,16 +9,13 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 SET search_path = public;
-
 -- ─── 1. Private bucket ───────────────────────────────────────────────────────
 UPDATE storage.buckets
 SET public = false
 WHERE id = 'workforce-media';
-
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('workforce-media', 'workforce-media', false)
 ON CONFLICT (id) DO UPDATE SET public = false;
-
 -- ─── 2. Upload grant ledger (validated RPC → storage INSERT) ─────────────────
 CREATE TABLE IF NOT EXISTS public.media_upload_grants (
   id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -31,16 +28,12 @@ CREATE TABLE IF NOT EXISTS public.media_upload_grants (
   created_at   timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT uq_media_upload_grants_path UNIQUE (storage_path)
 );
-
 ALTER TABLE public.media_upload_grants ENABLE ROW LEVEL SECURITY;
-
 CREATE INDEX IF NOT EXISTS idx_media_upload_grants_expires
   ON public.media_upload_grants (expires_at)
   WHERE consumed_at IS NULL;
-
 -- ─── 3. Replace permissive anon storage policies ─────────────────────────────
 DROP POLICY IF EXISTS p_workforce_media_anon_insert ON storage.objects;
-
 CREATE POLICY p_workforce_media_hr_insert ON storage.objects
 FOR INSERT TO authenticated
 WITH CHECK (
@@ -56,7 +49,6 @@ WITH CHECK (
     'job_photos'
   )
 );
-
 CREATE POLICY p_workforce_media_worker_insert ON storage.objects
 FOR INSERT TO anon
 WITH CHECK (
@@ -69,11 +61,9 @@ WITH CHECK (
       AND g.expires_at > now()
   )
 );
-
 CREATE POLICY p_workforce_media_hr_select ON storage.objects
 FOR SELECT TO authenticated
 USING (bucket_id = 'workforce-media');
-
 CREATE POLICY p_workforce_media_worker_select ON storage.objects
 FOR SELECT TO anon
 USING (
@@ -85,7 +75,6 @@ USING (
       AND g.expires_at > now()
   )
 );
-
 -- ─── 4. Worker upload grant RPC ──────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION public.employee_prepare_media_upload(
   p_company_id    uuid,
@@ -136,7 +125,6 @@ BEGIN
   );
 END;
 $$;
-
 CREATE OR REPLACE FUNCTION public.employee_consume_media_upload(
   p_company_id    uuid,
   p_employee_id   uuid,
@@ -158,12 +146,10 @@ BEGIN
     AND employee_id = p_employee_id;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.employee_prepare_media_upload(uuid, uuid, text, text, text)
   TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.employee_consume_media_upload(uuid, uuid, text, text)
   TO anon, authenticated;
-
 -- ─── 5. Cleanup expired grants (optional cron) ─────────────────────────────────
 CREATE OR REPLACE FUNCTION public.prune_expired_media_upload_grants()
 RETURNS integer
@@ -178,5 +164,4 @@ AS $$
   )
   SELECT count(*)::integer FROM d;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.prune_expired_media_upload_grants() TO authenticated;

@@ -34,9 +34,7 @@ AS $$
         LIMIT greatest(1, least(p_limit, 100))
     ) sub;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.list_public_app_versions(integer) TO anon, authenticated;
-
 -- Extend latest-version RPC with explicit platform download URLs for the website.
 CREATE OR REPLACE FUNCTION public.get_latest_app_version(p_platform text DEFAULT 'windows')
 RETURNS jsonb
@@ -87,5 +85,4 @@ BEGIN
     );
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.get_latest_app_version(text) TO anon, authenticated;

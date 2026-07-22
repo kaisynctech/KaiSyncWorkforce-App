@@ -1,18 +1,14 @@
 -- Enterprise employee job creation: worker-safe RPC, audit trail, assignments, calendar, messaging.
 
 set search_path = public;
-
 alter table public.jobs
   add column if not exists created_by_employee_id uuid references public.employees(id) on delete set null;
-
 create index if not exists idx_jobs_created_by_employee
   on public.jobs(company_id, created_by_employee_id, created_at desc);
-
 -- Drop legacy bigint overload if present (PGRST203 prevention).
 drop function if exists public.employee_create_job(
   bigint, bigint, text, text, text, timestamptz, timestamptz, bigint, bigint, bigint[], bigint
 );
-
 create or replace function public._next_job_code(p_company_id uuid)
 returns text
 language plpgsql
@@ -36,7 +32,6 @@ begin
   return v_prefix || '-J' || lpad(v_n::text, 4, '0');
 end;
 $$;
-
 create or replace function public.employee_create_job(
   p_company_id              uuid,
   p_creator_employee_id     uuid,
@@ -173,14 +168,12 @@ begin
   return row_to_json(v_row);
 end;
 $$;
-
 revoke all on function public.employee_create_job(
   uuid, uuid, text, text, text, timestamptz, timestamptz, uuid, uuid, uuid, uuid[], uuid, text
 ) from public;
 grant execute on function public.employee_create_job(
   uuid, uuid, text, text, text, timestamptz, timestamptz, uuid, uuid, uuid, uuid[], uuid, text
 ) to anon, authenticated;
-
 -- Creators always see jobs they created even before assignment sync edge cases.
 create or replace function public.employee_get_jobs_for_employee(
   p_company_id uuid,
@@ -214,5 +207,4 @@ as $$
     )
   order by j.created_at desc;
 $$;
-
 grant execute on function public.employee_get_jobs_for_employee(uuid, uuid) to anon, authenticated;

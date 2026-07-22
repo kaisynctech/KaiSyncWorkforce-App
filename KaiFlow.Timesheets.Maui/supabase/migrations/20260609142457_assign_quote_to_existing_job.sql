@@ -1,128 +1,235 @@
-﻿-- Migration: 20260609142457_assign_quote_to_existing_job
--- Assign quote to existing job - job messaging functions for quote-linked jobs
--- Representation file: idempotent (CREATE OR REPLACE FUNCTION throughout)
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Migration: assign_quote_to_existing_job  (Phase 2D.5)
+--
+-- 1. hr_assign_quote_to_job  — atomic RPC to link an approved quote to an
+--      already-existing job (instead of creating a new one).
+--    Multiple quotes can map to the same job (many → 1 via converted_to_job_id).
+--    Contractor cost is accumulated; contractor_id is set only when empty.
+--
+-- 2. Update hr_get_contractor_activity to include the new event type.
+-- ═══════════════════════════════════════════════════════════════════════════
 
-CREATE OR REPLACE FUNCTION public.contractor_portal_get_job_messages(p_company_code text, p_contractor_code text, p_job_id uuid)
- RETURNS json
- LANGUAGE plpgsql
- STABLE SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
+-- ── 1. hr_assign_quote_to_job ───────────────────────────────────────────────
+
+CREATE OR REPLACE FUNCTION public.hr_assign_quote_to_job(
+    p_company_id uuid,
+    p_hr_user_id uuid,
+    p_quote_id   uuid,
+    p_job_id     uuid
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 DECLARE
-  v_ct public.contractors%ROWTYPE;
-  v_subject text;
-  v_thread_id uuid;
+    v_quote  record;
+    v_job    record;
 BEGIN
-  SELECT * INTO v_ct
-  FROM public.contractors ct
-  INNER JOIN public.companies c ON c.id = ct.company_id
-  WHERE upper(trim(c.code)) = upper(trim(p_company_code))
-    AND upper(trim(ct.contractor_code)) = upper(trim(p_contractor_code))
-    AND ct.is_active = true;
+    -- ── Validate quote (lock row to prevent duplicate assignments) ────────────
+    SELECT * INTO v_quote
+    FROM public.contractor_quotes
+    WHERE id = p_quote_id AND company_id = p_company_id
+    FOR UPDATE;
 
-  IF NOT FOUND THEN RETURN '[]'::json; END IF;
-  IF NOT public._contractor_owns_job(v_ct.company_id, v_ct.id, p_job_id) THEN
-    RETURN '[]'::json;
-  END IF;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Quote not found';
+    END IF;
+    IF v_quote.status != 'approved' THEN
+        RAISE EXCEPTION 'Only approved quotes can be assigned to a job (current status: %)',
+            v_quote.status;
+    END IF;
+    IF v_quote.converted_to_job_id IS NOT NULL THEN
+        RAISE EXCEPTION 'Quote has already been linked to job %',
+            v_quote.converted_to_job_id;
+    END IF;
 
-  v_subject := 'Job:' || p_job_id::text;
-  SELECT t.id INTO v_thread_id
-  FROM public.message_threads t
-  WHERE t.company_id = v_ct.company_id AND t.subject = v_subject
-  LIMIT 1;
+    -- ── Validate job (must belong to same company) ────────────────────────────
+    SELECT * INTO v_job
+    FROM public.jobs
+    WHERE id = p_job_id AND company_id = p_company_id
+    FOR UPDATE;
 
-  IF v_thread_id IS NULL THEN RETURN '[]'::json; END IF;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Job not found or belongs to a different company';
+    END IF;
 
-  RETURN (
-    SELECT coalesce(json_agg(row_to_json(m) ORDER BY m.created_at), '[]'::json)
-    FROM public.app_messages m
-    WHERE m.thread_id = v_thread_id
-  );
-END;
-$function$
+    -- ── Link quote → job ──────────────────────────────────────────────────────
+    UPDATE public.contractor_quotes SET
+        status              = 'converted',
+        converted_to_job_id = p_job_id,
+        converted_at        = now(),
+        updated_at          = now()
+    WHERE id = p_quote_id AND company_id = p_company_id;
 
+    -- ── Update job ─────────────────────────────────────────────────────────────
+    -- • Set contractor_id only when currently NULL (don't overwrite existing contractor)
+    -- • Accumulate contractor_cost (a job may have multiple contractor quotes)
+    -- • Leave estimated_cost unchanged (set by the job creator, not the quote)
+    UPDATE public.jobs SET
+        contractor_id   = CASE
+                              WHEN contractor_id IS NULL THEN v_quote.contractor_id
+                              ELSE contractor_id
+                          END,
+        contractor_cost = contractor_cost + v_quote.total_amount,
+        updated_at      = now()
+    WHERE id = p_job_id AND company_id = p_company_id;
 
-REVOKE ALL ON FUNCTION public.contractor_portal_get_job_messages(p_company_code text, p_contractor_code text, p_job_id uuid) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.contractor_portal_get_job_messages(p_company_code text, p_contractor_code text, p_job_id uuid) FROM anon;
-GRANT EXECUTE ON FUNCTION public.contractor_portal_get_job_messages(p_company_code text, p_contractor_code text, p_job_id uuid) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.contractor_portal_get_job_messages(p_company_code text, p_contractor_code text, p_job_id uuid) TO service_role;
-
-CREATE OR REPLACE FUNCTION public.contractor_portal_send_job_message(p_company_code text, p_contractor_code text, p_job_id uuid, p_body text, p_sender_name text DEFAULT NULL::text)
- RETURNS json
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_ct public.contractors%ROWTYPE;
-  v_job public.jobs%ROWTYPE;
-  v_thread_id uuid;
-  v_subject text;
-  v_msg public.app_messages%ROWTYPE;
-  v_manager uuid;
-BEGIN
-  SELECT * INTO v_ct
-  FROM public.contractors ct
-  INNER JOIN public.companies c ON c.id = ct.company_id
-  WHERE upper(trim(c.code)) = upper(trim(p_company_code))
-    AND upper(trim(ct.contractor_code)) = upper(trim(p_contractor_code))
-    AND ct.is_active = true;
-
-  IF NOT FOUND THEN RAISE EXCEPTION 'CONTRACTOR_NOT_FOUND'; END IF;
-  IF NOT public._contractor_owns_job(v_ct.company_id, v_ct.id, p_job_id) THEN
-    RAISE EXCEPTION 'JOB_NOT_ASSIGNED';
-  END IF;
-
-  SELECT * INTO v_job FROM public.jobs WHERE id = p_job_id;
-  v_manager := coalesce(v_job.assignee_employee_id, v_job.contractor_employee_id);
-  v_subject := 'Job:' || p_job_id::text;
-
-  SELECT t.id INTO v_thread_id
-  FROM public.message_threads t
-  WHERE t.company_id = v_ct.company_id
-    AND t.subject = v_subject
-  LIMIT 1;
-
-  IF v_thread_id IS NULL THEN
-    INSERT INTO public.message_threads (id, company_id, subject, participant_ids, type_raw, created_at)
+    -- ── Audit log ─────────────────────────────────────────────────────────────
+    INSERT INTO public.app_events (company_id, auth_user_id, screen, action, level, meta)
     VALUES (
-      gen_random_uuid(),
-      v_ct.company_id,
-      v_subject,
-      CASE WHEN v_manager IS NOT NULL THEN ARRAY[v_manager] ELSE '{}' END,
-      'job',
-      now()
-    )
-    RETURNING id INTO v_thread_id;
-  END IF;
-
-  INSERT INTO public.app_messages (
-    id, thread_id, sender_id, body, company_id, created_at,
-    sender_contractor_id, sender_display_name
-  ) VALUES (
-    gen_random_uuid(),
-    v_thread_id,
-    coalesce(v_manager, v_ct.id),
-    trim(p_body),
-    v_ct.company_id,
-    now(),
-    v_ct.id,
-    coalesce(nullif(trim(p_sender_name), ''), v_ct.name)
-  )
-  RETURNING * INTO v_msg;
-
-  UPDATE public.message_threads
-  SET last_message_at = now(),
-      last_message_preview = left(trim(p_body), 120)
-  WHERE id = v_thread_id;
-
-  RETURN row_to_json(v_msg);
+        p_company_id,
+        p_hr_user_id,
+        'contractor_quotes',
+        'contractor_quote_assigned_to_existing_job',
+        'info',
+        jsonb_build_object(
+            'quote_id',      p_quote_id,
+            'job_id',        p_job_id,
+            'job_code',      v_job.job_code,
+            'job_title',     v_job.title,
+            'quote_number',  v_quote.quote_number,
+            'total_amount',  v_quote.total_amount,
+            'contractor_id', v_quote.contractor_id
+        )
+    );
 END;
-$function$
+$$;
 
 
-REVOKE ALL ON FUNCTION public.contractor_portal_send_job_message(p_company_code text, p_contractor_code text, p_job_id uuid, p_body text, p_sender_name text DEFAULT NULL::text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.contractor_portal_send_job_message(p_company_code text, p_contractor_code text, p_job_id uuid, p_body text, p_sender_name text DEFAULT NULL::text) FROM anon;
-GRANT EXECUTE ON FUNCTION public.contractor_portal_send_job_message(p_company_code text, p_contractor_code text, p_job_id uuid, p_body text, p_sender_name text DEFAULT NULL::text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.contractor_portal_send_job_message(p_company_code text, p_contractor_code text, p_job_id uuid, p_body text, p_sender_name text DEFAULT NULL::text) TO service_role;
+-- ── 2. Update hr_get_contractor_activity ─────────────────────────────────────
 
+CREATE OR REPLACE FUNCTION public.hr_get_contractor_activity(
+    p_company_id uuid,
+    p_limit      int DEFAULT 50
+)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    RETURN coalesce((
+        SELECT json_agg(row_to_json(a))
+        FROM (
+            SELECT
+                ae.id::text  AS id,
+                ae.screen,
+                ae.action,
+                ae.created_at,
+
+                coalesce(
+                    ae.meta->>'contractor_id',
+                    CASE WHEN ae.meta->>'quote_id' IS NOT NULL THEN (
+                        SELECT cq.contractor_id::text FROM public.contractor_quotes cq
+                        WHERE cq.id = (ae.meta->>'quote_id')::uuid LIMIT 1
+                    ) ELSE NULL END,
+                    ''
+                ) AS contractor_id,
+
+                coalesce((
+                    SELECT c2.name FROM public.contractors c2
+                    WHERE c2.id = coalesce(
+                        (ae.meta->>'contractor_id')::uuid,
+                        (SELECT cq2.contractor_id FROM public.contractor_quotes cq2
+                         WHERE cq2.id = (ae.meta->>'quote_id')::uuid LIMIT 1)
+                    ) AND c2.company_id = ae.company_id LIMIT 1
+                ), '') AS contractor_name,
+
+                coalesce((
+                    SELECT c3.contractor_code FROM public.contractors c3
+                    WHERE c3.id = coalesce(
+                        (ae.meta->>'contractor_id')::uuid,
+                        (SELECT cq3.contractor_id FROM public.contractor_quotes cq3
+                         WHERE cq3.id = (ae.meta->>'quote_id')::uuid LIMIT 1)
+                    ) AND c3.company_id = ae.company_id LIMIT 1
+                ), '') AS contractor_code,
+
+                CASE ae.action
+                    WHEN 'hr_approve_quote'                          THEN 'quotes'
+                    WHEN 'hr_reject_quote'                           THEN 'quotes'
+                    WHEN 'hr_request_revision'                       THEN 'quotes'
+                    WHEN 'hr_start_review'                           THEN 'quotes'
+                    WHEN 'contractor_quote_submitted'                THEN 'quotes'
+                    WHEN 'resubmit_quote'                            THEN 'quotes'
+                    WHEN 'contractor_quote_converted_to_job'         THEN 'quotes'
+                    WHEN 'contractor_quote_assigned_to_existing_job' THEN 'quotes'
+                    WHEN 'contractor_banking_update_submitted'       THEN 'banking'
+                    WHEN 'contractor_banking_update_approved'        THEN 'banking'
+                    WHEN 'contractor_banking_update_rejected'        THEN 'banking'
+                    WHEN 'contractor_profile_updated'                THEN 'profile'
+                    WHEN 'contractor_tax_updated'                    THEN 'profile'
+                    ELSE 'other'
+                END AS event_type,
+
+                CASE ae.action
+                    WHEN 'hr_approve_quote'                          THEN 'Quote Approved'
+                    WHEN 'hr_reject_quote'                           THEN 'Quote Rejected'
+                    WHEN 'hr_request_revision'                       THEN 'Revision Requested'
+                    WHEN 'hr_start_review'                           THEN 'Under Review'
+                    WHEN 'contractor_quote_submitted'                THEN 'Quote Submitted'
+                    WHEN 'resubmit_quote'                            THEN 'Quote Resubmitted'
+                    WHEN 'contractor_quote_converted_to_job'         THEN 'Converted to Job'
+                    WHEN 'contractor_quote_assigned_to_existing_job' THEN 'Assigned to Job'
+                    WHEN 'contractor_banking_update_submitted'       THEN 'Banking Submitted'
+                    WHEN 'contractor_banking_update_approved'        THEN 'Banking Approved'
+                    WHEN 'contractor_banking_update_rejected'        THEN 'Banking Rejected'
+                    WHEN 'contractor_profile_updated'                THEN 'Profile Updated'
+                    WHEN 'contractor_tax_updated'                    THEN 'Tax/VAT Updated'
+                    ELSE ae.action
+                END AS event_label,
+
+                CASE ae.action
+                    WHEN 'hr_approve_quote'
+                        THEN coalesce('Quote ' || (ae.meta->>'quote_number'), 'Quote') || ' approved'
+                    WHEN 'hr_reject_quote'
+                        THEN left(coalesce(ae.meta->>'rejection_reason', 'Rejected'), 80)
+                    WHEN 'hr_request_revision'
+                        THEN left(coalesce(ae.meta->>'revision_comments', 'Revisions requested'), 80)
+                    WHEN 'hr_start_review'      THEN 'Quote opened for review'
+                    WHEN 'contractor_quote_submitted'
+                        THEN coalesce(
+                            CASE WHEN ae.meta->>'quote_number' IS NOT NULL
+                                 THEN 'Quote ' || (ae.meta->>'quote_number') || ' submitted'
+                            END, 'Quote submitted for review')
+                    WHEN 'resubmit_quote'
+                        THEN coalesce('Quote ' || (ae.meta->>'quote_number'), 'Quote') || ' resubmitted after revision'
+                    WHEN 'contractor_quote_converted_to_job'
+                        THEN coalesce('Quote ' || (ae.meta->>'quote_number'), 'Quote') ||
+                             ' → Job ' || coalesce(ae.meta->>'job_code', '')
+                    WHEN 'contractor_quote_assigned_to_existing_job'
+                        THEN coalesce('Quote ' || (ae.meta->>'quote_number'), 'Quote') ||
+                             ' assigned to Job ' || coalesce(ae.meta->>'job_code', '') ||
+                             ' — ' || coalesce(ae.meta->>'job_title', '')
+                    WHEN 'contractor_banking_update_submitted' THEN 'Banking details update awaiting approval'
+                    WHEN 'contractor_banking_update_approved'  THEN 'Banking details approved'
+                    WHEN 'contractor_banking_update_rejected'  THEN 'Banking update rejected'
+                    WHEN 'contractor_profile_updated'          THEN 'Profile information updated'
+                    WHEN 'contractor_tax_updated'              THEN 'Tax / VAT details updated'
+                    ELSE ae.action
+                END AS summary,
+
+                CASE ae.screen
+                    WHEN 'ContractorPortal'  THEN 'Portal'
+                    WHEN 'contractor_portal' THEN 'Portal'
+                    ELSE 'HR'
+                END AS source
+
+            FROM app_events ae
+            WHERE ae.company_id = p_company_id
+              AND ae.action IN (
+                'hr_approve_quote', 'hr_reject_quote', 'hr_request_revision', 'hr_start_review',
+                'contractor_quote_submitted', 'resubmit_quote',
+                'contractor_quote_converted_to_job',
+                'contractor_quote_assigned_to_existing_job',
+                'contractor_banking_update_submitted',
+                'contractor_banking_update_approved',
+                'contractor_banking_update_rejected',
+                'contractor_profile_updated', 'contractor_tax_updated'
+              )
+            ORDER BY ae.created_at DESC
+            LIMIT p_limit
+        ) a
+    ), '[]'::json);
+END;
+$$;;

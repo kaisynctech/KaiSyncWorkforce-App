@@ -22,7 +22,6 @@ CREATE TABLE IF NOT EXISTS public.saas_plans (
     features_json   jsonb NOT NULL DEFAULT '{}'::jsonb,
     created_at      timestamptz NOT NULL DEFAULT now()
 );
-
 -- ─── 2. Company subscriptions ────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.saas_company_subscriptions (
     id                      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -40,10 +39,8 @@ CREATE TABLE IF NOT EXISTS public.saas_company_subscriptions (
     updated_at              timestamptz NOT NULL DEFAULT now(),
     UNIQUE (company_id)
 );
-
 CREATE INDEX IF NOT EXISTS idx_saas_subscriptions_plan ON public.saas_company_subscriptions(plan_id);
 CREATE INDEX IF NOT EXISTS idx_saas_subscriptions_status ON public.saas_company_subscriptions(subscription_status);
-
 -- ─── 3. Billing transactions ─────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.saas_billing_transactions (
     id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -58,9 +55,7 @@ CREATE TABLE IF NOT EXISTS public.saas_billing_transactions (
     provider_reference  text,
     created_at          timestamptz NOT NULL DEFAULT now()
 );
-
 CREATE INDEX IF NOT EXISTS idx_saas_billing_company ON public.saas_billing_transactions(company_id, created_at DESC);
-
 -- ─── 4. Feature flag catalogue ───────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.saas_feature_flags (
     id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -71,7 +66,6 @@ CREATE TABLE IF NOT EXISTS public.saas_feature_flags (
     is_enabled_by_default boolean NOT NULL DEFAULT false,
     created_at          timestamptz NOT NULL DEFAULT now()
 );
-
 -- ─── 5. Per-company feature overrides ────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.saas_company_features (
     id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -84,9 +78,7 @@ CREATE TABLE IF NOT EXISTS public.saas_company_features (
     created_at      timestamptz NOT NULL DEFAULT now(),
     UNIQUE (company_id, feature_code)
 );
-
 CREATE INDEX IF NOT EXISTS idx_saas_company_features_company ON public.saas_company_features(company_id);
-
 -- ─── 6. Usage metering snapshots ─────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.saas_usage_snapshots (
     id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -96,7 +88,6 @@ CREATE TABLE IF NOT EXISTS public.saas_usage_snapshots (
     created_at      timestamptz NOT NULL DEFAULT now(),
     UNIQUE (company_id, period_month)
 );
-
 -- ─── 7. Onboarding progress ──────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.saas_onboarding_progress (
     id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -108,7 +99,6 @@ CREATE TABLE IF NOT EXISTS public.saas_onboarding_progress (
     updated_at      timestamptz NOT NULL DEFAULT now(),
     UNIQUE (company_id, step_key)
 );
-
 -- ─── 8. Platform administrators (KaiFlow staff — NOT tenant HR) ──────────────
 CREATE TABLE IF NOT EXISTS public.platform_admins (
     id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -118,7 +108,6 @@ CREATE TABLE IF NOT EXISTS public.platform_admins (
     is_active       boolean NOT NULL DEFAULT true,
     created_at      timestamptz NOT NULL DEFAULT now()
 );
-
 -- ─── 9. Platform audit log ───────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.saas_platform_audit_log (
     id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -131,9 +120,7 @@ CREATE TABLE IF NOT EXISTS public.saas_platform_audit_log (
     detail_json     jsonb NOT NULL DEFAULT '{}'::jsonb,
     created_at      timestamptz NOT NULL DEFAULT now()
 );
-
 CREATE INDEX IF NOT EXISTS idx_platform_audit_created ON public.saas_platform_audit_log(created_at DESC);
-
 -- ─── 10. Support notes ───────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.saas_support_notes (
     id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -145,7 +132,6 @@ CREATE TABLE IF NOT EXISTS public.saas_support_notes (
     is_resolved     boolean NOT NULL DEFAULT false,
     created_at      timestamptz NOT NULL DEFAULT now()
 );
-
 -- ─── 11. Release rollouts ────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.saas_release_rollouts (
     id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -157,7 +143,6 @@ CREATE TABLE IF NOT EXISTS public.saas_release_rollouts (
     is_active       boolean NOT NULL DEFAULT true,
     created_at      timestamptz NOT NULL DEFAULT now()
 );
-
 -- ─── 12. Company app version tracking ────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.saas_company_app_versions (
     id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -167,7 +152,6 @@ CREATE TABLE IF NOT EXISTS public.saas_company_app_versions (
     last_seen_at    timestamptz NOT NULL DEFAULT now(),
     UNIQUE (company_id, app_version, platform)
 );
-
 -- ─── 13. Device sessions (MFA-ready / revocation foundation) ─────────────────
 CREATE TABLE IF NOT EXISTS public.saas_device_sessions (
     id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -180,9 +164,7 @@ CREATE TABLE IF NOT EXISTS public.saas_device_sessions (
     last_active_at  timestamptz NOT NULL DEFAULT now(),
     created_at      timestamptz NOT NULL DEFAULT now()
 );
-
 CREATE INDEX IF NOT EXISTS idx_device_sessions_user ON public.saas_device_sessions(auth_user_id, is_revoked);
-
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- SEED: Plans
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -205,7 +187,6 @@ VALUES
     '{"modules":{"employees":true,"attendance":true,"leave":true,"ticketing":true,"payroll":true,"reports":true,"messaging":true,"settings":true,"clients":true,"inventory":true,"suppliers":true,"contractors":true,"property_management":true,"scheduling":true,"incidents":true,"my_pa":true,"asset_compliance":true,"paperless":true},"features":{"advanced_reporting":true,"finance_module":true,"finance_forecasting":true,"accounting_sync":true,"platform_api":true},"max_employees":500}'::jsonb
 )
 ON CONFLICT (code) DO NOTHING;
-
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- SEED: Feature flags
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -221,7 +202,6 @@ VALUES
     ('feature.scheduling', 'Scheduling', 'Shift templates and scheduling', 'scheduling', false),
     ('feature.my_pa', 'My PA', 'Personal assistant module', 'my_pa', false)
 ON CONFLICT (feature_code) DO NOTHING;
-
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- Auto-provision subscription on new company
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -259,12 +239,10 @@ BEGIN
     RETURN new;
 END;
 $$;
-
 DROP TRIGGER IF EXISTS trg_provision_company_subscription ON public.companies;
 CREATE TRIGGER trg_provision_company_subscription
     AFTER INSERT ON public.companies
     FOR EACH ROW EXECUTE FUNCTION public.provision_company_subscription();
-
 -- Backfill subscriptions for existing companies
 INSERT INTO public.saas_company_subscriptions (company_id, plan_id, billing_status, employee_limit, trial_ends_at, subscription_status, current_employee_count)
 SELECT
@@ -282,7 +260,6 @@ SELECT
 FROM public.companies c
 LEFT JOIN public.saas_plans p ON p.code = coalesce(nullif(c.plan_code, ''), 'free_trial')
 ON CONFLICT (company_id) DO NOTHING;
-
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- RPC: Platform admin check
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -298,9 +275,7 @@ AS $$
         WHERE auth_user_id = auth.uid() AND is_active = true
     );
 $$;
-
 GRANT EXECUTE ON FUNCTION public.platform_is_admin() TO authenticated;
-
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- RPC: Feature entitlement check (server-side mirror of FeatureAccessService)
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -367,9 +342,7 @@ BEGIN
     RETURN coalesce(v_enabled, false);
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.saas_is_feature_enabled(uuid, text) TO authenticated;
-
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- RPC: Get company subscription summary (tenant-readable)
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -411,9 +384,7 @@ BEGIN
     RETURN coalesce(v_result, '{}'::jsonb);
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.saas_get_company_subscription(uuid) TO authenticated;
-
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- RPC: Platform admin — list companies (cross-tenant)
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -448,9 +419,7 @@ BEGIN
     LIMIT p_limit OFFSET p_offset;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.platform_list_companies(integer, integer) TO authenticated;
-
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- RPC: Platform admin — set subscription status
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -484,9 +453,7 @@ BEGIN
             jsonb_build_object('status', p_status, 'note', p_note));
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.platform_set_subscription_status(uuid, text, text) TO authenticated;
-
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- RPC: Platform admin — toggle company feature
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -520,9 +487,7 @@ BEGIN
             jsonb_build_object('feature_code', p_feature_code, 'enabled', p_enabled));
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.platform_set_company_feature(uuid, text, boolean, timestamptz, text) TO authenticated;
-
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- RPC: Record usage snapshot (called by client or cron)
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -551,9 +516,7 @@ BEGIN
         created_at = now();
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.saas_upsert_usage_snapshot(uuid, date, jsonb) TO authenticated;
-
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- RLS
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -570,75 +533,60 @@ ALTER TABLE public.saas_support_notes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.saas_release_rollouts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.saas_company_app_versions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.saas_device_sessions ENABLE ROW LEVEL SECURITY;
-
 -- Plans & feature catalogue: readable by all authenticated
 CREATE POLICY p_saas_plans_select ON public.saas_plans FOR SELECT TO authenticated USING (true);
 CREATE POLICY p_saas_feature_flags_select ON public.saas_feature_flags FOR SELECT TO authenticated USING (true);
-
 -- Subscriptions: tenant members read own; platform admin read all
 CREATE POLICY p_saas_subscriptions_select ON public.saas_company_subscriptions
     FOR SELECT TO authenticated
     USING (company_id = ANY(public.user_company_ids()) OR public.platform_is_admin());
-
 -- Billing: tenant read own
 CREATE POLICY p_saas_billing_select ON public.saas_billing_transactions
     FOR SELECT TO authenticated
     USING (company_id = ANY(public.user_company_ids()) OR public.platform_is_admin());
-
 -- Company features: tenant read own
 CREATE POLICY p_saas_company_features_select ON public.saas_company_features
     FOR SELECT TO authenticated
     USING (company_id = ANY(public.user_company_ids()) OR public.platform_is_admin());
-
 -- Usage snapshots: tenant read own
 CREATE POLICY p_saas_usage_select ON public.saas_usage_snapshots
     FOR SELECT TO authenticated
     USING (company_id = ANY(public.user_company_ids()) OR public.platform_is_admin());
-
 -- Onboarding: tenant read/write own
 CREATE POLICY p_saas_onboarding_select ON public.saas_onboarding_progress
     FOR SELECT TO authenticated
     USING (company_id = ANY(public.user_company_ids()));
-
 CREATE POLICY p_saas_onboarding_upsert ON public.saas_onboarding_progress
     FOR ALL TO authenticated
     USING (company_id = ANY(public.user_company_ids()))
     WITH CHECK (company_id = ANY(public.user_company_ids()));
-
 -- Platform admins: self-read only
 CREATE POLICY p_platform_admins_self ON public.platform_admins
     FOR SELECT TO authenticated
     USING (auth_user_id = auth.uid());
-
 -- Audit log: platform admin only
 CREATE POLICY p_platform_audit_select ON public.saas_platform_audit_log
     FOR SELECT TO authenticated
     USING (public.platform_is_admin());
-
 -- Support notes: platform admin full; tenant owners read (via RPC preferred)
 CREATE POLICY p_support_notes_platform ON public.saas_support_notes
     FOR SELECT TO authenticated
     USING (public.platform_is_admin());
-
 -- Release rollouts: readable by all authenticated (client checks locally)
 CREATE POLICY p_release_rollouts_select ON public.saas_release_rollouts
     FOR SELECT TO authenticated USING (true);
-
 -- App versions: tenant upsert own
 CREATE POLICY p_app_versions_select ON public.saas_company_app_versions
     FOR SELECT TO authenticated
     USING (company_id = ANY(public.user_company_ids()) OR public.platform_is_admin());
-
 CREATE POLICY p_app_versions_upsert ON public.saas_company_app_versions
     FOR ALL TO authenticated
     USING (company_id = ANY(public.user_company_ids()))
     WITH CHECK (company_id = ANY(public.user_company_ids()));
-
 -- Device sessions: own user
 CREATE POLICY p_device_sessions_own ON public.saas_device_sessions
     FOR ALL TO authenticated
     USING (auth_user_id = auth.uid())
     WITH CHECK (auth_user_id = auth.uid());
-
 -- No direct INSERT/UPDATE on subscriptions from clients — use RPCs
--- (platform RPCs are SECURITY DEFINER)
+-- (platform RPCs are SECURITY DEFINER);

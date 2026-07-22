@@ -34,7 +34,6 @@ BEGIN
   );
 END;
 $$;
-
 CREATE OR REPLACE FUNCTION public.employee_mark_notification_read_for_employee(
   p_employee_id uuid,
   p_notification_id bigint
@@ -60,10 +59,8 @@ BEGIN
     );
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.employee_get_my_notifications_for_employee(uuid) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.employee_mark_notification_read_for_employee(uuid, bigint) TO anon, authenticated;
-
 -- ─── Jobs: single job + photos (employee must be assigned) ────────────────────
 
 CREATE OR REPLACE FUNCTION public.employee_get_job_for_employee(
@@ -98,7 +95,6 @@ AS $$
     )
   LIMIT 1;
 $$;
-
 CREATE OR REPLACE FUNCTION public.employee_get_job_photo_urls(
   p_company_id uuid,
   p_employee_id uuid,
@@ -117,7 +113,6 @@ AS $$
   FROM public.employee_get_job_for_employee(p_company_id, p_employee_id, p_job_id) j
   LIMIT 1;
 $$;
-
 CREATE OR REPLACE FUNCTION public.employee_append_job_photo(
   p_company_id uuid,
   p_employee_id uuid,
@@ -154,11 +149,9 @@ BEGIN
   END IF;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.employee_get_job_for_employee(uuid, uuid, uuid) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.employee_get_job_photo_urls(uuid, uuid, uuid) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.employee_append_job_photo(uuid, uuid, uuid, text, text) TO anon, authenticated;
-
 -- ─── Directory, teams, leave calendar, absences, incidents ────────────────────
 
 CREATE OR REPLACE FUNCTION public.employee_list_company_peers(
@@ -182,7 +175,6 @@ AS $$
     )
   ORDER BY e.name NULLS LAST, e.surname NULLS LAST;
 $$;
-
 CREATE OR REPLACE FUNCTION public.employee_get_work_teams(
   p_company_id uuid,
   p_employee_id uuid
@@ -203,7 +195,6 @@ AS $$
       WHERE e.id = p_employee_id AND e.company_id = p_company_id
     );
 $$;
-
 CREATE OR REPLACE FUNCTION public.employee_get_company_approved_leave(
   p_company_id uuid,
   p_employee_id uuid
@@ -224,7 +215,6 @@ AS $$
       WHERE e.id = p_employee_id AND e.company_id = p_company_id
     );
 $$;
-
 CREATE OR REPLACE FUNCTION public.employee_get_daily_absences(
   p_company_id uuid,
   p_employee_id uuid,
@@ -250,7 +240,6 @@ AS $$
     )
   ORDER BY da.date DESC;
 $$;
-
 CREATE OR REPLACE FUNCTION public.employee_get_own_incidents(
   p_company_id uuid,
   p_employee_id uuid
@@ -273,13 +262,11 @@ AS $$
   ORDER BY i.created_at DESC
   LIMIT 50;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.employee_list_company_peers(uuid, uuid) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.employee_get_work_teams(uuid, uuid) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.employee_get_company_approved_leave(uuid, uuid) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.employee_get_daily_absences(uuid, uuid, date, date) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.employee_get_own_incidents(uuid, uuid) TO anon, authenticated;
-
 -- ─── My PA: uuid RPCs + settings read (anon grants) ───────────────────────────
 
 CREATE OR REPLACE FUNCTION public.employee_get_pa_settings(
@@ -302,9 +289,7 @@ AS $$
       WHERE e.id = p_employee_id AND e.company_id = p_company_id
     );
 $$;
-
 GRANT EXECUTE ON FUNCTION public.employee_get_pa_settings(uuid, uuid) TO anon, authenticated;
-
 GRANT EXECUTE ON FUNCTION public.employee_get_pa_tasks(uuid, uuid) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.employee_insert_pa_task(
   uuid, uuid, text, text, date, text, timestamptz, timestamptz, text, text, text, text, text, timestamptz, text, text
@@ -313,7 +298,6 @@ GRANT EXECUTE ON FUNCTION public.employee_notify_manager_job_created(uuid, uuid,
 GRANT EXECUTE ON FUNCTION public.sync_operational_pa_tasks(uuid, uuid) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.upsert_employee_pa_settings(uuid, uuid, boolean, boolean, boolean) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.enqueue_pa_task_notifications(uuid) TO anon, authenticated;
-
 CREATE OR REPLACE FUNCTION public.employee_update_pa_task(
   p_company_id uuid,
   p_employee_id uuid,
@@ -408,7 +392,6 @@ BEGIN
   WHERE t.id = p_task_id;
 END;
 $$;
-
 CREATE OR REPLACE FUNCTION public.employee_delete_pa_task(
   p_company_id uuid,
   p_employee_id uuid,
@@ -430,7 +413,6 @@ BEGIN
   END IF;
 END;
 $$;
-
 CREATE OR REPLACE FUNCTION public.employee_update_pa_task_status(
   p_company_id uuid,
   p_employee_id uuid,
@@ -489,7 +471,6 @@ BEGIN
   END IF;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.employee_update_pa_task(uuid, uuid, uuid, jsonb) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.employee_delete_pa_task(uuid, uuid, uuid) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.employee_update_pa_task_status(uuid, uuid, uuid, text, timestamptz) TO anon, authenticated;

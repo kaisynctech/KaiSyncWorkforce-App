@@ -9,7 +9,6 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 SET search_path = public;
-
 -- ─── Drop pre-session overloads ────────────────────────────────────────────
 
 DROP FUNCTION IF EXISTS public.employee_add_incident_comment(uuid, uuid, uuid, text);
@@ -93,7 +92,6 @@ DROP FUNCTION IF EXISTS public.message_company_feed_unread_count(uuid, uuid);
 DROP FUNCTION IF EXISTS public.message_unread_counts_for_threads(uuid, uuid, uuid[]);
 DROP FUNCTION IF EXISTS public.sync_operational_pa_tasks(uuid, uuid);
 DROP FUNCTION IF EXISTS public.upsert_employee_pa_settings(uuid, uuid, boolean, boolean, boolean);
-
 -- ─── Recreate with session enforcement ─────────────────────────────────────
 
 -- employee_add_incident_comment
@@ -141,7 +139,6 @@ begin
   return row_to_json(v_row);
 end;
 $$;
-
 -- employee_append_incident_photos
 create or replace function public.employee_append_incident_photos(
   p_company_id uuid,
@@ -173,7 +170,6 @@ begin
   return row_to_json(v_row);
 end;
 $$;
-
 -- employee_append_job_photo
 CREATE OR REPLACE FUNCTION public.employee_append_job_photo(
   p_company_id uuid,
@@ -213,7 +209,6 @@ BEGIN
   END IF;
 END;
 $$;
-
 -- employee_consume_media_upload
 CREATE OR REPLACE FUNCTION public.employee_consume_media_upload(
   p_company_id    uuid,
@@ -236,7 +231,6 @@ BEGIN
     AND employee_id = p_employee_id;
 END;
 $$;
-
 -- employee_create_job
 create or replace function public.employee_create_job(
   p_company_id              uuid,
@@ -376,7 +370,6 @@ begin
   return row_to_json(v_row);
 end;
 $$;
-
 -- employee_delete_pa_task
 CREATE OR REPLACE FUNCTION public.employee_delete_pa_task(
   p_company_id uuid,
@@ -401,7 +394,6 @@ BEGIN
   END IF;
 END;
 $$;
-
 -- employee_find_direct_thread_peer
 CREATE OR REPLACE FUNCTION public.employee_find_direct_thread_peer(
   p_company_id uuid,
@@ -429,7 +421,6 @@ BEGIN
   LIMIT 1);
 END;
 $$;
-
 -- employee_get_calendar_events_for_worker
 create or replace function public.employee_get_calendar_events_for_worker(
   p_company_id  uuid,
@@ -458,7 +449,6 @@ BEGIN
   order by e.start_time asc;
 END;
 $$;
-
 -- employee_get_checklist_for_job
 CREATE OR REPLACE FUNCTION public.employee_get_checklist_for_job(
   p_company_id uuid,
@@ -484,7 +474,6 @@ BEGIN
   ORDER BY c.sort_order, c.description;
 END;
 $$;
-
 -- employee_get_company_approved_leave
 CREATE OR REPLACE FUNCTION public.employee_get_company_approved_leave(
   p_company_id uuid,
@@ -511,7 +500,6 @@ BEGIN
     );
 END;
 $$;
-
 -- employee_get_company_feed_thread
 create or replace function public.employee_get_company_feed_thread(
   p_company_id uuid,
@@ -541,7 +529,6 @@ begin
   where t.id = v_id;
 end;
 $$;
-
 -- employee_get_company_messages_for_worker
 CREATE OR REPLACE FUNCTION public.employee_get_company_messages_for_worker(
   p_company_id uuid,
@@ -568,7 +555,6 @@ BEGIN
   LIMIT greatest(1, least(coalesce(p_limit, 120), 500));
 END;
 $$;
-
 -- employee_get_daily_absences
 CREATE OR REPLACE FUNCTION public.employee_get_daily_absences(
   p_company_id uuid,
@@ -600,7 +586,6 @@ BEGIN
   ORDER BY da.date DESC;
 END;
 $$;
-
 -- employee_get_direct_peer_thread_map
 CREATE OR REPLACE FUNCTION public.employee_get_direct_peer_thread_map(
   p_company_id uuid,
@@ -629,7 +614,6 @@ BEGIN
     AND cardinality(t.participant_ids) = 2;
 END;
 $$;
-
 -- employee_get_incident
 create or replace function public.employee_get_incident(
   p_company_id uuid,
@@ -663,7 +647,6 @@ begin
   return row_to_json(v_row);
 end;
 $$;
-
 -- employee_get_incident_comments
 create or replace function public.employee_get_incident_comments(
   p_company_id uuid,
@@ -689,7 +672,6 @@ BEGIN
   order by c.created_at asc;
 END;
 $$;
-
 -- employee_get_incident_status_history
 create or replace function public.employee_get_incident_status_history(
   p_company_id uuid,
@@ -715,7 +697,6 @@ BEGIN
   order by h.created_at desc;
 END;
 $$;
-
 -- employee_get_incidents
 create or replace function public.employee_get_incidents(
   p_company_id uuid,
@@ -752,7 +733,6 @@ BEGIN
   limit 200;
 END;
 $$;
-
 -- employee_get_inventory_items
 CREATE OR REPLACE FUNCTION public.employee_get_inventory_items(
   p_company_id uuid,
@@ -775,7 +755,6 @@ BEGIN
   ORDER BY i.name;
 END;
 $$;
-
 -- employee_get_inventory_usage_for_job
 CREATE OR REPLACE FUNCTION public.employee_get_inventory_usage_for_job(
   p_company_id uuid,
@@ -800,7 +779,6 @@ BEGIN
     AND (p_employee_id IS NULL OR u.employee_id = p_employee_id);
 END;
 $$;
-
 -- employee_get_job_card_for_employee
 CREATE OR REPLACE FUNCTION public.employee_get_job_card_for_employee(
   p_company_id uuid,
@@ -825,7 +803,6 @@ BEGIN
     AND public._employee_assigned_to_job(p_company_id, p_employee_id, p_job_id));
 END;
 $$;
-
 -- employee_get_job_card_for_job
 CREATE OR REPLACE FUNCTION public.employee_get_job_card_for_job(
   p_company_id uuid,
@@ -847,7 +824,6 @@ BEGIN
   , p_session_token));
 END;
 $$;
-
 -- employee_get_job_documents
 create or replace function public.employee_get_job_documents(
   p_company_id uuid,
@@ -873,7 +849,6 @@ BEGIN
   order by d.created_at desc;
 END;
 $$;
-
 -- employee_get_job_feedback
 create or replace function public.employee_get_job_feedback(
   p_company_id  uuid,
@@ -899,7 +874,6 @@ BEGIN
   order by f.submitted_at desc;
 END;
 $$;
-
 -- employee_get_job_for_employee
 CREATE OR REPLACE FUNCTION public.employee_get_job_for_employee(
   p_company_id uuid,
@@ -938,7 +912,6 @@ BEGIN
   LIMIT 1;
 END;
 $$;
-
 -- employee_get_job_photo_urls
 CREATE OR REPLACE FUNCTION public.employee_get_job_photo_urls(
   p_company_id uuid,
@@ -962,7 +935,6 @@ BEGIN
   LIMIT 1);
 END;
 $$;
-
 -- employee_get_job_thread
 create or replace function public.employee_get_job_thread(
   p_company_id uuid,
@@ -991,7 +963,6 @@ begin
   return row_to_json(v_row);
 end;
 $$;
-
 -- employee_get_jobs_for_employee
 create or replace function public.employee_get_jobs_for_employee(
   p_company_id uuid,
@@ -1030,7 +1001,6 @@ BEGIN
   order by j.created_at desc;
 END;
 $$;
-
 -- employee_get_leave_requests
 create or replace function public.employee_get_leave_requests(
     p_company_id  uuid,
@@ -1067,7 +1037,6 @@ begin
     );
 end;
 $$;
-
 -- employee_get_linked_contractors
 create or replace function public.employee_get_linked_contractors(
   p_company_id  uuid,
@@ -1095,7 +1064,6 @@ BEGIN
   order by c.name;
 END;
 $$;
-
 -- employee_get_message_threads_for_worker
 CREATE OR REPLACE FUNCTION public.employee_get_message_threads_for_worker(
   p_company_id uuid,
@@ -1120,7 +1088,6 @@ BEGIN
   ORDER BY coalesce(t.last_message_at, t.created_at) DESC;
 END;
 $$;
-
 -- employee_get_my_notifications_for_employee
 CREATE OR REPLACE FUNCTION public.employee_get_my_notifications_for_employee(p_employee_id uuid,
   p_session_token text DEFAULT NULL)
@@ -1157,7 +1124,6 @@ BEGIN
   );
 END;
 $$;
-
 -- employee_get_or_create_direct_thread_peer
 CREATE OR REPLACE FUNCTION public.employee_get_or_create_direct_thread_peer(
   p_company_id uuid,
@@ -1193,7 +1159,6 @@ BEGIN
   RETURN v_tid;
 END;
 $$;
-
 -- employee_get_own_incidents
 create or replace function public.employee_get_own_incidents(
   p_company_id uuid,
@@ -1219,7 +1184,6 @@ BEGIN
   limit 200;
 END;
 $$;
-
 -- employee_get_pa_settings
 CREATE OR REPLACE FUNCTION public.employee_get_pa_settings(
   p_company_id uuid,
@@ -1246,7 +1210,6 @@ BEGIN
     );
 END;
 $$;
-
 -- employee_get_pa_tasks
 CREATE OR REPLACE FUNCTION public.employee_get_pa_tasks(
   p_company_id uuid,
@@ -1273,7 +1236,6 @@ BEGIN
   ORDER BY t.created_at DESC;
 END;
 $$;
-
 -- employee_get_thread_messages_for_worker
 CREATE OR REPLACE FUNCTION public.employee_get_thread_messages_for_worker(
   p_company_id uuid,
@@ -1303,7 +1265,6 @@ BEGIN
   LIMIT greatest(1, least(coalesce(p_limit, 200), 500));
 END;
 $$;
-
 -- employee_get_work_teams
 CREATE OR REPLACE FUNCTION public.employee_get_work_teams(
   p_company_id uuid,
@@ -1330,7 +1291,6 @@ BEGIN
     );
 END;
 $$;
-
 -- employee_get_workflow_form_submissions
 create or replace function public.employee_get_workflow_form_submissions(
   p_company_id   uuid,
@@ -1357,7 +1317,6 @@ BEGIN
   order by s.submitted_at desc;
 END;
 $$;
-
 -- employee_get_workflow_form_templates
 create or replace function public.employee_get_workflow_form_templates(
   p_company_id  uuid,
@@ -1382,7 +1341,6 @@ BEGIN
   order by t.name;
 END;
 $$;
-
 -- employee_insert_checklist_item
 create or replace function public.employee_insert_checklist_item(
   p_company_id uuid,
@@ -1424,7 +1382,6 @@ begin
   return row_to_json(v_row);
 end;
 $$;
-
 -- employee_insert_incident
 create or replace function public.employee_insert_incident(
   p_company_id       uuid,
@@ -1505,7 +1462,6 @@ begin
   return row_to_json(v_row);
 end;
 $$;
-
 -- employee_insert_job_document
 create or replace function public.employee_insert_job_document(
   p_company_id uuid,
@@ -1546,7 +1502,6 @@ begin
   return row_to_json(v_row);
 end;
 $$;
-
 -- employee_insert_pa_task
 CREATE OR REPLACE FUNCTION public.employee_insert_pa_task(
   p_company_id uuid,
@@ -1605,7 +1560,6 @@ BEGIN
   RETURN v_id;
 END;
 $$;
-
 -- employee_insert_punch
 CREATE OR REPLACE FUNCTION public.employee_insert_punch(
     p_company_id  uuid,
@@ -1679,7 +1633,6 @@ BEGIN
     RETURN row_to_json(v_punch);
 END;
 $$;
-
 -- employee_job_site_open_visit
 CREATE OR REPLACE FUNCTION public.employee_job_site_open_visit(
   p_company_id  uuid,
@@ -1704,7 +1657,6 @@ BEGIN
   LIMIT 1);
 END;
 $$;
-
 -- employee_job_site_sign_in
 CREATE OR REPLACE FUNCTION public.employee_job_site_sign_in(
   p_company_id       uuid,
@@ -1761,7 +1713,6 @@ BEGIN
   RETURN row_to_json(v_row);
 END;
 $$;
-
 -- employee_job_site_sign_out
 CREATE OR REPLACE FUNCTION public.employee_job_site_sign_out(
   p_company_id       uuid,
@@ -1802,7 +1753,6 @@ BEGIN
   RETURN row_to_json(v_row);
 END;
 $$;
-
 -- employee_job_site_sign_out_open_visit
 CREATE OR REPLACE FUNCTION public.employee_job_site_sign_out_open_visit(
   p_company_id  uuid,
@@ -1835,7 +1785,6 @@ BEGIN
   RETURN row_to_json(v_row);
 END;
 $$;
-
 -- employee_job_site_switch_to_job
 CREATE OR REPLACE FUNCTION public.employee_job_site_switch_to_job(
   p_company_id       uuid,
@@ -1870,7 +1819,6 @@ BEGIN
   , p_session_token);
 END;
 $$;
-
 -- employee_list_company_peers
 CREATE OR REPLACE FUNCTION public.employee_list_company_peers(
   p_company_id uuid,
@@ -1898,7 +1846,6 @@ BEGIN
   ORDER BY e.name NULLS LAST, e.surname NULLS LAST;
 END;
 $$;
-
 -- employee_log_app_event
 create or replace function public.employee_log_app_event(
   p_company_id   uuid,
@@ -1940,7 +1887,6 @@ begin
   );
 end;
 $$;
-
 -- employee_mark_company_feed_read_for_worker
 CREATE OR REPLACE FUNCTION public.employee_mark_company_feed_read_for_worker(
   p_company_id uuid,
@@ -1962,7 +1908,6 @@ BEGIN
   );
 END;
 $$;
-
 -- employee_mark_notification_read_for_employee
 CREATE OR REPLACE FUNCTION public.employee_mark_notification_read_for_employee(
   p_employee_id uuid,
@@ -1991,7 +1936,6 @@ BEGIN
     );
 END;
 $$;
-
 -- employee_mark_thread_read_for_worker
 CREATE OR REPLACE FUNCTION public.employee_mark_thread_read_for_worker(
   p_company_id uuid,
@@ -2022,7 +1966,6 @@ BEGIN
     AND NOT (p_employee_id = ANY(m.read_by_ids));
 END;
 $$;
-
 -- employee_notify_manager_job_created
 CREATE OR REPLACE FUNCTION public.employee_notify_manager_job_created(
   p_company_id uuid,
@@ -2093,7 +2036,6 @@ BEGIN
   );
 END;
 $$;
-
 -- employee_prepare_media_upload
 CREATE OR REPLACE FUNCTION public.employee_prepare_media_upload(
   p_company_id    uuid,
@@ -2144,7 +2086,6 @@ BEGIN
   );
 END;
 $$;
-
 -- employee_report_absence
 create or replace function public.employee_report_absence(
     p_company_id  uuid,
@@ -2185,7 +2126,6 @@ begin
     return row_to_json(v_result);
 end;
 $$;
-
 -- employee_send_company_feed_message
 CREATE OR REPLACE FUNCTION public.employee_send_company_feed_message(
   p_company_id uuid,
@@ -2214,7 +2154,6 @@ BEGIN
   WHERE id = v_thread;
 END;
 $$;
-
 -- employee_send_thread_message
 CREATE OR REPLACE FUNCTION public.employee_send_thread_message(
   p_company_id uuid,
@@ -2247,7 +2186,6 @@ BEGIN
   WHERE id = p_thread_id;
 END;
 $$;
-
 -- employee_set_inventory_usage_for_job
 CREATE OR REPLACE FUNCTION public.employee_set_inventory_usage_for_job(
   p_company_id uuid,
@@ -2341,7 +2279,6 @@ BEGIN
   FROM _new_usage n;
 END;
 $$;
-
 -- employee_set_open_punch_job
 CREATE OR REPLACE FUNCTION public.employee_set_open_punch_job(
   p_company_id bigint,
@@ -2395,7 +2332,6 @@ BEGIN
   WHERE p.id = v_row_id;
 END;
 $$;
-
 -- employee_submit_job_feedback
 create or replace function public.employee_submit_job_feedback(
   p_company_id  uuid,
@@ -2439,7 +2375,6 @@ begin
   return row_to_json(v_row);
 end;
 $$;
-
 -- employee_submit_leave_request
 CREATE OR REPLACE FUNCTION public.employee_submit_leave_request(
   p_company_id    uuid,
@@ -2504,7 +2439,6 @@ BEGIN
   RETURN v_result;
 END;
 $$;
-
 -- employee_submit_workflow_form
 create or replace function public.employee_submit_workflow_form(
   p_company_id   uuid,
@@ -2547,7 +2481,6 @@ begin
   return v_row;
 end;
 $$;
-
 -- employee_update_calendar_event_attendance
 create or replace function public.employee_update_calendar_event_attendance(
   p_company_id  uuid,
@@ -2582,7 +2515,6 @@ begin
   end if;
 end;
 $$;
-
 -- employee_update_checklist_item
 CREATE OR REPLACE FUNCTION public.employee_update_checklist_item(
   p_company_id uuid,
@@ -2618,7 +2550,6 @@ BEGIN
   WHERE id = p_item_id AND company_id = p_company_id;
 END;
 $$;
-
 -- employee_update_document
 CREATE OR REPLACE FUNCTION public.employee_update_document(
   p_document_id   uuid,
@@ -2661,7 +2592,6 @@ BEGIN
   RETURN row_to_json(v_doc);
 END;
 $$;
-
 -- employee_update_incident
 create or replace function public.employee_update_incident(
   p_company_id uuid,
@@ -2722,7 +2652,6 @@ begin
   return row_to_json(v_row);
 end;
 $$;
-
 -- employee_update_job_status
 CREATE OR REPLACE FUNCTION public.employee_update_job_status(
   p_company_id uuid,
@@ -2755,7 +2684,6 @@ BEGIN
   END IF;
 END;
 $$;
-
 -- employee_update_leave_request
 CREATE OR REPLACE FUNCTION public.employee_update_leave_request(
   p_id             uuid,
@@ -2815,7 +2743,6 @@ BEGIN
   RETURN v_result;
 END;
 $$;
-
 -- employee_update_pa_task
 CREATE OR REPLACE FUNCTION public.employee_update_pa_task(
   p_company_id uuid,
@@ -2913,7 +2840,6 @@ BEGIN
   WHERE t.id = p_task_id;
 END;
 $$;
-
 -- employee_update_pa_task_status
 CREATE OR REPLACE FUNCTION public.employee_update_pa_task_status(
   p_company_id uuid,
@@ -2975,7 +2901,6 @@ BEGIN
   END IF;
 END;
 $$;
-
 -- employee_update_profile
 CREATE OR REPLACE FUNCTION public.employee_update_profile(
     p_employee_id uuid,
@@ -3065,7 +2990,6 @@ BEGIN
     RETURN row_to_json(v_emp);
 END;
 $$;
-
 -- employee_update_punch_address
 create or replace function public.employee_update_punch_address(
   p_company_id  uuid,
@@ -3098,7 +3022,6 @@ begin
   end if;
 end;
 $$;
-
 -- employee_upsert_job_card
 create or replace function public.employee_upsert_job_card(
   p_company_id uuid,
@@ -3167,7 +3090,6 @@ begin
   return row_to_json(v_row);
 end;
 $$;
-
 -- enqueue_pa_task_notifications
 CREATE OR REPLACE FUNCTION public.enqueue_pa_task_notifications(p_company_id uuid,
   p_session_token text DEFAULT NULL)
@@ -3240,7 +3162,6 @@ BEGIN
   RETURN v_count;
 END;
 $$;
-
 -- message_company_feed_unread_count
 CREATE OR REPLACE FUNCTION public.message_company_feed_unread_count(
   p_company_id uuid,
@@ -3266,7 +3187,6 @@ BEGIN
   ), 0));
 END;
 $$;
-
 -- message_unread_counts_for_threads
 CREATE OR REPLACE FUNCTION public.message_unread_counts_for_threads(
   p_company_id uuid,
@@ -3294,7 +3214,6 @@ BEGIN
   GROUP BY m.thread_id;
 END;
 $$;
-
 -- sync_operational_pa_tasks
 CREATE OR REPLACE FUNCTION public.sync_operational_pa_tasks(
   p_company_id uuid,
@@ -3467,7 +3386,6 @@ BEGIN
   RETURN v_created;
 END;
 $$;
-
 -- upsert_employee_pa_settings
 CREATE OR REPLACE FUNCTION public.upsert_employee_pa_settings(
   p_employee_id uuid,
@@ -3499,7 +3417,6 @@ BEGIN
     updated_at = now();
 END;
 $$;
-
 -- ─── Re-grant anon + authenticated ─────────────────────────────────────────
 
 GRANT EXECUTE ON FUNCTION public.employee_add_incident_comment(uuid, uuid, uuid, text, text) TO anon, authenticated;
@@ -3583,10 +3500,9 @@ GRANT EXECUTE ON FUNCTION public.message_company_feed_unread_count(uuid, uuid, t
 GRANT EXECUTE ON FUNCTION public.message_unread_counts_for_threads(uuid, uuid, uuid[], text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.sync_operational_pa_tasks(uuid, uuid, text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.upsert_employee_pa_settings(uuid, uuid, boolean, boolean, boolean, text) TO anon, authenticated;
-
 -- ════════════════════════════════════════════════════════════════════════════
 -- ROLLBACK NOTES (manual)
 --   1. DROP each (... , text) overload above; redeploy prior bodies from source migrations.
 --   2. Revert client RPC calls that pass p_session_token.
 --   3. _assert_worker_access helpers from foundation migration may remain.
--- ════════════════════════════════════════════════════════════════════════════
+-- ════════════════════════════════════════════════════════════════════════════;

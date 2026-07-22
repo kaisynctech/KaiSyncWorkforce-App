@@ -21,7 +21,6 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 set search_path = public;
-
 -- ─── Aggregated invalid-attempt audit (flood-resistant) ─────────────────────
 CREATE TABLE IF NOT EXISTS public.worker_session_audit (
   id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -33,9 +32,7 @@ CREATE TABLE IF NOT EXISTS public.worker_session_audit (
   last_reason      text,
   CONSTRAINT uq_worker_session_audit UNIQUE (company_id, employee_id, attempt_date)
 );
-
 ALTER TABLE public.worker_session_audit ENABLE ROW LEVEL SECURITY;
-
 -- HR (authenticated) may read their own company's audit; only definer functions write.
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'p_worker_session_audit_hr_read') THEN
@@ -43,7 +40,6 @@ DO $$ BEGIN
       FOR SELECT USING (company_id = ANY(public.user_company_ids()));
   END IF;
 END $$;
-
 -- ─── Reusable token-binding primitive (for incremental per-RPC adoption) ────
 CREATE OR REPLACE FUNCTION public._employee_session_is_valid(
   p_company_id uuid,
@@ -66,7 +62,6 @@ AS $$
       AND s.expires_at > now()
   );
 $$;
-
 -- ─── Public validation gate (records invalid attempts, bumps last_seen) ─────
 CREATE OR REPLACE FUNCTION public.employee_validate_session(
   p_company_id uuid,
@@ -107,14 +102,12 @@ BEGIN
   RETURN false;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public._employee_session_is_valid(uuid, uuid, text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.employee_validate_session(uuid, uuid, text) TO anon, authenticated;
-
 -- ════════════════════════════════════════════════════════════════════════════
 -- ROLLBACK NOTES (manual)
 --   drop function if exists public.employee_validate_session(uuid,uuid,text);
 --   drop function if exists public._employee_session_is_valid(uuid,uuid,text);
 --   drop table if exists public.worker_session_audit;
 --   (Revert the C# ValidateCodeSessionAsync call in RefreshCodeSessionAsync.)
--- ════════════════════════════════════════════════════════════════════════════
+-- ════════════════════════════════════════════════════════════════════════════;

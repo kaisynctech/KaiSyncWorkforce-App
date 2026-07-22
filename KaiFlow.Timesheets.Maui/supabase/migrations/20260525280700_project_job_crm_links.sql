@@ -5,7 +5,6 @@ ALTER TABLE public.client_deals
   ADD COLUMN IF NOT EXISTS quotation_notes text,
   ADD COLUMN IF NOT EXISTS quotation_valid_until date,
   ADD COLUMN IF NOT EXISTS quotation_sent_at timestamptz;
-
 CREATE TABLE IF NOT EXISTS public.project_quotation_lines (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id  uuid NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
@@ -16,16 +15,13 @@ CREATE TABLE IF NOT EXISTS public.project_quotation_lines (
   unit_price  numeric(12,2) NOT NULL DEFAULT 0,
   created_at  timestamptz NOT NULL DEFAULT now()
 );
-
 CREATE INDEX IF NOT EXISTS idx_project_quotation_lines_deal
   ON public.project_quotation_lines(deal_id, line_no);
-
 ALTER TABLE public.jobs
   ADD COLUMN IF NOT EXISTS contractor_id uuid REFERENCES public.contractors(id) ON DELETE SET NULL,
   ADD COLUMN IF NOT EXISTS contractor_cost numeric(12,2) NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS photo_urls_before text[] NOT NULL DEFAULT '{}',
   ADD COLUMN IF NOT EXISTS photo_urls_after text[] NOT NULL DEFAULT '{}';
-
 CREATE TABLE IF NOT EXISTS public.job_documents (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id    uuid NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
@@ -35,26 +31,20 @@ CREATE TABLE IF NOT EXISTS public.job_documents (
   file_url      text NOT NULL,
   created_at    timestamptz NOT NULL DEFAULT now()
 );
-
 CREATE INDEX IF NOT EXISTS idx_job_documents_job
   ON public.job_documents(job_id, created_at DESC);
-
 ALTER TABLE public.project_quotation_lines ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.job_documents ENABLE ROW LEVEL SECURITY;
-
 DROP POLICY IF EXISTS project_quotation_lines_company ON public.project_quotation_lines;
 CREATE POLICY project_quotation_lines_company ON public.project_quotation_lines FOR ALL TO authenticated
   USING (company_id IN (SELECT unnest(public.user_company_ids())))
   WITH CHECK (company_id IN (SELECT unnest(public.user_company_ids())));
-
 DROP POLICY IF EXISTS job_documents_company ON public.job_documents;
 CREATE POLICY job_documents_company ON public.job_documents FOR ALL TO authenticated
   USING (company_id IN (SELECT unnest(public.user_company_ids())))
   WITH CHECK (company_id IN (SELECT unnest(public.user_company_ids())));
-
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.project_quotation_lines TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.job_documents TO authenticated;
-
 -- Client portal: expose quotation on project detail.
 CREATE OR REPLACE FUNCTION public.client_portal_get_project(
   p_company_code text,

@@ -1,13 +1,11 @@
 -- Phase 3.1: drop legacy bigint RPC overloads + preserve job-card timestamps on partial saves.
 
 set search_path = public;
-
 -- ─── Incident: PGRST203 from bigint + uuid overload coexistence ─────────────
 
 drop function if exists public.employee_insert_incident(
   bigint, bigint, text, bigint, bigint, text, text, timestamptz, text[]
 );
-
 create or replace function public.employee_insert_incident(
   p_company_id       uuid,
   p_employee_id      uuid,
@@ -56,20 +54,17 @@ begin
   return row_to_json(v_row);
 end;
 $$;
-
 revoke all on function public.employee_insert_incident(
   uuid, uuid, text, text, uuid, uuid, uuid, text[], text
 ) from public;
 grant execute on function public.employee_insert_incident(
   uuid, uuid, text, text, uuid, uuid, uuid, text[], text
 ) to anon, authenticated;
-
 -- ─── Job card: do not wipe timestamps on partial upsert ───────────────────────
 
 drop function if exists public.employee_upsert_job_card(
   bigint, bigint, bigint, timestamptz, timestamptz, text, text, text, text[], text
 );
-
 create or replace function public.employee_upsert_job_card(
   p_company_id uuid,
   p_employee_id uuid,
@@ -135,14 +130,12 @@ begin
   return row_to_json(v_row);
 end;
 $$;
-
 revoke all on function public.employee_upsert_job_card(
   uuid, uuid, uuid, timestamptz, timestamptz, text, text, text[], boolean, text
 ) from public;
 grant execute on function public.employee_upsert_job_card(
   uuid, uuid, uuid, timestamptz, timestamptz, text, text, text[], boolean, text
 ) to anon, authenticated;
-
 -- ─── Job feedback (uuid v2 — legacy table was dropped) ────────────────────────
 
 create table if not exists public.job_feedback (
@@ -154,21 +147,16 @@ create table if not exists public.job_feedback (
   comments     text,
   submitted_at timestamptz not null default now()
 );
-
 create unique index if not exists uq_job_feedback_job_employee
   on public.job_feedback (job_id, employee_id);
-
 create index if not exists idx_job_feedback_company_job
   on public.job_feedback (company_id, job_id, submitted_at desc);
-
 alter table public.job_feedback enable row level security;
-
 drop policy if exists p_job_feedback_hr on public.job_feedback;
 create policy p_job_feedback_hr on public.job_feedback
   for all to authenticated
   using (company_id = any(public.user_company_ids()))
   with check (company_id = any(public.user_company_ids()));
-
 create or replace function public.employee_submit_job_feedback(
   p_company_id  uuid,
   p_employee_id uuid,
@@ -209,7 +197,6 @@ begin
   return row_to_json(v_row);
 end;
 $$;
-
 create or replace function public.employee_get_job_feedback(
   p_company_id  uuid,
   p_employee_id uuid,
@@ -229,7 +216,6 @@ as $$
     and public._employee_valid(p_company_id, p_employee_id)
   order by f.submitted_at desc;
 $$;
-
 grant execute on function public.employee_submit_job_feedback(uuid, uuid, uuid, int, text)
   to anon, authenticated;
 grant execute on function public.employee_get_job_feedback(uuid, uuid, uuid)

@@ -47,4 +47,4 @@ AS $function$
   ) t;
 $function$;
 
-GRANT EXECUTE ON FUNCTION public.contractor_portal_list_payouts(text, text) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.contractor_portal_list_payouts(text, text) TO anon, authenticated;;

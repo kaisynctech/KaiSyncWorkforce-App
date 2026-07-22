@@ -3,7 +3,6 @@
 ALTER TABLE public.employees
   ADD COLUMN IF NOT EXISTS bank_details_updated_at timestamptz,
   ADD COLUMN IF NOT EXISTS bank_details_updated_by text;
-
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -16,7 +15,6 @@ BEGIN
       CHECK (bank_details_updated_by IS NULL OR bank_details_updated_by IN ('employee', 'hr'));
   END IF;
 END $$;
-
 CREATE OR REPLACE FUNCTION public.employee_update_profile(
     p_employee_id uuid,
     p_company_id uuid,
@@ -103,5 +101,4 @@ BEGIN
     RETURN row_to_json(v_emp);
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.employee_update_profile(uuid, uuid, text, text, text, text, text, text, text) TO anon, authenticated;

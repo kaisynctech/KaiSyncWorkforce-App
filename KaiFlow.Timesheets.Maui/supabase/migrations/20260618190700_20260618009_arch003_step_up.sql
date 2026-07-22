@@ -28,7 +28,7 @@ CREATE POLICY step_up_sessions_user_select
     USING (user_id = auth.uid());
 
 -- ---------------------------------------------------------------------------
--- 2. hr_confirm_step_up  — called after successful password re-verification
+-- 2. hr_confirm_step_up
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.hr_confirm_step_up(p_company_id uuid)
 RETURNS void
@@ -59,7 +59,7 @@ REVOKE ALL ON FUNCTION public.hr_confirm_step_up(uuid) FROM anon;
 GRANT  EXECUTE ON FUNCTION public.hr_confirm_step_up(uuid) TO authenticated;
 
 -- ---------------------------------------------------------------------------
--- 3. hr_record_step_up_failure  — called after failed password attempt
+-- 3. hr_record_step_up_failure
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.hr_record_step_up_failure(p_company_id uuid)
 RETURNS jsonb
@@ -76,7 +76,6 @@ BEGIN
         RAISE EXCEPTION 'Not authenticated' USING ERRCODE = 'P0001';
     END IF;
 
-    -- Upsert: create a (non-valid) row if none exists, or increment failure count
     INSERT INTO public.step_up_sessions
         (user_id, company_id, verified_at, expires_at, failed_attempts, locked_until)
     VALUES
@@ -84,14 +83,12 @@ BEGIN
     ON CONFLICT (user_id, company_id) DO UPDATE
         SET failed_attempts = step_up_sessions.failed_attempts + 1;
 
-    -- Read back current state
     SELECT failed_attempts, locked_until
     INTO   v_attempts, v_locked_until
     FROM   public.step_up_sessions
     WHERE  user_id    = auth.uid()
       AND  company_id = p_company_id;
 
-    -- Lock for 30 minutes after 3 consecutive failures
     IF v_attempts >= 3 AND v_locked_until IS NULL THEN
         v_locked_until := now() + INTERVAL '30 minutes';
         UPDATE public.step_up_sessions
@@ -112,7 +109,7 @@ REVOKE ALL ON FUNCTION public.hr_record_step_up_failure(uuid) FROM anon;
 GRANT  EXECUTE ON FUNCTION public.hr_record_step_up_failure(uuid) TO authenticated;
 
 -- ---------------------------------------------------------------------------
--- 4. hr_check_step_up_valid  — fast gate called inside sensitive RPCs
+-- 4. hr_check_step_up_valid
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.hr_check_step_up_valid(p_company_id uuid)
 RETURNS boolean
@@ -142,7 +139,7 @@ REVOKE ALL ON FUNCTION public.hr_check_step_up_valid(uuid) FROM anon;
 GRANT  EXECUTE ON FUNCTION public.hr_check_step_up_valid(uuid) TO authenticated;
 
 -- ---------------------------------------------------------------------------
--- 5. Rebuild approve_payment_run  — add step-up guard
+-- 5. Rebuild approve_payment_run with step-up guard
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.approve_payment_run(
     p_company_id          uuid,
@@ -196,10 +193,10 @@ END;
 $$;
 
 -- ---------------------------------------------------------------------------
--- 6. Rebuild transfer_company_ownership  — add step-up guard
+-- 6. Rebuild transfer_company_ownership with step-up guard
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.transfer_company_ownership(
-    p_company_id        uuid,
+    p_company_id         uuid,
     p_target_employee_id uuid
 )
 RETURNS void
@@ -298,13 +295,13 @@ END;
 $$;
 
 -- ---------------------------------------------------------------------------
--- 7. Rebuild update_employee_banking  — add step-up guard
+-- 7. Rebuild update_employee_banking with step-up guard
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.update_employee_banking(
-    p_company_id      uuid,
-    p_employee_id     uuid,
-    p_bank_account    text DEFAULT NULL,
-    p_bank_name       text DEFAULT NULL,
+    p_company_id       uuid,
+    p_employee_id      uuid,
+    p_bank_account     text DEFAULT NULL,
+    p_bank_name        text DEFAULT NULL,
     p_bank_branch_code text DEFAULT NULL
 )
 RETURNS void
@@ -371,7 +368,7 @@ END;
 $$;
 
 -- ---------------------------------------------------------------------------
--- 8. Rebuild seed_company_role_permissions  — add step-up guard
+-- 8. Rebuild seed_company_role_permissions with step-up guard
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.seed_company_role_permissions(p_company_id uuid)
 RETURNS void
@@ -534,3 +531,4 @@ BEGIN
     END;
 END;
 $$;
+;

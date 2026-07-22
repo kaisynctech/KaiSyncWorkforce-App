@@ -227,7 +227,7 @@ BEGIN
   -- Verify PIN with bcrypt
   IF crypt(p_pin, v_emp.pin_hash) = v_emp.pin_hash THEN
 
-    -- ✅ Correct PIN: reset failure counter and issue session
+    -- Correct PIN: reset failure counter and issue session
     UPDATE public.employees
     SET pin_failed_attempts = 0,
         pin_locked_until    = NULL
@@ -276,7 +276,7 @@ BEGIN
 
   ELSE
 
-    -- ❌ Wrong PIN: increment counter, lock after 5 failures
+    -- Wrong PIN: increment counter, lock after 5 failures
     UPDATE public.employees
     SET pin_failed_attempts = COALESCE(pin_failed_attempts, 0) + 1,
         pin_locked_until    = CASE
@@ -555,3 +555,4 @@ GRANT EXECUTE ON FUNCTION public.employee_sign_in_with_code(text, text) TO anon,
 CREATE INDEX IF NOT EXISTS idx_employees_pin_locked
   ON public.employees(id)
   WHERE pin_locked_until IS NOT NULL;
+;

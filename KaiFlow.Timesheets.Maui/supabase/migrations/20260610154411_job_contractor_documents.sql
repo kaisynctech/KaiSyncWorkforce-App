@@ -30,4 +30,4 @@ CREATE POLICY "p_job_contractor_documents_company"
     WITH CHECK (company_id = ANY(user_company_ids()));
 
 CREATE INDEX ix_jcd_company_jc
-    ON public.job_contractor_documents (company_id, job_contractor_id);
+    ON public.job_contractor_documents (company_id, job_contractor_id);;

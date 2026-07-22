@@ -1,187 +1,129 @@
-﻿-- Migration: 20260609133918_portal_quote_conversion_fields
--- Additional fields for quote conversion - invoice submission and payout functions
--- Representation file: idempotent (CREATE OR REPLACE FUNCTION throughout)
+-- Add converted_at and converted_to_job_id to contractor_portal_get_quote
+-- and contractor_portal_list_quotes outputs so the portal shows the conversion status.
 
-CREATE OR REPLACE FUNCTION public.contractor_portal_submit_invoice(p_company_code text, p_contractor_code text, p_job_id uuid, p_amount numeric, p_invoice_reference text DEFAULT NULL::text, p_notes text DEFAULT NULL::text)
- RETURNS uuid
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
+CREATE OR REPLACE FUNCTION public.contractor_portal_get_quote(
+    p_contractor_id uuid,
+    p_company_id    uuid,
+    p_quote_id      uuid
+)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 DECLARE
-    v_ct         public.contractors%ROWTYPE;
-    v_jc_id      uuid;
-    v_payout_id  uuid;
-    v_notes      text;
+    v_quote       record;
+    v_items       json;
+    v_attachments json;
 BEGIN
-    -- Resolve contractor from portal codes (same pattern as all other portal RPCs)
-    SELECT * INTO v_ct
-    FROM public.contractors ct
-    INNER JOIN public.companies c ON c.id = ct.company_id
-    WHERE upper(trim(c.code))              = upper(trim(p_company_code))
-      AND upper(trim(ct.contractor_code))  = upper(trim(p_contractor_code))
-      AND ct.is_active = true;
+    SELECT * INTO v_quote
+    FROM   public.contractor_quotes
+    WHERE  id            = p_quote_id
+      AND  contractor_id = p_contractor_id
+      AND  company_id    = p_company_id;
 
-    IF NOT FOUND THEN RAISE EXCEPTION 'CONTRACTOR_NOT_FOUND'; END IF;
+    IF NOT FOUND THEN RETURN NULL; END IF;
 
-    -- Verify the contractor is actually assigned to this job
-    IF NOT public._contractor_owns_job(v_ct.company_id, v_ct.id, p_job_id) THEN
-        RAISE EXCEPTION 'JOB_NOT_ASSIGNED';
-    END IF;
+    SELECT coalesce(json_agg(row_to_json(i) ORDER BY i.sort_order, i.line_no), '[]'::json)
+    INTO   v_items
+    FROM   public.contractor_quote_items i
+    WHERE  i.quote_id = p_quote_id;
 
-    -- Find the specific job_contractors row for this assignment
-    SELECT id INTO v_jc_id
-    FROM public.job_contractors
-    WHERE company_id    = v_ct.company_id
-      AND job_id        = p_job_id
-      AND contractor_id = v_ct.id
-    LIMIT 1;
+    SELECT coalesce(json_agg(row_to_json(a) ORDER BY a.is_primary DESC, a.created_at), '[]'::json)
+    INTO   v_attachments
+    FROM   public.contractor_quote_attachments a
+    WHERE  a.quote_id = p_quote_id;
 
-    -- Compose notes: \\"INV-001 | additional notes\\"
-    v_notes := nullif(trim(concat_ws(' | ',
-        nullif(trim(coalesce(p_invoice_reference, '')), ''),
-        nullif(trim(coalesce(p_notes, '')), '')
-    )), '');
-
-    -- Create the payout record — HR will review amount, set VAT, and approve
-    INSERT INTO public.contractor_payouts (
-        id, company_id, contractor_id, job_id, job_contractor_id,
-        subtotal, vat_rate, vat_amount, total_amount, retention_amount,
-        is_vat_inclusive, tax_type,
-        payout_status, approval_status,
-        notes, created_at, updated_at
-    ) VALUES (
-        gen_random_uuid(),
-        v_ct.company_id,
-        v_ct.id,
-        p_job_id,
-        v_jc_id,
-        p_amount,
-        0,
-        0,
-        p_amount,
-        0,
-        false,
-        'standard',
-        'pending',
-        'pending',
-        v_notes,
-        now(),
-        now()
-    )
-    RETURNING id INTO v_payout_id;
-
-    RETURN v_payout_id;
+    RETURN json_build_object(
+        'id',                   v_quote.id,
+        'quote_number',         v_quote.quote_number,
+        'title',                v_quote.title,
+        'description',          v_quote.description,
+        'source_mode',          v_quote.source_mode,
+        'currency',             v_quote.currency,
+        'subtotal',             v_quote.subtotal,
+        'discount_amount',      v_quote.discount_amount,
+        'freight_amount',       v_quote.freight_amount,
+        'duty_amount',          v_quote.duty_amount,
+        'levies_amount',        v_quote.levies_amount,
+        'other_charges_amount', v_quote.other_charges_amount,
+        'taxable_amount',       v_quote.taxable_amount,
+        'vat_mode',             v_quote.vat_mode,
+        'vat_rate',             v_quote.vat_rate,
+        'vat_amount',           v_quote.vat_amount,
+        'total_amount',         v_quote.total_amount,
+        'is_vat_inclusive',     v_quote.is_vat_inclusive,
+        'quote_date',           v_quote.quote_date,
+        'valid_until',          v_quote.valid_until,
+        'status',               CASE
+                                    WHEN v_quote.status IN ('submitted','under_review',
+                                                            'revision_requested','approved')
+                                         AND v_quote.valid_until IS NOT NULL
+                                         AND v_quote.valid_until < CURRENT_DATE
+                                    THEN 'expired' ELSE v_quote.status END,
+        'terms',                v_quote.terms,
+        'contractor_notes',     v_quote.contractor_notes,
+        'revision_comments',    v_quote.revision_comments,
+        'rejection_reason',     v_quote.rejection_reason,
+        'converted_to_job_id',  v_quote.converted_to_job_id,
+        'converted_at',         v_quote.converted_at,
+        'submitted_at',         v_quote.submitted_at,
+        'reviewed_at',          v_quote.reviewed_at,
+        'created_at',           v_quote.created_at,
+        'updated_at',           v_quote.updated_at,
+        'items',                v_items,
+        'attachments',          v_attachments
+    );
 END;
-$function$
+$$;
 
-
-REVOKE ALL ON FUNCTION public.contractor_portal_submit_invoice(p_company_code text, p_contractor_code text, p_job_id uuid, p_amount numeric, p_invoice_reference text DEFAULT NULL::text, p_notes text DEFAULT NULL::text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.contractor_portal_submit_invoice(p_company_code text, p_contractor_code text, p_job_id uuid, p_amount numeric, p_invoice_reference text DEFAULT NULL::text, p_notes text DEFAULT NULL::text) FROM anon;
-GRANT EXECUTE ON FUNCTION public.contractor_portal_submit_invoice(p_company_code text, p_contractor_code text, p_job_id uuid, p_amount numeric, p_invoice_reference text DEFAULT NULL::text, p_notes text DEFAULT NULL::text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.contractor_portal_submit_invoice(p_company_code text, p_contractor_code text, p_job_id uuid, p_amount numeric, p_invoice_reference text DEFAULT NULL::text, p_notes text DEFAULT NULL::text) TO service_role;
-
-CREATE OR REPLACE FUNCTION public.contractor_portal_list_payouts(p_company_code text, p_contractor_code text)
- RETURNS json
- LANGUAGE sql
- STABLE SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-  SELECT coalesce(json_agg(row_to_json(t) ORDER BY t.created_at DESC), '[]'::json)
-  FROM (
-    SELECT
-      p.id,
-      p.company_id,
-      p.contractor_id,
-      p.job_id,
-      p.job_contractor_id,
-      p.subtotal,
-      p.vat_rate,
-      p.vat_amount,
-      p.total_amount,
-      p.retention_amount,
-      p.payout_status,
-      p.approval_status,
-      p.rejection_reason,
-      p.notes,
-      p.payout_date,
-      p.approved_at,
-      p.paid_at,
-      p.created_at,
-      j.title    AS job_title,
-      j.job_code AS job_code
-    FROM  public.contractor_payouts  p
-    INNER JOIN public.contractors    ct ON ct.id = p.contractor_id
-    INNER JOIN public.companies      c  ON c.id  = p.company_id
-    LEFT  JOIN public.jobs           j  ON j.id  = p.job_id
-                                       AND j.company_id = p.company_id
-    WHERE upper(trim(c.code))             = upper(trim(p_company_code))
-      AND upper(trim(ct.contractor_code)) = upper(trim(p_contractor_code))
-      AND ct.contractor_code IS NOT NULL
-      AND ct.is_active = true
-      AND (p.payout_status <> 'cancelled' OR p.approval_status = 'rejected')
-  ) t;
-$function$
-
-
-REVOKE ALL ON FUNCTION public.contractor_portal_list_payouts(p_company_code text, p_contractor_code text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.contractor_portal_list_payouts(p_company_code text, p_contractor_code text) FROM anon;
-GRANT EXECUTE ON FUNCTION public.contractor_portal_list_payouts(p_company_code text, p_contractor_code text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.contractor_portal_list_payouts(p_company_code text, p_contractor_code text) TO service_role;
-
-CREATE OR REPLACE FUNCTION public.contractor_portal_resubmit_payout(p_company_code text, p_contractor_code text, p_payout_id uuid, p_amount numeric, p_invoice_reference text DEFAULT NULL::text, p_notes text DEFAULT NULL::text)
- RETURNS void
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_contractor_id uuid;
-  v_company_id    uuid;
-  v_notes         text;
+-- Also update list_quotes to include conversion fields
+CREATE OR REPLACE FUNCTION public.contractor_portal_list_quotes(
+    p_contractor_id uuid,
+    p_company_id    uuid
+)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 BEGIN
-  SELECT ct.id, c.id
-    INTO v_contractor_id, v_company_id
-    FROM public.contractors ct
-    INNER JOIN public.companies c ON c.id = ct.company_id
-    WHERE upper(trim(ct.contractor_code)) = upper(trim(p_contractor_code))
-      AND upper(trim(c.code))             = upper(trim(p_company_code))
-      AND ct.is_active = true
-    LIMIT 1;
+    IF NOT EXISTS (
+        SELECT 1 FROM public.contractors
+        WHERE id = p_contractor_id AND company_id = p_company_id AND is_active = true
+    ) THEN RETURN '[]'::json; END IF;
 
-  IF v_contractor_id IS NULL THEN
-    RAISE EXCEPTION 'CONTRACTOR_NOT_FOUND';
-  END IF;
-
-  v_notes := nullif(trim(concat_ws(' | ',
-      nullif(trim(coalesce(p_invoice_reference, '')), ''),
-      nullif(trim(coalesce(p_notes, '')), '')
-  )), '');
-
-  UPDATE public.contractor_payouts
-  SET
-    payout_status    = 'pending',
-    approval_status  = 'pending',
-    rejection_reason = NULL,
-    subtotal         = p_amount,
-    vat_amount       = 0,
-    total_amount     = p_amount,
-    notes            = v_notes,
-    updated_at       = now()
-  WHERE id              = p_payout_id
-    AND contractor_id   = v_contractor_id
-    AND company_id      = v_company_id
-    AND approval_status = 'rejected';
-
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'PAYOUT_NOT_FOUND_OR_NOT_REJECTED';
-  END IF;
+    RETURN coalesce((
+        SELECT json_agg(row_to_json(q) ORDER BY q.sort_order, q.created_at DESC)
+        FROM (
+            SELECT
+                id, quote_number, title, description, source_mode, currency,
+                subtotal, discount_amount,
+                freight_amount, duty_amount, levies_amount, other_charges_amount,
+                taxable_amount, vat_mode, vat_rate, vat_amount, total_amount,
+                is_vat_inclusive,
+                quote_date, valid_until,
+                CASE
+                    WHEN status IN ('submitted','under_review','revision_requested','approved')
+                         AND valid_until IS NOT NULL
+                         AND valid_until < CURRENT_DATE
+                    THEN 'expired'
+                    ELSE status
+                END AS status,
+                contractor_notes, revision_comments, rejection_reason,
+                converted_to_job_id, converted_at,
+                submitted_at, reviewed_at, created_at, updated_at,
+                CASE status
+                    WHEN 'revision_requested' THEN 0
+                    WHEN 'draft'              THEN 1
+                    WHEN 'submitted'          THEN 2
+                    WHEN 'under_review'       THEN 3
+                    ELSE 4
+                END AS sort_order
+            FROM public.contractor_quotes
+            WHERE contractor_id = p_contractor_id
+              AND company_id    = p_company_id
+        ) q
+    ), '[]'::json);
 END;
-$function$
-
-
-REVOKE ALL ON FUNCTION public.contractor_portal_resubmit_payout(p_company_code text, p_contractor_code text, p_payout_id uuid, p_amount numeric, p_invoice_reference text DEFAULT NULL::text, p_notes text DEFAULT NULL::text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.contractor_portal_resubmit_payout(p_company_code text, p_contractor_code text, p_payout_id uuid, p_amount numeric, p_invoice_reference text DEFAULT NULL::text, p_notes text DEFAULT NULL::text) FROM anon;
-GRANT EXECUTE ON FUNCTION public.contractor_portal_resubmit_payout(p_company_code text, p_contractor_code text, p_payout_id uuid, p_amount numeric, p_invoice_reference text DEFAULT NULL::text, p_notes text DEFAULT NULL::text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.contractor_portal_resubmit_payout(p_company_code text, p_contractor_code text, p_payout_id uuid, p_amount numeric, p_invoice_reference text DEFAULT NULL::text, p_notes text DEFAULT NULL::text) TO service_role;
-
+$$;;

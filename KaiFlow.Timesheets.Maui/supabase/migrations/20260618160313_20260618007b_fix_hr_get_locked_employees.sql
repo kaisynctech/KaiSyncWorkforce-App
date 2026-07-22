@@ -1,9 +1,12 @@
--- ARCH-003 Migration 2b (corrective): Fix hr_get_locked_employees
--- The initial implementation referenced employees.full_name which does not exist.
--- This corrective migration replaces it with the composite name expression.
 
+-- Fix: employees has separate name/surname columns, no full_name column.
 CREATE OR REPLACE FUNCTION public.hr_get_locked_employees(p_company_id uuid)
-RETURNS TABLE(employee_id uuid, full_name text, locked_at timestamptz, locked_reason text)
+RETURNS TABLE (
+  employee_id   uuid,
+  full_name     text,
+  locked_at     timestamptz,
+  locked_reason text
+)
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path TO 'public'
@@ -28,8 +31,7 @@ BEGIN
   ORDER BY e.locked_at DESC;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.hr_get_locked_employees(uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.hr_get_locked_employees(uuid) FROM anon;
 GRANT EXECUTE ON FUNCTION public.hr_get_locked_employees(uuid) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.hr_get_locked_employees(uuid) TO service_role;
+;

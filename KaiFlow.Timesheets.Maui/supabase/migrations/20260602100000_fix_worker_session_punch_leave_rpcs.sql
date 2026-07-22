@@ -57,7 +57,6 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 SET search_path = public;
-
 -- ── 1. Drop old overloads ────────────────────────────────────────────────────
 -- Must be dropped before CREATE OR REPLACE to avoid ambiguous overloads
 -- (PGRST203). PostgreSQL function identity includes the full argument list, so
@@ -67,7 +66,6 @@ SET search_path = public;
 DROP FUNCTION IF EXISTS public.employee_get_last_punch(uuid);
 DROP FUNCTION IF EXISTS public.employee_get_my_punches(uuid, uuid, date, date);
 DROP FUNCTION IF EXISTS public.employee_is_on_leave_today(uuid, uuid);
-
 -- Drop the current 12-param employee_insert_punch so we can update its body
 -- (the internal leave-check call). Signature is identical; only the body changes.
 DROP FUNCTION IF EXISTS public.employee_insert_punch(
@@ -75,7 +73,6 @@ DROP FUNCTION IF EXISTS public.employee_insert_punch(
     double precision, double precision, text, uuid, text,
     uuid, uuid, text
 );
-
 -- ── 2. employee_is_on_leave_today ────────────────────────────────────────────
 -- Recreated first because employee_insert_punch calls it by name at planning
 -- time; PostgreSQL resolves the call at execution time, but defining it first
@@ -107,10 +104,8 @@ BEGIN
     );
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.employee_is_on_leave_today(uuid, uuid, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.employee_is_on_leave_today(uuid, uuid, text) TO anon, authenticated;
-
 -- ── 3. employee_get_my_punches ───────────────────────────────────────────────
 
 CREATE OR REPLACE FUNCTION public.employee_get_my_punches(
@@ -155,10 +150,8 @@ BEGIN
     );
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.employee_get_my_punches(uuid, uuid, date, date, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.employee_get_my_punches(uuid, uuid, date, date, text) TO anon, authenticated;
-
 -- ── 4. employee_get_last_punch ───────────────────────────────────────────────
 -- This function has no p_company_id parameter. Use _assert_worker_access_by_employee
 -- which resolves company_id internally from employees.company_id before delegating
@@ -191,10 +184,8 @@ BEGIN
     RETURN v_row;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.employee_get_last_punch(uuid, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.employee_get_last_punch(uuid, text) TO anon, authenticated;
-
 -- ── 5. employee_insert_punch (body update only) ──────────────────────────────
 -- Signature is unchanged from 20260601120000. The sole change is the internal
 -- call to employee_is_on_leave_today: p_session_token is now threaded through
@@ -277,7 +268,6 @@ BEGIN
     RETURN row_to_json(v_punch);
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.employee_insert_punch(
     uuid, uuid, text, timestamptz,
     double precision, double precision, text, uuid, text,
@@ -288,7 +278,6 @@ GRANT EXECUTE ON FUNCTION public.employee_insert_punch(
     double precision, double precision, text, uuid, text,
     uuid, uuid, text
 ) TO anon, authenticated;
-
 -- ════════════════════════════════════════════════════════════════════════════
 -- ROLLBACK (manual — run in reverse order)
 --
@@ -387,4 +376,4 @@ GRANT EXECUTE ON FUNCTION public.employee_insert_punch(
 --   RETURN v_row;
 -- END; $$;
 -- GRANT EXECUTE ON FUNCTION public.employee_get_last_punch(uuid) TO anon, authenticated;
--- ════════════════════════════════════════════════════════════════════════════
+-- ════════════════════════════════════════════════════════════════════════════;

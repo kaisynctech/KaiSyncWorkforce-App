@@ -4,7 +4,6 @@
 UPDATE public.app_versions
 SET is_active = false
 WHERE is_active = true;
-
 INSERT INTO public.app_versions (
   version,
   build_number,

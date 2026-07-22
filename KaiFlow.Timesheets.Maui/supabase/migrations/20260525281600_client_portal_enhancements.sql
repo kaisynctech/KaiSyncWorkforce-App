@@ -4,10 +4,8 @@ ALTER TABLE public.client_deals
   ADD COLUMN IF NOT EXISTS site_start_date date,
   ADD COLUMN IF NOT EXISTS expected_completion_date date,
   ADD COLUMN IF NOT EXISTS next_visit_date date;
-
 ALTER TABLE public.project_client_payments
   ADD COLUMN IF NOT EXISTS receipt_url text;
-
 CREATE TABLE IF NOT EXISTS public.client_deal_messages (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id  uuid NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
@@ -16,18 +14,14 @@ CREATE TABLE IF NOT EXISTS public.client_deal_messages (
   body        text NOT NULL,
   created_at  timestamptz NOT NULL DEFAULT now()
 );
-
 CREATE INDEX IF NOT EXISTS idx_client_deal_messages_deal
   ON public.client_deal_messages (deal_id, created_at DESC);
-
 ALTER TABLE public.client_deal_messages ENABLE ROW LEVEL SECURITY;
-
 CREATE POLICY "client_deal_messages_authenticated" ON public.client_deal_messages
   FOR ALL TO authenticated
   USING (
     company_id IN (SELECT company_id FROM public.employees WHERE user_id = auth.uid())
   );
-
 CREATE TABLE IF NOT EXISTS public.client_notification_deliveries (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id    uuid NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
@@ -44,16 +38,12 @@ CREATE TABLE IF NOT EXISTS public.client_notification_deliveries (
   sent_at       timestamptz,
   last_attempt_at timestamptz
 );
-
 CREATE INDEX IF NOT EXISTS idx_client_notification_deliveries_pending
   ON public.client_notification_deliveries (status, created_at)
   WHERE status = 'pending';
-
 ALTER TABLE public.client_notification_deliveries ENABLE ROW LEVEL SECURITY;
-
 CREATE POLICY "client_notification_deliveries_service" ON public.client_notification_deliveries
   FOR ALL TO service_role USING (true) WITH CHECK (true);
-
 CREATE OR REPLACE FUNCTION public.enqueue_client_portal_notification(
   p_deal_id    uuid,
   p_event_type text,
@@ -97,7 +87,6 @@ BEGIN
   END IF;
 END;
 $$;
-
 CREATE OR REPLACE FUNCTION public.trg_client_deal_update_notify()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 BEGIN
@@ -110,12 +99,10 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
 DROP TRIGGER IF EXISTS client_deal_updates_notify ON public.client_deal_updates;
 CREATE TRIGGER client_deal_updates_notify
   AFTER INSERT ON public.client_deal_updates
   FOR EACH ROW EXECUTE FUNCTION public.trg_client_deal_update_notify();
-
 CREATE OR REPLACE FUNCTION public.trg_client_payment_notify()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE v_title text;
@@ -132,12 +119,10 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
 DROP TRIGGER IF EXISTS project_client_payments_notify ON public.project_client_payments;
 CREATE TRIGGER project_client_payments_notify
   AFTER INSERT ON public.project_client_payments
   FOR EACH ROW EXECUTE FUNCTION public.trg_client_payment_notify();
-
 CREATE OR REPLACE FUNCTION public.trg_project_document_notify()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE v_title text;
@@ -155,12 +140,10 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
 DROP TRIGGER IF EXISTS project_documents_notify ON public.project_documents;
 CREATE TRIGGER project_documents_notify
   AFTER INSERT ON public.project_documents
   FOR EACH ROW EXECUTE FUNCTION public.trg_project_document_notify();
-
 CREATE OR REPLACE FUNCTION public.trg_client_deal_progress_notify()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 BEGIN
@@ -176,12 +159,10 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
 DROP TRIGGER IF EXISTS client_deals_progress_notify ON public.client_deals;
 CREATE TRIGGER client_deals_progress_notify
   AFTER UPDATE OF progress_percent ON public.client_deals
   FOR EACH ROW EXECUTE FUNCTION public.trg_client_deal_progress_notify();
-
 CREATE OR REPLACE FUNCTION public.trg_hr_message_notify()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE v_title text;
@@ -199,12 +180,10 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
 DROP TRIGGER IF EXISTS client_deal_messages_notify ON public.client_deal_messages;
 CREATE TRIGGER client_deal_messages_notify
   AFTER INSERT ON public.client_deal_messages
   FOR EACH ROW EXECUTE FUNCTION public.trg_hr_message_notify();
-
 CREATE OR REPLACE FUNCTION public.client_portal_send_message(
   p_company_code text,
   p_client_code  text,
@@ -244,9 +223,7 @@ BEGIN
   RETURN v_id;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.client_portal_send_message(text, text, uuid, text) TO anon, authenticated;
-
 CREATE OR REPLACE FUNCTION public.client_portal_register_document(
   p_company_code   text,
   p_client_code    text,
@@ -287,9 +264,7 @@ BEGIN
   RETURN v_id;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.client_portal_register_document(text, text, uuid, text, text) TO anon, authenticated;
-
 CREATE OR REPLACE FUNCTION public.client_portal_get_project(
   p_company_code text,
   p_client_code  text,

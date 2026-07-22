@@ -1,4 +1,3 @@
-
 -- Employee-level PAYE/UIF amounts persist across payslips.
 
 alter table employees

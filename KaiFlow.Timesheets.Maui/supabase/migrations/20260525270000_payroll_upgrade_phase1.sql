@@ -1,4 +1,3 @@
-
 -- Payroll upgrade phase 1: period lock, versioning, YTD, salary history, tax profile, cost center, release notify.
 
 -- Period locks
@@ -10,7 +9,6 @@ create table if not exists payroll_period_locks (
     locked_by    uuid references employees(id),
     primary key (company_id, period_start, period_end)
 );
-
 -- Salary history (effective-dated changes)
 create table if not exists employee_salary_history (
     id              uuid primary key default gen_random_uuid(),
@@ -23,10 +21,8 @@ create table if not exists employee_salary_history (
     note            text,
     created_at      timestamptz not null default now()
 );
-
 create index if not exists employee_salary_history_emp_date_idx
     on employee_salary_history (employee_id, effective_date desc);
-
 -- Employee tax profile + cost center
 alter table employees
     add column if not exists tax_number text,
@@ -37,7 +33,6 @@ alter table employees
     add column if not exists tax_directive_rate_percent double precision,
     add column if not exists date_of_birth date,
     add column if not exists cost_center text;
-
 -- Payslip extensions
 alter table payment_approvals
     add column if not exists version int not null default 1,
@@ -45,7 +40,6 @@ alter table payment_approvals
     add column if not exists ytd_json jsonb,
     add column if not exists branch_label text,
     add column if not exists cost_center text;
-
 -- Notify employee when payslip is released
 create or replace function notify_payslip_released()
 returns trigger language plpgsql security definer set search_path = public as $$
@@ -84,10 +78,8 @@ begin
     return NEW;
 end;
 $$;
-
 drop trigger if exists trg_notify_payslip_released on payment_approvals;
 create trigger trg_notify_payslip_released
     after update of shared_with_employee on payment_approvals
     for each row execute function notify_payslip_released();
-
 grant execute on function notify_payslip_released() to authenticated, service_role;

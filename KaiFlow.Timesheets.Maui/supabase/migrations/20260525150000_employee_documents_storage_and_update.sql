@@ -15,7 +15,6 @@ WITH CHECK (
     'employee_documents'
   )
 );
-
 DROP POLICY IF EXISTS hr_update_employee_documents ON public.employee_documents;
 CREATE POLICY hr_update_employee_documents ON public.employee_documents
 FOR UPDATE
@@ -33,7 +32,6 @@ WITH CHECK (
     AND access_level IN ('owner', 'hr_admin', 'admin', 'manager')
   )
 );
-
 CREATE OR REPLACE FUNCTION public.employee_update_document(
   p_document_id   uuid,
   p_company_id    uuid,
@@ -73,5 +71,4 @@ BEGIN
   RETURN row_to_json(v_doc);
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.employee_update_document(uuid, uuid, uuid, text, text, text) TO anon, authenticated;

@@ -2,11 +2,9 @@
 
 ALTER TABLE public.clients
   ADD COLUMN IF NOT EXISTS client_code text;
-
 CREATE UNIQUE INDEX IF NOT EXISTS idx_clients_company_client_code
   ON public.clients(company_id, upper(client_code))
   WHERE client_code IS NOT NULL;
-
 -- Resolve client for portal sign-in (company code + client code).
 CREATE OR REPLACE FUNCTION public.client_resolve_by_code(
   p_company_code text,
@@ -39,5 +37,4 @@ AS $$
     AND cl.client_code IS NOT NULL
   LIMIT 1;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.client_resolve_by_code(text, text) TO anon, authenticated;

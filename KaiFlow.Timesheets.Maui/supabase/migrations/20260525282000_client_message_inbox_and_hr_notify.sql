@@ -37,9 +37,7 @@ AS $$
       AND t.last_message_at IS NOT NULL
   ) x;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.client_portal_list_message_inbox(text, text) TO anon, authenticated;
-
 -- When HR/employee sends on a client deal thread, queue client notification (email/SMS if configured).
 CREATE OR REPLACE FUNCTION public.trg_app_message_hr_notify_client()
 RETURNS trigger
@@ -77,7 +75,6 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
 DROP TRIGGER IF EXISTS app_message_hr_notify_client ON public.app_messages;
 CREATE TRIGGER app_message_hr_notify_client
   AFTER INSERT ON public.app_messages

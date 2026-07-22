@@ -9,7 +9,6 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 SET search_path = public;
-
 CREATE OR REPLACE FUNCTION public._assert_worker_access(
   p_company_id uuid,
   p_employee_id uuid,
@@ -65,10 +64,8 @@ BEGIN
   WHERE session_token = p_session_token;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public._assert_worker_access(uuid, uuid, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public._assert_worker_access(uuid, uuid, text) TO anon, authenticated;
-
 -- Helper for RPCs that only receive employee_id (resolve company internally)
 CREATE OR REPLACE FUNCTION public._assert_worker_access_by_employee(
   p_employee_id uuid,
@@ -98,6 +95,5 @@ BEGIN
   RETURN v_company_id;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public._assert_worker_access_by_employee(uuid, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public._assert_worker_access_by_employee(uuid, text) TO anon, authenticated;

@@ -2,16 +2,12 @@
 
 ALTER TABLE public.pa_tasks
   ADD COLUMN IF NOT EXISTS owner_employee_id uuid REFERENCES public.employees(id) ON DELETE SET NULL;
-
 UPDATE public.pa_tasks
 SET owner_employee_id = assigned_employee_id
 WHERE owner_employee_id IS NULL AND assigned_employee_id IS NOT NULL;
-
 CREATE INDEX IF NOT EXISTS idx_pa_tasks_owner
   ON public.pa_tasks(company_id, owner_employee_id);
-
 DROP FUNCTION IF EXISTS public.employee_get_pa_tasks(bigint, bigint);
-
 CREATE OR REPLACE FUNCTION public.employee_get_pa_tasks(
   p_company_id uuid,
   p_employee_id uuid
@@ -32,10 +28,8 @@ AS $$
     )
   ORDER BY t.created_at DESC;
 $$;
-
 REVOKE ALL ON FUNCTION public.employee_get_pa_tasks(uuid, uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.employee_get_pa_tasks(uuid, uuid) TO authenticated;
-
 CREATE OR REPLACE FUNCTION public.employee_insert_pa_task(
   p_company_id uuid,
   p_employee_id uuid,
@@ -85,9 +79,7 @@ BEGIN
   RETURN v_id;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.employee_insert_pa_task(uuid, uuid, text, text, date, text) TO authenticated;
-
 CREATE OR REPLACE FUNCTION public.employee_notify_manager_job_created(
   p_company_id uuid,
   p_manager_user_id uuid,
@@ -155,9 +147,7 @@ BEGIN
   );
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.employee_notify_manager_job_created(uuid, uuid, uuid, uuid, text) TO authenticated;
-
 CREATE OR REPLACE FUNCTION public.enqueue_pa_task_notifications(p_company_id uuid)
 RETURNS integer
 LANGUAGE plpgsql
@@ -220,5 +210,4 @@ BEGIN
   RETURN v_count;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.enqueue_pa_task_notifications(uuid) TO authenticated;

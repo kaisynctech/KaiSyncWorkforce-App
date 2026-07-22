@@ -2,11 +2,9 @@
 -- Assets must exist before this migration is applied.
 
 BEGIN;
-
 UPDATE public.app_versions
 SET is_active = false
 WHERE is_active = true;
-
 INSERT INTO public.app_versions (
     version,
     build_number,
@@ -44,5 +42,4 @@ ON CONFLICT (version, build_number) DO UPDATE SET
     is_active = EXCLUDED.is_active,
     is_mandatory = EXCLUDED.is_mandatory,
     minimum_required_version = EXCLUDED.minimum_required_version;
-
 COMMIT;

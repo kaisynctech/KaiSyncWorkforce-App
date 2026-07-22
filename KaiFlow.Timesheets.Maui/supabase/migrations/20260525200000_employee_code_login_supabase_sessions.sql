@@ -12,20 +12,15 @@ CREATE TABLE IF NOT EXISTS public.employee_code_sessions (
   last_seen_at        timestamptz NOT NULL DEFAULT now(),
   revoked_at          timestamptz
 );
-
 CREATE INDEX IF NOT EXISTS idx_employee_code_sessions_token
   ON public.employee_code_sessions(session_token)
   WHERE revoked_at IS NULL;
-
 CREATE INDEX IF NOT EXISTS idx_employee_code_sessions_employee
   ON public.employee_code_sessions(employee_id)
   WHERE revoked_at IS NULL;
-
 ALTER TABLE public.employee_code_sessions ENABLE ROW LEVEL SECURITY;
-
 -- Restore id_number login + company fields on resolve.
 DROP FUNCTION IF EXISTS public.employee_resolve_by_code(text, text);
-
 CREATE OR REPLACE FUNCTION public.employee_resolve_by_code(p_company_code text, p_employee_code text)
 RETURNS TABLE(
   company_id             uuid,
@@ -97,9 +92,7 @@ AS $function$
     e.created_at
   LIMIT 1;
 $function$;
-
 GRANT EXECUTE ON FUNCTION public.employee_resolve_by_code(text, text) TO anon, authenticated;
-
 CREATE OR REPLACE FUNCTION public.employee_get_my_memberships_by_code(
   p_company_code text,
   p_employee_code text
@@ -163,9 +156,7 @@ BEGIN
   );
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.employee_get_my_memberships_by_code(text, text) TO anon, authenticated;
-
 CREATE OR REPLACE FUNCTION public.employee_sign_in_with_code(
   p_company_code text,
   p_employee_code text
@@ -240,9 +231,7 @@ BEGIN
   );
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.employee_sign_in_with_code(text, text) TO anon, authenticated;
-
 CREATE OR REPLACE FUNCTION public.employee_refresh_code_session(p_session_token text)
 RETURNS json
 LANGUAGE plpgsql
@@ -306,9 +295,7 @@ BEGIN
   );
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.employee_refresh_code_session(text) TO anon, authenticated;
-
 CREATE OR REPLACE FUNCTION public.employee_revoke_code_session(p_session_token text)
 RETURNS void
 LANGUAGE plpgsql
@@ -322,5 +309,4 @@ BEGIN
     AND revoked_at IS NULL;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.employee_revoke_code_session(text) TO anon, authenticated;

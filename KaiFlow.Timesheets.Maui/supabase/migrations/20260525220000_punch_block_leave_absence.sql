@@ -41,5 +41,4 @@ begin
 
     return row_to_json(v_punch);
 end; $$;
-
 grant execute on function employee_insert_punch(uuid, uuid, text, timestamptz, double precision, double precision, text, uuid, text, uuid) to anon, authenticated;

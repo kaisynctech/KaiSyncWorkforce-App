@@ -3,11 +3,9 @@
 -- Contractor portal code
 ALTER TABLE public.contractors
   ADD COLUMN IF NOT EXISTS contractor_code text;
-
 CREATE UNIQUE INDEX IF NOT EXISTS uq_contractors_company_contractor_code
   ON public.contractors (company_id, upper(trim(contractor_code)))
   WHERE contractor_code IS NOT NULL AND trim(contractor_code) <> '';
-
 -- Job site visits (employees + contractors)
 CREATE TABLE IF NOT EXISTS public.job_site_visits (
   id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -32,35 +30,26 @@ CREATE TABLE IF NOT EXISTS public.job_site_visits (
     OR (party_type = 'contractor' AND contractor_id IS NOT NULL AND employee_id IS NULL)
   )
 );
-
 CREATE INDEX IF NOT EXISTS idx_job_site_visits_job
   ON public.job_site_visits (job_id, sign_in_at DESC);
-
 CREATE INDEX IF NOT EXISTS idx_job_site_visits_employee_open
   ON public.job_site_visits (employee_id)
   WHERE sign_out_at IS NULL AND party_type = 'employee';
-
 CREATE INDEX IF NOT EXISTS idx_job_site_visits_contractor_open
   ON public.job_site_visits (contractor_id)
   WHERE sign_out_at IS NULL AND party_type = 'contractor';
-
 -- Incidents from contractor portal
 ALTER TABLE public.incident_reports
   ALTER COLUMN employee_id DROP NOT NULL;
-
 ALTER TABLE public.incident_reports
   ADD COLUMN IF NOT EXISTS contractor_id uuid REFERENCES public.contractors(id) ON DELETE SET NULL;
-
 ALTER TABLE public.incident_reports
   ADD COLUMN IF NOT EXISTS reported_by_name text;
-
 -- Contractor messages on job threads
 ALTER TABLE public.app_messages
   ADD COLUMN IF NOT EXISTS sender_contractor_id uuid REFERENCES public.contractors(id) ON DELETE SET NULL;
-
 ALTER TABLE public.app_messages
   ADD COLUMN IF NOT EXISTS sender_display_name text;
-
 -- Helper: employee assigned to job
 CREATE OR REPLACE FUNCTION public._employee_assigned_to_job(
   p_company_id uuid,
@@ -82,7 +71,6 @@ AS $$
       )
   );
 $$;
-
 -- Helper: contractor owns job
 CREATE OR REPLACE FUNCTION public._contractor_owns_job(
   p_company_id uuid,
@@ -100,7 +88,6 @@ AS $$
       AND j.contractor_id = p_contractor_id
   );
 $$;
-
 -- Resolve contractor by company + contractor code
 CREATE OR REPLACE FUNCTION public.contractor_resolve_by_code(
   p_company_code   text,
@@ -129,7 +116,6 @@ AS $$
     LIMIT 1
   ) t;
 $$;
-
 -- Contractor portal: list jobs
 CREATE OR REPLACE FUNCTION public.contractor_portal_list_jobs(
   p_company_code    text,
@@ -175,7 +161,6 @@ AS $$
       AND j.company_id = ct.company_id
   ) t;
 $$;
-
 -- Employee: sign in on job site
 CREATE OR REPLACE FUNCTION public.employee_job_site_sign_in(
   p_company_id       uuid,
@@ -223,7 +208,6 @@ BEGIN
   RETURN row_to_json(v_row);
 END;
 $$;
-
 -- Employee: sign out
 CREATE OR REPLACE FUNCTION public.employee_job_site_sign_out(
   p_company_id       uuid,
@@ -262,7 +246,6 @@ BEGIN
   RETURN row_to_json(v_row);
 END;
 $$;
-
 -- Employee: open visit
 CREATE OR REPLACE FUNCTION public.employee_job_site_open_visit(
   p_company_id  uuid,
@@ -283,7 +266,6 @@ AS $$
   ORDER BY v.sign_in_at DESC
   LIMIT 1;
 $$;
-
 -- Contractor portal: sign in
 CREATE OR REPLACE FUNCTION public.contractor_portal_site_sign_in(
   p_company_code     text,
@@ -342,7 +324,6 @@ BEGIN
   RETURN row_to_json(v_row);
 END;
 $$;
-
 -- Contractor portal: sign out
 CREATE OR REPLACE FUNCTION public.contractor_portal_site_sign_out(
   p_company_code    text,
@@ -392,7 +373,6 @@ BEGIN
   RETURN row_to_json(v_row);
 END;
 $$;
-
 -- Contractor portal: open visit
 CREATE OR REPLACE FUNCTION public.contractor_portal_open_visit(
   p_company_code    text,
@@ -415,7 +395,6 @@ AS $$
   ORDER BY v.sign_in_at DESC
   LIMIT 1;
 $$;
-
 -- Visits for a job (HR authenticated + anon for portal history via contractor code)
 CREATE OR REPLACE FUNCTION public.get_job_site_visits(p_job_id uuid)
 RETURNS json
@@ -436,7 +415,6 @@ AS $$
     WHERE v.job_id = p_job_id
   ) t;
 $$;
-
 -- Contractor portal: visit history for contractor
 CREATE OR REPLACE FUNCTION public.contractor_portal_visit_history(
   p_company_code    text,
@@ -461,7 +439,6 @@ AS $$
       AND (p_job_id IS NULL OR v.job_id = p_job_id)
   ) t;
 $$;
-
 -- Contractor portal: create incident
 CREATE OR REPLACE FUNCTION public.contractor_portal_create_incident(
   p_company_code     text,
@@ -505,7 +482,6 @@ BEGIN
   RETURN row_to_json(v_row);
 END;
 $$;
-
 -- Contractor portal: append photo URL to job
 CREATE OR REPLACE FUNCTION public.contractor_portal_append_job_photo(
   p_company_code    text,
@@ -553,7 +529,6 @@ BEGIN
   RETURN row_to_json(v_job);
 END;
 $$;
-
 -- Contractor portal: send message on job thread
 CREATE OR REPLACE FUNCTION public.contractor_portal_send_job_message(
   p_company_code     text,
@@ -633,7 +608,6 @@ BEGIN
   RETURN row_to_json(v_msg);
 END;
 $$;
-
 -- Contractor portal: get job messages
 CREATE OR REPLACE FUNCTION public.contractor_portal_get_job_messages(
   p_company_code    text,
@@ -678,7 +652,6 @@ BEGIN
   );
 END;
 $$;
-
 -- Job count on client portal projects
 CREATE OR REPLACE FUNCTION public.client_portal_list_projects(
   p_company_code text,
@@ -719,7 +692,6 @@ AS $$
       AND d.visibility <> 'private'
   ) t;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.contractor_resolve_by_code(text, text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.contractor_portal_list_jobs(text, text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.employee_job_site_sign_in(uuid,uuid,uuid,double precision,double precision,text,text,text) TO anon, authenticated;

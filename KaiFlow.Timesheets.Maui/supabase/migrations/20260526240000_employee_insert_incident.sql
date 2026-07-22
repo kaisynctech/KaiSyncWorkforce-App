@@ -66,7 +66,6 @@ BEGIN
   RETURN row_to_json(v_row);
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.employee_insert_incident(
   uuid, uuid, text, text, uuid, uuid, uuid, text[], text
 ) FROM PUBLIC;

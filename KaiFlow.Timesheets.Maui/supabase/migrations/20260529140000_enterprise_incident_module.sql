@@ -1,7 +1,6 @@
 -- Enterprise Incident Management Module: unified schema, comments, status history, worker RPCs.
 
 set search_path = public;
-
 -- ─── Extend incident_reports ───────────────────────────────────────────────────
 
 alter table public.incident_reports
@@ -13,20 +12,16 @@ alter table public.incident_reports
   add column if not exists latitude double precision,
   add column if not exists longitude double precision,
   add column if not exists location_text text;
-
 create index if not exists idx_incident_reports_company_status
   on public.incident_reports(company_id, status, created_at desc);
-
 create index if not exists idx_incident_reports_job
   on public.incident_reports(company_id, job_id, created_at desc)
   where job_id is not null;
-
 -- Backfill status from legacy is_closed flag
 update public.incident_reports
 set status = case when is_closed then 'closed' else 'open' end,
     updated_at = coalesce(updated_at, created_at)
 where status is null or status = 'open' and is_closed = true;
-
 -- ─── Comments & status history ─────────────────────────────────────────────────
 
 create table if not exists public.incident_comments (
@@ -38,10 +33,8 @@ create table if not exists public.incident_comments (
   body                text not null,
   created_at          timestamptz not null default now()
 );
-
 create index if not exists idx_incident_comments_incident
   on public.incident_comments(incident_id, created_at asc);
-
 create table if not exists public.incident_status_history (
   id                      uuid primary key default gen_random_uuid(),
   company_id              uuid not null references public.companies(id) on delete cascade,
@@ -52,23 +45,18 @@ create table if not exists public.incident_status_history (
   notes                   text,
   created_at              timestamptz not null default now()
 );
-
 create index if not exists idx_incident_status_history_incident
   on public.incident_status_history(incident_id, created_at desc);
-
 alter table public.incident_comments enable row level security;
 alter table public.incident_status_history enable row level security;
-
 drop policy if exists incident_comments_all on public.incident_comments;
 create policy incident_comments_all on public.incident_comments for all to authenticated
   using (company_id = any(public.user_company_ids()))
   with check (company_id = any(public.user_company_ids()));
-
 drop policy if exists incident_status_history_all on public.incident_status_history;
 create policy incident_status_history_all on public.incident_status_history for all to authenticated
   using (company_id = any(public.user_company_ids()))
   with check (company_id = any(public.user_company_ids()));
-
 -- ─── Access helpers ────────────────────────────────────────────────────────────
 
 create or replace function public._employee_can_view_incident(
@@ -99,7 +87,6 @@ as $$
       )
   );
 $$;
-
 create or replace function public._employee_can_manage_incident(
   p_company_id uuid,
   p_employee_id uuid,
@@ -127,7 +114,6 @@ as $$
       and i.assignee_id = p_employee_id
   );
 $$;
-
 create or replace function public._incident_apply_status(
   p_incident_id uuid,
   p_new_status text,
@@ -174,13 +160,11 @@ begin
   );
 end;
 $$;
-
 -- ─── Create incident (replace existing) ────────────────────────────────────────
 
 drop function if exists public.employee_insert_incident(
   bigint, bigint, text, bigint, bigint, text, text, timestamptz, text[]
 );
-
 create or replace function public.employee_insert_incident(
   p_company_id       uuid,
   p_employee_id      uuid,
@@ -258,14 +242,12 @@ begin
   return row_to_json(v_row);
 end;
 $$;
-
 revoke all on function public.employee_insert_incident(
   uuid, uuid, text, text, uuid, uuid, uuid, text[], text, text, text, timestamptz, double precision, double precision, text
 ) from public;
 grant execute on function public.employee_insert_incident(
   uuid, uuid, text, text, uuid, uuid, uuid, text[], text, text, text, timestamptz, double precision, double precision, text
 ) to anon, authenticated;
-
 -- ─── List / get incidents ──────────────────────────────────────────────────────
 
 create or replace function public.employee_get_incidents(
@@ -298,9 +280,7 @@ as $$
   order by i.created_at desc
   limit 200;
 $$;
-
 grant execute on function public.employee_get_incidents(uuid, uuid, uuid, boolean) to anon, authenticated;
-
 create or replace function public.employee_get_incident(
   p_company_id uuid,
   p_employee_id uuid,
@@ -331,9 +311,7 @@ begin
   return row_to_json(v_row);
 end;
 $$;
-
 grant execute on function public.employee_get_incident(uuid, uuid, uuid) to anon, authenticated;
-
 -- Keep legacy alias pointing to expanded list (reporter-only subset for backward compat)
 create or replace function public.employee_get_own_incidents(
   p_company_id uuid,
@@ -354,7 +332,6 @@ as $$
   order by i.created_at desc
   limit 200;
 $$;
-
 -- ─── Update / close ────────────────────────────────────────────────────────────
 
 create or replace function public.employee_update_incident(
@@ -414,11 +391,9 @@ begin
   return row_to_json(v_row);
 end;
 $$;
-
 grant execute on function public.employee_update_incident(
   uuid, uuid, uuid, text, text, uuid, boolean
 ) to anon, authenticated;
-
 -- ─── Comments ──────────────────────────────────────────────────────────────────
 
 create or replace function public.employee_add_incident_comment(
@@ -463,9 +438,7 @@ begin
   return row_to_json(v_row);
 end;
 $$;
-
 grant execute on function public.employee_add_incident_comment(uuid, uuid, uuid, text) to anon, authenticated;
-
 create or replace function public.employee_get_incident_comments(
   p_company_id uuid,
   p_employee_id uuid,
@@ -485,9 +458,7 @@ as $$
     and public._employee_can_view_incident(p_company_id, p_employee_id, p_incident_id)
   order by c.created_at asc;
 $$;
-
 grant execute on function public.employee_get_incident_comments(uuid, uuid, uuid) to anon, authenticated;
-
 create or replace function public.employee_get_incident_status_history(
   p_company_id uuid,
   p_employee_id uuid,
@@ -507,9 +478,7 @@ as $$
     and public._employee_can_view_incident(p_company_id, p_employee_id, p_incident_id)
   order by h.created_at desc;
 $$;
-
 grant execute on function public.employee_get_incident_status_history(uuid, uuid, uuid) to anon, authenticated;
-
 -- Append photo URLs (reporter or manager)
 create or replace function public.employee_append_incident_photos(
   p_company_id uuid,
@@ -539,5 +508,4 @@ begin
   return row_to_json(v_row);
 end;
 $$;
-
 grant execute on function public.employee_append_incident_photos(uuid, uuid, uuid, text[]) to anon, authenticated;
