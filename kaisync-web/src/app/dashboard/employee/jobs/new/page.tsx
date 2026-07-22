@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import { useEmployeeModuleGate } from '@/lib/employee-module-gate'
+import { buildAssignedEmployeeIds } from '@/lib/job-ownership'
 
 interface Employee {
   id: string
@@ -22,6 +24,7 @@ function toLocalDateTimeInput(d: Date): string {
 }
 
 export default function NewJobPage() {
+  const allowed = useEmployeeModuleGate('jobs')
   const router = useRouter()
 
   const [empId,     setEmpId]     = useState<string | null>(null)
@@ -43,7 +46,10 @@ export default function NewJobPage() {
   const [teamSearch,  setTeamSearch]  = useState('')
   const [selectedTeam, setSelectedTeam] = useState<Set<string>>(new Set())
 
-  useEffect(() => { init() }, [])
+  useEffect(() => {
+    if (allowed !== true) return
+    void init()
+  }, [allowed])
 
   async function init() {
     setLoading(true)
@@ -87,39 +93,44 @@ export default function NewJobPage() {
   }
 
   async function submit() {
-    if (!title.trim()) { setError('Please enter a job title.'); return }
+    if (!title.trim()) {
+      setError('Please enter a job title.')
+      return
+    }
     if (!empId || !companyId) return
     setError(null)
     setSubmitting(true)
 
     const scheduled = new Date(startDT)
     const scheduledEnd = new Date(scheduled.getTime() + 8 * 3600000)
+    // MAUI: creator + assignee always included in assigned_employee_ids
+    const assignedIds = buildAssignedEmployeeIds(empId, Array.from(selectedTeam))
 
     const supabase = createClient()
     try {
       const token = tokRef.current ?? ''
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error: rpcErr } = await (supabase.rpc as any)('employee_create_job', {
-        p_company_id:                companyId,
-        p_creator_employee_id:       empId,
-        p_title:                     title.trim(),
-        p_description:               description.trim() || null,
-        p_priority:                  priority,
-        p_scheduled_start:           scheduled.toISOString(),
-        p_scheduled_end:             scheduledEnd.toISOString(),
-        p_site_id:                   null,
-        p_client_id:                 null,
-        p_assignee_employee_id:      empId,
-        p_assigned_employee_ids:     Array.from(selectedTeam),
+        p_company_id: companyId,
+        p_creator_employee_id: empId,
+        p_title: title.trim(),
+        p_description: description.trim() || null,
+        p_priority: priority,
+        p_scheduled_start: scheduled.toISOString(),
+        p_scheduled_end: scheduledEnd.toISOString(),
+        p_site_id: null,
+        p_client_id: null,
+        p_assignee_employee_id: empId,
+        p_assigned_employee_ids: assignedIds,
         p_notify_manager_employee_id: managerId || null,
-        p_visibility:                managerId ? 'restricted' : 'inherit',
-        p_session_token:             token,
+        p_visibility: managerId ? 'restricted' : 'inherit',
+        p_session_token: token,
       })
       if (rpcErr) throw rpcErr
       alert('Your job was saved and is visible to your team, managers, and HR.')
       router.push('/dashboard/employee/jobs')
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to create job.')
+      setError(e instanceof Error ? e.message : `Could not create job: ${String(e)}`)
     }
     setSubmitting(false)
   }
@@ -131,9 +142,10 @@ export default function NewJobPage() {
     return `${e.name} ${e.surname} ${e.position ?? ''}`.toLowerCase().includes(q)
   })
 
-  if (loading) return (
+  if (allowed === null || (allowed && loading)) return (
     <div className="flex items-center justify-center h-64 text-text-secondary text-[14px]">Loading…</div>
   )
+  if (allowed === false) return null
 
   return (
     <div className="h-full flex flex-col overflow-hidden">

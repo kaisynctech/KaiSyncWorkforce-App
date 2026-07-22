@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import { useEmployeeModuleGate } from '@/lib/employee-module-gate'
 
 interface PATask {
   id: string
@@ -49,6 +50,7 @@ interface Props {
 }
 
 export default function PATaskEditor({ mode, taskId }: Props) {
+  const allowed = useEmployeeModuleGate('myPa')
   const router        = useRouter()
   const isCodeAuthRef = useRef(false)
 
@@ -77,7 +79,11 @@ export default function PATaskEditor({ mode, taskId }: Props) {
   const [linkOptions,    setLinkOptions]    = useState<LinkOption[]>([])
   const [loadingLinks,   setLoadingLinks]   = useState(false)
 
-  useEffect(() => { init() }, [])
+  useEffect(() => {
+    if (allowed !== true) return
+    void init()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allowed])
   useEffect(() => {
     if (linkedType !== 'none' && linkedType !== 'meeting') loadLinkOptions()
   }, [linkedType])
@@ -215,6 +221,10 @@ export default function PATaskEditor({ mode, taskId }: Props) {
     setSubmitting(false)
   }
 
+  if (allowed === null || (allowed && loading)) return (
+    <div className="flex items-center justify-center h-64 text-text-secondary text-[14px]">Loading…</div>
+  )
+  if (allowed === false) return null
   if (loading) return (
     <div className="flex items-center justify-center h-64 text-text-secondary text-[14px]">Loading…</div>
   )

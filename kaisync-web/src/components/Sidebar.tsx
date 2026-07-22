@@ -55,8 +55,12 @@ export default function Sidebar({ open, onToggle, company, employee }: SidebarPr
 
   async function handleSignOut() {
     const supabase = createClient()
+    const { revokeCodeSession } = await import('@/lib/auth/session')
+    const { clearAllAuthLocalState } = await import('@/lib/auth/code-session')
+    await revokeCodeSession(supabase)
     await supabase.auth.signOut()
-    router.push('/auth/hr-sign-in')
+    clearAllAuthLocalState()
+    router.push('/auth/id-entry')
     router.refresh()
   }
 

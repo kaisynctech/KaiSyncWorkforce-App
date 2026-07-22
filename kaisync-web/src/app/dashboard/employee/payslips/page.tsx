@@ -3,50 +3,51 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
-
-interface Payslip {
-  id: string
-  period_start: string
-  period_end: string
-  gross_pay: number | null
-  deductions: number | null
-  net_pay: number | null
-  status: string
-  paid_at: string | null
-  regular_hours: number | null
-  overtime_hours: number | null
-  working_days: number | null
-}
+import { getCodeSession } from '@/lib/auth/code-session'
+import { loadCompanyWorkspace, loadEmployeeWorkspace } from '@/lib/employee-workspace'
+import { useEmployeeModuleGate } from '@/lib/employee-module-gate'
+import { downloadPayslipPdf, parsePayslipsRpcJson, type PayslipPdfInput } from '@/lib/payslip-pdf'
 
 const STATUS_STYLES: Record<string, string> = {
-  pending:  'bg-warning/10 text-warning',
+  pending: 'bg-warning/10 text-warning',
   approved: 'bg-primary/10 text-primary',
-  paid:     'bg-success/10 text-success',
+  paid: 'bg-success/10 text-success',
+  rejected: 'bg-error/10 text-error',
 }
 
 function fmtPeriod(start: string, end: string): string {
   const fmt = (d: string) =>
-    new Date(d + 'T12:00:00').toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })
+    new Date(d.includes('T') ? d : `${d}T12:00:00`).toLocaleDateString('en-ZA', {
+      day: '2-digit', month: 'short', year: 'numeric',
+    })
   return `${fmt(start)} – ${fmt(end)}`
 }
 
-function fmtMoney(n: number | null): string {
+function fmtMoney(n: number | null | undefined): string {
   if (n == null) return '—'
-  return `R ${n.toFixed(2)}`
+  return `R ${Number(n).toFixed(2)}`
 }
 
 export default function PayslipsPage() {
-  const [payslips,   setPayslips]   = useState<Payslip[]>([])
-  const [loading,    setLoading]    = useState(true)
-  const [companyId,  setCompanyId]  = useState<string | null>(null)
+  const allowed = useEmployeeModuleGate('payroll')
+  const [payslips, setPayslips] = useState<PayslipPdfInput[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [companyId, setCompanyId] = useState<string | null>(null)
   const [employeeId, setEmployeeId] = useState<string | null>(null)
-  const [downloading,setDownloading]= useState<string | null>(null)
-  const [toast,      setToast]      = useState<string | null>(null)
+  const [employeeName, setEmployeeName] = useState('Employee')
+  const [companyName, setCompanyName] = useState('Company')
+  const [downloading, setDownloading] = useState<string | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
 
-  useEffect(() => { init() }, [])
+  useEffect(() => {
+    if (allowed !== true) return
+    void init()
+  }, [allowed])
 
   async function init() {
     setLoading(true)
+    setError(null)
     const supabase = createClient()
     const member = await resolveCurrentMember(supabase)
     if (!member) { setLoading(false); return }
@@ -54,19 +55,35 @@ export default function PayslipsPage() {
     setCompanyId(member.companyId)
     setEmployeeId(member.employeeId)
 
+    const [company, emp] = await Promise.all([
+      loadCompanyWorkspace(supabase, member.companyId),
+      loadEmployeeWorkspace(supabase, member.employeeId),
+    ])
+    setCompanyName(company?.name ?? getCodeSession()?.company.name ?? 'Company')
+    if (emp) setEmployeeName(`${emp.name} ${emp.surname}`.trim())
+    else {
+      const cs = getCodeSession()
+      if (cs?.employee) setEmployeeName(`${cs.employee.name} ${cs.employee.surname}`.trim())
+    }
+
     const tok = member.sessionToken
       ?? (await supabase.auth.getSession()).data.session?.access_token
       ?? null
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data } = await (supabase.rpc as any)('employee_get_payslips', {
-      p_company_id:    member.companyId,
-      p_employee_id:   member.employeeId,
+    const { data, error: rpcErr } = await (supabase.rpc as any)('employee_get_payslips', {
+      p_company_id: member.companyId,
+      p_employee_id: member.employeeId,
       p_session_token: tok,
     })
-
-    const sorted = ((data as Payslip[]) ?? [])
-      .slice().sort((a, b) => b.period_start.localeCompare(a.period_start))
-    setPayslips(sorted)
+    if (rpcErr) {
+      setError(rpcErr.message)
+      setPayslips([])
+    } else {
+      const sorted = parsePayslipsRpcJson(data)
+        .slice()
+        .sort((a, b) => (b.period_start ?? '').localeCompare(a.period_start ?? ''))
+      setPayslips(sorted)
+    }
     setLoading(false)
   }
 
@@ -75,7 +92,7 @@ export default function PayslipsPage() {
     setTimeout(() => setToast(null), 3000)
   }
 
-  async function downloadPDF(payslip: Payslip) {
+  async function downloadPDF(payslip: PayslipPdfInput) {
     if (!companyId || !employeeId) return
     setDownloading(payslip.id)
     const supabase = createClient()
@@ -87,38 +104,50 @@ export default function PayslipsPage() {
       if (urlData?.signedUrl) {
         window.open(urlData.signedUrl, '_blank')
       } else {
-        showToast('PDF not available yet.')
+        downloadPayslipPdf(payslip, employeeName, companyName)
       }
     } catch {
-      showToast('PDF not available yet.')
+      try {
+        downloadPayslipPdf(payslip, employeeName, companyName)
+      } catch {
+        showToast('Could not generate PDF.')
+      }
     }
     setDownloading(null)
   }
 
-  if (loading) return (
-    <div className="flex items-center justify-center h-64 text-text-secondary text-[14px]">Loading…</div>
-  )
+  if (allowed === null || (allowed && loading)) {
+    return (
+      <div className="flex items-center justify-center h-64 text-text-secondary text-[14px]">Loading…</div>
+    )
+  }
+  if (allowed === false) return null
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      {/* Header */}
       <div className="px-4 py-3 border-b border-divider shrink-0 bg-surface">
         <h1 className="text-[18px] font-semibold text-text-primary">My Payslips</h1>
       </div>
 
-      {/* Toast */}
       {toast && (
         <div className="mx-4 mt-3 shrink-0 rounded-xl px-4 py-3 bg-warning/10 border border-warning/30">
           <p className="text-[13px] text-warning font-semibold">{toast}</p>
         </div>
       )}
+      {error && (
+        <div className="mx-4 mt-3 shrink-0 rounded-xl px-4 py-3 bg-error-dark border border-error/30">
+          <p className="text-[13px] text-error font-semibold">{error}</p>
+        </div>
+      )}
 
-      {/* List */}
       <div className="flex-1 overflow-y-auto">
         {payslips.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64 gap-2 text-text-secondary">
+          <div className="flex flex-col items-center justify-center h-64 gap-2 text-text-secondary px-6 text-center">
             <span className="material-icons text-[48px] text-text-disabled">payments</span>
-            <p className="text-[14px]">No payslips yet.</p>
+            <p className="text-[14px]">No payslips released yet.</p>
+            <p className="text-[12px] text-text-disabled">
+              Payslips appear here after HR shares them with you.
+            </p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -143,15 +172,9 @@ export default function PayslipsPage() {
                     <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
                       {fmtPeriod(p.period_start, p.period_end)}
                     </td>
-                    <td className="px-4 py-3 font-medium text-text-primary whitespace-nowrap">
-                      {fmtMoney(p.gross_pay)}
-                    </td>
-                    <td className="px-4 py-3 text-text-secondary whitespace-nowrap">
-                      {fmtMoney(p.deductions)}
-                    </td>
-                    <td className="px-4 py-3 font-bold text-text-primary whitespace-nowrap">
-                      {fmtMoney(p.net_pay)}
-                    </td>
+                    <td className="px-4 py-3 font-medium text-text-primary whitespace-nowrap">{fmtMoney(p.gross_pay)}</td>
+                    <td className="px-4 py-3 text-text-secondary whitespace-nowrap">{fmtMoney(p.deductions)}</td>
+                    <td className="px-4 py-3 font-bold text-text-primary whitespace-nowrap">{fmtMoney(p.net_pay)}</td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <span className={`text-[11px] font-semibold px-2 py-[2px] rounded-full capitalize ${STATUS_STYLES[p.status] ?? 'bg-surface-elevated text-text-secondary'}`}>
                         {p.status}
@@ -163,18 +186,21 @@ export default function PayslipsPage() {
                         : '—'}
                     </td>
                     <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
-                      {p.regular_hours != null ? p.regular_hours.toFixed(1) : '—'}
+                      {p.regular_hours != null ? Number(p.regular_hours).toFixed(1) : '—'}
                     </td>
                     <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
-                      {p.overtime_hours != null ? p.overtime_hours.toFixed(1) : '—'}
+                      {p.overtime_hours != null ? Number(p.overtime_hours).toFixed(1) : '—'}
                     </td>
                     <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
                       {p.working_days != null ? p.working_days : '—'}
                     </td>
                     <td className="px-4 py-3">
-                      <button onClick={() => downloadPDF(p)} disabled={downloading === p.id}
+                      <button
+                        onClick={() => void downloadPDF(p)}
+                        disabled={downloading === p.id}
                         className="flex items-center justify-center w-8 h-8 rounded-lg border border-divider text-text-secondary hover:border-primary hover:text-primary transition-colors disabled:opacity-50"
-                        title="Download PDF">
+                        title="Download PDF"
+                      >
                         {downloading === p.id
                           ? <span className="material-icons animate-spin text-[16px]">refresh</span>
                           : <span className="material-icons text-[16px]">download</span>}

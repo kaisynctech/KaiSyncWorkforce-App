@@ -1,28 +1,40 @@
 'use client'
 
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { cn, getInitials } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
+import {
+  ALL_MODULES_ENABLED,
+  type EmployeeModuleFlags,
+} from '@/lib/company-modules'
+import { loadCompanyWorkspace, moduleFlagsForCompany } from '@/lib/employee-workspace'
 import type { Company, Employee } from '@/types/database'
 
-interface NavItem { label: string; href: string; icon: string }
+interface NavItem {
+  label: string
+  href: string
+  icon: string
+  /** null = always visible */
+  module?: keyof EmployeeModuleFlags
+}
 
 const EMP_NAV_ITEMS: NavItem[] = [
-  { label: 'Dashboard',          href: '/dashboard/employee/overview',     icon: 'home' },
-  { label: 'My Jobs',            href: '/dashboard/employee/jobs',         icon: 'work' },
-  { label: 'My PA',              href: '/dashboard/employee/pa',           icon: 'task_alt' },
-  { label: 'My Shifts',          href: '/dashboard/employee/shifts',       icon: 'event' },
-  { label: 'My Leave',           href: '/dashboard/employee/leave',        icon: 'beach_access' },
-  { label: 'Attendance',         href: '/dashboard/employee/attendance',   icon: 'schedule' },
-  { label: 'My Incidents',       href: '/dashboard/employee/incidents',    icon: 'warning' },
-  { label: 'Contractor Profile', href: '/dashboard/employee/contractor',   icon: 'badge' },
-  { label: 'My Payslips',        href: '/dashboard/employee/payslips',     icon: 'payments' },
-  { label: 'My Documents',       href: '/dashboard/employee/documents',    icon: 'folder' },
-  { label: 'Forms',              href: '/dashboard/employee/forms',        icon: 'description' },
-  { label: 'Messages',           href: '/dashboard/messages',              icon: 'chat' },
-  { label: 'Notifications',      href: '/dashboard/employee/notifications',icon: 'notifications' },
-  { label: 'My Profile',         href: '/dashboard/profile',               icon: 'person' },
+  { label: 'Dashboard', href: '/dashboard/employee/overview', icon: 'home' },
+  { label: 'My Jobs', href: '/dashboard/employee/jobs', icon: 'work', module: 'jobs' },
+  { label: 'My PA', href: '/dashboard/employee/pa', icon: 'task_alt', module: 'myPa' },
+  { label: 'My Shifts', href: '/dashboard/employee/shifts', icon: 'event', module: 'scheduling' },
+  { label: 'My Leave', href: '/dashboard/employee/leave', icon: 'beach_access', module: 'leave' },
+  { label: 'Attendance', href: '/dashboard/employee/attendance', icon: 'schedule', module: 'attendance' },
+  { label: 'My Incidents', href: '/dashboard/employee/incidents', icon: 'warning', module: 'incidents' },
+  { label: 'Contractor Profile', href: '/dashboard/employee/contractor', icon: 'badge', module: 'contractors' },
+  { label: 'My Payslips', href: '/dashboard/employee/payslips', icon: 'payments', module: 'payroll' },
+  { label: 'My Documents', href: '/dashboard/employee/documents', icon: 'folder' },
+  { label: 'Forms', href: '/dashboard/employee/forms', icon: 'description', module: 'paperless' },
+  { label: 'Messages', href: '/dashboard/messages', icon: 'chat', module: 'messaging' },
+  { label: 'Notifications', href: '/dashboard/employee/notifications', icon: 'notifications' },
+  { label: 'My Profile', href: '/dashboard/profile', icon: 'person' },
 ]
 
 interface SidebarProps {
@@ -34,20 +46,39 @@ interface SidebarProps {
 
 export default function EmployeeSidebar({ open, onToggle, company, employee }: SidebarProps) {
   const pathname = usePathname()
-  const router   = useRouter()
+  const router = useRouter()
+  const [modules, setModules] = useState<EmployeeModuleFlags>(ALL_MODULES_ENABLED)
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      if (!company?.id) return
+      const supabase = createClient()
+      const workspace = await loadCompanyWorkspace(supabase, company.id)
+      if (!cancelled) setModules(moduleFlagsForCompany(workspace))
+    }
+    load()
+    return () => { cancelled = true }
+  }, [company?.id])
+
+  const items = useMemo(
+    () => EMP_NAV_ITEMS.filter((item) => !item.module || modules[item.module]),
+    [modules],
+  )
 
   async function handleSignOut() {
     const supabase = createClient()
-    // Clear JWT session (no-op if code-auth, harmless)
+    const { revokeCodeSession } = await import('@/lib/auth/session')
+    const { clearAllAuthLocalState } = await import('@/lib/auth/code-session')
+    await revokeCodeSession(supabase)
     await supabase.auth.signOut()
-    // Clear code session
-    localStorage.removeItem('kf_cs')
+    clearAllAuthLocalState()
     router.push('/auth/id-entry')
     router.refresh()
   }
 
   const displayName = employee ? `${employee.name} ${employee.surname}` : 'Unknown'
-  const roleLabel   = 'Employee'
+  const roleLabel = 'Employee'
 
   return (
     <>
@@ -56,9 +87,8 @@ export default function EmployeeSidebar({ open, onToggle, company, employee }: S
       )}
       <aside className={cn(
         'fixed lg:relative inset-y-0 left-0 z-30 flex flex-col bg-sidebar-bg transition-all duration-200 shrink-0',
-        open ? 'w-60' : 'w-[64px]'
+        open ? 'w-60' : 'w-[64px]',
       )}>
-        {/* Header */}
         <div className="flex items-center gap-3 px-4 h-16 border-b border-white/10">
           <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0">
             <span className="material-icons text-white text-[18px]">bolt</span>
@@ -74,18 +104,22 @@ export default function EmployeeSidebar({ open, onToggle, company, employee }: S
           </button>
         </div>
 
-        {/* Navigation */}
         <nav className="flex-1 py-4 overflow-y-auto overflow-x-hidden">
-          {EMP_NAV_ITEMS.map(item => {
+          {items.map((item) => {
             const active = pathname === item.href || pathname.startsWith(item.href + '/')
             return (
-              <Link key={item.href} href={item.href}
+              <Link
+                key={item.href}
+                href={item.href}
                 className={cn(
                   'flex items-center gap-3 mx-2 mb-0.5 rounded-lg px-3 h-10 transition-colors group',
-                  active ? 'bg-primary/20 text-sidebar-active' : 'text-white/60 hover:text-white hover:bg-white/10'
+                  active ? 'bg-primary/20 text-sidebar-active' : 'text-white/60 hover:text-white hover:bg-white/10',
+                )}
+              >
+                <span className={cn(
+                  'material-icons shrink-0 transition-colors text-[20px]',
+                  active ? 'text-sidebar-active' : 'text-white/50 group-hover:text-white',
                 )}>
-                <span className={cn('material-icons shrink-0 transition-colors text-[20px]',
-                  active ? 'text-sidebar-active' : 'text-white/50 group-hover:text-white')}>
                   {item.icon}
                 </span>
                 {open && <span className="text-[13px] font-medium truncate">{item.label}</span>}
@@ -94,7 +128,6 @@ export default function EmployeeSidebar({ open, onToggle, company, employee }: S
           })}
         </nav>
 
-        {/* User footer */}
         <div className="border-t border-white/10 p-3">
           <div className={cn('flex items-center gap-3', !open && 'justify-center')}>
             <div className="w-8 h-8 rounded-full bg-primary-dark flex items-center justify-center shrink-0">

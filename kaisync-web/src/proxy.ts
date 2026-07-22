@@ -34,17 +34,9 @@ export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname
 
   if (!user && pathname.startsWith('/dashboard')) {
-    // Employee portal routes use code-auth (localStorage kf_cs) — no JWT present.
-    // Server-side middleware cannot read localStorage, so these routes must be
-    // allowed through. The client-side dashboard/layout.tsx handles the auth
-    // check and will redirect truly unauthenticated users.
-    if (pathname.startsWith('/dashboard/employee') || pathname.startsWith('/dashboard/messages') || pathname.startsWith('/dashboard/profile')) {
-      return supabaseResponse
-    }
-    // HR/admin routes require a JWT — redirect to role picker if missing.
-    const url = request.nextUrl.clone()
-    url.pathname = '/auth/id-entry'
-    return NextResponse.redirect(url)
+    // Code-auth sessions live in localStorage (kf_cs) and are invisible to middleware.
+    // Allow dashboard through; dashboard/layout.tsx enforces JWT or valid code session.
+    return supabaseResponse
   }
 
   // Access-level routing guard

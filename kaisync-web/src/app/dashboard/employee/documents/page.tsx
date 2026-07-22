@@ -3,6 +3,14 @@
 import { useRef, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import { getCodeSession } from '@/lib/auth/code-session'
+import { loadEmployeeWorkspace, isPendingMembership } from '@/lib/employee-workspace'
+import {
+  EMPLOYEE_DOCUMENT_TYPES,
+  formatEmployeeDocumentType,
+  EMPLOYEE_DOCUMENT_ACCEPT,
+} from '@/lib/employee-document-types'
+import { uploadEmployeeDocumentFile } from '@/lib/employee-media'
 
 interface EmployeeDocument {
   id: string
@@ -11,19 +19,6 @@ interface EmployeeDocument {
   file_url: string
   uploaded_by_role: string
   created_at: string
-}
-
-const DOC_TYPES = ['id_document', 'contract', 'certificate', 'payslip', 'other']
-
-function fmtDocType(raw: string): string {
-  const map: Record<string, string> = {
-    id_document: 'ID Document',
-    contract:    'Contract',
-    certificate: 'Certificate',
-    payslip:     'Payslip',
-    other:       'Other',
-  }
-  return map[raw] ?? raw.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
 function fmtDate(iso: string): string {
@@ -35,8 +30,8 @@ export default function DocumentsPage() {
   const [loading,       setLoading]       = useState(true)
   const [companyId,     setCompanyId]     = useState<string | null>(null)
   const [employeeId,    setEmployeeId]    = useState<string | null>(null)
-  const [tok,           setTok]           = useState<string | null>(null)
   const [companyName,   setCompanyName]   = useState<string>('')
+  const [pendingReview, setPendingReview] = useState(false)
   const tokRef        = useRef<string | null>(null)
   const isCodeAuthRef = useRef<boolean>(false)
 
@@ -69,7 +64,6 @@ export default function DocumentsPage() {
     const token = member.sessionToken
       ?? (await supabase.auth.getSession()).data.session?.access_token
       ?? null
-    setTok(token)
     tokRef.current        = token
     isCodeAuthRef.current = member.sessionToken !== null
 
@@ -81,11 +75,16 @@ export default function DocumentsPage() {
     })
     setDocs((data as EmployeeDocument[]) ?? [])
 
+    const workspace = await loadEmployeeWorkspace(supabase, member.employeeId)
+    const cs = getCodeSession()
+    const pending =
+      isPendingMembership(workspace) ||
+      cs?.employee?.registration_status === 'pending' ||
+      (cs?.employee != null && cs.employee.is_active === false)
+    setPendingReview(pending)
+
     if (isCodeAuthRef.current) {
-      try {
-        const kfcs = JSON.parse(localStorage.getItem('kf_cs') ?? '{}')
-        if (kfcs.company?.name) setCompanyName(kfcs.company.name)
-      } catch { /* ignore */ }
+      if (cs?.company?.name) setCompanyName(cs.company.name)
     } else {
       const { data: companyRow } = await supabase
         .from('companies')
@@ -138,11 +137,15 @@ export default function DocumentsPage() {
     setUploadError(null)
 
     const supabase = createClient()
-    const path = `employee-documents/${companyId}/${employeeId}/${Date.now()}_${file.name}`
 
     try {
-      const { error: upErr } = await supabase.storage.from('workforce-media').upload(path, file, { upsert: false })
-      if (upErr) throw upErr
+      const path = await uploadEmployeeDocumentFile({
+        supabase,
+        companyId,
+        employeeId,
+        file,
+        sessionToken: tokRef.current,
+      })
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error: rpcErr } = await (supabase.rpc as any)('employee_submit_document', {
@@ -158,7 +161,8 @@ export default function DocumentsPage() {
       setShowUpload(false)
       await init()
     } catch (e: unknown) {
-      setUploadError(e instanceof Error ? e.message : 'Upload failed.')
+      const msg = e instanceof Error ? e.message : 'Upload failed.'
+      setUploadError(msg.startsWith('Upload failed:') ? msg : `Upload failed: ${msg}`)
     }
     setUploading(false)
   }
@@ -183,11 +187,15 @@ export default function DocumentsPage() {
     setReplaceError(null)
 
     const supabase = createClient()
-    const newPath = `employee-documents/${companyId}/${employeeId}/${Date.now()}_${file.name}`
 
     try {
-      const { error: upErr } = await supabase.storage.from('workforce-media').upload(newPath, file, { upsert: false })
-      if (upErr) throw upErr
+      const newPath = await uploadEmployeeDocumentFile({
+        supabase,
+        companyId,
+        employeeId,
+        file,
+        sessionToken: tokRef.current,
+      })
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error: rpcErr } = await (supabase.rpc as any)('employee_update_document', {
@@ -204,7 +212,8 @@ export default function DocumentsPage() {
       setReplaceDoc(null)
       await init()
     } catch (e: unknown) {
-      setReplaceError(e instanceof Error ? e.message : 'Replace failed.')
+      const msg = e instanceof Error ? e.message : 'Update failed.'
+      setReplaceError(msg.startsWith('Update failed:') ? msg : `Update failed: ${msg}`)
     }
     setReplacing(false)
   }
@@ -213,15 +222,33 @@ export default function DocumentsPage() {
     <div className="flex items-center justify-center h-64 text-text-secondary text-[14px]">Loading…</div>
   )
 
+  const subtitle = companyName
+    ? (pendingReview
+        ? `Documents — ${companyName} (pending review)`
+        : `Documents — ${companyName}`)
+    : null
+
   return (
     <div className="h-full flex flex-col overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-divider shrink-0 bg-surface">
-        <h1 className="text-[18px] font-semibold text-text-primary">My Documents</h1>
+        <div className="min-w-0">
+          <h1 className="text-[18px] font-semibold text-text-primary">My Documents</h1>
+          {subtitle && (
+            <p className="text-[12px] text-text-secondary mt-0.5 truncate">{subtitle}</p>
+          )}
+        </div>
         <button onClick={openUploadModal}
-          className="flex items-center gap-1.5 bg-primary text-white text-[13px] font-semibold px-4 py-2 rounded-lg hover:bg-primary-dark transition-colors">
-          <span className="material-icons text-[16px]">add</span>Upload
+          className="flex items-center gap-1.5 bg-primary text-white text-[13px] font-semibold px-4 py-2 rounded-lg hover:bg-primary-dark transition-colors shrink-0">
+          <span className="material-icons text-[16px]">add</span>Submit Document
         </button>
+      </div>
+
+      {/* Intro */}
+      <div className="px-4 py-3 border-b border-divider bg-surface shrink-0">
+        <p className="text-[13px] text-text-secondary">
+          Submit copies of your documents for HR to review. HR may also upload documents to your profile.
+        </p>
       </div>
 
       {/* List */}
@@ -229,7 +256,9 @@ export default function DocumentsPage() {
         {docs.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 gap-2 text-text-secondary">
             <span className="material-icons text-[48px] text-text-disabled">folder_open</span>
-            <p className="text-[14px]">No documents uploaded yet.</p>
+            <p className="text-[14px] text-center px-6">
+              No documents yet. Tap &apos;Submit Document&apos; to add your first.
+            </p>
           </div>
         ) : (
           <div className="divide-y divide-divider">
@@ -238,13 +267,13 @@ export default function DocumentsPage() {
                 <span className="material-icons text-text-disabled text-[24px] mt-0.5 shrink-0">description</span>
                 <div className="flex-1 min-w-0">
                   <p className="text-[14px] font-semibold text-text-primary truncate">{doc.document_name}</p>
-                  <p className="text-[11px] text-text-secondary">{fmtDocType(doc.document_type)}</p>
+                  <p className="text-[11px] text-text-secondary">{formatEmployeeDocumentType(doc.document_type)}</p>
                   <p className="text-[11px] text-text-disabled mt-0.5">
                     {companyName && <span>{companyName} · </span>}
                     {fmtDate(doc.created_at)}
-                    {doc.uploaded_by_role === 'employee' && (
-                      <span className="ml-1 text-warning">(pending review)</span>
-                    )}
+                    <span className="ml-1 text-warning">
+                      {doc.uploaded_by_role === 'employee' ? '(Self-submitted)' : '(HR uploaded)'}
+                    </span>
                   </p>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
@@ -272,7 +301,7 @@ export default function DocumentsPage() {
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/50">
           <div className="bg-surface rounded-2xl w-full max-w-sm p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between">
-              <h2 className="text-[17px] font-bold text-text-primary">Upload Document</h2>
+              <h2 className="text-[17px] font-bold text-text-primary">Submit Document</h2>
               <button onClick={() => setShowUpload(false)} className="text-text-secondary hover:text-text-primary">
                 <span className="material-icons">close</span>
               </button>
@@ -288,7 +317,9 @@ export default function DocumentsPage() {
               <label className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide">Document Type *</label>
               <select className="input" value={upDocType} onChange={e => setUpDocType(e.target.value)}>
                 <option value="">Select type…</option>
-                {DOC_TYPES.map(t => <option key={t} value={t}>{fmtDocType(t)}</option>)}
+                {EMPLOYEE_DOCUMENT_TYPES.map(t => (
+                  <option key={t.key} value={t.key}>{t.label}</option>
+                ))}
               </select>
             </div>
 
@@ -300,7 +331,12 @@ export default function DocumentsPage() {
 
             <div className="flex flex-col gap-1.5">
               <label className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide">File *</label>
-              <input ref={uploadFileRef} type="file" className="text-[13px] text-text-secondary" />
+              <input
+                ref={uploadFileRef}
+                type="file"
+                accept={EMPLOYEE_DOCUMENT_ACCEPT}
+                className="text-[13px] text-text-secondary"
+              />
             </div>
 
             <div className="flex gap-3">
@@ -310,7 +346,7 @@ export default function DocumentsPage() {
               </button>
               <button onClick={submitUpload} disabled={uploading}
                 className="flex-1 h-11 rounded-xl bg-primary text-white text-[14px] font-bold hover:bg-primary-dark transition-colors disabled:opacity-60">
-                {uploading ? 'Uploading…' : 'Upload'}
+                {uploading ? 'Uploading…' : 'Submit'}
               </button>
             </div>
           </div>
@@ -342,7 +378,12 @@ export default function DocumentsPage() {
 
             <div className="flex flex-col gap-1.5">
               <label className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide">New File *</label>
-              <input ref={replaceFileRef} type="file" className="text-[13px] text-text-secondary" />
+              <input
+                ref={replaceFileRef}
+                type="file"
+                accept={EMPLOYEE_DOCUMENT_ACCEPT}
+                className="text-[13px] text-text-secondary"
+              />
             </div>
 
             <div className="flex gap-3">

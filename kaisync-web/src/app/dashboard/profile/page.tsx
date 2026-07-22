@@ -4,6 +4,9 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import { getCodeSession } from '@/lib/auth/code-session'
+import { prepareMediaUpload, consumeMediaUpload } from '@/lib/job-media'
+import { loadCompanyWorkspace, moduleFlagsForCompany } from '@/lib/employee-workspace'
 import { getInitials } from '@/lib/utils'
 import type { Employee } from '@/types/database'
 
@@ -14,6 +17,107 @@ function FormField({ label, children }: { label: string; children: React.ReactNo
       {children}
     </div>
   )
+}
+
+function trimOrNull(value: string): string | null {
+  const t = value.trim()
+  return t === '' ? null : t
+}
+
+type ProfileRpcRow = {
+  name?: string | null
+  surname?: string | null
+  email?: string | null
+  phone?: string | null
+  id_number?: string | null
+  position?: string | null
+  employment_type?: string | null
+  employment_type_label?: string | null
+  bank_name?: string | null
+  bank_account?: string | null
+  bank_branch_code?: string | null
+  profile_photo_url?: string | null
+  date_of_birth?: string | null
+  access_level?: string | null
+}
+
+type EmployeeWithDob = Employee & { date_of_birth?: string | null }
+
+function thinFromCodeSession(): EmployeeWithDob | null {
+  const cs = getCodeSession()
+  if (!cs?.employee) return null
+  return {
+    name: cs.employee.name ?? null,
+    surname: cs.employee.surname ?? null,
+    position: cs.employee.position ?? null,
+    access_level: cs.employee.access_level ?? null,
+    phone: null,
+    id_number: null,
+    bank_name: null,
+    bank_account: null,
+    bank_branch_code: null,
+    email: null,
+    employment_type: null,
+    profile_photo_url: null,
+    date_of_birth: null,
+  } as unknown as EmployeeWithDob
+}
+
+function fromRpcRow(p: ProfileRpcRow): EmployeeWithDob {
+  return {
+    name: p.name ?? null,
+    surname: p.surname ?? null,
+    email: p.email ?? null,
+    phone: p.phone ?? null,
+    id_number: p.id_number ?? null,
+    position: p.position ?? null,
+    employment_type: p.employment_type_label ?? p.employment_type ?? null,
+    bank_name: p.bank_name ?? null,
+    bank_account: p.bank_account ?? null,
+    bank_branch_code: p.bank_branch_code ?? null,
+    profile_photo_url: p.profile_photo_url ?? null,
+    date_of_birth: p.date_of_birth ?? null,
+    access_level: p.access_level ?? null,
+  } as unknown as EmployeeWithDob
+}
+
+function applyForm(
+  emp: EmployeeWithDob,
+  set: {
+    setEmployee: (e: Employee) => void
+    setFirstName: (v: string) => void
+    setLastName: (v: string) => void
+    setPhone: (v: string) => void
+    setIdNumber: (v: string) => void
+    setBankName: (v: string) => void
+    setAccountNumber: (v: string) => void
+    setBranchCode: (v: string) => void
+  },
+) {
+  set.setEmployee(emp)
+  set.setFirstName(emp.name ?? '')
+  set.setLastName(emp.surname ?? '')
+  set.setPhone(emp.phone ?? '')
+  set.setIdNumber(emp.id_number ?? '')
+  set.setBankName(emp.bank_name ?? '')
+  set.setAccountNumber(emp.bank_account ?? '')
+  set.setBranchCode(emp.bank_branch_code ?? '')
+}
+
+async function resolvePhotoUrl(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  path: string | null | undefined,
+  setPhotoUrl: (url: string | null) => void,
+) {
+  if (!path) {
+    setPhotoUrl(null)
+    return
+  }
+  const { data: signed } = await supabase.storage
+    .from('workforce-media')
+    .createSignedUrl(path, 3600)
+  setPhotoUrl(signed?.signedUrl ?? null)
 }
 
 export default function ProfilePage() {
@@ -27,23 +131,22 @@ export default function ProfilePage() {
   const [notLinked,    setNotLinked]    = useState(false)
   const [companyName,  setCompanyName]  = useState<string>('')
 
-  // Photo
   const [photoUrl,       setPhotoUrl]       = useState<string | null>(null)
   const [photoUploading, setPhotoUploading] = useState(false)
   const [photoError,     setPhotoError]     = useState<string | null>(null)
   const photoInputRef = useRef<HTMLInputElement>(null)
   const tokRef        = useRef<string | null>(null)
 
-  // Personal
   const [firstName,   setFirstName]   = useState('')
   const [lastName,    setLastName]    = useState('')
   const [phone,       setPhone]       = useState('')
   const [idNumber,    setIdNumber]    = useState('')
 
-  // Banking
   const [bankName,       setBankName]       = useState('')
   const [accountNumber,  setAccountNumber]  = useState('')
   const [branchCode,     setBranchCode]     = useState('')
+  const [showPayroll,    setShowPayroll]    = useState(true)
+  const [showLeave,      setShowLeave]      = useState(true)
 
   useEffect(() => { init() }, [])
 
@@ -56,65 +159,91 @@ export default function ProfilePage() {
     setCompanyId(member.companyId)
     setEmpId(member.employeeId)
 
+    const company = await loadCompanyWorkspace(supabase, member.companyId)
+    const flags = moduleFlagsForCompany(company)
+    setShowPayroll(flags.payroll)
+    setShowLeave(flags.leave)
+    if (company?.name) setCompanyName(company.name)
+
     const tok = member.sessionToken
       ?? (await supabase.auth.getSession()).data.session?.access_token
       ?? null
     tokRef.current = tok
 
-    if (member.sessionToken !== null) {
-      // Code-auth: read limited data from kf_cs localStorage
-      try {
-        const raw = typeof window !== 'undefined' ? localStorage.getItem('kf_cs') : null
-        if (raw) {
-          const cs = JSON.parse(raw) as {
-            employee?: { name?: string; surname?: string; position?: string; access_level?: string }
-            company?: { name?: string }
-          }
-          if (cs.company?.name) setCompanyName(cs.company.name)
-          if (cs.employee) {
-            setFirstName(cs.employee.name ?? '')
-            setLastName(cs.employee.surname ?? '')
-            setEmployee({ name: cs.employee.name ?? null, surname: cs.employee.surname ?? null, position: cs.employee.position ?? null, access_level: cs.employee.access_level ?? null } as unknown as Employee)
-          }
-        }
-      } catch { /* ignore */ }
+    const formSetters = {
+      setEmployee,
+      setFirstName,
+      setLastName,
+      setPhone,
+      setIdNumber,
+      setBankName,
+      setAccountNumber,
+      setBranchCode,
+    }
+
+    const isCodeAuth = member.sessionToken !== null
+    let loaded: EmployeeWithDob | null = null
+
+    // 1) Try employees table (may fail RLS for code-auth)
+    const { data: empRow } = await supabase
+      .from('employees')
+      .select('*')
+      .eq('id', member.employeeId)
+      .eq('company_id', member.companyId)
+      .maybeSingle()
+
+    if (empRow) {
+      loaded = empRow as EmployeeWithDob
     } else {
-      // JWT path: query tables directly
+      // 2) Fall back to employee_get_profile with session token
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: rpcData, error: rpcErr } = await (supabase.rpc as any)('employee_get_profile', {
+          p_employee_id:   member.employeeId,
+          p_company_id:    member.companyId,
+          p_session_token: tok,
+        })
+        if (!rpcErr && rpcData) {
+          const p = (Array.isArray(rpcData) ? rpcData[0] : rpcData) as ProfileRpcRow | null
+          if (p) loaded = fromRpcRow(p)
+        }
+      } catch {
+        // RPC may be missing
+      }
+    }
+
+    // 3) Code-auth: seed names from kf_cs when still thin
+    if (!loaded && isCodeAuth) {
+      loaded = thinFromCodeSession()
+    } else if (loaded && isCodeAuth) {
+      const cs = getCodeSession()
+      if (cs?.employee) {
+        if (!loaded.name) loaded = { ...loaded, name: cs.employee.name ?? loaded.name }
+        if (!loaded.surname) loaded = { ...loaded, surname: cs.employee.surname ?? loaded.surname }
+        if (!loaded.position) loaded = { ...loaded, position: cs.employee.position ?? loaded.position }
+        if (!loaded.access_level) {
+          loaded = { ...loaded, access_level: (cs.employee.access_level ?? loaded.access_level) as Employee['access_level'] }
+        }
+      }
+    }
+
+    if (loaded) {
+      applyForm(loaded, formSetters)
+      await resolvePhotoUrl(supabase, loaded.profile_photo_url, setPhotoUrl)
+    }
+
+    if (isCodeAuth) {
+      const cs = getCodeSession()
+      if (cs?.company?.name) setCompanyName(cs.company.name)
+    } else {
       const { data: companyRow } = await supabase
         .from('companies')
         .select('name')
         .eq('id', member.companyId)
         .maybeSingle()
       if (companyRow?.name) setCompanyName(companyRow.name)
-
-      const { data } = await supabase
-        .from('employees')
-        .select('*')
-        .eq('id', member.employeeId)
-        .eq('company_id', member.companyId)
-        .maybeSingle()
-
-      if (data) {
-        const emp = data as Employee
-        setEmployee(emp)
-        setFirstName(emp.name ?? '')
-        setLastName(emp.surname ?? '')
-        setPhone(emp.phone ?? '')
-        setIdNumber(emp.id_number ?? '')
-        setBankName(emp.bank_name ?? '')
-        setAccountNumber(emp.bank_account ?? '')
-        setBranchCode(emp.bank_branch_code ?? '')
-
-        if (emp.profile_photo_url) {
-          const { data: signed } = await supabase.storage
-            .from('workforce-media')
-            .createSignedUrl(emp.profile_photo_url, 3600)
-          if (signed?.signedUrl) setPhotoUrl(signed.signedUrl)
-        } else {
-          setPhotoUrl(null)
-        }
-      }
     }
+
     setLoading(false)
   }
 
@@ -136,17 +265,23 @@ export default function ProfilePage() {
     const ext  = file.name.split('.').pop()?.toLowerCase() ?? 'jpg'
     const path = `profile-photos/${companyId}/${empId}.${ext}`
     const supabase = createClient()
-    const { data: { session: photoSession } } = await supabase.auth.getSession()
+    const sessionToken = tokRef.current
+
+    await prepareMediaUpload(supabase, companyId, empId, path, 'profile_photo', sessionToken)
+
     const { error: upErr } = await supabase.storage
       .from('workforce-media')
       .upload(path, file, { upsert: true, contentType: file.type })
     if (upErr) { setPhotoError(upErr.message); setPhotoUploading(false); return }
+
+    await consumeMediaUpload(supabase, companyId, empId, path, sessionToken)
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error: rpcErr } = await (supabase.rpc as any)('employee_update_profile', {
       p_employee_id:       empId,
       p_company_id:        companyId,
       p_profile_photo_url: path,
-      p_session_token:     photoSession?.access_token ?? null,
+      p_session_token:     tokRef.current,
     })
     if (rpcErr) { setPhotoError(rpcErr.message); setPhotoUploading(false); return }
     const { data: signed } = await supabase.storage
@@ -158,25 +293,34 @@ export default function ProfilePage() {
   }
 
   async function save() {
-    if (!employee || !companyId || !empId) return
+    if (!companyId || !empId) return
     setSaving(true)
     setSaved(false)
     setSaveError(null)
 
+    const baseline = employee
     const supabase = createClient()
-    const { data: { session: saveSession } } = await supabase.auth.getSession()
+
+    const nextFirst  = trimOrNull(firstName)
+    const nextLast   = trimOrNull(lastName)
+    const nextPhone  = trimOrNull(phone)
+    const nextId     = trimOrNull(idNumber)
+    const nextBank   = trimOrNull(bankName)
+    const nextAcct   = trimOrNull(accountNumber)
+    const nextBranch = trimOrNull(branchCode)
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error } = await (supabase.rpc as any)('employee_update_profile', {
       p_employee_id:      empId,
       p_company_id:       companyId,
-      p_first_name:       firstName !== employee.name                ? firstName      : null,
-      p_last_name:        lastName  !== employee.surname             ? lastName       : null,
-      p_phone:            phone     !== (employee.phone ?? '')       ? phone          : null,
-      p_id_number:        idNumber  !== (employee.id_number ?? '')   ? idNumber       : null,
-      p_bank_name:        bankName  !== (employee.bank_name ?? '')   ? bankName       : null,
-      p_bank_account:     accountNumber !== (employee.bank_account ?? '') ? accountNumber : null,
-      p_bank_branch_code: branchCode !== (employee.bank_branch_code ?? '') ? branchCode : null,
-      p_session_token:    saveSession?.access_token ?? null,
+      p_first_name:       firstName.trim() !== (baseline?.name ?? '') ? nextFirst : null,
+      p_last_name:        lastName.trim() !== (baseline?.surname ?? '') ? nextLast : null,
+      p_phone:            phone.trim() !== (baseline?.phone ?? '') ? nextPhone : null,
+      p_id_number:        idNumber.trim() !== (baseline?.id_number ?? '') ? nextId : null,
+      p_bank_name:        bankName.trim() !== (baseline?.bank_name ?? '') ? nextBank : null,
+      p_bank_account:     accountNumber.trim() !== (baseline?.bank_account ?? '') ? nextAcct : null,
+      p_bank_branch_code: branchCode.trim() !== (baseline?.bank_branch_code ?? '') ? nextBranch : null,
+      p_session_token:    tokRef.current,
     })
 
     if (error) {
@@ -203,29 +347,27 @@ export default function ProfilePage() {
     </div>
   )
 
-  const fullName = employee ? `${employee.name} ${employee.surname}`.trim() : '—'
+  const fullName = `${firstName} ${lastName}`.trim()
+    || (employee ? `${employee.name ?? ''} ${employee.surname ?? ''}`.trim() : '—')
+  const empDob = (employee as EmployeeWithDob | null)?.date_of_birth
 
-  const isDirty = employee !== null && (
-    firstName     !== (employee.name             ?? '') ||
-    lastName      !== (employee.surname          ?? '') ||
-    phone         !== (employee.phone            ?? '') ||
-    idNumber      !== (employee.id_number        ?? '') ||
-    bankName      !== (employee.bank_name        ?? '') ||
-    accountNumber !== (employee.bank_account     ?? '') ||
-    branchCode    !== (employee.bank_branch_code ?? '')
-  )
+  const isDirty =
+    firstName.trim()     !== (employee?.name             ?? '').trim() ||
+    lastName.trim()      !== (employee?.surname          ?? '').trim() ||
+    phone.trim()         !== (employee?.phone            ?? '').trim() ||
+    idNumber.trim()      !== (employee?.id_number        ?? '').trim() ||
+    bankName.trim()      !== (employee?.bank_name        ?? '').trim() ||
+    accountNumber.trim() !== (employee?.bank_account     ?? '').trim() ||
+    branchCode.trim()    !== (employee?.bank_branch_code ?? '').trim()
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      {/* Header */}
       <div className="flex items-center px-4 py-3 border-b border-divider shrink-0 bg-surface">
         <h1 className="text-[18px] font-semibold text-text-primary">My Profile</h1>
       </div>
 
-      {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 max-w-xl">
 
-        {/* Avatar card */}
         <div className="bg-surface border border-divider rounded-xl p-4 flex items-center gap-4">
           <div className="relative shrink-0">
             <div
@@ -281,29 +423,25 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {/* Photo error */}
         {photoError && (
           <div className="rounded-xl px-4 py-3 bg-error-dark border border-error/30">
             <p className="text-[13px] font-semibold text-error">{photoError}</p>
           </div>
         )}
 
-        {/* Success banner */}
         {saved && (
           <div className="rounded-xl px-4 py-3 bg-success-dark border border-success/30 flex items-center gap-2">
             <span className="material-icons text-success text-[18px]">check_circle</span>
-            <p className="text-[13px] font-semibold text-success">Profile updated</p>
+            <p className="text-[13px] font-semibold text-success">Your profile has been updated.</p>
           </div>
         )}
 
-        {/* Error banner */}
         {saveError && (
           <div className="rounded-xl px-4 py-3 bg-error-dark border border-error/30">
             <p className="text-[13px] font-semibold text-error">{saveError}</p>
           </div>
         )}
 
-        {/* Personal Information */}
         <div className="bg-surface border border-divider rounded-xl overflow-hidden">
           <div className="px-4 py-3 border-b border-divider">
             <p className="section-label">Personal Information</p>
@@ -329,9 +467,9 @@ export default function ProfilePage() {
             </FormField>
             <FormField label="Date of Birth">
               <p className="text-[13px] text-text-disabled py-2 px-3 bg-surface-elevated rounded-lg border border-divider">
-                {employee?.date_of_birth
-                  ? new Date(employee.date_of_birth + 'T12:00:00').toLocaleDateString(
-                      'en-ZA', { day: '2-digit', month: 'long', year: 'numeric' }
+                {empDob
+                  ? new Date(`${empDob}T12:00:00`).toLocaleDateString(
+                      'en-ZA', { day: '2-digit', month: 'long', year: 'numeric' },
                     )
                   : '—'}
               </p>
@@ -339,6 +477,11 @@ export default function ProfilePage() {
             <FormField label="Email">
               <p className="text-[13px] text-text-disabled py-2 px-3 bg-surface-elevated rounded-lg border border-divider">
                 {employee?.email ?? '—'}
+              </p>
+            </FormField>
+            <FormField label="Position">
+              <p className="text-[13px] text-text-disabled py-2 px-3 bg-surface-elevated rounded-lg border border-divider">
+                {employee?.position ?? '—'}
               </p>
             </FormField>
             <FormField label="Employment Type">
@@ -349,7 +492,6 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {/* Banking Details */}
         <div className="bg-surface border border-divider rounded-xl overflow-hidden">
           <div className="px-4 py-3 border-b border-divider">
             <p className="section-label">Banking Details</p>
@@ -376,15 +518,14 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {/* My Record */}
         <div className="bg-surface border border-divider rounded-xl overflow-hidden">
           <div className="px-4 py-3 border-b border-divider">
             <p className="section-label">My Record</p>
           </div>
           <div className="divide-y divide-divider">
             {[
-              { label: 'My Payslips',  href: '/dashboard/employee/payslips',  icon: 'payments' },
-              { label: 'My Leave',     href: '/dashboard/employee/leave',      icon: 'event_available' },
+              ...(showPayroll ? [{ label: 'My Payslips',  href: '/dashboard/employee/payslips',  icon: 'payments' }] : []),
+              ...(showLeave ? [{ label: 'My Leave',     href: '/dashboard/employee/leave',      icon: 'event_available' }] : []),
               { label: 'My Documents', href: '/dashboard/employee/documents',  icon: 'folder' },
             ].map(item => (
               <Link key={item.href} href={item.href}
@@ -399,10 +540,9 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {/* Save button */}
         <button
           onClick={save}
-          disabled={saving || !isDirty}
+          disabled={saving || !isDirty || !empId || !companyId}
           className="w-full h-12 rounded-xl font-bold text-[15px] transition-colors disabled:cursor-not-allowed"
           style={{
             backgroundColor: isDirty ? 'var(--color-primary)' : 'var(--color-surface-elevated)',
@@ -413,9 +553,7 @@ export default function ProfilePage() {
           {saving ? 'Saving…' : isDirty ? 'Save Changes' : 'No Changes'}
         </button>
 
-        {/* Bottom padding for mobile */}
         <div className="h-4" />
-
       </div>
     </div>
   )
