@@ -1,15 +1,3 @@
--- ============================================================================
--- Fix 1: _contractor_owns_job — use job_contractors table, not legacy jobs.contractor_id
---
--- The original helper checked `jobs.contractor_id`, which is the legacy
--- single-contractor field. Since Phase A introduced multi-contractor support
--- via the `job_contractors` table, most assignments are made there and
--- `jobs.contractor_id` is no longer reliably populated.
---
--- Impact: 6 portal RPCs (sign-in, sign-out guard, create-incident,
--- append-photo, send-message, get-messages, submit-invoice) all raise
--- JOB_NOT_ASSIGNED for contractors assigned via job_contractors.
--- ============================================================================
 
 CREATE OR REPLACE FUNCTION public._contractor_owns_job(
   p_company_id    uuid,
@@ -28,16 +16,6 @@ AS $$
       AND jc.status        <> 'cancelled'
   );
 $$;
-
--- ============================================================================
--- Fix 2: contractor_portal_list_jobs — source from job_contractors, not jobs.contractor_id
---
--- The original function did:
---   FROM jobs j INNER JOIN contractors ct ON ct.id = j.contractor_id
--- which means only jobs where the legacy single-contractor field matched would
--- be returned. Contractors assigned via job_contractors never saw those jobs
--- in their portal, preventing any job-level actions (sign-in, photo, invoice).
--- ============================================================================
 
 CREATE OR REPLACE FUNCTION public.contractor_portal_list_jobs(
   p_company_code    text,
@@ -89,3 +67,4 @@ $$;
 
 GRANT EXECUTE ON FUNCTION public._contractor_owns_job(uuid, uuid, uuid) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.contractor_portal_list_jobs(text, text) TO anon, authenticated;
+;

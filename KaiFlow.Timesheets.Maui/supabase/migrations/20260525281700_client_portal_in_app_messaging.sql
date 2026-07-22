@@ -2,12 +2,10 @@
 
 ALTER TABLE public.app_messages
   ADD COLUMN IF NOT EXISTS sender_client_id uuid REFERENCES public.clients(id) ON DELETE SET NULL;
-
 CREATE OR REPLACE FUNCTION public._deal_message_subject(p_deal_id uuid)
 RETURNS text LANGUAGE sql IMMUTABLE AS $$
   SELECT 'Deal:' || p_deal_id::text;
 $$;
-
 CREATE OR REPLACE FUNCTION public._hr_participant_ids_for_deal(p_company_id uuid, p_manager_id uuid)
 RETURNS uuid[]
 LANGUAGE sql
@@ -22,7 +20,6 @@ AS $$
       OR e.access_level IN ('owner', 'hr_admin', 'admin', 'hr', 'manager')
     );
 $$;
-
 CREATE OR REPLACE FUNCTION public._get_or_create_deal_thread(
   p_company_id uuid,
   p_deal_id uuid,
@@ -69,7 +66,6 @@ BEGIN
   RETURN v_thread_id;
 END;
 $$;
-
 CREATE OR REPLACE FUNCTION public.notify_hr_client_portal_message(
   p_company_id uuid,
   p_deal_id uuid,
@@ -119,7 +115,6 @@ BEGIN
   END LOOP;
 END;
 $$;
-
 CREATE OR REPLACE FUNCTION public.trg_app_message_client_notify_hr()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -161,12 +156,10 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
 DROP TRIGGER IF EXISTS app_message_client_notify_hr ON public.app_messages;
 CREATE TRIGGER app_message_client_notify_hr
   AFTER INSERT ON public.app_messages
   FOR EACH ROW EXECUTE FUNCTION public.trg_app_message_client_notify_hr();
-
 CREATE OR REPLACE FUNCTION public.trg_app_message_update_thread_preview()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -186,18 +179,14 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
 DROP TRIGGER IF EXISTS app_message_update_thread_preview ON public.app_messages;
 CREATE TRIGGER app_message_update_thread_preview
   AFTER INSERT ON public.app_messages
   FOR EACH ROW EXECUTE FUNCTION public.trg_app_message_update_thread_preview();
-
 -- Stop SMS/email for legacy client_deal_messages replies
 DROP TRIGGER IF EXISTS client_deal_messages_notify ON public.client_deal_messages;
-
 -- Return type changed from uuid to json — drop old signature first
 DROP FUNCTION IF EXISTS public.client_portal_send_message(text, text, uuid, text);
-
 -- Client portal: send message on project thread (in-app, not SMS)
 CREATE OR REPLACE FUNCTION public.client_portal_send_message(
   p_company_code text,
@@ -257,7 +246,6 @@ BEGIN
   RETURN row_to_json(v_msg);
 END;
 $$;
-
 CREATE OR REPLACE FUNCTION public.client_portal_get_deal_messages(
   p_company_code text,
   p_client_code  text,
@@ -304,9 +292,7 @@ BEGIN
   );
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.client_portal_get_deal_messages(text, text, uuid) TO anon, authenticated;
-
 -- Project payload: messages from in-app thread
 CREATE OR REPLACE FUNCTION public.client_portal_get_project(
   p_company_code text,

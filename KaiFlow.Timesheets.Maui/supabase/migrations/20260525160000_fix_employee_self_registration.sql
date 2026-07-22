@@ -95,7 +95,6 @@ BEGIN
   );
 END;
 $$;
-
 CREATE OR REPLACE FUNCTION public.approve_pending_employee(p_employee_id uuid)
 RETURNS void
 LANGUAGE plpgsql
@@ -133,7 +132,6 @@ BEGIN
   END IF;
 END;
 $$;
-
 CREATE OR REPLACE FUNCTION public.reject_pending_employee(p_employee_id uuid)
 RETURNS void
 LANGUAGE plpgsql

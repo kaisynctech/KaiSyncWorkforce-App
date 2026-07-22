@@ -3,7 +3,6 @@
 -- 1) Employee job list (code login uses anon key — must match leave/punch RPCs)
 REVOKE ALL ON FUNCTION public.employee_get_jobs_for_employee(uuid, uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.employee_get_jobs_for_employee(uuid, uuid) TO anon, authenticated;
-
 -- 2) Persist assignee + team array in SQL (Postgrest often drops uuid[] on insert/update)
 CREATE OR REPLACE FUNCTION public.hr_set_job_assignments(
   p_job_id uuid,
@@ -51,6 +50,5 @@ BEGIN
   RETURN v_job;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.hr_set_job_assignments(uuid, uuid, uuid, uuid[]) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.hr_set_job_assignments(uuid, uuid, uuid, uuid[]) TO anon, authenticated;

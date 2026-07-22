@@ -16,7 +16,6 @@ CREATE TABLE IF NOT EXISTS public.employee_calendar_connections (
   updated_at      timestamptz NOT NULL DEFAULT now(),
   UNIQUE (employee_id, provider)
 );
-
 CREATE TABLE IF NOT EXISTS public.external_calendar_events (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id      uuid NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
@@ -33,10 +32,8 @@ CREATE TABLE IF NOT EXISTS public.external_calendar_events (
   updated_at      timestamptz NOT NULL DEFAULT now(),
   UNIQUE (employee_id, provider, external_id)
 );
-
 CREATE INDEX IF NOT EXISTS idx_external_cal_events_employee_range
   ON public.external_calendar_events(employee_id, start_time);
-
 CREATE TABLE IF NOT EXISTS public.employee_pa_settings (
   employee_id           uuid PRIMARY KEY REFERENCES public.employees(id) ON DELETE CASCADE,
   company_id            uuid NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
@@ -47,11 +44,9 @@ CREATE TABLE IF NOT EXISTS public.employee_pa_settings (
   outlook_sync_enabled    boolean NOT NULL DEFAULT false,
   updated_at            timestamptz NOT NULL DEFAULT now()
 );
-
 ALTER TABLE public.pa_tasks
   ADD COLUMN IF NOT EXISTS delegated_by_employee_id uuid REFERENCES public.employees(id),
   ADD COLUMN IF NOT EXISTS quick_capture text;
-
 CREATE OR REPLACE FUNCTION public.upsert_employee_pa_settings(
   p_employee_id uuid,
   p_company_id uuid,
@@ -80,13 +75,10 @@ BEGIN
     updated_at = now();
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.upsert_employee_pa_settings(uuid, uuid, boolean, boolean, boolean) TO authenticated;
-
 ALTER TABLE public.employee_calendar_connections ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.external_calendar_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.employee_pa_settings ENABLE ROW LEVEL SECURITY;
-
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'p_employee_calendar_connections_own') THEN
     CREATE POLICY p_employee_calendar_connections_own ON public.employee_calendar_connections

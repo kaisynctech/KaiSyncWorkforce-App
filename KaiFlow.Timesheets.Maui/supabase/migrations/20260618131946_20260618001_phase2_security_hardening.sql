@@ -1,3 +1,4 @@
+
 -- ================================================================
 -- Migration: 20260618001_phase2_security_hardening
 -- Bundles CF-2, CF-3, CF-5 from the ARCH-001 carry-forward register
@@ -5,8 +6,8 @@
 
 -- ----------------------------------------------------------------
 -- CF-2: Revoke PUBLIC and anon EXECUTE on get_my_role and
---       seed_company_role_permissions. Both previously carried
---       {=X/postgres, anon=X/postgres} allowing unauthenticated
+--       seed_company_role_permissions. Both currently carry
+--       {=X/postgres, anon=X/postgres} which allows unauthenticated
 --       callers to invoke them. authenticated and service_role
 --       grants are preserved.
 -- ----------------------------------------------------------------
@@ -142,3 +143,4 @@ $$;
 -- Ensure set_employee_role itself has no PUBLIC/anon grant
 REVOKE ALL ON FUNCTION public.set_employee_role(uuid, uuid, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.set_employee_role(uuid, uuid, text) FROM anon;
+;

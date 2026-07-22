@@ -38,7 +38,6 @@ AS $$
       AND d.visibility <> 'private'
   ) t;
 $$;
-
 CREATE OR REPLACE FUNCTION public.client_portal_get_project(
   p_company_code text,
   p_client_code  text,
@@ -80,6 +79,5 @@ AS $$
     LIMIT 1
   ) t;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.client_portal_list_projects(text, text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.client_portal_get_project(text, text, uuid) TO anon, authenticated;

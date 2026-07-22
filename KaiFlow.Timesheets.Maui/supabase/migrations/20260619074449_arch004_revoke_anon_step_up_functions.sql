@@ -75,4 +75,4 @@ BEGIN
   IF v_count > 0 THEN
     RAISE EXCEPTION 'ARCH-004 M1: % function(s) still have anon grants after revocation.', v_count;
   END IF;
-END $$;
+END $$;;

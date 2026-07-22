@@ -1,13 +1,17 @@
-﻿-- Migration: 20260608120406_contractor_portal_latest_banking_decision
--- Get latest banking decision for contractor portal
--- Representation file: idempotent (CREATE OR REPLACE FUNCTION throughout)
+-- Phase 2C.4 polish: expose the latest banking decision to the contractor portal.
+-- contractor_portal_get_pending_banking only returns status='pending'.
+-- This new function returns the most-recent row regardless of status so the
+-- contractor can see approved/rejected outcomes without querying directly.
 
-CREATE OR REPLACE FUNCTION public.contractor_portal_get_latest_banking_decision(p_contractor_id uuid, p_company_id uuid)
- RETURNS json
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
+CREATE OR REPLACE FUNCTION public.contractor_portal_get_latest_banking_decision(
+    p_contractor_id uuid,
+    p_company_id    uuid
+)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 DECLARE
     v_row    public.contractor_banking_updates%ROWTYPE;
     v_masked text;
@@ -49,11 +53,11 @@ BEGIN
         'rejection_reason',     v_row.rejection_reason
     );
 END;
-$function$
+$$;
 
+GRANT EXECUTE ON FUNCTION public.contractor_portal_get_latest_banking_decision TO anon, authenticated;
 
-REVOKE ALL ON FUNCTION public.contractor_portal_get_latest_banking_decision(p_contractor_id uuid, p_company_id uuid) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.contractor_portal_get_latest_banking_decision(p_contractor_id uuid, p_company_id uuid) FROM anon;
-GRANT EXECUTE ON FUNCTION public.contractor_portal_get_latest_banking_decision(p_contractor_id uuid, p_company_id uuid) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.contractor_portal_get_latest_banking_decision(p_contractor_id uuid, p_company_id uuid) TO service_role;
-
+COMMENT ON FUNCTION public.contractor_portal_get_latest_banking_decision IS
+    'Returns the contractor''s most recent banking update (any status: pending/approved/rejected). '
+    'Account number is always masked. reviewed_at included so contractor sees decision date. '
+    'Phase 2C.4.';;

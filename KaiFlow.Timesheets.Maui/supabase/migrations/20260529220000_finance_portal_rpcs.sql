@@ -12,7 +12,6 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 set search_path = public;
-
 -- ─── Client portal: their invoices ──────────────────────────────────────────
 create or replace function public.client_portal_list_invoices(
   p_company_code text,
@@ -52,7 +51,6 @@ as $$
       and i.status not in ('draft', 'cancelled')
   ) t;
 $$;
-
 -- ─── Contractor portal: their payouts ───────────────────────────────────────
 create or replace function public.contractor_portal_list_payouts(
   p_company_code    text,
@@ -88,12 +86,10 @@ as $$
       and p.payout_status <> 'cancelled'
   ) t;
 $$;
-
 grant execute on function public.client_portal_list_invoices(text, text) to anon, authenticated;
 grant execute on function public.contractor_portal_list_payouts(text, text) to anon, authenticated;
-
 -- ════════════════════════════════════════════════════════════════════════════
 -- ROLLBACK NOTES (manual)
 --   drop function if exists public.client_portal_list_invoices(text, text);
 --   drop function if exists public.contractor_portal_list_payouts(text, text);
--- ════════════════════════════════════════════════════════════════════════════
+-- ════════════════════════════════════════════════════════════════════════════;

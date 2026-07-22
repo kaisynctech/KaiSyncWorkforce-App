@@ -2,10 +2,8 @@
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_job_cards_company_job
   ON public.job_cards (company_id, job_id);
-
 DROP FUNCTION IF EXISTS public.employee_get_job_card_for_employee(bigint, bigint, bigint);
 DROP FUNCTION IF EXISTS public.employee_get_job_card_for_employee(uuid, uuid, uuid);
-
 CREATE OR REPLACE FUNCTION public.employee_get_job_card_for_employee(
   p_company_id uuid,
   p_job_id uuid,
@@ -25,10 +23,8 @@ AS $$
     AND jc.job_id = p_job_id
     AND public._employee_assigned_to_job(p_company_id, p_employee_id, p_job_id);
 $$;
-
 DROP FUNCTION IF EXISTS public.employee_upsert_job_card(bigint, bigint, bigint, timestamptz, timestamptz, text, text, text, text[], text);
 DROP FUNCTION IF EXISTS public.employee_upsert_job_card(uuid, uuid, uuid, timestamptz, timestamptz, text, text, text[], boolean, text);
-
 CREATE OR REPLACE FUNCTION public.employee_upsert_job_card(
   p_company_id uuid,
   p_employee_id uuid,
@@ -91,9 +87,7 @@ BEGIN
   RETURN row_to_json(v_row);
 END;
 $$;
-
 DROP FUNCTION IF EXISTS public.employee_get_checklist_for_job(uuid, uuid, uuid);
-
 CREATE OR REPLACE FUNCTION public.employee_get_checklist_for_job(
   p_company_id uuid,
   p_job_id uuid,
@@ -113,9 +107,7 @@ AS $$
     AND public._employee_assigned_to_job(p_company_id, p_employee_id, p_job_id)
   ORDER BY c.sort_order, c.description;
 $$;
-
 DROP FUNCTION IF EXISTS public.employee_update_checklist_item(uuid, uuid, uuid, boolean);
-
 CREATE OR REPLACE FUNCTION public.employee_update_checklist_item(
   p_company_id uuid,
   p_employee_id uuid,
@@ -148,15 +140,11 @@ BEGIN
   WHERE id = p_item_id AND company_id = p_company_id;
 END;
 $$;
-
 REVOKE ALL ON FUNCTION public.employee_get_job_card_for_employee(uuid, uuid, uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.employee_get_job_card_for_employee(uuid, uuid, uuid) TO anon, authenticated;
-
 REVOKE ALL ON FUNCTION public.employee_upsert_job_card(uuid, uuid, uuid, timestamptz, timestamptz, text, text, text[], boolean, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.employee_upsert_job_card(uuid, uuid, uuid, timestamptz, timestamptz, text, text, text[], boolean, text) TO anon, authenticated;
-
 REVOKE ALL ON FUNCTION public.employee_get_checklist_for_job(uuid, uuid, uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.employee_get_checklist_for_job(uuid, uuid, uuid) TO anon, authenticated;
-
 REVOKE ALL ON FUNCTION public.employee_update_checklist_item(uuid, uuid, uuid, boolean) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.employee_update_checklist_item(uuid, uuid, uuid, boolean) TO anon, authenticated;

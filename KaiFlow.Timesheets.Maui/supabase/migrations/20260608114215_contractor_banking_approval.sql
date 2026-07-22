@@ -1,13 +1,32 @@
-﻿-- Migration: 20260608114215_contractor_banking_approval
--- HR approve/reject contractor banking submission functions
--- Representation file: idempotent (CREATE OR REPLACE FUNCTION throughout)
+-- Phase 2C.4: HR approval and rejection of contractor banking updates.
+--
+-- hr_approve_contractor_banking:
+--   Copies pending banking fields to contractors table.
+--   Sets banking_verified = false — HR must re-verify separately.
+--   Marks update approved. Writes app_events.
+--
+-- hr_reject_contractor_banking:
+--   Marks update rejected with reason. Does NOT touch contractors table.
+--   Writes app_events.
+--
+-- Both RPCs validate: update is pending, reviewer belongs to same company,
+-- reviewer has HR/admin/owner access level.
+--
+-- TODO Phase 2C.5: add notify_contractor_banking_decision() call
+-- when contractor portal notification infrastructure is built.
 
-CREATE OR REPLACE FUNCTION public.hr_approve_contractor_banking(p_update_id uuid, p_reviewed_by uuid)
- RETURNS void
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
+
+-- ── Approve ───────────────────────────────────────────────────────────────────
+
+CREATE OR REPLACE FUNCTION public.hr_approve_contractor_banking(
+    p_update_id   uuid,
+    p_reviewed_by uuid     -- employees.id of the HR user approving
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 DECLARE
     v_update   public.contractor_banking_updates%ROWTYPE;
     v_reviewer public.employees%ROWTYPE;
@@ -22,7 +41,7 @@ BEGIN
     END IF;
 
     IF v_update.status <> 'pending' THEN
-        RAISE EXCEPTION 'Cannot approve: update status is already \\"%\\"', v_update.status;
+        RAISE EXCEPTION 'Cannot approve: update status is already "%"', v_update.status;
     END IF;
 
     -- Validate reviewer: active HR employee in the same company
@@ -81,20 +100,28 @@ BEGIN
     -- HOOK: PERFORM public.notify_contractor_banking_decision(
     --     v_update.contractor_id, v_update.company_id, 'approved', null);
 END;
-$function$
+$$;
+
+GRANT EXECUTE ON FUNCTION public.hr_approve_contractor_banking TO authenticated;
+
+COMMENT ON FUNCTION public.hr_approve_contractor_banking IS
+    'Copies pending banking to contractors table, resets banking_verified = false, '
+    'marks update approved. HR must separately verify banking before payouts. '
+    'Phase 2C.4.';
 
 
-REVOKE ALL ON FUNCTION public.hr_approve_contractor_banking(p_update_id uuid, p_reviewed_by uuid) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.hr_approve_contractor_banking(p_update_id uuid, p_reviewed_by uuid) FROM anon;
-GRANT EXECUTE ON FUNCTION public.hr_approve_contractor_banking(p_update_id uuid, p_reviewed_by uuid) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.hr_approve_contractor_banking(p_update_id uuid, p_reviewed_by uuid) TO service_role;
+-- ── Reject ────────────────────────────────────────────────────────────────────
 
-CREATE OR REPLACE FUNCTION public.hr_reject_contractor_banking(p_update_id uuid, p_reviewed_by uuid, p_reason text)
- RETURNS void
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
+CREATE OR REPLACE FUNCTION public.hr_reject_contractor_banking(
+    p_update_id   uuid,
+    p_reviewed_by uuid,
+    p_reason      text
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 DECLARE
     v_update   public.contractor_banking_updates%ROWTYPE;
     v_reviewer public.employees%ROWTYPE;
@@ -109,7 +136,7 @@ BEGIN
     END IF;
 
     IF v_update.status <> 'pending' THEN
-        RAISE EXCEPTION 'Cannot reject: update status is already \\"%\\"', v_update.status;
+        RAISE EXCEPTION 'Cannot reject: update status is already "%"', v_update.status;
     END IF;
 
     -- Validate reviewer
@@ -155,11 +182,10 @@ BEGIN
     -- HOOK: PERFORM public.notify_contractor_banking_decision(
     --     v_update.contractor_id, v_update.company_id, 'rejected', p_reason);
 END;
-$function$
+$$;
 
+GRANT EXECUTE ON FUNCTION public.hr_reject_contractor_banking TO authenticated;
 
-REVOKE ALL ON FUNCTION public.hr_reject_contractor_banking(p_update_id uuid, p_reviewed_by uuid, p_reason text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.hr_reject_contractor_banking(p_update_id uuid, p_reviewed_by uuid, p_reason text) FROM anon;
-GRANT EXECUTE ON FUNCTION public.hr_reject_contractor_banking(p_update_id uuid, p_reviewed_by uuid, p_reason text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.hr_reject_contractor_banking(p_update_id uuid, p_reviewed_by uuid, p_reason text) TO service_role;
-
+COMMENT ON FUNCTION public.hr_reject_contractor_banking IS
+    'Marks a pending banking update as rejected with reason. '
+    'contractors table banking fields are not modified. Phase 2C.4.';;

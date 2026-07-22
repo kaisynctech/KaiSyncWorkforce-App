@@ -1,15 +1,7 @@
--- ============================================================
--- Fix: pgcrypto schema path for PIN hashing functions
--- Migration: 20260612005
---
--- Root cause: Supabase installs pgcrypto in the 'extensions' schema.
--- employee_set_pin and employee_sign_in_with_pin both use
--- SET search_path = public which hides 'extensions', causing:
---   "function gen_salt(unknown, integer) does not exist"
---   "function crypt(text, text) does not exist"
---
--- Fix: qualify all pgcrypto calls with extensions. prefix.
--- ============================================================
+
+-- Fix: pgcrypto functions (gen_salt, crypt) live in the 'extensions' schema in Supabase.
+-- Our functions use SET search_path = public which hides 'extensions'.
+-- Replace bare gen_salt/crypt calls with extensions.gen_salt/extensions.crypt.
 
 SET search_path = public;
 
@@ -58,7 +50,7 @@ BEGIN
   SELECT * INTO v_comp FROM public.companies WHERE id = v_sess.company_id;
 
   -- Hash the PIN with bcrypt (cost 10) and store it
-  -- extensions. prefix required because SET search_path = public hides extensions schema
+  -- extensions. prefix required because SET search_path = public hides the extensions schema
   UPDATE public.employees
   SET pin_hash            = extensions.crypt(p_pin, extensions.gen_salt('bf', 10)),
       pin_set_at          = now(),
@@ -174,7 +166,7 @@ BEGIN
   END IF;
 
   -- Verify PIN with bcrypt
-  -- extensions. prefix required because SET search_path = public hides extensions schema
+  -- extensions. prefix required because SET search_path = public hides the extensions schema
   IF extensions.crypt(p_pin, v_emp.pin_hash) = v_emp.pin_hash THEN
 
     -- Correct PIN: reset failure counter and issue session
@@ -245,3 +237,4 @@ $$;
 
 REVOKE ALL ON FUNCTION public.employee_sign_in_with_pin(text, text, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.employee_sign_in_with_pin(text, text, text) TO anon, authenticated;
+;

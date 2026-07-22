@@ -11,12 +11,9 @@ CREATE TABLE IF NOT EXISTS public.project_client_payments (
   notes           text,
   created_at      timestamptz NOT NULL DEFAULT now()
 );
-
 CREATE INDEX IF NOT EXISTS idx_project_client_payments_deal
   ON public.project_client_payments (deal_id, paid_at DESC);
-
 ALTER TABLE public.project_client_payments ENABLE ROW LEVEL SECURITY;
-
 CREATE POLICY "project_client_payments_all" ON public.project_client_payments
   FOR ALL TO authenticated
   USING (

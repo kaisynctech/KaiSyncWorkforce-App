@@ -16,19 +16,15 @@ ALTER TABLE public.contractors
   ADD COLUMN IF NOT EXISTS payment_hold         boolean NOT NULL DEFAULT false,
   ADD COLUMN IF NOT EXISTS compliance_hold      boolean NOT NULL DEFAULT false,
   ADD COLUMN IF NOT EXISTS banking_verified     boolean NOT NULL DEFAULT false;
-
 -- Indexes for common filter queries (hold dashboards, compliance lists).
 CREATE INDEX IF NOT EXISTS idx_contractors_payment_hold
   ON public.contractors(company_id, payment_hold)
   WHERE payment_hold = true;
-
 CREATE INDEX IF NOT EXISTS idx_contractors_compliance_hold
   ON public.contractors(company_id, compliance_hold)
   WHERE compliance_hold = true;
-
 CREATE INDEX IF NOT EXISTS idx_contractors_banking_verified
   ON public.contractors(company_id, banking_verified);
-
 COMMENT ON COLUMN public.contractors.account_holder_name IS
   'Legal name of bank account holder — must match bank records for EFT verification.';
 COMMENT ON COLUMN public.contractors.account_type IS

@@ -1,15 +1,12 @@
 -- Multi-company memberships, in-app registration notifications, UUID app_notifications FKs.
 
 TRUNCATE TABLE public.app_notification_deliveries, public.app_notifications RESTART IDENTITY CASCADE;
-
 DROP POLICY IF EXISTS p_app_notifications_hr ON public.app_notifications;
 DROP POLICY IF EXISTS p_app_notifications_hr_insert ON public.app_notifications;
 DROP POLICY IF EXISTS p_app_notifications_employee ON public.app_notifications;
-
 ALTER TABLE public.app_notifications
   DROP CONSTRAINT IF EXISTS app_notifications_company_id_fkey,
   DROP CONSTRAINT IF EXISTS app_notifications_recipient_employee_id_fkey;
-
 DO $$
 BEGIN
   IF EXISTS (
@@ -24,17 +21,14 @@ BEGIN
       ALTER COLUMN recipient_employee_id TYPE uuid USING NULL;
   END IF;
 END $$;
-
 ALTER TABLE public.app_notifications
   DROP CONSTRAINT IF EXISTS app_notifications_company_id_fkey,
   DROP CONSTRAINT IF EXISTS app_notifications_recipient_employee_id_fkey;
-
 ALTER TABLE public.app_notifications
   ADD CONSTRAINT app_notifications_company_id_fkey
     FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE CASCADE,
   ADD CONSTRAINT app_notifications_recipient_employee_id_fkey
     FOREIGN KEY (recipient_employee_id) REFERENCES public.employees(id) ON DELETE CASCADE;
-
 CREATE POLICY p_app_notifications_hr ON public.app_notifications
   FOR ALL USING (
     audience IN ('hr', 'all')
@@ -50,7 +44,6 @@ CREATE POLICY p_app_notifications_hr ON public.app_notifications
       OR recipient_auth_user_id = auth.uid()
     )
   );
-
 CREATE POLICY p_app_notifications_hr_insert ON public.app_notifications
   FOR INSERT
   WITH CHECK (
@@ -67,7 +60,6 @@ CREATE POLICY p_app_notifications_hr_insert ON public.app_notifications
       OR audience = 'all'
     )
   );
-
 DROP POLICY IF EXISTS p_app_notifications_employee ON public.app_notifications;
 CREATE POLICY p_app_notifications_employee ON public.app_notifications
   FOR ALL TO authenticated
@@ -93,7 +85,6 @@ CREATE POLICY p_app_notifications_employee ON public.app_notifications
       )
     )
   );
-
 CREATE OR REPLACE FUNCTION public.approve_pending_employee(p_employee_id uuid)
 RETURNS void
 LANGUAGE plpgsql
@@ -158,7 +149,6 @@ BEGIN
   END IF;
 END;
 $$;
-
 CREATE OR REPLACE FUNCTION public.employee_get_my_memberships(p_user_id uuid)
 RETURNS json
 LANGUAGE plpgsql
@@ -192,9 +182,7 @@ BEGIN
   );
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.employee_get_my_memberships(uuid) TO authenticated;
-
 CREATE OR REPLACE FUNCTION public.employee_get_my_notifications(p_user_id uuid)
 RETURNS json
 LANGUAGE plpgsql
@@ -226,9 +214,7 @@ BEGIN
   );
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.employee_get_my_notifications(uuid) TO authenticated;
-
 CREATE OR REPLACE FUNCTION public.employee_mark_notification_read(
   p_user_id uuid,
   p_notification_id bigint
@@ -252,5 +238,4 @@ BEGIN
     );
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.employee_mark_notification_read(uuid, bigint) TO authenticated;

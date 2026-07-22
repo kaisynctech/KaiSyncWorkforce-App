@@ -1,7 +1,6 @@
 -- Return company + registration fields from employee_resolve_by_code for code-login sessions.
 
 DROP FUNCTION IF EXISTS public.employee_resolve_by_code(text, text);
-
 CREATE OR REPLACE FUNCTION public.employee_resolve_by_code(p_company_code text, p_employee_code text)
 RETURNS TABLE(
     company_id             uuid,
@@ -70,5 +69,4 @@ AS $function$
     e.created_at
   LIMIT 1;
 $function$;
-
 GRANT EXECUTE ON FUNCTION public.employee_resolve_by_code(text, text) TO anon, authenticated;

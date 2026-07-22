@@ -1,7 +1,6 @@
 -- Expose company feed thread for code-login field workers (anon cannot read message_threads via RLS).
 
 set search_path = public;
-
 create or replace function public.employee_get_company_feed_thread(
   p_company_id uuid,
   p_employee_id uuid
@@ -28,6 +27,5 @@ begin
   where t.id = v_id;
 end;
 $$;
-
 grant execute on function public.employee_get_company_feed_thread(uuid, uuid)
   to anon, authenticated;

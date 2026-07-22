@@ -20,7 +20,6 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 set search_path = public;
-
 -- ─── 1. Worker path: fix column + add locking/atomicity ─────────────────────
 CREATE OR REPLACE FUNCTION public.employee_set_inventory_usage_for_job(
   p_company_id uuid,
@@ -112,7 +111,6 @@ BEGIN
   FROM _new_usage n;
 END;
 $$;
-
 -- ─── 2. HR path: single atomic, row-locked allocation ───────────────────────
 -- Replaces the previous client-side "insert usage + UpdateInventoryItem" two-step.
 CREATE OR REPLACE FUNCTION public.hr_allocate_inventory_to_job(
@@ -172,10 +170,8 @@ BEGIN
   RETURN v_item;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.employee_set_inventory_usage_for_job(uuid, uuid, uuid, jsonb) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.hr_allocate_inventory_to_job(uuid, uuid, uuid, uuid, numeric, numeric) TO authenticated;
-
 -- ════════════════════════════════════════════════════════════════════════════
 -- ROLLBACK NOTES (manual)
 --   • employee_set_inventory_usage_for_job: re-deploy the prior body from
@@ -186,4 +182,4 @@ GRANT EXECUTE ON FUNCTION public.hr_allocate_inventory_to_job(uuid, uuid, uuid, 
 --       drop function if exists public.hr_allocate_inventory_to_job(uuid,uuid,uuid,uuid,numeric,numeric);
 --     The HR client path falls back to the previous insert+decrement behaviour
 --     only if the C# AllocateInventoryToJobAsync wrapper is also reverted.
--- ════════════════════════════════════════════════════════════════════════════
+-- ════════════════════════════════════════════════════════════════════════════;

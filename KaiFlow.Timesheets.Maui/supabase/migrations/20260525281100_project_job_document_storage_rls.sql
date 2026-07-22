@@ -18,7 +18,6 @@ WITH CHECK (
     'job_photos'
   )
 );
-
 DROP POLICY IF EXISTS "project_client_payments_all" ON public.project_client_payments;
 CREATE POLICY project_client_payments_company ON public.project_client_payments
   FOR ALL TO authenticated

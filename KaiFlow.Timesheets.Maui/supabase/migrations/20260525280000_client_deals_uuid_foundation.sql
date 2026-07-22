@@ -12,7 +12,6 @@ BEGIN
     DROP TABLE public.client_deals CASCADE;
   END IF;
 END $$;
-
 CREATE TABLE IF NOT EXISTS public.client_deals (
   id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id          uuid NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
@@ -29,16 +28,12 @@ CREATE TABLE IF NOT EXISTS public.client_deals (
   created_at          timestamptz NOT NULL DEFAULT now(),
   updated_at          timestamptz NOT NULL DEFAULT now()
 );
-
 CREATE INDEX IF NOT EXISTS idx_client_deals_company_client
   ON public.client_deals(company_id, client_id);
-
 CREATE INDEX IF NOT EXISTS idx_client_deals_company_job
   ON public.client_deals(company_id, job_id);
-
 CREATE INDEX IF NOT EXISTS idx_client_deals_visibility
   ON public.client_deals(company_id, visibility);
-
 -- jobs.deal_id may exist as bigint from legacy migrations on dropped jobs tables; normalize to uuid.
 DO $$
 BEGIN
@@ -49,13 +44,10 @@ BEGIN
     ALTER TABLE public.jobs DROP COLUMN deal_id;
   END IF;
 END $$;
-
 ALTER TABLE public.jobs
   ADD COLUMN IF NOT EXISTS deal_id uuid REFERENCES public.client_deals(id) ON DELETE SET NULL;
-
 ALTER TABLE public.jobs
   ADD COLUMN IF NOT EXISTS visibility text NOT NULL DEFAULT 'inherit';
-
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -66,18 +58,13 @@ BEGIN
       CHECK (visibility IN ('inherit', 'all', 'restricted', 'private'));
   END IF;
 END $$;
-
 CREATE INDEX IF NOT EXISTS idx_jobs_deal_id
   ON public.jobs(deal_id) WHERE deal_id IS NOT NULL;
-
 CREATE INDEX IF NOT EXISTS idx_jobs_visibility
   ON public.jobs(company_id, visibility);
-
 ALTER TABLE public.client_deals ENABLE ROW LEVEL SECURITY;
-
 DROP POLICY IF EXISTS "client_deals_all" ON public.client_deals;
 CREATE POLICY "client_deals_all" ON public.client_deals FOR ALL TO authenticated
   USING (company_id = ANY(user_company_ids()))
   WITH CHECK (company_id = ANY(user_company_ids()));
-
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.client_deals TO authenticated;

@@ -73,7 +73,7 @@ BEGIN
         p_job_id,
         v_jc_id,
         p_amount,
-        0,          -- HR sets VAT during review
+        0,
         0,
         p_amount,
         0,
@@ -92,4 +92,4 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.contractor_portal_submit_invoice
-    TO anon, authenticated;
+    TO anon, authenticated;;

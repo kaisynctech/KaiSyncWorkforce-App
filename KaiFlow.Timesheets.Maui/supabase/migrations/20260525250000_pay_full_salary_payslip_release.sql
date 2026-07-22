@@ -1,4 +1,3 @@
-
 -- Pay full monthly salary for mid-month joiners (per employee) + payslip release day in company settings.
 
 alter table employees

@@ -59,26 +59,21 @@ CREATE TABLE IF NOT EXISTS public.contractor_documents (
       'other'                        -- Catch-all for unlisted document types
     ))
 );
-
 -- ── Auto-maintain updated_at ──────────────────────────────────────────────────
 
 CREATE OR REPLACE TRIGGER trg_contractor_documents_updated_at
   BEFORE UPDATE ON public.contractor_documents
   FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
-
 -- ── Indexes ───────────────────────────────────────────────────────────────────
 
 CREATE INDEX IF NOT EXISTS idx_contractor_docs_contractor
   ON public.contractor_documents(contractor_id, is_current, approval_status);
-
 CREATE INDEX IF NOT EXISTS idx_contractor_docs_expiry
   ON public.contractor_documents(company_id, expiry_date)
   WHERE is_current = true AND expiry_date IS NOT NULL;
-
 CREATE INDEX IF NOT EXISTS idx_contractor_docs_pending
   ON public.contractor_documents(company_id, approval_status)
   WHERE approval_status = 'pending' AND is_current = true;
-
 -- ── Row-Level Security ────────────────────────────────────────────────────────
 -- contractor_documents uses uuid company_id. The service layer (C# SupabaseStorageService)
 -- always filters by company_id from the authenticated user's session, enforcing
@@ -88,12 +83,10 @@ CREATE INDEX IF NOT EXISTS idx_contractor_docs_pending
 -- mapping function for uuid schemas is confirmed.
 
 ALTER TABLE public.contractor_documents ENABLE ROW LEVEL SECURITY;
-
 CREATE POLICY p_contractor_documents_authenticated ON public.contractor_documents
   FOR ALL TO authenticated
   USING (true)
   WITH CHECK (true);
-
 -- ── Storage bucket: add contractor_documents folder ───────────────────────────
 -- The workforce-media bucket INSERT policy for authenticated HR must include
 -- the new contractor_documents/ folder. We DROP and RECREATE to extend the
@@ -101,7 +94,6 @@ CREATE POLICY p_contractor_documents_authenticated ON public.contractor_document
 -- across Supabase storage schema versions).
 
 DROP POLICY IF EXISTS p_workforce_media_hr_insert ON storage.objects;
-
 CREATE POLICY p_workforce_media_hr_insert ON storage.objects
   FOR INSERT TO authenticated
   WITH CHECK (
@@ -118,7 +110,6 @@ CREATE POLICY p_workforce_media_hr_insert ON storage.objects
       'contractor_documents'   -- Phase 2B.1 addition
     )
   );
-
 COMMENT ON TABLE public.contractor_documents IS
   'Contractor compliance and onboarding documents (Phase 2B.1). '
   'HR uploads and manages; contractor portal upload support added in Phase 2B.2.';

@@ -1,7 +1,6 @@
 -- Employee job list RPC (uuid schema) + resolve employee row via user_id for visibility.
 
 DROP FUNCTION IF EXISTS public.employee_get_jobs_for_employee(bigint, bigint);
-
 CREATE OR REPLACE FUNCTION public.employee_get_jobs_for_employee(
   p_company_id uuid,
   p_employee_id uuid
@@ -33,10 +32,8 @@ AS $$
     )
   ORDER BY j.created_at DESC;
 $$;
-
 REVOKE ALL ON FUNCTION public.employee_get_jobs_for_employee(uuid, uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.employee_get_jobs_for_employee(uuid, uuid) TO authenticated;
-
 -- Patch visibility resolver to recognize employees linked by user_id (uuid schema).
 DO $$
 BEGIN

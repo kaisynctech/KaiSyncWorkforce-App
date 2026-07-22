@@ -1,12 +1,146 @@
 {
   "Version": 1,
   "WorkspaceRootPath": "C:\\Users\\NN\\Documents\\KaiFlow\\Workforce App\\KaiFlow.Timesheets.Maui\\",
-  "Documents": [],
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\NN\\.copilot\\plans\\plan-rpc-enumeration-plan.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}|MardownSecureEdit"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\NN\\.copilot\\plans\\plan-rpc-enumeration-plan.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}|MarkdownSecurePreview"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\NN\\.copilot\\plans\\plan-regression-audit-plan.md||{EFC0BB08-EA7D-40C6-A696-C870411A895B}|MarkdownSecurePreview"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{95A0303D-06FA-6207-33A0-F7AEC3E7EDA5}|KaiFlow.Timesheets.Maui.csproj|c:\\users\\nn\\documents\\kaiflow\\workforce app\\kaiflow.timesheets.maui\\mauiprogram.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{95A0303D-06FA-6207-33A0-F7AEC3E7EDA5}|KaiFlow.Timesheets.Maui.csproj|solutionrelative:mauiprogram.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{95A0303D-06FA-6207-33A0-F7AEC3E7EDA5}|KaiFlow.Timesheets.Maui.csproj|c:\\users\\nn\\documents\\kaiflow\\workforce app\\kaiflow.timesheets.maui\\services\\apptelemetry.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{95A0303D-06FA-6207-33A0-F7AEC3E7EDA5}|KaiFlow.Timesheets.Maui.csproj|solutionrelative:services\\apptelemetry.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{95A0303D-06FA-6207-33A0-F7AEC3E7EDA5}|KaiFlow.Timesheets.Maui.csproj|c:\\users\\nn\\documents\\kaiflow\\workforce app\\kaiflow.timesheets.maui\\viewmodels\\auth\\employeeloginviewmodel.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{95A0303D-06FA-6207-33A0-F7AEC3E7EDA5}|KaiFlow.Timesheets.Maui.csproj|solutionrelative:viewmodels\\auth\\employeeloginviewmodel.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{95A0303D-06FA-6207-33A0-F7AEC3E7EDA5}|KaiFlow.Timesheets.Maui.csproj|c:\\users\\nn\\documents\\kaiflow\\workforce app\\kaiflow.timesheets.maui\\services\\shellnavigation.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{95A0303D-06FA-6207-33A0-F7AEC3E7EDA5}|KaiFlow.Timesheets.Maui.csproj|solutionrelative:services\\shellnavigation.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{95A0303D-06FA-6207-33A0-F7AEC3E7EDA5}|KaiFlow.Timesheets.Maui.csproj|c:\\users\\nn\\documents\\kaiflow\\workforce app\\kaiflow.timesheets.maui\\services\\realtimeservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{95A0303D-06FA-6207-33A0-F7AEC3E7EDA5}|KaiFlow.Timesheets.Maui.csproj|solutionrelative:services\\realtimeservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    }
+  ],
   "DocumentGroupContainers": [
     {
       "Orientation": 0,
       "VerticalTabListWidth": 256,
-      "DocumentGroups": []
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 0,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "plan-rpc-enumeration-plan.md",
+              "DocumentMoniker": "C:\\Users\\NN\\.copilot\\plans\\plan-rpc-enumeration-plan.md",
+              "RelativeDocumentMoniker": "..\\..\\..\\..\\.copilot\\plans\\plan-rpc-enumeration-plan.md",
+              "ToolTip": "C:\\Users\\NN\\.copilot\\plans\\plan-rpc-enumeration-plan.md",
+              "RelativeToolTip": "..\\..\\..\\..\\.copilot\\plans\\plan-rpc-enumeration-plan.md",
+              "ViewState": "AgIAAAcAAAAAAAAAACBjwAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001818|",
+              "WhenOpened": "2026-06-01T14:21:04.934Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "plan-rpc-enumeration-plan.md [Preview]",
+              "DocumentMoniker": "C:\\Users\\NN\\.copilot\\plans\\plan-rpc-enumeration-plan.md",
+              "RelativeDocumentMoniker": "..\\..\\..\\..\\.copilot\\plans\\plan-rpc-enumeration-plan.md",
+              "ToolTip": "C:\\Users\\NN\\.copilot\\plans\\plan-rpc-enumeration-plan.md [Preview]",
+              "RelativeToolTip": "..\\..\\..\\..\\.copilot\\plans\\plan-rpc-enumeration-plan.md [Preview]",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001818|",
+              "WhenOpened": "2026-06-01T14:18:47.286Z",
+              "EditorCaption": " [Preview]"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 7,
+              "Title": "RealtimeService.cs",
+              "DocumentMoniker": "C:\\Users\\NN\\Documents\\KaiFlow\\Workforce App\\KaiFlow.Timesheets.Maui\\Services\\RealtimeService.cs",
+              "RelativeDocumentMoniker": "Services\\RealtimeService.cs",
+              "ToolTip": "C:\\Users\\NN\\Documents\\KaiFlow\\Workforce App\\KaiFlow.Timesheets.Maui\\Services\\RealtimeService.cs",
+              "RelativeToolTip": "Services\\RealtimeService.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-06-01T14:16:36.324Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "plan-regression-audit-plan.md [Preview]",
+              "DocumentMoniker": "C:\\Users\\NN\\.copilot\\plans\\plan-regression-audit-plan.md",
+              "RelativeDocumentMoniker": "..\\..\\..\\..\\.copilot\\plans\\plan-regression-audit-plan.md",
+              "ToolTip": "C:\\Users\\NN\\.copilot\\plans\\plan-regression-audit-plan.md [Preview]",
+              "RelativeToolTip": "..\\..\\..\\..\\.copilot\\plans\\plan-regression-audit-plan.md [Preview]",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001818|",
+              "WhenOpened": "2026-06-01T14:12:17.906Z",
+              "EditorCaption": " [Preview]"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 6,
+              "Title": "ShellNavigation.cs",
+              "DocumentMoniker": "C:\\Users\\NN\\Documents\\KaiFlow\\Workforce App\\KaiFlow.Timesheets.Maui\\Services\\ShellNavigation.cs",
+              "RelativeDocumentMoniker": "Services\\ShellNavigation.cs",
+              "ToolTip": "C:\\Users\\NN\\Documents\\KaiFlow\\Workforce App\\KaiFlow.Timesheets.Maui\\Services\\ShellNavigation.cs",
+              "RelativeToolTip": "Services\\ShellNavigation.cs",
+              "ViewState": "AgIAAGIAAAAAAAAAAIBJwAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-06-01T13:58:22.884Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 5,
+              "Title": "EmployeeLoginViewModel.cs",
+              "DocumentMoniker": "C:\\Users\\NN\\Documents\\KaiFlow\\Workforce App\\KaiFlow.Timesheets.Maui\\ViewModels\\Auth\\EmployeeLoginViewModel.cs",
+              "RelativeDocumentMoniker": "ViewModels\\Auth\\EmployeeLoginViewModel.cs",
+              "ToolTip": "C:\\Users\\NN\\Documents\\KaiFlow\\Workforce App\\KaiFlow.Timesheets.Maui\\ViewModels\\Auth\\EmployeeLoginViewModel.cs",
+              "RelativeToolTip": "ViewModels\\Auth\\EmployeeLoginViewModel.cs",
+              "ViewState": "AgIAAFcAAAAAAAAAAIBJwAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-06-01T13:55:23.55Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "MauiProgram.cs",
+              "DocumentMoniker": "C:\\Users\\NN\\Documents\\KaiFlow\\Workforce App\\KaiFlow.Timesheets.Maui\\MauiProgram.cs",
+              "RelativeDocumentMoniker": "MauiProgram.cs",
+              "ToolTip": "C:\\Users\\NN\\Documents\\KaiFlow\\Workforce App\\KaiFlow.Timesheets.Maui\\MauiProgram.cs",
+              "RelativeToolTip": "MauiProgram.cs",
+              "ViewState": "AgIAABQBAAAAAAAAAAAcwC4BAAAIAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-06-01T12:58:45.2Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "AppTelemetry.cs",
+              "DocumentMoniker": "C:\\Users\\NN\\Documents\\KaiFlow\\Workforce App\\KaiFlow.Timesheets.Maui\\Services\\AppTelemetry.cs",
+              "RelativeDocumentMoniker": "Services\\AppTelemetry.cs",
+              "ToolTip": "C:\\Users\\NN\\Documents\\KaiFlow\\Workforce App\\KaiFlow.Timesheets.Maui\\Services\\AppTelemetry.cs",
+              "RelativeToolTip": "Services\\AppTelemetry.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAIBJwAIAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-06-01T13:25:35.305Z"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

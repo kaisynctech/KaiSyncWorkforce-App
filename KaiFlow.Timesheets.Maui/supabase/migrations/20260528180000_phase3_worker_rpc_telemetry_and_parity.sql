@@ -1,7 +1,6 @@
 -- Phase 3: worker telemetry + remaining code-login RPC parity (scheduling, contractor, paperless, punch address).
 
 set search_path = public;
-
 -- ─── Telemetry (code-login) ───────────────────────────────────────────────────
 
 create or replace function public.employee_log_app_event(
@@ -42,11 +41,9 @@ begin
   );
 end;
 $$;
-
 grant execute on function public.employee_log_app_event(
   uuid, uuid, text, text, text, text, jsonb, text, text
 ) to anon, authenticated;
-
 -- ─── Punch address (code-login geocode backfill) ──────────────────────────────
 
 create or replace function public.employee_update_punch_address(
@@ -78,10 +75,8 @@ begin
   end if;
 end;
 $$;
-
 grant execute on function public.employee_update_punch_address(uuid, uuid, uuid, text)
   to anon, authenticated;
-
 -- ─── Scheduling ───────────────────────────────────────────────────────────────
 
 create or replace function public.employee_get_calendar_events_for_worker(
@@ -106,7 +101,6 @@ as $$
     and public._employee_valid(p_company_id, p_employee_id)
   order by e.start_time asc;
 $$;
-
 create or replace function public.employee_update_calendar_event_attendance(
   p_company_id  uuid,
   p_employee_id uuid,
@@ -138,12 +132,10 @@ begin
   end if;
 end;
 $$;
-
 grant execute on function public.employee_get_calendar_events_for_worker(uuid, uuid, date, date)
   to anon, authenticated;
 grant execute on function public.employee_update_calendar_event_attendance(uuid, uuid, uuid, text)
   to anon, authenticated;
-
 -- ─── Contractor profile (employee app) ──────────────────────────────────────
 
 create or replace function public.employee_get_linked_contractors(
@@ -167,10 +159,8 @@ as $$
     and public._employee_valid(p_company_id, p_employee_id)
   order by c.name;
 $$;
-
 grant execute on function public.employee_get_linked_contractors(uuid, uuid)
   to anon, authenticated;
-
 -- ─── Paperless / workflow forms ───────────────────────────────────────────────
 
 create or replace function public.employee_get_workflow_form_templates(
@@ -191,7 +181,6 @@ as $$
     and public._employee_valid(p_company_id, p_employee_id)
   order by t.name;
 $$;
-
 create or replace function public.employee_get_workflow_form_submissions(
   p_company_id   uuid,
   p_employee_id  uuid,
@@ -212,7 +201,6 @@ as $$
     and public._employee_valid(p_company_id, p_employee_id)
   order by s.submitted_at desc;
 $$;
-
 create or replace function public.employee_submit_workflow_form(
   p_company_id   uuid,
   p_employee_id  uuid,
@@ -252,7 +240,6 @@ begin
   return v_row;
 end;
 $$;
-
 grant execute on function public.employee_get_workflow_form_templates(uuid, uuid)
   to anon, authenticated;
 grant execute on function public.employee_get_workflow_form_submissions(uuid, uuid, uuid)

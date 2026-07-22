@@ -1,9 +1,7 @@
 -- Phase 3.2: employee job parity worker RPCs (documents, checklist insert, job thread, leadership-safe).
 
 set search_path = public;
-
 grant execute on function public.ensure_job_team_message_thread(uuid, uuid) to anon, authenticated;
-
 create or replace function public.employee_get_job_thread(
   p_company_id uuid,
   p_employee_id uuid,
@@ -29,9 +27,7 @@ begin
   return row_to_json(v_row);
 end;
 $$;
-
 grant execute on function public.employee_get_job_thread(uuid, uuid, uuid) to anon, authenticated;
-
 create or replace function public.employee_get_job_documents(
   p_company_id uuid,
   p_employee_id uuid,
@@ -51,9 +47,7 @@ as $$
     and public._employee_assigned_to_job(p_company_id, p_employee_id, p_job_id)
   order by d.created_at desc;
 $$;
-
 grant execute on function public.employee_get_job_documents(uuid, uuid, uuid) to anon, authenticated;
-
 create or replace function public.employee_insert_job_document(
   p_company_id uuid,
   p_employee_id uuid,
@@ -91,11 +85,9 @@ begin
   return row_to_json(v_row);
 end;
 $$;
-
 grant execute on function public.employee_insert_job_document(
   uuid, uuid, uuid, text, text, text
 ) to anon, authenticated;
-
 create or replace function public.employee_insert_checklist_item(
   p_company_id uuid,
   p_employee_id uuid,
@@ -134,5 +126,4 @@ begin
   return row_to_json(v_row);
 end;
 $$;
-
 grant execute on function public.employee_insert_checklist_item(uuid, uuid, uuid, text) to anon, authenticated;

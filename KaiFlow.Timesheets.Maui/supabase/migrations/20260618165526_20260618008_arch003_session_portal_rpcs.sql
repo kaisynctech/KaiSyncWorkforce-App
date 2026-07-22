@@ -324,7 +324,7 @@ BEGIN
     ));
 
     UPDATE public.contractors
-    SET contractor_code           = v_new_code,
+    SET contractor_code            = v_new_code,
         contractor_code_expires_at = v_expires_at,
         contractor_code_rotated_at = now()
     WHERE id = p_contractor_id;
@@ -402,7 +402,7 @@ BEGIN
     ));
 
     UPDATE public.clients
-    SET client_code           = v_new_code,
+    SET client_code            = v_new_code,
         client_code_expires_at = v_expires_at,
         client_code_rotated_at = now()
     WHERE id = p_client_id;
@@ -428,3 +428,4 @@ $$;
 REVOKE ALL ON FUNCTION public.hr_rotate_client_code(uuid, uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.hr_rotate_client_code(uuid, uuid) FROM anon;
 GRANT  EXECUTE ON FUNCTION public.hr_rotate_client_code(uuid, uuid) TO authenticated;
+;

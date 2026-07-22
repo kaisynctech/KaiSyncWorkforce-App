@@ -28,15 +28,12 @@ BEGIN
     RETURN COALESCE(NEW, OLD);
 END;
 $$;
-
 DROP TRIGGER IF EXISTS trg_sync_saas_employee_count ON public.employees;
-
 CREATE TRIGGER trg_sync_saas_employee_count
     AFTER INSERT OR UPDATE OF is_active, company_id OR DELETE
     ON public.employees
     FOR EACH ROW
     EXECUTE FUNCTION public.sync_saas_employee_count();
-
 -- Backfill counts for existing subscriptions.
 UPDATE public.saas_company_subscriptions s
 SET current_employee_count = (

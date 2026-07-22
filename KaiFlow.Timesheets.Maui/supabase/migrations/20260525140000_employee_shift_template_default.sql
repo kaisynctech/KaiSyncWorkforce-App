@@ -2,11 +2,9 @@
 
 ALTER TABLE public.employee_shift_templates
   ADD COLUMN IF NOT EXISTS is_default boolean NOT NULL DEFAULT false;
-
 CREATE INDEX IF NOT EXISTS idx_employee_shift_templates_company_default
   ON public.employee_shift_templates (company_id)
   WHERE is_default = true;
-
 CREATE OR REPLACE FUNCTION public.hr_set_default_shift_template(
   p_company_id uuid,
   p_template_id uuid
@@ -35,5 +33,4 @@ BEGIN
   RETURN row_to_json(v_row);
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.hr_set_default_shift_template(uuid, uuid) TO authenticated, anon;

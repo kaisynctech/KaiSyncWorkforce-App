@@ -51,7 +51,6 @@ BEGIN
     );
 END;
 $$;
-
 CREATE OR REPLACE FUNCTION public.list_public_app_versions(p_limit integer DEFAULT 25)
 RETURNS jsonb
 LANGUAGE sql
@@ -88,6 +87,5 @@ AS $$
         LIMIT greatest(1, least(p_limit, 100))
     ) sub;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.get_latest_app_version(text) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.list_public_app_versions(integer) TO anon, authenticated;

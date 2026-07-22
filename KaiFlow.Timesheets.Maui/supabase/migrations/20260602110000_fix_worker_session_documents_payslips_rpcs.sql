@@ -61,7 +61,6 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 SET search_path = public;
-
 -- ── 1. Drop old overloads ────────────────────────────────────────────────────
 -- Must be dropped before CREATE OR REPLACE to eliminate any ambiguous overload
 -- (PGRST203). PostgreSQL identifies functions by their full argument list, so
@@ -71,7 +70,6 @@ SET search_path = public;
 DROP FUNCTION IF EXISTS public.employee_get_payslips(uuid, uuid);
 DROP FUNCTION IF EXISTS public.employee_get_documents(uuid, uuid);
 DROP FUNCTION IF EXISTS public.employee_submit_document(uuid, uuid, text, text, text);
-
 -- ── 2. employee_get_payslips ─────────────────────────────────────────────────
 -- Source: 20260522162411_payslip_employee_sharing.sql
 -- Original: returns json, security definer, set search_path = public
@@ -108,7 +106,6 @@ BEGIN
     );
 END;
 $$;
-
 -- ── 3. employee_get_documents ────────────────────────────────────────────────
 -- Source: 20260525062215_employee_documents.sql
 -- Original: returns json, security definer, set search_path = public
@@ -141,7 +138,6 @@ BEGIN
     );
 END;
 $$;
-
 -- ── 4. employee_submit_document ──────────────────────────────────────────────
 -- Source: 20260525062215_employee_documents.sql
 -- Original: returns json, security definer, set search_path = public
@@ -181,13 +177,11 @@ BEGIN
     RETURN row_to_json(v_doc);
 END;
 $$;
-
 -- ── 5. Re-grant anon + authenticated ────────────────────────────────────────
 
 GRANT EXECUTE ON FUNCTION public.employee_get_payslips(uuid, uuid, text)    TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.employee_get_documents(uuid, uuid, text)   TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.employee_submit_document(uuid, uuid, text, text, text, text) TO anon, authenticated;
-
 -- ════════════════════════════════════════════════════════════════════════════
 -- ROLLBACK (manual)
 -- ─────────────────
@@ -234,4 +228,4 @@ GRANT EXECUTE ON FUNCTION public.employee_submit_document(uuid, uuid, text, text
 --   GRANT EXECUTE ON FUNCTION public.employee_get_documents(uuid, uuid)                     TO anon, authenticated;
 --   GRANT EXECUTE ON FUNCTION public.employee_submit_document(uuid, uuid, text, text, text) TO anon, authenticated;
 --
--- ════════════════════════════════════════════════════════════════════════════
+-- ════════════════════════════════════════════════════════════════════════════;

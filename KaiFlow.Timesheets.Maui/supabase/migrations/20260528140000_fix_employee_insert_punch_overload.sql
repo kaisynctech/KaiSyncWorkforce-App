@@ -4,7 +4,6 @@
 DROP FUNCTION IF EXISTS public.employee_insert_punch(
   uuid, uuid, text, timestamptz, double precision, double precision, text, uuid, text
 );
-
 -- Re-assert canonical definition from punch_block_leave_absence migration.
 CREATE OR REPLACE FUNCTION public.employee_insert_punch(
     p_company_id  uuid,
@@ -51,7 +50,6 @@ BEGIN
     RETURN row_to_json(v_punch);
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.employee_insert_punch(
   uuid, uuid, text, timestamptz, double precision, double precision, text, uuid, text, uuid
 ) TO anon, authenticated;

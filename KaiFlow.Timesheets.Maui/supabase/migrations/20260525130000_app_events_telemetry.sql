@@ -2,7 +2,6 @@
 -- Replaces the never-applied bigint draft at 20260516120000.
 
 set search_path = public;
-
 create table if not exists public.app_events (
   id           bigserial primary key,
   company_id   uuid references public.companies(id) on delete set null,
@@ -16,16 +15,13 @@ create table if not exists public.app_events (
   app_version  text null,
   created_at   timestamptz not null default now()
 );
-
 create index if not exists idx_app_events_company_time
   on public.app_events(company_id, created_at desc);
 create index if not exists idx_app_events_user_time
   on public.app_events(auth_user_id, created_at desc);
 create index if not exists idx_app_events_level_time
   on public.app_events(level, created_at desc) where level <> 'info';
-
 alter table public.app_events enable row level security;
-
 drop policy if exists p_app_events_insert on public.app_events;
 create policy p_app_events_insert on public.app_events
   for insert to authenticated
@@ -36,7 +32,6 @@ create policy p_app_events_insert on public.app_events
       or app_events.company_id = any(public.user_company_ids())
     )
   );
-
 drop policy if exists p_app_events_select_owner on public.app_events;
 create policy p_app_events_select_owner on public.app_events
   for select to authenticated
@@ -49,7 +44,6 @@ create policy p_app_events_select_owner on public.app_events
         and c.owner_user_id = auth.uid()
     )
   );
-
 create or replace function public.prune_old_app_events(p_days int default 90)
 returns integer
 language plpgsql
@@ -68,6 +62,5 @@ begin
   return v_deleted;
 end;
 $$;
-
 revoke all on function public.prune_old_app_events(int) from public;
 grant execute on function public.prune_old_app_events(int) to service_role;

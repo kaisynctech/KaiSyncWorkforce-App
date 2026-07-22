@@ -1,155 +1,202 @@
-﻿-- Migration: 20260609130300_contractor_activity_polish
--- Polish/refinements to contractor activity - visit history and site sign-in/out
--- Representation file: idempotent (CREATE OR REPLACE FUNCTION throughout)
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Migration: contractor_activity_polish
+--
+-- Fix 1: hr_start_review — store contractor_id in meta (was missing, caused
+--   "Unknown Contractor" in the activity feed).
+-- Fix 2: hr_get_contractor_activity — use quote_id fallback to look up
+--   contractor when meta->>'contractor_id' is absent (covers historical rows).
+-- ═══════════════════════════════════════════════════════════════════════════
 
-CREATE OR REPLACE FUNCTION public.contractor_portal_visit_history(p_company_code text, p_contractor_code text, p_job_id uuid DEFAULT NULL::uuid)
- RETURNS json
- LANGUAGE sql
- STABLE SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-  SELECT coalesce(json_agg(row_to_json(t) ORDER BY t.sign_in_at DESC), '[]'::json)
-  FROM (
-    SELECT v.*
-    FROM public.job_site_visits v
-    INNER JOIN public.contractors ct ON ct.id = v.contractor_id
-    INNER JOIN public.companies c ON c.id = ct.company_id
-    WHERE upper(trim(c.code)) = upper(trim(p_company_code))
-      AND upper(trim(ct.contractor_code)) = upper(trim(p_contractor_code))
-      AND v.party_type = 'contractor'
-      AND (p_job_id IS NULL OR v.job_id = p_job_id)
-  ) t;
-$function$
+-- ── 1. Fix hr_start_review ────────────────────────────────────────────────
+-- Now stores contractor_id in meta so the activity feed can show the name.
 
-
-REVOKE ALL ON FUNCTION public.contractor_portal_visit_history(p_company_code text, p_contractor_code text, p_job_id uuid DEFAULT NULL::uuid) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.contractor_portal_visit_history(p_company_code text, p_contractor_code text, p_job_id uuid DEFAULT NULL::uuid) FROM anon;
-GRANT EXECUTE ON FUNCTION public.contractor_portal_visit_history(p_company_code text, p_contractor_code text, p_job_id uuid DEFAULT NULL::uuid) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.contractor_portal_visit_history(p_company_code text, p_contractor_code text, p_job_id uuid DEFAULT NULL::uuid) TO service_role;
-
-CREATE OR REPLACE FUNCTION public.contractor_portal_open_visit(p_company_code text, p_contractor_code text)
- RETURNS json
- LANGUAGE sql
- STABLE SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-  SELECT row_to_json(v)
-  FROM public.job_site_visits v
-  INNER JOIN public.contractors ct ON ct.id = v.contractor_id
-  INNER JOIN public.companies c ON c.id = ct.company_id
-  WHERE upper(trim(c.code)) = upper(trim(p_company_code))
-    AND upper(trim(ct.contractor_code)) = upper(trim(p_contractor_code))
-    AND v.party_type = 'contractor'
-    AND v.sign_out_at IS NULL
-  ORDER BY v.sign_in_at DESC
-  LIMIT 1;
-$function$
-
-
-REVOKE ALL ON FUNCTION public.contractor_portal_open_visit(p_company_code text, p_contractor_code text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.contractor_portal_open_visit(p_company_code text, p_contractor_code text) FROM anon;
-GRANT EXECUTE ON FUNCTION public.contractor_portal_open_visit(p_company_code text, p_contractor_code text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.contractor_portal_open_visit(p_company_code text, p_contractor_code text) TO service_role;
-
-CREATE OR REPLACE FUNCTION public.contractor_portal_site_sign_in(p_company_code text, p_contractor_code text, p_job_id uuid, p_latitude double precision DEFAULT NULL::double precision, p_longitude double precision DEFAULT NULL::double precision, p_address text DEFAULT NULL::text, p_reported_by_name text DEFAULT NULL::text, p_notes text DEFAULT NULL::text)
- RETURNS json
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
+CREATE OR REPLACE FUNCTION public.hr_start_quote_review(
+    p_company_id  uuid,
+    p_hr_user_id  uuid,
+    p_quote_id    uuid
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 DECLARE
-  v_ct public.contractors%ROWTYPE;
-  v_row public.job_site_visits%ROWTYPE;
+    v_contractor_id uuid;
 BEGIN
-  SELECT * INTO v_ct
-  FROM public.contractors ct
-  INNER JOIN public.companies c ON c.id = ct.company_id
-  WHERE upper(trim(c.code)) = upper(trim(p_company_code))
-    AND upper(trim(ct.contractor_code)) = upper(trim(p_contractor_code))
-    AND ct.is_active = true;
+    -- Resolve contractor_id so the activity feed can show the name
+    SELECT contractor_id INTO v_contractor_id
+    FROM public.contractor_quotes
+    WHERE id = p_quote_id AND company_id = p_company_id;
 
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'CONTRACTOR_NOT_FOUND';
-  END IF;
+    UPDATE public.contractor_quotes
+    SET    status = 'under_review', updated_at = now()
+    WHERE  id         = p_quote_id
+      AND  company_id = p_company_id
+      AND  status     = 'submitted';
+    -- Silently no-op if already under_review (idempotent)
 
-  IF NOT public._contractor_owns_job(v_ct.company_id, v_ct.id, p_job_id) THEN
-    RAISE EXCEPTION 'JOB_NOT_ASSIGNED';
-  END IF;
-
-  IF EXISTS (
-    SELECT 1 FROM public.job_site_visits v
-    WHERE v.contractor_id = v_ct.id
-      AND v.sign_out_at IS NULL
-      AND v.party_type = 'contractor'
-  ) THEN
-    RAISE EXCEPTION 'ALREADY_ON_SITE';
-  END IF;
-
-  INSERT INTO public.job_site_visits (
-    company_id, job_id, party_type, contractor_id,
-    sign_in_at, sign_in_latitude, sign_in_longitude, sign_in_address,
-    reported_by_name, notes
-  ) VALUES (
-    v_ct.company_id, p_job_id, 'contractor', v_ct.id,
-    now(), p_latitude, p_longitude, p_address,
-    p_reported_by_name, p_notes
-  )
-  RETURNING * INTO v_row;
-
-  RETURN row_to_json(v_row);
+    INSERT INTO public.app_events (company_id, auth_user_id, screen, action, level, meta)
+    VALUES (p_company_id, p_hr_user_id, 'contractor_quotes', 'hr_start_review', 'info',
+            jsonb_build_object(
+                'quote_id',      p_quote_id,
+                'contractor_id', v_contractor_id   -- now included
+            ));
 END;
-$function$
+$$;
 
 
-REVOKE ALL ON FUNCTION public.contractor_portal_site_sign_in(p_company_code text, p_contractor_code text, p_job_id uuid, p_latitude double precision DEFAULT NULL::double precision, p_longitude double precision DEFAULT NULL::double precision, p_address text DEFAULT NULL::text, p_reported_by_name text DEFAULT NULL::text, p_notes text DEFAULT NULL::text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.contractor_portal_site_sign_in(p_company_code text, p_contractor_code text, p_job_id uuid, p_latitude double precision DEFAULT NULL::double precision, p_longitude double precision DEFAULT NULL::double precision, p_address text DEFAULT NULL::text, p_reported_by_name text DEFAULT NULL::text, p_notes text DEFAULT NULL::text) FROM anon;
-GRANT EXECUTE ON FUNCTION public.contractor_portal_site_sign_in(p_company_code text, p_contractor_code text, p_job_id uuid, p_latitude double precision DEFAULT NULL::double precision, p_longitude double precision DEFAULT NULL::double precision, p_address text DEFAULT NULL::text, p_reported_by_name text DEFAULT NULL::text, p_notes text DEFAULT NULL::text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.contractor_portal_site_sign_in(p_company_code text, p_contractor_code text, p_job_id uuid, p_latitude double precision DEFAULT NULL::double precision, p_longitude double precision DEFAULT NULL::double precision, p_address text DEFAULT NULL::text, p_reported_by_name text DEFAULT NULL::text, p_notes text DEFAULT NULL::text) TO service_role;
+-- ── 2. Fix hr_get_contractor_activity ─────────────────────────────────────
+-- Add quote-based fallback for contractor lookup (covers historical rows that
+-- lack contractor_id in meta, e.g. old hr_start_review events).
 
-CREATE OR REPLACE FUNCTION public.contractor_portal_site_sign_out(p_company_code text, p_contractor_code text, p_job_id uuid, p_latitude double precision DEFAULT NULL::double precision, p_longitude double precision DEFAULT NULL::double precision, p_address text DEFAULT NULL::text, p_notes text DEFAULT NULL::text)
- RETURNS json
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_ct public.contractors%ROWTYPE;
-  v_row public.job_site_visits%ROWTYPE;
+CREATE OR REPLACE FUNCTION public.hr_get_contractor_activity(
+    p_company_id uuid,
+    p_limit      int DEFAULT 50
+)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 BEGIN
-  SELECT * INTO v_ct
-  FROM public.contractors ct
-  INNER JOIN public.companies c ON c.id = ct.company_id
-  WHERE upper(trim(c.code)) = upper(trim(p_company_code))
-    AND upper(trim(ct.contractor_code)) = upper(trim(p_contractor_code))
-    AND ct.is_active = true;
+    RETURN coalesce((
+        SELECT json_agg(row_to_json(a))
+        FROM (
+            SELECT
+                ae.id::text  AS id,
+                ae.screen,
+                ae.action,
+                ae.created_at,
 
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'CONTRACTOR_NOT_FOUND';
-  END IF;
+                -- Resolved contractor_id: meta field first, then via quote lookup
+                coalesce(
+                    ae.meta->>'contractor_id',
+                    CASE
+                        WHEN ae.meta->>'quote_id' IS NOT NULL
+                        THEN (
+                            SELECT cq.contractor_id::text
+                            FROM public.contractor_quotes cq
+                            WHERE cq.id = (ae.meta->>'quote_id')::uuid
+                            LIMIT 1
+                        )
+                        ELSE NULL
+                    END,
+                    ''
+                ) AS contractor_id,
 
-  UPDATE public.job_site_visits v
-  SET sign_out_at = now(),
-      sign_out_latitude = p_latitude,
-      sign_out_longitude = p_longitude,
-      sign_out_address = p_address,
-      notes = coalesce(p_notes, v.notes)
-  WHERE v.contractor_id = v_ct.id
-    AND v.job_id = p_job_id
-    AND v.party_type = 'contractor'
-    AND v.sign_out_at IS NULL
-  RETURNING * INTO v_row;
+                -- Contractor name (uses resolved contractor_id above via subquery)
+                coalesce((
+                    SELECT c2.name
+                    FROM public.contractors c2
+                    WHERE c2.id = coalesce(
+                        (ae.meta->>'contractor_id')::uuid,
+                        (
+                            SELECT cq2.contractor_id
+                            FROM public.contractor_quotes cq2
+                            WHERE cq2.id = (ae.meta->>'quote_id')::uuid
+                            LIMIT 1
+                        )
+                    )
+                    AND c2.company_id = ae.company_id
+                    LIMIT 1
+                ), '') AS contractor_name,
 
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'NO_OPEN_VISIT';
-  END IF;
+                coalesce((
+                    SELECT c3.contractor_code
+                    FROM public.contractors c3
+                    WHERE c3.id = coalesce(
+                        (ae.meta->>'contractor_id')::uuid,
+                        (
+                            SELECT cq3.contractor_id
+                            FROM public.contractor_quotes cq3
+                            WHERE cq3.id = (ae.meta->>'quote_id')::uuid
+                            LIMIT 1
+                        )
+                    )
+                    AND c3.company_id = ae.company_id
+                    LIMIT 1
+                ), '') AS contractor_code,
 
-  RETURN row_to_json(v_row);
+                CASE ae.action
+                    WHEN 'hr_approve_quote'                    THEN 'quotes'
+                    WHEN 'hr_reject_quote'                     THEN 'quotes'
+                    WHEN 'hr_request_revision'                 THEN 'quotes'
+                    WHEN 'hr_start_review'                     THEN 'quotes'
+                    WHEN 'contractor_quote_submitted'          THEN 'quotes'
+                    WHEN 'resubmit_quote'                      THEN 'quotes'
+                    WHEN 'contractor_banking_update_submitted' THEN 'banking'
+                    WHEN 'contractor_banking_update_approved'  THEN 'banking'
+                    WHEN 'contractor_banking_update_rejected'  THEN 'banking'
+                    WHEN 'contractor_profile_updated'          THEN 'profile'
+                    WHEN 'contractor_tax_updated'              THEN 'profile'
+                    ELSE 'other'
+                END AS event_type,
+
+                CASE ae.action
+                    WHEN 'hr_approve_quote'                    THEN 'Quote Approved'
+                    WHEN 'hr_reject_quote'                     THEN 'Quote Rejected'
+                    WHEN 'hr_request_revision'                 THEN 'Revision Requested'
+                    WHEN 'hr_start_review'                     THEN 'Under Review'
+                    WHEN 'contractor_quote_submitted'          THEN 'Quote Submitted'
+                    WHEN 'resubmit_quote'                      THEN 'Quote Resubmitted'
+                    WHEN 'contractor_banking_update_submitted' THEN 'Banking Submitted'
+                    WHEN 'contractor_banking_update_approved'  THEN 'Banking Approved'
+                    WHEN 'contractor_banking_update_rejected'  THEN 'Banking Rejected'
+                    WHEN 'contractor_profile_updated'          THEN 'Profile Updated'
+                    WHEN 'contractor_tax_updated'              THEN 'Tax/VAT Updated'
+                    ELSE ae.action
+                END AS event_label,
+
+                CASE ae.action
+                    WHEN 'hr_approve_quote'
+                        THEN coalesce('Quote ' || (ae.meta->>'quote_number'), 'Quote') || ' approved'
+                    WHEN 'hr_reject_quote'
+                        THEN coalesce('Quote approved — ' , 'Quote — ') ||
+                             left(coalesce(ae.meta->>'rejection_reason', 'rejected'), 80)
+                    WHEN 'hr_request_revision'
+                        THEN left(coalesce(ae.meta->>'revision_comments', 'Revisions requested'), 80)
+                    WHEN 'hr_start_review'
+                        THEN 'Quote opened for review'
+                    WHEN 'contractor_quote_submitted'
+                        THEN coalesce(
+                            CASE WHEN ae.meta->>'quote_number' IS NOT NULL
+                                 THEN 'Quote ' || (ae.meta->>'quote_number') || ' submitted'
+                            END,
+                            'Quote submitted for review')
+                    WHEN 'resubmit_quote'
+                        THEN coalesce('Quote ' || (ae.meta->>'quote_number'), 'Quote') || ' resubmitted after revision'
+                    WHEN 'contractor_banking_update_submitted'
+                        THEN 'Banking details update awaiting approval'
+                    WHEN 'contractor_banking_update_approved'
+                        THEN 'Banking details approved'
+                    WHEN 'contractor_banking_update_rejected'
+                        THEN 'Banking update rejected'
+                    WHEN 'contractor_profile_updated'
+                        THEN 'Profile information updated'
+                    WHEN 'contractor_tax_updated'
+                        THEN 'Tax / VAT details updated'
+                    ELSE ae.action
+                END AS summary,
+
+                CASE ae.screen
+                    WHEN 'ContractorPortal'  THEN 'Portal'
+                    WHEN 'contractor_portal' THEN 'Portal'
+                    ELSE 'HR'
+                END AS source
+
+            FROM app_events ae
+            WHERE ae.company_id = p_company_id
+              AND ae.action IN (
+                'hr_approve_quote', 'hr_reject_quote', 'hr_request_revision', 'hr_start_review',
+                'contractor_quote_submitted', 'resubmit_quote',
+                'contractor_banking_update_submitted',
+                'contractor_banking_update_approved',
+                'contractor_banking_update_rejected',
+                'contractor_profile_updated', 'contractor_tax_updated'
+              )
+            ORDER BY ae.created_at DESC
+            LIMIT p_limit
+        ) a
+    ), '[]'::json);
 END;
-$function$
-
-
-REVOKE ALL ON FUNCTION public.contractor_portal_site_sign_out(p_company_code text, p_contractor_code text, p_job_id uuid, p_latitude double precision DEFAULT NULL::double precision, p_longitude double precision DEFAULT NULL::double precision, p_address text DEFAULT NULL::text, p_notes text DEFAULT NULL::text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.contractor_portal_site_sign_out(p_company_code text, p_contractor_code text, p_job_id uuid, p_latitude double precision DEFAULT NULL::double precision, p_longitude double precision DEFAULT NULL::double precision, p_address text DEFAULT NULL::text, p_notes text DEFAULT NULL::text) FROM anon;
-GRANT EXECUTE ON FUNCTION public.contractor_portal_site_sign_out(p_company_code text, p_contractor_code text, p_job_id uuid, p_latitude double precision DEFAULT NULL::double precision, p_longitude double precision DEFAULT NULL::double precision, p_address text DEFAULT NULL::text, p_notes text DEFAULT NULL::text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.contractor_portal_site_sign_out(p_company_code text, p_contractor_code text, p_job_id uuid, p_latitude double precision DEFAULT NULL::double precision, p_longitude double precision DEFAULT NULL::double precision, p_address text DEFAULT NULL::text, p_notes text DEFAULT NULL::text) TO service_role;
-
+$$;;

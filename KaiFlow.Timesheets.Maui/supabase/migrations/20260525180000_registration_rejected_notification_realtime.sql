@@ -2,7 +2,6 @@
 
 ALTER TABLE public.employees REPLICA IDENTITY FULL;
 ALTER TABLE public.app_notifications REPLICA IDENTITY FULL;
-
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -23,7 +22,6 @@ BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.app_notifications;
   END IF;
 END $$;
-
 CREATE OR REPLACE FUNCTION public.reject_pending_employee(p_employee_id uuid)
 RETURNS void
 LANGUAGE plpgsql

@@ -15,20 +15,17 @@
 -- ════════════════════════════════════════════════════════════════════════════
 
 set search_path = public;
-
 -- ─── Phase 3: company-level VAT configuration ───────────────────────────────
 alter table public.companies
   add column if not exists is_vat_registered boolean not null default true,
   add column if not exists vat_number text,
   add column if not exists default_vat_rate numeric(6,4) not null default 0.1500,
   add column if not exists finance_vat_inclusive_default boolean not null default false;
-
 -- ─── Phase 3: supplier / contractor VAT registration ────────────────────────
 alter table public.contractors
   add column if not exists is_vat_registered boolean not null default false,
   add column if not exists vat_number text,
   add column if not exists default_vat_rate numeric(6,4);
-
 -- ════════════════════════════════════════════════════════════════════════════
 -- Phase 2: client invoices
 -- ════════════════════════════════════════════════════════════════════════════
@@ -59,7 +56,6 @@ create table if not exists public.finance_invoices (
   created_at        timestamptz not null default now(),
   updated_at        timestamptz not null default now()
 );
-
 create index if not exists idx_finance_invoices_company_status
   on public.finance_invoices(company_id, status, issue_date desc);
 create index if not exists idx_finance_invoices_client
@@ -68,7 +64,6 @@ create index if not exists idx_finance_invoices_project
   on public.finance_invoices(company_id, project_id) where project_id is not null;
 create unique index if not exists uq_finance_invoices_number
   on public.finance_invoices(company_id, invoice_number) where invoice_number is not null;
-
 -- ─── invoice line items ─────────────────────────────────────────────────────
 create table if not exists public.finance_invoice_lines (
   id                uuid primary key default gen_random_uuid(),
@@ -88,10 +83,8 @@ create table if not exists public.finance_invoice_lines (
   tax_type          text not null default 'standard',
   created_at        timestamptz not null default now()
 );
-
 create index if not exists idx_finance_invoice_lines_invoice
   on public.finance_invoice_lines(invoice_id, line_no);
-
 -- ════════════════════════════════════════════════════════════════════════════
 -- Phase 2: supplier invoices (payables)
 -- ════════════════════════════════════════════════════════════════════════════
@@ -121,12 +114,10 @@ create table if not exists public.supplier_invoices (
   created_at        timestamptz not null default now(),
   updated_at        timestamptz not null default now()
 );
-
 create index if not exists idx_supplier_invoices_company_status
   on public.supplier_invoices(company_id, status, due_date);
 create index if not exists idx_supplier_invoices_supplier
   on public.supplier_invoices(company_id, supplier_id) where supplier_id is not null;
-
 -- ════════════════════════════════════════════════════════════════════════════
 -- Phase 2: contractor payouts
 -- ════════════════════════════════════════════════════════════════════════════
@@ -152,12 +143,10 @@ create table if not exists public.contractor_payouts (
   created_at        timestamptz not null default now(),
   updated_at        timestamptz not null default now()
 );
-
 create index if not exists idx_contractor_payouts_company_status
   on public.contractor_payouts(company_id, payout_status, payout_date);
 create index if not exists idx_contractor_payouts_contractor
   on public.contractor_payouts(company_id, contractor_id) where contractor_id is not null;
-
 -- ════════════════════════════════════════════════════════════════════════════
 -- Phase 2: universal finance ledger
 -- ════════════════════════════════════════════════════════════════════════════
@@ -180,14 +169,12 @@ create table if not exists public.finance_transactions (
   created_by        uuid references public.employees(id) on delete set null,
   created_at        timestamptz not null default now()
 );
-
 create index if not exists idx_finance_transactions_company_date
   on public.finance_transactions(company_id, transaction_date desc);
 create index if not exists idx_finance_transactions_type
   on public.finance_transactions(company_id, transaction_type, direction, transaction_date desc);
 create index if not exists idx_finance_transactions_source
   on public.finance_transactions(source_table, source_id) where source_id is not null;
-
 -- ════════════════════════════════════════════════════════════════════════════
 -- Phase 2: VAT periods
 -- ════════════════════════════════════════════════════════════════════════════
@@ -203,10 +190,8 @@ create table if not exists public.finance_vat_periods (
   submitted_at  timestamptz,
   created_at    timestamptz not null default now()
 );
-
 create unique index if not exists uq_finance_vat_periods_company_range
   on public.finance_vat_periods(company_id, start_date, end_date);
-
 -- ════════════════════════════════════════════════════════════════════════════
 -- Row Level Security  (HR / JWT users via PostgREST; code-login users via RPCs)
 -- ════════════════════════════════════════════════════════════════════════════
@@ -216,37 +201,30 @@ alter table public.supplier_invoices      enable row level security;
 alter table public.contractor_payouts     enable row level security;
 alter table public.finance_transactions   enable row level security;
 alter table public.finance_vat_periods    enable row level security;
-
 drop policy if exists finance_invoices_all on public.finance_invoices;
 create policy finance_invoices_all on public.finance_invoices for all to authenticated
   using (company_id = any(public.user_company_ids()))
   with check (company_id = any(public.user_company_ids()));
-
 drop policy if exists finance_invoice_lines_all on public.finance_invoice_lines;
 create policy finance_invoice_lines_all on public.finance_invoice_lines for all to authenticated
   using (company_id = any(public.user_company_ids()))
   with check (company_id = any(public.user_company_ids()));
-
 drop policy if exists supplier_invoices_all on public.supplier_invoices;
 create policy supplier_invoices_all on public.supplier_invoices for all to authenticated
   using (company_id = any(public.user_company_ids()))
   with check (company_id = any(public.user_company_ids()));
-
 drop policy if exists contractor_payouts_all on public.contractor_payouts;
 create policy contractor_payouts_all on public.contractor_payouts for all to authenticated
   using (company_id = any(public.user_company_ids()))
   with check (company_id = any(public.user_company_ids()));
-
 drop policy if exists finance_transactions_all on public.finance_transactions;
 create policy finance_transactions_all on public.finance_transactions for all to authenticated
   using (company_id = any(public.user_company_ids()))
   with check (company_id = any(public.user_company_ids()));
-
 drop policy if exists finance_vat_periods_all on public.finance_vat_periods;
 create policy finance_vat_periods_all on public.finance_vat_periods for all to authenticated
   using (company_id = any(public.user_company_ids()))
   with check (company_id = any(public.user_company_ids()));
-
 -- ════════════════════════════════════════════════════════════════════════════
 -- ROLLBACK NOTES (manual)
 -- ────────────────────────────────────────────────────────────────────────────
@@ -271,4 +249,4 @@ create policy finance_vat_periods_all on public.finance_vat_periods for all to a
 --     drop column if exists vat_number,
 --     drop column if exists default_vat_rate,
 --     drop column if exists finance_vat_inclusive_default;
--- ════════════════════════════════════════════════════════════════════════════
+-- ════════════════════════════════════════════════════════════════════════════;

@@ -1,168 +1,158 @@
-﻿-- Migration: 20260610081647_phase_a_multi_contractor_foundation
--- Multi-contractor foundation - compliance pack, documents, incidents for portal
--- Representation file: idempotent (CREATE OR REPLACE FUNCTION throughout)
 
-CREATE OR REPLACE FUNCTION public.contractor_portal_get_compliance_pack(p_contractor_id uuid, p_company_id uuid)
- RETURNS TABLE(document_type text, requirement text, sort_order integer)
- LANGUAGE sql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-    SELECT  i.document_type,
-            i.requirement,
-            i.sort_order
-    FROM    public.contractors c
-    JOIN    public.contractor_compliance_packs p
-               ON  p.id          = c.compliance_pack_id
-              AND  p.is_archived = false
-    JOIN    public.contractor_compliance_pack_items i
-               ON  i.pack_id = p.id
-    WHERE   c.id         = p_contractor_id
-      AND   c.company_id = p_company_id
-    ORDER   BY CASE WHEN i.requirement = 'required' THEN 0 ELSE 1 END,
-               i.sort_order;
-$function$
+-- ============================================================
+-- Phase A: Multi-Contractor Foundation
+-- Fully backward-compatible: zero existing columns removed.
+-- All new tables/columns are additive only.
+-- ============================================================
 
+-- ── 1. job_contractors ────────────────────────────────────────────────────────
+CREATE TABLE public.job_contractors (
+    id            uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+    company_id    uuid        NOT NULL REFERENCES public.companies(id)          ON DELETE CASCADE,
+    job_id        uuid        NOT NULL REFERENCES public.jobs(id)               ON DELETE CASCADE,
+    contractor_id uuid        NOT NULL REFERENCES public.contractors(id)        ON DELETE CASCADE,
+    quote_id      uuid                 REFERENCES public.contractor_quotes(id)  ON DELETE SET NULL,
+    role          text        NOT NULL DEFAULT 'general',
+    scope_notes   text,
+    quoted_amount numeric     NOT NULL DEFAULT 0,
+    agreed_amount numeric     NOT NULL DEFAULT 0,
+    status        text        NOT NULL DEFAULT 'assigned'
+                  CHECK (status IN ('assigned','in_progress','completed','cancelled')),
+    assigned_at   timestamptz NOT NULL DEFAULT now(),
+    completed_at  timestamptz,
+    created_by    uuid                 REFERENCES public.employees(id)          ON DELETE SET NULL,
+    created_at    timestamptz NOT NULL DEFAULT now(),
+    updated_at    timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (job_id, contractor_id)
+);
 
-REVOKE ALL ON FUNCTION public.contractor_portal_get_compliance_pack(p_contractor_id uuid, p_company_id uuid) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.contractor_portal_get_compliance_pack(p_contractor_id uuid, p_company_id uuid) FROM anon;
-GRANT EXECUTE ON FUNCTION public.contractor_portal_get_compliance_pack(p_contractor_id uuid, p_company_id uuid) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.contractor_portal_get_compliance_pack(p_contractor_id uuid, p_company_id uuid) TO service_role;
+COMMENT ON TABLE  public.job_contractors IS 'Phase A: many-to-many mapping of contractors to jobs. Preserves jobs.contractor_id for backward compatibility.';
+COMMENT ON COLUMN public.job_contractors.quote_id      IS 'The approved contractor_quote that authorised this assignment (nullable — direct assignments allowed).';
+COMMENT ON COLUMN public.job_contractors.quoted_amount IS 'Original quote total (informational, copied from contractor_quotes.total_amount at assignment time).';
+COMMENT ON COLUMN public.job_contractors.agreed_amount IS 'Negotiated/authorised cost for this contractor on this job.';
 
-CREATE OR REPLACE FUNCTION public.contractor_portal_get_documents(p_contractor_id uuid, p_company_id uuid)
- RETURNS SETOF contractor_documents
- LANGUAGE sql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-    SELECT *
-    FROM   public.contractor_documents
-    WHERE  contractor_id = p_contractor_id
-      AND  company_id    = p_company_id
-      AND  is_current    = true
-    ORDER  BY created_at DESC;
-$function$
+-- ── 2. project_contractors ────────────────────────────────────────────────────
+CREATE TABLE public.project_contractors (
+    id            uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+    company_id    uuid        NOT NULL REFERENCES public.companies(id)          ON DELETE CASCADE,
+    deal_id       uuid        NOT NULL REFERENCES public.client_deals(id)       ON DELETE CASCADE,
+    contractor_id uuid        NOT NULL REFERENCES public.contractors(id)        ON DELETE CASCADE,
+    role          text        NOT NULL DEFAULT 'general',
+    scope_notes   text,
+    status        text        NOT NULL DEFAULT 'active'
+                  CHECK (status IN ('active','completed','removed')),
+    assigned_at   timestamptz NOT NULL DEFAULT now(),
+    completed_at  timestamptz,
+    created_at    timestamptz NOT NULL DEFAULT now(),
+    updated_at    timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (deal_id, contractor_id)
+);
 
+COMMENT ON TABLE public.project_contractors IS 'Phase A: many-to-many mapping of contractors to projects (client_deals). Auto-populated from job_contractors backfill.';
 
-REVOKE ALL ON FUNCTION public.contractor_portal_get_documents(p_contractor_id uuid, p_company_id uuid) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.contractor_portal_get_documents(p_contractor_id uuid, p_company_id uuid) FROM anon;
-GRANT EXECUTE ON FUNCTION public.contractor_portal_get_documents(p_contractor_id uuid, p_company_id uuid) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.contractor_portal_get_documents(p_contractor_id uuid, p_company_id uuid) TO service_role;
+-- ── 3. incident_reports.deal_id ──────────────────────────────────────────────
+ALTER TABLE public.incident_reports
+    ADD COLUMN IF NOT EXISTS deal_id uuid
+        REFERENCES public.client_deals(id) ON DELETE SET NULL;
 
-CREATE OR REPLACE FUNCTION public.contractor_portal_insert_document(p_contractor_id uuid, p_company_id uuid, p_document_type text, p_document_name text, p_file_url text, p_storage_path text, p_expiry_date date DEFAULT NULL::date, p_old_document_id uuid DEFAULT NULL::uuid)
- RETURNS uuid
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-    v_new_id          uuid;
-    v_contractor_name text;
-    v_action          text;
-BEGIN
-    IF p_old_document_id IS NOT NULL THEN
-        UPDATE public.contractor_documents
-           SET is_current  = false,
-               updated_at  = now()
-         WHERE id            = p_old_document_id
-           AND contractor_id = p_contractor_id
-           AND company_id    = p_company_id;
-        v_action := 'replaced';
-    ELSE
-        v_action := 'uploaded';
-    END IF;
+COMMENT ON COLUMN public.incident_reports.deal_id IS 'Phase A: project (client_deal) context for this incident. Backfilled via job.deal_id; may also be set directly.';
 
-    INSERT INTO public.contractor_documents (
-        company_id,      contractor_id,   document_type,   document_name,
-        file_url,        storage_path,    expiry_date,
-        approval_status, is_required,     is_current,      uploaded_by_role,
-        created_at,      updated_at
-    ) VALUES (
-        p_company_id,    p_contractor_id, p_document_type, p_document_name,
-        p_file_url,      p_storage_path,  p_expiry_date,
-        'pending',        false,           true,            'contractor_portal',
-        now(),           now()
-    )
-    RETURNING id INTO v_new_id;
+-- ── 4. contractor_payouts.quote_id ───────────────────────────────────────────
+ALTER TABLE public.contractor_payouts
+    ADD COLUMN IF NOT EXISTS quote_id uuid
+        REFERENCES public.contractor_quotes(id) ON DELETE SET NULL;
 
-    SELECT name INTO v_contractor_name
-    FROM   public.contractors
-    WHERE  id = p_contractor_id AND company_id = p_company_id;
+COMMENT ON COLUMN public.contractor_payouts.quote_id IS 'Phase A: links payout to the approved contractor_quote it settles (nullable — legacy payouts predate quotes).';
 
-    v_contractor_name := coalesce(v_contractor_name, 'Contractor');
+-- ── 5. Indexes ────────────────────────────────────────────────────────────────
 
-    PERFORM public.notify_hr_contractor_document(
-        p_company_id, p_contractor_id, v_new_id,
-        v_contractor_name, p_document_name, p_document_type, v_action
-    );
+-- job_contractors
+CREATE INDEX idx_job_contractors_job        ON public.job_contractors(job_id);
+CREATE INDEX idx_job_contractors_contractor ON public.job_contractors(company_id, contractor_id);
+CREATE INDEX idx_job_contractors_active     ON public.job_contractors(company_id, status)
+    WHERE status != 'cancelled';
+CREATE INDEX idx_job_contractors_quote      ON public.job_contractors(quote_id)
+    WHERE quote_id IS NOT NULL;
 
-    INSERT INTO public.app_events (
-        company_id, auth_user_id, screen, action, level, meta, created_at
-    ) VALUES (
-        p_company_id, NULL,
-        'ContractorPortal',
-        'contractor_document_' || v_action,
-        'info',
-        jsonb_build_object(
-            'contractor_id',   p_contractor_id,
-            'contractor_name', v_contractor_name,
-            'document_id',     v_new_id,
-            'document_type',   p_document_type,
-            'document_name',   p_document_name,
-            'action',          v_action
-        ),
-        now()
-    );
+-- project_contractors
+CREATE INDEX idx_project_contractors_deal        ON public.project_contractors(deal_id);
+CREATE INDEX idx_project_contractors_contractor  ON public.project_contractors(company_id, contractor_id);
+CREATE INDEX idx_project_contractors_active      ON public.project_contractors(company_id, status)
+    WHERE status != 'removed';
 
-    RETURN v_new_id;
-END;
-$function$
+-- incident_reports.deal_id (sparse — only non-null values)
+CREATE INDEX idx_incident_reports_deal ON public.incident_reports(company_id, deal_id)
+    WHERE deal_id IS NOT NULL;
 
+-- contractor_payouts.quote_id (sparse)
+CREATE INDEX idx_contractor_payouts_quote ON public.contractor_payouts(quote_id)
+    WHERE quote_id IS NOT NULL;
 
-REVOKE ALL ON FUNCTION public.contractor_portal_insert_document(p_contractor_id uuid, p_company_id uuid, p_document_type text, p_document_name text, p_file_url text, p_storage_path text, p_expiry_date date DEFAULT NULL::date, p_old_document_id uuid DEFAULT NULL::uuid) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.contractor_portal_insert_document(p_contractor_id uuid, p_company_id uuid, p_document_type text, p_document_name text, p_file_url text, p_storage_path text, p_expiry_date date DEFAULT NULL::date, p_old_document_id uuid DEFAULT NULL::uuid) FROM anon;
-GRANT EXECUTE ON FUNCTION public.contractor_portal_insert_document(p_contractor_id uuid, p_company_id uuid, p_document_type text, p_document_name text, p_file_url text, p_storage_path text, p_expiry_date date DEFAULT NULL::date, p_old_document_id uuid DEFAULT NULL::uuid) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.contractor_portal_insert_document(p_contractor_id uuid, p_company_id uuid, p_document_type text, p_document_name text, p_file_url text, p_storage_path text, p_expiry_date date DEFAULT NULL::date, p_old_document_id uuid DEFAULT NULL::uuid) TO service_role;
+-- jobs.contractor_id (was missing from indexes — needed for backfill and portal RPC)
+CREATE INDEX idx_jobs_contractor ON public.jobs(company_id, contractor_id)
+    WHERE contractor_id IS NOT NULL;
 
-CREATE OR REPLACE FUNCTION public.contractor_portal_create_incident(p_company_code text, p_contractor_code text, p_job_id uuid, p_description text, p_severity text DEFAULT 'low'::text, p_reported_by_name text DEFAULT NULL::text)
- RETURNS json
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_ct public.contractors%ROWTYPE;
-  v_row public.incident_reports%ROWTYPE;
-BEGIN
-  SELECT * INTO v_ct
-  FROM public.contractors ct
-  INNER JOIN public.companies c ON c.id = ct.company_id
-  WHERE upper(trim(c.code)) = upper(trim(p_company_code))
-    AND upper(trim(ct.contractor_code)) = upper(trim(p_contractor_code))
-    AND ct.is_active = true;
+-- ── 6. Row-Level Security ─────────────────────────────────────────────────────
+ALTER TABLE public.job_contractors     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.project_contractors ENABLE ROW LEVEL SECURITY;
 
-  IF NOT FOUND THEN RAISE EXCEPTION 'CONTRACTOR_NOT_FOUND'; END IF;
-  IF NOT public._contractor_owns_job(v_ct.company_id, v_ct.id, p_job_id) THEN
-    RAISE EXCEPTION 'JOB_NOT_ASSIGNED';
-  END IF;
+CREATE POLICY job_contractors_all ON public.job_contractors
+    FOR ALL TO authenticated
+    USING     (company_id = ANY (user_company_ids()))
+    WITH CHECK (company_id = ANY (user_company_ids()));
 
-  INSERT INTO public.incident_reports (
-    id, company_id, job_id, contractor_id, description, severity,
-    reported_by_name, is_closed, created_at
-  ) VALUES (
-    gen_random_uuid(), v_ct.company_id, p_job_id, v_ct.id, trim(p_description),
-    coalesce(nullif(trim(p_severity), ''), 'low'),
-    p_reported_by_name, false, now()
-  )
-  RETURNING * INTO v_row;
+CREATE POLICY project_contractors_all ON public.project_contractors
+    FOR ALL TO authenticated
+    USING     (company_id = ANY (user_company_ids()))
+    WITH CHECK (company_id = ANY (user_company_ids()));
 
-  RETURN row_to_json(v_row);
-END;
-$function$
+-- ── 7. Backfill ───────────────────────────────────────────────────────────────
 
+-- A: Populate job_contractors from existing jobs.contractor_id (single-contractor legacy data)
+INSERT INTO public.job_contractors (
+    company_id, job_id, contractor_id, quote_id,
+    quoted_amount, agreed_amount, status, assigned_at
+)
+SELECT
+    j.company_id,
+    j.id                  AS job_id,
+    j.contractor_id,
+    j.source_quote_id     AS quote_id,
+    COALESCE(j.contractor_cost, 0),
+    COALESCE(j.contractor_cost, 0),
+    CASE j.status
+        WHEN 'completed'  THEN 'completed'
+        WHEN 'cancelled'  THEN 'cancelled'
+        WHEN 'inProgress' THEN 'in_progress'
+        WHEN 'in_progress' THEN 'in_progress'
+        ELSE 'assigned'
+    END,
+    COALESCE(j.opened_at, j.created_at)
+FROM public.jobs j
+WHERE j.contractor_id IS NOT NULL
+ON CONFLICT (job_id, contractor_id) DO NOTHING;
 
-REVOKE ALL ON FUNCTION public.contractor_portal_create_incident(p_company_code text, p_contractor_code text, p_job_id uuid, p_description text, p_severity text DEFAULT 'low'::text, p_reported_by_name text DEFAULT NULL::text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.contractor_portal_create_incident(p_company_code text, p_contractor_code text, p_job_id uuid, p_description text, p_severity text DEFAULT 'low'::text, p_reported_by_name text DEFAULT NULL::text) FROM anon;
-GRANT EXECUTE ON FUNCTION public.contractor_portal_create_incident(p_company_code text, p_contractor_code text, p_job_id uuid, p_description text, p_severity text DEFAULT 'low'::text, p_reported_by_name text DEFAULT NULL::text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.contractor_portal_create_incident(p_company_code text, p_contractor_code text, p_job_id uuid, p_description text, p_severity text DEFAULT 'low'::text, p_reported_by_name text DEFAULT NULL::text) TO service_role;
+-- B: Populate project_contractors from job_contractors + jobs.deal_id
+INSERT INTO public.project_contractors (
+    company_id, deal_id, contractor_id, status, assigned_at
+)
+SELECT DISTINCT
+    jc.company_id,
+    j.deal_id,
+    jc.contractor_id,
+    'active',
+    jc.assigned_at
+FROM public.job_contractors jc
+JOIN public.jobs j ON j.id = jc.job_id
+WHERE j.deal_id IS NOT NULL
+  AND jc.status != 'cancelled'
+ON CONFLICT (deal_id, contractor_id) DO NOTHING;
 
+-- C: Backfill incident_reports.deal_id via job.deal_id
+UPDATE public.incident_reports ir
+SET    deal_id = j.deal_id
+FROM   public.jobs j
+WHERE  ir.job_id   = j.id
+  AND  j.deal_id  IS NOT NULL
+  AND  ir.deal_id IS NULL;
+;

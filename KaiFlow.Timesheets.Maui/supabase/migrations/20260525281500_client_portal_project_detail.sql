@@ -40,9 +40,7 @@ BEGIN
   RETURN v_id;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.client_portal_add_document_link(text, text, uuid, text, text) TO anon, authenticated;
-
 CREATE OR REPLACE FUNCTION public.client_portal_get_project(
   p_company_code text,
   p_client_code  text,

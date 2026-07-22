@@ -32,5 +32,4 @@ BEGIN
   END IF;
 END;
 $$;
-
 GRANT EXECUTE ON FUNCTION public.append_job_photo(uuid, uuid, text, text) TO authenticated;

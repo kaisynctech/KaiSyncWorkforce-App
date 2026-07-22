@@ -1,7 +1,6 @@
 -- Optional company-matrix flags: let Owner enable "see all projects/jobs" for managers (or any role).
 -- Skipped when company_role_permissions is not present (uuid-only deployments).
 set search_path = public;
-
 DO $$
 BEGIN
   IF EXISTS (
