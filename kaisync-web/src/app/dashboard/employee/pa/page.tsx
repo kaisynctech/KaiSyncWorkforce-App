@@ -4,18 +4,29 @@ import Link from 'next/link'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import { useEmployeeModuleGate } from '@/lib/employee-module-gate'
+import {
+  buildIcsCalendar,
+  downloadIcsFile,
+  nextSnoozeUntil,
+  normalizePaStatus,
+  parsePaSettingsRpc,
+  paTasksToIcsEntries,
+  spawnNextDueAt,
+} from '@/lib/pa-helpers'
 
 interface PATask {
   id: string
   title: string
   description: string | null
-  status: 'todo' | 'in_progress' | 'done' | 'snoozed'
+  status: 'todo' | 'in_progress' | 'done' | 'snoozed' | 'cancelled'
   priority: 'low' | 'medium' | 'high' | 'urgent'
   due_date: string | null
   due_at: string | null
   remind_at: string | null
   snoozed_until: string | null
   linked_type: string | null
+  linked_id?: string | null
   linked_label: string | null
   meeting_with: string | null
   meeting_at: string | null
@@ -23,6 +34,7 @@ interface PATask {
   quick_capture: string | null
   notes: string | null
   source_type: string | null
+  recurrence_pattern?: string | null
 }
 
 const PRIORITY_STRIP: Record<string, string> = {
@@ -63,15 +75,37 @@ function isToday(iso: string | null): boolean {
   return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()
 }
 
-function nextSnoozeDate(option: string): string {
-  const now = new Date()
-  switch (option) {
-    case 'later_today': { const d = new Date(now); d.setHours(now.getHours() + 3, 0, 0, 0); return d.toISOString() }
-    case 'tomorrow':    { const d = new Date(now); d.setDate(d.getDate() + 1); d.setHours(9,0,0,0); return d.toISOString() }
-    case 'next_monday': { const d = new Date(now); d.setDate(d.getDate() + (8 - d.getDay()) % 7 || 7); d.setHours(9,0,0,0); return d.toISOString() }
-    case '2_hours':     { return new Date(now.getTime() + 2*3600000).toISOString() }
-    default:            { return new Date(now.getTime() + 3600000).toISOString() }
-  }
+async function spawnRecurringNext(
+  task: PATask,
+  companyId: string,
+  empId: string,
+  token: string | null,
+) {
+  const nextDue = spawnNextDueAt(task.due_at, task.recurrence_pattern)
+  if (!nextDue) return
+  const supabase = createClient()
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase.rpc as any)('employee_insert_pa_task', {
+      p_company_id: companyId,
+      p_employee_id: empId,
+      p_title: task.title,
+      p_due_at: nextDue,
+      p_priority: task.priority,
+      p_source_type: 'manual',
+      p_notes: task.notes,
+      p_remind_at: null,
+      p_linked_type: task.linked_type,
+      p_linked_id: task.linked_id ?? null,
+      p_linked_label: task.linked_label,
+      p_recurrence_pattern: task.recurrence_pattern ?? null,
+      p_meeting_with: task.meeting_with,
+      p_meeting_at: task.meeting_at,
+      p_meeting_minutes: null,
+      p_meeting_follow_up: null,
+      p_session_token: token,
+    })
+  } catch (e) { console.error(e) }
 }
 
 function TaskRow({ task, empId, companyId, token, onRefresh }: {
@@ -93,13 +127,31 @@ function TaskRow({ task, empId, companyId, token, onRefresh }: {
         p_session_token: token,
       })
       if (error) throw error
+      await spawnRecurringNext(task, companyId, empId, token)
+      onRefresh()
+    } catch (e) { console.error(e) }
+  }
+
+  async function start() {
+    const supabase = createClient()
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase.rpc as any)('employee_update_pa_task_status', {
+        p_company_id:    companyId,
+        p_employee_id:   empId,
+        p_task_id:       task.id,
+        p_status:        'in_progress',
+        p_snoozed_until: null,
+        p_session_token: token,
+      })
+      if (error) throw error
       onRefresh()
     } catch (e) { console.error(e) }
   }
 
   async function snooze(option: string) {
     setSnoozeOpen(false)
-    const sunoozedUntil = nextSnoozeDate(option)
+    const sunoozedUntil = nextSnoozeUntil(option)
     const supabase = createClient()
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -157,6 +209,11 @@ function TaskRow({ task, empId, companyId, token, onRefresh }: {
         </div>
       </div>
       <div className="flex items-center gap-1 pr-2">
+        {task.status === 'todo' && (
+          <button onClick={start} title="Start" className="p-1.5 rounded-lg hover:bg-primary/10 transition-colors">
+            <span className="material-icons text-[18px] text-primary">play_arrow</span>
+          </button>
+        )}
         <button onClick={complete} title="Complete" className="p-1.5 rounded-lg hover:bg-success/10 transition-colors">
           <span className="material-icons text-[18px] text-success">check_circle</span>
         </button>
@@ -315,6 +372,7 @@ function CalendarGrid({ tasks, mode, month, setMonth }: {
 }
 
 export default function MyPAPage() {
+  const allowed = useEmployeeModuleGate('myPa')
   const [tasks,      setTasks]      = useState<PATask[]>([])
   const [loading,    setLoading]    = useState(true)
   const [error,      setError]      = useState<string | null>(null)
@@ -331,7 +389,10 @@ export default function MyPAPage() {
   const [token,      setToken]      = useState<string | null>(null)
   const searchRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  useEffect(() => { init() }, [])
+  useEffect(() => {
+    if (allowed !== true) return
+    void init()
+  }, [allowed])
 
   async function init() {
     setLoading(true)
@@ -346,19 +407,114 @@ export default function MyPAPage() {
       ?? null
     setToken(tok)
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rpc = (fn: string, args: Record<string, unknown>) => (supabase.rpc as any)(fn, args)
+
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error: rpcErr } = await (supabase.rpc as any)('employee_get_pa_tasks', {
+      await rpc('sync_operational_pa_tasks', {
+        p_company_id: member.companyId,
+        p_scope_employee_id: member.employeeId,
+        p_session_token: tok,
+      }).catch(() => {})
+    } catch { /* non-fatal */ }
+
+    try {
+      await rpc('enqueue_pa_task_notifications', {
+        p_company_id: member.companyId,
+        p_session_token: tok,
+      }).catch(() => {})
+    } catch { /* non-fatal */ }
+
+    try {
+      const { data: settingsData } = await rpc('employee_get_pa_settings', {
+        p_company_id: member.companyId,
+        p_employee_id: member.employeeId,
+        p_session_token: tok,
+      })
+      setFocusMode(Boolean(parsePaSettingsRpc(settingsData).focus_mode_enabled))
+    } catch { /* non-fatal */ }
+
+    try {
+      const { data, error: rpcErr } = await rpc('employee_get_pa_tasks', {
         p_company_id:    member.companyId,
         p_employee_id:   member.employeeId,
         p_session_token: tok,
       })
       if (rpcErr) throw rpcErr
-      setTasks((data as PATask[]) ?? [])
+      setTasks(((data as PATask[]) ?? []).map(t => ({
+        ...t,
+        status: normalizePaStatus(t.status),
+      })))
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load tasks.')
     }
     setLoading(false)
+  }
+
+  async function toggleFocusMode() {
+    const next = !focusMode
+    setFocusMode(next)
+    if (!empId || !companyId) return
+    const supabase = createClient()
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase.rpc as any)('upsert_employee_pa_settings', {
+        p_employee_id: empId,
+        p_company_id: companyId,
+        p_focus_mode_enabled: next,
+        p_session_token: token,
+      })
+    } catch { /* non-fatal */ }
+  }
+
+  function exportCalendarIcs() {
+    const from = calMode === 'week'
+      ? (() => {
+          const d = new Date(calDate)
+          const day = d.getDay()
+          const diff = day === 0 ? -6 : 1 - day
+          d.setDate(d.getDate() + diff)
+          d.setHours(0, 0, 0, 0)
+          return d
+        })()
+      : new Date(calDate.getFullYear(), calDate.getMonth(), 1)
+    const to = calMode === 'week'
+      ? (() => { const d = new Date(from); d.setDate(d.getDate() + 6); d.setHours(23, 59, 59, 999); return d })()
+      : new Date(calDate.getFullYear(), calDate.getMonth() + 1, 0, 23, 59, 59, 999)
+    const entries = paTasksToIcsEntries(tasks, from, to)
+    if (entries.length === 0) {
+      alert('No events in this period.')
+      return
+    }
+    const stamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 12)
+    downloadIcsFile(buildIcsCalendar(entries), `my-pa-${stamp}.ics`)
+  }
+
+  async function completeInline(t: PATask) {
+    if (!empId || !companyId) return
+    const supabase = createClient()
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase.rpc as any)('employee_update_pa_task_status', {
+        p_company_id: companyId, p_employee_id: empId,
+        p_task_id: t.id, p_status: 'done', p_snoozed_until: null, p_session_token: token,
+      })
+      await spawnRecurringNext(t, companyId, empId, token)
+      await init()
+    } catch (e) { console.error(e) }
+  }
+
+  async function startInline(t: PATask) {
+    if (!empId || !companyId) return
+    const supabase = createClient()
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase.rpc as any)('employee_update_pa_task_status', {
+        p_company_id: companyId, p_employee_id: empId,
+        p_task_id: t.id, p_status: 'in_progress', p_snoozed_until: null, p_session_token: token,
+      })
+      await init()
+    } catch (e) { console.error(e) }
   }
 
   async function addQuick() {
@@ -420,9 +576,12 @@ export default function MyPAPage() {
     )
   }, [tasks, search])
 
-  if (loading) return (
-    <div className="flex items-center justify-center h-64 text-text-secondary text-[14px]">Loading…</div>
-  )
+  if (allowed === null || (allowed && loading)) {
+    return (
+      <div className="flex items-center justify-center h-64 text-text-secondary text-[14px]">Loading…</div>
+    )
+  }
+  if (allowed === false) return null
 
   const rowProps = { empId: empId!, companyId: companyId!, token, onRefresh: init }
 
@@ -541,7 +700,7 @@ export default function MyPAPage() {
                     }`}>{f.replace(/_/g,' ')}</button>
                 ))}
               </div>
-              <button onClick={() => setFocusMode(v => !v)}
+              <button onClick={() => void toggleFocusMode()}
                 className={`text-[11px] font-semibold px-3 py-1.5 rounded-full transition-colors ${
                   focusMode ? 'bg-warning text-white' : 'bg-surface-elevated text-text-secondary border border-divider'
                 }`}>
@@ -605,14 +764,12 @@ export default function MyPAPage() {
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-1 justify-end">
-                              <button onClick={() => {
-                                const supabase = createClient()
-                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                ;(supabase.rpc as any)('employee_update_pa_task_status', {
-                                  p_company_id: companyId!, p_employee_id: empId!,
-                                  p_task_id: t.id, p_status: 'done', p_snoozed_until: null, p_session_token: token,
-                                }).then(() => init())
-                              }} title="Complete" className="p-1 rounded hover:bg-success/10">
+                              {t.status === 'todo' && (
+                                <button onClick={() => void startInline(t)} title="Start" className="p-1 rounded hover:bg-primary/10">
+                                  <span className="material-icons text-[16px] text-primary">play_arrow</span>
+                                </button>
+                              )}
+                              <button onClick={() => void completeInline(t)} title="Complete" className="p-1 rounded hover:bg-success/10">
                                 <span className="material-icons text-[16px] text-success">check_circle</span>
                               </button>
                               <button onClick={async () => {
@@ -642,13 +799,22 @@ export default function MyPAPage() {
         {/* ── CALENDAR ── */}
         {mainTab === 'calendar' && (
           <div className="p-4 space-y-4">
-            <div className="flex gap-2">
-              {(['month','week'] as const).map(m => (
-                <button key={m} onClick={() => setCalMode(m)}
-                  className={`text-[12px] font-semibold px-3 py-1.5 rounded-full capitalize transition-colors ${
-                    calMode === m ? 'bg-primary text-white' : 'bg-surface-elevated text-text-secondary border border-divider'
-                  }`}>{m}</button>
-              ))}
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex gap-2">
+                {(['month','week'] as const).map(m => (
+                  <button key={m} onClick={() => setCalMode(m)}
+                    className={`text-[12px] font-semibold px-3 py-1.5 rounded-full capitalize transition-colors ${
+                      calMode === m ? 'bg-primary text-white' : 'bg-surface-elevated text-text-secondary border border-divider'
+                    }`}>{m}</button>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={exportCalendarIcs}
+                className="text-[12px] font-semibold text-primary border border-primary/30 px-3 py-1.5 rounded-lg hover:bg-primary/10 transition-colors"
+              >
+                Export .ics
+              </button>
             </div>
             <CalendarGrid tasks={tasks} mode={calMode} month={calDate} setMonth={setCalDate} />
           </div>

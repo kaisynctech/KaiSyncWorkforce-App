@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import { useEmployeeModuleGate } from '@/lib/employee-module-gate'
 
 interface FormTemplate {
   id: string
@@ -19,12 +20,16 @@ interface Submission {
 }
 
 export default function FormsPage() {
-  const [templates,   setTemplates]   = useState<FormTemplate[]>([])
+  const allowed = useEmployeeModuleGate('paperless')
+  const [templates, setTemplates] = useState<FormTemplate[]>([])
   const [submissions, setSubmissions] = useState<Submission[]>([])
-  const [loading, setLoading]         = useState(true)
-  const [error, setError]             = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => { init() }, [])
+  useEffect(() => {
+    if (allowed !== true) return
+    void init()
+  }, [allowed])
 
   async function init() {
     setLoading(true)
@@ -37,24 +42,28 @@ export default function FormsPage() {
         ?? (await supabase.auth.getSession()).data.session?.access_token
         ?? null
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rpc = (fn: string, args: Record<string, unknown>, opts?: Record<string, unknown>) => (supabase.rpc as any)(fn, args, opts)
+      const rpc = (fn: string, args: Record<string, unknown>) => (supabase.rpc as any)(fn, args)
 
       const [tmplRes, subRes] = await Promise.all([
         rpc('employee_get_workflow_form_templates', {
-          p_company_id:    member.companyId,
-          p_employee_id:   member.employeeId,
+          p_company_id: member.companyId,
+          p_employee_id: member.employeeId,
           p_session_token: token,
         }),
         rpc('employee_get_workflow_form_submissions', {
-          p_company_id:    member.companyId,
-          p_employee_id:   member.employeeId,
+          p_company_id: member.companyId,
+          p_employee_id: member.employeeId,
           p_session_token: token,
         }),
       ])
 
       if (tmplRes.error) throw tmplRes.error
       setTemplates((tmplRes.data as FormTemplate[]) ?? [])
-      setSubmissions((subRes.data as Submission[]) ?? [])
+      const subs = ((subRes.data as Submission[]) ?? [])
+        .slice()
+        .sort((a, b) => b.submitted_at.localeCompare(a.submitted_at))
+        .slice(0, 20)
+      setSubmissions(subs)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load forms.')
     }
@@ -63,9 +72,12 @@ export default function FormsPage() {
 
   const templateMap = Object.fromEntries(templates.map(t => [t.id, t.name]))
 
-  if (loading) return (
-    <div className="flex items-center justify-center h-64 text-text-secondary text-[14px]">Loading…</div>
-  )
+  if (allowed === null || (allowed && loading)) {
+    return (
+      <div className="flex items-center justify-center h-64 text-text-secondary text-[14px]">Loading…</div>
+    )
+  }
+  if (allowed === false) return null
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
@@ -80,7 +92,6 @@ export default function FormsPage() {
           </div>
         )}
 
-        {/* Available Forms */}
         <div>
           <p className="section-label mb-3">Available Forms</p>
           {templates.length === 0 ? (
@@ -98,8 +109,10 @@ export default function FormsPage() {
                       <p className="text-[12px] text-text-secondary mt-0.5">{t.description}</p>
                     )}
                   </div>
-                  <Link href={`/dashboard/employee/forms/${t.id}`}
-                    className="bg-primary text-white text-[13px] font-semibold px-4 py-2 rounded-lg hover:bg-primary-dark transition-colors shrink-0">
+                  <Link
+                    href={`/dashboard/employee/forms/${t.id}`}
+                    className="bg-primary text-white text-[13px] font-semibold px-4 py-2 rounded-lg hover:bg-primary-dark transition-colors shrink-0"
+                  >
                     Fill Form
                   </Link>
                 </div>
@@ -108,7 +121,6 @@ export default function FormsPage() {
           )}
         </div>
 
-        {/* Recent Submissions */}
         {submissions.length > 0 && (
           <div>
             <p className="section-label mb-3">Recent Submissions</p>
@@ -116,14 +128,18 @@ export default function FormsPage() {
               {submissions.map(s => (
                 <div key={s.id} className="px-4 py-3 flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-[13px] font-semibold text-text-primary">{templateMap[s.template_id] ?? 'Unknown Form'}</p>
+                    <p className="text-[13px] font-semibold text-text-primary">
+                      {templateMap[s.template_id] ?? 'Form'}
+                    </p>
                     <p className="text-[11px] text-text-disabled mt-0.5">
                       {new Date(s.submitted_at).toLocaleString('en-ZA', {
-                        day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+                        day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
                       })}
                     </p>
                   </div>
-                  <span className="text-[11px] font-semibold px-2 py-[2px] rounded-full bg-success/10 text-success">Submitted</span>
+                  <span className="text-[11px] font-semibold px-2 py-[2px] rounded-full bg-success/10 text-success">
+                    Submitted
+                  </span>
                 </div>
               ))}
             </div>

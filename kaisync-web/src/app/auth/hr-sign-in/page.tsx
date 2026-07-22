@@ -28,6 +28,29 @@ export default function HrSignInPage() {
         router.push('/auth/hr-register-company')
         return
       }
+      // Persist selected company context (parity with employee company picker)
+      const { data: emp } = await supabase
+        .from('employees')
+        .select('id, company_id, access_level, name, surname, companies(name, company_code)')
+        .eq('id', member.employeeId)
+        .maybeSingle()
+      if (emp) {
+        const { saveEmpContext } = await import('@/lib/auth/code-session')
+        const companies = emp.companies as
+          | { name?: string; company_code?: string }
+          | { name?: string; company_code?: string }[]
+          | null
+        const co = Array.isArray(companies) ? companies[0] : companies
+        saveEmpContext({
+          employee_id: emp.id,
+          company_id: emp.company_id,
+          access_level: emp.access_level ?? 'owner',
+          name: emp.name ?? undefined,
+          surname: emp.surname ?? undefined,
+          company_name: co?.name,
+          company_code: co?.company_code ?? undefined,
+        })
+      }
       router.push('/dashboard/overview')
       router.refresh()
     } catch (err: unknown) {

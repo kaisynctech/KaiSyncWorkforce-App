@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import { useEmployeeModuleGate } from '@/lib/employee-module-gate'
 import Link from 'next/link'
 
 interface CalendarEvent {
@@ -33,6 +34,10 @@ function addDays(d: Date, n: number): Date {
   return r
 }
 
+function toDateStr(d: Date): string {
+  return d.toISOString().split('T')[0]
+}
+
 function fmtWeekLabel(start: Date): string {
   const end = addDays(start, 6)
   return `${start.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short' })} – ${end.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })}`
@@ -56,6 +61,7 @@ const RESPONSE_STYLES: Record<string, string> = {
 }
 
 export default function EmployeeShiftsPage() {
+  const allowed = useEmployeeModuleGate('scheduling')
   const [events,    setEvents]    = useState<CalendarEvent[]>([])
   const [loading,   setLoading]   = useState(true)
   const [error,     setError]     = useState<string | null>(null)
@@ -64,9 +70,20 @@ export default function EmployeeShiftsPage() {
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [responding, setResponding] = useState<string | null>(null)
   const tokRef = useRef<string | null>(null)
+  /** Cached fetch window: today−7 … today+30 (expanded when week leaves range). */
+  const cacheFromRef = useRef<string | null>(null)
+  const cacheToRef = useRef<string | null>(null)
 
-  useEffect(() => { init() }, [])
-  useEffect(() => { if (empId && companyId) loadEvents() }, [weekStart, empId, companyId])
+  useEffect(() => {
+    if (allowed !== true) return
+    void init()
+  }, [allowed])
+
+  useEffect(() => {
+    if (allowed !== true || !empId || !companyId) return
+    void ensureWindowForWeek(weekStart)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekStart, empId, companyId, allowed])
 
   async function init() {
     setLoading(true)
@@ -78,37 +95,48 @@ export default function EmployeeShiftsPage() {
     tokRef.current = member.sessionToken
       ?? (await supabase.auth.getSession()).data.session?.access_token
       ?? null
-    await loadEventsFor(member.employeeId, member.companyId, weekStart)
+    await loadEventsFor(member.employeeId, member.companyId, addDays(new Date(), -7), addDays(new Date(), 30))
     setLoading(false)
   }
 
-  async function loadEvents() {
-    if (!empId || !companyId) return
-    setLoading(true)
-    await loadEventsFor(empId, companyId, weekStart)
-    setLoading(false)
-  }
-
-  async function loadEventsFor(eid: string, cid: string, ws: Date) {
+  async function loadEventsFor(eid: string, cid: string, from: Date, to: Date) {
     const supabase = createClient()
-    const from = addDays(ws, -7).toISOString().split('T')[0]
-    const to   = addDays(ws, 13).toISOString().split('T')[0]
-
+    const fromStr = toDateStr(from)
+    const toStr = toDateStr(to)
     try {
       const token = tokRef.current
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data, error: rpcErr } = await (supabase.rpc as any)('employee_get_calendar_events_for_worker', {
         p_company_id:    cid,
         p_employee_id:   eid,
-        p_from:          from,
-        p_to:            to,
+        p_from:          fromStr,
+        p_to:            toStr,
         p_session_token: token,
       })
       if (rpcErr) throw rpcErr
       setEvents((data as CalendarEvent[]) ?? [])
+      cacheFromRef.current = fromStr
+      cacheToRef.current = toStr
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load shifts.')
     }
+  }
+
+  async function ensureWindowForWeek(ws: Date) {
+    if (!empId || !companyId) return
+    const weekEnd = addDays(ws, 6)
+    const from = cacheFromRef.current
+    const to = cacheToRef.current
+    const weekStartStr = toDateStr(ws)
+    const weekEndStr = toDateStr(weekEnd)
+    if (from && to && weekStartStr >= from && weekEndStr <= to) return
+
+    // Expand window around requested week (±7 / +30 from week edges)
+    const newFrom = addDays(ws, -7)
+    const newTo = addDays(weekEnd, 30)
+    setLoading(true)
+    await loadEventsFor(empId, companyId, newFrom, newTo)
+    setLoading(false)
   }
 
   async function respond(eventId: string, response: 'accepted' | 'declined') {
@@ -152,6 +180,13 @@ export default function EmployeeShiftsPage() {
   }
   const sortedDays = Object.keys(grouped).sort()
 
+  if (allowed === null || (allowed && loading)) {
+    return (
+      <div className="flex items-center justify-center h-64 text-text-secondary text-[14px]">Loading…</div>
+    )
+  }
+  if (allowed === false) return null
+
   return (
     <div className="h-full flex flex-col overflow-hidden">
       <div className="px-4 py-3 border-b border-divider shrink-0 bg-surface">
@@ -180,12 +215,11 @@ export default function EmployeeShiftsPage() {
           </div>
         )}
 
-        {loading ? (
-          <div className="flex items-center justify-center h-48 text-text-secondary text-[14px]">Loading…</div>
-        ) : sortedDays.length === 0 ? (
+        {sortedDays.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 gap-2 text-text-secondary">
             <span className="material-icons text-[48px] text-text-disabled">event_busy</span>
             <p className="text-[14px]">No shifts scheduled in this period.</p>
+            <p className="text-[12px] text-text-disabled">Accept or Decline upcoming shifts when they appear.</p>
           </div>
         ) : (
           <div className="divide-y divide-divider">

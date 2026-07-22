@@ -3,6 +3,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import { useEmployeeModuleGate } from '@/lib/employee-module-gate'
+import {
+  LEAVE_TYPE_KEYS,
+  LEAVE_ATTACHMENT_ACCEPT,
+  calcLeaveTotalDays,
+  computeLeaveSummary,
+  getLeaveIcon,
+} from '@/lib/leave-policy'
+import { uploadLeaveAttachment } from '@/lib/employee-media'
 
 interface LeaveRequest {
   id: string
@@ -13,109 +22,57 @@ interface LeaveRequest {
   status: string
   reason: string | null
   attachment_url: string | null
+  decision_note: string | null
   created_at: string
 }
 
-interface LeaveSummary {
-  leave_type:     string
-  annual_days:    number
-  days_approved:  number
-  days_pending:   number
-  days_remaining: number
-}
-
-const LEAVE_QUOTA: Record<string, number> = {
-  'Annual Leave':          15,
-  'Sick Leave':            10,
-  'Family Responsibility':  3,
-  'Maternity Leave':       60,
-  'Paternity Leave':       10,
-  'Study Leave':            5,
-  'Unpaid Leave':         365,
-}
-
-const LEAVE_TYPES = [
-  'Annual Leave',
-  'Sick Leave',
-  'Family Responsibility',
-  'Unpaid Leave',
-  'Study Leave',
-  'Maternity Leave',
-  'Paternity Leave',
-]
-
-const LEAVE_TYPE_ICONS: Record<string, string> = {
-  'Annual Leave':          'beach_access',
-  'Sick Leave':            'local_hospital',
-  'Family Responsibility': 'family_restroom',
-  'Unpaid Leave':          'money_off',
-  'Study Leave':           'school',
-  'Maternity Leave':       'pregnant_woman',
-  'Paternity Leave':       'child_friendly',
-}
-
 const STATUS_STYLES: Record<string, string> = {
-  pending:   'bg-warning/10 text-warning',
-  approved:  'bg-success/10 text-success',
-  declined:  'bg-error/10 text-error',
+  pending: 'bg-warning/10 text-warning',
+  approved: 'bg-success/10 text-success',
+  declined: 'bg-error/10 text-error',
   cancelled: 'bg-surface-elevated text-text-secondary',
 }
 
 function fmtDate(iso: string): string {
-  return new Date(iso + 'T12:00:00').toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })
-}
-
-function computeSummary(requests: LeaveRequest[]): LeaveSummary[] {
-  const thisYear = new Date().getFullYear()
-  const yearly = requests.filter(r => new Date(r.start_date).getFullYear() === thisYear)
-  return LEAVE_TYPES.map(leaveType => {
-    const forType  = yearly.filter(r => r.leave_type === leaveType)
-    const approved = forType.filter(r => r.status === 'approved').reduce((s, r) => s + r.total_days, 0)
-    const pending  = forType.filter(r => r.status === 'pending').reduce((s, r) => s + r.total_days, 0)
-    const annual   = LEAVE_QUOTA[leaveType] ?? 0
-    return {
-      leave_type:     leaveType,
-      annual_days:    annual,
-      days_approved:  approved,
-      days_pending:   pending,
-      days_remaining: Math.max(0, annual - approved),
-    }
-  }).filter(s => s.days_approved > 0 || s.days_pending > 0 || s.annual_days > 0)
-}
-
-function calcTotalDays(start: string, end: string): number {
-  if (!start || !end) return 1
-  return Math.max(
-    1,
-    Math.round((new Date(end).getTime() - new Date(start).getTime()) / 86400000) + 1
-  )
+  return new Date(iso + 'T12:00:00').toLocaleDateString('en-ZA', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  })
 }
 
 export default function EmployeeLeavePage() {
-  const [requests,  setRequests]   = useState<LeaveRequest[]>([])
-  const [loading,   setLoading]    = useState(true)
-  const [showForm,  setShowForm]   = useState(false)
+  const allowed = useEmployeeModuleGate('leave')
+  const [requests, setRequests] = useState<LeaveRequest[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showForm, setShowForm] = useState(false)
   const [editRequest, setEditRequest] = useState<LeaveRequest | null>(null)
   const [submitting, setSubmitting] = useState(false)
-  const [formError,  setFormError] = useState<string | null>(null)
-  const [companyId, setCompanyId]  = useState<string | null>(null)
-  const [empId,     setEmpId]      = useState<string | null>(null)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [companyId, setCompanyId] = useState<string | null>(null)
+  const [empId, setEmpId] = useState<string | null>(null)
+  const [removeExistingAttachment, setRemoveExistingAttachment] = useState(false)
 
-  // Form fields
   const [leaveType, setLeaveType] = useState('Annual Leave')
   const [startDate, setStartDate] = useState('')
-  const [endDate,   setEndDate]   = useState('')
-  const [reason,    setReason]    = useState('')
+  const [endDate, setEndDate] = useState('')
+  const [reason, setReason] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
-  const tokRef  = useRef<string | null>(null)
+  const tokRef = useRef<string | null>(null)
 
-  useEffect(() => { init() }, [])
+  useEffect(() => {
+    if (allowed !== true) return
+    void init()
+  }, [allowed])
 
   async function init() {
     setLoading(true)
     const supabase = createClient()
     const member = await resolveCurrentMember(supabase)
-    if (!member) { setLoading(false); return }
+    if (!member) {
+      setLoading(false)
+      return
+    }
     setCompanyId(member.companyId)
     setEmpId(member.employeeId)
 
@@ -126,8 +83,8 @@ export default function EmployeeLeavePage() {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data, error } = await (supabase.rpc as any)('employee_get_leave_requests', {
-      p_company_id:    member.companyId,
-      p_employee_id:   member.employeeId,
+      p_company_id: member.companyId,
+      p_employee_id: member.employeeId,
       p_session_token: tok,
     })
     if (!error) setRequests((data as LeaveRequest[]) ?? [])
@@ -148,6 +105,7 @@ export default function EmployeeLeavePage() {
       setEndDate('')
       setReason('')
     }
+    setRemoveExistingAttachment(false)
     setFormError(null)
     if (fileRef.current) fileRef.current.value = ''
     setShowForm(true)
@@ -158,52 +116,60 @@ export default function EmployeeLeavePage() {
       setFormError('Please fill in all required fields.')
       return
     }
+    if (endDate < startDate) {
+      setFormError('End date cannot be before start date.')
+      return
+    }
     setSubmitting(true)
     setFormError(null)
 
     const supabase = createClient()
     const tok = tokRef.current
+    const file = fileRef.current?.files?.[0]
 
     let attachmentUrl: string | null = null
-    const file = fileRef.current?.files?.[0]
     if (file) {
-      const ext  = file.name.split('.').pop()?.toLowerCase() ?? 'pdf'
-      const path = `leave-attachments/${companyId}/${empId}/${Date.now()}.${ext}`
-      const { error: upErr } = await supabase.storage.from('workforce-media').upload(path, file, { upsert: true })
-      if (upErr) { setFormError(upErr.message); setSubmitting(false); return }
-      attachmentUrl = path
+      attachmentUrl = await uploadLeaveAttachment({
+        supabase,
+        companyId,
+        employeeId: empId,
+        file,
+        sessionToken: tok,
+      })
+    } else if (editRequest) {
+      attachmentUrl = removeExistingAttachment ? null : (editRequest.attachment_url ?? null)
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rpc = (fn: string, args: Record<string, unknown>, opts?: Record<string, unknown>) => (supabase.rpc as any)(fn, args, opts)
-    const totalDays = calcTotalDays(startDate, endDate)
+    const rpc = (fn: string, args: Record<string, unknown>) => (supabase.rpc as any)(fn, args)
+    const totalDays = calcLeaveTotalDays(startDate, endDate)
 
     let error: { message: string } | null = null
 
     if (editRequest) {
       const res = await rpc('employee_update_leave_request', {
-        p_id:             editRequest.id,
-        p_employee_id:    empId,
-        p_leave_type:     leaveType,
-        p_start_date:     startDate,
-        p_end_date:       endDate,
-        p_total_days:     totalDays,
-        p_reason:         reason || null,
+        p_id: editRequest.id,
+        p_employee_id: empId,
+        p_leave_type: leaveType,
+        p_start_date: startDate,
+        p_end_date: endDate,
+        p_total_days: totalDays,
+        p_reason: reason || null,
         p_attachment_url: attachmentUrl,
-        p_session_token:  tok,
+        p_session_token: tok,
       })
       error = res.error
     } else {
       const res = await rpc('employee_submit_leave_request', {
-        p_company_id:     companyId,
-        p_employee_id:    empId,
-        p_leave_type:     leaveType,
-        p_start_date:     startDate,
-        p_end_date:       endDate,
-        p_total_days:     totalDays,
-        p_reason:         reason || null,
+        p_company_id: companyId,
+        p_employee_id: empId,
+        p_leave_type: leaveType,
+        p_start_date: startDate,
+        p_end_date: endDate,
+        p_total_days: totalDays,
+        p_reason: reason || null,
         p_attachment_url: attachmentUrl,
-        p_session_token:  tok,
+        p_session_token: tok,
       })
       error = res.error
     }
@@ -217,9 +183,12 @@ export default function EmployeeLeavePage() {
     setSubmitting(false)
   }
 
-  if (loading) return (
-    <div className="flex items-center justify-center h-64 text-text-secondary text-[14px]">Loading…</div>
-  )
+  if (allowed === null || (allowed && loading)) {
+    return (
+      <div className="flex items-center justify-center h-64 text-text-secondary text-[14px]">Loading…</div>
+    )
+  }
+  if (allowed === false) return null
 
   const sorted = [...requests].sort((a, b) => {
     if (a.status === 'pending' && b.status !== 'pending') return -1
@@ -227,35 +196,38 @@ export default function EmployeeLeavePage() {
     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   })
 
-  const summary = computeSummary(requests)
+  const summary = computeLeaveSummary(requests)
+  const existingAttachment = editRequest?.attachment_url && !removeExistingAttachment
+    ? editRequest.attachment_url
+    : null
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 border-b border-divider shrink-0 bg-surface">
         <h1 className="text-[18px] font-semibold text-text-primary">My Leave</h1>
-        <button onClick={() => openForm()}
-          className="flex items-center gap-1.5 bg-primary text-white text-[13px] font-semibold px-4 py-2 rounded-lg hover:bg-primary-dark transition-colors">
+        <button
+          type="button"
+          onClick={() => openForm()}
+          className="flex items-center gap-1.5 bg-primary text-white text-[13px] font-semibold px-4 py-2 rounded-lg hover:bg-primary-dark transition-colors"
+        >
           <span className="material-icons text-[16px]">add</span>Apply
         </button>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-
-        {/* Leave summary — computed from requests */}
         {summary.length > 0 && (
           <div>
-            <p className="section-label mb-2">Leave Summary</p>
+            <p className="section-label mb-2">Leave Balances</p>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {summary.map(s => (
+              {summary.map((s) => (
                 <div key={s.leave_type} className="bg-surface border border-divider rounded-xl p-3">
                   <div className="flex items-center gap-2 mb-2">
-                    <span className="material-icons text-primary text-[18px]">
-                      {LEAVE_TYPE_ICONS[s.leave_type] ?? 'event_busy'}
-                    </span>
+                    <span className="material-icons text-primary text-[18px]">{getLeaveIcon(s.leave_type)}</span>
                     <p className="text-[12px] font-semibold text-text-primary truncate">{s.leave_type}</p>
                   </div>
                   <p className="text-[22px] font-bold text-text-primary">
-                    {s.days_remaining}<span className="text-[14px] text-text-disabled font-normal"> / {s.annual_days}d</span>
+                    {s.days_remaining}
+                    <span className="text-[14px] text-text-disabled font-normal"> / {s.annual_days}d</span>
                   </p>
                   <p className="text-[11px] text-text-disabled">days remaining</p>
                   <p className="text-[11px] text-text-secondary mt-0.5">
@@ -268,7 +240,6 @@ export default function EmployeeLeavePage() {
           </div>
         )}
 
-        {/* Requests list */}
         <div>
           <p className="section-label mb-2">Leave Requests</p>
           {sorted.length === 0 ? (
@@ -287,36 +258,33 @@ export default function EmployeeLeavePage() {
                     <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Days</th>
                     <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Status</th>
                     <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Reason</th>
+                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Note</th>
                     <th className="px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide text-center">Doc</th>
                     <th className="px-4 py-2.5" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-divider">
-                  {sorted.map(req => (
+                  {sorted.map((req) => (
                     <tr key={req.id} className="hover:bg-surface-elevated transition-colors">
-                      <td className="px-4 py-3 text-[13px] font-semibold text-text-primary whitespace-nowrap">
-                        {req.leave_type}
-                      </td>
-                      <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
-                        {fmtDate(req.start_date)}
-                      </td>
-                      <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
-                        {fmtDate(req.end_date)}
-                      </td>
-                      <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
-                        {req.total_days}d
-                      </td>
+                      <td className="px-4 py-3 text-[13px] font-semibold text-text-primary whitespace-nowrap">{req.leave_type}</td>
+                      <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">{fmtDate(req.start_date)}</td>
+                      <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">{fmtDate(req.end_date)}</td>
+                      <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">{req.total_days}d</td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <span className={`text-[11px] font-semibold px-2 py-[2px] rounded-full capitalize ${STATUS_STYLES[req.status] ?? 'bg-surface-elevated text-text-secondary'}`}>
                           {req.status}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-[12px] text-text-disabled max-w-[160px] truncate">
+                      <td className="px-4 py-3 text-[12px] text-text-disabled max-w-[140px] truncate">
                         {req.reason ? <span className="italic">&ldquo;{req.reason}&rdquo;</span> : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-[12px] text-text-secondary max-w-[140px] truncate">
+                        {req.decision_note || '—'}
                       </td>
                       <td className="px-4 py-3 text-center">
                         {req.attachment_url ? (
                           <button
+                            type="button"
                             onClick={async () => {
                               const supabase = createClient()
                               const { data: urlData } = await supabase.storage
@@ -325,7 +293,8 @@ export default function EmployeeLeavePage() {
                               if (urlData?.signedUrl) window.open(urlData.signedUrl, '_blank')
                             }}
                             className="inline-flex items-center justify-center w-7 h-7 rounded-lg border border-divider text-text-secondary hover:border-primary hover:text-primary transition-colors"
-                            title="View attachment">
+                            title="View attachment"
+                          >
                             <span className="material-icons text-[14px]">attach_file</span>
                           </button>
                         ) : (
@@ -334,8 +303,11 @@ export default function EmployeeLeavePage() {
                       </td>
                       <td className="px-4 py-3">
                         {req.status === 'pending' && (
-                          <button onClick={() => openForm(req)}
-                            className="text-[12px] text-primary font-semibold hover:underline whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => openForm(req)}
+                            className="text-[12px] text-primary font-semibold hover:underline whitespace-nowrap"
+                          >
                             Edit
                           </button>
                         )}
@@ -349,7 +321,6 @@ export default function EmployeeLeavePage() {
         </div>
       </div>
 
-      {/* Apply / Edit form modal */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/50">
           <div className="bg-surface rounded-2xl w-full max-w-md p-6 space-y-4 shadow-2xl">
@@ -357,7 +328,7 @@ export default function EmployeeLeavePage() {
               <h2 className="text-[17px] font-bold text-text-primary">
                 {editRequest ? 'Edit Leave Request' : 'Apply for Leave'}
               </h2>
-              <button onClick={() => setShowForm(false)} className="text-text-secondary hover:text-text-primary">
+              <button type="button" onClick={() => setShowForm(false)} className="text-text-secondary hover:text-text-primary">
                 <span className="material-icons">close</span>
               </button>
             </div>
@@ -371,8 +342,8 @@ export default function EmployeeLeavePage() {
             <div className="space-y-3">
               <div className="flex flex-col gap-1.5">
                 <label className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide">Leave Type</label>
-                <select className="input" value={leaveType} onChange={e => setLeaveType(e.target.value)}>
-                  {LEAVE_TYPES.map(t => (
+                <select className="input" value={leaveType} onChange={(e) => setLeaveType(e.target.value)}>
+                  {LEAVE_TYPE_KEYS.map((t) => (
                     <option key={t} value={t}>{t}</option>
                   ))}
                 </select>
@@ -380,36 +351,59 @@ export default function EmployeeLeavePage() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="flex flex-col gap-1.5">
                   <label className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide">Start Date</label>
-                  <input className="input" type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
+                  <input className="input" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <label className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide">End Date</label>
-                  <input className="input" type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
+                  <input className="input" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
                 </div>
               </div>
               {startDate && endDate && endDate >= startDate && (
                 <p className="text-[12px] text-text-secondary">
-                  Duration: <span className="font-semibold text-text-primary">{calcTotalDays(startDate, endDate)} day{calcTotalDays(startDate, endDate) !== 1 ? 's' : ''}</span>
+                  Duration:{' '}
+                  <span className="font-semibold text-text-primary">
+                    {calcLeaveTotalDays(startDate, endDate)} day{calcLeaveTotalDays(startDate, endDate) !== 1 ? 's' : ''}
+                  </span>
                 </p>
               )}
               <div className="flex flex-col gap-1.5">
                 <label className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide">Reason (optional)</label>
-                <textarea className="input resize-none" rows={3} value={reason} onChange={e => setReason(e.target.value)} />
+                <textarea className="input resize-none" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} />
               </div>
               <div className="flex flex-col gap-1.5">
                 <label className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide">Supporting Document (optional)</label>
-                <input ref={fileRef} type="file" accept=".pdf,.jpg,.jpeg,.png" className="text-[13px] text-text-secondary" />
+                {existingAttachment && (
+                  <div className="flex items-center justify-between text-[12px] text-text-secondary bg-surface-elevated border border-divider rounded-lg px-3 py-2">
+                    <span className="truncate">Current attachment on file</span>
+                    <button
+                      type="button"
+                      className="text-error font-semibold shrink-0 ml-2"
+                      onClick={() => setRemoveExistingAttachment(true)}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
+                <input ref={fileRef} type="file" accept={LEAVE_ATTACHMENT_ACCEPT} className="text-[13px] text-text-secondary" />
               </div>
             </div>
 
             <div className="flex gap-3 pt-2">
-              <button onClick={() => setShowForm(false)} disabled={submitting}
-                className="flex-1 h-11 rounded-xl border border-divider text-[14px] font-semibold text-text-secondary hover:bg-surface-elevated transition-colors">
+              <button
+                type="button"
+                onClick={() => setShowForm(false)}
+                disabled={submitting}
+                className="flex-1 h-11 rounded-xl border border-divider text-[14px] font-semibold text-text-secondary hover:bg-surface-elevated transition-colors"
+              >
                 Cancel
               </button>
-              <button onClick={submit} disabled={submitting}
-                className="flex-1 h-11 rounded-xl bg-primary text-white text-[14px] font-semibold hover:bg-primary-dark transition-colors disabled:opacity-60">
-                {submitting ? 'Submitting…' : editRequest ? 'Update' : 'Submit'}
+              <button
+                type="button"
+                onClick={() => void submit()}
+                disabled={submitting}
+                className="flex-1 h-11 rounded-xl bg-primary text-white text-[14px] font-semibold hover:bg-primary-dark transition-colors disabled:opacity-60"
+              >
+                {submitting ? 'Submitting…' : editRequest ? 'Save Changes' : 'Submit Request'}
               </button>
             </div>
           </div>

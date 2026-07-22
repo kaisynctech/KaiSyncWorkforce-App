@@ -4,38 +4,45 @@ import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
-
-interface FieldDef {
-  key: string
-  label: string
-  type: 'text' | 'number' | 'boolean' | 'date' | 'select' | 'textarea'
-  is_required: boolean
-  options?: string[]
-}
+import { useEmployeeModuleGate } from '@/lib/employee-module-gate'
+import { uploadFormPhoto } from '@/lib/employee-media'
+import {
+  isCheckField,
+  isTextLikeField,
+  normalizeFormFields,
+  type NormalizedFormField,
+} from '@/lib/form-fields'
 
 interface FormTemplate {
   id: string
   name: string
   description: string | null
-  fields: FieldDef[]
+  fields: unknown
 }
 
 export default function FormFillPage() {
-  const params   = useParams()
-  const router   = useRouter()
-  const tmplId   = params.id as string
+  const allowed = useEmployeeModuleGate('paperless')
+  const params = useParams()
+  const router = useRouter()
+  const tmplId = params.id as string
 
-  const [template,   setTemplate]   = useState<FormTemplate | null>(null)
-  const [loading,    setLoading]    = useState(true)
-  const [notFound,   setNotFound]   = useState(false)
-  const [values,     setValues]     = useState<Record<string, unknown>>({})
+  const [template, setTemplate] = useState<FormTemplate | null>(null)
+  const [fields, setFields] = useState<NormalizedFormField[]>([])
+  const [loading, setLoading] = useState(true)
+  const [notFound, setNotFound] = useState(false)
+  const [values, setValues] = useState<Record<string, unknown>>({})
+  const [photoFiles, setPhotoFiles] = useState<Record<string, File | null>>({})
   const [submitting, setSubmitting] = useState(false)
-  const [error,      setError]      = useState<string | null>(null)
-  const [companyId,  setCompanyId]  = useState<string | null>(null)
-  const [empId,      setEmpId]      = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [companyId, setCompanyId] = useState<string | null>(null)
+  const [empId, setEmpId] = useState<string | null>(null)
   const tokRef = useRef<string | null>(null)
 
-  useEffect(() => { init() }, [tmplId])
+  useEffect(() => {
+    if (allowed !== true) return
+    void init()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allowed, tmplId])
 
   async function init() {
     setLoading(true)
@@ -52,22 +59,22 @@ export default function FormFillPage() {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: tmplList, error: qErr } = await (supabase.rpc as any)('employee_get_workflow_form_templates', {
-        p_company_id:    member.companyId,
-        p_employee_id:   member.employeeId,
+        p_company_id: member.companyId,
+        p_employee_id: member.employeeId,
         p_session_token: tok,
       })
       if (qErr) throw qErr
-      const data = ((tmplList as FormTemplate[]) ?? []).find((t: FormTemplate) => t.id === tmplId)
+      const data = ((tmplList as FormTemplate[]) ?? []).find(t => t.id === tmplId)
       if (!data) { setNotFound(true); setLoading(false); return }
-      const tmpl = data
-      setTemplate(tmpl)
-      // Initialise values
-      const init: Record<string, unknown> = {}
-      for (const f of (tmpl.fields ?? [])) {
-        if (f.type === 'boolean') init[f.key] = false
-        else init[f.key] = ''
+      setTemplate(data)
+      const normalized = normalizeFormFields(data.fields)
+      setFields(normalized)
+      const initVals: Record<string, unknown> = {}
+      for (const f of normalized) {
+        initVals[f.key] = isCheckField(f.type) ? false : ''
       }
-      setValues(init)
+      setValues(initVals)
+      setPhotoFiles({})
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load form.')
     }
@@ -82,11 +89,13 @@ export default function FormFillPage() {
     if (!template || !empId || !companyId) return
     setError(null)
 
-    // Validate required fields
     const missing: string[] = []
-    for (const f of template.fields ?? []) {
-      if (!f.is_required) continue
-      if (f.type === 'boolean') continue
+    for (const f of fields) {
+      if (!f.is_required || isCheckField(f.type)) continue
+      if (f.type === 'photo') {
+        if (!photoFiles[f.key]) missing.push(f.label)
+        continue
+      }
       const v = values[f.key]
       if (v == null || String(v).trim() === '') missing.push(f.label)
     }
@@ -98,16 +107,33 @@ export default function FormFillPage() {
     setSubmitting(true)
     const supabase = createClient()
     try {
-      const token = tokRef.current
+      const data: Record<string, unknown> = { ...values }
+      for (const f of fields) {
+        if (f.type !== 'photo') continue
+        const file = photoFiles[f.key]
+        if (!file) {
+          data[f.key] = null
+          continue
+        }
+        const path = await uploadFormPhoto({
+          supabase,
+          companyId,
+          employeeId: empId,
+          file,
+          sessionToken: tokRef.current,
+        })
+        data[f.key] = path
+      }
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error: rpcErr } = await (supabase.rpc as any)('employee_submit_workflow_form', {
-        p_company_id:    companyId,
-        p_employee_id:   empId,
-        p_template_id:   tmplId,
-        p_data:          values,
-        p_job_id:        null,
-        p_site_id:       null,
-        p_session_token: token,
+        p_company_id: companyId,
+        p_employee_id: empId,
+        p_template_id: tmplId,
+        p_data: data,
+        p_job_id: null,
+        p_site_id: null,
+        p_session_token: tokRef.current,
       })
       if (rpcErr) throw rpcErr
       alert(`Form '${template.name}' submitted successfully.`)
@@ -118,12 +144,17 @@ export default function FormFillPage() {
     setSubmitting(false)
   }
 
-  if (loading) return (
-    <div className="flex items-center justify-center h-64 text-text-secondary text-[14px]">Loading…</div>
-  )
-  if (notFound) return (
-    <div className="flex items-center justify-center h-64 text-text-secondary text-[14px]">Form not found.</div>
-  )
+  if (allowed === null || (allowed && loading)) {
+    return (
+      <div className="flex items-center justify-center h-64 text-text-secondary text-[14px]">Loading…</div>
+    )
+  }
+  if (allowed === false) return null
+  if (notFound) {
+    return (
+      <div className="flex items-center justify-center h-64 text-text-secondary text-[14px]">Form not found.</div>
+    )
+  }
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
@@ -146,49 +177,107 @@ export default function FormFillPage() {
           </div>
         )}
 
-        {(template?.fields ?? []).map(f => (
+        {fields.length === 0 && (
+          <p className="text-[13px] text-text-secondary">This form has no fields configured.</p>
+        )}
+
+        {fields.map(f => (
           <div key={f.key} className="flex flex-col gap-1.5">
             <label className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide">
               {f.label}{f.is_required && <span className="text-error ml-0.5">*</span>}
             </label>
-            {f.type === 'text' && (
-              <input className="input" type="text" value={String(values[f.key] ?? '')}
-                onChange={e => setValue(f.key, e.target.value)} />
+            {(f.type === 'text' || f.type === 'signature') && (
+              <input
+                className="input"
+                type="text"
+                placeholder={f.type === 'signature' ? 'Type full name as signature' : undefined}
+                value={String(values[f.key] ?? '')}
+                onChange={e => setValue(f.key, e.target.value)}
+              />
             )}
             {f.type === 'number' && (
-              <input className="input" type="number" value={String(values[f.key] ?? '')}
-                onChange={e => setValue(f.key, e.target.value === '' ? '' : Number(e.target.value))} />
+              <input
+                className="input"
+                type="number"
+                value={String(values[f.key] ?? '')}
+                onChange={e => setValue(f.key, e.target.value === '' ? '' : Number(e.target.value))}
+              />
             )}
             {f.type === 'date' && (
-              <input className="input" type="date" value={String(values[f.key] ?? '')}
-                onChange={e => setValue(f.key, e.target.value)} />
+              <input
+                className="input"
+                type="date"
+                value={String(values[f.key] ?? '')}
+                onChange={e => setValue(f.key, e.target.value)}
+              />
             )}
             {f.type === 'textarea' && (
-              <textarea className="input resize-none" rows={3} value={String(values[f.key] ?? '')}
-                onChange={e => setValue(f.key, e.target.value)} />
+              <textarea
+                className="input resize-none"
+                rows={3}
+                value={String(values[f.key] ?? '')}
+                onChange={e => setValue(f.key, e.target.value)}
+              />
             )}
-            {f.type === 'boolean' && (
+            {isCheckField(f.type) && (
               <label className="flex items-center gap-3 cursor-pointer">
-                <input type="checkbox" className="w-5 h-5 accent-primary"
+                <input
+                  type="checkbox"
+                  className="w-5 h-5 accent-primary"
                   checked={Boolean(values[f.key])}
-                  onChange={e => setValue(f.key, e.target.checked)} />
+                  onChange={e => setValue(f.key, e.target.checked)}
+                />
                 <span className="text-[13px] text-text-secondary">Yes</span>
               </label>
             )}
             {f.type === 'select' && (
-              <select className="input" value={String(values[f.key] ?? '')}
-                onChange={e => setValue(f.key, e.target.value)}>
+              <select
+                className="input"
+                value={String(values[f.key] ?? '')}
+                onChange={e => setValue(f.key, e.target.value)}
+              >
                 <option value="">Select…</option>
-                {(f.options ?? []).map(o => (
+                {f.options.map(o => (
                   <option key={o} value={o}>{o}</option>
                 ))}
               </select>
             )}
+            {f.type === 'photo' && (
+              <div className="space-y-2">
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="text-[13px] text-text-secondary w-full"
+                  onChange={e => {
+                    const file = e.target.files?.[0] ?? null
+                    setPhotoFiles(prev => ({ ...prev, [f.key]: file }))
+                    setValue(f.key, file?.name ?? '')
+                  }}
+                />
+                {photoFiles[f.key] && (
+                  <p className="text-[12px] text-success font-medium truncate">
+                    Selected: {photoFiles[f.key]!.name}
+                  </p>
+                )}
+              </div>
+            )}
+            {!isTextLikeField(f.type) && !isCheckField(f.type) && f.type !== 'number' && f.type !== 'date' && f.type !== 'select' && f.type !== 'photo' && (
+              <input
+                className="input"
+                type="text"
+                value={String(values[f.key] ?? '')}
+                onChange={e => setValue(f.key, e.target.value)}
+              />
+            )}
           </div>
         ))}
 
-        <button onClick={submit} disabled={submitting}
-          className="w-full h-12 rounded-xl bg-primary text-white font-bold text-[15px] hover:bg-primary-dark transition-colors disabled:opacity-60 mt-2">
+        <button
+          onClick={() => void submit()}
+          disabled={submitting}
+          className="w-full h-12 rounded-xl bg-primary text-white font-bold text-[15px] hover:bg-primary-dark transition-colors disabled:opacity-60 mt-2"
+        >
           {submitting ? 'Submitting…' : 'Submit Form'}
         </button>
 

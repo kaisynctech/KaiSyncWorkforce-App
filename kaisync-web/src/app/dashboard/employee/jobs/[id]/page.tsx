@@ -1,10 +1,13 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { useParams, useRouter, useSearchParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import { uploadJobPhoto, uploadJobDocument } from '@/lib/job-media'
+import { loadCompanyWorkspace, moduleFlagsForCompany } from '@/lib/employee-workspace'
+import { useEmployeeModuleGate } from '@/lib/employee-module-gate'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 interface Job {
@@ -18,6 +21,9 @@ interface Job {
   site_id: string | null
   client_name: string | null
   site_name: string | null
+  job_code: string | null
+  scheduled_start: string | null
+  scheduled_end: string | null
 }
 
 interface JobCard {
@@ -96,6 +102,89 @@ function fmtTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit', hour12: true })
 }
 
+function fmtDateTime(iso: string | null): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleString('en-ZA', {
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: true,
+  })
+}
+
+async function signMediaPaths(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  paths: string[],
+): Promise<string[]> {
+  const signed = await Promise.all(paths.map(async (path) => {
+    if (!path) return null
+    if (path.startsWith('http://') || path.startsWith('https://')) return path
+    const { data } = await supabase.storage.from('workforce-media').createSignedUrl(path, 3600)
+    return data?.signedUrl ?? null
+  }))
+  return signed.filter(Boolean) as string[]
+}
+
+function parsePhasePhotoUrls(raw: unknown): { before: string[]; after: string[] } {
+  const empty = { before: [] as string[], after: [] as string[] }
+  if (!raw) return empty
+
+  // Unwrap common RPC shapes: array of one row, or single object
+  let payload: unknown = raw
+  if (Array.isArray(raw)) {
+    if (raw.length === 0) return empty
+    payload = raw[0]
+  }
+
+  if (typeof payload === 'string') {
+    try { payload = JSON.parse(payload) } catch { return empty }
+  }
+
+  if (!payload || typeof payload !== 'object') return empty
+
+  const obj = payload as Record<string, unknown>
+
+  // Shape: { before: string[], after: string[] } (or photo_urls_before / before_urls)
+  const beforeArr =
+    (Array.isArray(obj.before) ? obj.before : null)
+    ?? (Array.isArray(obj.photo_urls_before) ? obj.photo_urls_before : null)
+    ?? (Array.isArray(obj.before_urls) ? obj.before_urls : null)
+  const afterArr =
+    (Array.isArray(obj.after) ? obj.after : null)
+    ?? (Array.isArray(obj.photo_urls_after) ? obj.photo_urls_after : null)
+    ?? (Array.isArray(obj.after_urls) ? obj.after_urls : null)
+
+  if (beforeArr || afterArr) {
+    return {
+      before: (beforeArr ?? []).map(String).filter(Boolean),
+      after: (afterArr ?? []).map(String).filter(Boolean),
+    }
+  }
+
+  // Shape: list of { phase, url } — may be the array itself or nested under a key
+  const listCandidate =
+    Array.isArray(raw) ? raw
+    : Array.isArray(obj.photos) ? obj.photos
+    : Array.isArray(obj.urls) ? obj.urls
+    : null
+
+  if (listCandidate) {
+    const before: string[] = []
+    const after: string[] = []
+    for (const entry of listCandidate) {
+      if (!entry || typeof entry !== 'object') continue
+      const row = entry as Record<string, unknown>
+      const phase = String(row.phase ?? row.p_phase ?? '').toLowerCase()
+      const url = String(row.url ?? row.photo_url ?? row.file_url ?? '')
+      if (!url) continue
+      if (phase === 'before' || phase === 'photo_before') before.push(url)
+      else if (phase === 'after' || phase === 'photo_after') after.push(url)
+    }
+    if (before.length || after.length) return { before, after }
+  }
+
+  return empty
+}
+
 const STATUS_STYLES: Record<string, string> = {
   open:        'bg-primary/10 text-primary',
   in_progress: 'bg-warning/10 text-warning',
@@ -105,10 +194,10 @@ const STATUS_STYLES: Record<string, string> = {
 
 // ── Main page ──────────────────────────────────────────────────────────────
 export default function JobCardPage() {
-  const params        = useParams()
-  const router        = useRouter()
-  const searchParams  = useSearchParams()
-  const jobId         = params.id as string
+  const allowed = useEmployeeModuleGate('jobs')
+  const params = useParams()
+  const router = useRouter()
+  const jobId  = params.id as string
 
   const [empId,     setEmpId]     = useState<string | null>(null)
   const [companyId, setCompanyId] = useState<string | null>(null)
@@ -122,7 +211,8 @@ export default function JobCardPage() {
   const [inventory, setInventory] = useState<InventoryUsage[]>([])
   const [feedback,  setFeedback]  = useState<Feedback | null>(null)
   const [incidents, setIncidents] = useState<Incident[]>([])
-  const [photoUrls, setPhotoUrls] = useState<string[]>([])
+  const [showIncidents, setShowIncidents] = useState(true)
+  const [phasePhotos, setPhasePhotos] = useState<{ before: string[]; after: string[] }>({ before: [], after: [] })
 
   const [loading,   setLoading]   = useState(true)
   const [notFound,  setNotFound]  = useState(false)
@@ -143,6 +233,7 @@ export default function JobCardPage() {
   const [siteLoading,   setSiteLoading]     = useState(false)
   const [siteGeoLat,    setSiteGeoLat]      = useState<number | null>(null)
   const [siteGeoLng,    setSiteGeoLng]      = useState<number | null>(null)
+  const [siteAddress,   setSiteAddress]     = useState<string | null>(null)
 
   // Checklist
   const [newCheckItem,  setNewCheckItem]    = useState('')
@@ -166,10 +257,15 @@ export default function JobCardPage() {
   const afterPhotoRef  = useRef<HTMLInputElement>(null)
   const docRef         = useRef<HTMLInputElement>(null)
 
-  useEffect(() => { init() }, [jobId])
+  useEffect(() => {
+    if (allowed !== true) return
+    void init()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allowed, jobId])
 
   async function init() {
     setLoading(true)
+    setError(null)
     const supabase = createClient()
     const member = await resolveCurrentMember(supabase)
     if (!member) { setLoading(false); return }
@@ -185,19 +281,56 @@ export default function JobCardPage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const rpc = (fn: string, args: Record<string, unknown>, opts?: Record<string, unknown>) => (supabase.rpc as any)(fn, args, opts)
 
-      const [jobsRes, cardRes, checkRes, docsRes, visitRes, invRes, fbRes, incRes] = await Promise.all([
+      const flags = moduleFlagsForCompany(await loadCompanyWorkspace(supabase, member.companyId))
+      setShowIncidents(flags.incidents)
+
+      // Job card: prefer employee_get_job_card_for_employee, fall back to _for_job
+      let cardRes = await rpc('employee_get_job_card_for_employee', {
+        p_company_id: member.companyId,
+        p_employee_id: member.employeeId,
+        p_job_id: jobId,
+        p_session_token: tok,
+      })
+      if (cardRes.error || !cardRes.data || (Array.isArray(cardRes.data) && cardRes.data.length === 0)) {
+        cardRes = await rpc('employee_get_job_card_for_job', {
+          p_company_id: member.companyId,
+          p_job_id: jobId,
+          p_employee_id: member.employeeId,
+          p_session_token: tok,
+        })
+      }
+
+      const [jobsRes, checkRes, docsRes, visitRes, invRes, fbRes, incRes, photosRes] = await Promise.all([
         rpc('employee_get_job_for_employee', { p_company_id: member.companyId, p_employee_id: member.employeeId, p_job_id: jobId, p_session_token: tok }),
-        rpc('employee_get_job_card_for_job',  { p_company_id: member.companyId, p_job_id: jobId, p_employee_id: member.employeeId, p_session_token: tok }),
         rpc('employee_get_checklist_for_job', { p_company_id: member.companyId, p_job_id: jobId, p_employee_id: member.employeeId, p_session_token: tok }),
         rpc('employee_get_job_documents', { p_company_id: member.companyId, p_job_id: jobId, p_employee_id: member.employeeId, p_session_token: tok }),
         rpc('employee_job_site_open_visit',   { p_company_id: member.companyId, p_employee_id: member.employeeId, p_session_token: tok }),
         rpc('employee_get_inventory_usage_for_job', { p_company_id: member.companyId, p_job_id: jobId, p_employee_id: member.employeeId, p_session_token: tok }),
         rpc('employee_get_job_feedback',      { p_company_id: member.companyId, p_employee_id: member.employeeId, p_job_id: jobId, p_session_token: tok }),
-        rpc('employee_get_own_incidents', { p_company_id: member.companyId, p_employee_id: member.employeeId, p_session_token: tok }),
+        flags.incidents
+          ? rpc('employee_get_incidents', {
+              p_company_id: member.companyId,
+              p_employee_id: member.employeeId,
+              p_job_id: jobId,
+              p_include_closed: true,
+              p_session_token: tok,
+            })
+          : Promise.resolve({ data: [] }),
+        rpc('employee_get_job_photo_urls', {
+          p_company_id: member.companyId,
+          p_employee_id: member.employeeId,
+          p_job_id: jobId,
+          p_session_token: tok,
+        }),
       ])
 
       const foundJob = ((jobsRes.data as Job[]) ?? [])[0] ?? null
-      if (!foundJob) { setNotFound(true); setLoading(false); return }
+      if (!foundJob) {
+        setNotFound(true)
+        setLoading(false)
+        return
+      }
+      setNotFound(false)
       setJob(foundJob)
 
       const card = (cardRes.data as JobCard[] | null)?.[0] ?? null
@@ -208,15 +341,20 @@ export default function JobCardPage() {
         setWorkPerformed(card.work_performed ?? '')
         setMaterialsUsed(card.materials_used ?? '')
         setIsCompleted(card.is_completed)
-        // Load signed photo URLs
-        if (card.photo_urls?.length) {
-          const signed = await Promise.all(card.photo_urls.map(async path => {
-            const { data } = await supabase.storage.from('workforce-media').createSignedUrl(path, 3600)
-            return data?.signedUrl ?? null
-          }))
-          setPhotoUrls(signed.filter(Boolean) as string[])
-        }
+      } else {
+        setStartTime('')
+        setEndTime('')
+        setWorkPerformed('')
+        setMaterialsUsed('')
+        setIsCompleted(false)
       }
+
+      const parsed = parsePhasePhotoUrls(photosRes.data)
+      const [beforeSigned, afterSigned] = await Promise.all([
+        signMediaPaths(supabase, parsed.before),
+        signMediaPaths(supabase, parsed.after),
+      ])
+      setPhasePhotos({ before: beforeSigned, after: afterSigned })
 
       setChecklist(((checkRes.data as ChecklistItem[]) ?? []).sort((a,b) => a.sort_order - b.sort_order))
       const rawDocs = (docsRes.data as JobDocument[]) ?? []
@@ -228,7 +366,7 @@ export default function JobCardPage() {
       setSiteVisit((visitRes.data as SiteVisit[] | null)?.[0] ?? null)
       setInventory((invRes.data as InventoryUsage[]) ?? [])
       setFeedback((fbRes.data as Feedback[] | null)?.[0] ?? null)
-      setIncidents(((incRes.data as Incident[]) ?? []).filter(i => i.job_id === jobId))
+      setIncidents((incRes.data as Incident[]) ?? [])
 
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load job.')
@@ -237,18 +375,24 @@ export default function JobCardPage() {
   }
 
   // ── Job Card save ──────────────────────────────────────────────────────
-  async function saveCard() {
+  async function upsertCard(overrides?: {
+    startTime?: string
+    endTime?: string
+    silent?: boolean
+  }) {
     if (!empId || !companyId) return
     setSavingCard(true)
     const supabase = createClient()
+    const start = overrides?.startTime ?? startTime
+    const end   = overrides?.endTime   ?? endTime
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error: rpcErr } = await (supabase.rpc as any)('employee_upsert_job_card', {
         p_company_id:          companyId,
         p_employee_id:         empId,
         p_job_id:              jobId,
-        p_start_time:          startTime ? new Date(startTime).toISOString() : null,
-        p_end_time:            endTime   ? new Date(endTime).toISOString()   : null,
+        p_start_time:          start ? new Date(start).toISOString() : null,
+        p_end_time:            end   ? new Date(end).toISOString()   : null,
         p_work_performed:      workPerformed  || null,
         p_materials_used:      materialsUsed  || null,
         p_photo_urls:          jobCard?.photo_urls ?? [],
@@ -257,6 +401,7 @@ export default function JobCardPage() {
         p_session_token:       token,
       })
       if (rpcErr) throw rpcErr
+      if (!overrides?.silent) alert('Job card saved.')
       await init()
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to save job card.')
@@ -264,24 +409,46 @@ export default function JobCardPage() {
     setSavingCard(false)
   }
 
+  async function saveCard() {
+    await upsertCard()
+  }
+
+  async function stampStart() {
+    const stamp = toLocalDateTimeInput(new Date().toISOString())
+    setStartTime(stamp)
+    await upsertCard({ startTime: stamp, silent: true })
+  }
+
+  async function stampEnd() {
+    const stamp = toLocalDateTimeInput(new Date().toISOString())
+    setEndTime(stamp)
+    await upsertCard({ endTime: stamp, silent: true })
+  }
+
   // ── Checklist ──────────────────────────────────────────────────────────
   async function toggleCheckItem(item: ChecklistItem) {
+    const nextChecked = !item.is_checked
+    setChecklist(prev => prev.map(c => c.id === item.id ? { ...c, is_checked: nextChecked } : c))
+
     const supabase = createClient()
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase.rpc as any)('employee_update_checklist_item', {
-        p_company_id:   companyId,
-        p_employee_id:  empId,
-        p_job_id:       jobId,
-        p_item_id:      item.id,
-        p_is_checked:   !item.is_checked,
+      const { error: rpcErr } = await (supabase.rpc as any)('employee_update_checklist_item', {
+        p_company_id:    companyId,
+        p_employee_id:   empId,
+        p_item_id:       item.id,
+        p_is_checked:    nextChecked,
         p_session_token: token,
       })
-      setChecklist(prev => prev.map(c => c.id === item.id ? { ...c, is_checked: !c.is_checked } : c))
+      if (rpcErr) throw rpcErr
     } catch {
-      // Fallback: direct update
-      await supabase.from('job_checklist_items').update({ is_checked: !item.is_checked }).eq('id', item.id)
-      setChecklist(prev => prev.map(c => c.id === item.id ? { ...c, is_checked: !c.is_checked } : c))
+      // Last resort after RPC fails
+      try {
+        await supabase.from('job_checklist_items').update({ is_checked: nextChecked }).eq('id', item.id)
+      } catch {
+        setChecklist(prev => prev.map(c => c.id === item.id ? { ...c, is_checked: item.is_checked } : c))
+        setError('Failed to update checklist item.')
+      }
     }
   }
 
@@ -308,47 +475,83 @@ export default function JobCardPage() {
   }
 
   // ── Photos ─────────────────────────────────────────────────────────────
-  async function uploadPhoto(phase: 'photo_before' | 'photo_after', ref: React.RefObject<HTMLInputElement | null>) {
+  async function uploadPhoto(phase: 'before' | 'after', ref: React.RefObject<HTMLInputElement | null>) {
     const file = ref.current?.files?.[0]
-    if (!file || !companyId) return
+    if (!file || !companyId || !empId) return
     const supabase = createClient()
-    const ext  = file.name.split('.').pop()?.toLowerCase() ?? 'jpg'
-    const path = `jobs/${companyId}/${jobId}/${phase}/${crypto.randomUUID()}.${ext}`
-    const { error: upErr } = await supabase.storage.from('workforce-media').upload(path, file, { upsert: true, contentType: file.type })
-    if (upErr) { setError(upErr.message); return }
-    await supabase.from('job_documents').insert({
-      company_id: companyId, job_id: jobId,
-      document_name: file.name, document_type: phase, file_url: path,
-    })
-    if (ref.current) ref.current.value = ''
-    await init()
+    try {
+      await uploadJobPhoto({
+        supabase,
+        companyId,
+        employeeId: empId,
+        jobId,
+        phase,
+        file,
+        sessionToken: token,
+      })
+      if (ref.current) ref.current.value = ''
+      await init()
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setError(`Upload failed: ${msg}`)
+    }
   }
 
   async function uploadDoc() {
     const file = docRef.current?.files?.[0]
-    if (!file || !companyId) return
-    const name = prompt('Document name:', file.name) ?? file.name
+    if (!file || !companyId || !empId) return
+    const name = prompt('Document name:', file.name)
+    if (!name?.trim()) {
+      if (docRef.current) docRef.current.value = ''
+      return
+    }
     const supabase = createClient()
-    const ext  = file.name.split('.').pop()?.toLowerCase() ?? 'pdf'
-    const path = `jobs/${companyId}/${jobId}/docs/${crypto.randomUUID()}.${ext}`
-    const { error: upErr } = await supabase.storage.from('workforce-media').upload(path, file, { upsert: true })
-    if (upErr) { setError(upErr.message); return }
-    await supabase.from('job_documents').insert({
-      company_id: companyId, job_id: jobId,
-      document_name: name, document_type: 'other', file_url: path,
-    })
-    if (docRef.current) docRef.current.value = ''
-    await init()
+    try {
+      await uploadJobDocument({
+        supabase,
+        companyId,
+        employeeId: empId,
+        jobId,
+        file,
+        documentName: name.trim(),
+        documentType: 'other',
+        sessionToken: token,
+      })
+      if (docRef.current) docRef.current.value = ''
+      await init()
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setError(`Upload failed: ${msg}`)
+    }
   }
 
   // ── On-site flows ──────────────────────────────────────────────────────
   function openSiteModal(action: typeof siteAction) {
-    setSiteAction(action); setSiteName(''); setSiteGeoLat(null); setSiteGeoLng(null)
+    setSiteAction(action)
+    setSiteName('')
+    setSiteGeoLat(null)
+    setSiteGeoLng(null)
+    setSiteAddress(null)
     setSiteModalOpen(true)
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        pos => { setSiteGeoLat(pos.coords.latitude); setSiteGeoLng(pos.coords.longitude) },
-        () => {}
+        async pos => {
+          const lat = pos.coords.latitude
+          const lng = pos.coords.longitude
+          setSiteGeoLat(lat)
+          setSiteGeoLng(lng)
+          try {
+            const res = await fetch(
+              `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
+              { headers: { 'Accept-Language': 'en' } },
+            )
+            const json = await res.json()
+            setSiteAddress((json as { display_name?: string }).display_name ?? null)
+          } catch {
+            // reverse geocode failed — address stays null
+          }
+        },
+        () => {},
       )
     }
   }
@@ -363,14 +566,14 @@ export default function JobCardPage() {
       if (siteAction === 'sign_in') {
         const { error: rpcErr } = await rpc('employee_job_site_sign_in', {
           p_company_id: companyId, p_employee_id: empId, p_job_id: jobId,
-          p_latitude: siteGeoLat, p_longitude: siteGeoLng, p_address: null,
+          p_latitude: siteGeoLat, p_longitude: siteGeoLng, p_address: siteAddress,
           p_reported_by_name: siteName || null, p_notes: null, p_session_token: token,
         })
         if (rpcErr?.message?.includes('ALREADY_ON_SITE')) {
           if (confirm('You already have an open site visit. Switch to this job instead?')) {
             await rpc('employee_job_site_switch_to_job', {
               p_company_id: companyId, p_employee_id: empId, p_job_id: jobId,
-              p_latitude: siteGeoLat, p_longitude: siteGeoLng, p_address: null,
+              p_latitude: siteGeoLat, p_longitude: siteGeoLng, p_address: siteAddress,
               p_reported_by_name: siteName || null, p_session_token: token,
             })
           }
@@ -378,13 +581,13 @@ export default function JobCardPage() {
       } else if (siteAction === 'sign_out') {
         const { error: rpcErr } = await rpc('employee_job_site_sign_out', {
           p_company_id: companyId, p_employee_id: empId, p_job_id: jobId,
-          p_latitude: siteGeoLat, p_longitude: siteGeoLng, p_address: null, p_session_token: token,
+          p_latitude: siteGeoLat, p_longitude: siteGeoLng, p_address: siteAddress, p_session_token: token,
         })
         if (rpcErr) throw rpcErr
       } else if (siteAction === 'switch') {
         const { error: rpcErr } = await rpc('employee_job_site_switch_to_job', {
           p_company_id: companyId, p_employee_id: empId, p_job_id: jobId,
-          p_latitude: siteGeoLat, p_longitude: siteGeoLng, p_address: null,
+          p_latitude: siteGeoLat, p_longitude: siteGeoLng, p_address: siteAddress,
           p_reported_by_name: siteName || null, p_session_token: token,
         })
         if (rpcErr) throw rpcErr
@@ -413,20 +616,59 @@ export default function JobCardPage() {
       p_employee_id:   empId,
       p_session_token: token,
     })
-    setInvItems((data as InventoryItem[]) ?? [])
+    const items = (data as InventoryItem[]) ?? []
+    if (items.length === 0) {
+      alert('No inventory items found.')
+      return
+    }
+    setInvItems(items)
     setInvItemId(''); setInvQty('')
     setInvModalOpen(true)
   }
 
   async function submitInventory() {
     if (!invItemId || !invQty || !empId || !companyId) return
+    const qty = Number(invQty)
+    if (!Number.isFinite(qty) || qty <= 0) {
+      alert('Enter a quantity greater than 0.')
+      return
+    }
     setSubmittingInv(true)
     const supabase = createClient()
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error: rpcErr } = await (supabase.rpc as any)('employee_set_inventory_usage_for_job', {
-        p_company_id: companyId, p_employee_id: empId, p_job_id: jobId,
-        p_inventory_item_id: invItemId, p_quantity: Number(invQty), p_session_token: token,
+      const rpc = (fn: string, args: Record<string, unknown>) => (supabase.rpc as any)(fn, args)
+
+      const { data: existingData, error: loadErr } = await rpc('employee_get_inventory_usage_for_job', {
+        p_company_id: companyId,
+        p_employee_id: empId,
+        p_job_id: jobId,
+        p_session_token: token,
+      })
+      if (loadErr) throw loadErr
+
+      const existing = (existingData as InventoryUsage[]) ?? []
+      const merged = new Map<string, number>()
+      for (const u of existing) {
+        const id = u.inventory_item_id
+        if (!id) continue
+        merged.set(id, (merged.get(id) ?? 0) + Number(u.quantity || 0))
+      }
+      merged.set(invItemId, (merged.get(invItemId) ?? 0) + qty)
+
+      const usages = Array.from(merged.entries())
+        .filter(([, q]) => q > 0)
+        .map(([inventory_item_id, quantity]) => ({
+          inventory_item_id,
+          quantity: String(quantity),
+        }))
+
+      const { error: rpcErr } = await rpc('employee_set_inventory_usage_for_job', {
+        p_company_id: companyId,
+        p_employee_id: empId,
+        p_job_id: jobId,
+        p_usages: JSON.stringify(usages),
+        p_session_token: token,
       })
       if (rpcErr) throw rpcErr
       setInvModalOpen(false)
@@ -440,6 +682,10 @@ export default function JobCardPage() {
   // ── Feedback ───────────────────────────────────────────────────────────
   async function submitFeedback() {
     if (!empId || !companyId) return
+    if (!Number.isInteger(fbRating) || fbRating < 1 || fbRating > 5) {
+      alert('Enter a rating from 1 to 5.')
+      return
+    }
     setSubmittingFb(true)
     const supabase = createClient()
     try {
@@ -457,10 +703,37 @@ export default function JobCardPage() {
     setSubmittingFb(false)
   }
 
+  // ── Job Chat ───────────────────────────────────────────────────────────
+  async function openJobChat() {
+    if (!empId || !companyId) return
+    const supabase = createClient()
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error: rpcErr } = await (supabase.rpc as any)('employee_get_job_thread', {
+        p_company_id: companyId,
+        p_employee_id: empId,
+        p_job_id: jobId,
+        p_session_token: token,
+      })
+      if (rpcErr) throw rpcErr
+
+      const threadId =
+        (Array.isArray(data) ? (data[0] as { id?: string } | undefined)?.id : undefined)
+        ?? (data as { id?: string } | null)?.id
+        ?? null
+
+      if (threadId) router.push(`/dashboard/messages?threadId=${threadId}`)
+      else router.push('/dashboard/messages')
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : 'Could not open job chat.')
+    }
+  }
+
   // ── Render ─────────────────────────────────────────────────────────────
-  if (loading) return (
+  if (allowed === null || (allowed && loading)) return (
     <div className="flex items-center justify-center h-64 text-text-secondary text-[14px]">Loading…</div>
   )
+  if (allowed === false) return null
   if (notFound || !job) return (
     <div className="flex flex-col items-center justify-center h-64 gap-2 text-text-secondary">
       <span className="material-icons text-[48px] text-text-disabled">work_off</span>
@@ -468,9 +741,9 @@ export default function JobCardPage() {
     </div>
   )
 
-  const beforePhotos = docs.filter(d => d.document_type === 'photo_before')
-  const afterPhotos  = docs.filter(d => d.document_type === 'photo_after')
-  const otherDocs    = docs.filter(d => !['photo_before','photo_after'].includes(d.document_type))
+  const beforeDocPhotos = docs.filter(d => d.document_type === 'photo_before')
+  const afterDocPhotos  = docs.filter(d => d.document_type === 'photo_after')
+  const otherDocs       = docs.filter(d => !['photo_before','photo_after'].includes(d.document_type))
 
   const isOnThisJob    = !!siteVisit && siteVisit.job_id === jobId
   const isOnOtherJob   = !!siteVisit && siteVisit.job_id !== jobId
@@ -516,6 +789,46 @@ export default function JobCardPage() {
             <p className="text-[13px] text-error font-semibold">{error}</p>
           </div>
         )}
+
+        {/* ── Job Info ── */}
+        <Section title="Job Info">
+          <div className="p-4 space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide">Code</p>
+                <p className="text-[13px] text-text-primary mt-0.5">{job.job_code || '—'}</p>
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide">Priority</p>
+                <p className="text-[13px] text-text-primary mt-0.5 capitalize">{job.priority?.replace(/_/g, ' ') || '—'}</p>
+              </div>
+            </div>
+            <div>
+              <p className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide">Description</p>
+              <p className="text-[13px] text-text-primary mt-0.5 whitespace-pre-wrap">{job.description || '—'}</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide">Scheduled Start</p>
+                <p className="text-[13px] text-text-primary mt-0.5">{fmtDateTime(job.scheduled_start)}</p>
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide">Scheduled End</p>
+                <p className="text-[13px] text-text-primary mt-0.5">{fmtDateTime(job.scheduled_end)}</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide">Client</p>
+                <p className="text-[13px] text-text-primary mt-0.5">{job.client_name || '—'}</p>
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide">Site</p>
+                <p className="text-[13px] text-text-primary mt-0.5">{job.site_name || '—'}</p>
+              </div>
+            </div>
+          </div>
+        </Section>
 
         {/* ── On-site Status ── */}
         <Section title="On-Site Status">
@@ -577,8 +890,8 @@ export default function JobCardPage() {
                 <div className="flex gap-2">
                   <input className="input flex-1 text-[12px]" type="datetime-local" value={startTime}
                     onChange={e => setStartTime(e.target.value)} />
-                  <button onClick={() => setStartTime(toLocalDateTimeInput(new Date().toISOString()))}
-                    className="text-[11px] font-semibold px-2 py-1.5 rounded-lg bg-surface-elevated border border-divider hover:border-primary transition-colors whitespace-nowrap">
+                  <button onClick={stampStart} disabled={savingCard}
+                    className="text-[11px] font-semibold px-2 py-1.5 rounded-lg bg-surface-elevated border border-divider hover:border-primary transition-colors whitespace-nowrap disabled:opacity-60">
                     Now
                   </button>
                 </div>
@@ -588,8 +901,8 @@ export default function JobCardPage() {
                 <div className="flex gap-2">
                   <input className="input flex-1 text-[12px]" type="datetime-local" value={endTime}
                     onChange={e => setEndTime(e.target.value)} />
-                  <button onClick={() => setEndTime(toLocalDateTimeInput(new Date().toISOString()))}
-                    className="text-[11px] font-semibold px-2 py-1.5 rounded-lg bg-surface-elevated border border-divider hover:border-primary transition-colors whitespace-nowrap">
+                  <button onClick={stampEnd} disabled={savingCard}
+                    className="text-[11px] font-semibold px-2 py-1.5 rounded-lg bg-surface-elevated border border-divider hover:border-primary transition-colors whitespace-nowrap disabled:opacity-60">
                     Now
                   </button>
                 </div>
@@ -646,14 +959,19 @@ export default function JobCardPage() {
             <div>
               <p className="text-[12px] font-semibold text-text-secondary mb-2">Before</p>
               <div className="grid grid-cols-3 gap-2 mb-2">
-                {beforePhotos.map(d => (
+                {phasePhotos.before.map((url, i) => (
+                  <a key={`phase-before-${i}`} href={url} target="_blank" rel="noopener noreferrer">
+                    <img src={url} alt={`Before ${i + 1}`} className="w-full aspect-square object-cover rounded-lg" />
+                  </a>
+                ))}
+                {beforeDocPhotos.map(d => (
                   <a key={d.id} href={d.signedUrl ?? '#'} target="_blank" rel="noopener noreferrer">
                     <img src={d.signedUrl ?? ''} alt={d.document_name} className="w-full aspect-square object-cover rounded-lg" />
                   </a>
                 ))}
               </div>
               <input ref={beforePhotoRef} type="file" accept="image/*" className="hidden"
-                onChange={() => uploadPhoto('photo_before', beforePhotoRef)} />
+                onChange={() => uploadPhoto('before', beforePhotoRef)} />
               <button onClick={() => beforePhotoRef.current?.click()}
                 className="w-full h-9 rounded-lg border border-dashed border-divider text-[12px] text-text-secondary hover:border-primary hover:text-primary transition-colors">
                 + Upload before photo
@@ -663,14 +981,19 @@ export default function JobCardPage() {
             <div>
               <p className="text-[12px] font-semibold text-text-secondary mb-2">After</p>
               <div className="grid grid-cols-3 gap-2 mb-2">
-                {afterPhotos.map(d => (
+                {phasePhotos.after.map((url, i) => (
+                  <a key={`phase-after-${i}`} href={url} target="_blank" rel="noopener noreferrer">
+                    <img src={url} alt={`After ${i + 1}`} className="w-full aspect-square object-cover rounded-lg" />
+                  </a>
+                ))}
+                {afterDocPhotos.map(d => (
                   <a key={d.id} href={d.signedUrl ?? '#'} target="_blank" rel="noopener noreferrer">
                     <img src={d.signedUrl ?? ''} alt={d.document_name} className="w-full aspect-square object-cover rounded-lg" />
                   </a>
                 ))}
               </div>
               <input ref={afterPhotoRef} type="file" accept="image/*" className="hidden"
-                onChange={() => uploadPhoto('photo_after', afterPhotoRef)} />
+                onChange={() => uploadPhoto('after', afterPhotoRef)} />
               <button onClick={() => afterPhotoRef.current?.click()}
                 className="w-full h-9 rounded-lg border border-dashed border-divider text-[12px] text-text-secondary hover:border-primary hover:text-primary transition-colors">
                 + Upload after photo
@@ -706,23 +1029,30 @@ export default function JobCardPage() {
         </Section>
 
         {/* ── Incidents ── */}
-        <Section title="Incidents" action={
-          <Link href={`/dashboard/employee/incidents/new?jobId=${jobId}&jobTitle=${encodeURIComponent(job.title)}`}
-            className="text-[12px] font-semibold text-primary hover:underline">Report</Link>
-        }>
-          <div className="divide-y divide-divider">
-            {incidents.length === 0 && <p className="px-4 py-3 text-[13px] text-text-disabled">No incidents linked to this job.</p>}
-            {incidents.map(inc => (
-              <Link key={inc.id} href={`/dashboard/employee/incidents/${inc.id}`}
-                className="flex items-center gap-3 px-4 py-3 hover:bg-surface-elevated transition-colors">
-                <div className="flex-1 min-w-0">
-                  <p className="text-[13px] font-semibold text-text-primary">{inc.title}</p>
-                </div>
-                {inc.severity && <span className="text-[11px] font-semibold text-error capitalize">{inc.severity}</span>}
-              </Link>
-            ))}
-          </div>
-        </Section>
+        {showIncidents && (
+          <Section title="Incidents" action={
+            <Link href={`/dashboard/employee/incidents/new?jobId=${jobId}&jobTitle=${encodeURIComponent(job.title)}`}
+              className="text-[12px] font-semibold text-primary hover:underline">Report</Link>
+          }>
+            <div className="divide-y divide-divider">
+              {incidents.length === 0 && <p className="px-4 py-3 text-[13px] text-text-disabled">No incidents linked to this job.</p>}
+              {incidents.map(inc => (
+                <Link key={inc.id} href={`/dashboard/employee/incidents/${inc.id}`}
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-surface-elevated transition-colors">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] font-semibold text-text-primary truncate">
+                      {inc.title?.trim() || 'Incident'}
+                    </p>
+                    {inc.status && (
+                      <p className="text-[11px] text-text-disabled capitalize">{inc.status.replace(/_/g, ' ')}</p>
+                    )}
+                  </div>
+                  {inc.severity && <span className="text-[11px] font-semibold text-error capitalize">{inc.severity}</span>}
+                </Link>
+              ))}
+            </div>
+          </Section>
+        )}
 
         {/* ── Inventory ── */}
         <Section title="Inventory Used" action={
@@ -763,7 +1093,7 @@ export default function JobCardPage() {
                   ))}
                   <span className="ml-1 text-[13px] font-semibold text-text-primary">{feedback.rating}/5</span>
                 </div>
-                {feedback.comments && <p className="text-[13px] text-text-secondary mt-1">"{feedback.comments}"</p>}
+                {feedback.comments && <p className="text-[13px] text-text-secondary mt-1">&ldquo;{feedback.comments}&rdquo;</p>}
                 <p className="text-[11px] text-text-disabled mt-1">
                   {new Date(feedback.created_at).toLocaleDateString('en-ZA', {day:'2-digit',month:'short',year:'numeric'})}
                 </p>
@@ -775,20 +1105,8 @@ export default function JobCardPage() {
         {/* ── Job Chat ── */}
         <Section title="Job Chat">
           <div className="p-4">
-            <button onClick={async () => {
-              if (!empId || !companyId) return
-              const supabase = createClient()
-              try {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const { data } = await (supabase.rpc as any)('get_or_create_job_thread', { p_company_id: companyId, p_job_id: jobId, p_employee_id: empId })
-                const threadId = (data as { id?: string }[] | null)?.[0]?.id
-                  ?? (data as { id?: string } | null)?.id
-                if (threadId) router.push(`/dashboard/messages?threadId=${threadId}`)
-                else router.push('/dashboard/messages')
-              } catch {
-                router.push('/dashboard/messages')
-              }
-            }} className="w-full h-10 rounded-xl border border-divider text-[14px] font-semibold text-text-primary hover:bg-surface-elevated transition-colors">
+            <button onClick={openJobChat}
+              className="w-full h-10 rounded-xl border border-divider text-[14px] font-semibold text-text-primary hover:bg-surface-elevated transition-colors">
               Open job chat
             </button>
           </div>
@@ -821,6 +1139,9 @@ export default function JobCardPage() {
               </span>
               {siteGeoLat != null ? `GPS: ${siteGeoLat.toFixed(4)}, ${siteGeoLng!.toFixed(4)}` : 'Location not captured'}
             </div>
+            {siteAddress && (
+              <p className="text-[11px] text-text-disabled leading-snug">{siteAddress}</p>
+            )}
             <div className="flex gap-3">
               <button onClick={() => setSiteModalOpen(false)} disabled={siteLoading}
                 className="flex-1 h-11 rounded-xl border border-divider text-[14px] font-semibold text-text-secondary hover:bg-surface-elevated transition-colors">

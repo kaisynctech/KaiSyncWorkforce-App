@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import { useEmployeeModuleGate } from '@/lib/employee-module-gate'
 
 interface Contractor {
   id: string
@@ -171,12 +172,16 @@ function InfoRow({ label, value }: { label: string; value: string | null | undef
 }
 
 export default function ContractorProfilePage() {
+  const allowed = useEmployeeModuleGate('contractors')
   const [contractors, setContractors] = useState<Contractor[]>([])
   const [loading, setLoading]         = useState(true)
   const [error, setError]             = useState<string | null>(null)
   const [activeTab, setActiveTab]     = useState(0)
 
-  useEffect(() => { init() }, [])
+  useEffect(() => {
+    if (allowed !== true) return
+    void init()
+  }, [allowed])
 
   async function init() {
     setLoading(true)
@@ -203,9 +208,10 @@ export default function ContractorProfilePage() {
     setLoading(false)
   }
 
-  if (loading) return (
+  if (allowed === null || (allowed && loading)) return (
     <div className="flex items-center justify-center h-64 text-text-secondary text-[14px]">Loading…</div>
   )
+  if (allowed === false) return null
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
