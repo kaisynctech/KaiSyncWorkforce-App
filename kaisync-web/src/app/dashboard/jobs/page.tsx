@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { cn, formatDate, formatCurrency } from '@/lib/utils'
-import type { Job, JobStatus, JobPriority } from '@/types/database'
+import type { Job, JobStatus } from '@/types/database'
 
 type Scope = 'all' | 'mine'
 
@@ -19,18 +19,39 @@ const STATUS_OPTIONS: { value: JobStatus | 'all'; label: string }[] = [
   { value: 'cancelled', label: 'Cancelled' },
 ]
 
-const STATUS_BADGES: Record<JobStatus, { label: string; cls: string }> = {
+const STATUS_BADGES: Record<string, { label: string; cls: string }> = {
   open: { label: 'Open', cls: 'bg-[#DBEAFE] text-[#1D4ED8]' },
   scheduled: { label: 'Scheduled', cls: 'bg-warning-dark text-[#92400E]' },
   in_progress: { label: 'In Progress', cls: 'bg-success-dark text-[#166534]' },
+  inProgress: { label: 'In Progress', cls: 'bg-success-dark text-[#166534]' },
   completed: { label: 'Completed', cls: 'bg-surface-elevated text-text-secondary' },
   cancelled: { label: 'Cancelled', cls: 'bg-error-dark text-[#991B1B]' },
 }
 
-const PRIORITY_BADGES: Record<JobPriority, { label: string; cls: string }> = {
+const PRIORITY_BADGES: Record<string, { label: string; cls: string }> = {
   high: { label: 'High', cls: 'bg-error-dark text-error' },
   medium: { label: 'Medium', cls: 'bg-warning-dark text-[#92400E]' },
+  normal: { label: 'Normal', cls: 'bg-warning-dark text-[#92400E]' },
   low: { label: 'Low', cls: 'bg-surface-elevated text-text-secondary' },
+  none: { label: 'None', cls: 'bg-surface-elevated text-text-secondary' },
+}
+
+const FALLBACK_BADGE = { label: '—', cls: 'bg-surface-elevated text-text-secondary' }
+
+function statusBadgeOf(raw: string | null | undefined) {
+  if (!raw) return FALLBACK_BADGE
+  return STATUS_BADGES[raw] ?? STATUS_BADGES[raw.toLowerCase()] ?? {
+    label: raw.replace(/_/g, ' '),
+    cls: FALLBACK_BADGE.cls,
+  }
+}
+
+function priorityBadgeOf(raw: string | null | undefined) {
+  if (!raw) return FALLBACK_BADGE
+  return PRIORITY_BADGES[raw] ?? PRIORITY_BADGES[raw.toLowerCase()] ?? {
+    label: raw.replace(/_/g, ' '),
+    cls: FALLBACK_BADGE.cls,
+  }
 }
 
 export default function JobsPage() {
@@ -91,8 +112,9 @@ export default function JobsPage() {
       const q = search.toLowerCase()
       const clientName = (job.clients as { name: string } | null | undefined)?.name ?? ''
       return (
-        job.title.toLowerCase().includes(q) ||
+        (job.title ?? '').toLowerCase().includes(q) ||
         clientName.toLowerCase().includes(q) ||
+        (job.job_code ?? '').toLowerCase().includes(q) ||
         job.id.toLowerCase().includes(q)
       )
     }
@@ -288,8 +310,8 @@ export default function JobsPage() {
               </thead>
               <tbody>
                 {filtered.map(job => {
-                  const statusBadge = STATUS_BADGES[job.status]
-                  const priorityBadge = PRIORITY_BADGES[job.priority]
+                  const statusBadge = statusBadgeOf(job.status)
+                  const priorityBadge = priorityBadgeOf(job.priority)
                   const client = job.clients as { name: string; client_code: string | null } | undefined
                   return (
                     <tr
@@ -301,7 +323,7 @@ export default function JobsPage() {
                         {job.job_code ?? job.id.slice(0, 8).toUpperCase()}
                       </td>
                       <td className="px-4 py-3">
-                        <p className="font-medium text-text-primary truncate max-w-[160px]">{job.title}</p>
+                        <p className="font-medium text-text-primary truncate max-w-[160px]">{job.title || '—'}</p>
                       </td>
                       <td className="px-4 py-3 text-text-secondary truncate max-w-[130px]">
                         {client?.name ?? '—'}
