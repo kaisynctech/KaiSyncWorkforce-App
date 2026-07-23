@@ -97,7 +97,7 @@ export interface Client {
 }
 
 export type JobStatus = 'open' | 'scheduled' | 'in_progress' | 'completed' | 'cancelled'
-export type JobPriority = 'low' | 'medium' | 'high'
+export type JobPriority = 'low' | 'medium' | 'high' | 'normal' | 'none'
 
 export interface Site {
   id: string
