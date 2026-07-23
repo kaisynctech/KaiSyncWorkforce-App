@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { FilterChip } from '@/components/ui/FilterChip'
 import { StatusBadge } from '@/components/ui/StatusBadge'
+import { isContractorKind } from '@/lib/partner-kinds'
 import type { Contractor, ContractorActionItem } from '@/types/database'
 
 type FilterValue = 'active' | 'inactive' | 'all'
@@ -55,7 +56,9 @@ export default function ContractorsPage() {
         .limit(20),
     ])
 
-    setContractors((cRes.data ?? []) as Contractor[])
+    const rows = ((cRes.data ?? []) as (Contractor & { partner_kind?: string | null })[])
+      .filter(c => isContractorKind(c.partner_kind) || (!c.partner_kind && !c.is_supplier))
+    setContractors(rows as Contractor[])
     setActionItems((aRes.data ?? []) as ContractorActionItem[])
     setLoading(false)
   }, [])

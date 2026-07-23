@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import { isSupplierKind } from '@/lib/partner-kinds'
 import type { Contractor } from '@/types/database'
 
 export default function SuppliersPage() {
@@ -21,9 +22,12 @@ export default function SuppliersPage() {
       .from('contractors')
       .select('*')
       .eq('company_id', member.companyId)
-      .eq('is_supplier', true)
       .order('name')
-    setSuppliers((data ?? []) as Contractor[])
+    // MAUI: IsSupplierKind (partner_kind = supplier | both); keep legacy is_supplier
+    const rows = ((data ?? []) as (Contractor & { partner_kind?: string | null })[]).filter(c =>
+      isSupplierKind(c.partner_kind) || c.is_supplier === true,
+    )
+    setSuppliers(rows as Contractor[])
     setLoading(false)
   }, [])
 

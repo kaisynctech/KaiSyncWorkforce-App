@@ -4,6 +4,12 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { formatDateTime } from '@/lib/utils'
+import {
+  COMPANY_MODULE_SPECS,
+  buildEnabledModulesMap,
+  isModuleEnabled,
+  type EnabledModules,
+} from '@/lib/company-modules'
 import type { Company, Employee, SecuritySettings, AuditEvent } from '@/types/database'
 
 // ─── Local types ──────────────────────────────────────────────────────────────
@@ -45,6 +51,9 @@ export default function SettingsPage() {
   const [allEmployees,     setAllEmployees]      = useState<HrEmployee[]>([])
   const [promoteEmployeeId, setPromoteEmployeeId] = useState('')
   const [hrBusy,           setHrBusy]           = useState(false)
+  const [enabledModules,   setEnabledModules]   = useState<EnabledModules>({})
+  const [modulesBusy,      setModulesBusy]      = useState(false)
+  const [modulesMsg,       setModulesMsg]       = useState<string | null>(null)
 
   useEffect(() => { load() }, [])
 
@@ -70,6 +79,7 @@ export default function SettingsPage() {
     setCompany(co)
     setCompanyName(co.name)
     setIndustry(co.industry ?? '')
+    setEnabledModules((co as Company).enabled_modules ?? {})
 
     const [secRes, auditRes, branchRes, allEmpRes] = await Promise.all([
       supabase.from('security_settings').select('*').eq('company_id', member.companyId).maybeSingle(),
@@ -80,6 +90,16 @@ export default function SettingsPage() {
       supabase.from('employees').select('id, name, surname, email, access_level')
         .eq('company_id', member.companyId).eq('is_active', true).order('name'),
     ])
+
+    // Prefer explicit enabled_modules column if nested select omitted it
+    if (!(co as Company).enabled_modules) {
+      const { data: coRow } = await supabase
+        .from('companies')
+        .select('enabled_modules')
+        .eq('id', member.companyId)
+        .maybeSingle()
+      if (coRow?.enabled_modules) setEnabledModules(coRow.enabled_modules as EnabledModules)
+    }
 
     setSecurity(secRes.data as SecuritySettings | null)
     setAuditEvents((auditRes.data ?? []) as AuditEvent[])
@@ -102,6 +122,31 @@ export default function SettingsPage() {
       .eq('id', company.id)
     await load()
     setSaving(null)
+  }
+
+  function toggleModule(key: string, value: boolean) {
+    setEnabledModules(prev => buildEnabledModulesMap(prev, { [key]: value }))
+    setModulesMsg(null)
+  }
+
+  async function saveModules() {
+    if (!company || !isHrOrAbove) return
+    setModulesBusy(true)
+    setModulesMsg(null)
+    const supabase = createClient()
+    const payload = buildEnabledModulesMap(enabledModules, {})
+    const { error: e } = await supabase
+      .from('companies')
+      .update({ enabled_modules: payload })
+      .eq('id', company.id)
+    if (e) {
+      setModulesMsg(e.message || 'Failed to save modules')
+      setModulesBusy(false)
+      return
+    }
+    setEnabledModules(payload)
+    setModulesMsg('Modules saved. Sidebar updates on next navigation refresh.')
+    setModulesBusy(false)
   }
 
   async function rotatePortalCode(type: 'employee' | 'contractor') {
@@ -282,7 +327,40 @@ export default function SettingsPage() {
         </div>
       </Section>
 
-      {/* 2. Security */}
+      {/* 2. Modules */}
+      <Section title="Modules" icon="extension">
+        <div className="flex flex-col gap-3">
+          <p className="text-[13px] text-text-secondary">
+            Enable or disable company modules. Disabled modules are hidden from the HR sidebar and employee portal.
+          </p>
+          {COMPANY_MODULE_SPECS.map(spec => (
+            <Toggle
+              key={spec.key}
+              label={spec.title}
+              description={spec.description}
+              checked={isModuleEnabled(enabledModules, spec.key, spec.defaultIfMissing)}
+              onChange={v => toggleModule(spec.key, v)}
+              disabled={!isHrOrAbove || modulesBusy}
+            />
+          ))}
+          {modulesMsg && (
+            <p className={`text-[12px] ${modulesMsg.includes('Failed') ? 'text-danger' : 'text-text-secondary'}`}>
+              {modulesMsg}
+            </p>
+          )}
+          {isHrOrAbove && (
+            <button
+              onClick={saveModules}
+              disabled={modulesBusy}
+              className="self-start h-9 px-4 rounded-md bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors"
+            >
+              {modulesBusy ? 'Saving…' : 'Save Modules'}
+            </button>
+          )}
+        </div>
+      </Section>
+
+      {/* 3. Security */}
       <Section title="Security" icon="security">
         <div className="flex flex-col gap-4">
           <Toggle

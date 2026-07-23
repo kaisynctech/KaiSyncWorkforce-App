@@ -13,6 +13,8 @@ import { FormSelect } from '@/components/FormSelect'
 import { Toggle } from '@/components/Toggle'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { ComingSoon } from '@/components/ui/ComingSoon'
+import { ContractorActivityTab } from '@/components/ContractorActivityTab'
+import { ContractorQuotesTab } from '@/components/ContractorQuotesTab'
 import { KpiTile } from '@/components/ui/KpiTile'
 import { InfoBanner } from '@/components/ui/InfoBanner'
 import { DocFilterChip } from '@/components/ui/DocFilterChip'
@@ -1108,10 +1110,27 @@ export default function ContractorDetailPage() {
           </div>
         )}
 
-        {/* ── DEFERRED TABS ── */}
-        {['Activity', 'Quotes', 'Invoices'].includes(tab) && (
+        {/* ── ACTIVITY ── */}
+        {tab === 'Activity' && contractor && (
+          <div className="flex-1 overflow-y-auto">
+            <ContractorActivityTab companyId={contractor.company_id} contractorId={contractorId} />
+          </div>
+        )}
+
+        {/* ── QUOTES ── */}
+        {tab === 'Quotes' && contractor && (
+          <div className="flex-1 overflow-y-auto">
+            <ContractorQuotesTab companyId={contractor.company_id} contractorId={contractorId} />
+          </div>
+        )}
+
+        {/* ── INVOICES (MAUI stub parity) ── */}
+        {tab === 'Invoices' && (
           <div className="flex-1 overflow-y-auto">
             <ComingSoon />
+            <p className="text-center text-[12px] text-text-secondary -mt-4 pb-6">
+              Contractor invoices are coming soon (same as MAUI).
+            </p>
           </div>
         )}
       </div>

@@ -45,9 +45,16 @@ export default function TimeTemplatesPage() {
   }
 
   async function deleteTemplate(id: string) {
-    if (!window.confirm('Delete this template?')) return
+    if (!companyId || !window.confirm('Delete this template?')) return
     const supabase = createClient()
-    await supabase.from('employee_shift_templates').delete().eq('id', id)
+    const { error: rpcErr } = await supabase.rpc('hr_delete_shift_template', {
+      p_id: id,
+      p_company_id: companyId,
+    })
+    if (rpcErr) {
+      console.error('delete template:', rpcErr.message)
+      return
+    }
     setTemplates(prev => prev.filter(t => t.id !== id))
   }
 
@@ -114,9 +121,13 @@ export default function TimeTemplatesPage() {
                   Delete
                 </button>
               </div>
-              {t.summary && (
+              {t.summary ? (
                 <p className="text-xs text-text-secondary">{t.summary}</p>
-              )}
+              ) : (t.start_time || t.end_time) ? (
+                <p className="text-xs text-text-secondary">
+                  {(t.start_time ?? '').slice(0, 5)} – {(t.end_time ?? '').slice(0, 5)}
+                </p>
+              ) : null}
             </div>
           ))
         )}

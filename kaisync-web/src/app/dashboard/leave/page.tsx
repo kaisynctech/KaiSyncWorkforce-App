@@ -83,16 +83,17 @@ export default function LeavePage() {
     setLoading(false)
   }
 
-  async function handleAction(requestId: string, decision: 'approved' | 'rejected') {
+  async function handleAction(requestId: string, decision: 'approved' | 'declined') {
     if (!companyId) return
     setActionLoading(requestId)
     const supabase = createClient()
-    await supabase.rpc('decide_leave_request', {
+    const { error: rpcErr } = await supabase.rpc('decide_leave_request', {
       p_company_id:        companyId,
       p_leave_request_id:  requestId,
       p_decision:          decision,
       p_note:              null,
     })
+    if (rpcErr) setError(rpcErr.message)
     await load()
     setActionLoading(null)
   }
@@ -297,7 +298,7 @@ export default function LeavePage() {
                   {req.status === 'pending' && (
                     <div className="flex gap-2 shrink-0">
                       <button
-                        onClick={() => handleAction(req.id, 'rejected')}
+                        onClick={() => handleAction(req.id, 'declined')}
                         disabled={actionLoading === req.id}
                         className="h-8 px-3 rounded-md text-[12px] font-medium bg-error-dark text-error hover:bg-red-100 transition-colors disabled:opacity-50"
                       >

@@ -22,6 +22,11 @@ function calcPaidHours(start: string, end: string, breaks: BreakEntry[]): string
   return `${h}h ${String(m).padStart(2, '0')}m`
 }
 
+function toTimeSql(t: string): string {
+  // HH:mm -> HH:mm:ss for Postgres time
+  return t.length === 5 ? `${t}:00` : t
+}
+
 export default function NewTimeTemplatePage() {
   const router = useRouter()
   const [name, setName] = useState('')
@@ -32,7 +37,6 @@ export default function NewTimeTemplatePage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Add break modal state
   const [showAddBreak, setShowAddBreak] = useState(false)
   const [breakLabel, setBreakLabel] = useState('')
   const [breakMinutes, setBreakMinutes] = useState('30')
@@ -57,20 +61,23 @@ export default function NewTimeTemplatePage() {
     const member = await resolveCurrentMember(supabase)
     if (!member) { setError('not_linked'); setBusy(false); return }
 
-    try {
-      await supabase.rpc('upsert_shift_template', {
-        template: {
-          company_id: member.companyId,
-          name: name.trim(),
-          start_time: startTime,
-          end_time: endTime,
-        },
-        breaks: breaks.map(b => ({ label: b.label, minutes: b.minutes })),
-      })
-      router.push('/dashboard/time-templates')
-    } catch (e: unknown) {
-      setErrorMsg(e instanceof Error ? e.message : 'Failed to save template.')
+    const breakMins = breaks.reduce((s, b) => s + (b.minutes || 0), 0)
+    const { error: rpcErr } = await supabase.rpc('hr_upsert_shift_template', {
+      p_company_id: member.companyId,
+      p_id: null,
+      p_name: name.trim(),
+      p_start_time: toTimeSql(startTime),
+      p_end_time: toTimeSql(endTime),
+      p_break_minutes: breakMins,
+      p_breaks: breaks.map(b => ({ label: b.label, minutes: b.minutes })),
+    })
+
+    if (rpcErr) {
+      setErrorMsg(rpcErr.message || 'Failed to save template.')
+      setBusy(false)
+      return
     }
+    router.push('/dashboard/time-templates')
     setBusy(false)
   }
 
@@ -91,7 +98,6 @@ export default function NewTimeTemplatePage() {
 
   return (
     <div className="h-full flex flex-col">
-      {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-divider shrink-0 bg-surface">
         <Link href="/dashboard/time-templates" className="text-text-secondary hover:text-text-primary transition-colors">
           <span className="material-icons text-[20px]">arrow_back</span>
@@ -100,8 +106,6 @@ export default function NewTimeTemplatePage() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4 max-w-xl">
-
-        {/* TEMPLATE DETAILS */}
         <div className="card p-4 space-y-3">
           <p className="section-label">TEMPLATE DETAILS</p>
           <div className="flex flex-col gap-1">
@@ -126,7 +130,6 @@ export default function NewTimeTemplatePage() {
           </div>
         </div>
 
-        {/* BREAKS */}
         <div className="card p-4 space-y-3">
           <div className="flex items-center justify-between">
             <p className="section-label">BREAKS</p>
@@ -156,7 +159,6 @@ export default function NewTimeTemplatePage() {
           )}
         </div>
 
-        {/* Paid hours preview */}
         <div className="rounded-xl px-5 py-3.5 flex flex-col items-center gap-1 border border-primary"
           style={{ backgroundColor: 'var(--color-surface-dark)' }}>
           <p className="font-bold text-[20px] text-primary">{paidHours}</p>
@@ -170,7 +172,6 @@ export default function NewTimeTemplatePage() {
         </button>
       </div>
 
-      {/* Add break modal */}
       {showAddBreak && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-surface rounded-xl shadow-lg w-full max-w-sm p-5 space-y-3">

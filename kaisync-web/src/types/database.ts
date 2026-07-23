@@ -53,6 +53,7 @@ export interface Company {
   industry: string | null
   size_range: string | null
   address: string | null
+  enabled_modules?: Record<string, boolean> | null
   created_at: string
 }
 
@@ -243,6 +244,7 @@ export interface Contractor {
   company_id: string
   name: string
   contractor_code: string | null
+  partner_kind?: string | null
   is_supplier?: boolean
   contact_person: string | null
   phone: string | null
@@ -556,36 +558,60 @@ export interface CalendarEvent {
   company_id: string
   title: string
   start_time: string
-  end_time: string
+  end_time: string | null
   description: string | null
-  date: string
+  event_type?: string | null
+  attendee_ids?: string[] | null
+  created_by?: string | null
+  /** @deprecated use start_time date portion */
+  date?: string
 }
 
 export interface Resident {
   id: string
+  company_id: string
   site_id: string
-  full_name: string
+  unit_id?: string | null
   name: string
+  surname: string
   phone: string | null
+  email?: string | null
   move_in_date: string | null
-  is_current_resident: boolean
+  move_out_date?: string | null
+  notes?: string | null
+  /** Derived client-side */
+  full_name?: string
+  is_current_resident?: boolean
 }
 
 export interface Unit {
   id: string
+  company_id: string
   site_id: string
-  display_name: string
+  unit_number: string
   unit_type: string | null
-  is_occupied: boolean
+  address?: string | null
+  floor?: string | null
+  is_occupied?: boolean | null
+  notes?: string | null
+  /** Derived / legacy alias */
+  display_name?: string
 }
 
 export interface SiteComplianceEntry {
   id: string
-  site_id: string
-  title: string
-  category: string
+  company_id: string
+  site_id: string | null
+  compliance_type: string
+  certificate_number?: string | null
+  issued_date?: string | null
   expiry_date: string | null
-  status: string
+  issued_by?: string | null
+  notes?: string | null
+  /** Derived client-side for UI */
+  title?: string
+  category?: string
+  status?: string
 }
 
 export interface PayrollSettings {

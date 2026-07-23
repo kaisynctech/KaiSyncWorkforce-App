@@ -1,57 +1,146 @@
 'use client'
 
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { cn, getInitials } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
+import {
+  resolveHrNavFlags,
+  type HrNavFlags,
+} from '@/lib/company-modules'
+import { resolveFinanceNavFlag } from '@/lib/finance-gate'
+import { loadCompanyWorkspace } from '@/lib/employee-workspace'
+import { isPlatformAdmin } from '@/lib/platform-admin'
 import type { Company, Employee } from '@/types/database'
 
 interface NavItem {
   label: string
   href: string
   icon: string
+  /** null = always visible */
+  flag?: keyof HrNavFlags
+  /** Owner-only (MAUI Activity Log) */
+  ownerOnly?: boolean
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { label: 'Overview',      href: '/dashboard/overview',      icon: 'home' },
-  { label: 'My Profile',   href: '/dashboard/profile',       icon: 'person' },
-  { label: 'Messages',     href: '/dashboard/messages',      icon: 'chat' },
-  { label: 'Employees',    href: '/dashboard/employees',     icon: 'people' },
-  { label: 'Jobs',          href: '/dashboard/jobs',          icon: 'work' },
-  { label: 'Contractors',   href: '/dashboard/contractors',   icon: 'engineering' },
-  { label: 'Projects',      href: '/dashboard/projects',      icon: 'folder' },
-  { label: 'Clients',       href: '/dashboard/clients',       icon: 'business' },
-  { label: 'Incidents',     href: '/dashboard/incidents',     icon: 'warning' },
-  { label: 'Leave',         href: '/dashboard/leave',         icon: 'event_available' },
-  { label: 'Attendance',    href: '/dashboard/attendance',    icon: 'schedule' },
-  { label: 'Payroll',           href: '/dashboard/payroll',           icon: 'payments' },
-  { label: 'Suppliers',         href: '/dashboard/suppliers',         icon: 'storefront' },
-  { label: 'Inventory',         href: '/dashboard/inventory',         icon: 'inventory_2' },
-  { label: 'Assets',            href: '/dashboard/assets',            icon: 'category' },
-  { label: 'Compliance Packs',  href: '/dashboard/compliance-packs',  icon: 'verified' },
-  { label: 'Time Templates',    href: '/dashboard/time-templates',    icon: 'access_time' },
-  { label: 'Work Teams',        href: '/dashboard/work-teams',        icon: 'groups' },
-  { label: 'Scheduling',        href: '/dashboard/scheduling',        icon: 'calendar_month' },
-  { label: 'Team Punch',        href: '/dashboard/team-punch',        icon: 'punch_clock' },
-  { label: 'Properties',        href: '/dashboard/properties',        icon: 'home_work' },
-  { label: 'Residents',         href: '/dashboard/residents',         icon: 'apartment' },
-  { label: 'Activity Log',      href: '/dashboard/activity-log',      icon: 'history' },
-  { label: 'Active Sessions',   href: '/dashboard/active-sessions',   icon: 'manage_accounts' },
-  { label: 'Reports',           href: '/dashboard/reports',           icon: 'bar_chart' },
-  { label: 'Notifications',     href: '/dashboard/notifications',     icon: 'notifications' },
-  { label: 'Settings',          href: '/dashboard/settings',          icon: 'settings' },
+  { label: 'Overview', href: '/dashboard/overview', icon: 'home' },
+  { label: 'My Profile', href: '/dashboard/profile', icon: 'person' },
+  { label: 'Messages', href: '/dashboard/messages', icon: 'chat', flag: 'messaging' },
+  { label: 'My PA', href: '/dashboard/pa', icon: 'task_alt', flag: 'myPa' },
+  { label: 'Employees', href: '/dashboard/employees', icon: 'people', flag: 'employees' },
+  { label: 'Jobs', href: '/dashboard/jobs', icon: 'work', flag: 'jobs' },
+  { label: 'Contractors', href: '/dashboard/contractors', icon: 'engineering', flag: 'contractors' },
+  { label: 'Projects', href: '/dashboard/projects', icon: 'folder', flag: 'projects' },
+  { label: 'Clients', href: '/dashboard/clients', icon: 'business', flag: 'clients' },
+  { label: 'Incidents', href: '/dashboard/incidents', icon: 'warning', flag: 'incidents' },
+  { label: 'Leave', href: '/dashboard/leave', icon: 'event_available', flag: 'leave' },
+  { label: 'Attendance', href: '/dashboard/attendance', icon: 'schedule', flag: 'attendance' },
+  { label: 'Payroll', href: '/dashboard/payroll', icon: 'payments', flag: 'payroll' },
+  { label: 'Finance', href: '/dashboard/finance', icon: 'account_balance', flag: 'finance' },
+  { label: 'Suppliers', href: '/dashboard/suppliers', icon: 'storefront', flag: 'suppliers' },
+  { label: 'Inventory', href: '/dashboard/inventory', icon: 'inventory_2', flag: 'inventory' },
+  { label: 'Assets', href: '/dashboard/assets', icon: 'category', flag: 'assets' },
+  { label: 'Compliance Packs', href: '/dashboard/compliance-packs', icon: 'verified', flag: 'compliancePacks' },
+  { label: 'Time Templates', href: '/dashboard/time-templates', icon: 'access_time', flag: 'timeTemplates' },
+  { label: 'Work Teams', href: '/dashboard/work-teams', icon: 'groups', flag: 'workTeams' },
+  { label: 'Scheduling', href: '/dashboard/scheduling', icon: 'calendar_month', flag: 'scheduling' },
+  { label: 'Team Punch', href: '/dashboard/team-punch', icon: 'punch_clock', flag: 'teamPunch' },
+  { label: 'Properties', href: '/dashboard/properties', icon: 'home_work', flag: 'properties' },
+  { label: 'Residents', href: '/dashboard/residents', icon: 'apartment', flag: 'residents' },
+  { label: 'Activity Log', href: '/dashboard/activity-log', icon: 'history', ownerOnly: true },
+  { label: 'Active Sessions', href: '/dashboard/active-sessions', icon: 'manage_accounts', flag: 'settings' },
+  { label: 'Reports', href: '/dashboard/reports', icon: 'bar_chart', flag: 'reports' },
+  { label: 'Notifications', href: '/dashboard/notifications', icon: 'notifications' },
+  { label: 'Settings', href: '/dashboard/settings', icon: 'settings', flag: 'settings' },
 ]
+
+const ALL_HR_FLAGS: HrNavFlags = {
+  employees: true,
+  leave: true,
+  attendance: true,
+  jobs: true,
+  projects: true,
+  payroll: true,
+  contractors: true,
+  clients: true,
+  inventory: true,
+  suppliers: true,
+  assets: true,
+  properties: true,
+  incidents: true,
+  reports: true,
+  scheduling: true,
+  myPa: true,
+  workTeams: true,
+  messaging: true,
+  settings: true,
+  compliancePacks: true,
+  timeTemplates: true,
+  teamPunch: true,
+  residents: true,
+  finance: true,
+}
 
 interface SidebarProps {
   open: boolean
   onToggle: () => void
   company: Company | null
   employee: Employee | null
+  /** JWT platform admin with no employee row (MAUI Platform Console parity) */
+  platformOnly?: boolean
 }
 
-export default function Sidebar({ open, onToggle, company, employee }: SidebarProps) {
+export default function Sidebar({ open, onToggle, company, employee, platformOnly = false }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
+  const [flags, setFlags] = useState<HrNavFlags>(ALL_HR_FLAGS)
+  const [showPlatform, setShowPlatform] = useState(platformOnly)
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      const supabase = createClient()
+      if (platformOnly) {
+        if (!cancelled) setShowPlatform(true)
+        return
+      }
+      const admin = await isPlatformAdmin(supabase)
+      if (!cancelled) setShowPlatform(admin)
+
+      if (!company?.id) return
+      const workspace = await loadCompanyWorkspace(supabase, company.id)
+      const { finance } = await resolveFinanceNavFlag(
+        supabase,
+        company.id,
+        workspace?.enabled_modules,
+      )
+      if (!cancelled) setFlags(resolveHrNavFlags(workspace?.enabled_modules, finance))
+    }
+    void load()
+    return () => { cancelled = true }
+  }, [company?.id, platformOnly])
+
+  const isOwner = (employee?.access_level ?? '').toLowerCase() === 'owner'
+
+  const items = useMemo(() => {
+    if (platformOnly) {
+      return [{ label: 'Platform Console', href: '/dashboard/platform', icon: 'admin_panel_settings' }]
+    }
+    const hr = NAV_ITEMS.filter(item => {
+      if (item.ownerOnly) return isOwner
+      if (!item.flag) return true
+      return Boolean(flags[item.flag])
+    })
+    if (showPlatform) {
+      return [
+        { label: 'Platform Console', href: '/dashboard/platform', icon: 'admin_panel_settings' },
+        ...hr,
+      ]
+    }
+    return hr
+  }, [flags, isOwner, platformOnly, showPlatform])
 
   async function handleSignOut() {
     const supabase = createClient()
@@ -66,14 +155,17 @@ export default function Sidebar({ open, onToggle, company, employee }: SidebarPr
 
   const displayName = employee
     ? `${employee.name} ${employee.surname}`
-    : 'Unknown'
+    : platformOnly
+      ? 'Platform Operator'
+      : 'Unknown'
   const roleLabel = employee?.access_level
     ? employee.access_level.charAt(0).toUpperCase() + employee.access_level.slice(1)
-    : ''
+    : platformOnly
+      ? 'Platform Admin'
+      : ''
 
   return (
     <>
-      {/* Mobile overlay */}
       {open && (
         <div
           className="fixed inset-0 bg-black/40 z-20 lg:hidden"
@@ -87,7 +179,6 @@ export default function Sidebar({ open, onToggle, company, employee }: SidebarPr
           open ? 'w-60' : 'w-[64px]'
         )}
       >
-        {/* Header */}
         <div className="flex items-center gap-3 px-4 h-16 border-b border-white/10">
           <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0">
             <span className="material-icons text-white text-[18px]">bolt</span>
@@ -95,9 +186,11 @@ export default function Sidebar({ open, onToggle, company, employee }: SidebarPr
           {open && (
             <div className="flex-1 overflow-hidden">
               <p className="text-white text-[13px] font-semibold truncate">
-                {company?.name ?? 'KaiSync'}
+                {company?.name ?? (platformOnly ? 'KaiSync Platform' : 'KaiSync')}
               </p>
-              <p className="text-white/50 text-[11px] truncate">Workforce</p>
+              <p className="text-white/50 text-[11px] truncate">
+                {platformOnly ? 'Operator Console' : 'Workforce'}
+              </p>
             </div>
           )}
           <button
@@ -111,10 +204,9 @@ export default function Sidebar({ open, onToggle, company, employee }: SidebarPr
           </button>
         </div>
 
-        {/* Navigation */}
         <nav className="flex-1 py-4 overflow-y-auto overflow-x-hidden">
-          {NAV_ITEMS.map(item => {
-            const active = pathname.startsWith(item.href)
+          {items.map(item => {
+            const active = pathname === item.href || pathname.startsWith(`${item.href}/`)
             return (
               <Link
                 key={item.href}
@@ -142,7 +234,6 @@ export default function Sidebar({ open, onToggle, company, employee }: SidebarPr
           })}
         </nav>
 
-        {/* User footer */}
         <div className="border-t border-white/10 p-3">
           <div className={cn('flex items-center gap-3', !open && 'justify-center')}>
             <div className="w-8 h-8 rounded-full bg-primary-dark flex items-center justify-center shrink-0">

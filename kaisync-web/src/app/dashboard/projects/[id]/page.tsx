@@ -10,7 +10,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { Toggle } from '@/components/Toggle'
-import { ComingSoon } from '@/components/ui/ComingSoon'
+import { ProjectPaymentsTab } from '@/components/ProjectPaymentsTab'
 import type { Project, Client, Employee, Job, ProjectDocument, ProjectQuotationLine } from '@/types/database'
 
 const PROJECT_TABS = ['details', 'docs', 'quotation', 'pipeline', 'payments']
@@ -602,7 +602,15 @@ export default function ProjectDetailPage() {
         )}
 
         {/* ── PAYMENTS ── */}
-        {!isNew && tab === 'payments' && <ComingSoon />}
+        {!isNew && tab === 'payments' && (
+          <ProjectPaymentsTab
+            projectId={projectId}
+            offerAmount={project?.offer_amount ?? null}
+            onPaidUpdated={(paid) => {
+              setProject(prev => prev ? { ...prev, paid_amount: paid } : prev)
+            }}
+          />
+        )}
       </div>
     </div>
   )
