@@ -30,7 +30,7 @@ const PRIORITY_COLORS: Record<string, { bg: string; fg: string }> = {
 // ─── Local types ──────────────────────────────────────────────────────────────
 
 type JobDetail = Job & {
-  clients:  { name: string; code: string | null } | null
+  clients:  { name: string; client_code: string | null } | null
   sites:    { name: string; address: string | null } | null
   projects: { name: string } | null
 }

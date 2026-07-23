@@ -40,7 +40,7 @@ export default function CreateJobPage() {
     setCompanyId(member.companyId)
 
     const [cl, emp] = await Promise.all([
-      supabase.from('clients').select('id, name, code').eq('company_id', member.companyId).order('name'),
+      supabase.from('clients').select('id, name, client_code').eq('company_id', member.companyId).order('name'),
       supabase.from('employees').select('id, name, surname')
         .eq('company_id', member.companyId).eq('is_active', true).order('name'),
     ])
@@ -161,7 +161,7 @@ export default function CreateJobPage() {
           <option value="">No client</option>
           {clients.map(c => (
             <option key={c.id} value={c.id}>
-              {c.name}{c.code ? ` (${c.code})` : ''}
+              {c.name}{c.client_code ? ` (${c.client_code})` : ''}
             </option>
           ))}
         </FormSelect>

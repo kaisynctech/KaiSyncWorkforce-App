@@ -73,7 +73,7 @@ export function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: 
 function findBranch(branches: BranchRow[], branchName: string): BranchRow | undefined {
   const target = branchName.trim().toLowerCase()
   return branches.find(
-    (b) => (b.is_active !== false) && b.name.trim().toLowerCase() === target,
+    (b) => (b.is_active !== false) && (b.name ?? '').trim().toLowerCase() === target,
   )
 }
 

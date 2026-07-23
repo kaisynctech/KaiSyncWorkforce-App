@@ -432,18 +432,18 @@ export default function MyPAPage() {
     const rpc = (fn: string, args: Record<string, unknown>) => (supabase.rpc as any)(fn, args)
 
     try {
-      await rpc('sync_operational_pa_tasks', {
+      await Promise.resolve(rpc('sync_operational_pa_tasks', {
         p_company_id: member.companyId,
         p_scope_employee_id: member.employeeId,
         p_session_token: tok,
-      }).catch(() => {})
+      })).catch(() => {})
     } catch { /* non-fatal */ }
 
     try {
-      await rpc('enqueue_pa_task_notifications', {
+      await Promise.resolve(rpc('enqueue_pa_task_notifications', {
         p_company_id: member.companyId,
         p_session_token: tok,
-      }).catch(() => {})
+      })).catch(() => {})
     } catch { /* non-fatal */ }
 
     try {

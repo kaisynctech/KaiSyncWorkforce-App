@@ -90,7 +90,7 @@ export default function ClientDetailPage() {
     const [cRes, sRes, pRes, jRes] = await Promise.all([
       supabase.from('clients').select('*').eq('id', clientId).single(),
       supabase.from('sites').select('*').eq('client_id', clientId),
-      supabase.from('projects').select('*, employees(name, surname)').eq('client_id', clientId).order('created_at', { ascending: false }),
+      supabase.from('client_deals').select('*, employees:manager_employee_id(name, surname)').eq('client_id', clientId).order('created_at', { ascending: false }),
       supabase.from('jobs').select('id, title, status, created_at').eq('client_id', clientId).order('created_at', { ascending: false }),
     ])
 
@@ -105,7 +105,7 @@ export default function ClientDetailPage() {
     setEmail(c.email ?? '')
     setAddress(c.address ?? '')
     setNotes(c.notes ?? '')
-    setClientCode(c.code ?? '')
+    setClientCode(c.client_code ?? '')
 
     setSites((sRes.data ?? []) as Site[])
     setProjects((pRes.data ?? []) as Project[])
@@ -132,7 +132,7 @@ export default function ClientDetailPage() {
       email:          email.trim() || null,
       address:        address.trim() || null,
       notes:          notes.trim() || null,
-      code:           clientCode.trim() || null,
+      client_code:    clientCode.trim() || null,
     }
 
     if (isNew) {
@@ -373,9 +373,9 @@ export default function ClientDetailPage() {
                               onClick={() => router.push(`/dashboard/projects/${p.id}`)}
                               className="text-left text-[13px] font-medium text-text-primary hover:text-primary w-full"
                             >
-                              {p.name}
+                              {p.title}
                             </button>
-                            <p className="text-[11px] text-text-secondary font-mono">{p.code ?? '—'}</p>
+                            <p className="text-[11px] text-text-secondary font-mono">{p.project_code ?? '—'}</p>
                             <p className="text-[11px] text-text-secondary">{fmtCurrency(p.offer_amount)}</p>
                             <select
                               value={p.status ?? 'draft'}
@@ -419,13 +419,13 @@ export default function ClientDetailPage() {
                             <td className="data-td">
                               <button onClick={() => router.push(`/dashboard/projects/${p.id}`)}
                                 className="text-text-primary text-[12px] font-medium hover:text-primary transition-colors">
-                                {p.code ?? '—'}
+                                {p.project_code ?? '—'}
                               </button>
                             </td>
                             <td className="data-td">
                               <button onClick={() => router.push(`/dashboard/projects/${p.id}`)}
                                 className="text-left text-text-primary text-[13px] truncate w-full hover:text-primary transition-colors">
-                                {p.name}
+                                {p.title}
                               </button>
                             </td>
                             <td className="data-td">

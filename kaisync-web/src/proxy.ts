@@ -59,15 +59,19 @@ export async function proxy(request: NextRequest) {
     const isHR = emp?.access_level &&
       ['owner', 'hr_admin', 'admin', 'hr', 'manager'].includes(emp.access_level)
 
+    // Must not match `/dashboard/employees` (HR list) — only the employee portal.
+    const isEmployeePortalPath =
+      pathname === '/dashboard/employee' || pathname.startsWith('/dashboard/employee/')
+
     // Pure employees can only access employee portal + shared pages
     if (isEmployee &&
-        !pathname.startsWith('/dashboard/employee') &&
+        !isEmployeePortalPath &&
         !pathname.startsWith('/dashboard/profile') &&
         !pathname.startsWith('/dashboard/messages')) {
       return NextResponse.redirect(new URL('/dashboard/employee/overview', request.url))
     }
     // HR/managers cannot access employee portal routes
-    if (isHR && pathname.startsWith('/dashboard/employee')) {
+    if (isHR && isEmployeePortalPath) {
       return NextResponse.redirect(new URL('/dashboard/overview', request.url))
     }
   }
