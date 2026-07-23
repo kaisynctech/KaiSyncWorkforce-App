@@ -75,7 +75,7 @@ export default function ProjectDetailPage() {
 
     if (isNew) {
       const [cRes, mRes] = await Promise.all([
-        supabase.from('clients').select('id, name, code').order('name'),
+        supabase.from('clients').select('id, name, client_code').order('name'),
         supabase.from('employees').select('id, name, surname').eq('is_active', true).order('name'),
       ])
       setClients((cRes.data ?? []) as Client[])
@@ -85,10 +85,10 @@ export default function ProjectDetailPage() {
     }
 
     const [pRes, cRes, mRes, jRes, dRes, lRes] = await Promise.all([
-      supabase.from('projects').select('*, clients(id, name), employees(id, name, surname)').eq('id', projectId).single(),
-      supabase.from('clients').select('id, name, code').order('name'),
+      supabase.from('client_deals').select('*, clients(id, name), employees:manager_employee_id(id, name, surname)').eq('id', projectId).single(),
+      supabase.from('clients').select('id, name, client_code').order('name'),
       supabase.from('employees').select('id, name, surname').eq('is_active', true).order('name'),
-      supabase.from('jobs').select('id, title, status').eq('project_id', projectId).order('created_at', { ascending: false }),
+      supabase.from('jobs').select('id, title, status').eq('deal_id', projectId).order('created_at', { ascending: false }),
       supabase.from('project_documents').select('*').eq('project_id', projectId).order('created_at', { ascending: false }),
       supabase.from('project_quotation_lines').select('*').eq('project_id', projectId).order('sort_order'),
     ])
@@ -97,10 +97,10 @@ export default function ProjectDetailPage() {
 
     const p = pRes.data as Project
     setProject(p)
-    setTitle(p.name ?? '')
-    setCode(p.code ?? '')
+    setTitle(p.title ?? '')
+    setCode(p.project_code ?? '')
     setClientId(p.client_id ?? '')
-    setManagerId(p.manager_id ?? '')
+    setManagerId(p.manager_employee_id ?? '')
     setStatus(p.status ?? 'draft')
     setNotes(p.notes ?? '')
     setAgreementNotes(p.agreement_notes ?? '')
@@ -131,10 +131,10 @@ export default function ProjectDetailPage() {
     const supabase = createClient()
 
     const payload = {
-      name:                    title.trim(),
-      code:                    code.trim() || null,
+      title:                   title.trim(),
+      project_code:            code.trim() || null,
       client_id:               clientId || null,
-      manager_id:              managerId || null,
+      manager_employee_id:     managerId || null,
       status,
       notes:                   notes.trim() || null,
       agreement_notes:         agreementNotes.trim() || null,
@@ -149,11 +149,11 @@ export default function ProjectDetailPage() {
     if (isNew) {
       const member = await resolveCurrentMember(supabase)
       if (!member) { setError('Your account is not linked to an active employee record. Please contact your administrator.'); setSaving(false); return }
-      const { data: np, error: e } = await supabase.from('projects').insert({ ...payload, company_id: member.companyId }).select().single()
+      const { data: np, error: e } = await supabase.from('client_deals').insert({ ...payload, company_id: member.companyId }).select().single()
       if (e) { setError(e.message); setSaving(false); return }
       router.push(`/dashboard/projects/${np.id}`)
     } else {
-      const { error: e } = await supabase.from('projects').update(payload).eq('id', projectId)
+      const { error: e } = await supabase.from('client_deals').update(payload).eq('id', projectId)
       if (e) setError(e.message)
     }
     setSaving(false)
@@ -607,7 +607,7 @@ export default function ProjectDetailPage() {
             projectId={projectId}
             offerAmount={project?.offer_amount ?? null}
             onPaidUpdated={(paid) => {
-              setProject(prev => prev ? { ...prev, paid_amount: paid } : prev)
+              setProject(prev => prev ? { ...prev, amount_paid: paid } : prev)
             }}
           />
         )}

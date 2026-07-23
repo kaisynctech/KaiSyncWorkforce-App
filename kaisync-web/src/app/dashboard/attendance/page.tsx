@@ -3,16 +3,19 @@
 import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
-import { formatDateTime } from '@/lib/utils'
 import {
   buildPunchSessions,
+  earlyFlag,
+  fmtSessionDate,
+  fmtSessionTime,
+  lateFlag,
+  locationDisplay,
+  totalHrsDisplay,
   type PunchLike,
   type PunchSessionRow,
   type ShiftTemplateLike,
 } from '@/lib/punch-session'
 import type { TimePunch } from '@/types/database'
-
-// ─── Types ────────────────────────────────────────────────────────────────────
 
 type Preset = 'today' | 'week' | 'month' | 'all' | 'custom'
 
@@ -31,16 +34,9 @@ type DisplaySession = {
   employeeId: string
   employeeName: string
   employeeCode: string
-  punchIn: string
-  punchOut: string | null
-  hoursWorked: number
+  row: PunchSessionRow
   pay: number
-  isLate: boolean
-  isOvertime: boolean
-  status: 'active' | 'completed'
 }
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const todayStr = () => new Date().toISOString().split('T')[0]
 
@@ -65,10 +61,7 @@ function getRange(
   return { from: customFrom, to: customTo }
 }
 
-function toDisplay(
-  row: PunchSessionRow,
-  emp: EmpRow | undefined,
-): DisplaySession {
+function toDisplay(row: PunchSessionRow, emp: EmpRow | undefined): DisplaySession {
   const hours = row.regularHours + row.overtimeHours
   const rate = emp?.hourly_rate ?? 0
   return {
@@ -76,30 +69,32 @@ function toDisplay(
     employeeId: row.employeeId,
     employeeName: row.employeeName,
     employeeCode: emp?.employee_code ?? '',
-    punchIn: row.clockIn.toISOString(),
-    punchOut: row.clockOut?.toISOString() ?? null,
-    hoursWorked: hours,
+    row,
     pay: hours * rate,
-    isLate: row.isLate,
-    isOvertime: row.overtimeHours > 0,
-    status: row.isOpen ? 'active' : 'completed',
   }
 }
 
 function exportCSV(sessions: DisplaySession[], from: string, to: string) {
-  const header = 'Employee,Code,Clock In,Clock Out,Hours,Pay,Late,OT'
-  const rows = sessions.map(s =>
-    [
+  const header = 'Employee,Code,Date,Time In,In Location,Time Out,Out Location,Reg hrs,OT hrs,Total hrs,Notes,Pay'
+  const rows = sessions.map(s => {
+    const r = s.row
+    const kind = r.isAbsentDay ? 'absent' : r.isLeaveDay ? 'leave' : 'in'
+    const notes = [lateFlag(r), earlyFlag(r), r.notes ?? r.statusNote ?? ''].filter(Boolean).join('; ')
+    return [
       `"${s.employeeName.replace(/"/g, '""')}"`,
       s.employeeCode,
-      s.punchIn,
-      s.punchOut ?? '',
-      s.hoursWorked.toFixed(2),
+      fmtSessionDate(r.clockIn),
+      fmtSessionTime(r.clockIn, kind as 'in' | 'absent' | 'leave'),
+      `"${locationDisplay(r.clockInAddress, r.clockInLat, r.clockInLng).replace(/"/g, '""')}"`,
+      fmtSessionTime(r.clockOut, 'out'),
+      `"${locationDisplay(r.clockOutAddress, r.clockOutLat, r.clockOutLng).replace(/"/g, '""')}"`,
+      r.regularHours.toFixed(2),
+      r.overtimeHours.toFixed(2),
+      totalHrsDisplay(r),
+      `"${notes.replace(/"/g, '""')}"`,
       s.pay.toFixed(2),
-      s.isLate ? 'Yes' : 'No',
-      s.isOvertime ? 'Yes' : 'No',
     ].join(',')
-  )
+  })
   const csv  = [header, ...rows].join('\n')
   const blob = new Blob([csv], { type: 'text/csv' })
   const url  = URL.createObjectURL(blob)
@@ -111,29 +106,39 @@ function exportCSV(sessions: DisplaySession[], from: string, to: string) {
 }
 
 function exportPDF(sessions: DisplaySession[], from: string, to: string) {
-  const rows = sessions.map(s => `<tr>
-    <td>${s.employeeName.replace(/</g, '&lt;')}</td>
-    <td>${formatDateTime(s.punchIn)}</td>
-    <td>${s.punchOut ? formatDateTime(s.punchOut) : 'Open'}</td>
-    <td>${s.hoursWorked.toFixed(2)}</td>
-    <td>R${s.pay.toFixed(2)}</td>
-    <td>${[s.isLate ? 'Late' : '', s.isOvertime ? 'OT' : ''].filter(Boolean).join(', ') || '—'}</td>
-  </tr>`).join('')
+  const rows = sessions.map(s => {
+    const r = s.row
+    const kind = r.isAbsentDay ? 'absent' : r.isLeaveDay ? 'leave' : 'in'
+    const notes = [lateFlag(r), earlyFlag(r), r.notes ?? r.statusNote ?? ''].filter(Boolean).join('; ')
+    return `<tr>
+      <td>${s.employeeName.replace(/</g, '&lt;')}</td>
+      <td>${fmtSessionDate(r.clockIn)}</td>
+      <td>${fmtSessionTime(r.clockIn, kind as 'in' | 'absent' | 'leave')}</td>
+      <td>${locationDisplay(r.clockInAddress, r.clockInLat, r.clockInLng).replace(/</g, '&lt;')}</td>
+      <td>${fmtSessionTime(r.clockOut, 'out')}</td>
+      <td>${locationDisplay(r.clockOutAddress, r.clockOutLat, r.clockOutLng).replace(/</g, '&lt;')}</td>
+      <td>${totalHrsDisplay(r)}</td>
+      <td>${notes.replace(/</g, '&lt;') || '—'}</td>
+    </tr>`
+  }).join('')
   const w = window.open('', '_blank')
   if (!w) return
   w.document.write(`<!DOCTYPE html><html><head><title>Attendance Report</title><style>
-    body{font-family:sans-serif;font-size:12px;padding:20px}
+    body{font-family:sans-serif;font-size:11px;padding:20px}
     h2{font-size:16px;margin-bottom:4px}
     p{margin:2px 0 12px;color:#555}
     table{width:100%;border-collapse:collapse}
-    th,td{border:1px solid #ddd;padding:6px 8px;text-align:left}
+    th,td{border:1px solid #ddd;padding:5px 6px;text-align:left}
     th{background:#f5f5f5;font-weight:600}
     @media print{button{display:none}}
   </style></head><body>
     <h2>Attendance Report</h2>
     <p>Period: ${from} to ${to}</p>
     <table>
-      <thead><tr><th>Employee</th><th>Clock In</th><th>Clock Out</th><th>Hours</th><th>Pay</th><th>Flags</th></tr></thead>
+      <thead><tr>
+        <th>Employee</th><th>Date</th><th>Time In</th><th>In Location</th>
+        <th>Time Out</th><th>Out Location</th><th>Total hrs</th><th>Notes</th>
+      </tr></thead>
       <tbody>${rows}</tbody>
     </table>
     <br><button onclick="window.print()">Print / Save PDF</button>
@@ -141,40 +146,38 @@ function exportPDF(sessions: DisplaySession[], from: string, to: string) {
   w.document.close()
 }
 
-// ─── Page ─────────────────────────────────────────────────────────────────────
-
 const PRESETS: { key: Preset; label: string }[] = [
-  { key: 'today', label: 'Today'      },
-  { key: 'week',  label: 'This Week'  },
+  { key: 'today', label: 'Today' },
+  { key: 'week', label: 'This Week' },
   { key: 'month', label: 'This Month' },
-  { key: 'all',   label: 'All'        },
-  { key: 'custom', label: 'Custom'    },
+  { key: 'all', label: 'All' },
+  { key: 'custom', label: 'Custom' },
 ]
 
 export default function AttendancePage() {
   const [companyId, setCompanyId] = useState<string | null>(null)
-  const [sessions,  setSessions]  = useState<DisplaySession[]>([])
-  const [preset,    setPreset]    = useState<Preset>('today')
+  const [sessions, setSessions] = useState<DisplaySession[]>([])
+  const [preset, setPreset] = useState<Preset>('today')
   const [customFrom, setCustomFrom] = useState(todayStr())
-  const [customTo,   setCustomTo]   = useState(todayStr())
-  const [search,    setSearch]    = useState('')
-  const [loading,   setLoading]   = useState(true)
-  const [error,     setError]     = useState<string | null>(null)
+  const [customTo, setCustomTo] = useState(todayStr())
+  const [search, setSearch] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  const companyIdRef  = useRef<string | null>(null)
-  const presetRef     = useRef<Preset>('today')
+  const companyIdRef = useRef<string | null>(null)
+  const presetRef = useRef<Preset>('today')
   const customFromRef = useRef(todayStr())
-  const customToRef   = useRef(todayStr())
+  const customToRef = useRef(todayStr())
 
-  presetRef.current     = preset
+  presetRef.current = preset
   customFromRef.current = customFrom
-  customToRef.current   = customTo
+  customToRef.current = customTo
 
-  useEffect(() => { init() }, [])
+  useEffect(() => { void init() }, [])
 
   async function init() {
     const supabase = createClient()
-    const member   = await resolveCurrentMember(supabase)
+    const member = await resolveCurrentMember(supabase)
     if (!member) { setError('not_linked'); setLoading(false); return }
 
     companyIdRef.current = member.companyId
@@ -183,23 +186,23 @@ export default function AttendancePage() {
   }
 
   useEffect(() => {
-    if (companyId) fetchPunches()
+    if (companyId) void fetchPunches()
   }, [preset, customFrom, customTo])
 
   useEffect(() => {
     if (!companyId) return
     const supabase = createClient()
-    const channel  = supabase
+    const channel = supabase
       .channel('attendance-realtime')
       .on(
         'postgres_changes',
         {
-          event:  '*',
+          event: '*',
           schema: 'public',
-          table:  'time_punches',
+          table: 'time_punches',
           filter: `company_id=eq.${companyId}`,
         },
-        () => { fetchPunches() }
+        () => { void fetchPunches() },
       )
       .subscribe()
     return () => { supabase.removeChannel(channel) }
@@ -207,12 +210,12 @@ export default function AttendancePage() {
 
   function fetchPunches() {
     if (!companyIdRef.current) return
-    fetchPunchesWithParams(companyIdRef.current)
+    void fetchPunchesWithParams(companyIdRef.current)
   }
 
   async function fetchPunchesWithParams(cid: string) {
     setLoading(true)
-    const supabase     = createClient()
+    const supabase = createClient()
     const { from, to } = getRange(presetRef.current, customFromRef.current, customToRef.current)
 
     const [{ data: empData }, { data: punchData }, { data: tmplData }, { data: companyRow }] = await Promise.all([
@@ -237,7 +240,7 @@ export default function AttendancePage() {
 
     const cs = (companyRow?.custom_settings ?? {}) as Record<string, unknown>
     const lateMin = Number(cs.late_threshold_minutes ?? 30) || 30
-    const otMin   = Number(cs.ot_start_after_minutes ?? 30) || 30
+    const otMin = Number(cs.ot_start_after_minutes ?? 30) || 30
 
     const empMap = new Map((empData ?? []).map(e => [e.id, e as EmpRow]))
     const tmplMap = new Map(
@@ -246,6 +249,7 @@ export default function AttendancePage() {
 
     const punchesByEmp = new Map<string, PunchLike[]>()
     for (const p of (punchData ?? []) as TimePunch[]) {
+      if (!p.date_time) continue
       const list = punchesByEmp.get(p.employee_id) ?? []
       list.push(p as PunchLike)
       punchesByEmp.set(p.employee_id, list)
@@ -268,7 +272,7 @@ export default function AttendancePage() {
       for (const row of rows) built.push(toDisplay(row, emp))
     }
 
-    built.sort((a, b) => new Date(b.punchIn).getTime() - new Date(a.punchIn).getTime())
+    built.sort((a, b) => b.row.clockIn.getTime() - a.row.clockIn.getTime())
     setSessions(built)
     setLoading(false)
   }
@@ -281,10 +285,10 @@ export default function AttendancePage() {
     return s.employeeName.toLowerCase().includes(q) || s.employeeCode.toLowerCase().includes(q)
   })
 
-  const onSite     = sessions.filter(s => s.status === 'active').length
-  const completed  = sessions.filter(s => s.status === 'completed').length
-  const totalHours = sessions.reduce((sum, s) => sum + s.hoursWorked, 0)
-  const totalPay   = sessions.reduce((sum, s) => sum + s.pay, 0)
+  const onSite = sessions.filter(s => s.row.isOpen && !s.row.isAbsentDay && !s.row.isLeaveDay).length
+  const completed = sessions.filter(s => !s.row.isOpen && !s.row.isAbsentDay && !s.row.isLeaveDay).length
+  const totalHours = sessions.reduce((sum, s) => sum + s.row.regularHours + s.row.overtimeHours, 0)
+  const totalPay = sessions.reduce((sum, s) => sum + s.pay, 0)
 
   if (error === 'not_linked') return (
     <div className="flex items-center justify-center h-full">
@@ -300,8 +304,7 @@ export default function AttendancePage() {
   )
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
-
+    <div className="p-6 max-w-[1400px] mx-auto">
       <div className="flex items-center justify-between mb-5">
         <div>
           <h1 className="text-[22px] font-semibold text-text-primary">Attendance</h1>
@@ -356,7 +359,7 @@ export default function AttendancePage() {
         )}
       </div>
 
-      <div className="grid grid-cols-4 gap-4 mb-5">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-5">
         <div className="bg-surface rounded-lg border border-divider p-4">
           <p className="text-[24px] font-bold text-primary">{onSite}</p>
           <p className="text-[12px] text-text-secondary">Currently on site</p>
@@ -396,69 +399,80 @@ export default function AttendancePage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-[13px]">
+            <table className="w-full text-[13px]" style={{ minWidth: 1100 }}>
               <thead>
                 <tr className="border-b border-divider bg-surface-elevated">
-                  <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Employee</th>
-                  <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Clock In</th>
-                  <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Clock Out</th>
-                  <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Hours</th>
-                  <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Pay</th>
-                  <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Status</th>
-                  <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Flags</th>
+                  <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Employee</th>
+                  <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Date</th>
+                  <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Time In</th>
+                  <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">In Location</th>
+                  <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Time Out</th>
+                  <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Out Location</th>
+                  <th className="text-right px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Reg</th>
+                  <th className="text-right px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">OT</th>
+                  <th className="text-right px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Total</th>
+                  <th className="text-right px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Pay</th>
+                  <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Notes</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(s => (
-                  <tr key={s.key} className="border-b border-divider last:border-0 hover:bg-background transition-colors">
-                    <td className="px-5 py-3">
-                      <p className="font-medium text-text-primary">{s.employeeName}</p>
-                      {s.employeeCode && (
-                        <p className="text-[11px] text-text-secondary font-mono">{s.employeeCode}</p>
-                      )}
-                    </td>
-                    <td className="px-5 py-3 text-text-secondary">{formatDateTime(s.punchIn)}</td>
-                    <td className="px-5 py-3 text-text-secondary">
-                      {s.punchOut ? formatDateTime(s.punchOut) : '—'}
-                    </td>
-                    <td className="px-5 py-3 font-semibold text-text-primary">
-                      {s.hoursWorked > 0 ? `${s.hoursWorked.toFixed(1)}h` : '—'}
-                    </td>
-                    <td className="px-5 py-3 text-text-primary">
-                      {s.pay > 0 ? `R${s.pay.toFixed(2)}` : '—'}
-                    </td>
-                    <td className="px-5 py-3">
-                      <span className={`flex items-center gap-1 text-[12px] font-medium w-fit ${
-                        s.status === 'active' ? 'text-success' : 'text-text-secondary'
+                {filtered.map(s => {
+                  const r = s.row
+                  const kind = r.isAbsentDay ? 'absent' : r.isLeaveDay ? 'leave' : 'in'
+                  const late = lateFlag(r)
+                  const early = earlyFlag(r)
+                  const notes = [late, early, r.notes ?? r.statusNote ?? ''].filter(Boolean).join(' · ')
+                  return (
+                    <tr key={s.key} className="border-b border-divider last:border-0 hover:bg-background transition-colors">
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-text-primary whitespace-nowrap">{s.employeeName}</p>
+                        {s.employeeCode && (
+                          <p className="text-[11px] text-text-secondary font-mono">{s.employeeCode}</p>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-text-secondary whitespace-nowrap">{fmtSessionDate(r.clockIn)}</td>
+                      <td className={`px-4 py-3 font-medium whitespace-nowrap ${
+                        r.isAbsentDay ? 'text-error' : r.isLeaveDay ? 'text-warning' : r.isLate ? 'text-error' : 'text-success'
                       }`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${
-                          s.status === 'active' ? 'bg-success' : 'bg-text-disabled'
-                        }`} />
-                        {s.status === 'active' ? 'On site' : 'Completed'}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3">
-                      <div className="flex gap-1">
-                        {s.isLate && (
-                          <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold bg-error/10 text-error">
-                            Late
-                          </span>
+                        {fmtSessionTime(r.clockIn, kind as 'in' | 'absent' | 'leave')}
+                        {r.isOpen && !r.isAbsentDay && !r.isLeaveDay && (
+                          <span className="ml-1 text-[10px] text-warning font-semibold">OPEN</span>
                         )}
-                        {s.isOvertime && (
-                          <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold bg-warning/10 text-warning">
-                            OT
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                        {late && <span className="block text-[10px] text-error font-semibold">{late}</span>}
+                      </td>
+                      <td className="px-4 py-3 text-text-secondary max-w-[160px] truncate">
+                        {r.isAbsentDay || r.isLeaveDay
+                          ? '—'
+                          : locationDisplay(r.clockInAddress, r.clockInLat, r.clockInLng)}
+                      </td>
+                      <td className="px-4 py-3 text-text-primary whitespace-nowrap">
+                        {fmtSessionTime(r.clockOut, 'out')}
+                        {early && <span className="block text-[10px] text-warning font-semibold">{early}</span>}
+                      </td>
+                      <td className="px-4 py-3 text-text-secondary max-w-[160px] truncate">
+                        {r.isAbsentDay || r.isLeaveDay
+                          ? '—'
+                          : locationDisplay(r.clockOutAddress, r.clockOutLat, r.clockOutLng)}
+                      </td>
+                      <td className="px-4 py-3 text-right text-text-primary">{r.regularHours.toFixed(1)}</td>
+                      <td className="px-4 py-3 text-right text-warning font-medium">
+                        {r.overtimeHours > 0 ? r.overtimeHours.toFixed(1) : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-right font-semibold text-text-primary">{totalHrsDisplay(r)}</td>
+                      <td className="px-4 py-3 text-right text-text-primary">
+                        {s.pay > 0 ? `R${s.pay.toFixed(2)}` : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-text-secondary max-w-[180px] truncate">
+                        {notes || '—'}
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
         )}
       </div>
-
     </div>
   )
 }

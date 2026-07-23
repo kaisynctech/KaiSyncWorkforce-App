@@ -86,7 +86,7 @@ export interface Client {
   id: string
   company_id: string
   name: string
-  code: string | null
+  client_code: string | null
   email: string | null
   phone: string | null
   address: string | null
@@ -114,13 +114,16 @@ export interface Site {
 export interface Project {
   id: string
   company_id: string
-  name: string
-  code: string | null
+  /** client_deals.title */
+  title: string
+  /** client_deals.project_code */
+  project_code: string | null
   status: string | null
   client_id: string | null
-  manager_id: string | null
+  manager_employee_id: string | null
   offer_amount: number | null
-  paid_amount: number | null
+  amount_paid: number | null
+  progress_percent: number | null
   notes: string | null
   agreement_notes: string | null
   quotation_notes: string | null
@@ -131,6 +134,7 @@ export interface Project {
   expected_close_date: string | null
   created_at: string
   clients?: { id: string; name: string } | null
+  /** manager embed via manager_employee_id */
   employees?: { id: string; name: string; surname: string } | null
 }
 
@@ -160,6 +164,7 @@ export interface Job {
   description: string | null
   status: JobStatus
   priority: JobPriority
+  job_code: string | null
   estimated_cost: number | null
   actual_cost: number | null
   labor_cost: number | null
@@ -168,15 +173,15 @@ export interface Job {
   scheduled_end: string | null
   client_id: string | null
   site_id: string | null
-  project_id: string | null
+  deal_id: string | null
   address: string | null
-  assigned_employee_id: string | null
+  assignee_employee_id: string | null
+  assigned_employee_ids: string[] | null
   first_response_at: string | null
   closed_at: string | null
   created_at: string
-  clients?: Pick<Client, 'name' | 'code'> | null
+  clients?: { name: string; client_code?: string | null } | null
   sites?: Pick<Site, 'name' | 'address'> | null
-  projects?: Pick<Project, 'name'> | null
 }
 
 export interface LeaveRequest {
@@ -381,11 +386,14 @@ export interface IncidentReport {
   job_id: string | null
   deal_id: string | null
   contractor_id: string | null
-  assigned_to: string | null
+  employee_id: string | null
+  assignee_id: string | null
+  is_closed: boolean | null
   resolution_notes: string | null
   created_at: string
   jobs?: { title: string } | null
-  employees?: { name: string; surname: string } | null
+  reporter?: { name: string; surname: string } | null
+  assignee?: { name: string; surname: string } | null
 }
 
 export interface IncidentComment {

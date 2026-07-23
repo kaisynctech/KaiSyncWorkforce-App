@@ -36,7 +36,7 @@ export default function ClientsPage() {
     const q = searchText.toLowerCase()
     return (
       (c.name ?? '').toLowerCase().includes(q) ||
-      (c.code ?? '').toLowerCase().includes(q) ||
+      (c.client_code ?? '').toLowerCase().includes(q) ||
       (c.email ?? '').toLowerCase().includes(q) ||
       (c.phone ?? '').toLowerCase().includes(q) ||
       (c.contact_person ?? '').toLowerCase().includes(q)
@@ -91,7 +91,7 @@ export default function ClientsPage() {
                     <td className="data-td text-text-primary font-medium">
                       <span className="block truncate" style={{ maxWidth: 180 }}>{c.name}</span>
                     </td>
-                    <td className="data-td text-text-primary font-medium text-[12px]">{c.code ?? '—'}</td>
+                    <td className="data-td text-text-primary font-medium text-[12px]">{c.client_code ?? '—'}</td>
                     <td className="data-td text-text-secondary text-[12px]">
                       {CLIENT_TYPE_LABELS[c.type ?? ''] ?? c.type ?? '—'}
                     </td>

@@ -57,11 +57,11 @@ export default function IncidentDetailPage() {
     const supabase = createClient()
     const [incRes, commRes] = await Promise.all([
       supabase.from('incident_reports')
-        .select('*, jobs(title), employees!assigned_to(name, surname)')
+        .select('*, jobs(title), assignee:employees!assignee_id(name, surname), reporter:employees!employee_id(name, surname)')
         .eq('id', incidentId)
         .single(),
       supabase.from('incident_comments')
-        .select('*, employees(name, surname)')
+        .select('*, employees:author_employee_id(name, surname)')
         .eq('incident_id', incidentId)
         .order('created_at'),
     ])
@@ -81,10 +81,12 @@ export default function IncidentDetailPage() {
     const supabase = createClient()
     const payload: Record<string, unknown> = { status: newStatus }
     if (resolutionNotes !== undefined) payload.resolution_notes = resolutionNotes
+    if (newStatus === 'closed') payload.is_closed = true
     await supabase.from('incident_reports').update(payload).eq('id', incidentId)
     setIncident(prev => prev ? {
       ...prev,
       status: newStatus,
+      ...(newStatus === 'closed' ? { is_closed: true } : {}),
       ...(resolutionNotes !== undefined ? { resolution_notes: resolutionNotes } : {}),
     } : prev)
   }
@@ -98,12 +100,12 @@ export default function IncidentDetailPage() {
 
   async function assignIncident() {
     const supabase = createClient()
-    await supabase.from('incident_reports').update({ assigned_to: assigningEmpId || null }).eq('id', incidentId)
+    await supabase.from('incident_reports').update({ assignee_id: assigningEmpId || null }).eq('id', incidentId)
     const emp = employees.find(e => e.id === assigningEmpId)
     setIncident(prev => prev ? {
       ...prev,
-      assigned_to: assigningEmpId || null,
-      employees: emp ? { name: emp.name, surname: emp.surname } : null,
+      assignee_id: assigningEmpId || null,
+      assignee: emp ? { name: emp.name, surname: emp.surname } : null,
     } : prev)
     setShowAssignModal(false)
     setAssigningEmpId('')
@@ -177,11 +179,11 @@ export default function IncidentDetailPage() {
         )}
 
         {/* Reported by */}
-        {incident.employees && (
+        {incident.reporter && (
           <div className="card p-4 flex items-center gap-3">
             <span className="text-text-secondary text-[13px] whitespace-nowrap">Reported by</span>
             <span className="text-text-primary text-[14px]">
-              {incident.employees.name} {incident.employees.surname}
+              {incident.reporter.name} {incident.reporter.surname}
             </span>
           </div>
         )}
@@ -208,11 +210,11 @@ export default function IncidentDetailPage() {
           <div>
             <p className="section-label">ASSIGNED TO</p>
             <p className="text-text-primary text-[14px] mt-0.5">
-              {incident.employees ? `${incident.employees.name} ${incident.employees.surname}` : 'Unassigned'}
+              {incident.assignee ? `${incident.assignee.name} ${incident.assignee.surname}` : 'Unassigned'}
             </p>
           </div>
           {canManage && (
-            <button onClick={() => { setAssigningEmpId(incident.assigned_to ?? ''); setShowAssignModal(true) }}
+            <button onClick={() => { setAssigningEmpId(incident.assignee_id ?? ''); setShowAssignModal(true) }}
               className="bg-surface-elevated border border-border text-text-primary rounded-lg px-3 py-1.5 text-[12px] hover:bg-background transition-colors">
               Assign
             </button>

@@ -148,6 +148,21 @@ const STATUS_STYLES: Record<string, string> = {
 
 const ABSENCE_REASONS = ['sick', 'personal', 'emergency', 'other']
 
+/** Normalize PostgREST/json RPC payloads to arrays (RETURNS json may vary). */
+function asRpcArray<T>(data: unknown): T[] {
+  if (data == null) return []
+  if (Array.isArray(data)) return data as T[]
+  if (typeof data === 'string') {
+    try {
+      const parsed = JSON.parse(data) as unknown
+      return Array.isArray(parsed) ? (parsed as T[]) : []
+    } catch {
+      return []
+    }
+  }
+  return []
+}
+
 // ── Component ──────────────────────────────────────────────────────────────
 export default function EmployeeOverviewPage() {
   const router = useRouter()
@@ -248,7 +263,7 @@ export default function EmployeeOverviewPage() {
   // ── Apply last punch to clock state ────────────────────────────────────
   function applyLastPunch(lp: LastPunch | null, todayStr: string) {
     setLastPunch(lp)
-    if (lp?.type === 'in') {
+    if (lp?.type === 'in' && typeof lp.date_time === 'string' && lp.date_time.length > 0) {
       setIsClockedIn(true)
       clockInTimeRef.current = lp.date_time
       baseElapsedRef.current = 0
@@ -546,32 +561,33 @@ export default function EmployeeOverviewPage() {
           p_employee_id: member.employeeId,
           p_session_token: tok,
         }),
-        rpc('employee_get_work_teams', {
+        Promise.resolve(rpc('employee_get_work_teams', {
           p_company_id: member.companyId,
           p_employee_id: member.employeeId,
           p_session_token: tok,
-        }).catch(() => ({ data: [] })),
+        })).catch(() => ({ data: [] })),
       ])
 
       applyLastPunch((lastPunchRes.data as LastPunch | null) ?? null, todayStr)
-      setJobs((jobsRes.data as Job[]) ?? [])
-      setLeaveRequests((leaveRes.data as LeaveRequest[]) ?? [])
+      setJobs(asRpcArray<Job>(jobsRes.data))
+      setLeaveRequests(asRpcArray<LeaveRequest>(leaveRes.data))
       setIsOnLeave(
         onLeaveRes.data === true
         || (Array.isArray(onLeaveRes.data) && onLeaveRes.data?.[0]?.is_on_leave === true)
       )
-      setIncidents((incRes.data as Incident[]) ?? [])
-      setPunchesToday(((punchesTodayRes.data as unknown[] | null) ?? []).length)
+      setIncidents(asRpcArray<Incident>(incRes.data))
+      setPunchesToday(asRpcArray(punchesTodayRes.data).length)
       setNotificationCount(
         countUnreadAppNotifications(parseNotificationsRpcJson(notifRes.data).map(mapAppNotification)),
       )
 
-      const weekPunches = ((punchesWeekRes.data as RecentPunchRow[] | null) ?? [])
+      const weekPunches = asRpcArray<RecentPunchRow>(punchesWeekRes.data)
+        .filter(p => typeof p.date_time === 'string' && p.date_time.length > 0)
         .slice()
         .sort((a, b) => b.date_time.localeCompare(a.date_time))
       setRecentPunches(weekPunches)
 
-      const absences = (absencesRes.data as DailyAbsenceRow[] | null) ?? []
+      const absences = asRpcArray<DailyAbsenceRow>(absencesRes.data)
       if (absences.length > 0) {
         setIsAbsentToday(true)
         setAbsenceReasonLabel(fmtAbsenceReason(absences[0].reason ?? 'other'))
@@ -580,14 +596,14 @@ export default function EmployeeOverviewPage() {
         setAbsenceReasonLabel('')
       }
 
-      const allTasks = (paRes.data as PATask[]) ?? []
+      const allTasks = asRpcArray<PATask>(paRes.data)
       const todayTasks = allTasks.filter(t =>
         t.status !== 'done' && t.status !== 'snoozed'
         && (!t.due_at || t.due_at.split('T')[0] === todayStr)
       )
       setPATasks(todayTasks)
 
-      const teams = ((teamsRes.data as WorkTeam[]) ?? []).filter(t => {
+      const teams = asRpcArray<WorkTeam>(teamsRes.data).filter(t => {
         if (t.is_active === false) return false
         const ids = (t.member_ids ?? []).map(String)
         return ids.includes(member.employeeId)
@@ -908,7 +924,10 @@ export default function EmployeeOverviewPage() {
       date: i.occurred_at ?? i.created_at,
       inc:  i,
     })),
-  ].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5)
+  ]
+    .filter(a => typeof a.date === 'string' && a.date.length > 0)
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, 5)
 
   if (loading) return (
     <div className="flex items-center justify-center h-64 text-text-secondary text-[14px]">Loading…</div>

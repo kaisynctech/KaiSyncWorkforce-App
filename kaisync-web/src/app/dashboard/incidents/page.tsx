@@ -14,15 +14,9 @@ const SEVERITY_COLORS: Record<string, { bg: string; fg: string }> = {
   low:      { bg: '#DCFCE7', fg: '#166534' },
 }
 
-const SCOPE_FILTERS = [
-  { value: 'all',        label: 'All' },
-  { value: 'standalone', label: 'Standalone' },
-  { value: 'job',        label: 'Job-linked' },
-] as const
-type ScopeValue = typeof SCOPE_FILTERS[number]['value']
-
-const SEVERITY_FILTERS = ['all', 'critical', 'high', 'medium', 'low'] as const
-type SeverityFilter = typeof SEVERITY_FILTERS[number]
+type StatusFilter = 'open' | 'all' | 'closed'
+type ScopeFilter = 'all' | 'standalone' | 'job'
+type SeverityFilter = 'all' | 'critical' | 'high' | 'medium' | 'low'
 
 const fmtDate = (d: string) =>
   new Intl.DateTimeFormat('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(d))
@@ -30,52 +24,80 @@ const fmtDate = (d: string) =>
 function sevBg(s: string) { return (SEVERITY_COLORS[s?.toLowerCase()] ?? SEVERITY_COLORS.low).bg }
 function sevFg(s: string) { return (SEVERITY_COLORS[s?.toLowerCase()] ?? SEVERITY_COLORS.low).fg }
 
+function isOpenIncident(inc: IncidentReport): boolean {
+  if (inc.is_closed === true) return false
+  const s = (inc.status ?? '').toLowerCase()
+  return s === 'open' || s === 'investigating'
+}
+
+type IncidentRow = IncidentReport & {
+  jobs?: { title: string } | null
+  reporter?: { name: string; surname: string } | null
+  assignee?: { name: string; surname: string } | null
+}
+
 export default function IncidentsPage() {
   const router = useRouter()
-  const [incidents, setIncidents] = useState<IncidentReport[]>([])
+  const [incidents, setIncidents] = useState<IncidentRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [scope, setScope] = useState<ScopeValue>('all')
-  const [showOpenOnly, setShowOpenOnly] = useState(true)
+  const [scope, setScope] = useState<ScopeFilter>('all')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('open')
   const [searchText, setSearchText] = useState('')
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('all')
 
   const load = useCallback(async () => {
     setLoading(true)
+    setError(null)
     const supabase = createClient()
     const member = await resolveCurrentMember(supabase)
     if (!member) { setError('not_linked'); setLoading(false); return }
 
-    const { data } = await supabase
+    const { data, error: qErr } = await supabase
       .from('incident_reports')
-      .select('*, jobs(title), employees(name, surname)')
+      .select('*, jobs(title), reporter:employees!employee_id(name, surname), assignee:employees!assignee_id(name, surname)')
       .eq('company_id', member.companyId)
       .order('created_at', { ascending: false })
 
-    setIncidents((data ?? []) as IncidentReport[])
+    if (qErr) {
+      console.error('[Incidents] load failed:', qErr.message)
+      setError(qErr.message)
+      setIncidents([])
+    } else {
+      setIncidents((data ?? []) as IncidentRow[])
+    }
     setLoading(false)
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { void load() }, [load])
 
-  async function closeIncident(inc: IncidentReport) {
+  async function closeIncident(inc: IncidentRow) {
     if (!window.confirm('Close this incident?')) return
     const supabase = createClient()
-    await supabase.from('incident_reports').update({ status: 'closed' }).eq('id', inc.id)
-    setIncidents(prev => prev.map(i => i.id === inc.id ? { ...i, status: 'closed' } : i))
+    const { error: uErr } = await supabase
+      .from('incident_reports')
+      .update({ status: 'closed', is_closed: true })
+      .eq('id', inc.id)
+    if (uErr) {
+      console.error('[Incidents] close failed:', uErr.message)
+      return
+    }
+    setIncidents(prev => prev.map(i => i.id === inc.id ? { ...i, status: 'closed', is_closed: true } : i))
   }
 
   const filtered = incidents.filter(inc => {
-    if (showOpenOnly && inc.status === 'closed') return false
+    if (statusFilter === 'open' && !isOpenIncident(inc)) return false
+    if (statusFilter === 'closed' && isOpenIncident(inc)) return false
     if (scope === 'standalone' && inc.job_id) return false
     if (scope === 'job' && !inc.job_id) return false
-    if (severityFilter !== 'all' && inc.severity?.toLowerCase() !== severityFilter) return false
+    if (severityFilter !== 'all' && (inc.severity ?? '').toLowerCase() !== severityFilter) return false
     if (searchText) {
       const q = searchText.toLowerCase()
       if (
         !(inc.description ?? '').toLowerCase().includes(q) &&
         !(inc.title ?? '').toLowerCase().includes(q) &&
-        !(inc.category ?? '').toLowerCase().includes(q)
+        !(inc.category ?? '').toLowerCase().includes(q) &&
+        !(inc.jobs?.title ?? '').toLowerCase().includes(q)
       ) return false
     }
     return true
@@ -96,101 +118,128 @@ export default function IncidentsPage() {
 
   return (
     <div className="h-full flex flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-divider shrink-0 bg-surface-dark">
-        <h1 className="text-[18px] font-semibold text-text-primary">Incident Reports</h1>
+      <div className="flex items-center justify-between px-4 py-3 border-b border-divider shrink-0 bg-surface">
+        <div>
+          <h1 className="text-[18px] font-semibold text-text-primary">Incident Reports</h1>
+          <p className="text-[12px] text-text-secondary mt-0.5">{filtered.length} shown</p>
+        </div>
         <button onClick={() => router.push('/dashboard/incidents/new')}
           className="btn-primary h-9 px-3 text-[13px]">New</button>
       </div>
 
-      {/* Scope chips */}
-      <div className="overflow-x-auto shrink-0">
-        <div className="flex gap-2 px-4 py-2">
-          {SCOPE_FILTERS.map(f => (
-            <button key={f.value} onClick={() => setScope(f.value)}
-              className="rounded-2xl h-8 px-3 text-[12px] whitespace-nowrap shrink-0 transition-colors"
-              style={{ backgroundColor: scope === f.value ? '#3B82F6' : '#FFFFFF', color: scope === f.value ? '#FFFFFF' : '#6B7280' }}>
-              {f.label}
-            </button>
-          ))}
+      {error && error !== 'not_linked' && (
+        <div className="mx-4 mt-3 rounded-lg border border-error/30 bg-error/5 px-3 py-2 text-[13px] text-error">
+          Failed to load incidents: {error}
         </div>
+      )}
+
+      <div className="px-4 py-3 flex flex-wrap gap-2 items-center border-b border-divider bg-surface shrink-0">
+        <div className="flex items-center gap-2 h-10 px-3 bg-background border border-border rounded-lg flex-1 min-w-[180px]">
+          <span className="material-icons text-text-disabled text-[18px]">search</span>
+          <input
+            type="search"
+            placeholder="Search title, description, job…"
+            className="flex-1 text-[13px] text-text-primary placeholder:text-text-disabled bg-transparent focus:outline-none"
+            value={searchText}
+            onChange={e => setSearchText(e.target.value)}
+          />
+        </div>
+        <select
+          value={statusFilter}
+          onChange={e => setStatusFilter(e.target.value as StatusFilter)}
+          className="h-10 px-3 rounded-lg border border-border bg-surface text-[13px] text-text-primary"
+        >
+          <option value="open">Open</option>
+          <option value="all">All statuses</option>
+          <option value="closed">Closed</option>
+        </select>
+        <select
+          value={scope}
+          onChange={e => setScope(e.target.value as ScopeFilter)}
+          className="h-10 px-3 rounded-lg border border-border bg-surface text-[13px] text-text-primary"
+        >
+          <option value="all">All scopes</option>
+          <option value="standalone">Standalone</option>
+          <option value="job">Job-linked</option>
+        </select>
+        <select
+          value={severityFilter}
+          onChange={e => setSeverityFilter(e.target.value as SeverityFilter)}
+          className="h-10 px-3 rounded-lg border border-border bg-surface text-[13px] text-text-primary capitalize"
+        >
+          <option value="all">All severity</option>
+          <option value="critical">Critical</option>
+          <option value="high">High</option>
+          <option value="medium">Medium</option>
+          <option value="low">Low</option>
+        </select>
       </div>
 
-      {/* Open / All filter */}
-      <div className="flex gap-2 bg-surface-dark px-4 py-2 shrink-0">
-        <button onClick={() => setShowOpenOnly(true)}
-          className="rounded-2xl px-3 py-1.5 text-[13px] transition-colors"
-          style={{ backgroundColor: showOpenOnly ? '#3B82F6' : '#E5E7EB', color: showOpenOnly ? 'white' : '#6B7280' }}>
-          Open
-        </button>
-        <button onClick={() => setShowOpenOnly(false)}
-          className="rounded-2xl px-3 py-1.5 text-[13px] transition-colors"
-          style={{ backgroundColor: !showOpenOnly ? '#3B82F6' : '#E5E7EB', color: !showOpenOnly ? 'white' : '#6B7280' }}>
-          All
-        </button>
-      </div>
-
-      {/* Severity filter chips */}
-      <div className="flex gap-2 px-4 py-2 border-b border-divider shrink-0 overflow-x-auto">
-        {SEVERITY_FILTERS.map(s => (
-          <button key={s} onClick={() => setSeverityFilter(s)}
-            className="rounded-2xl h-8 px-3 text-[12px] whitespace-nowrap shrink-0 capitalize transition-colors"
-            style={{
-              backgroundColor: severityFilter === s ? (s === 'all' ? '#3B82F6' : (SEVERITY_COLORS[s]?.bg ?? '#3B82F6')) : '#F3F4F6',
-              color: severityFilter === s ? (s === 'all' ? '#FFFFFF' : (SEVERITY_COLORS[s]?.fg ?? '#FFFFFF')) : '#6B7280',
-            }}>
-            {s === 'all' ? 'All Severity' : s}
-          </button>
-        ))}
-      </div>
-
-      {/* Search */}
-      <div className="mx-4 my-1 shrink-0">
-        <input type="search" placeholder="Search incidents…"
-          className="w-full bg-surface border border-border text-text-primary placeholder:text-text-disabled rounded-lg px-3 py-2 text-[14px] focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors"
-          value={searchText} onChange={e => setSearchText(e.target.value)} />
-      </div>
-
-      {/* Cards */}
-      <div className="flex-1 overflow-y-auto px-4 py-2 space-y-2">
-        {loading ? (
-          <p className="text-text-secondary text-[13px] text-center py-8">Loading…</p>
-        ) : filtered.length === 0 ? (
-          <div className="flex flex-col items-center py-8 gap-3">
-            <span className="text-[48px]">✅</span>
-            <p className="text-text-secondary text-[14px]">No incidents found</p>
-          </div>
-        ) : (
-          filtered.map(inc => (
-            <div key={inc.id}
-              className="card p-4 cursor-pointer hover:bg-background transition-colors"
-              onClick={() => router.push(`/dashboard/incidents/${inc.id}`)}>
-              <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1">
-                <p className="font-semibold text-text-primary">{inc.title ?? inc.description}</p>
-                <StatusBadge label={inc.severity} bg={sevBg(inc.severity)} fg={sevFg(inc.severity)} />
-                <p className="text-text-secondary text-[12px]">{inc.status}</p>
-                <p className="text-text-secondary text-[11px] text-right">{fmtDate(inc.created_at)}</p>
-                {inc.jobs?.title && (
-                  <p className="text-text-secondary text-[11px] col-span-2">Job: {inc.jobs.title}</p>
-                )}
-                {inc.employees && (
-                  <p className="text-text-secondary text-[11px] col-span-2">
-                    Assigned: {inc.employees.name} {inc.employees.surname}
-                  </p>
-                )}
-              </div>
-              {inc.status !== 'closed' && (
-                <div className="mt-2 flex justify-end">
-                  <button
-                    onClick={e => { e.stopPropagation(); closeIncident(inc) }}
-                    className="bg-primary text-white rounded-lg px-3 h-8 text-[12px]">
-                    Close
-                  </button>
-                </div>
-              )}
+      <div className="flex-1 overflow-auto">
+        <div className="mx-4 my-3 bg-surface rounded-lg border border-divider overflow-x-auto">
+          {loading ? (
+            <p className="text-text-secondary text-[13px] text-center py-12">Loading…</p>
+          ) : filtered.length === 0 ? (
+            <div className="flex flex-col items-center py-12 gap-2">
+              <span className="material-icons text-[40px] text-text-disabled">verified</span>
+              <p className="text-text-secondary text-[14px]">No incidents found</p>
             </div>
-          ))
-        )}
+          ) : (
+            <table className="w-full text-[13px]" style={{ minWidth: 960 }}>
+              <thead>
+                <tr className="border-b border-divider bg-surface-elevated">
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase">Title</th>
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase">Severity</th>
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase">Status</th>
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase">Reporter</th>
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase">Assignee</th>
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase">Job</th>
+                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase">Created</th>
+                  <th className="text-right px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-divider">
+                {filtered.map(inc => {
+                  const reporter = inc.reporter
+                    ? `${inc.reporter.name} ${inc.reporter.surname}`.trim()
+                    : '—'
+                  const assignee = inc.assignee
+                    ? `${inc.assignee.name} ${inc.assignee.surname}`.trim()
+                    : '—'
+                  return (
+                    <tr
+                      key={inc.id}
+                      className="hover:bg-background transition-colors cursor-pointer"
+                      onClick={() => router.push(`/dashboard/incidents/${inc.id}`)}
+                    >
+                      <td className="px-4 py-3 font-medium text-text-primary max-w-[220px] truncate">
+                        {inc.title ?? inc.description ?? '—'}
+                      </td>
+                      <td className="px-4 py-3">
+                        <StatusBadge label={inc.severity} bg={sevBg(inc.severity)} fg={sevFg(inc.severity)} />
+                      </td>
+                      <td className="px-4 py-3 text-text-secondary capitalize">{inc.status}</td>
+                      <td className="px-4 py-3 text-text-secondary truncate max-w-[120px]">{reporter}</td>
+                      <td className="px-4 py-3 text-text-secondary truncate max-w-[120px]">{assignee}</td>
+                      <td className="px-4 py-3 text-text-secondary truncate max-w-[140px]">{inc.jobs?.title ?? '—'}</td>
+                      <td className="px-4 py-3 text-text-secondary whitespace-nowrap">{fmtDate(inc.created_at)}</td>
+                      <td className="px-4 py-3 text-right">
+                        {isOpenIncident(inc) && (
+                          <button
+                            onClick={e => { e.stopPropagation(); void closeIncident(inc) }}
+                            className="h-8 px-3 rounded-lg bg-primary text-white text-[12px] font-medium"
+                          >
+                            Close
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
       </div>
     </div>
   )

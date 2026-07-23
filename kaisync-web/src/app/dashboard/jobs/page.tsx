@@ -61,7 +61,7 @@ export default function JobsPage() {
 
     let query = supabase
       .from('jobs')
-      .select('*, clients(name, code)')
+      .select('*, clients(name, client_code)')
       .eq('company_id', member.companyId)
       .order('created_at', { ascending: false })
 
@@ -69,8 +69,15 @@ export default function JobsPage() {
       query = query.or(`assignee_employee_id.eq.${member.employeeId},assigned_employee_ids.cs.{${member.employeeId}}`)
     }
 
-    const { data } = await query
-    setJobs((data ?? []) as Job[])
+    const { data, error: qErr } = await query
+    if (qErr) {
+      console.error('[Jobs] load failed:', qErr.message)
+      setError(qErr.message)
+      setJobs([])
+    } else {
+      setError(null)
+      setJobs((data ?? []) as Job[])
+    }
     setLoading(false)
   }
 
@@ -132,6 +139,10 @@ export default function JobsPage() {
     </div>
   )
 
+  if (error && error !== 'not_linked') {
+    // keep page chrome; show banner above table
+  }
+
   return (
     <div className="p-3 flex flex-col gap-3">
       {/* Top bar */}
@@ -154,6 +165,12 @@ export default function JobsPage() {
           </Link>
         </div>
       </div>
+
+      {error && error !== 'not_linked' && (
+        <div className="rounded-lg border border-error/30 bg-error/5 px-3 py-2 text-[13px] text-error">
+          Failed to load jobs: {error}
+        </div>
+      )}
 
       {/* Scope toggle */}
       <div className="grid grid-cols-2 gap-2">
@@ -273,7 +290,7 @@ export default function JobsPage() {
                 {filtered.map(job => {
                   const statusBadge = STATUS_BADGES[job.status]
                   const priorityBadge = PRIORITY_BADGES[job.priority]
-                  const client = job.clients as { name: string; code: string | null } | undefined
+                  const client = job.clients as { name: string; client_code: string | null } | undefined
                   return (
                     <tr
                       key={job.id}
@@ -281,7 +298,7 @@ export default function JobsPage() {
                       onClick={() => router.push(`/dashboard/jobs/${job.id}`)}
                     >
                       <td className="px-4 py-3 font-mono text-[11px] text-text-secondary">
-                        {job.id.slice(0, 8).toUpperCase()}
+                        {job.job_code ?? job.id.slice(0, 8).toUpperCase()}
                       </td>
                       <td className="px-4 py-3">
                         <p className="font-medium text-text-primary truncate max-w-[160px]">{job.title}</p>

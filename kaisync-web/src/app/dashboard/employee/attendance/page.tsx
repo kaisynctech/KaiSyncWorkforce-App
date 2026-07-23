@@ -22,6 +22,20 @@ import {
 
 type Range = 'today' | 'week' | 'month' | 'custom'
 
+function asRpcArray<T>(data: unknown): T[] {
+  if (data == null) return []
+  if (Array.isArray(data)) return data as T[]
+  if (typeof data === 'string') {
+    try {
+      const parsed = JSON.parse(data) as unknown
+      return Array.isArray(parsed) ? (parsed as T[]) : []
+    } catch {
+      return []
+    }
+  }
+  return []
+}
+
 function toDateStr(d: Date): string {
   return d.toISOString().split('T')[0]
 }
@@ -120,123 +134,131 @@ export default function EmployeeAttendancePage() {
 
   async function load() {
     setLoading(true)
-    const supabase = createClient()
-    const member = await resolveCurrentMember(supabase)
-    if (!member) { setLoading(false); return }
-
-    const tok = member.sessionToken
-      ?? (await supabase.auth.getSession()).data.session?.access_token
-      ?? null
-
-    const now = new Date()
-    let fromDate: string
-    let toDate = toDateStr(now)
-    if (range === 'today') fromDate = toDateStr(now)
-    else if (range === 'week') {
-      const d = new Date(now); d.setDate(d.getDate() - 7); fromDate = toDateStr(d)
-    } else if (range === 'month') {
-      const d = new Date(now); d.setDate(d.getDate() - 30); fromDate = toDateStr(d)
-    } else {
-      fromDate = customFrom || toDateStr(new Date(now.getTime() - 30 * 86400000))
-      toDate = customTo || toDateStr(now)
-    }
-
-    const [company, emp] = await Promise.all([
-      loadCompanyWorkspace(supabase, member.companyId),
-      loadEmployeeWorkspace(supabase, member.employeeId),
-    ])
-
-    const name = emp
-      ? `${emp.name} ${emp.surname}`.trim()
-      : (() => {
-          const cs = getCodeSession()
-          return cs?.employee ? `${cs.employee.name} ${cs.employee.surname}`.trim() : 'Employee'
-        })()
-    setEmpName(name)
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const settings = ((company as any)?.custom_settings
-      ?? (company as { dispatch_settings?: Record<string, unknown> } | null)?.dispatch_settings
-      ?? {}) as Record<string, unknown>
-
-    // custom_settings may live on companies — try select if needed
-    let lateMin = 30
-    let otMin = 30
     try {
-      const { data: co } = await supabase
-        .from('companies')
-        .select('custom_settings')
-        .eq('id', member.companyId)
-        .maybeSingle()
-      const cs = (co?.custom_settings ?? settings) as Record<string, unknown>
-      if (cs.late_threshold_minutes != null) lateMin = Number(cs.late_threshold_minutes) || 30
-      if (cs.ot_start_after_minutes != null) otMin = Number(cs.ot_start_after_minutes) || 30
-    } catch { /* defaults */ }
+      const supabase = createClient()
+      const member = await resolveCurrentMember(supabase)
+      if (!member) return
 
-    let template: ShiftTemplateLike | null = null
-    try {
-      const { data: empRow } = await supabase
-        .from('employees')
-        .select('shift_template_id, daily_hours')
-        .eq('id', member.employeeId)
-        .maybeSingle()
-      const tid = (empRow as { shift_template_id?: string | null } | null)?.shift_template_id
-      if (tid) {
-        const { data: tmpl } = await supabase
-          .from('employee_shift_templates')
-          .select('id, start_time, end_time, break_minutes')
-          .eq('id', tid)
+      const tok = member.sessionToken
+        ?? (await supabase.auth.getSession()).data.session?.access_token
+        ?? null
+
+      const now = new Date()
+      let fromDate: string
+      let toDate = toDateStr(now)
+      if (range === 'today') fromDate = toDateStr(now)
+      else if (range === 'week') {
+        const d = new Date(now); d.setDate(d.getDate() - 7); fromDate = toDateStr(d)
+      } else if (range === 'month') {
+        const d = new Date(now); d.setDate(d.getDate() - 30); fromDate = toDateStr(d)
+      } else {
+        fromDate = customFrom || toDateStr(new Date(now.getTime() - 30 * 86400000))
+        toDate = customTo || toDateStr(now)
+      }
+
+      const [company, emp] = await Promise.all([
+        loadCompanyWorkspace(supabase, member.companyId),
+        loadEmployeeWorkspace(supabase, member.employeeId),
+      ])
+
+      const name = emp
+        ? `${emp.name} ${emp.surname}`.trim()
+        : (() => {
+            const cs = getCodeSession()
+            return cs?.employee ? `${cs.employee.name} ${cs.employee.surname}`.trim() : 'Employee'
+          })()
+      setEmpName(name)
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const settings = ((company as any)?.custom_settings
+        ?? (company as { dispatch_settings?: Record<string, unknown> } | null)?.dispatch_settings
+        ?? {}) as Record<string, unknown>
+
+      // custom_settings may live on companies — try select if needed
+      let lateMin = 30
+      let otMin = 30
+      try {
+        const { data: co } = await supabase
+          .from('companies')
+          .select('custom_settings')
+          .eq('id', member.companyId)
           .maybeSingle()
-        if (tmpl) template = tmpl as ShiftTemplateLike
+        const cs = (co?.custom_settings ?? settings) as Record<string, unknown>
+        if (cs.late_threshold_minutes != null) lateMin = Number(cs.late_threshold_minutes) || 30
+        if (cs.ot_start_after_minutes != null) otMin = Number(cs.ot_start_after_minutes) || 30
+      } catch { /* defaults */ }
+
+      let template: ShiftTemplateLike | null = null
+      try {
+        const { data: empRow } = await supabase
+          .from('employees')
+          .select('shift_template_id, daily_hours')
+          .eq('id', member.employeeId)
+          .maybeSingle()
+        const tid = (empRow as { shift_template_id?: string | null } | null)?.shift_template_id
+        if (tid) {
+          const { data: tmpl } = await supabase
+            .from('employee_shift_templates')
+            .select('id, start_time, end_time, break_minutes')
+            .eq('id', tid)
+            .maybeSingle()
+          if (tmpl) template = tmpl as ShiftTemplateLike
+        }
+      } catch { /* optional */ }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rpc = (fn: string, args: Record<string, unknown>) => (supabase.rpc as any)(fn, args)
+      const [punchRes, absRes, leaveRes] = await Promise.all([
+        Promise.resolve(rpc('employee_get_my_punches', {
+          p_employee_id: member.employeeId,
+          p_company_id: member.companyId,
+          p_from: fromDate,
+          p_to: toDate,
+          p_session_token: tok,
+        })),
+        Promise.resolve(rpc('employee_get_daily_absences', {
+          p_company_id: member.companyId,
+          p_employee_id: member.employeeId,
+          p_from: fromDate,
+          p_to: toDate,
+          p_session_token: tok,
+        })).catch(() => ({ data: [] })),
+        Promise.resolve(rpc('employee_get_leave_requests', {
+          p_company_id: member.companyId,
+          p_employee_id: member.employeeId,
+          p_session_token: tok,
+        })).catch(() => ({ data: [] })),
+      ])
+
+      const punches = asRpcArray<PunchLike>(punchRes.data).filter(
+        p => typeof p.date_time === 'string' && p.date_time.length > 0,
+      )
+      const opts = {
+        employeeId: member.employeeId,
+        employeeName: name,
+        lateThresholdMinutes: lateMin,
+        otStartAfterMinutes: otMin,
+        shiftTemplate: template,
       }
-    } catch { /* optional */ }
+      let built = buildPunchSessions(punches, opts)
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rpc = (fn: string, args: Record<string, unknown>) => (supabase.rpc as any)(fn, args)
-    const [punchRes, absRes, leaveRes] = await Promise.all([
-      rpc('employee_get_my_punches', {
-        p_employee_id: member.employeeId,
-        p_company_id: member.companyId,
-        p_from: fromDate,
-        p_to: toDate,
-        p_session_token: tok,
-      }),
-      rpc('employee_get_daily_absences', {
-        p_company_id: member.companyId,
-        p_employee_id: member.employeeId,
-        p_from: fromDate,
-        p_to: toDate,
-        p_session_token: tok,
-      }).catch(() => ({ data: [] })),
-      rpc('employee_get_leave_requests', {
-        p_company_id: member.companyId,
-        p_employee_id: member.employeeId,
-        p_session_token: tok,
-      }).catch(() => ({ data: [] })),
-    ])
-
-    const punches = (punchRes.data as PunchLike[]) ?? []
-    const opts = {
-      employeeId: member.employeeId,
-      employeeName: name,
-      lateThresholdMinutes: lateMin,
-      otStartAfterMinutes: otMin,
-      shiftTemplate: template,
-    }
-    let built = buildPunchSessions(punches, opts)
-
-    const absences = ((absRes.data as { date: string; reason?: string | null; note?: string | null }[]) ?? [])
-    const leaveRows = ((leaveRes.data as { start_date: string; end_date: string; leave_type: string; status: string }[]) ?? [])
-      .filter(l => (l.status ?? '').toLowerCase() === 'approved')
-    const leaveDays: { date: string; leave_type: string }[] = []
-    for (const l of leaveRows) {
-      for (const d of eachDateInclusive(l.start_date, l.end_date)) {
-        if (d >= fromDate && d <= toDate) leaveDays.push({ date: d, leave_type: l.leave_type })
+      const absences = asRpcArray<{ date: string; reason?: string | null; note?: string | null }>(absRes.data)
+      const leaveRows = asRpcArray<{ start_date: string; end_date: string; leave_type: string; status: string }>(leaveRes.data)
+        .filter(l => (l.status ?? '').toLowerCase() === 'approved')
+      const leaveDays: { date: string; leave_type: string }[] = []
+      for (const l of leaveRows) {
+        for (const d of eachDateInclusive(l.start_date, l.end_date)) {
+          if (d >= fromDate && d <= toDate) leaveDays.push({ date: d, leave_type: l.leave_type })
+        }
       }
+      built = mergeNonWorkDays(built, absences, leaveDays, opts)
+      setSessions(built)
+    } catch (e) {
+      console.error('[Attendance] load failed:', e)
+      setSessions([])
+    } finally {
+      setLoading(false)
     }
-    built = mergeNonWorkDays(built, absences, leaveDays, opts)
-    setSessions(built)
-    setLoading(false)
   }
 
   const totals = useMemo(() => {

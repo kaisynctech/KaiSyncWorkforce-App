@@ -79,7 +79,7 @@ const INCIDENT_STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
 type DocFilterType = 'all' | 'approved' | 'pending' | 'rejected' | 'expired'
 
 type JobContractorRow = JobContractor & {
-  jobs?: Pick<Job, 'id' | 'title' | 'status' | 'scheduled_start' | 'project_id'> | null
+  jobs?: Pick<Job, 'id' | 'title' | 'status' | 'scheduled_start' | 'deal_id'> | null
 }
 
 type ProjectContractorRow = {
@@ -87,7 +87,7 @@ type ProjectContractorRow = {
   contractor_id: string
   project_id: string
   role: string | null
-  projects?: Pick<Project, 'id' | 'name' | 'code' | 'status'> | null
+  projects?: Pick<Project, 'id' | 'title' | 'project_code' | 'status'> | null
 }
 
 const fmtDate = (d: string) =>
@@ -230,7 +230,7 @@ export default function ContractorDetailPage() {
     const supabase = createClient()
     const { data } = await supabase
       .from('project_contractors')
-      .select('*, projects(id, name, code, status)')
+      .select('*, projects:client_deals(id, title, project_code, status)')
       .eq('contractor_id', contractorId)
     setContractorProjects((data ?? []) as ProjectContractorRow[])
     setTabsLoaded(prev => new Set([...prev, 'Projects']))
@@ -1034,8 +1034,8 @@ export default function ContractorDetailPage() {
                         const p = pc.projects
                         return (
                           <tr key={pc.id} className="bg-surface border-b border-divider last:border-0">
-                            <td className="data-td text-text-secondary font-medium text-[12px]">{p?.code ?? '—'}</td>
-                            <td className="data-td text-text-primary text-[13px] truncate">{p?.name ?? '—'}</td>
+                            <td className="data-td text-text-secondary font-medium text-[12px]">{p?.project_code ?? '—'}</td>
+                            <td className="data-td text-text-primary text-[13px] truncate">{p?.title ?? '—'}</td>
                             <td className="data-td text-text-secondary text-center text-[12px]">{pc.role ?? '—'}</td>
                             <td className="data-td text-center">
                               <StatusBadge
