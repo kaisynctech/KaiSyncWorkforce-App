@@ -4,13 +4,12 @@
 // Fixed: Jobs tab now loads and renders client jobs table (was ComingSoon)
 // Deferred: kanban board view for projects tab (projects board already marked ComingSoon)
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type DragEvent } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { StatusBadge } from '@/components/ui/StatusBadge'
-import { ComingSoon } from '@/components/ui/ComingSoon'
 import type { Client, Site, Project } from '@/types/database'
 
 const CLIENT_TABS = ['info', 'projects', 'jobs'] as const
@@ -33,11 +32,13 @@ const JOB_STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
 const PROJECT_STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
   draft:       { bg: '#E5E7EB', fg: '#6B7280' },
   sent:        { bg: '#DBEAFE', fg: '#1E40AF' },
+  negotiation: { bg: '#E0E7FF', fg: '#3730A3' },
   in_progress: { bg: '#FEF3C7', fg: '#92400E' },
   won:         { bg: '#DCFCE7', fg: '#166534' },
   lost:        { bg: '#FEE2E2', fg: '#991B1B' },
 }
-const PROJECT_STATUS_OPTIONS = ['draft', 'sent', 'in_progress', 'won', 'lost']
+const PROJECT_STATUS_OPTIONS = ['draft', 'sent', 'negotiation', 'in_progress', 'won', 'lost']
+const BOARD_STAGES = ['draft', 'sent', 'negotiation', 'in_progress', 'won', 'lost'] as const
 
 const fmtCurrency = (n: number | null) =>
   n != null ? `R ${n.toLocaleString('en-ZA', { minimumFractionDigits: 0 })}` : '—'
@@ -149,9 +150,28 @@ export default function ClientDetailPage() {
   }
 
   async function updateProjectStatus(p: Project, newStatus: string) {
+    const from = p.status ?? 'draft'
+    if (from === newStatus) return
     const supabase = createClient()
+    // Prefer client_deals (MAUI); also update projects if that table/view is used
+    await supabase.from('client_deals').update({ status: newStatus }).eq('id', p.id)
     await supabase.from('projects').update({ status: newStatus }).eq('id', p.id)
+    await supabase.from('client_deal_updates').insert({
+      deal_id: p.id,
+      company_id: p.company_id,
+      body: `Moved to ${newStatus.replace(/_/g, ' ')}`,
+      status_from: from,
+      status_to: newStatus,
+    })
     setProjects(prev => prev.map(x => x.id === p.id ? { ...x, status: newStatus } : x))
+  }
+
+  function onBoardDrop(e: DragEvent, stage: string) {
+    e.preventDefault()
+    const id = e.dataTransfer.getData('text/project-id')
+    if (!id) return
+    const project = projects.find(p => p.id === id)
+    if (project) void updateProjectStatus(project, stage)
   }
 
   function copyCredentials() {
@@ -324,7 +344,58 @@ export default function ClientDetailPage() {
             </div>
 
             {projectView === 'board' ? (
-              <ComingSoon />
+              <div className="flex gap-3 overflow-x-auto pb-2">
+                {BOARD_STAGES.map(stage => {
+                  const sc = PROJECT_STATUS_COLORS[stage] ?? PROJECT_STATUS_COLORS.draft
+                  const column = projects.filter(p => (p.status ?? 'draft') === stage)
+                  return (
+                    <div
+                      key={stage}
+                      className="shrink-0 w-[220px] bg-surface-elevated rounded-lg border border-divider p-2 min-h-[280px]"
+                      onDragOver={e => e.preventDefault()}
+                      onDrop={e => onBoardDrop(e, stage)}
+                    >
+                      <div className="flex items-center justify-between mb-2 px-1">
+                        <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: sc.fg }}>
+                          {stage.replace(/_/g, ' ')}
+                        </span>
+                        <span className="text-[11px] text-text-secondary">{column.length}</span>
+                      </div>
+                      <div className="space-y-2">
+                        {column.map(p => (
+                          <div
+                            key={p.id}
+                            draggable
+                            onDragStart={e => e.dataTransfer.setData('text/project-id', p.id)}
+                            className="card p-2.5 cursor-grab active:cursor-grabbing space-y-1.5"
+                          >
+                            <button
+                              onClick={() => router.push(`/dashboard/projects/${p.id}`)}
+                              className="text-left text-[13px] font-medium text-text-primary hover:text-primary w-full"
+                            >
+                              {p.name}
+                            </button>
+                            <p className="text-[11px] text-text-secondary font-mono">{p.code ?? '—'}</p>
+                            <p className="text-[11px] text-text-secondary">{fmtCurrency(p.offer_amount)}</p>
+                            <select
+                              value={p.status ?? 'draft'}
+                              onChange={e => updateProjectStatus(p, e.target.value)}
+                              className="w-full text-[11px] h-7 px-1.5 rounded border border-border bg-surface"
+                            >
+                              {PROJECT_STATUS_OPTIONS.map(s => (
+                                <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>
+                              ))}
+                            </select>
+                          </div>
+                        ))}
+                        {column.length === 0 && (
+                          <p className="text-[11px] text-text-disabled px-1 py-4 text-center">Drop here</p>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
             ) : (
               <div className="overflow-x-auto bg-surface rounded-lg border border-divider">
                 <table style={{ minWidth: 520 }} className="w-full">

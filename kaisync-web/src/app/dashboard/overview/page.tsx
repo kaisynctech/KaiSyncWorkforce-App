@@ -44,6 +44,8 @@ export default function OverviewPage() {
   const [kpi, setKpi] = useState({ headcount: 0, clockedIn: 0, activeJobs: 0, pendingLeave: 0, openIncidents: 0, pendingPay: 0 })
   const [allEmployees, setAllEmployees] = useState<EmpRow[]>([])
   const [notClockedInIds, setNotClockedInIds] = useState<Set<string>>(new Set())
+  const [onLeaveToday, setOnLeaveToday] = useState<{ id: string; name: string }[]>([])
+  const [absentToday, setAbsentToday] = useState<{ id: string; name: string; reason: string }[]>([])
   const [markAbsentLoading, setMarkAbsentLoading] = useState<string | null>(null)
 
   const [loading, setLoading] = useState(true)
@@ -161,7 +163,8 @@ export default function OverviewPage() {
     setIsClockedIn(selfClockedIn)
 
     // Parallel KPI queries
-    const [hcRes, jobRes, leaveRes, incRes, payRes, empsRes] = await Promise.all([
+    const todayDate = new Date().toISOString().split('T')[0]
+    const [hcRes, jobRes, leaveRes, incRes, payRes, empsRes, onLeaveRes, absentRes] = await Promise.all([
       supabase.from('employees').select('id', { count: 'exact', head: true })
         .eq('company_id', member.companyId).eq('is_active', true),
       supabase.from('jobs').select('id', { count: 'exact', head: true })
@@ -174,6 +177,16 @@ export default function OverviewPage() {
         .eq('company_id', member.companyId).eq('status', 'pending'),
       supabase.from('employees').select('id, name, surname, position')
         .eq('company_id', member.companyId).eq('is_active', true).order('name'),
+      supabase.from('leave_requests')
+        .select('id, employee_id, employees(name, surname)')
+        .eq('company_id', member.companyId)
+        .eq('status', 'approved')
+        .lte('start_date', todayDate)
+        .gte('end_date', todayDate),
+      supabase.from('daily_absences')
+        .select('id, employee_id, reason, employees(name, surname)')
+        .eq('company_id', member.companyId)
+        .eq('date', todayDate),
     ])
 
     setKpi({
@@ -189,7 +202,29 @@ export default function OverviewPage() {
     setAllEmployees(employees)
     empsRef.current = employees
     const punchedTodayIds = new Set(punches.map(p => p.employee_id))
-    setNotClockedInIds(new Set(employees.filter(e => !punchedTodayIds.has(e.id)).map(e => e.id)))
+    const onLeaveIds = new Set((onLeaveRes.data ?? []).map((r: { employee_id: string }) => r.employee_id))
+    const absentIds = new Set((absentRes.data ?? []).map((r: { employee_id: string }) => r.employee_id))
+    setNotClockedInIds(new Set(
+      employees
+        .filter(e => !punchedTodayIds.has(e.id) && !onLeaveIds.has(e.id) && !absentIds.has(e.id))
+        .map(e => e.id),
+    ))
+
+    setOnLeaveToday((onLeaveRes.data ?? []).map((r: Record<string, unknown>) => {
+      const emp = r.employees as { name: string; surname: string } | null
+      return {
+        id: r.employee_id as string,
+        name: emp ? `${emp.name} ${emp.surname}` : 'Employee',
+      }
+    }))
+    setAbsentToday((absentRes.data ?? []).map((r: Record<string, unknown>) => {
+      const emp = r.employees as { name: string; surname: string } | null
+      return {
+        id: r.employee_id as string,
+        name: emp ? `${emp.name} ${emp.surname}` : 'Employee',
+        reason: (r.reason as string) || 'absent',
+      }
+    }))
 
     setLoading(false)
   }, [])
@@ -343,10 +378,45 @@ export default function OverviewPage() {
             </div>
           </div>
 
+          {onLeaveToday.length > 0 && (
+            <div>
+              <p className="px-4 pt-3 pb-1 text-[11px] font-semibold text-text-secondary tracking-wide">
+                ON LEAVE TODAY
+              </p>
+              {onLeaveToday.map(row => (
+                <div key={row.id} className="flex items-center gap-3 px-4 py-2 border-b border-divider">
+                  <span className="material-icons text-[18px] text-warning">event_available</span>
+                  <p className="text-[13px] text-text-primary">{row.name}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {absentToday.length > 0 && (
+            <div>
+              <p className="px-4 pt-3 pb-1 text-[11px] font-semibold text-text-secondary tracking-wide">
+                REPORTED ABSENT TODAY
+              </p>
+              {absentToday.map(row => (
+                <div key={row.id} className="flex items-center gap-3 px-4 py-2 border-b border-divider">
+                  <span className="material-icons text-[18px]" style={{ color: '#d97706' }}>person_off</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] text-text-primary">{row.name}</p>
+                    <p className="text-[11px] text-text-secondary capitalize">{row.reason.replace(/_/g, ' ')}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
           {notSignedInList.length === 0 ? (
             <div className="py-8 text-center">
               <span className="material-icons text-[32px] text-text-disabled">check_circle</span>
-              <p className="text-[13px] text-text-secondary mt-1">Everyone is clocked in</p>
+              <p className="text-[13px] text-text-secondary mt-1">
+                {onLeaveToday.length || absentToday.length
+                  ? 'Everyone else is accounted for'
+                  : 'Everyone is clocked in'}
+              </p>
             </div>
           ) : (
             <div>

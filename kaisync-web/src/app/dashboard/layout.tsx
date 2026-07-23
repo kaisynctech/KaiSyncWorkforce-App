@@ -1,19 +1,22 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Sidebar from '@/components/Sidebar'
 import EmployeeSidebar from '@/components/EmployeeSidebar'
 import { getCodeSession, getEmpContext, clearCodeSession } from '@/lib/auth/code-session'
 import { AUTH_ROUTES, usesCompanyDashboard } from '@/lib/auth/employee-routing'
 import { refreshCodeSession } from '@/lib/auth/session'
+import { isPlatformAdmin } from '@/lib/platform-admin'
 import type { Company, Employee } from '@/types/database'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
+  const pathname = usePathname()
   const [employee, setEmployee] = useState<Employee | null>(null)
   const [company, setCompany] = useState<Company | null>(null)
+  const [platformOnly, setPlatformOnly] = useState(false)
   const [loading, setLoading] = useState(true)
   const [sidebarOpen, setSidebarOpen] = useState(true)
 
@@ -48,6 +51,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           }
           setEmployee(emp as Employee)
           setCompany((emp as { companies: Company }).companies)
+          setPlatformOnly(false)
+          setLoading(false)
+          return
+        }
+
+        // JWT but no employee row — platform owners may continue (MAUI parity)
+        const admin = await isPlatformAdmin(supabase)
+        if (admin) {
+          setEmployee(null)
+          setCompany(null)
+          setPlatformOnly(true)
+          if (!pathname.startsWith('/dashboard/platform')) {
+            router.replace('/dashboard/platform')
+          }
           setLoading(false)
           return
         }
@@ -91,7 +108,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
 
     init()
-  }, [router])
+  }, [router, pathname])
 
   // Match MAUI: only field employees use employee shell; managers+ use company dashboard
   const showEmployeeShell = employee != null && !usesCompanyDashboard(employee.access_level)
@@ -122,6 +139,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           onToggle={() => setSidebarOpen(v => !v)}
           company={company}
           employee={employee}
+          platformOnly={platformOnly}
         />
       )}
 
@@ -137,15 +155,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <div className="flex items-center gap-3">
             <div className="text-right hidden sm:block">
               <p className="text-[13px] font-medium text-text-primary leading-none">
-                {employee ? `${employee.name} ${employee.surname}` : ''}
+                {employee ? `${employee.name} ${employee.surname}` : platformOnly ? 'Platform Operator' : ''}
               </p>
               <p className="text-[11px] text-text-secondary capitalize mt-0.5">
-                {employee?.access_level}
+                {employee?.access_level ?? (platformOnly ? 'platform admin' : '')}
               </p>
             </div>
             <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
               <span className="text-white text-[12px] font-semibold">
-                {employee ? `${employee.name?.[0] ?? ''}${employee.surname?.[0] ?? ''}` : '?'}
+                {employee
+                  ? `${employee.name?.[0] ?? ''}${employee.surname?.[0] ?? ''}`
+                  : platformOnly ? 'P' : '?'}
               </span>
             </div>
           </div>

@@ -4,9 +4,19 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import type { ShiftTemplate, BreakSlot } from '@/types/database'
+import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 
 interface BreakEntry { id: string; label: string; minutes: number }
+
+type TemplateRow = {
+  id: string
+  company_id: string
+  name: string
+  start_time: string | null
+  end_time: string | null
+  break_minutes: number | null
+  breaks: { label?: string; Label?: string; minutes?: number; Minutes?: number }[] | null
+}
 
 function calcPaidHours(start: string, end: string, breaks: BreakEntry[]): string {
   if (!start || !end) return '—'
@@ -22,12 +32,24 @@ function calcPaidHours(start: string, end: string, breaks: BreakEntry[]): string
   return `${h}h ${String(m).padStart(2, '0')}m`
 }
 
+function toTimeInput(raw: string | null | undefined): string {
+  if (!raw) return '08:00'
+  const m = raw.match(/^(\d{1,2}):(\d{2})/)
+  if (!m) return '08:00'
+  return `${m[1].padStart(2, '0')}:${m[2]}`
+}
+
+function toTimeSql(t: string): string {
+  return t.length === 5 ? `${t}:00` : t
+}
+
 export default function EditTimeTemplatePage() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
   const templateId = params.id
 
   const [loading, setLoading] = useState(true)
+  const [companyId, setCompanyId] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [startTime, setStartTime] = useState('08:00')
   const [endTime, setEndTime] = useState('17:00')
@@ -43,19 +65,35 @@ export default function EditTimeTemplatePage() {
   async function load() {
     setLoading(true)
     const supabase = createClient()
+    const member = await resolveCurrentMember(supabase)
+    if (!member) { router.push('/dashboard/time-templates'); return }
+    setCompanyId(member.companyId)
+
     const { data } = await supabase
-      .from('shift_templates')
-      .select('*, breaks:shift_template_breaks(*)')
+      .from('employee_shift_templates')
+      .select('id, company_id, name, start_time, end_time, break_minutes, breaks')
       .eq('id', templateId)
-      .single()
+      .eq('company_id', member.companyId)
+      .maybeSingle()
 
     if (!data) { router.push('/dashboard/time-templates'); return }
 
-    const t = data as ShiftTemplate
+    const t = data as TemplateRow
     setName(t.name)
-    setStartTime(t.start_time ?? '08:00')
-    setEndTime(t.end_time ?? '17:00')
-    setBreaks((t.breaks ?? []).map((b: BreakSlot) => ({ id: b.id, label: b.label, minutes: b.minutes })))
+    setStartTime(toTimeInput(t.start_time))
+    setEndTime(toTimeInput(t.end_time))
+    const rawBreaks = Array.isArray(t.breaks) ? t.breaks : []
+    if (rawBreaks.length > 0) {
+      setBreaks(rawBreaks.map((b, i) => ({
+        id: `${i}`,
+        label: b.label ?? b.Label ?? 'Break',
+        minutes: Number(b.minutes ?? b.Minutes ?? 0) || 0,
+      })))
+    } else if (t.break_minutes && t.break_minutes > 0) {
+      setBreaks([{ id: '0', label: 'Break', minutes: t.break_minutes }])
+    } else {
+      setBreaks([])
+    }
     setLoading(false)
   }
 
@@ -70,19 +108,26 @@ export default function EditTimeTemplatePage() {
   function removeBreak(id: string) { setBreaks(prev => prev.filter(b => b.id !== id)) }
 
   async function save() {
-    if (!name.trim()) { setErrorMsg('Template name is required.'); return }
+    if (!name.trim() || !companyId) { setErrorMsg('Template name is required.'); return }
     setBusy(true)
     setErrorMsg('')
     const supabase = createClient()
-    try {
-      await supabase.rpc('upsert_shift_template', {
-        template: { id: templateId, name: name.trim(), start_time: startTime, end_time: endTime },
-        breaks: breaks.map(b => ({ label: b.label, minutes: b.minutes })),
-      })
-      router.push('/dashboard/time-templates')
-    } catch (e: unknown) {
-      setErrorMsg(e instanceof Error ? e.message : 'Failed to save template.')
+    const breakMins = breaks.reduce((s, b) => s + (b.minutes || 0), 0)
+    const { error: rpcErr } = await supabase.rpc('hr_upsert_shift_template', {
+      p_company_id: companyId,
+      p_id: templateId,
+      p_name: name.trim(),
+      p_start_time: toTimeSql(startTime),
+      p_end_time: toTimeSql(endTime),
+      p_break_minutes: breakMins,
+      p_breaks: breaks.map(b => ({ label: b.label, minutes: b.minutes })),
+    })
+    if (rpcErr) {
+      setErrorMsg(rpcErr.message || 'Failed to save template.')
+      setBusy(false)
+      return
     }
+    router.push('/dashboard/time-templates')
     setBusy(false)
   }
 
@@ -106,7 +151,6 @@ export default function EditTimeTemplatePage() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4 max-w-xl">
-        {/* TEMPLATE DETAILS */}
         <div className="card p-4 space-y-3">
           <p className="section-label">TEMPLATE DETAILS</p>
           <div className="flex flex-col gap-1">
@@ -131,7 +175,6 @@ export default function EditTimeTemplatePage() {
           </div>
         </div>
 
-        {/* BREAKS */}
         <div className="card p-4 space-y-3">
           <div className="flex items-center justify-between">
             <p className="section-label">BREAKS</p>
@@ -160,7 +203,6 @@ export default function EditTimeTemplatePage() {
           )}
         </div>
 
-        {/* Live paid hours preview */}
         <div className="rounded-xl px-5 py-3.5 flex flex-col items-center gap-1 border border-primary"
           style={{ backgroundColor: 'var(--color-surface-dark)' }}>
           <p className="font-bold text-[20px] text-primary">{paidHours}</p>

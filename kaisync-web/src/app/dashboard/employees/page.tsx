@@ -152,10 +152,13 @@ export default function EmployeesPage() {
 
   // ── Tab 3 — Leave ─────────────────────────────────────────────────────────
   const [leaveBalances,   setLeaveBalances]   = useState<LeaveBalance[]>([])
+  const [pendingLeave,    setPendingLeave]    = useState<LeaveRequest[]>([])
   const [leaveLoading,    setLeaveLoading]    = useState(false)
   const [leaveLoaded,     setLeaveLoaded]     = useState(false)
   const [leaveSearch,     setLeaveSearch]     = useState('')
   const [leaveTypeFilter, setLeaveTypeFilter] = useState('')
+  const [leaveSubTab,     setLeaveSubTab]     = useState<'pending' | 'balances'>('pending')
+  const [leaveActionBusy, setLeaveActionBusy] = useState<string | null>(null)
 
   // ── Tab 4 — Pending ───────────────────────────────────────────────────────
   const [pending,        setPending]        = useState<PendingEmployee[]>([])
@@ -249,13 +252,21 @@ export default function EmployeesPage() {
     const supabase  = createClient()
     const yearStart = `${new Date().getFullYear()}-01-01`
 
-    const { data } = await supabase
-      .from('leave_requests')
-      .select('employee_id, leave_type, days_requested, start_date')
-      .eq('company_id', companyId)
-      .eq('status', 'approved')
-      .gte('start_date', yearStart)
-      .order('start_date', { ascending: false })
+    const [{ data }, { data: pendingData }] = await Promise.all([
+      supabase
+        .from('leave_requests')
+        .select('employee_id, leave_type, days_requested, start_date')
+        .eq('company_id', companyId)
+        .eq('status', 'approved')
+        .gte('start_date', yearStart)
+        .order('start_date', { ascending: false }),
+      supabase
+        .from('leave_requests')
+        .select('*, employees(name, surname, employee_code)')
+        .eq('company_id', companyId)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false }),
+    ])
 
     setLeaveBalances(
       buildLeaveBalances(
@@ -263,8 +274,24 @@ export default function EmployeesPage() {
         (data ?? []) as Pick<LeaveRequest, 'employee_id' | 'leave_type' | 'days_requested' | 'start_date'>[]
       )
     )
+    setPendingLeave((pendingData ?? []) as LeaveRequest[])
     setLeaveLoaded(true)
     setLeaveLoading(false)
+  }
+
+  async function decideLeave(requestId: string, decision: 'approved' | 'declined') {
+    if (!companyId) return
+    setLeaveActionBusy(requestId)
+    const supabase = createClient()
+    await supabase.rpc('decide_leave_request', {
+      p_company_id: companyId,
+      p_leave_request_id: requestId,
+      p_decision: decision,
+      p_note: null,
+    })
+    setLeaveActionBusy(null)
+    setLeaveLoaded(false)
+    await loadLeave()
   }
 
   // ── Tab 4 ─────────────────────────────────────────────────────────────────
@@ -319,7 +346,12 @@ export default function EmployeesPage() {
   const TABS: { key: Tab; label: string }[] = [
     { key: 'employees', label: 'Employees' },
     { key: 'teams',     label: 'Teams' },
-    ...(canSeeLeave ? [{ key: 'leave' as Tab, label: 'Leave' }] : []),
+    ...(canSeeLeave ? [{
+      key: 'leave' as Tab,
+      label: leaveLoaded && pendingLeave.length > 0
+        ? `Leave (${pendingLeave.length})`
+        : 'Leave',
+    }] : []),
     {
       key:   'pending',
       label: pendingLoaded && pending.length > 0 ? `Pending (${pending.length})` : 'Pending',
@@ -709,76 +741,145 @@ export default function EmployeesPage() {
       {/* ════════════════════════════════════════════════════════════════════ */}
       {tab === 'leave' && (
         <>
-          <div className="flex items-center gap-3 mb-4 flex-wrap">
-            <div className="flex items-center gap-2 h-10 px-3 bg-surface border border-border rounded-md flex-1 min-w-[200px]">
-              <span className="material-icons text-text-disabled text-[18px]">search</span>
-              <input
-                type="text"
-                placeholder="Search employee…"
-                value={leaveSearch}
-                onChange={e => setLeaveSearch(e.target.value)}
-                className="flex-1 text-[13px] text-text-primary placeholder:text-text-disabled bg-transparent focus:outline-none"
-              />
-            </div>
-            <select
-              value={leaveTypeFilter}
-              onChange={e => setLeaveTypeFilter(e.target.value)}
-              className="h-10 px-3 bg-surface border border-border rounded-md text-[13px] text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 appearance-none"
+          <div className="flex gap-2 mb-4">
+            <button
+              onClick={() => setLeaveSubTab('pending')}
+              className={`h-8 px-3 rounded-2xl text-[12px] font-medium ${
+                leaveSubTab === 'pending' ? 'bg-primary text-white' : 'bg-surface border border-border text-text-secondary'
+              }`}
             >
-              <option value="">All leave types</option>
-              {leaveTypes.map(lt => (
-                <option key={lt} value={lt}>{lt.replace(/_/g, ' ')}</option>
-              ))}
-            </select>
+              Pending ({pendingLeave.length})
+            </button>
+            <button
+              onClick={() => setLeaveSubTab('balances')}
+              className={`h-8 px-3 rounded-2xl text-[12px] font-medium ${
+                leaveSubTab === 'balances' ? 'bg-primary text-white' : 'bg-surface border border-border text-text-secondary'
+              }`}
+            >
+              Balances
+            </button>
           </div>
 
-          <div className="bg-surface rounded-lg border border-divider overflow-hidden">
-            {leaveLoading ? (
-              <div className="py-16 text-center text-[13px] text-text-disabled">Loading…</div>
-            ) : filteredLeave.length === 0 ? (
-              <div className="py-16 text-center">
-                <span className="material-icons text-[48px] text-text-disabled block mb-2">beach_access</span>
-                <p className="text-[14px] text-text-secondary">No approved leave records for this year</p>
+          {leaveSubTab === 'pending' ? (
+            <div className="bg-surface rounded-lg border border-divider overflow-hidden">
+              {leaveLoading ? (
+                <div className="py-16 text-center text-[13px] text-text-disabled">Loading…</div>
+              ) : pendingLeave.length === 0 ? (
+                <div className="py-16 text-center">
+                  <span className="material-icons text-[48px] text-text-disabled block mb-2">beach_access</span>
+                  <p className="text-[14px] text-text-secondary">No pending leave requests</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-divider">
+                  {pendingLeave.map(req => {
+                    const emp = req.employees as { name: string; surname: string; employee_code?: string } | undefined
+                    const name = emp ? `${emp.name} ${emp.surname}` : 'Employee'
+                    return (
+                      <div key={req.id} className="flex items-center gap-4 px-5 py-3">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[13px] font-medium text-text-primary truncate">{name}</p>
+                          <p className="text-[12px] text-text-secondary capitalize">
+                            {req.leave_type.replace(/_/g, ' ')} · {fmtDate(req.start_date)}
+                            {req.end_date ? ` – ${fmtDate(req.end_date)}` : ''}
+                            {req.days_requested != null ? ` · ${req.days_requested}d` : ''}
+                          </p>
+                        </div>
+                        <div className="flex gap-2 shrink-0">
+                          <button
+                            onClick={() => decideLeave(req.id, 'declined')}
+                            disabled={leaveActionBusy === req.id}
+                            className="h-8 px-3 rounded-md text-[12px] font-medium bg-error-dark text-error hover:bg-red-100 transition-colors disabled:opacity-50"
+                          >
+                            {leaveActionBusy === req.id ? '…' : 'Decline'}
+                          </button>
+                          <button
+                            onClick={() => decideLeave(req.id, 'approved')}
+                            disabled={leaveActionBusy === req.id}
+                            className="h-8 px-3 rounded-md text-[12px] font-medium bg-success-dark text-success hover:bg-green-100 transition-colors disabled:opacity-50"
+                          >
+                            {leaveActionBusy === req.id ? '…' : 'Approve'}
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-3 mb-4 flex-wrap">
+                <div className="flex items-center gap-2 h-10 px-3 bg-surface border border-border rounded-md flex-1 min-w-[200px]">
+                  <span className="material-icons text-text-disabled text-[18px]">search</span>
+                  <input
+                    type="text"
+                    placeholder="Search employee…"
+                    value={leaveSearch}
+                    onChange={e => setLeaveSearch(e.target.value)}
+                    className="flex-1 text-[13px] text-text-primary placeholder:text-text-disabled bg-transparent focus:outline-none"
+                  />
+                </div>
+                <select
+                  value={leaveTypeFilter}
+                  onChange={e => setLeaveTypeFilter(e.target.value)}
+                  className="h-10 px-3 bg-surface border border-border rounded-md text-[13px] text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 appearance-none"
+                >
+                  <option value="">All leave types</option>
+                  {leaveTypes.map(lt => (
+                    <option key={lt} value={lt}>{lt.replace(/_/g, ' ')}</option>
+                  ))}
+                </select>
               </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-[13px]">
-                  <thead>
-                    <tr className="border-b border-divider bg-surface-elevated">
-                      <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Employee</th>
-                      <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Leave Type</th>
-                      <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Annual Days</th>
-                      <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Used</th>
-                      <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Remaining</th>
-                      <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Last Request</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredLeave.map((b, i) => (
-                      <tr key={i} className="border-b border-divider last:border-0">
-                        <td className="px-5 py-3 font-medium text-text-primary">{b.employeeName}</td>
-                        <td className="px-5 py-3 text-text-secondary capitalize">
-                          {b.leaveType.replace(/_/g, ' ')}
-                        </td>
-                        <td className="px-5 py-3 text-text-secondary text-center">{b.annualDays}</td>
-                        <td className="px-5 py-3 text-text-secondary text-center">{b.usedDays}</td>
-                        <td className="px-5 py-3 text-center">
-                          <span className={`font-semibold ${
-                            b.remaining <= 0 ? 'text-error' : b.remaining <= 3 ? 'text-warning' : 'text-success'
-                          }`}>
-                            {b.remaining}
-                          </span>
-                        </td>
-                        <td className="px-5 py-3 text-text-secondary">
-                          {b.lastRequestDate ? fmtDate(b.lastRequestDate) : '—'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+
+              <div className="bg-surface rounded-lg border border-divider overflow-hidden">
+                {leaveLoading ? (
+                  <div className="py-16 text-center text-[13px] text-text-disabled">Loading…</div>
+                ) : filteredLeave.length === 0 ? (
+                  <div className="py-16 text-center">
+                    <span className="material-icons text-[48px] text-text-disabled block mb-2">beach_access</span>
+                    <p className="text-[14px] text-text-secondary">No approved leave records for this year</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-[13px]">
+                      <thead>
+                        <tr className="border-b border-divider bg-surface-elevated">
+                          <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Employee</th>
+                          <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Leave Type</th>
+                          <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Annual Days</th>
+                          <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Used</th>
+                          <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Remaining</th>
+                          <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Last Request</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredLeave.map((b, i) => (
+                          <tr key={i} className="border-b border-divider last:border-0">
+                            <td className="px-5 py-3 font-medium text-text-primary">{b.employeeName}</td>
+                            <td className="px-5 py-3 text-text-secondary capitalize">
+                              {b.leaveType.replace(/_/g, ' ')}
+                            </td>
+                            <td className="px-5 py-3 text-text-secondary text-center">{b.annualDays}</td>
+                            <td className="px-5 py-3 text-text-secondary text-center">{b.usedDays}</td>
+                            <td className="px-5 py-3 text-center">
+                              <span className={`font-semibold ${
+                                b.remaining <= 0 ? 'text-error' : b.remaining <= 3 ? 'text-warning' : 'text-success'
+                              }`}>
+                                {b.remaining}
+                              </span>
+                            </td>
+                            <td className="px-5 py-3 text-text-secondary">
+                              {b.lastRequestDate ? fmtDate(b.lastRequestDate) : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            </>
+          )}
         </>
       )}
 

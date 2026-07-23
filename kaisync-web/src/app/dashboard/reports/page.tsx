@@ -1,12 +1,20 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar,
   XAxis, YAxis, Tooltip, CartesianGrid,
 } from 'recharts'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import {
+  buildPhase2Snapshot,
+  fetchIncidentsExportRows,
+  fetchInventoryExportRows,
+  fetchJobsExportRows,
+  fetchPaymentsExportRows,
+  isPhase2Tab,
+} from '@/lib/reports-snapshots'
 
 type Preset = '7d' | '30d' | 'month' | 'year'
 type TabKey = 'executive' | 'financial' | 'payroll' | 'workforce' | 'operational' |
@@ -140,9 +148,27 @@ function useTabData(preset: Preset, activeTab: TabKey, companyId: string | null)
         p_from:       start,
         p_to:         end,
       })
-      setData(d as RpcData ?? null)
+      const rpcData = (d as RpcData | null) ?? null
+      if (rpcData && Object.keys(rpcData).length > 0) {
+        setData(rpcData)
+      } else if (isPhase2Tab(activeTab)) {
+        // MAUI builds these client-side; use until Phase 2 RPCs are deployed
+        const built = await buildPhase2Snapshot(supabase, activeTab, companyId, start, end)
+        setData(built)
+      } else {
+        setData(rpcData)
+      }
     } catch {
-      setData(null)
+      if (isPhase2Tab(activeTab)) {
+        try {
+          const built = await buildPhase2Snapshot(supabase, activeTab, companyId, start, end)
+          setData(built)
+        } catch {
+          setData(null)
+        }
+      } else {
+        setData(null)
+      }
     }
     setLoading(false)
   }, [preset, activeTab, companyId])
@@ -185,7 +211,7 @@ function ExecTab({ data }: { data: RpcData | null }) {
   )
 }
 
-// Financial — Phase 2 stub; shows empty state clearly
+// Financial
 function FinancialTab({ data }: { data: RpcData | null }) {
   const d = data ?? {}
   const hasData = Object.keys(d).length > 0
@@ -193,7 +219,7 @@ function FinancialTab({ data }: { data: RpcData | null }) {
     return (
       <div className="flex flex-col items-center justify-center py-16 gap-2">
         <span className="material-icons text-[40px] text-text-disabled">bar_chart</span>
-        <p className="text-[14px] text-text-secondary font-semibold">Financial analytics coming in Phase 2</p>
+        <p className="text-[14px] text-text-secondary font-semibold">No financial data for this period</p>
       </div>
     )
   }
@@ -287,7 +313,7 @@ function OperationalTab({ data }: { data: RpcData | null }) {
   )
 }
 
-// Incidents — Phase 2 stub
+// Incidents
 function IncidentsTab({ data }: { data: RpcData | null }) {
   const d    = data ?? {}
   const list = (d.recent as Record<string, unknown>[] | null) ?? []
@@ -296,7 +322,7 @@ function IncidentsTab({ data }: { data: RpcData | null }) {
     return (
       <div className="flex flex-col items-center justify-center py-16 gap-2">
         <span className="material-icons text-[40px] text-text-disabled">warning</span>
-        <p className="text-[14px] text-text-secondary font-semibold">Incidents analytics coming in Phase 2</p>
+        <p className="text-[14px] text-text-secondary font-semibold">No incidents in this period</p>
       </div>
     )
   }
@@ -317,7 +343,7 @@ function IncidentsTab({ data }: { data: RpcData | null }) {
   )
 }
 
-// Inventory — Phase 2 stub
+// Inventory
 function InventoryTab({ data }: { data: RpcData | null }) {
   const d    = data ?? {}
   const rows = (d.top_items as Record<string, unknown>[] | null) ?? []
@@ -326,7 +352,7 @@ function InventoryTab({ data }: { data: RpcData | null }) {
     return (
       <div className="flex flex-col items-center justify-center py-16 gap-2">
         <span className="material-icons text-[40px] text-text-disabled">inventory_2</span>
-        <p className="text-[14px] text-text-secondary font-semibold">Inventory analytics coming in Phase 2</p>
+        <p className="text-[14px] text-text-secondary font-semibold">No inventory data</p>
       </div>
     )
   }
@@ -364,7 +390,7 @@ function InventoryTab({ data }: { data: RpcData | null }) {
   )
 }
 
-// Contractors — Phase 2 stub
+// Contractors
 function ContractorsTab({ data }: { data: RpcData | null }) {
   const d    = data ?? {}
   const rows = (d.payment_summary as Record<string, unknown>[] | null) ?? []
@@ -373,7 +399,7 @@ function ContractorsTab({ data }: { data: RpcData | null }) {
     return (
       <div className="flex flex-col items-center justify-center py-16 gap-2">
         <span className="material-icons text-[40px] text-text-disabled">badge</span>
-        <p className="text-[14px] text-text-secondary font-semibold">Contractor analytics coming in Phase 2</p>
+        <p className="text-[14px] text-text-secondary font-semibold">No contractor data</p>
       </div>
     )
   }
@@ -410,7 +436,7 @@ function ContractorsTab({ data }: { data: RpcData | null }) {
   )
 }
 
-// Property — Phase 2 stub
+// Property
 function PropertyTab({ data }: { data: RpcData | null }) {
   const d       = data ?? {}
   const hasData = Object.keys(d).length > 0
@@ -418,7 +444,7 @@ function PropertyTab({ data }: { data: RpcData | null }) {
     return (
       <div className="flex flex-col items-center justify-center py-16 gap-2">
         <span className="material-icons text-[40px] text-text-disabled">apartment</span>
-        <p className="text-[14px] text-text-secondary font-semibold">Property analytics coming in Phase 2</p>
+        <p className="text-[14px] text-text-secondary font-semibold">No property data</p>
       </div>
     )
   }
@@ -432,7 +458,7 @@ function PropertyTab({ data }: { data: RpcData | null }) {
   )
 }
 
-// Telemetry — Phase 2 stub
+// Telemetry
 function TelemetryTab({ data }: { data: RpcData | null }) {
   const d       = data ?? {}
   const hasData = Object.keys(d).length > 0
@@ -440,12 +466,12 @@ function TelemetryTab({ data }: { data: RpcData | null }) {
     return (
       <div className="flex flex-col items-center justify-center py-16 gap-2">
         <span className="material-icons text-[40px] text-text-disabled">analytics</span>
-        <p className="text-[14px] text-text-secondary font-semibold">Telemetry analytics coming in Phase 2</p>
+        <p className="text-[14px] text-text-secondary font-semibold">No telemetry data</p>
       </div>
     )
   }
   const pairs: [string, string][] = [
-    ['Realtime Status',    d.realtime_status as string     ?? '—'],
+    ['Realtime Status',    (d.realtime_status as string)     ?? '—'],
     ['Offline Queue',      fmtN(d.offline_queue as number)],
     ['Error Rate',         d.error_rate != null ? `${d.error_rate}%` : '—'],
     ['Active Connections', fmtN(d.active_connections as number)],
@@ -474,7 +500,16 @@ function downloadCSV(content: string, filename: string) {
   URL.revokeObjectURL(url)
 }
 
-// Exports tab — fetches payroll data on demand and generates CSV client-side
+function empName(employees: unknown): string {
+  const emp = (Array.isArray(employees) ? employees[0] : employees) as
+    | { name?: string; surname?: string }
+    | null
+    | undefined
+  if (!emp) return ''
+  return `${emp.name ?? ''} ${emp.surname ?? ''}`.trim()
+}
+
+// Exports tab — client CSV (MAUI ExportAsync parity)
 function ExportsTab({ companyId, preset }: { companyId: string | null; preset: Preset }) {
   const [busy, setBusy] = useState<string | null>(null)
 
@@ -488,11 +523,23 @@ function ExportsTab({ companyId, preset }: { companyId: string | null; preset: P
         p_company_id: companyId, p_from: start, p_to: end,
       })
       const rows = ((data as RpcData | null)?.payroll_by_employee as Record<string, unknown>[] | null) ?? []
-      const csv  = [
-        'Employee,Gross (R),Net (R),Hours',
-        ...rows.map(r => `"${r.employee_name}",${r.gross},${r.net},${(r.hours as number ?? 0).toFixed(2)}`),
-      ].join('\n')
-      downloadCSV(csv, `payroll_${start}_${end}.csv`)
+      if (rows.length === 0) {
+        const payments = await fetchPaymentsExportRows(supabase, companyId, start, end)
+        const csv = [
+          'Employee,Gross (R),Net (R),Status,Period Start,Period End',
+          ...payments.map(r => {
+            const name = empName(r.employees)
+            return `"${name}",${r.gross_pay},${r.net_pay},${r.status},${r.period_start},${r.period_end}`
+          }),
+        ].join('\n')
+        downloadCSV(csv, `payments_${start}_${end}.csv`)
+      } else {
+        const csv = [
+          'Employee,Gross (R),Net (R),Hours',
+          ...rows.map(r => `"${r.employee_name}",${r.gross},${r.net},${(r.hours as number ?? 0).toFixed(2)}`),
+        ].join('\n')
+        downloadCSV(csv, `payroll_${start}_${end}.csv`)
+      }
     } catch {}
     setBusy(null)
   }
@@ -503,24 +550,92 @@ function ExportsTab({ companyId, preset }: { companyId: string | null; preset: P
     const supabase = createClient()
     const { start, end } = getPeriod(preset)
     try {
-      const { data } = await supabase.rpc('hr_get_workforce_snapshot', {
-        p_company_id: companyId, p_from: start, p_to: end,
-      })
-      const trend = ((data as RpcData | null)?.attendance_trend as Record<string, unknown>[] | null) ?? []
-      const csv   = [
-        'Date,Present Employees',
-        ...trend.map(r => `"${r.label}",${r.value}`),
+      const { data: punches } = await supabase
+        .from('time_punches')
+        .select('date_time, type, address, employees(name, surname)')
+        .eq('company_id', companyId)
+        .gte('date_time', `${start}T00:00:00`)
+        .lte('date_time', `${end}T23:59:59`)
+        .order('date_time', { ascending: false })
+        .limit(2000)
+      const csv = [
+        'Employee,Type,DateTime,Address',
+        ...(punches ?? []).map(r => {
+          const name = empName(r.employees)
+          return `"${name}",${r.type},"${r.date_time}","${r.address ?? ''}"`
+        }),
       ].join('\n')
       downloadCSV(csv, `attendance_${start}_${end}.csv`)
     } catch {}
     setBusy(null)
   }
 
+  async function exportIncidentsCSV() {
+    if (!companyId) return
+    setBusy('incidents')
+    const supabase = createClient()
+    const { start, end } = getPeriod(preset)
+    try {
+      const rows = await fetchIncidentsExportRows(supabase, companyId, start, end)
+      const csv = [
+        'Employee,Description,Severity,Status,Created',
+        ...rows.map(r => {
+          const name = empName(r.employees)
+          const status = r.is_closed ? 'closed' : (r.status ?? 'open')
+          const desc = String(r.description ?? '').replace(/"/g, '""')
+          return `"${name}","${desc}",${r.severity},${status},${r.created_at}`
+        }),
+      ].join('\n')
+      downloadCSV(csv, `incidents_${start}_${end}.csv`)
+    } catch {}
+    setBusy(null)
+  }
+
+  async function exportInventoryCSV() {
+    if (!companyId) return
+    setBusy('inventory')
+    const supabase = createClient()
+    try {
+      const rows = await fetchInventoryExportRows(supabase, companyId)
+      const csv = [
+        'Name,SKU,Qty On Hand,Unit Cost,Reorder Level,Supplier',
+        ...rows.map(r =>
+          `"${r.name ?? ''}","${r.sku ?? ''}",${r.quantity_on_hand ?? 0},${r.unit_cost ?? 0},${r.reorder_level ?? 0},"${r.supplier ?? ''}"`,
+        ),
+      ].join('\n')
+      downloadCSV(csv, `inventory_export.csv`)
+    } catch {}
+    setBusy(null)
+  }
+
+  async function exportJobsCSV() {
+    if (!companyId) return
+    setBusy('jobs')
+    const supabase = createClient()
+    const { start, end } = getPeriod(preset)
+    try {
+      const rows = await fetchJobsExportRows(supabase, companyId, start, end)
+      const csv = [
+        'Title,Client,Status,Priority,Start,End,Estimated Cost',
+        ...rows.map(r => {
+          const clientRaw = r.clients as unknown
+          const clientObj = (Array.isArray(clientRaw) ? clientRaw[0] : clientRaw) as { name?: string } | null
+          const client = clientObj?.name ?? ''
+          return `"${r.title}","${client}",${r.status},${r.priority},${r.scheduled_start ?? ''},${r.scheduled_end ?? ''},${r.estimated_cost ?? ''}`
+        }),
+      ].join('\n')
+      downloadCSV(csv, `jobs_${start}_${end}.csv`)
+    } catch {}
+    setBusy(null)
+  }
+
   const EXPORTS: { label: string; key: string; action: () => void; available: boolean }[] = [
-    { label: 'Export Payroll CSV',    key: 'payroll',    action: exportPayrollCSV,    available: true },
-    { label: 'Export Attendance CSV', key: 'attendance', action: exportAttendanceCSV, available: true },
-    { label: 'Export P&L PDF',        key: 'pl',         action: () => {},             available: false },
-    { label: 'Export Inventory CSV',  key: 'inventory',  action: () => {},             available: false },
+    { label: 'Export Payroll / Payments CSV', key: 'payroll',    action: exportPayrollCSV,    available: true },
+    { label: 'Export Attendance CSV',         key: 'attendance', action: exportAttendanceCSV, available: true },
+    { label: 'Export Incidents CSV',          key: 'incidents',  action: exportIncidentsCSV,  available: true },
+    { label: 'Export Inventory CSV',          key: 'inventory',  action: exportInventoryCSV,  available: true },
+    { label: 'Export Jobs CSV',               key: 'jobs',       action: exportJobsCSV,       available: true },
+    { label: 'Export P&L PDF',                key: 'pl',         action: () => {},            available: false },
   ]
 
   return (
@@ -539,7 +654,7 @@ function ExportsTab({ companyId, preset }: { companyId: string | null; preset: P
             {busy === e.key ? 'hourglass_empty' : 'download'}
           </span>
           {busy === e.key ? 'Generating…' : e.label}
-          {!e.available && <span className="text-[11px] text-text-disabled ml-1">(Phase 2)</span>}
+          {!e.available && <span className="text-[11px] text-text-disabled ml-1">(deferred)</span>}
         </button>
       ))}
     </div>

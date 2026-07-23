@@ -34,6 +34,12 @@ const ACTIVITY_FILTERS: { value: ActivityFilter; label: string }[] = [
   { value: 'leave',     label: 'Leave' },
 ]
 
+function sevenDaysAgoIso() {
+  const d = new Date()
+  d.setDate(d.getDate() - 7)
+  return d.toISOString()
+}
+
 export default function ActivityLogPage() {
   const [punches, setPunches] = useState<Punch[]>([])
   const [incidents, setIncidents] = useState<Incident[]>([])
@@ -48,32 +54,35 @@ export default function ActivityLogPage() {
     const member = await resolveCurrentMember(supabase)
     if (!member) { setError('not_linked'); setLoading(false); return }
     const cid = member.companyId
+    const since = sevenDaysAgoIso()
 
     const [{ data: pData }, { data: iData }, { data: lData }] = await Promise.all([
-      supabase.from('attendance_sessions')
-        .select('id, employee_id, created_at, punch_out, address, employees(name, surname)')
+      supabase.from('time_punches')
+        .select('id, type, date_time, address, employees(name, surname)')
         .eq('company_id', cid)
-        .order('created_at', { ascending: false })
-        .limit(50),
+        .gte('date_time', since)
+        .order('date_time', { ascending: false })
+        .limit(20),
       supabase.from('incident_reports')
         .select('id, description, severity, created_at')
         .eq('company_id', cid)
         .order('created_at', { ascending: false })
-        .limit(20),
+        .limit(10),
       supabase.from('leave_requests')
         .select('id, leave_type, start_date, status, employees(name, surname)')
         .eq('company_id', cid)
         .order('created_at', { ascending: false })
-        .limit(20),
+        .limit(10),
     ])
 
     setPunches((pData ?? []).map((r: Record<string, unknown>) => {
       const emp = r.employees as { name: string; surname: string } | null
+      const punchType = String(r.type ?? '').toLowerCase()
       return {
         id: r.id as string,
         employee_name: emp ? `${emp.name} ${emp.surname}` : '—',
-        date_time: r.created_at as string,
-        type_label: (r.punch_out ? 'Clock Out' : 'Clock In') as 'Clock In' | 'Clock Out',
+        date_time: r.date_time as string,
+        type_label: (punchType === 'out' ? 'Clock Out' : 'Clock In') as 'Clock In' | 'Clock Out',
         address: (r.address as string | null) ?? null,
       }
     }))
@@ -121,7 +130,6 @@ export default function ActivityLogPage() {
 
   return (
     <div className="h-full flex flex-col">
-      {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-divider shrink-0 bg-surface">
         <h1 className="text-[20px] font-semibold text-text-primary">Activity Log</h1>
         <button onClick={load} className="text-[13px] text-primary hover:opacity-70 transition-opacity">
@@ -129,7 +137,6 @@ export default function ActivityLogPage() {
         </button>
       </div>
 
-      {/* Event type filter chips */}
       <div className="flex gap-2 px-4 py-2 border-b border-divider shrink-0 overflow-x-auto">
         {ACTIVITY_FILTERS.map(f => (
           <button
@@ -151,7 +158,6 @@ export default function ActivityLogPage() {
           <p className="text-text-secondary text-[13px] text-center py-8">Loading…</p>
         ) : (
           <>
-            {/* RECENT CLOCK INS/OUTS */}
             {(activityFilter === 'all' || activityFilter === 'punches') && (
             <div>
               <p className="section-label mb-2">RECENT CLOCK INS/OUTS</p>
@@ -183,7 +189,6 @@ export default function ActivityLogPage() {
             </div>
             )}
 
-            {/* RECENT INCIDENTS */}
             {(activityFilter === 'all' || activityFilter === 'incidents') && (
             <div>
               <p className="section-label mb-2">RECENT INCIDENTS</p>
@@ -214,7 +219,6 @@ export default function ActivityLogPage() {
             </div>
             )}
 
-            {/* RECENT LEAVE REQUESTS */}
             {(activityFilter === 'all' || activityFilter === 'leave') && (
             <div>
               <p className="section-label mb-2">RECENT LEAVE REQUESTS</p>
@@ -226,9 +230,9 @@ export default function ActivityLogPage() {
                     <div key={l.id} className="card p-3 mb-1.5">
                       <div className="grid grid-cols-[1fr_auto] items-center gap-3">
                         <div>
-                          <p className="font-semibold text-[13px] text-primary">{l.leave_type}</p>
-                          <p className="text-[12px] text-text-secondary">
-                            {fmtDate(l.start_date)}
+                          <p className="font-semibold text-[13px] text-primary">{l.employee_name}</p>
+                          <p className="text-[12px] text-text-secondary capitalize">
+                            {l.leave_type.replace(/_/g, ' ')} · {fmtDate(l.start_date)}
                           </p>
                         </div>
                         <span

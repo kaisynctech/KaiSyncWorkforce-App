@@ -2,9 +2,11 @@
 
 import Link from 'next/link'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
-import { useEmployeeModuleGate } from '@/lib/employee-module-gate'
+import { CompanyModuleKeys, isModuleEnabled } from '@/lib/company-modules'
+import { loadCompanyWorkspace } from '@/lib/employee-workspace'
 import {
   buildIcsCalendar,
   downloadIcsFile,
@@ -372,7 +374,26 @@ function CalendarGrid({ tasks, mode, month, setMonth }: {
 }
 
 export default function MyPAPage() {
-  const allowed = useEmployeeModuleGate('myPa')
+  const pathname = usePathname()
+  const router = useRouter()
+  const isHrShell = pathname.startsWith('/dashboard/pa')
+  const [allowed, setAllowed] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    void (async () => {
+      const supabase = createClient()
+      const member = await resolveCurrentMember(supabase)
+      if (!member) { setAllowed(false); return }
+      const company = await loadCompanyWorkspace(supabase, member.companyId)
+      const ok = isModuleEnabled(company?.enabled_modules, CompanyModuleKeys.MyPa)
+      if (!ok) {
+        router.replace(isHrShell ? '/dashboard/overview' : '/dashboard/employee/overview')
+        setAllowed(false)
+        return
+      }
+      setAllowed(true)
+    })()
+  }, [isHrShell, router])
   const [tasks,      setTasks]      = useState<PATask[]>([])
   const [loading,    setLoading]    = useState(true)
   const [error,      setError]      = useState<string | null>(null)
