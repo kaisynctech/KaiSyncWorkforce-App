@@ -17,6 +17,8 @@ export default function SuppliersPage() {
   const [xeroPushing,   setXeroPushing]   = useState<string | null>(null)
   const [companyId,     setCompanyId]     = useState<string | null>(null)
   const [sessionToken,  setSessionToken]  = useState<string | null>(null)
+  const [xeroImporting, setXeroImporting] = useState(false)
+  const [xeroMsg,       setXeroMsg]       = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -80,6 +82,33 @@ export default function SuppliersPage() {
     }
   }
 
+  async function importFromXero() {
+    if (!companyId || !sessionToken) return
+    setXeroImporting(true)
+    setXeroMsg(null)
+    try {
+      const resp = await fetch(
+        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/xero-sync-contacts`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${sessionToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ company_id: companyId, direction: 'pull' }),
+        }
+      )
+      const data = await resp.json()
+      if (data.ok) {
+        setXeroMsg(`Imported from Xero: ${data.created} new record${data.created !== 1 ? 's' : ''} created, ${data.matched} existing linked.`)
+        await load()
+      } else {
+        setXeroMsg(data.error ?? 'Import failed')
+      }
+    } catch {
+      setXeroMsg('Unexpected error during import')
+    } finally {
+      setXeroImporting(false)
+    }
+  }
+
   if (error === 'not_linked') return (
     <div className="flex items-center justify-center h-full">
       <div className="text-center space-y-2">
@@ -108,6 +137,15 @@ export default function SuppliersPage() {
               {xeroPushing === '__all__' ? 'Syncing…' : 'Sync All to Xero'}
             </button>
           )}
+          {xeroConnected && (
+            <button
+              onClick={importFromXero}
+              disabled={xeroImporting}
+              className="h-9 px-3 text-[13px] rounded-lg border border-[#13B5EA] text-[#13B5EA] font-medium hover:bg-[#13B5EA]/10 disabled:opacity-50 transition-colors"
+            >
+              {xeroImporting ? 'Importing…' : '↓ Import from Xero'}
+            </button>
+          )}
           <button className="btn-primary h-9 px-3 text-[13px]"
             onClick={() => router.push('/dashboard/contractors/new?type=supplier')}>
             + Add
@@ -124,6 +162,15 @@ export default function SuppliersPage() {
           Refresh
         </button>
       </div>
+
+      {xeroMsg && (
+        <p className={`mx-4 mb-2 text-[12px] px-3 py-2 rounded ${
+          xeroMsg.includes('Imported') ? 'bg-green-900/30 text-green-300' : 'bg-red-900/30 text-red-300'
+        }`}>
+          {xeroMsg}
+          <button onClick={() => setXeroMsg(null)} className="ml-2 opacity-60 hover:opacity-100">✕</button>
+        </p>
+      )}
 
       {/* Table */}
       <div className="flex-1 overflow-auto">
