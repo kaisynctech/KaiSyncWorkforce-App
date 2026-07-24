@@ -55,7 +55,24 @@ export default function SettingsPage() {
   const [modulesBusy,      setModulesBusy]      = useState(false)
   const [modulesMsg,       setModulesMsg]       = useState<string | null>(null)
 
+  // ── Xero state ─────────────────────────────────────────────────────────
+  const [xeroConn,           setXeroConn]           = useState<{ tenant_name: string | null } | null>(null)
+  const [xeroConnected,      setXeroConnected]      = useState(false)
+  const [xeroConnecting,     setXeroConnecting]     = useState(false)
+  const [xeroSyncing,        setXeroSyncing]        = useState(false)
+  const [xeroPushing,        setXeroPushing]        = useState(false)
+  const [xeroMsg,            setXeroMsg]            = useState<string | null>(null)
+  const [payrollPeriodStart, setPayrollPeriodStart] = useState('')
+  const [payrollPeriodEnd,   setPayrollPeriodEnd]   = useState('')
+
   useEffect(() => { load() }, [])
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const p = new URLSearchParams(window.location.search)
+    const s = p.get('xero')
+    if (s === 'connected') setXeroMsg('Xero connected successfully.')
+    if (s === 'error')     setXeroMsg('Xero connection failed. Please try again.')
+  }, [])
 
   // ── Load ──────────────────────────────────────────────────────────────────
 
@@ -109,7 +126,18 @@ export default function SettingsPage() {
     setAllEmployees(emps)
     setHrAdmins(emps.filter(e => ['owner', 'hr', 'manager'].includes(e.access_level)))
 
+    await loadXero(member.companyId)
     setLoading(false)
+  }
+
+  async function loadXero(cId: string) {
+    const supabase = createClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (supabase.rpc as any)('get_xero_connection_status', { p_company_id: cId })
+    if (data) {
+      setXeroConnected(data.connected ?? false)
+      setXeroConn(data.connected ? { tenant_name: data.tenant_name ?? null } : null)
+    }
   }
 
   // ── Company settings ──────────────────────────────────────────────────────
@@ -249,6 +277,78 @@ export default function SettingsPage() {
     setAllEmployees(emps)
     setHrAdmins(emps.filter(e => ['owner', 'hr', 'manager'].includes(e.access_level)))
     setHrBusy(false)
+  }
+
+  // ── Xero ─────────────────────────────────────────────────────────────────
+
+  async function connectXero() {
+    if (!companyId) return
+    setXeroConnecting(true)
+    setXeroMsg(null)
+    const supabase = createClient()
+    const tok = (await supabase.auth.getSession()).data.session?.access_token ?? ''
+    const res = await fetch(
+      `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/xero-oauth-start`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company_id: companyId }),
+      },
+    )
+    const data = await res.json()
+    if (data.auth_url) {
+      window.location.href = data.auth_url
+    } else {
+      setXeroMsg(data.error ?? 'Failed to start Xero connection.')
+      setXeroConnecting(false)
+    }
+  }
+
+  async function syncXeroContacts() {
+    if (!companyId) return
+    setXeroSyncing(true)
+    setXeroMsg(null)
+    const supabase = createClient()
+    const tok = (await supabase.auth.getSession()).data.session?.access_token ?? ''
+    const res = await fetch(
+      `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/xero-sync-contacts`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company_id: companyId }),
+      },
+    )
+    const data = await res.json()
+    setXeroMsg(res.ok ? `Synced ${data.synced} contacts to Xero.` : (data.error ?? 'Sync failed.'))
+    setXeroSyncing(false)
+  }
+
+  async function pushPayroll() {
+    if (!companyId || !payrollPeriodStart || !payrollPeriodEnd) {
+      setXeroMsg('Select a pay period first.')
+      return
+    }
+    setXeroPushing(true)
+    setXeroMsg(null)
+    const supabase = createClient()
+    const tok = (await supabase.auth.getSession()).data.session?.access_token ?? ''
+    const res = await fetch(
+      `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/xero-push-payroll`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          company_id:   companyId,
+          period_start: payrollPeriodStart,
+          period_end:   payrollPeriodEnd,
+        }),
+      },
+    )
+    const data = await res.json()
+    setXeroMsg(res.ok
+      ? `Pushed ${data.pushed} payslip${data.pushed === 1 ? '' : 's'} to Xero.`
+      : (data.error ?? 'Push failed.'))
+    setXeroPushing(false)
   }
 
   // ── Derived ───────────────────────────────────────────────────────────────
@@ -632,12 +732,91 @@ export default function SettingsPage() {
             </div>
             <p className="text-[12px] text-text-disabled italic">Configure in MAUI admin app</p>
           </div>
-          <div className="flex items-center justify-between py-2">
-            <div>
-              <p className="text-[13px] font-medium text-text-primary">Xero</p>
-              <p className="text-[12px] text-text-secondary">Sync financial records</p>
+          {/* Xero */}
+          <div className="flex flex-col gap-3 py-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[13px] font-medium text-text-primary">Xero</p>
+                <p className="text-[12px] text-text-secondary">
+                  {xeroConnected
+                    ? `Connected to ${xeroConn?.tenant_name ?? 'Xero'}`
+                    : 'Sync contacts and push payroll to Xero'}
+                </p>
+              </div>
+              {isOwner && (
+                xeroConnected ? (
+                  <span className="flex items-center gap-1.5 text-[12px] font-semibold text-success">
+                    <span className="material-icons text-[14px]">check_circle</span>Connected
+                  </span>
+                ) : (
+                  <button
+                    onClick={connectXero}
+                    disabled={xeroConnecting}
+                    className="h-8 px-3 rounded-md bg-primary text-white text-[12px] font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors"
+                  >
+                    {xeroConnecting ? 'Connecting…' : 'Connect Xero'}
+                  </button>
+                )
+              )}
             </div>
-            <p className="text-[12px] text-text-disabled italic">Configure in MAUI admin app</p>
+
+            {xeroConnected && isOwner && (
+              <>
+                <div className="flex items-center justify-between pt-2 border-t border-divider">
+                  <div>
+                    <p className="text-[13px] font-medium text-text-primary">Sync Contacts</p>
+                    <p className="text-[12px] text-text-secondary">Push employees and contractors to Xero</p>
+                  </div>
+                  <button
+                    onClick={syncXeroContacts}
+                    disabled={xeroSyncing}
+                    className="h-8 px-3 rounded-md bg-surface border border-border text-[12px] font-semibold text-text-secondary hover:border-primary hover:text-primary disabled:opacity-50 transition-colors"
+                  >
+                    {xeroSyncing ? 'Syncing…' : 'Sync Now'}
+                  </button>
+                </div>
+
+                <div className="flex flex-col gap-2 pt-2 border-t border-divider">
+                  <div>
+                    <p className="text-[13px] font-medium text-text-primary">Push Payroll</p>
+                    <p className="text-[12px] text-text-secondary">Post payslips as manual journals in Xero</p>
+                  </div>
+                  <div className="flex gap-2 items-center">
+                    <input
+                      type="date"
+                      value={payrollPeriodStart}
+                      onChange={e => setPayrollPeriodStart(e.target.value)}
+                      className={inputCls}
+                    />
+                    <span className="text-[12px] text-text-disabled shrink-0">to</span>
+                    <input
+                      type="date"
+                      value={payrollPeriodEnd}
+                      onChange={e => setPayrollPeriodEnd(e.target.value)}
+                      className={inputCls}
+                    />
+                    <button
+                      onClick={pushPayroll}
+                      disabled={xeroPushing || !payrollPeriodStart || !payrollPeriodEnd}
+                      className="h-10 px-4 rounded-lg bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors shrink-0"
+                    >
+                      {xeroPushing ? '…' : 'Push'}
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {xeroMsg && (
+              <p className={`text-[12px] ${
+                xeroMsg.toLowerCase().includes('fail') ||
+                xeroMsg.toLowerCase().includes('error') ||
+                xeroMsg.toLowerCase().includes('failed')
+                  ? 'text-error' : 'text-text-secondary'
+              }`}>
+                {xeroMsg}
+              </p>
+            )}
           </div>
         </div>
       </Section>
