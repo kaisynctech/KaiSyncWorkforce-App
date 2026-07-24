@@ -108,6 +108,10 @@ export default function ContractorDetailPage() {
   const [saving, setSaving] = useState(false)
   const [isBusy, setIsBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [xeroLink,      setXeroLink]      = useState<{ xero_contact_id: string; last_synced_at: string } | null>(null)
+  const [xeroConnected, setXeroConnected] = useState(false)
+  const [xeroPushing,   setXeroPushing]   = useState(false)
+  const [sessionToken,  setSessionToken]  = useState<string | null>(null)
 
   // Information tab
   const [name, setName] = useState('')
@@ -210,6 +214,17 @@ export default function ContractorDetailPage() {
     ])
     setComplianceDocs((docsRes.data ?? []) as ComplianceDocument[])
     setPendingBanking(pendingRes.data as PendingBankingUpdate | null)
+    const cId = cont.company_id
+    const { data: xStatus } = await (supabase.rpc as any)('get_xero_connection_status', { p_company_id: cId })
+    setXeroConnected(xStatus?.connected ?? false)
+    if (xStatus?.connected) {
+      const { data: lnk } = await (supabase.rpc as any)('get_xero_link_for_record', {
+        p_company_id: cId, p_record_type: 'contractor', p_record_id: contractorId,
+      })
+      setXeroLink(lnk ?? null)
+    }
+    const { data: { session } } = await supabase.auth.getSession()
+    setSessionToken(session?.access_token ?? null)
     setLoading(false)
   }
 
@@ -349,6 +364,22 @@ export default function ContractorDetailPage() {
     setComplianceDocs(prev => prev.filter(d => d.id !== doc.id))
   }
 
+  async function pushToXero() {
+    if (!contractor?.company_id || !sessionToken || xeroPushing) return
+    setXeroPushing(true)
+    try {
+      const resp = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/xero-sync-contacts`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${sessionToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company_id: contractor.company_id, record_id: contractorId, record_type: 'contractor' }),
+      })
+      const data = await resp.json()
+      if (data.ok) setXeroLink({ xero_contact_id: data.xero_contact_id, last_synced_at: new Date().toISOString() })
+    } finally {
+      setXeroPushing(false)
+    }
+  }
+
   // Compliance calculations
   const requiredDocs      = complianceDocs.filter(d => d.is_required)
   const validRequired     = requiredDocs.filter(d => d.status === 'valid').length
@@ -413,7 +444,32 @@ export default function ContractorDetailPage() {
           <Link href="/dashboard/contractors" className="text-text-secondary hover:text-text-primary transition-colors">
             <span className="material-icons text-[20px]">arrow_back</span>
           </Link>
-          <h1 className="text-[20px] font-semibold text-text-primary">{contractor?.name ?? 'Contractor'}</h1>
+          <div>
+            <h1 className="text-[20px] font-semibold text-text-primary">{contractor?.name ?? 'Contractor'}</h1>
+            {xeroConnected && (
+              <div className="flex items-center gap-2 mt-1">
+                {xeroLink ? (
+                  <>
+                    <span className="inline-flex items-center gap-1 text-[12px] text-green-400">
+                      <span className="text-[14px]">✓</span> Synced to Xero
+                    </span>
+                    <span className="text-text-disabled text-[11px]">
+                      {new Date(xeroLink.last_synced_at).toLocaleDateString()}
+                    </span>
+                    <button onClick={pushToXero} disabled={xeroPushing}
+                      className="text-[11px] text-[#13B5EA] hover:opacity-70 disabled:opacity-40">
+                      Update in Xero
+                    </button>
+                  </>
+                ) : (
+                  <button onClick={pushToXero} disabled={xeroPushing}
+                    className="inline-flex items-center gap-1 text-[12px] px-3 py-1 rounded border border-[#13B5EA] text-[#13B5EA] hover:bg-[#13B5EA]/10 disabled:opacity-40 transition-colors">
+                    {xeroPushing ? 'Pushing…' : '+ Push to Xero'}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
         <button
           onClick={handleSave}

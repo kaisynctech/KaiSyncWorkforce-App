@@ -58,6 +58,10 @@ export default function ClientDetailPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [companyCode, setCompanyCode] = useState('')
+  const [xeroLink,      setXeroLink]      = useState<{ xero_contact_id: string; last_synced_at: string } | null>(null)
+  const [xeroConnected, setXeroConnected] = useState(false)
+  const [xeroPushing,   setXeroPushing]   = useState(false)
+  const [xeroSessionToken, setXeroSessionToken] = useState<string | null>(null)
   const [projectView, setProjectView] = useState<'table' | 'board'>('table')
 
   // Form state
@@ -110,7 +114,34 @@ export default function ClientDetailPage() {
     setSites((sRes.data ?? []) as Site[])
     setProjects((pRes.data ?? []) as Project[])
     setClientJobs((jRes.data ?? []) as ClientJob[])
+    const cId = (c as any).company_id as string
+    const { data: xStatus } = await (supabase.rpc as any)('get_xero_connection_status', { p_company_id: cId })
+    setXeroConnected(xStatus?.connected ?? false)
+    if (xStatus?.connected) {
+      const { data: lnk } = await (supabase.rpc as any)('get_xero_link_for_record', {
+        p_company_id: cId, p_record_type: 'client', p_record_id: clientId,
+      })
+      setXeroLink(lnk ?? null)
+    }
+    const { data: { session } } = await supabase.auth.getSession()
+    setXeroSessionToken(session?.access_token ?? null)
     setLoading(false)
+  }
+
+  async function pushToXero() {
+    if (!(client as any)?.company_id || !xeroSessionToken || xeroPushing) return
+    setXeroPushing(true)
+    try {
+      const resp = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/xero-sync-contacts`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${xeroSessionToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company_id: (client as any).company_id, record_id: clientId, record_type: 'client' }),
+      })
+      const data = await resp.json()
+      if (data.ok) setXeroLink({ xero_contact_id: data.xero_contact_id, last_synced_at: new Date().toISOString() })
+    } finally {
+      setXeroPushing(false)
+    }
   }
 
   function generateCode() {
@@ -213,7 +244,32 @@ export default function ClientDetailPage() {
           <Link href="/dashboard/clients" className="text-text-secondary hover:text-text-primary transition-colors">
             <span className="material-icons text-[20px]">arrow_back</span>
           </Link>
-          <h1 className="text-[20px] font-semibold text-text-primary">{name || 'New Client'}</h1>
+          <div>
+            <h1 className="text-[20px] font-semibold text-text-primary">{name || 'New Client'}</h1>
+            {!isNew && xeroConnected && (
+              <div className="flex items-center gap-2 mt-1">
+                {xeroLink ? (
+                  <>
+                    <span className="inline-flex items-center gap-1 text-[12px] text-green-400">
+                      <span className="text-[14px]">✓</span> Synced to Xero
+                    </span>
+                    <span className="text-text-disabled text-[11px]">
+                      {new Date(xeroLink.last_synced_at).toLocaleDateString()}
+                    </span>
+                    <button onClick={pushToXero} disabled={xeroPushing}
+                      className="text-[11px] text-[#13B5EA] hover:opacity-70 disabled:opacity-40">
+                      Update in Xero
+                    </button>
+                  </>
+                ) : (
+                  <button onClick={pushToXero} disabled={xeroPushing}
+                    className="inline-flex items-center gap-1 text-[12px] px-3 py-1 rounded border border-[#13B5EA] text-[#13B5EA] hover:bg-[#13B5EA]/10 disabled:opacity-40 transition-colors">
+                    {xeroPushing ? 'Pushing…' : '+ Push to Xero'}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
         <button onClick={save} disabled={saving}
           className="h-11 px-5 text-[16px] font-semibold rounded-lg bg-primary text-white hover:bg-primary-dark disabled:opacity-50 transition-colors min-w-[96px]">
