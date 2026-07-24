@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
@@ -39,6 +39,11 @@ export default function ContractorsPage() {
   const [searchText, setSearchText] = useState('')
   const [filter, setFilter] = useState<FilterValue>('active')
   const [error, setError] = useState<string | null>(null)
+  const [xeroLinked,    setXeroLinked]    = useState<Set<string>>(new Set())
+  const [xeroConnected, setXeroConnected] = useState(false)
+  const [xeroPushing,   setXeroPushing]   = useState<string | null>(null)
+  const [companyId,     setCompanyId]     = useState<string | null>(null)
+  const [sessionToken,  setSessionToken]  = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -60,6 +65,17 @@ export default function ContractorsPage() {
       .filter(c => isContractorKind(c.partner_kind) || (!c.partner_kind && !c.is_supplier))
     setContractors(rows as Contractor[])
     setActionItems((aRes.data ?? []) as ContractorActionItem[])
+
+    const cId = member.companyId
+    setCompanyId(cId)
+    const { data: xStatus } = await (supabase.rpc as any)('get_xero_connection_status', { p_company_id: cId })
+    setXeroConnected(xStatus?.connected ?? false)
+    if (xStatus?.connected) {
+      const { data: linkedIds } = await (supabase.rpc as any)('get_xero_linked_records', { p_company_id: cId, p_record_type: 'contractor' })
+      setXeroLinked(new Set((linkedIds ?? []) as string[]))
+    }
+    const { data: { session } } = await supabase.auth.getSession()
+    setSessionToken(session?.access_token ?? null)
     setLoading(false)
   }, [])
 
@@ -81,6 +97,38 @@ export default function ContractorsPage() {
 
   const fmtDate = (d: string) =>
     new Intl.DateTimeFormat('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(d))
+
+  async function pushToXero(e: React.MouseEvent, contractorId: string) {
+    e.stopPropagation()
+    if (!companyId || !sessionToken || xeroPushing) return
+    setXeroPushing(contractorId)
+    try {
+      const resp = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/xero-sync-contacts`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${sessionToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company_id: companyId, record_id: contractorId, record_type: 'contractor' }),
+      })
+      const data = await resp.json()
+      if (data.ok) setXeroLinked(prev => new Set([...prev, contractorId]))
+    } finally {
+      setXeroPushing(null)
+    }
+  }
+
+  async function syncAllToXero() {
+    if (!companyId || !sessionToken) return
+    setXeroPushing('__all__')
+    try {
+      await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/xero-sync-contacts`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${sessionToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company_id: companyId }),
+      })
+      await load()
+    } finally {
+      setXeroPushing(null)
+    }
+  }
 
   if (error === 'not_linked') return (
     <div className="flex items-center justify-center h-full">
@@ -115,6 +163,15 @@ export default function ContractorsPage() {
         <FilterChip label="All"      active={filter === 'all'}      onClick={() => setFilter('all')} />
         <span className="ml-2 text-[12px] text-text-secondary flex-1">{filtered.length} contractors</span>
         <button onClick={load} className="text-[13px] text-primary px-2 hover:opacity-70 transition-opacity">Refresh</button>
+        {xeroConnected && (
+          <button
+            onClick={syncAllToXero}
+            disabled={!!xeroPushing}
+            className="h-8 px-3 text-[13px] rounded-lg border border-[#13B5EA] text-[#13B5EA] hover:bg-[#13B5EA]/10 disabled:opacity-40 transition-colors whitespace-nowrap"
+          >
+            {xeroPushing === '__all__' ? 'Syncing…' : 'Sync All to Xero'}
+          </button>
+        )}
         <button
           onClick={() => router.push('/dashboard/contractors/new')}
           className="h-8 px-3 text-[13px] rounded-lg bg-primary text-white font-semibold hover:bg-primary-dark transition-colors"
@@ -129,7 +186,6 @@ export default function ContractorsPage() {
           <span className="text-text-secondary text-[11px] ml-1">
             {actionItems.length > 0 ? `${actionItems.length} pending` : 'Up to date'}
           </span>
-          {/* Count badges by type */}
           {actionItems.length > 0 && (() => {
             const quotes   = actionItems.filter(i => i.action_type === 'quote_pending').length
             const banking  = actionItems.filter(i => i.action_type === 'banking_pending').length
@@ -191,16 +247,19 @@ export default function ContractorsPage() {
                 <th style={{ width: 80 }}  className="text-center px-3 py-3 text-[12px] font-medium text-text-secondary">Payment</th>
                 <th style={{ width: 100 }} className="text-center px-3 py-3 text-[12px] font-medium text-text-secondary">Compliance</th>
                 <th style={{ width: 80 }}  className="text-right px-3 py-3 text-[12px] font-medium text-text-secondary">Status</th>
+                {xeroConnected && (
+                  <th style={{ width: 80 }} className="text-center px-3 py-3 text-[12px] font-medium text-text-secondary">Xero</th>
+                )}
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center text-[13px] text-text-disabled">Loading…</td>
+                  <td colSpan={xeroConnected ? 11 : 10} className="py-12 text-center text-[13px] text-text-disabled">Loading…</td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center text-[13px] text-text-secondary">
+                  <td colSpan={xeroConnected ? 11 : 10} className="py-12 text-center text-[13px] text-text-secondary">
                     No contractors yet. Click + Add to register one.
                   </td>
                 </tr>
@@ -237,6 +296,21 @@ export default function ContractorsPage() {
                       <td className="px-3 py-3 text-center"><StatusBadge {...payment} /></td>
                       <td className="px-3 py-3 text-center"><StatusBadge {...compliance} /></td>
                       <td className="px-3 py-3 text-right"><StatusBadge {...status} /></td>
+                      {xeroConnected && (
+                        <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
+                          {xeroLinked.has(c.id) ? (
+                            <span className="text-green-400 text-[18px]" title="Synced to Xero">✓</span>
+                          ) : (
+                            <button
+                              onClick={e => pushToXero(e, c.id)}
+                              disabled={xeroPushing === c.id}
+                              className="text-[11px] px-2 py-1 rounded border border-[#13B5EA] text-[#13B5EA] hover:bg-[#13B5EA]/10 disabled:opacity-40 transition-colors whitespace-nowrap"
+                            >
+                              {xeroPushing === c.id ? '…' : '+ Xero'}
+                            </button>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   )
                 })
