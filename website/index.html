@@ -3,19 +3,19 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="KaiSync Workforce — web workforce platform for attendance, payroll, operations, finance, and portals. Install as an app on any device.">
+  <meta name="description" content="KaiSync Workforce — modern web platform for attendance, jobs, payroll, finance, and portals. Install as an app on any device.">
   <meta name="robots" content="index, follow">
-  <meta name="theme-color" content="#0B1220">
+  <meta name="theme-color" content="#06080d">
   <link rel="canonical" href="https://www.kaisyncworkforce.com/">
-  <title>KaiSync Workforce — Run your workforce in one place</title>
+  <title>KaiSync Workforce — Run operations without the chaos</title>
   <meta property="og:title" content="KaiSync Workforce">
-  <meta property="og:description" content="Workforce, operations, payroll, and finance — modular web software your team can install like an app.">
+  <meta property="og:description" content="Workforce, operations, payroll, and finance in one modular web platform your team can install like an app.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://www.kaisyncworkforce.com/">
   <link rel="stylesheet" href="styles.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Syne:wght@600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700;12..96,800&family=Onest:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -24,17 +24,14 @@
         "@type": "Organization",
         "name": "KaiSync Workforce",
         "url": "https://www.kaisyncworkforce.com/",
-        "email": "kaisynctech@gmail.com",
-        "areaServed": { "@type": "Place", "name": "Worldwide" }
+        "email": "kaisynctech@gmail.com"
       },
       {
         "@type": "SoftwareApplication",
         "name": "KaiSync Workforce",
-        "url": "https://www.kaisyncworkforce.com/",
         "applicationCategory": "BusinessApplication",
         "operatingSystem": "Web, Progressive Web App",
-        "description": "Multi-tenant workforce and operations platform with modular company entitlements.",
-        "offers": { "@type": "Offer", "url": "https://www.kaisyncworkforce.com/contact", "description": "Commercial terms on enquiry" }
+        "offers": { "@type": "Offer", "url": "https://www.kaisyncworkforce.com/contact" }
       }
     ]
   }
@@ -50,7 +47,7 @@
       </a>
       <ul class="nav-menu" id="navMenu">
         <li><a href="#top" class="nav-link active">Home</a></li>
-        <li><a href="features.html" class="nav-link">Modules</a></li>
+        <li><a href="#modules" class="nav-link">Modules</a></li>
         <li><a href="pricing.html" class="nav-link">Pricing</a></li>
         <li><a href="about.html" class="nav-link">About</a></li>
         <li><a href="contact.html" class="nav-link">Contact</a></li>
@@ -65,158 +62,257 @@
 
   <main id="main-content" tabindex="-1">
     <section class="hero" id="top">
-      <div class="container hero-inner">
-        <p class="hero-brand">KaiSync</p>
-        <h1 class="hero-title">Workforce software that stays with your team.</h1>
-        <p class="hero-subtitle">
-          Attendance, jobs, payroll, finance, and portals — one modular web platform you can open in the browser or install on any device.
-        </p>
-        <div class="hero-buttons">
-          <a href="https://www.kaisyncworkforce.com/login" class="btn btn-primary">Sign in</a>
-          <a href="contact.html" class="btn btn-secondary">Talk to us</a>
-        </div>
-      </div>
-    </section>
-
-    <section class="section" id="modules" aria-labelledby="modules-heading">
-      <div class="container">
-        <div class="section-header reveal">
-          <p class="section-eyebrow">Modules</p>
-          <h2 class="section-title" id="modules-heading">Simple groups. Real work.</h2>
-          <p class="section-desc">Enable only what your company needs. Same product story your teams see inside the app.</p>
-        </div>
-        <div class="module-list reveal">
-          <article class="module-row">
-            <h3 class="module-name">Workforce</h3>
-            <div class="module-copy">
-              <p>People, time, leave, and payroll in one flow — from punch to payslip.</p>
-              <div class="module-tags">
-                <span class="module-tag">Employees</span>
-                <span class="module-tag">Attendance</span>
-                <span class="module-tag">Leave</span>
-                <span class="module-tag">Scheduling</span>
-                <span class="module-tag">Payroll</span>
-              </div>
-            </div>
-          </article>
-          <article class="module-row">
-            <h3 class="module-name">Operations</h3>
-            <div class="module-copy">
-              <p>Clients, projects, jobs, contractors, incidents, and compliance — delivery without the chaos.</p>
-              <div class="module-tags">
-                <span class="module-tag">Clients</span>
-                <span class="module-tag">Projects</span>
-                <span class="module-tag">Jobs</span>
-                <span class="module-tag">Contractors</span>
-                <span class="module-tag">Incidents</span>
-                <span class="module-tag">Compliance</span>
-              </div>
-            </div>
-          </article>
-          <article class="module-row">
-            <h3 class="module-name">Money</h3>
-            <div class="module-copy">
-              <p>Finance visibility tied to real operations — invoices, approvals, and cashflow.</p>
-              <div class="module-tags">
-                <span class="module-tag">Finance</span>
-                <span class="module-tag">Invoices</span>
-                <span class="module-tag">Approvals</span>
-              </div>
-            </div>
-          </article>
-          <article class="module-row">
-            <h3 class="module-name">Supply &amp; Assets</h3>
-            <div class="module-copy">
-              <p>Know what you stock, who supplies it, and which assets are in play.</p>
-              <div class="module-tags">
-                <span class="module-tag">Suppliers</span>
-                <span class="module-tag">Inventory</span>
-                <span class="module-tag">Assets</span>
-              </div>
-            </div>
-          </article>
-          <article class="module-row">
-            <h3 class="module-name">Properties</h3>
-            <div class="module-copy">
-              <p>Sites, units, and residents beside the work that happens on them.</p>
-              <div class="module-tags">
-                <span class="module-tag">Properties</span>
-                <span class="module-tag">Residents</span>
-              </div>
-            </div>
-          </article>
-          <article class="module-row">
-            <h3 class="module-name">Insights</h3>
-            <div class="module-copy">
-              <p>Reports leadership can trust — plus My PA for personal follow-through.</p>
-              <div class="module-tags">
-                <span class="module-tag">Reports</span>
-                <span class="module-tag">My PA</span>
-              </div>
-            </div>
-          </article>
-        </div>
-        <p style="margin-top:1.75rem" class="reveal">
-          <a href="features.html" class="btn btn-ghost-dark">Explore modules</a>
-        </p>
-      </div>
-    </section>
-
-    <section class="section section-alt" id="install-preview">
-      <div class="container split">
-        <div class="reveal">
-          <p class="section-eyebrow">Install</p>
-          <h2 class="section-title">Your app is the web app.</h2>
-          <p class="section-desc" style="margin-bottom:1.5rem">
-            No native installer required. Open KaiSync in the browser, then install it to your home screen or desktop — same secure product HR and field teams already use.
+      <div class="hero-atmosphere" aria-hidden="true"></div>
+      <div class="hero-layout">
+        <div class="hero-copy">
+          <p class="hero-brand">KaiSync</p>
+          <h1 class="hero-title">One system for people, jobs, and pay.</h1>
+          <p class="hero-subtitle">
+            Modular workforce software for operators who need proof on site and clarity in the office.
           </p>
-          <div class="hero-buttons">
-            <a href="install.html" class="btn btn-on-light">How to install</a>
-            <a href="https://www.kaisyncworkforce.com/login" class="btn btn-ghost-dark">Open the app</a>
+          <div class="hero-cta">
+            <a href="https://www.kaisyncworkforce.com/login" class="btn btn-primary">Open the app</a>
+            <a href="#modules" class="btn btn-ghost">See modules</a>
           </div>
         </div>
-        <div class="split-visual reveal" aria-hidden="true"></div>
+
+        <div class="hero-stage" aria-hidden="true">
+          <div class="product-shell">
+            <div class="product-chrome">
+              <span class="product-dot"></span>
+              <span class="product-dot"></span>
+              <span class="product-dot"></span>
+              <span class="product-chrome-label">Live operations</span>
+            </div>
+            <div class="product-body">
+              <div class="product-rail">
+                <div class="rail-item is-live"></div>
+                <div class="rail-item"></div>
+                <div class="rail-item"></div>
+                <div class="rail-item"></div>
+                <div class="rail-item"></div>
+              </div>
+              <div class="product-main">
+                <div class="kpi-row">
+                  <div class="kpi">
+                    <div class="kpi-label">On site</div>
+                    <div class="kpi-value"><em>128</em></div>
+                  </div>
+                  <div class="kpi">
+                    <div class="kpi-label">Open jobs</div>
+                    <div class="kpi-value">34</div>
+                  </div>
+                  <div class="kpi">
+                    <div class="kpi-label">Payroll</div>
+                    <div class="kpi-value">Ready</div>
+                  </div>
+                </div>
+                <div class="stream">
+                  <div class="stream-row"><span><strong>Branch North</strong> · clock-ins synced</span><span class="pill">Live</span></div>
+                  <div class="stream-row"><span><strong>Job #4821</strong> · contractor checked in</span><span class="pill">Field</span></div>
+                  <div class="stream-row"><span><strong>Payslip batch</strong> · awaiting release</span><span class="pill warn">Review</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
-    <section class="section" id="why">
+    <section class="proof-strip" aria-label="Platform highlights">
+      <div class="container proof-track">
+        <span><strong>Web-first</strong> · installable PWA</span>
+        <span><strong>Multi-tenant</strong> · company isolation</span>
+        <span><strong>Modular</strong> · enable what you need</span>
+        <span><strong>Portals</strong> · clients &amp; contractors</span>
+      </div>
+    </section>
+
+    <section class="section" id="modules">
       <div class="container">
         <div class="section-header reveal">
-          <p class="section-eyebrow">Why KaiSync</p>
-          <h2 class="section-title">Built for operators, not slide decks.</h2>
+          <p class="section-eyebrow">Product</p>
+          <h2 class="section-title">Modules that match how work actually moves.</h2>
+          <p class="section-desc">
+            Not a laundry list — six outcomes your teams feel every day. Same structure you navigate inside KaiSync.
+          </p>
         </div>
-        <ul class="why-list reveal">
-          <li>
-            <strong>One source of truth</strong>
-            <span>Attendance, jobs, payroll, and finance share the same tenant data — fewer disputes, faster decisions.</span>
-          </li>
-          <li>
-            <strong>Role-ready access</strong>
-            <span>HR dashboards, employee tools, and client / contractor portals with company-scoped isolation.</span>
-          </li>
-          <li>
-            <strong>Modular by company</strong>
-            <span>Turn modules on when you need them. Grow without ripping out tools every quarter.</span>
-          </li>
-        </ul>
+
+        <article class="module-stage reveal">
+          <div>
+            <p class="module-kicker">01 · Workforce</p>
+            <h3 class="module-outcome">From punch to payslip without the WhatsApp chase.</h3>
+            <p class="module-body">
+              Attendance, leave, scheduling, and payroll share one employee record — so HR stops reconciling three tools at month-end.
+            </p>
+            <ul class="capability-list">
+              <li>GPS-backed attendance and team punch</li>
+              <li>Leave balances that stay payroll-ready</li>
+              <li>Salary and hourly runs with payslip release</li>
+            </ul>
+            <a href="features.html#workforce" class="btn btn-ghost">Explore Workforce</a>
+          </div>
+          <div class="mini-shell" aria-hidden="true">
+            <div class="mini-top">Workforce today</div>
+            <div class="mini-grid">
+              <div class="mini-line"><span>Clocked in</span><span>128</span></div>
+              <div class="mini-line"><span>Leave pending</span><span>6</span></div>
+              <div class="mini-line"><span>Payroll draft</span><span>Ready</span></div>
+            </div>
+          </div>
+        </article>
+
+        <article class="module-stage is-flip reveal">
+          <div>
+            <p class="module-kicker">02 · Operations</p>
+            <h3 class="module-outcome">Clients, jobs, and contractors in one delivery spine.</h3>
+            <p class="module-body">
+              Sell the work, assign the field team, capture proof, and keep compliance attached to the job — not buried in email.
+            </p>
+            <ul class="capability-list">
+              <li>Clients → projects → jobs with media and checklists</li>
+              <li>Contractor assignment and scoped portals</li>
+              <li>Incidents and compliance packs on the same trail</li>
+            </ul>
+            <a href="features.html#operations" class="btn btn-ghost">Explore Operations</a>
+          </div>
+          <div class="mini-shell" aria-hidden="true">
+            <div class="mini-top">Active delivery</div>
+            <div class="mini-grid">
+              <div class="mini-line"><span>Open jobs</span><span>34</span></div>
+              <div class="mini-line"><span>Contractors on site</span><span>12</span></div>
+              <div class="mini-line"><span>Incidents open</span><span>2</span></div>
+            </div>
+          </div>
+        </article>
+
+        <article class="module-stage reveal">
+          <div>
+            <p class="module-kicker">03 · Money</p>
+            <h3 class="module-outcome">Finance that can see the field — not just the ledger.</h3>
+            <p class="module-body">
+              Invoices, approvals, and cashflow sit next to operational truth, so payments follow completed work instead of arguments.
+            </p>
+            <ul class="capability-list">
+              <li>Invoicing and VAT-aware finance views</li>
+              <li>Approval workflows with audit trail</li>
+              <li>Contractor payout visibility</li>
+            </ul>
+            <a href="features.html#money" class="btn btn-ghost">Explore Money</a>
+          </div>
+          <div class="mini-shell" aria-hidden="true">
+            <div class="mini-top">Finance pulse</div>
+            <div class="mini-grid">
+              <div class="mini-line"><span>Awaiting approval</span><span>8</span></div>
+              <div class="mini-line"><span>Invoices due</span><span>15</span></div>
+              <div class="mini-line"><span>Payouts queued</span><span>R184k</span></div>
+            </div>
+          </div>
+        </article>
+
+        <article class="module-stage is-flip reveal">
+          <div>
+            <p class="module-kicker">04 · Supply &amp; Assets</p>
+            <h3 class="module-outcome">Know what left the store before the job goes cold.</h3>
+            <p class="module-body">
+              Suppliers, stock, and assets stay linked to the work that consumes them — fewer surprise shortages on site.
+            </p>
+            <ul class="capability-list">
+              <li>Supplier records and inventory movements</li>
+              <li>Asset tracking across sites</li>
+              <li>Usage visibility for ops and finance</li>
+            </ul>
+            <a href="features.html#supply" class="btn btn-ghost">Explore Supply</a>
+          </div>
+          <div class="mini-shell" aria-hidden="true">
+            <div class="mini-top">Stock &amp; assets</div>
+            <div class="mini-grid">
+              <div class="mini-line"><span>Low stock alerts</span><span>4</span></div>
+              <div class="mini-line"><span>Assets allocated</span><span>67</span></div>
+              <div class="mini-line"><span>Supplier orders</span><span>3</span></div>
+            </div>
+          </div>
+        </article>
+
+        <article class="module-stage reveal">
+          <div>
+            <p class="module-kicker">05 · Properties</p>
+            <h3 class="module-outcome">Sites and residents beside the work that happens there.</h3>
+            <p class="module-body">
+              Built for managing agents and multi-site operators who brief contractors against real units — not spreadsheet rows.
+            </p>
+            <ul class="capability-list">
+              <li>Property and site context on jobs</li>
+              <li>Resident records next to service history</li>
+              <li>Clearer handovers for field teams</li>
+            </ul>
+            <a href="features.html#properties" class="btn btn-ghost">Explore Properties</a>
+          </div>
+          <div class="mini-shell" aria-hidden="true">
+            <div class="mini-top">Portfolio lens</div>
+            <div class="mini-grid">
+              <div class="mini-line"><span>Active sites</span><span>22</span></div>
+              <div class="mini-line"><span>Open resident requests</span><span>9</span></div>
+              <div class="mini-line"><span>Jobs this week</span><span>41</span></div>
+            </div>
+          </div>
+        </article>
+
+        <article class="module-stage is-flip reveal">
+          <div>
+            <p class="module-kicker">06 · Insights &amp; portals</p>
+            <h3 class="module-outcome">Leadership sees the signal. Outside partners see only their lane.</h3>
+            <p class="module-body">
+              Reports and My PA for internal pace — plus client and contractor portals so you stop forwarding screenshots.
+            </p>
+            <ul class="capability-list">
+              <li>Operational reports leadership can trust</li>
+              <li>My PA for personal follow-through</li>
+              <li>Scoped client and contractor portals</li>
+            </ul>
+            <a href="features.html#insights" class="btn btn-ghost">Explore Insights</a>
+          </div>
+          <div class="mini-shell" aria-hidden="true">
+            <div class="mini-top">Visibility</div>
+            <div class="mini-grid">
+              <div class="mini-line"><span>Reports ready</span><span>12</span></div>
+              <div class="mini-line"><span>Portal sessions</span><span>58</span></div>
+              <div class="mini-line"><span>My PA due today</span><span>7</span></div>
+            </div>
+          </div>
+        </article>
       </div>
     </section>
 
-    <section class="section section-dark" id="pricing">
+    <section class="install-band" id="install">
+      <div class="container reveal">
+        <p class="section-eyebrow">Install</p>
+        <h2 class="section-title">Your app is already the web app.</h2>
+        <p class="section-desc">
+          Open KaiSync in the browser, then install it to home screen or desktop. Same secure product — always current, no APK or installer.
+        </p>
+        <div class="install-actions">
+          <a href="install.html" class="btn btn-primary">How to install</a>
+          <a href="https://www.kaisyncworkforce.com/login" class="btn btn-ghost">Sign in</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="pricing">
       <div class="container price-strip reveal">
         <div>
           <p class="section-eyebrow">Pricing</p>
           <p class="price-figure">R2,500<span>/month</span></p>
           <p class="price-note">Business plan · up to 25 employees · R99 per extra seat</p>
         </div>
-        <div class="hero-buttons">
-          <a href="pricing.html" class="btn btn-primary">See pricing</a>
-          <a href="contact.html" class="btn btn-secondary">Book a demo</a>
+        <div class="hero-cta">
+          <a href="pricing.html" class="btn btn-primary">See full pricing</a>
+          <a href="contact.html" class="btn btn-ghost">Book a demo</a>
         </div>
       </div>
     </section>
 
-    <section class="section" id="contact">
+    <section class="section section-light" id="contact">
       <div class="container contact-inner">
         <div class="reveal">
           <p class="section-eyebrow">Contact</p>
@@ -240,13 +336,13 @@
           </div>
           <div class="form-group">
             <label for="contact-email">Email</label>
-            <input id="contact-email" name="email" type="email" placeholder="Email address" autocomplete="email" required>
+            <input id="contact-email" name="email" type="email" placeholder="Work email" autocomplete="email" required>
           </div>
           <div class="form-group">
             <label for="contact-message">Message</label>
-            <textarea id="contact-message" name="message" placeholder="What do you want to manage in KaiSync?" rows="5" required></textarea>
+            <textarea id="contact-message" name="message" placeholder="What should KaiSync run for you?" rows="5" required></textarea>
           </div>
-          <button class="btn btn-primary btn-block" type="submit">Send request</button>
+          <button class="btn btn-dark btn-block" type="submit">Send request</button>
           <p class="contact-form-note" id="contactFormNote" hidden>Your email app should open with this message. If it does not, email <a href="mailto:kaisynctech@gmail.com">kaisynctech@gmail.com</a>.</p>
         </form>
       </div>
@@ -267,7 +363,6 @@
         <a href="pricing.html">Pricing</a>
         <a href="about.html">About</a>
         <a href="install.html">Install</a>
-        <a href="releases.html">Releases</a>
         <a href="contact.html">Contact</a>
         <a href="https://www.kaisyncworkforce.com/login">Sign in</a>
       </nav>

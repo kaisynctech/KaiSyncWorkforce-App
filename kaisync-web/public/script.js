@@ -1,4 +1,13 @@
 (function () {
+  var navbar = document.getElementById('navbar');
+  if (navbar) {
+    var onScroll = function () {
+      navbar.classList.toggle('is-scrolled', window.scrollY > 12);
+    };
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+  }
+
   var hamburger = document.getElementById('hamburger');
   var navMenu = document.getElementById('navMenu');
   if (hamburger && navMenu) {
