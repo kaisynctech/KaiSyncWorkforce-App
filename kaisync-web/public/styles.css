@@ -291,7 +291,7 @@ a {
   display: grid;
   grid-template-columns: 1.05fr 0.95fr;
   gap: 2.5rem;
-  align-items: end;
+  align-items: center;
   width: min(100% - 2.5rem, var(--max));
   margin-inline: auto;
 }
