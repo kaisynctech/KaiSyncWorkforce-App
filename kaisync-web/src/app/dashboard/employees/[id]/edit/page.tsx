@@ -96,22 +96,28 @@ export default function EditEmployeePage() {
     setTemplateId(emp.shift_template_id ?? '')
     setEmploymentType(emp.employment_type ?? 'Permanent')
     setAccessLevel(emp.access_level)
+    const raw = emp as Employee & {
+      paye_rate_percent?: number | null
+      uif_exempt?: boolean | null
+      work_days_weekly?: number | null
+      account_type?: string | null
+    }
     setManagerId(emp.manager_id ?? '')
     setEmploymentDate(emp.employment_date ?? '')
     setMonthlySalary(emp.monthly_salary?.toString() ?? '')
     setPayByHour(emp.pay_by_hour ?? false)
     setPayBasis(emp.pay_basis ?? 'hourly')
-    setPayeRate(emp.paye_rate?.toString() ?? '')
-    setExemptUif(emp.exempt_from_uif ?? false)
+    setPayeRate((raw.paye_rate_percent ?? emp.paye_rate)?.toString() ?? '')
+    setExemptUif(raw.uif_exempt ?? emp.exempt_from_uif ?? false)
     setMedicalAid(emp.medical_aid_deduction?.toString() ?? '')
     setPension(emp.pension_deduction?.toString() ?? '')
     setUnion(emp.union_deduction?.toString() ?? '')
-    setWorkDays(emp.work_days_per_week?.toString() ?? '5')
+    setWorkDays((raw.work_days_weekly ?? emp.work_days_per_week)?.toString() ?? '5')
     setDailyHours(emp.daily_hours?.toString() ?? '8')
     setBankName(emp.bank_name ?? '')
     setAccountNumber(emp.bank_account ?? '')
     setBankBranchCode(emp.bank_branch_code ?? '')
-    setAccountType(emp.account_type ?? 'Cheque')
+    setAccountType(raw.account_type ?? 'Cheque')
 
     setLoading(false)
   }
@@ -130,6 +136,7 @@ export default function EditEmployeePage() {
     setSaving(true)
     setError(null)
     const supabase = createClient()
+    // Column names must match live DB (not MAUI DTO aliases).
     const { error: updateError } = await supabase
       .from('employees')
       .update({
@@ -149,12 +156,12 @@ export default function EditEmployeePage() {
         monthly_salary: salaryNum || null,
         pay_by_hour: payByHour,
         pay_basis: payByHour ? payBasis : null,
-        paye_rate: payeRate ? parseFloat(payeRate) : null,
-        exempt_from_uif: exemptUif,
+        paye_rate_percent: payeRate ? parseFloat(payeRate) : null,
+        uif_exempt: exemptUif,
         medical_aid_deduction: medicalAid ? parseFloat(medicalAid) : null,
         pension_deduction: pension ? parseFloat(pension) : null,
         union_deduction: union ? parseFloat(union) : null,
-        work_days_per_week: daysNum,
+        work_days_weekly: daysNum,
         daily_hours: hoursNum,
         hourly_rate: salaryNum ? computedHourlyRate : null,
         daily_rate: salaryNum ? computedDailyRate : null,

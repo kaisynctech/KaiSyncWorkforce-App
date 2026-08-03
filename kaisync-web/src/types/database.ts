@@ -22,12 +22,18 @@ export interface Employee {
   hourly_rate: number | null
   monthly_salary: number | null
   daily_rate: number | null
-  paye_rate: number | null
-  exempt_from_uif: boolean
+  /** @deprecated live column is paye_rate_percent */
+  paye_rate?: number | null
+  paye_rate_percent?: number | null
+  /** @deprecated live column is uif_exempt */
+  exempt_from_uif?: boolean
+  uif_exempt?: boolean
   medical_aid_deduction: number | null
   pension_deduction: number | null
   union_deduction: number | null
-  work_days_per_week: number | null
+  /** @deprecated live column is work_days_weekly */
+  work_days_per_week?: number | null
+  work_days_weekly?: number | null
   daily_hours: number | null
   pay_by_hour: boolean
   pay_basis: string | null
@@ -577,6 +583,7 @@ export interface Asset {
   company_id: string
   site_id?: string | null
   unit_id?: string | null
+  assigned_employee_id?: string | null
   label: string
   asset_type: string | null
   serial_number: string | null
@@ -588,6 +595,9 @@ export interface Asset {
   notes?: string | null
   photo_urls?: string[] | null
   created_at?: string
+  sites?: { id: string; name: string } | null
+  units?: { id: string; unit_number?: string | null; label?: string | null } | null
+  assigned_employee?: { id: string; name: string; surname: string } | null
 }
 
 export interface CalendarEvent {

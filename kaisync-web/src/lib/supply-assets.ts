@@ -47,3 +47,51 @@ export function assetStatusLabel(status: string | null | undefined): string {
     default: return status || '—'
   }
 }
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
+export function isWarrantyExpired(warrantyExpires: string | null | undefined): boolean {
+  if (!warrantyExpires) return false
+  const end = new Date(warrantyExpires)
+  end.setHours(23, 59, 59, 999)
+  return end.getTime() < Date.now()
+}
+
+export function isWarrantyExpiringSoon(
+  warrantyExpires: string | null | undefined,
+  withinDays = 30,
+): boolean {
+  if (!warrantyExpires || isWarrantyExpired(warrantyExpires)) return false
+  const end = new Date(warrantyExpires).getTime()
+  const diff = end - Date.now()
+  return diff >= 0 && diff <= withinDays * DAY_MS
+}
+
+/** Append a dated service note line to existing notes. */
+export function appendAssetServiceNote(
+  existing: string | null | undefined,
+  note: string,
+  actorName?: string | null,
+): string {
+  const text = note.trim()
+  if (!text) return (existing ?? '').trim()
+  const date = new Date().toISOString().slice(0, 10)
+  const who = actorName?.trim() ? ` (${actorName.trim()})` : ''
+  const line = `[${date}]${who} ${text}`
+  const prev = (existing ?? '').trim()
+  return prev ? `${prev}\n${line}` : line
+}
+
+export function extendWarrantyDate(
+  current: string | null | undefined,
+  days: number,
+): string {
+  const base = current && !Number.isNaN(Date.parse(current))
+    ? new Date(current)
+    : new Date()
+  if (base.getTime() < Date.now()) {
+    base.setTime(Date.now())
+  }
+  base.setDate(base.getDate() + days)
+  return base.toISOString().slice(0, 10)
+}
