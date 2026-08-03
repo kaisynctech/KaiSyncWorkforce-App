@@ -83,11 +83,11 @@ export default function CreateEmployeePage() {
 
     const [br, tmpl, mgr] = await Promise.all([
       supabase.from('branches').select('id, name, address').eq('company_id', member.companyId).order('name'),
-      supabase.from('shift_templates').select('id, name, summary').eq('company_id', member.companyId).order('name'),
+      supabase.from('employee_shift_templates').select('id, name, start_time, end_time, is_default').eq('company_id', member.companyId).order('name'),
       supabase.from('employees').select('id, name, surname')
         .eq('company_id', member.companyId)
         .eq('is_active', true)
-        .in('access_level', ['owner', 'manager', 'hr'])
+        .in('access_level', ['owner', 'manager', 'hr', 'hr_admin'])
         .order('name'),
     ])
 
@@ -135,6 +135,7 @@ export default function CreateEmployeePage() {
         position,
         department,
         branchId,
+        branchName: branches.find(b => b.id === branchId)?.name ?? null,
         shiftTemplateId: templateId,
         employmentType: resolvedEmploymentType,
         workerType: resolvedWorkerType,
@@ -252,9 +253,11 @@ export default function CreateEmployeePage() {
             <option value="">Select shift template (optional)</option>
             {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
           </FormSelect>
-          {selectedTemplate?.summary && (
+          {selectedTemplate?.start_time && selectedTemplate?.end_time && (
             <div className="mt-2 bg-surface rounded-sm px-[10px] py-[6px] border border-primary/20">
-              <p className="text-[13px] text-primary">{selectedTemplate.summary}</p>
+              <p className="text-[13px] text-primary">
+                {selectedTemplate.start_time} – {selectedTemplate.end_time}
+              </p>
             </div>
           )}
         </div>

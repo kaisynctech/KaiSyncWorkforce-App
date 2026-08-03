@@ -169,21 +169,27 @@ export default function PayrollPage() {
   }
 
   async function approvePayslip(id: string) {
+    setError(null)
     const supabase = createClient()
-    try { await supabase.rpc('approve_payslip', { payment_id: id }) } catch {}
-    loadPayroll(dateFrom, dateTo)
+    const { error: rpcErr } = await supabase.rpc('approve_payslip', { payment_id: id })
+    if (rpcErr) setError(rpcErr.message)
+    await loadPayroll(dateFrom, dateTo)
   }
 
   async function rejectPayslip(id: string) {
+    setError(null)
     const supabase = createClient()
-    try { await supabase.rpc('reject_payslip', { payment_id: id }) } catch {}
-    loadPayroll(dateFrom, dateTo)
+    const { error: rpcErr } = await supabase.rpc('reject_payslip', { payment_id: id })
+    if (rpcErr) setError(rpcErr.message)
+    await loadPayroll(dateFrom, dateTo)
   }
 
   async function releasePayslip(id: string) {
+    setError(null)
     const supabase = createClient()
-    try { await supabase.rpc('release_payslip_to_employee', { payment_id: id }) } catch {}
-    loadPayroll(dateFrom, dateTo)
+    const { error: rpcErr } = await supabase.rpc('release_payslip_to_employee', { payment_id: id })
+    if (rpcErr) setError(rpcErr.message)
+    await loadPayroll(dateFrom, dateTo)
   }
 
   async function approveAll() {
@@ -191,10 +197,14 @@ export default function PayrollPage() {
     if (!pending.length) return
     if (!window.confirm(`Approve all ${pending.length} pending payslip${pending.length !== 1 ? 's' : ''}?`)) return
     setApproving(true)
+    setError(null)
     const supabase = createClient()
+    const failures: string[] = []
     for (const p of pending) {
-      try { await supabase.rpc('approve_payslip', { payment_id: p.id }) } catch {}
+      const { error: rpcErr } = await supabase.rpc('approve_payslip', { payment_id: p.id })
+      if (rpcErr) failures.push(rpcErr.message)
     }
+    if (failures.length) setError(failures[0])
     await loadPayroll(dateFrom, dateTo)
     setApproving(false)
   }
@@ -204,10 +214,14 @@ export default function PayrollPage() {
     if (!releasable.length) { setError('No approved-but-unreleased payslips in this view.'); return }
     if (!window.confirm(`Release ${releasable.length} approved payslip${releasable.length !== 1 ? 's' : ''} to employees?`)) return
     setReleasing(true)
+    setError(null)
     const supabase = createClient()
+    const failures: string[] = []
     for (const p of releasable) {
-      try { await supabase.rpc('release_payslip_to_employee', { payment_id: p.id }) } catch {}
+      const { error: rpcErr } = await supabase.rpc('release_payslip_to_employee', { payment_id: p.id })
+      if (rpcErr) failures.push(rpcErr.message)
     }
+    if (failures.length) setError(failures[0])
     await loadPayroll(dateFrom, dateTo)
     setReleasing(false)
   }

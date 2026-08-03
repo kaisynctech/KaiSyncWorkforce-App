@@ -544,7 +544,7 @@ function LeaveTab({ leaveRequests, employeeId }: { leaveRequests: LeaveRequest[]
   const byType = leaveRequests
     .filter(r => r.status === 'approved' && r.start_date >= yearStart)
     .reduce<Record<string, number>>((acc, r) => {
-      acc[r.leave_type] = (acc[r.leave_type] ?? 0) + r.days_requested
+      acc[r.leave_type] = (acc[r.leave_type] ?? 0) + (r.total_days ?? 0)
       return acc
     }, {})
 
@@ -627,7 +627,7 @@ function LeaveTab({ leaveRequests, employeeId }: { leaveRequests: LeaveRequest[]
                   </span>
                 </div>
                 <p className="text-[12px] text-text-secondary mt-0.5">
-                  {formatDate(req.start_date)} – {formatDate(req.end_date)} · {req.days_requested} day{req.days_requested !== 1 ? 's' : ''}
+                  {formatDate(req.start_date)} – {formatDate(req.end_date)} · {req.total_days} day{req.total_days !== 1 ? 's' : ''}
                 </p>
               </div>
             )

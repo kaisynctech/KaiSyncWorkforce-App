@@ -4,40 +4,12 @@ import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import {
+  loadPayrollSettings,
+  PAYROLL_SETTINGS_DEFAULTS,
+  savePayrollSettings,
+} from '@/lib/payroll-settings'
 import type { PayrollSettings } from '@/types/database'
-
-const BLANK: Partial<PayrollSettings> = {
-  payroll_default_pay_basis: 'monthly',
-  default_hourly_rate: 0,
-  overtime_multiplier: 1.5,
-  overtime_threshold_hours: 8,
-  allow_overtime_for_salary: false,
-  pay_full_salary_for_mid_month_joiners: false,
-  pay_salary_on_public_holidays: true,
-  pay_hourly_on_public_holidays: true,
-  late_threshold_minutes: 15,
-  ot_start_after_minutes: 30,
-  deduct_absent_from_pay: true,
-  salary_ignore_attendance_deductions: false,
-  absent_penalty_mode: 'none',
-  absent_penalty_threshold: 1,
-  absent_penalty_deduct_days: 1,
-  late_penalty_mode: 'none',
-  late_penalty_threshold: 30,
-  late_penalty_deduct_hours: 0.5,
-  early_penalty_mode: 'none',
-  early_penalty_threshold: 30,
-  early_penalty_deduct_hours: 0.5,
-  uif_enabled: true,
-  uif_rate_percent: 1,
-  uif_ceiling_monthly: 17712,
-  paye_enabled: true,
-  default_paye_rate_percent: 18,
-  use_sars_tax_tables: false,
-  payslip_release_day: 25,
-  auto_release_payslips_on_release_day: false,
-  public_holidays_text: '',
-}
 
 function Sw({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return (
@@ -70,26 +42,34 @@ function NumInput({ value, onChange, width = 80, step }: {
   )
 }
 
-const PAY_BASIS_OPTS = ['monthly', 'hourly', 'daily']
-const PENALTY_MODES = ['none', 'deduct_days', 'deduct_hours', 'deduct_percent']
+const PAY_BASIS_OPTS = ['monthly', 'hourly', 'daily', 'monthly_salary']
+const PENALTY_MODES = ['none', 'deduct_days', 'deduct_hours', 'deduct_percent', 'per_day', 'per_occurrence', 'threshold']
 
 export default function PayrollSettingsPage() {
   const router = useRouter()
-  const [settings, setSettings] = useState<Partial<PayrollSettings>>(BLANK)
+  const [settings, setSettings] = useState<Partial<PayrollSettings>>({ ...PAYROLL_SETTINGS_DEFAULTS })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isBusy, setIsBusy] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
+  const [savedMsg, setSavedMsg] = useState('')
   const [companyId, setCompanyId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
+    setErrorMessage('')
     const supabase = createClient()
     const member = await resolveCurrentMember(supabase)
     if (!member) { setError('not_linked'); setLoading(false); return }
     setCompanyId(member.companyId)
-    const { data } = await supabase.from('payroll_settings').select('*').eq('company_id', member.companyId).maybeSingle()
-    if (data) setSettings(data as PayrollSettings)
+
+    const result = await loadPayrollSettings(supabase, member.companyId)
+    if (!result.ok) {
+      setErrorMessage(result.message)
+      setSettings({ ...PAYROLL_SETTINGS_DEFAULTS, company_id: member.companyId })
+    } else {
+      setSettings(result.settings)
+    }
     setLoading(false)
   }, [])
 
@@ -99,11 +79,14 @@ export default function PayrollSettingsPage() {
     setSettings(prev => ({ ...prev, [k]: v }))
 
   async function save() {
+    if (!companyId) return
     setIsBusy(true)
     setErrorMessage('')
+    setSavedMsg('')
     const supabase = createClient()
-    const { error } = await supabase.from('payroll_settings').upsert({ ...settings, company_id: companyId })
-    if (error) setErrorMessage(error.message)
+    const result = await savePayrollSettings(supabase, companyId, settings)
+    if (!result.ok) setErrorMessage(result.message)
+    else setSavedMsg('Payroll settings saved.')
     setIsBusy(false)
   }
 
@@ -126,7 +109,7 @@ export default function PayrollSettingsPage() {
     </div>
   )
 
-  const s = settings as PayrollSettings
+  const s = { ...PAYROLL_SETTINGS_DEFAULTS, ...settings } as PayrollSettings
 
   return (
     <div className="h-full flex flex-col">
@@ -135,16 +118,14 @@ export default function PayrollSettingsPage() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4 max-w-2xl">
-
-        {/* Intro */}
         <div className="card p-4">
           <p className="section-label">PAYROLL ENGINE</p>
           <p className="text-xs text-text-secondary mt-1">
-            Configure how payslips are calculated, taxed, and released. These settings apply company-wide.
+            Configure how payslips are calculated, taxed, and released. Stored in company settings
+            (<code className="text-[11px]"> payroll_preferences</code>).
           </p>
         </div>
 
-        {/* PAY CALCULATION */}
         <div className="card p-4">
           <p className="section-label mb-3">PAY CALCULATION</p>
           <Row label="Default pay basis">
@@ -176,7 +157,6 @@ export default function PayrollSettingsPage() {
           </Row>
         </div>
 
-        {/* TIME & ATTENDANCE */}
         <div className="card p-4">
           <p className="section-label">TIME &amp; ATTENDANCE</p>
           <p className="text-xs text-text-secondary mt-1 mb-3">
@@ -203,7 +183,6 @@ export default function PayrollSettingsPage() {
           </div>
         </div>
 
-        {/* ATTENDANCE PENALTIES */}
         <div className="card p-4">
           <p className="section-label mb-3">ATTENDANCE PENALTIES</p>
           {([
@@ -232,7 +211,6 @@ export default function PayrollSettingsPage() {
           )}
         </div>
 
-        {/* STATUTORY & TAX */}
         <div className="card p-4">
           <p className="section-label mb-3">STATUTORY &amp; TAX (SARS)</p>
           <Row label="UIF enabled">
@@ -255,12 +233,8 @@ export default function PayrollSettingsPage() {
           <Row label="Use SARS PAYE tax tables">
             <Sw checked={s.use_sars_tax_tables} onChange={v => set('use_sars_tax_tables', v)} />
           </Row>
-          <p className="text-xs text-text-secondary mt-2">
-            When SARS tables are on, employee DOB and tax directive on their profile drive PAYE. Otherwise use employee PAYE rate/fixed or default % above.
-          </p>
         </div>
 
-        {/* PAYSLIPS & RELEASE */}
         <div className="card p-4">
           <p className="section-label mb-3">PAYSLIPS &amp; RELEASE</p>
           <Row label="Payslip release day (0 = manual)">
@@ -278,6 +252,7 @@ export default function PayrollSettingsPage() {
         </div>
 
         {errorMessage && <p className="text-error text-sm text-center">{errorMessage}</p>}
+        {savedMsg && <p className="text-success text-sm text-center">{savedMsg}</p>}
 
         <button onClick={save} disabled={isBusy}
           className="btn-primary w-full h-11 text-[14px] disabled:opacity-50">

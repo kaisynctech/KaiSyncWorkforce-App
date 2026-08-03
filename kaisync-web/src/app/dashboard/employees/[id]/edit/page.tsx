@@ -18,6 +18,7 @@ import {
   normalizeWorkerType,
 } from '@/lib/employee-taxonomy'
 import { sendEmployeeInvite } from '@/lib/employee-invite'
+import { deleteEmployee, setEmployeeActive } from '@/lib/employee-lifecycle'
 import type { Branch, ShiftTemplate, Employee } from '@/types/database'
 
 const ACCOUNT_TYPES = ['Cheque', 'Savings', 'Transmission']
@@ -34,7 +35,9 @@ export default function EditEmployeePage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [archiving, setArchiving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [initialActive, setInitialActive] = useState(true)
 
   // Form state
   const [isActive, setIsActive] = useState(true)
@@ -44,6 +47,7 @@ export default function EditEmployeePage() {
   const [phone, setPhone] = useState('')
   const [idNumber, setIdNumber] = useState('')
   const [position, setPosition] = useState('')
+  const [department, setDepartment] = useState('')
   const [branchId, setBranchId] = useState('')
   const [templateId, setTemplateId] = useState('')
   const [employmentType, setEmploymentType] = useState('permanent')
@@ -78,10 +82,10 @@ export default function EditEmployeePage() {
     const [empRes, br, tmpl, mgr] = await Promise.all([
       supabase.from('employees').select('*').eq('id', id).eq('company_id', member.companyId).maybeSingle(),
       supabase.from('branches').select('id, name').eq('company_id', member.companyId).order('name'),
-      supabase.from('shift_templates').select('id, name, summary').eq('company_id', member.companyId).order('name'),
+      supabase.from('employee_shift_templates').select('id, name, start_time, end_time, is_default').eq('company_id', member.companyId).order('name'),
       supabase.from('employees').select('id, name, surname')
         .eq('company_id', member.companyId).eq('is_active', true)
-        .in('access_level', ['owner', 'manager', 'hr']).order('name'),
+        .in('access_level', ['owner', 'manager', 'hr', 'hr_admin']).order('name'),
     ])
 
     const emp = empRes.data as Employee | null
@@ -94,12 +98,14 @@ export default function EditEmployeePage() {
 
     // Populate form
     setIsActive(emp.is_active)
+    setInitialActive(emp.is_active)
     setFirstName(emp.name)
     setLastName(emp.surname)
     setEmail(emp.email ?? '')
     setPhone(emp.phone ?? '')
     setIdNumber(emp.id_number ?? '')
     setPosition(emp.position ?? '')
+    setDepartment(emp.department ?? '')
     setBranchId(emp.branch_id ?? '')
     setTemplateId(emp.shift_template_id ?? '')
     setEmploymentType(normalizeEmploymentType(emp.employment_type))
@@ -145,18 +151,25 @@ export default function EditEmployeePage() {
     setSaving(true)
     setError(null)
     const supabase = createClient()
-    // Column names must match live DB (not MAUI DTO aliases).
+    const branchName = branchId
+      ? (branches.find(b => b.id === branchId)?.name ?? null)
+      : null
+    const dept = department.trim() || null
+
+    // Column names must match live DB. Sync legacy branch text + cost_center.
     const { error: updateError } = await supabase
       .from('employees')
       .update({
-        is_active: isActive,
         name: firstName.trim(),
         surname: lastName.trim(),
         email: email.trim() || null,
         phone: phone.trim() || null,
         id_number: idNumber.trim() || null,
         position: position.trim() || null,
+        department: dept,
+        cost_center: dept,
         branch_id: branchId || null,
+        branch: branchName,
         shift_template_id: templateId || null,
         employment_type: normalizeEmploymentType(employmentType),
         worker_type: normalizeWorkerType(workerType),
@@ -182,8 +195,27 @@ export default function EditEmployeePage() {
       })
       .eq('id', id)
 
+    if (updateError) {
+      setSaving(false)
+      setError(updateError.message)
+      return
+    }
+
+    // Active flag goes through audited RPC (also syncs company_relationships).
+    if (isActive !== initialActive) {
+      const activeResult = await setEmployeeActive(supabase, {
+        companyId,
+        employeeId: id,
+        isActive,
+      })
+      if (!activeResult.ok) {
+        setSaving(false)
+        setError(activeResult.message)
+        return
+      }
+    }
+
     setSaving(false)
-    if (updateError) { setError(updateError.message); return }
     router.push(`/dashboard/employees/${id}`)
   }
 
@@ -198,12 +230,43 @@ export default function EditEmployeePage() {
     setInviteMsg(result.ok ? 'Invite sent.' : result.message)
   }
 
-  async function handleArchive() {
-    if (!confirm('This will deactivate the employee. Continue?')) return
+  async function handleToggleActive() {
+    if (!companyId) return
+    const next = !isActive
+    const label = next ? 'reactivate' : 'deactivate'
+    if (!confirm(`This will ${label} the employee. Continue?`)) return
     setArchiving(true)
+    setError(null)
     const supabase = createClient()
-    await supabase.from('employees').update({ is_active: false }).eq('id', id)
+    const result = await setEmployeeActive(supabase, {
+      companyId,
+      employeeId: id,
+      isActive: next,
+    })
     setArchiving(false)
+    if (!result.ok) { setError(result.message); return }
+    setIsActive(next)
+    setInitialActive(next)
+    if (!next) router.push('/dashboard/employees')
+  }
+
+  async function handleDelete() {
+    if (!companyId) return
+    const confirmed = confirm(
+      'Permanently delete this employee? This cannot be undone. Related time punches for this employee will also be removed.'
+    )
+    if (!confirmed) return
+    const typed = window.prompt('Type DELETE to confirm permanent removal:')
+    if (typed !== 'DELETE') {
+      setError('Delete cancelled — confirmation text did not match.')
+      return
+    }
+    setDeleting(true)
+    setError(null)
+    const supabase = createClient()
+    const result = await deleteEmployee(supabase, { companyId, employeeId: id })
+    setDeleting(false)
+    if (!result.ok) { setError(result.message); return }
     router.push('/dashboard/employees')
   }
 
@@ -260,11 +323,11 @@ export default function EditEmployeePage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-2 px-4 pb-[14px]">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 px-4 pb-[14px]">
           <button
             type="button"
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || deleting}
             className="bg-primary text-white h-11 rounded-sm font-semibold text-[13px] hover:bg-primary-dark disabled:opacity-50 transition-colors"
           >
             {saving ? 'Saving…' : 'Save Changes'}
@@ -272,17 +335,31 @@ export default function EditEmployeePage() {
           <button
             type="button"
             onClick={handleSendInvite}
-            className="border border-primary text-primary h-11 rounded-sm font-medium text-[13px] hover:bg-primary/5 transition-colors"
+            disabled={deleting}
+            className="border border-primary text-primary h-11 rounded-sm font-medium text-[13px] hover:bg-primary/5 transition-colors disabled:opacity-50"
           >
             Send Invite
           </button>
           <button
             type="button"
-            onClick={handleArchive}
-            disabled={archiving}
+            onClick={handleToggleActive}
+            disabled={archiving || deleting}
+            className={cn(
+              'h-11 rounded-sm font-semibold text-[13px] disabled:opacity-50 transition-colors',
+              isActive
+                ? 'bg-warning text-white hover:opacity-90'
+                : 'bg-success text-white hover:opacity-90'
+            )}
+          >
+            {archiving ? '…' : isActive ? 'Archive' : 'Reactivate'}
+          </button>
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={deleting || archiving}
             className="bg-error text-white h-11 rounded-sm font-semibold text-[13px] hover:opacity-90 disabled:opacity-50 transition-colors"
           >
-            {archiving ? '…' : 'Archive'}
+            {deleting ? '…' : 'Delete'}
           </button>
         </div>
 
@@ -320,6 +397,9 @@ export default function EditEmployeePage() {
         <SectionCard title="EMPLOYMENT">
           <FormField label="Position / Role">
             <input type="text" value={position} onChange={e => setPosition(e.target.value)} placeholder="e.g. Cleaner, Guard, Technician" className={entryClass} />
+          </FormField>
+          <FormField label="Department">
+            <input type="text" value={department} onChange={e => setDepartment(e.target.value)} placeholder="e.g. Operations, Finance" className={entryClass} />
           </FormField>
           <FormSelect label="Branch" value={branchId} onChange={e => setBranchId(e.target.value)}>
             <option value="">None</option>

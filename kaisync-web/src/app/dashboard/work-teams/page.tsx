@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import { withMemberCount, type WorkTeamRow } from '@/lib/work-teams'
 import type { WorkTeam } from '@/types/database'
 
 export default function WorkTeamsPage() {
@@ -11,6 +12,7 @@ export default function WorkTeamsPage() {
   const [teams, setTeams] = useState<WorkTeam[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
   const [newTeamName, setNewTeamName] = useState('')
@@ -19,24 +21,24 @@ export default function WorkTeamsPage() {
 
   const load = useCallback(async () => {
     setLoading(true)
+    setActionError(null)
     const supabase = createClient()
     const member = await resolveCurrentMember(supabase)
     if (!member) { setError('not_linked'); setLoading(false); return }
     setCompanyId(member.companyId)
 
-    const { data } = await supabase
+    const { data, error: qErr } = await supabase
       .from('work_teams')
-      .select('*, members:work_team_members(count)')
+      .select('id, company_id, name, description, leader_employee_id, member_ids, is_active, created_at')
       .eq('company_id', member.companyId)
       .order('name')
 
-    const mapped = (data ?? []).map((t: Record<string, unknown>) => ({
-      ...t,
-      member_count: Array.isArray(t.members) && t.members.length > 0
-        ? ((t.members[0] as Record<string, unknown>).count ?? 0)
-        : 0,
-    }))
-    setTeams(mapped as WorkTeam[])
+    if (qErr) {
+      setActionError(qErr.message)
+      setTeams([])
+    } else {
+      setTeams((data ?? []).map(t => withMemberCount(t as WorkTeamRow)) as WorkTeam[])
+    }
     setLoading(false)
   }, [])
 
@@ -45,17 +47,30 @@ export default function WorkTeamsPage() {
   async function createTeam() {
     if (!newTeamName.trim() || !companyId) return
     setCreating(true)
+    setActionError(null)
     const supabase = createClient()
-    await supabase.from('work_teams').insert({
-      company_id:  companyId,
-      name:        newTeamName.trim(),
-      description: newTeamDesc.trim() || null,
-      is_active:   true,
-    })
-    setNewTeamName(''); setNewTeamDesc('')
-    setShowCreate(false)
+    const { data, error: insertErr } = await supabase
+      .from('work_teams')
+      .insert({
+        company_id: companyId,
+        name: newTeamName.trim(),
+        description: newTeamDesc.trim() || null,
+        is_active: true,
+        member_ids: [],
+      })
+      .select('id')
+      .single()
+
     setCreating(false)
-    load()
+    if (insertErr) {
+      setActionError(insertErr.message)
+      return
+    }
+    setNewTeamName('')
+    setNewTeamDesc('')
+    setShowCreate(false)
+    if (data?.id) router.push(`/dashboard/work-teams/${data.id}`)
+    else await load()
   }
 
   if (error === 'not_linked') return (
@@ -73,7 +88,6 @@ export default function WorkTeamsPage() {
 
   return (
     <div className="h-full flex flex-col">
-      {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 shrink-0 bg-surface-dark">
         <h1 className="text-sm font-semibold uppercase tracking-wider text-text-primary">Work Teams</h1>
         <button onClick={() => setShowCreate(true)} className="btn-primary h-9 px-3 text-[13px]">
@@ -81,7 +95,10 @@ export default function WorkTeamsPage() {
         </button>
       </div>
 
-      {/* Team cards */}
+      {actionError && (
+        <p className="px-4 py-2 text-error text-[13px] shrink-0">{actionError}</p>
+      )}
+
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {loading ? (
           <p className="text-text-secondary text-[13px] text-center py-8">Loading…</p>
@@ -101,15 +118,12 @@ export default function WorkTeamsPage() {
               onClick={() => router.push(`/dashboard/work-teams/${team.id}`)}
             >
               <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3">
-                {/* Icon circle */}
                 <div
                   className="w-11 h-11 rounded-full flex items-center justify-center text-xl shrink-0"
                   style={{ backgroundColor: team.is_active ? '#1D4ED8' : '#374151' }}
                 >
                   👥
                 </div>
-
-                {/* Team info */}
                 <div className="min-w-0">
                   <p className="text-sm font-bold text-text-primary truncate">{team.name}</p>
                   {team.description && (
@@ -120,8 +134,6 @@ export default function WorkTeamsPage() {
                     <span className="text-text-secondary"> member{team.member_count !== 1 ? 's' : ''}</span>
                   </p>
                 </div>
-
-                {/* Active badge */}
                 <span
                   className="text-[11px] font-bold px-2 py-1 rounded-xl shrink-0"
                   style={team.is_active
@@ -137,7 +149,6 @@ export default function WorkTeamsPage() {
         )}
       </div>
 
-      {/* Create team modal */}
       {showCreate && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-surface rounded-xl shadow-lg w-full max-w-sm p-5 space-y-3">
