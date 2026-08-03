@@ -224,29 +224,34 @@ export default function AttendancePage() {
     const supabase = createClient()
     const { from, to } = getRange(presetRef.current, customFromRef.current, customToRef.current)
 
-    const [{ data: empData }, { data: punchData }, { data: tmplData }, { data: companyRow }] = await Promise.all([
-      supabase.from('employees')
-        .select('id, name, surname, employee_code, hourly_rate, daily_hours, shift_template_id')
-        .eq('company_id', cid)
-        .eq('is_active', true),
-      supabase.from('time_punches')
-        .select('id, employee_id, type, date_time, created_at, latitude, longitude, address, job_id, notes')
-        .eq('company_id', cid)
-        .gte('date_time', `${from}T00:00:00`)
-        .lte('date_time', `${to}T23:59:59`)
-        .order('date_time', { ascending: true }),
-      supabase.from('employee_shift_templates')
-        .select('id, start_time, end_time, break_minutes')
-        .eq('company_id', cid),
-      supabase.from('companies')
-        .select('custom_settings')
-        .eq('id', cid)
-        .maybeSingle(),
-    ])
+    const [{ data: empData }, { data: punchData }, { data: tmplData }, { data: companyRow }, { data: coSettings }] =
+      await Promise.all([
+        supabase.from('employees')
+          .select('id, name, surname, employee_code, hourly_rate, daily_hours, shift_template_id')
+          .eq('company_id', cid)
+          .eq('is_active', true),
+        supabase.from('time_punches')
+          .select('id, employee_id, type, date_time, created_at, latitude, longitude, address, job_id, notes')
+          .eq('company_id', cid)
+          .gte('date_time', `${from}T00:00:00`)
+          .lte('date_time', `${to}T23:59:59`)
+          .order('date_time', { ascending: true }),
+        supabase.from('employee_shift_templates')
+          .select('id, start_time, end_time, break_minutes')
+          .eq('company_id', cid),
+        supabase.from('companies')
+          .select('custom_settings')
+          .eq('id', cid)
+          .maybeSingle(),
+        supabase.rpc('get_company_settings', { p_company_id: cid }),
+      ])
 
     const cs = (companyRow?.custom_settings ?? {}) as Record<string, unknown>
     const lateMin = Number(cs.late_threshold_minutes ?? 30) || 30
     const otMin = Number(cs.ot_start_after_minutes ?? 30) || 30
+    const tzRaw = (coSettings as { timezone?: string } | null)?.timezone
+    const timeZone =
+      typeof tzRaw === 'string' && tzRaw.trim() ? tzRaw.trim() : 'Africa/Johannesburg'
 
     const scope = scopedIdsRef.current
     const empMap = new Map(
@@ -280,6 +285,7 @@ export default function AttendancePage() {
         lateThresholdMinutes: lateMin,
         otStartAfterMinutes: otMin,
         shiftTemplate: template,
+        timeZone,
       })
       for (const row of rows) built.push(toDisplay(row, emp))
     }

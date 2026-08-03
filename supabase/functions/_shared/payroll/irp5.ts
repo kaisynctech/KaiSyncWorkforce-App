@@ -1,5 +1,10 @@
 /**
- * Server-side copy of `kaisync-web/src/lib/payroll/irp5.ts` (Deno-friendly relative imports).
+ * AUTO-SYNCED from kaisync-web — do not edit by hand.
+ * Source: kaisync-web/src/lib/payroll/irp5.ts
+ * Regenerate: node scripts/sync-payroll-shared.mjs
+ */
+
+/**
  * Ports KaiFlow.Payroll/PayrollYtdHelper.cs and Irp5RecordBuilder.cs.
  */
 

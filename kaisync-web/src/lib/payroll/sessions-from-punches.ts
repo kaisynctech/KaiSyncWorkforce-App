@@ -8,6 +8,7 @@ import {
   toLocalDateStr,
   type ShiftTemplateLike,
 } from '@/lib/punch-session'
+import { DEFAULT_COMPANY_TIMEZONE, toZonedDateStr } from '@/lib/timezone'
 import type { ISODate } from './period'
 import type { PunchLike, SessionSnapshot } from './calculator'
 
@@ -16,6 +17,8 @@ export type SessionBuildOptions = {
   lateThresholdMinutes?: number
   otStartAfterMinutes?: number
   dailyHours?: number
+  /** IANA timezone from company_settings.timezone. */
+  timeZone?: string
 }
 
 export function buildTemplateAwareSessions(
@@ -26,9 +29,10 @@ export function buildTemplateAwareSessions(
   options: SessionBuildOptions = {}
 ): SessionSnapshot[] {
   const dailyHours = options.dailyHours && options.dailyHours > 0 ? options.dailyHours : 8
+  const timeZone = options.timeZone || DEFAULT_COMPANY_TIMEZONE
   const inPeriod = punches.filter(p => {
     if (p.employee_id !== employeeId || !p.date_time) return false
-    const d = p.date_time.slice(0, 10)
+    const d = toZonedDateStr(new Date(p.date_time), timeZone)
     return d >= periodStart && d <= periodEnd
   })
 
@@ -38,13 +42,14 @@ export function buildTemplateAwareSessions(
     lateThresholdMinutes: options.lateThresholdMinutes ?? 30,
     otStartAfterMinutes: options.otStartAfterMinutes ?? 30,
     shiftTemplate: options.shiftTemplate ?? null,
+    timeZone,
   })
 
   // Closed sessions only for payroll (MAUI filters !IsOpen)
   return rows
     .filter(s => !s.isOpen && !s.isAbsentDay && !s.isLeaveDay)
     .map(s => ({
-      date: toLocalDateStr(s.clockIn) as ISODate,
+      date: toLocalDateStr(s.clockIn, timeZone) as ISODate,
       regularHours: s.regularHours,
       overtimeHours: s.overtimeHours,
       isLate: s.isLate,

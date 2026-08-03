@@ -1,10 +1,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { PayrollSettings } from '@/types/database'
+import { DEFAULT_COMPANY_TIMEZONE } from '@/lib/timezone'
 
 /**
  * Live store: company_settings.payroll_preferences (jsonb)
  * via get_company_settings / upsert_company_settings.
  * There is no payroll_settings table.
+ * company_timezone comes from company_settings.timezone (column), not prefs jsonb.
  */
 
 export const PAYROLL_SETTINGS_DEFAULTS: Omit<PayrollSettings, 'id' | 'company_id'> = {
@@ -38,6 +40,7 @@ export const PAYROLL_SETTINGS_DEFAULTS: Omit<PayrollSettings, 'id' | 'company_id
   payslip_release_day: 25,
   auto_release_payslips_on_release_day: false,
   public_holidays_text: '',
+  company_timezone: DEFAULT_COMPANY_TIMEZONE,
 }
 
 type Prefs = Record<string, unknown>
@@ -111,6 +114,8 @@ export function prefsToPayrollSettings(
       d.auto_release_payslips_on_release_day
     ),
     public_holidays_text: asString(p.public_holidays_text, d.public_holidays_text),
+    // Prefer explicit column override; prefs may carry a copy for Deno sync convenience.
+    company_timezone: asString(p.company_timezone, d.company_timezone) || DEFAULT_COMPANY_TIMEZONE,
   }
 }
 
@@ -120,6 +125,7 @@ export function payrollSettingsToPrefs(settings: Partial<PayrollSettings>): Pref
   const {
     id: _id,
     company_id: _cid,
+    company_timezone: _tz,
     ...rest
   } = merged
 
@@ -161,12 +167,17 @@ export async function loadPayrollSettings(
   })
   if (error) return { ok: false, message: error.message }
 
-  const row = (data ?? {}) as { payroll_preferences?: Prefs }
+  const row = (data ?? {}) as { payroll_preferences?: Prefs; timezone?: string }
   const prefs =
     row.payroll_preferences && typeof row.payroll_preferences === 'object'
       ? row.payroll_preferences
       : {}
-  return { ok: true, settings: prefsToPayrollSettings(companyId, prefs) }
+  const settings = prefsToPayrollSettings(companyId, prefs)
+  const tz =
+    typeof row.timezone === 'string' && row.timezone.trim()
+      ? row.timezone.trim()
+      : DEFAULT_COMPANY_TIMEZONE
+  return { ok: true, settings: { ...settings, company_timezone: tz } }
 }
 
 export async function savePayrollSettings(

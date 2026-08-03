@@ -1,8 +1,10 @@
 /**
- * Server-side copy of `kaisync-web/src/lib/payroll/calculator.ts` (Deno-friendly relative
- * imports only). Keep byte-for-byte in sync with the web version — this is what makes
- * `payroll-generate` non-repudiation-authoritative over the browser calculation.
- *
+ * AUTO-SYNCED from kaisync-web — do not edit by hand.
+ * Source: kaisync-web/src/lib/payroll/calculator.ts
+ * Regenerate: node scripts/sync-payroll-shared.mjs
+ */
+
+/**
  * Ports KaiFlow.Payroll/PayrollCalculator.cs — the full calculation pipeline.
  *
  * Deviations from the C# reference (documented in docs/modules/payroll-web-program.md):
@@ -212,9 +214,8 @@ export function sumPunchHours(
 }
 
 /**
- * Derives per-day sessions from raw punches for the calculation pipeline.
- * Late/early flags require shift-schedule data not available from punches alone,
- * so they default to false (see docs/modules/payroll-web-program.md gaps).
+ * Legacy day-bucket hours helper (no template). Prefer `buildTemplateAwareSessions`
+ * in `sessions-from-punches.ts` for late/early + MAUI-parity OT.
  */
 export function buildSessionsFromPunches(
   punches: PunchLike[],

@@ -1,7 +1,21 @@
 /**
+ * AUTO-SYNCED from kaisync-web — do not edit by hand.
+ * Source: kaisync-web/src/lib/punch-session.ts
+ * Regenerate: node scripts/sync-payroll-shared.mjs
+ */
+
+/**
  * Client-side punch session builder — mirrors MAUI PunchSession.Build.
  * Pairs clock-in/out, computes regular/OT hours, late/early flags.
+ * Wall-clock comparisons use company IANA timezone (not server/browser local).
  */
+
+import {
+  DEFAULT_COMPANY_TIMEZONE,
+  toZonedDateStr,
+  zonedTimeOnPunchDay,
+  zonedWallTimeToUtc,
+} from './timezone.ts'
 
 export type PunchLike = {
   id?: string
@@ -30,6 +44,8 @@ export type PunchSessionOptions = {
   lateThresholdMinutes?: number
   otStartAfterMinutes?: number
   shiftTemplate?: ShiftTemplateLike | null
+  /** IANA timezone from company_settings.timezone (default Africa/Johannesburg). */
+  timeZone?: string
 }
 
 export type PunchSessionRow = {
@@ -64,12 +80,6 @@ function parseTimeOnly(raw: string | null | undefined): { h: number; m: number }
   return { h: Number(m[1]), m: Number(m[2]) }
 }
 
-function atLocalTime(day: Date, t: { h: number; m: number }): Date {
-  const d = new Date(day)
-  d.setHours(t.h, t.m, 0, 0)
-  return d
-}
-
 function paidHoursOf(template: ShiftTemplateLike): number {
   const start = parseTimeOnly(template.start_time)
   const end = parseTimeOnly(template.end_time)
@@ -94,6 +104,7 @@ function computeMetrics(
   const lateThreshold = opts.lateThresholdMinutes ?? 30
   const otAfter = opts.otStartAfterMinutes ?? 30
   const template = opts.shiftTemplate ?? null
+  const timeZone = opts.timeZone || DEFAULT_COMPANY_TIMEZONE
   const now = new Date()
   const totalHours = ((clockOut ?? now).getTime() - clockIn.getTime()) / 3600000
 
@@ -108,7 +119,7 @@ function computeMetrics(
   const endT = template ? parseTimeOnly(template.end_time) : null
 
   if (template && startT) {
-    const shiftStart = atLocalTime(clockIn, startT)
+    const shiftStart = zonedTimeOnPunchDay(clockIn, startT.h, startT.m, timeZone)
     const minsLate = (clockIn.getTime() - shiftStart.getTime()) / 60000
     if (minsLate > lateThreshold) {
       isLate = true
@@ -117,10 +128,10 @@ function computeMetrics(
   }
 
   if (template && endT && clockOut) {
-    let shiftEnd = atLocalTime(clockOut, endT)
+    let shiftEnd = zonedTimeOnPunchDay(clockOut, endT.h, endT.m, timeZone)
     const billingStart = isLate || !startT
       ? clockIn
-      : atLocalTime(clockIn, startT)
+      : zonedTimeOnPunchDay(clockIn, startT.h, startT.m, timeZone)
     if (shiftEnd.getTime() < billingStart.getTime()) {
       shiftEnd = new Date(shiftEnd.getTime() + 24 * 3600000)
     }
@@ -134,7 +145,9 @@ function computeMetrics(
     regularHours = Math.min(totalHours, dailyHours)
     overtimeHours = Math.max(0, totalHours - dailyHours)
   } else if (startT) {
-    const billingStart = isLate ? clockIn : atLocalTime(clockIn, startT)
+    const billingStart = isLate
+      ? clockIn
+      : zonedTimeOnPunchDay(clockIn, startT.h, startT.m, timeZone)
     const brk = breakMinutesOf(template) / 60
     const paidCap = paidHoursOf(template)
     if (!clockOut) {
@@ -143,7 +156,7 @@ function computeMetrics(
       const paidElapsed = (clockOut.getTime() - billingStart.getTime()) / 3600000 - brk
       regularHours = Math.max(0, Math.min(paidElapsed, paidCap))
       if (endT) {
-        let shiftEnd = atLocalTime(clockOut, endT)
+        let shiftEnd = zonedTimeOnPunchDay(clockOut, endT.h, endT.m, timeZone)
         if (shiftEnd.getTime() < billingStart.getTime()) {
           shiftEnd = new Date(shiftEnd.getTime() + 24 * 3600000)
         }
@@ -225,7 +238,8 @@ export function absentDaySession(
   reason: string,
   opts: PunchSessionOptions,
 ): PunchSessionRow {
-  const d = new Date(`${dateStr}T00:00:00`)
+  const [y, m, day] = dateStr.split('-').map(Number)
+  const d = zonedWallTimeToUtc(y, m, day, 0, 0, opts.timeZone || DEFAULT_COMPANY_TIMEZONE)
   return {
     employeeId: opts.employeeId,
     employeeName: opts.employeeName ?? 'Employee',
@@ -257,7 +271,8 @@ export function leaveDaySession(
   leaveType: string,
   opts: PunchSessionOptions,
 ): PunchSessionRow {
-  const d = new Date(`${dateStr}T00:00:00`)
+  const [y, m, day] = dateStr.split('-').map(Number)
+  const d = zonedWallTimeToUtc(y, m, day, 0, 0, opts.timeZone || DEFAULT_COMPANY_TIMEZONE)
   return {
     employeeId: opts.employeeId,
     employeeName: opts.employeeName ?? 'Employee',
@@ -291,10 +306,11 @@ export function mergeNonWorkDays(
   leaveDays: { date: string; leave_type: string }[],
   opts: PunchSessionOptions,
 ): PunchSessionRow[] {
+  const timeZone = opts.timeZone || DEFAULT_COMPANY_TIMEZONE
   const workDates = new Set(
     sessions
       .filter(s => !s.isAbsentDay && !s.isLeaveDay)
-      .map(s => toLocalDateStr(s.clockIn)),
+      .map(s => toLocalDateStr(s.clockIn, timeZone)),
   )
   const extra: PunchSessionRow[] = []
   for (const a of absences) {
@@ -311,11 +327,9 @@ export function mergeNonWorkDays(
   return [...sessions, ...extra].sort((a, b) => b.clockIn.getTime() - a.clockIn.getTime())
 }
 
-export function toLocalDateStr(d: Date): string {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
+/** @deprecated Prefer toZonedDateStr with company timezone; kept for UI callers. */
+export function toLocalDateStr(d: Date, timeZone: string = DEFAULT_COMPANY_TIMEZONE): string {
+  return toZonedDateStr(d, timeZone)
 }
 
 export function fmtSessionTime(d: Date | null, kind: 'in' | 'out' | 'absent' | 'leave'): string {

@@ -58,7 +58,8 @@ Also re-pushed existing approved May payslips to Xero.
 | `xero-push-payroll` May | ✅ PASS | `pushed: 2` Draft Manual Journals |
 | `xero-push-payroll` July | ✅ PASS | `pushed: 3` Draft Manual Journals |
 | Xero re-push idempotent | ✅ PASS | `pushed: 0` / “No new approved payslips…” |
-| Local `npm test` / `tsc` | ✅ PASS | 43/43 tests, `tsc` exit 0 |
+| Local `npm test` / `tsc` | ✅ PASS | 53/53 tests (incl. company TZ helpers), `tsc` exit 0 |
+| Company TZ late/early (unit) | ✅ PASS | Punch UTC vs `Africa/Johannesburg` wall clock; Edge `payroll-generate` redeployed with synced `_shared/payroll` |
 
 ### Gap found during smoke — fixed
 

@@ -1,5 +1,10 @@
 /**
- * Server-side copy of `kaisync-web/src/lib/payroll/sars-paye.ts`.
+ * AUTO-SYNCED from kaisync-web — do not edit by hand.
+ * Source: kaisync-web/src/lib/payroll/sars-paye.ts
+ * Regenerate: node scripts/sync-payroll-shared.mjs
+ */
+
+/**
  * Ports KaiFlow.Payroll/SarsPayeCalculator.cs.
  * Simplified SA PAYE for 2025/2026 tax year (annual brackets, monthly conversion).
  * Use when policy.statutory.useSarsTaxTables is true.

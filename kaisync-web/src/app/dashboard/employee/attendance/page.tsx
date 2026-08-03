@@ -177,15 +177,21 @@ export default function EmployeeAttendancePage() {
       // custom_settings may live on companies — try select if needed
       let lateMin = 30
       let otMin = 30
+      let timeZone = 'Africa/Johannesburg'
       try {
-        const { data: co } = await supabase
-          .from('companies')
-          .select('custom_settings')
-          .eq('id', member.companyId)
-          .maybeSingle()
+        const [{ data: co }, { data: coSettings }] = await Promise.all([
+          supabase
+            .from('companies')
+            .select('custom_settings')
+            .eq('id', member.companyId)
+            .maybeSingle(),
+          supabase.rpc('get_company_settings', { p_company_id: member.companyId }),
+        ])
         const cs = (co?.custom_settings ?? settings) as Record<string, unknown>
         if (cs.late_threshold_minutes != null) lateMin = Number(cs.late_threshold_minutes) || 30
         if (cs.ot_start_after_minutes != null) otMin = Number(cs.ot_start_after_minutes) || 30
+        const tzRaw = (coSettings as { timezone?: string } | null)?.timezone
+        if (typeof tzRaw === 'string' && tzRaw.trim()) timeZone = tzRaw.trim()
       } catch { /* defaults */ }
 
       let template: ShiftTemplateLike | null = null
@@ -239,6 +245,7 @@ export default function EmployeeAttendancePage() {
         lateThresholdMinutes: lateMin,
         otStartAfterMinutes: otMin,
         shiftTemplate: template,
+        timeZone,
       }
       let built = buildPunchSessions(punches, opts)
 
