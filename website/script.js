@@ -82,11 +82,14 @@
       });
     });
 
-    var initial = (location.hash || '#workforce').replace(/^#/, '');
-    showModule(initial, false);
+    var initial = (location.hash || '').replace(/^#/, '');
+    if (!initial && panels[0]) initial = panels[0].getAttribute('data-module-panel');
+    showModule(initial || 'workforce', false);
 
     window.addEventListener('hashchange', function () {
-      showModule((location.hash || '#workforce').replace(/^#/, ''), false);
+      var next = (location.hash || '').replace(/^#/, '');
+      if (!next && panels[0]) next = panels[0].getAttribute('data-module-panel');
+      showModule(next || 'workforce', false);
     });
   }
 

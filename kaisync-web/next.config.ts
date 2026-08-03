@@ -9,6 +9,7 @@ const nextConfig: NextConfig = {
       { source: '/pricing', destination: '/pricing.html', permanent: false },
       { source: '/contact', destination: '/contact.html', permanent: false },
       { source: '/install', destination: '/install.html', permanent: false },
+      { source: '/portals', destination: '/portals.html', permanent: false },
       { source: '/download', destination: '/install.html', permanent: true },
       { source: '/download.html', destination: '/install.html', permanent: true },
       { source: '/releases', destination: '/releases.html', permanent: false },
