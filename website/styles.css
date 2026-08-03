@@ -235,13 +235,14 @@ a {
 /* ── Hero ── */
 .hero {
   position: relative;
-  min-height: 100svh;
+  min-height: calc(100svh - 4.5rem);
   display: grid;
-  align-items: end;
+  align-items: center;
   overflow: hidden;
   background: var(--bg);
-  /* Clear fixed dark nav (4.5rem) + breathing room */
-  padding: 7.25rem 0 3.5rem;
+  /* Only clear the fixed nav — no large empty band above content */
+  padding: 5.75rem 0 3rem;
+  margin-top: 0;
 }
 
 .hero-atmosphere {
@@ -770,7 +771,7 @@ a {
 
 /* ── Pricing / page chrome ── */
 .page-header {
-  padding: 8.5rem 0 3.5rem;
+  padding: 6.5rem 0 2rem;
   background:
     radial-gradient(ellipse 50% 60% at 80% 0%, rgba(59, 130, 246, 0.14), transparent 50%),
     radial-gradient(ellipse 35% 50% at 10% 20%, rgba(65, 186, 231, 0.1), transparent 55%),
@@ -793,37 +794,15 @@ a {
 }
 
 .page-content {
-  padding: 3.5rem 0 5rem;
+  padding: 1.5rem 0 5rem;
 }
 
-/* Features page — detailed module explainers */
-.feature-detail {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 2.5rem;
-  align-items: start;
-  padding: 2.75rem 0;
-  border-bottom: 1px solid var(--line);
-  scroll-margin-top: 5.5rem;
-}
-
-.feature-detail:last-of-type {
-  border-bottom: 0;
-}
-
-.feature-detail .module-outcome {
-  margin-bottom: 0.75rem;
-}
-
-.feature-detail .capability-list {
-  margin-bottom: 0;
-}
-
+/* Features page — tabbed module explainers (one visible at a time) */
 .feature-jump {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
-  margin-bottom: 2rem;
+  margin-bottom: 1.75rem;
 }
 
 .feature-jump a {
@@ -834,16 +813,47 @@ a {
   border-radius: 999px;
   border: 1px solid var(--line-strong);
   background: #fff;
-  color: var(--accent-deep);
+  color: var(--text-dim);
 }
 
 .feature-jump a:hover {
   border-color: rgba(59, 130, 246, 0.45);
+  color: var(--accent-deep);
   background: rgba(59, 130, 246, 0.06);
 }
 
+.feature-jump a.is-active {
+  border-color: var(--accent);
+  color: var(--accent-deep);
+  background: rgba(59, 130, 246, 0.1);
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.15);
+}
+
+.feature-detail {
+  display: none;
+  grid-template-columns: 1fr 1fr;
+  gap: 2.5rem;
+  align-items: start;
+  padding: 0.35rem 0 1rem;
+  border-bottom: 0;
+  scroll-margin-top: 5.5rem;
+}
+
+.feature-detail.is-active {
+  display: grid;
+  animation: riseIn 0.4s var(--ease) both;
+}
+
+.feature-detail .module-outcome {
+  margin-bottom: 0.75rem;
+}
+
+.feature-detail .capability-list {
+  margin-bottom: 0;
+}
+
 @media (max-width: 960px) {
-  .feature-detail {
+  .feature-detail.is-active {
     grid-template-columns: 1fr;
   }
 }
@@ -1211,7 +1221,9 @@ a {
 
   .hero {
     align-items: start;
-    padding-top: 6.75rem;
+    min-height: auto;
+    padding-top: 5.5rem;
+    padding-bottom: 2.5rem;
   }
 
   .hero-stage {
