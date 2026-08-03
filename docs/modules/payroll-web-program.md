@@ -66,7 +66,7 @@ Session/OT derivation (`buildSessionsFromPunches`) pairs `in`/`out` punches per 
 |---|---|---|
 | **P0 Truth & guardrails** | ✅ | Anon `EXECUTE` revoked on `hr_generate_*` / lock RPCs; migrations in repo; prefs matrix documented |
 | **P1 Server/engine v1** | ✅ | Full `calculator.ts` + SARS; generate/recalc load salary history + leave snapshots. `payroll-generate` Deno Edge Function now runs the same engine server-side (non-repudiation) |
-| **P2 Policy completeness** | ✅ / ⚠️ | Holidays, pro-rate, penalties, SARS wired. Late/early still need shift-schedule comparison |
+| **P2 Policy completeness** | ✅ | Holidays, pro-rate, penalties, SARS; late/early via `employee_shift_templates` + `punch-session` metrics; `daily_absences` loaded on generate |
 | **P3 Exports** | ✅ | Bank format picker (generic/FNB/ABSA/Standard) + IRP5 YTD PAYE/UIF CSV on payroll page |
 | **P4 Xero payroll** | ✅ | `xero-push-payroll` v3 deployed against `payment_approvals` + `payment_approval_id` links (was broken inventing `payslips`) |
 | **P5 Ops UX** | ✅ partial | Period cockpit KPIs, readiness preview, bulk approve, bank/IRP5 exports |
@@ -74,7 +74,7 @@ Session/OT derivation (`buildSessionsFromPunches`) pairs `in`/`out` punches per 
 
 ### Remaining gaps (honest)
 
-1. Late/early penalties need punch vs shift-template comparison.
+1. ~~Late/early penalties need punch vs shift-template comparison~~ — **closed**: `sessions-from-punches.ts` + generate loads templates/`daily_absences`.
 2. ~~Browser still owns generate math~~ — **closed**: `generate`/`recalculate` now run server-side in the `payroll-generate` Edge Function (same engine, service-role data access, non-repudiation). See "Server-side generate/recalculate" above.
 3. Staging smoke of generate → approve → Xero draft journals with a real connected org, now including the `payroll-generate` EF in the path.
 

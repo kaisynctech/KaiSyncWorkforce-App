@@ -23,8 +23,10 @@ import {
   type PayslipOverrides,
   type PunchLike,
   type SalaryHistoryEntry,
+  type ShiftTemplateLike,
 } from '../_shared/payroll/adapter.ts'
 import { prefsToSettings, type PayrollSettings } from '../_shared/payroll/prefs.ts'
+import type { AbsenceSnapshot } from '../_shared/payroll/calculator.ts'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -134,6 +136,48 @@ async function loadSalaryHistory(
   }))
 }
 
+async function loadShiftTemplates(
+  admin: SupabaseClient,
+  companyId: string
+): Promise<{ byId: Map<string, ShiftTemplateLike>; defaultTemplate: ShiftTemplateLike | null }> {
+  const { data } = await admin
+    .from('employee_shift_templates')
+    .select('id, start_time, end_time, break_minutes, is_default')
+    .eq('company_id', companyId)
+
+  const byId = new Map<string, ShiftTemplateLike>()
+  let defaultTemplate: ShiftTemplateLike | null = null
+  for (const row of data ?? []) {
+    const tmpl: ShiftTemplateLike = {
+      id: row.id as string,
+      start_time: row.start_time as string | null,
+      end_time: row.end_time as string | null,
+      break_minutes: Number(row.break_minutes ?? 0),
+    }
+    byId.set(tmpl.id, tmpl)
+    if (row.is_default && !defaultTemplate) defaultTemplate = tmpl
+  }
+  return { byId, defaultTemplate }
+}
+
+async function loadAbsencesInPeriod(
+  admin: SupabaseClient,
+  companyId: string,
+  employeeId: string,
+  periodStart: string,
+  periodEnd: string
+): Promise<AbsenceSnapshot[]> {
+  const { data } = await admin
+    .from('daily_absences')
+    .select('date')
+    .eq('company_id', companyId)
+    .eq('employee_id', employeeId)
+    .gte('date', periodStart)
+    .lte('date', periodEnd)
+
+  return (data ?? []).map(row => ({ date: row.date as string }))
+}
+
 async function loadYtdPrior(
   admin: SupabaseClient,
   companyId: string,
@@ -189,22 +233,27 @@ async function handleGenerate(
   if (!settingsRes.ok) return json({ ok: false, error: settingsRes.message }, 400)
   const settings = settingsRes.settings
 
-  const [{ data: emps, error: empErr }, { data: existing, error: existErr }, { data: punches, error: punchErr }] =
-    await Promise.all([
-      admin.from('employees').select(EMP_SELECT).eq('company_id', companyId).eq('is_active', true),
-      admin
-        .from('payment_approvals')
-        .select('employee_id')
-        .eq('company_id', companyId)
-        .eq('period_start', periodStart)
-        .eq('period_end', periodEnd),
-      admin
-        .from('time_punches')
-        .select('employee_id, type, date_time')
-        .eq('company_id', companyId)
-        .gte('date_time', `${periodStart}T00:00:00`)
-        .lte('date_time', `${periodEnd}T23:59:59`),
-    ])
+  const [
+    { data: emps, error: empErr },
+    { data: existing, error: existErr },
+    { data: punches, error: punchErr },
+    templates,
+  ] = await Promise.all([
+    admin.from('employees').select(EMP_SELECT).eq('company_id', companyId).eq('is_active', true),
+    admin
+      .from('payment_approvals')
+      .select('employee_id')
+      .eq('company_id', companyId)
+      .eq('period_start', periodStart)
+      .eq('period_end', periodEnd),
+    admin
+      .from('time_punches')
+      .select('employee_id, type, date_time')
+      .eq('company_id', companyId)
+      .gte('date_time', `${periodStart}T00:00:00`)
+      .lte('date_time', `${periodEnd}T23:59:59`),
+    loadShiftTemplates(admin, companyId),
+  ])
 
   if (empErr) return json({ ok: false, error: empErr.message }, 500)
   if (existErr) return json({ ok: false, error: existErr.message }, 500)
@@ -226,11 +275,16 @@ async function handleGenerate(
       continue
     }
 
-    const [leaveRecords, salaryHistory, ytdPrior] = await Promise.all([
+    const [leaveRecords, salaryHistory, ytdPrior, absences] = await Promise.all([
       loadLeaveRecordsInPeriod(admin, companyId, raw.id, periodStart, periodEnd),
       loadSalaryHistory(admin, companyId, raw.id),
       loadYtdPrior(admin, companyId, raw.id, periodStart),
+      loadAbsencesInPeriod(admin, companyId, raw.id, periodStart, periodEnd),
     ])
+
+    const shiftTemplate =
+      (raw.shift_template_id ? templates.byId.get(raw.shift_template_id) : null) ??
+      templates.defaultTemplate
 
     const slip = calculatePayslip({
       employee: raw,
@@ -239,6 +293,8 @@ async function handleGenerate(
       periodStart,
       periodEnd,
       leaveRecords,
+      absences,
+      shiftTemplate,
       salaryHistory,
       ytdPrior,
     })
@@ -329,10 +385,12 @@ async function handleRecalculate(
     .gte('date_time', `${payment.period_start}T00:00:00`)
     .lte('date_time', `${payment.period_end}T23:59:59`)
 
-  const [leaveRecords, salaryHistory, ytdPrior] = await Promise.all([
+  const [leaveRecords, salaryHistory, ytdPrior, absences, templates] = await Promise.all([
     loadLeaveRecordsInPeriod(admin, companyId, payment.employee_id, payment.period_start, payment.period_end),
     loadSalaryHistory(admin, companyId, payment.employee_id),
     loadYtdPrior(admin, companyId, payment.employee_id, payment.period_start),
+    loadAbsencesInPeriod(admin, companyId, payment.employee_id, payment.period_start, payment.period_end),
+    loadShiftTemplates(admin, companyId),
   ])
 
   const overrides = body.overrides ?? {}
@@ -346,14 +404,21 @@ async function handleRecalculate(
     bonusAmount: overrides.bonusAmount !== undefined ? overrides.bonusAmount : payment.bonus_amount,
   }
 
+  const empRow = emp as EngineEmployee
+  const shiftTemplate =
+    (empRow.shift_template_id ? templates.byId.get(empRow.shift_template_id) : null) ??
+    templates.defaultTemplate
+
   const slip = calculatePayslip({
-    employee: emp as EngineEmployee,
+    employee: empRow,
     settings: settingsRes.settings,
     punches: (punches ?? []) as PunchLike[],
     periodStart: payment.period_start,
     periodEnd: payment.period_end,
     overrides: mergedOverrides,
     leaveRecords,
+    absences,
+    shiftTemplate,
     salaryHistory,
     ytdPrior,
   })
