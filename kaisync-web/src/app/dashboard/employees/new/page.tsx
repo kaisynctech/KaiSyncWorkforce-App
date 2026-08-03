@@ -35,7 +35,7 @@ export default function CreateEmployeePage() {
   const [branchId, setBranchId] = useState('')
   const [templateId, setTemplateId] = useState('')
   const [employmentType, setEmploymentType] = useState('Permanent')
-  const [workerType, setWorkerType] = useState('')
+  const [workerType, setWorkerType] = useState('employee')
   const [accessLevel, setAccessLevel] = useState('employee')
   const [managerId, setManagerId] = useState('')
   const [employmentDate, setEmploymentDate] = useState('')
@@ -114,7 +114,7 @@ export default function CreateEmployeePage() {
         branch_id: branchId || null,
         shift_template_id: templateId || null,
         employment_type: employmentType,
-        worker_type: workerType || null,
+        worker_type: workerType.trim() || 'employee',
         access_level: accessLevel,
         manager_id: managerId || null,
         employment_date: employmentDate || null,
