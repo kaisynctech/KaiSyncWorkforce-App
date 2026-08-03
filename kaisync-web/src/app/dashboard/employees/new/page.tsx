@@ -16,6 +16,7 @@ import {
   normalizeEmploymentType,
   normalizeWorkerType,
 } from '@/lib/employee-taxonomy'
+import { buildEmployeeCreatePayload } from '@/lib/employee-create-payload'
 import { sendEmployeeInvite } from '@/lib/employee-invite'
 import type { Branch, ShiftTemplate, Employee } from '@/types/database'
 
@@ -121,44 +122,42 @@ export default function CreateEmployeePage() {
     const resolvedWorkerType = normalizeWorkerType(workerType)
     const resolvedEmploymentType = normalizeEmploymentType(employmentType)
 
-    // Column names must match live DB (not MAUI DTO aliases).
+    // Payload must satisfy live NOT NULL columns — never send null for money/rate fields.
     const { data, error: insertError } = await supabase
       .from('employees')
-      .insert({
-        company_id: companyId,
-        name: firstName.trim(),
-        surname: lastName.trim(),
-        email: email.trim() || null,
-        phone: phone.trim() || null,
-        id_number: idNumber.trim() || null,
-        position: position.trim() || null,
-        department: department.trim() || null,
-        branch_id: branchId || null,
-        shift_template_id: templateId || null,
-        employment_type: resolvedEmploymentType,
-        worker_type: resolvedWorkerType,
-        access_level: accessLevel,
-        manager_id: managerId || null,
-        employment_date: employmentDate || null,
-        monthly_salary: salaryNum || null,
-        pay_by_hour: payByHour,
-        pay_basis: payByHour ? payBasis : null,
-        paye_rate_percent: payeRate ? parseFloat(payeRate) : null,
-        uif_exempt: exemptUif,
-        medical_aid_deduction: medicalAid ? parseFloat(medicalAid) : null,
-        pension_deduction: pension ? parseFloat(pension) : null,
-        union_deduction: union ? parseFloat(union) : null,
-        work_days_weekly: daysNum,
-        daily_hours: hoursNum,
-        hourly_rate: salaryNum ? computedHourlyRate : null,
-        daily_rate: salaryNum ? computedDailyRate : null,
-        bank_name: bankName.trim() || null,
-        bank_account: accountNumber.trim() || null,
-        bank_branch_code: bankBranchCode.trim() || null,
-        account_type: accountType || null,
-        is_active: true,
-        registration_status: 'active',
-      })
+      .insert(buildEmployeeCreatePayload({
+        companyId,
+        name: firstName,
+        surname: lastName,
+        email,
+        phone,
+        idNumber,
+        position,
+        department,
+        branchId,
+        shiftTemplateId: templateId,
+        employmentType: resolvedEmploymentType,
+        workerType: resolvedWorkerType,
+        accessLevel,
+        managerId,
+        employmentDate,
+        monthlySalary: salaryNum,
+        payByHour,
+        payBasis,
+        payeRatePercent: payeRate ? parseFloat(payeRate) : null,
+        uifExempt: exemptUif,
+        medicalAidDeduction: medicalAid ? parseFloat(medicalAid) : 0,
+        pensionDeduction: pension ? parseFloat(pension) : 0,
+        unionDeduction: union ? parseFloat(union) : 0,
+        workDaysWeekly: daysNum,
+        dailyHours: hoursNum,
+        hourlyRate: salaryNum ? computedHourlyRate : 0,
+        dailyRate: salaryNum ? computedDailyRate : 0,
+        bankName,
+        bankAccount: accountNumber,
+        bankBranchCode,
+        accountType,
+      }))
       .select()
       .single()
 
