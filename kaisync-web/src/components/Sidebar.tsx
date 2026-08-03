@@ -33,11 +33,16 @@ interface NavSection {
 const NAV_STORAGE_KEY = 'kf_hr_nav_sections_v1'
 
 /** Always visible at top (not inside a collapsible group). */
-const PINNED_ITEMS: NavItem[] = [
+const PINNED_TOP: NavItem[] = [
   { label: 'Overview', href: '/dashboard/overview', icon: 'home' },
-  { label: 'My Profile', href: '/dashboard/profile', icon: 'person' },
+  { label: 'My PA', href: '/dashboard/pa', icon: 'task_alt', flag: 'myPa' },
   { label: 'Messages', href: '/dashboard/messages', icon: 'chat', flag: 'messaging' },
   { label: 'Notifications', href: '/dashboard/notifications', icon: 'notifications' },
+]
+
+/** Always visible above the account footer. */
+const PINNED_BOTTOM: NavItem[] = [
+  { label: 'Settings', href: '/dashboard/settings', icon: 'settings', flag: 'settings' },
 ]
 
 /**
@@ -56,6 +61,7 @@ const NAV_SECTIONS: NavSection[] = [
       { label: 'Team Punch', href: '/dashboard/team-punch', icon: 'punch_clock', flag: 'teamPunch' },
       { label: 'Time Templates', href: '/dashboard/time-templates', icon: 'access_time', flag: 'timeTemplates' },
       { label: 'Scheduling', href: '/dashboard/scheduling', icon: 'calendar_month', flag: 'scheduling' },
+      { label: 'Payroll', href: '/dashboard/payroll', icon: 'payments', flag: 'payroll' },
     ],
   },
   {
@@ -73,7 +79,6 @@ const NAV_SECTIONS: NavSection[] = [
     id: 'money',
     label: 'Money',
     items: [
-      { label: 'Payroll', href: '/dashboard/payroll', icon: 'payments', flag: 'payroll' },
       { label: 'Finance', href: '/dashboard/finance', icon: 'account_balance', flag: 'finance' },
     ],
   },
@@ -100,14 +105,13 @@ const NAV_SECTIONS: NavSection[] = [
     label: 'Insights',
     items: [
       { label: 'Reports', href: '/dashboard/reports', icon: 'bar_chart', flag: 'reports' },
-      { label: 'My PA', href: '/dashboard/pa', icon: 'task_alt', flag: 'myPa' },
     ],
   },
   {
     id: 'admin',
     label: 'Admin',
     items: [
-      { label: 'Settings', href: '/dashboard/settings', icon: 'settings', flag: 'settings' },
+      { label: 'My Profile', href: '/dashboard/profile', icon: 'person' },
       { label: 'Active Sessions', href: '/dashboard/active-sessions', icon: 'manage_accounts', flag: 'settings' },
       { label: 'Activity Log', href: '/dashboard/activity-log', icon: 'history', ownerOnly: true },
     ],
@@ -213,9 +217,9 @@ export default function Sidebar({ open, onToggle, company, employee, platformOnl
 
   const isOwner = (employee?.access_level ?? '').toLowerCase() === 'owner'
 
-  const pinned = useMemo(() => {
+  const pinnedTop = useMemo(() => {
     if (platformOnly) return [] as NavItem[]
-    const list = PINNED_ITEMS.filter(item => itemVisible(item, flags, isOwner))
+    const list = PINNED_TOP.filter(item => itemVisible(item, flags, isOwner))
     if (showPlatform) {
       return [
         { label: 'Platform Console', href: '/dashboard/platform', icon: 'admin_panel_settings' },
@@ -224,6 +228,11 @@ export default function Sidebar({ open, onToggle, company, employee, platformOnl
     }
     return list
   }, [flags, isOwner, platformOnly, showPlatform])
+
+  const pinnedBottom = useMemo(() => {
+    if (platformOnly) return [] as NavItem[]
+    return PINNED_BOTTOM.filter(item => itemVisible(item, flags, isOwner))
+  }, [flags, isOwner, platformOnly])
 
   const sections = useMemo(() => {
     if (platformOnly) return [] as { id: string; label: string; items: NavItem[] }[]
@@ -325,14 +334,14 @@ export default function Sidebar({ open, onToggle, company, employee, platformOnl
     )
   }
 
-  // Icon-only rail: flat list of every visible item (no section chrome) — same destinations as expanded
+  // Icon-only rail: scrollable destinations only — Settings stays in sticky bottom pin
   const flatRailItems = useMemo(() => {
     if (platformOnly) return platformOnlyItems
     return [
-      ...pinned,
+      ...pinnedTop,
       ...sections.flatMap(s => s.items),
     ]
-  }, [platformOnly, platformOnlyItems, pinned, sections])
+  }, [platformOnly, platformOnlyItems, pinnedTop, sections])
 
   return (
     <>
@@ -381,7 +390,7 @@ export default function Sidebar({ open, onToggle, company, employee, platformOnl
             flatRailItems.map(renderLink)
           ) : (
             <>
-              {pinned.map(renderLink)}
+              {pinnedTop.map(renderLink)}
 
               {sections.map(section => {
                 const expanded = Boolean(openSections[section.id])
@@ -409,7 +418,7 @@ export default function Sidebar({ open, onToggle, company, employee, platformOnl
                     <div
                       className={cn(
                         'overflow-hidden transition-[max-height,opacity] duration-200 ease-out',
-                        expanded ? 'max-h-[480px] opacity-100' : 'max-h-0 opacity-0',
+                        expanded ? 'max-h-[520px] opacity-100' : 'max-h-0 opacity-0',
                       )}
                     >
                       {section.items.map(renderLink)}
@@ -420,6 +429,12 @@ export default function Sidebar({ open, onToggle, company, employee, platformOnl
             </>
           )}
         </nav>
+
+        {!platformOnly && pinnedBottom.length > 0 && (
+          <div className={cn('border-t border-white/10 py-2', !open && 'px-0')}>
+            {pinnedBottom.map(renderLink)}
+          </div>
+        )}
 
         <div className="border-t border-white/10 p-3">
           <div className={cn('flex items-center gap-3', !open && 'justify-center')}>
