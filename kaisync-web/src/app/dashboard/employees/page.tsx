@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { getInitials } from '@/lib/utils'
+import { employmentTypesMatch } from '@/lib/employee-taxonomy'
 import type { Employee, AccessLevel, LeaveRequest, WorkTeam } from '@/types/database'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -361,7 +362,7 @@ export default function EmployeesPage() {
   const filteredEmployees = employees.filter(e => {
     if (filterRole    && e.access_level    !== filterRole)    return false
     if (filterBranch  && e.branch_id       !== filterBranch)  return false
-    if (filterEmpType && e.employment_type !== filterEmpType) return false
+    if (filterEmpType && !employmentTypesMatch(e.employment_type, filterEmpType)) return false
     if (filterStatus === 'active'   && !e.is_active) return false
     if (filterStatus === 'inactive' &&  e.is_active) return false
     if (search) {
@@ -411,13 +412,22 @@ export default function EmployeesPage() {
           <h1 className="text-[22px] font-semibold text-text-primary">Employees</h1>
           <p className="text-[13px] text-text-secondary mt-0.5">{employees.length} total</p>
         </div>
-        <Link
-          href="/dashboard/employees/new"
-          className="flex items-center gap-2 h-10 px-4 rounded-md bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark transition-colors"
-        >
-          <span className="material-icons text-[18px]">person_add</span>
-          Add Employee
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/dashboard/employees/import"
+            className="flex items-center gap-2 h-10 px-4 rounded-md border border-border bg-surface text-text-primary text-[13px] font-semibold hover:bg-surface-elevated transition-colors"
+          >
+            <span className="material-icons text-[18px]">upload_file</span>
+            Import
+          </Link>
+          <Link
+            href="/dashboard/employees/new"
+            className="flex items-center gap-2 h-10 px-4 rounded-md bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark transition-colors"
+          >
+            <span className="material-icons text-[18px]">person_add</span>
+            Add Employee
+          </Link>
+        </div>
       </div>
 
       {/* Tab bar */}
@@ -482,7 +492,7 @@ export default function EmployeesPage() {
               <option value="">All types</option>
               <option value="permanent">Permanent</option>
               <option value="contract">Contract</option>
-              <option value="part_time">Part-time</option>
+              <option value="part-time">Part-time</option>
               <option value="student">Student</option>
             </select>
           </div>

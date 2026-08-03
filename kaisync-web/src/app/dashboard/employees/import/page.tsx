@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import { normalizeEmploymentType, normalizeWorkerType } from '@/lib/employee-taxonomy'
 import * as XLSX from 'xlsx'
 
 interface PreviewEmployee {
@@ -148,8 +149,8 @@ export default function ImportEmployeesPage() {
         position:                get('Position', 'Job Title', 'JobTitle', 'Role') ?? null,
         department:              get('Department') ?? null,
         access_level:            (get('Access Level', 'AccessLevel') ?? 'employee').toLowerCase(),
-        employment_type:         (get('Employment Type', 'EmploymentType', 'Type') ?? 'permanent').toLowerCase(),
-        worker_type:             'employee',
+        employment_type:         normalizeEmploymentType(get('Employment Type', 'EmploymentType', 'Type')),
+        worker_type:             normalizeWorkerType(get('Worker Type', 'WorkerType', 'Worker Category')),
         is_active:               true,
         registration_status:     'active',
         hourly_rate:             0,

@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { cn, formatDate, formatDateTime, formatCurrency, getInitials } from '@/lib/utils'
+import { labelEmploymentType, labelWorkerType } from '@/lib/employee-taxonomy'
 import type { Employee, LeaveRequest, TimePunch, AccessLevel } from '@/types/database'
 
 type PairSession = {
@@ -242,7 +243,12 @@ export default function EmployeeDetailPage() {
               </span>
               {employee.employment_type && (
                 <span className="text-[11px] text-text-secondary bg-surface-elevated border border-divider px-2 py-[3px] rounded-[10px]">
-                  {employee.employment_type}
+                  {labelEmploymentType(employee.employment_type)}
+                </span>
+              )}
+              {employee.worker_type && (
+                <span className="text-[11px] text-text-secondary bg-surface-elevated border border-divider px-2 py-[3px] rounded-[10px]">
+                  {labelWorkerType(employee.worker_type)}
                 </span>
               )}
               <span className="text-[11px] text-text-secondary bg-surface-elevated border border-divider px-2 py-[3px] rounded-[10px] capitalize">
@@ -548,9 +554,12 @@ function LeaveTab({ leaveRequests, employeeId }: { leaveRequests: LeaveRequest[]
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-[15px] font-semibold text-text-primary">Leave History</p>
-        <button className="h-9 px-4 rounded-sm bg-primary text-white text-[13px] font-medium hover:bg-primary-dark transition-colors">
+        <Link
+          href={`/dashboard/leave/apply?employeeId=${employeeId}`}
+          className="h-9 px-4 rounded-sm bg-primary text-white text-[13px] font-medium hover:bg-primary-dark transition-colors inline-flex items-center"
+        >
           Apply Leave
-        </button>
+        </Link>
       </div>
 
       {/* Balance summary */}
