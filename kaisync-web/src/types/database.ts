@@ -251,6 +251,7 @@ export interface Contractor {
   contractor_code: string | null
   partner_kind?: string | null
   is_supplier?: boolean
+  registration_number?: string | null
   contact_person: string | null
   phone: string | null
   email: string | null
@@ -322,11 +323,29 @@ export interface LaborEntry {
 export interface JobInventoryItem {
   id: string
   job_id: string
+  inventory_item_id?: string
   name: string
   supplier: string | null
   quantity: number
   unit_cost: number
   total_cost: number
+}
+
+export interface InventoryStockMovement {
+  id: string
+  company_id: string
+  item_id: string
+  movement_type: 'receive' | 'adjust' | 'return' | 'allocate' | string
+  quantity: number
+  quantity_before: number
+  quantity_after: number
+  actor_employee_id: string | null
+  job_id: string | null
+  note: string | null
+  unit_cost: number | null
+  created_at: string
+  employees?: Pick<Employee, 'name' | 'surname'> | null
+  jobs?: { id: string; title: string } | null
 }
 
 export interface InventoryItem {

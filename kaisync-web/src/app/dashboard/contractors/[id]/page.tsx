@@ -8,7 +8,7 @@ import { useEffect, useState, useCallback, Suspense } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { isSupplierKind, partnerKindLabel, PARTNER_KIND } from '@/lib/partner-kinds'
+import { partnerKindLabel, PARTNER_KIND } from '@/lib/partner-kinds'
 import { SectionCard, FormField, entryClass } from '@/components/SectionCard'
 import { FormSelect } from '@/components/FormSelect'
 import { Toggle } from '@/components/Toggle'
@@ -111,6 +111,13 @@ function ContractorDetailInner() {
   const searchParams = useSearchParams()
   const fromSuppliers = searchParams.get('from') === 'suppliers'
   const contractorId = params.id
+
+  // Legacy deep-link: send supplier module traffic to dedicated supplier detail
+  useEffect(() => {
+    if (fromSuppliers && contractorId) {
+      router.replace(`/dashboard/suppliers/${contractorId}`)
+    }
+  }, [fromSuppliers, contractorId, router])
 
   const [tab, setTab] = useState('Information')
   const [contractor, setContractor] = useState<Contractor | null>(null)
@@ -442,6 +449,14 @@ function ContractorDetailInner() {
     accountTypeLabel: pendingBanking.account_type ?? '—',
   } : null
 
+  if (fromSuppliers) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <span className="text-text-secondary text-[13px]">Opening supplier…</span>
+      </div>
+    )
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -450,9 +465,8 @@ function ContractorDetailInner() {
     )
   }
 
-  const supplierModule = fromSuppliers || (isSupplierKind(partnerKind) && partnerKind === 'supplier')
-  const listHref = supplierModule ? '/dashboard/suppliers' : '/dashboard/contractors'
-  const entityLabel = supplierModule ? 'Supplier' : (partnerKindLabel(partnerKind) || 'Contractor')
+  const listHref = '/dashboard/contractors'
+  const entityLabel = partnerKindLabel(partnerKind) || 'Contractor'
 
   return (
     <div className="h-full flex flex-col">
