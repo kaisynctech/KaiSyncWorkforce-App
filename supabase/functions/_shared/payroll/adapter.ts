@@ -168,6 +168,7 @@ export function calculatePayslip(input: {
       lateThresholdMinutes: settings.late_threshold_minutes,
       otStartAfterMinutes: settings.ot_start_after_minutes,
       dailyHours,
+      timeZone: settings.company_timezone,
     },
   )
   const otMultiplier = settings.overtime_multiplier > 0 ? settings.overtime_multiplier : 1.5

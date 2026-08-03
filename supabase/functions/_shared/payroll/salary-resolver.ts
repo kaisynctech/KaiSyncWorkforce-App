@@ -1,5 +1,10 @@
 /**
- * Server-side copy of `kaisync-web/src/lib/payroll/salary-resolver.ts`.
+ * AUTO-SYNCED from kaisync-web — do not edit by hand.
+ * Source: kaisync-web/src/lib/payroll/salary-resolver.ts
+ * Regenerate: node scripts/sync-payroll-shared.mjs
+ */
+
+/**
  * Ports KaiFlow.Payroll/SalaryResolver.cs.
  */
 

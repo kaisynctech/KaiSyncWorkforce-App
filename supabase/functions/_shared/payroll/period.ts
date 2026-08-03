@@ -1,5 +1,10 @@
 /**
- * Server-side copy of `kaisync-web/src/lib/payroll/period.ts`.
+ * AUTO-SYNCED from kaisync-web — do not edit by hand.
+ * Source: kaisync-web/src/lib/payroll/period.ts
+ * Regenerate: node scripts/sync-payroll-shared.mjs
+ */
+
+/**
  * Ports KaiFlow.Payroll/PayrollPeriodHelper.cs.
  * Dates are ISO 'YYYY-MM-DD' strings; day-number math avoids local-timezone drift.
  */

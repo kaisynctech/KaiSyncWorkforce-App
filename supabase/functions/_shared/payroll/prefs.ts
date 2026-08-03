@@ -41,7 +41,11 @@ export type PayrollSettings = {
   payslip_release_day: number
   auto_release_payslips_on_release_day: boolean
   public_holidays_text: string
+  /** IANA TZ from company_settings.timezone (not stored in payroll_preferences). */
+  company_timezone: string
 }
+
+export const DEFAULT_COMPANY_TIMEZONE = 'Africa/Johannesburg'
 
 export const PAYROLL_SETTINGS_DEFAULTS: Omit<PayrollSettings, 'id' | 'company_id'> = {
   payroll_default_pay_basis: 'monthly',
@@ -74,6 +78,7 @@ export const PAYROLL_SETTINGS_DEFAULTS: Omit<PayrollSettings, 'id' | 'company_id
   payslip_release_day: 25,
   auto_release_payslips_on_release_day: false,
   public_holidays_text: '',
+  company_timezone: DEFAULT_COMPANY_TIMEZONE,
 }
 
 type Prefs = Record<string, unknown>
@@ -144,5 +149,15 @@ export function prefsToSettings(companyId: string, prefs: Prefs | null | undefin
       d.auto_release_payslips_on_release_day
     ),
     public_holidays_text: asString(p.public_holidays_text, d.public_holidays_text),
+    company_timezone: asString(p.company_timezone, d.company_timezone) || DEFAULT_COMPANY_TIMEZONE,
   }
+}
+
+/** Apply company_settings.timezone column onto settings (preferred over prefs copy). */
+export function withCompanyTimezone(
+  settings: PayrollSettings,
+  timezone: string | null | undefined,
+): PayrollSettings {
+  const tz = typeof timezone === 'string' && timezone.trim() ? timezone.trim() : DEFAULT_COMPANY_TIMEZONE
+  return { ...settings, company_timezone: tz }
 }

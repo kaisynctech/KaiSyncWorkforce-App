@@ -1,5 +1,10 @@
 /**
- * Server-side copy of `kaisync-web/src/lib/payroll/leave-days.ts`.
+ * AUTO-SYNCED from kaisync-web — do not edit by hand.
+ * Source: kaisync-web/src/lib/payroll/leave-days.ts
+ * Regenerate: node scripts/sync-payroll-shared.mjs
+ */
+
+/**
  * Ports KaiFlow.Payroll/LeaveDayCalculator.cs.
  */
 

@@ -25,7 +25,7 @@ import {
   type SalaryHistoryEntry,
   type ShiftTemplateLike,
 } from '../_shared/payroll/adapter.ts'
-import { prefsToSettings, type PayrollSettings } from '../_shared/payroll/prefs.ts'
+import { prefsToSettings, withCompanyTimezone, type PayrollSettings } from '../_shared/payroll/prefs.ts'
 import type { AbsenceSnapshot } from '../_shared/payroll/calculator.ts'
 
 const CORS = {
@@ -83,10 +83,13 @@ async function loadSettings(
 ): Promise<{ ok: true; settings: PayrollSettings } | { ok: false; message: string }> {
   const { data, error } = await userClient.rpc('get_company_settings', { p_company_id: companyId })
   if (error) return { ok: false, message: error.message }
-  const row = (data ?? {}) as { payroll_preferences?: Record<string, unknown> }
+  const row = (data ?? {}) as { payroll_preferences?: Record<string, unknown>; timezone?: string }
   const prefs =
     row.payroll_preferences && typeof row.payroll_preferences === 'object' ? row.payroll_preferences : {}
-  return { ok: true, settings: prefsToSettings(companyId, prefs) }
+  return {
+    ok: true,
+    settings: withCompanyTimezone(prefsToSettings(companyId, prefs), row.timezone),
+  }
 }
 
 async function loadLeaveRecordsInPeriod(

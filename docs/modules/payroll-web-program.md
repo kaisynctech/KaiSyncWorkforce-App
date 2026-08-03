@@ -75,7 +75,7 @@ Session/OT derivation (`buildSessionsFromPunches`) pairs `in`/`out` punches per 
 ### Remaining gaps (honest)
 
 1. ~~Late/early penalties~~ / ~~server generate~~ / ~~step-up UI~~ / ~~live smoke~~ — closed (see phase table).
-2. Optional polish: company timezone for punch local-time vs device TZ; sync Deno/`kaisync-web` payroll copies via a single package to avoid drift.
+2. ~~Company timezone + Deno/web drift~~ — closed: punch late/early/OT uses `company_settings.timezone` (default `Africa/Johannesburg`) via `kaisync-web/src/lib/timezone.ts`; regenerate Deno copies with `npm run sync:payroll-shared` (or `node scripts/sync-payroll-shared.mjs`). Hand-maintained Deno mirrors: `_shared/payroll/prefs.ts`, `adapter.ts`.
 
 ## Testing
 
@@ -84,4 +84,4 @@ Session/OT derivation (`buildSessionsFromPunches`) pairs `in`/`out` punches per 
 - `bank-export.test.ts` — header/row shape per bank format.
 - `payroll-engine.test.ts` — adapter-level backward compatibility (monthly + UIF/PAYE/medical, contractor/exempt UIF skip, hourly OT split, manual PAYE + bonus).
 
-Run `npm test` and `npx tsc --noEmit` in `kaisync-web` after any change to these files. There is no separate Deno test suite for `supabase/functions/_shared/payroll/*` yet — those files must be kept byte-for-byte identical (module-body) to `kaisync-web/src/lib/payroll/*` (only the relative-import extensions differ, e.g. `./period` → `./period.ts`), so the web unit tests above are the effective regression coverage for the server engine too. Any future edit to one copy must be mirrored to the other.
+Run `npm test` and `npx tsc --noEmit` in `kaisync-web` after any change to these files. After editing web payroll/`punch-session`/`timezone`, run `npm run sync:payroll-shared` before deploying `payroll-generate`. There is no separate Deno test suite — web unit tests are the regression coverage for the synced server engine.

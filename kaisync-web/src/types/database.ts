@@ -717,6 +717,8 @@ export interface PayrollSettings {
   payslip_release_day: number
   auto_release_payslips_on_release_day: boolean
   public_holidays_text: string
+  /** IANA TZ from company_settings.timezone (not stored in payroll_preferences). */
+  company_timezone: string
 }
 
 export interface JobContractorDocument {
