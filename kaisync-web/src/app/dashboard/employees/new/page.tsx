@@ -100,6 +100,7 @@ export default function CreateEmployeePage() {
     setError(null)
 
     const supabase = createClient()
+    // Column names must match live DB (not MAUI DTO aliases).
     const { data, error: insertError } = await supabase
       .from('employees')
       .insert({
@@ -120,12 +121,12 @@ export default function CreateEmployeePage() {
         monthly_salary: salaryNum || null,
         pay_by_hour: payByHour,
         pay_basis: payByHour ? payBasis : null,
-        paye_rate: payeRate ? parseFloat(payeRate) : null,
-        exempt_from_uif: exemptUif,
+        paye_rate_percent: payeRate ? parseFloat(payeRate) : null,
+        uif_exempt: exemptUif,
         medical_aid_deduction: medicalAid ? parseFloat(medicalAid) : null,
         pension_deduction: pension ? parseFloat(pension) : null,
         union_deduction: union ? parseFloat(union) : null,
-        work_days_per_week: daysNum,
+        work_days_weekly: daysNum,
         daily_hours: hoursNum,
         hourly_rate: salaryNum ? computedHourlyRate : null,
         daily_rate: salaryNum ? computedDailyRate : null,
