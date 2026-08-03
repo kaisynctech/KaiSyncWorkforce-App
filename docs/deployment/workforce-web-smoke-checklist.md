@@ -43,3 +43,23 @@ cd kaisync-web
 npm test
 npx tsc --noEmit
 ```
+
+## Live API smoke — 2026-08-03 (test company)
+
+Tenant: `test company` · Period under test: `2026-07-01` → `2026-07-31`  
+Also re-pushed existing approved May payslips to Xero.
+
+| Step | Result | Evidence |
+|---|---|---|
+| `payroll-generate` (server) | ✅ PASS | `generated: 3`, `skipped: 2`, `policy_snapshot.source = kaisync-web-payroll-engine-v2-server` |
+| `approve_payment_run` without step-up | ⚠️ BLOCKED (expected) | `STEP_UP_REQUIRED` when `hr_check_step_up_valid` is false |
+| `hr_confirm_step_up` then approve ×3 | ✅ PASS | All three July pending → `approved` |
+| Release (`shared_with_employee`) | ✅ PASS | One July payslip released |
+| `xero-push-payroll` May | ✅ PASS | `pushed: 2` Draft Manual Journals |
+| `xero-push-payroll` July | ✅ PASS | `pushed: 3` Draft Manual Journals |
+| Xero re-push idempotent | ✅ PASS | `pushed: 0` / “No new approved payslips…” |
+| Local `npm test` / `tsc` | ✅ PASS | 43/43 tests, `tsc` exit 0 |
+
+### Gap found during smoke — fixed
+
+Web payroll approve now matches MAUI: on `STEP_UP_REQUIRED`, prompt for password → `signInWithPassword` → `hr_confirm_step_up` → retry approve (`kaisync-web/src/lib/step-up.ts` + `StepUpDialog`).

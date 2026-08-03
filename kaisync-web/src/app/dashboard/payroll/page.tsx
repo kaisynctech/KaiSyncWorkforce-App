@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { FilterChip } from '@/components/ui/FilterChip'
+import { StepUpDialog } from '@/components/step-up-dialog'
 import {
   approvePaymentRun,
   generatePayrollPeriod,
@@ -107,6 +108,28 @@ export default function PayrollPage() {
   const [genPreview,   setGenPreview]   = useState<PayrollGeneratePreview | null>(null)
   const [showGenModal, setShowGenModal] = useState(false)
   const [bankFormat,   setBankFormat]   = useState<BankFormat>('generic')
+  const [stepUpOpen,   setStepUpOpen]   = useState(false)
+  const [stepUpBusy,   setStepUpBusy]   = useState(false)
+  const [stepUpError,  setStepUpError]  = useState<string | null>(null)
+  const stepUpResolverRef = useRef<((password: string | null) => void) | null>(null)
+
+  function promptStepUpPassword(): Promise<string | null> {
+    setStepUpError(null)
+    setStepUpBusy(false)
+    setStepUpOpen(true)
+    return new Promise(resolve => {
+      stepUpResolverRef.current = resolve
+    })
+  }
+
+  function finishStepUpPrompt(password: string | null) {
+    const resolve = stepUpResolverRef.current
+    stepUpResolverRef.current = null
+    setStepUpOpen(false)
+    setStepUpBusy(false)
+    setStepUpError(null)
+    resolve?.(password)
+  }
 
   // Reload whenever the date range changes
   useEffect(() => { loadPayroll(dateFrom, dateTo) }, [dateFrom, dateTo])
@@ -196,7 +219,9 @@ export default function PayrollPage() {
     if (!cid) return
     setError(null)
     const supabase = createClient()
-    const result = await approvePaymentRun(supabase, cid, id)
+    const result = await approvePaymentRun(supabase, cid, id, {
+      promptPassword: promptStepUpPassword,
+    })
     if (!result.ok) setError(result.message)
     else setSuccess('Payslip approved')
     await loadPayroll(dateFrom, dateTo)
@@ -235,8 +260,13 @@ export default function PayrollPage() {
     const supabase = createClient()
     const failures: string[] = []
     for (const p of pending) {
-      const result = await approvePaymentRun(supabase, cid, p.id)
-      if (!result.ok) failures.push(result.message)
+      const result = await approvePaymentRun(supabase, cid, p.id, {
+        promptPassword: promptStepUpPassword,
+      })
+      if (!result.ok) {
+        failures.push(result.message)
+        break
+      }
     }
     if (failures.length) setError(failures[0])
     else setSuccess(`Approved ${pending.length} payslip${pending.length !== 1 ? 's' : ''}`)
@@ -702,6 +732,17 @@ export default function PayrollPage() {
           </div>
         </div>
       )}
+
+      <StepUpDialog
+        open={stepUpOpen}
+        busy={stepUpBusy}
+        error={stepUpError}
+        onCancel={() => finishStepUpPrompt(null)}
+        onVerify={password => {
+          setStepUpBusy(true)
+          finishStepUpPrompt(password)
+        }}
+      />
     </div>
   )
 }

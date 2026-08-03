@@ -14,6 +14,7 @@ import {
   type PayrollGeneratePreview,
   type PayrollEmployeeLike,
 } from '@/lib/payroll-readiness'
+import { executeWithStepUp, isStepUpRequiredMessage } from '@/lib/step-up'
 
 export type PayrollResult<T> =
   | { ok: true; data: T }
@@ -21,8 +22,8 @@ export type PayrollResult<T> =
 
 export function formatPayrollActionError(message: string): string {
   const m = message.toLowerCase()
-  if (m.includes('step_up') || m.includes('step-up') || m.includes('step up')) {
-    return 'Step-up verification is required before approving payments. Complete step-up in Settings security, then try again.'
+  if (isStepUpRequiredMessage(message)) {
+    return 'Step-up verification is required before approving payments. Re-enter your password when prompted.'
   }
   if (m.includes('insufficient') || m.includes('permission') || m.includes('not authorized')) {
     return 'You do not have permission to perform this payroll action.'
@@ -30,17 +31,29 @@ export function formatPayrollActionError(message: string): string {
   return message
 }
 
+export type ApproveOptions = {
+  /** When set, STEP_UP_REQUIRED triggers password re-auth + hr_confirm_step_up (MAUI parity). */
+  promptPassword?: () => Promise<string | null>
+}
+
 export async function approvePaymentRun(
   supabase: SupabaseClient,
   companyId: string,
-  paymentApprovalId: string
+  paymentApprovalId: string,
+  options?: ApproveOptions
 ): Promise<PayrollResult<void>> {
-  const { error } = await supabase.rpc('approve_payment_run', {
-    p_company_id: companyId,
-    p_payment_approval_id: paymentApprovalId,
-  })
-  if (error) return { ok: false, message: formatPayrollActionError(error.message) }
-  return { ok: true, data: undefined }
+  const run = async (): Promise<PayrollResult<void>> => {
+    const { error } = await supabase.rpc('approve_payment_run', {
+      p_company_id: companyId,
+      p_payment_approval_id: paymentApprovalId,
+    })
+    if (error) return { ok: false, message: formatPayrollActionError(error.message) }
+    return { ok: true, data: undefined }
+  }
+
+  if (!options?.promptPassword) return run()
+
+  return executeWithStepUp(supabase, companyId, run, options.promptPassword)
 }
 
 export async function rejectPaymentRun(
