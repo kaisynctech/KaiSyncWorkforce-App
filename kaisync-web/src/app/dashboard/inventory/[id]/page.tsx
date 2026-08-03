@@ -1,19 +1,27 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { isSupplierKind } from '@/lib/partner-kinds'
-import { inventoryStockValue } from '@/lib/supply-assets'
+import { inventoryStockValue, stockMovementLabel, type StockMovementType } from '@/lib/supply-assets'
 import { Toggle } from '@/components/Toggle'
-import type { InventoryItem } from '@/types/database'
+import type { InventoryItem, InventoryStockMovement } from '@/types/database'
 
 const fmtR = (n: number) =>
   `R ${(n ?? 0).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
+const fmtDT = (d: string) =>
+  new Intl.DateTimeFormat('en-ZA', {
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  }).format(new Date(d))
+
 interface SupplierOption { id: string; name: string }
+
+type StockModal = 'receive' | 'adjust' | 'return' | 'allocate' | null
 
 export default function InventoryDetailPage() {
   const params = useParams<{ id: string }>()
@@ -27,11 +35,16 @@ export default function InventoryDetailPage() {
   const [suppliers, setSuppliers] = useState<SupplierOption[]>([])
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [employeeId, setEmployeeId] = useState<string | null>(null)
-  const [showAllocate, setShowAllocate] = useState(false)
+
+  const [stockModal, setStockModal] = useState<StockModal>(null)
   const [openJobs, setOpenJobs] = useState<{ id: string; title: string }[]>([])
   const [selectedJobId, setSelectedJobId] = useState('')
-  const [allocateQty, setAllocateQty] = useState('1')
-  const [allocating, setAllocating] = useState(false)
+  const [moveQty, setMoveQty] = useState('1')
+  const [moveNote, setMoveNote] = useState('')
+  const [moving, setMoving] = useState(false)
+
+  const [movements, setMovements] = useState<InventoryStockMovement[]>([])
+  const [movementsLoading, setMovementsLoading] = useState(false)
 
   const [name, setName] = useState('')
   const [sku, setSku] = useState('')
@@ -48,6 +61,20 @@ export default function InventoryDetailPage() {
     const value = inventoryStockValue(parseFloat(quantityOnHand) || 0, parseFloat(unitCost) || 0)
     return `Stock value: ${fmtR(value)}`
   })()
+
+  const loadMovements = useCallback(async () => {
+    if (isNew) return
+    setMovementsLoading(true)
+    const supabase = createClient()
+    const { data } = await supabase
+      .from('inventory_stock_movements')
+      .select('*, employees(name, surname), jobs(id, title)')
+      .eq('item_id', itemId)
+      .order('created_at', { ascending: false })
+      .limit(50)
+    setMovements((data ?? []) as InventoryStockMovement[])
+    setMovementsLoading(false)
+  }, [itemId, isNew])
 
   useEffect(() => {
     void bootstrap()
@@ -76,8 +103,12 @@ export default function InventoryDetailPage() {
 
     setSuppliers(supplierRows.map(s => ({ id: s.id, name: s.name })))
 
-    if (!isNew) await loadItem()
-    else setLoading(false)
+    if (!isNew) {
+      await loadItem()
+      await loadMovements()
+    } else {
+      setLoading(false)
+    }
   }
 
   async function loadItem() {
@@ -109,43 +140,82 @@ export default function InventoryDetailPage() {
     setLoading(false)
   }
 
-  async function openAllocateModal() {
-    if (!companyId) return
-    const supabase = createClient()
-    const { data } = await supabase
-      .from('jobs')
-      .select('id, title')
-      .eq('company_id', companyId)
-      .in('status', ['open', 'scheduled', 'in_progress'])
-      .order('created_at', { ascending: false })
-    setOpenJobs((data ?? []) as { id: string; title: string }[])
+  async function openStockModal(kind: Exclude<StockModal, null>) {
+    setError(null)
+    setMoveQty(kind === 'adjust' ? '0' : '1')
+    setMoveNote('')
     setSelectedJobId('')
-    setAllocateQty('1')
-    setShowAllocate(true)
+    if (kind === 'allocate' || kind === 'return') {
+      if (!companyId) return
+      const supabase = createClient()
+      const { data } = await supabase
+        .from('jobs')
+        .select('id, title')
+        .eq('company_id', companyId)
+        .in('status', ['open', 'scheduled', 'in_progress', 'completed'])
+        .order('created_at', { ascending: false })
+        .limit(100)
+      setOpenJobs((data ?? []) as { id: string; title: string }[])
+    }
+    setStockModal(kind)
   }
 
-  async function doAllocate() {
-    if (!selectedJobId || !companyId || !employeeId) {
-      setError('Missing company or employee context for allocation.')
+  async function submitStockMovement() {
+    if (!companyId || !employeeId || !stockModal) {
+      setError('Missing company or employee context.')
       return
     }
-    const qty = parseFloat(allocateQty)
-    if (!qty || qty <= 0) { setError('Enter a valid quantity.'); return }
-    setAllocating(true)
+    const qty = parseFloat(moveQty)
+    if (!Number.isFinite(qty) || qty === 0) {
+      setError('Enter a non-zero quantity.')
+      return
+    }
+    if (stockModal === 'allocate' && !selectedJobId) {
+      setError('Select a job to allocate to.')
+      return
+    }
+    if (stockModal !== 'adjust' && qty < 0) {
+      setError('Quantity must be positive for this action.')
+      return
+    }
+
+    setMoving(true)
     setError(null)
     const supabase = createClient()
-    const { error: e } = await supabase.rpc('hr_allocate_inventory_to_job', {
-      p_company_id: companyId,
-      p_job_id: selectedJobId,
-      p_employee_id: employeeId,
-      p_inventory_item_id: itemId,
-      p_quantity: qty,
-      p_unit_cost: parseFloat(unitCost) || 0,
-    })
-    if (e) { setError(e.message); setAllocating(false); return }
-    setQuantityOnHand(prev => String(Math.max(0, (parseFloat(prev) || 0) - qty)))
-    setShowAllocate(false)
-    setAllocating(false)
+
+    // Allocate keeps dedicated RPC (also writes movement ledger after migration)
+    if (stockModal === 'allocate') {
+      const { data, error: e } = await supabase.rpc('hr_allocate_inventory_to_job', {
+        p_company_id: companyId,
+        p_job_id: selectedJobId,
+        p_employee_id: employeeId,
+        p_inventory_item_id: itemId,
+        p_quantity: Math.abs(qty),
+        p_unit_cost: parseFloat(unitCost) || 0,
+      })
+      if (e) { setError(e.message); setMoving(false); return }
+      const updated = data as InventoryItem | null
+      if (updated?.quantity_on_hand != null) setQuantityOnHand(String(updated.quantity_on_hand))
+      else setQuantityOnHand(prev => String(Math.max(0, (parseFloat(prev) || 0) - Math.abs(qty))))
+    } else {
+      const { data, error: e } = await supabase.rpc('hr_inventory_stock_movement', {
+        p_company_id: companyId,
+        p_item_id: itemId,
+        p_type: stockModal as StockMovementType,
+        p_quantity: stockModal === 'adjust' ? qty : Math.abs(qty),
+        p_actor_employee_id: employeeId,
+        p_job_id: stockModal === 'return' && selectedJobId ? selectedJobId : null,
+        p_note: moveNote.trim() || null,
+        p_unit_cost: parseFloat(unitCost) || null,
+      })
+      if (e) { setError(e.message); setMoving(false); return }
+      const updated = data as InventoryItem | null
+      if (updated?.quantity_on_hand != null) setQuantityOnHand(String(updated.quantity_on_hand))
+    }
+
+    setStockModal(null)
+    setMoving(false)
+    await loadMovements()
   }
 
   async function save() {
@@ -155,29 +225,30 @@ export default function InventoryDetailPage() {
     setError(null)
     const supabase = createClient()
 
-    const payload = {
+    // Existing items: never write quantity_on_hand (RPC-only after Wave 2 migration)
+    const base = {
       name: name.trim(),
       sku: sku.trim() || null,
       description: description.trim() || null,
       unit_of_measure: unitOfMeasure.trim() || 'each',
       unit_cost: parseFloat(unitCost) || 0,
       selling_price: sellingPrice ? parseFloat(sellingPrice) : 0,
-      quantity_on_hand: parseFloat(quantityOnHand) || 0,
       reorder_level: parseFloat(reorderLevel) || 0,
       is_active: isActive,
       supplier_contractor_id: supplierContractorId || null,
     }
 
     if (isNew) {
+      const opening = parseFloat(quantityOnHand) || 0
       const { data: nc, error: e } = await supabase
         .from('inventory_items')
-        .insert({ ...payload, company_id: companyId })
+        .insert({ ...base, company_id: companyId, quantity_on_hand: opening })
         .select()
         .single()
       if (e) { setError(e.message); setSaving(false); return }
       router.push(`/dashboard/inventory/${nc.id}`)
     } else {
-      const { error: e } = await supabase.from('inventory_items').update(payload).eq('id', itemId)
+      const { error: e } = await supabase.from('inventory_items').update(base).eq('id', itemId)
       if (e) setError(e.message)
     }
     setSaving(false)
@@ -203,6 +274,13 @@ export default function InventoryDetailPage() {
       </div>
     </div>
   )
+
+  const modalTitle =
+    stockModal === 'receive' ? 'Receive stock'
+      : stockModal === 'adjust' ? 'Adjust stock'
+        : stockModal === 'return' ? 'Return stock'
+          : stockModal === 'allocate' ? 'Allocate to job'
+            : ''
 
   return (
     <div className="h-full flex flex-col">
@@ -259,17 +337,25 @@ export default function InventoryDetailPage() {
               + New supplier
             </button>
           </div>
-          {suppliers.length === 0 && (
-            <p className="text-[12px] text-text-secondary">No suppliers yet. Add one in Suppliers first.</p>
-          )}
         </div>
 
         <div className="card p-4 space-y-3">
           <p className="section-label">STOCK</p>
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1">
-              <label className="text-[11px] text-text-secondary">Quantity on hand</label>
-              <input type="number" value={quantityOnHand} onChange={e => setQuantityOnHand(e.target.value)} className="dark-entry" />
+              <label className="text-[11px] text-text-secondary">
+                {isNew ? 'Opening quantity' : 'Quantity on hand'}
+              </label>
+              <input
+                type="number"
+                value={quantityOnHand}
+                onChange={e => setQuantityOnHand(e.target.value)}
+                readOnly={!isNew}
+                className={`dark-entry ${!isNew ? 'opacity-80 cursor-default' : ''}`}
+              />
+              {!isNew && (
+                <p className="text-[11px] text-text-secondary">Change stock with Receive / Adjust / Return / Allocate.</p>
+              )}
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-[11px] text-text-secondary">Reorder level</label>
@@ -284,34 +370,99 @@ export default function InventoryDetailPage() {
         </div>
 
         {!isNew && (
-          <button onClick={() => void openAllocateModal()} className="btn-outlined w-full h-11 text-[13px]">
-            Allocate stock to open job
-          </button>
+          <div className="grid grid-cols-2 gap-2">
+            <button onClick={() => void openStockModal('receive')} className="btn-outlined h-11 text-[13px]">Receive</button>
+            <button onClick={() => void openStockModal('adjust')} className="btn-outlined h-11 text-[13px]">Adjust</button>
+            <button onClick={() => void openStockModal('return')} className="btn-outlined h-11 text-[13px]">Return</button>
+            <button onClick={() => void openStockModal('allocate')} className="btn-primary h-11 text-[13px]">Allocate to job</button>
+          </div>
+        )}
+
+        {!isNew && (
+          <div className="card p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="section-label mb-0">MOVEMENT HISTORY</p>
+              <button onClick={() => void loadMovements()} className="text-[12px] text-primary hover:opacity-70">Refresh</button>
+            </div>
+            {movementsLoading ? (
+              <p className="text-text-secondary text-[13px]">Loading…</p>
+            ) : movements.length === 0 ? (
+              <p className="text-text-secondary text-[13px]">
+                No movements yet. Apply the stock-movements migration, then Receive / Adjust / Return / Allocate.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {movements.map(m => {
+                  const actor = m.employees
+                    ? `${m.employees.name ?? ''} ${m.employees.surname ?? ''}`.trim()
+                    : null
+                  return (
+                    <div key={m.id} className="border-b border-divider pb-2 last:border-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[13px] font-medium text-text-primary">
+                          {stockMovementLabel(m.movement_type)}
+                        </span>
+                        <span className={`text-[13px] font-semibold ${m.quantity >= 0 ? 'text-green-600' : 'text-error'}`}>
+                          {m.quantity > 0 ? '+' : ''}{m.quantity}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-text-secondary">
+                        {m.quantity_before} → {m.quantity_after}
+                        {m.jobs?.title ? ` · ${m.jobs.title}` : ''}
+                        {actor ? ` · ${actor}` : ''}
+                        {' · '}{fmtDT(m.created_at)}
+                      </p>
+                      {m.note && <p className="text-[11px] text-text-secondary mt-0.5">{m.note}</p>}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         )}
       </div>
 
-      {showAllocate && (
+      {stockModal && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-surface rounded-xl shadow-lg w-full max-w-sm p-5 space-y-3">
-            <h3 className="font-semibold text-text-primary">Allocate to Job</h3>
-            <select value={selectedJobId} onChange={e => setSelectedJobId(e.target.value)}
-              className="dark-entry w-full appearance-none">
-              <option value="">Select job…</option>
-              {openJobs.map(j => <option key={j.id} value={j.id}>{j.title}</option>)}
-            </select>
-            {openJobs.length === 0 && (
-              <p className="text-text-secondary text-[12px]">No open jobs found for this company.</p>
+            <h3 className="font-semibold text-text-primary">{modalTitle}</h3>
+            {(stockModal === 'allocate' || stockModal === 'return') && (
+              <>
+                <select value={selectedJobId} onChange={e => setSelectedJobId(e.target.value)}
+                  className="dark-entry w-full appearance-none">
+                  <option value="">
+                    {stockModal === 'allocate' ? 'Select job…' : 'Job (optional for warehouse return)…'}
+                  </option>
+                  {openJobs.map(j => <option key={j.id} value={j.id}>{j.title}</option>)}
+                </select>
+                {stockModal === 'return' && (
+                  <p className="text-[11px] text-text-secondary">
+                    With a job selected, usage on that job is reduced. Without a job, stock is returned to warehouse only.
+                  </p>
+                )}
+              </>
             )}
             <div className="flex flex-col gap-1">
-              <label className="text-xs text-text-secondary">Quantity</label>
-              <input type="number" value={allocateQty} onChange={e => setAllocateQty(e.target.value)}
-                min="1" step="any" className="dark-entry w-full" />
+              <label className="text-xs text-text-secondary">
+                {stockModal === 'adjust' ? 'Delta (+ increase / − decrease)' : 'Quantity'}
+              </label>
+              <input type="number" value={moveQty} onChange={e => setMoveQty(e.target.value)}
+                step="any" className="dark-entry w-full" />
             </div>
+            {stockModal !== 'allocate' && (
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-text-secondary">Note (optional)</label>
+                <input value={moveNote} onChange={e => setMoveNote(e.target.value)} className="dark-entry w-full" />
+              </div>
+            )}
             <div className="flex gap-2 justify-end">
-              <button onClick={() => setShowAllocate(false)} className="btn-outlined h-9 px-4 text-[13px]">Cancel</button>
-              <button onClick={() => void doAllocate()} disabled={!selectedJobId || allocating}
-                className="btn-primary h-9 px-4 text-[13px] disabled:opacity-50">
-                {allocating ? 'Allocating…' : 'Allocate'}
+              <button onClick={() => setStockModal(null)} className="btn-outlined h-9 px-4 text-[13px]">Cancel</button>
+              <button
+                onClick={() => void submitStockMovement()}
+                disabled={moving || (stockModal === 'allocate' && !selectedJobId)}
+                className="btn-primary h-9 px-4 text-[13px] disabled:opacity-50"
+              >
+                {moving ? 'Working…' : 'Confirm'}
               </button>
             </div>
           </div>

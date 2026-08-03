@@ -121,7 +121,7 @@ export default function JobDetailPage() {
         supabase.from('employees').select('id, name, surname').eq('company_id', member.companyId).eq('is_active', true).order('name'),
         supabase.from('job_contractors').select('*, contractors(name, contractor_code)').eq('job_id', jobId),
         supabase.from('labor_entries').select('*').eq('job_id', jobId).order('work_date'),
-        supabase.from('job_inventory').select('*').eq('job_id', jobId),
+        supabase.from('inventory_usage').select('id, job_id, inventory_item_id, quantity_used, unit_cost_at_use, inventory_items(name, supplier)').eq('job_id', jobId),
         supabase.from('job_photos').select('*').eq('job_id', jobId),
         supabase.from('job_employees').select('employee_id').eq('job_id', jobId),
         supabase.from('clients').select('id, name').eq('company_id', member.companyId).order('name'),
@@ -136,7 +136,30 @@ export default function JobDetailPage() {
     setEmployees((empRes.data     ?? []) as Pick<Employee, 'id' | 'name' | 'surname'>[])
     setJobContractors((jcRes.data  ?? []) as JobContractor[])
     setLaborEntries((leRes.data    ?? []) as LaborEntry[])
-    setInventory((invRes.data      ?? []) as JobInventoryItem[])
+    {
+      const usageRows = (invRes.data ?? []) as {
+        id: string
+        job_id: string
+        inventory_item_id: string
+        quantity_used: number
+        unit_cost_at_use: number | null
+        inventory_items?: { name?: string; supplier?: string | null } | null
+      }[]
+      setInventory(usageRows.map(u => {
+        const unit = Number(u.unit_cost_at_use ?? 0)
+        const qty = Number(u.quantity_used ?? 0)
+        return {
+          id: u.id,
+          job_id: u.job_id,
+          inventory_item_id: u.inventory_item_id,
+          name: u.inventory_items?.name ?? 'Item',
+          supplier: u.inventory_items?.supplier ?? null,
+          quantity: qty,
+          unit_cost: unit,
+          total_cost: qty * unit,
+        } satisfies JobInventoryItem
+      }))
+    }
     setPhotos((photoRes.data       ?? []) as JobPhoto[])
     setAssignedIds(new Set((assignRes.data ?? []).map((r: { employee_id: string }) => r.employee_id)))
     setClients((clientRes.data     ?? []) as ClientRow[])

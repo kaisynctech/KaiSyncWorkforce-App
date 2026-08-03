@@ -20,6 +20,18 @@ export function inventoryStockValue(
   return Number(quantityOnHand ?? 0) * Number(unitCost ?? 0)
 }
 
+export type StockMovementType = 'receive' | 'adjust' | 'return' | 'allocate'
+
+export function stockMovementLabel(type: string | null | undefined): string {
+  switch ((type ?? '').toLowerCase()) {
+    case 'receive': return 'Receive'
+    case 'adjust': return 'Adjust'
+    case 'return': return 'Return'
+    case 'allocate': return 'Allocate'
+    default: return type || '—'
+  }
+}
+
 export const ASSET_STATUSES = ['active', 'out_of_service', 'retired'] as const
 export type AssetStatus = (typeof ASSET_STATUSES)[number]
 

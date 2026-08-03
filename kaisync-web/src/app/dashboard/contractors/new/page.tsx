@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -36,9 +36,20 @@ const PAYMENT_METHODS = [
 function NewContractorForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const initialKind = partnerKindFromQuery(searchParams.get('type'))
+  const typeParam = searchParams.get('type')
 
-  const [partnerKind, setPartnerKind] = useState<PartnerKind>(initialKind)
+  // Supplier create belongs in the Suppliers module
+  useEffect(() => {
+    if ((typeParam ?? '').toLowerCase() === 'supplier') {
+      router.replace('/dashboard/suppliers/new')
+    }
+  }, [typeParam, router])
+
+  const initialKind = partnerKindFromQuery(typeParam)
+
+  const [partnerKind, setPartnerKind] = useState<PartnerKind>(
+    initialKind === PARTNER_KIND.supplier ? PARTNER_KIND.contractor : initialKind,
+  )
   const [name, setName] = useState('')
   const [contactPerson, setContactPerson] = useState('')
   const [phone, setPhone] = useState('')
@@ -60,7 +71,15 @@ function NewContractorForm() {
   const [error, setError] = useState<string | null>(null)
 
   const title = `New ${partnerKindLabel(partnerKind)}`
-  const backHref = partnerKind === PARTNER_KIND.supplier ? '/dashboard/suppliers' : '/dashboard/contractors'
+  const backHref = '/dashboard/contractors'
+
+  if ((typeParam ?? '').toLowerCase() === 'supplier') {
+    return (
+      <div className="flex items-center justify-center h-full text-[13px] text-text-secondary">
+        Opening new supplier…
+      </div>
+    )
+  }
 
   async function save() {
     if (!name.trim()) { setError('Company / partner name is required.'); return }
@@ -125,10 +144,7 @@ function NewContractorForm() {
       return
     }
 
-    const detailHref = partnerKind === PARTNER_KIND.supplier
-      ? `/dashboard/suppliers/${data.id}`
-      : `/dashboard/contractors/${data.id}`
-    router.push(detailHref)
+    router.push(`/dashboard/contractors/${data.id}`)
     setBusy(false)
   }
 
@@ -166,10 +182,13 @@ function NewContractorForm() {
               className="dark-entry w-full"
             >
               <option value={PARTNER_KIND.contractor}>Contractor</option>
-              <option value={PARTNER_KIND.supplier}>Supplier</option>
               <option value={PARTNER_KIND.both}>Contractor &amp; supplier</option>
             </select>
           </Field>
+          <p className="text-[11px] text-text-secondary">
+            Pure suppliers are created under{' '}
+            <Link href="/dashboard/suppliers/new" className="text-primary hover:underline">Suppliers</Link>.
+          </p>
           <Field label="Company / partner name *">
             <input value={name} onChange={e => setName(e.target.value)} className="dark-entry w-full" autoFocus />
           </Field>
