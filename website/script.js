@@ -45,6 +45,51 @@
     });
   }
 
+  // Modules page: show one module panel at a time
+  var tabs = document.getElementById('moduleTabs');
+  if (tabs) {
+    var tabLinks = Array.prototype.slice.call(tabs.querySelectorAll('[data-module]'));
+    var panels = Array.prototype.slice.call(document.querySelectorAll('[data-module-panel]'));
+
+    function showModule(id, updateHash) {
+      if (!id) id = 'workforce';
+      var matched = false;
+      panels.forEach(function (panel) {
+        var on = panel.getAttribute('data-module-panel') === id;
+        panel.classList.toggle('is-active', on);
+        if (on) {
+          matched = true;
+          panel.classList.add('is-visible');
+        }
+      });
+      if (!matched) {
+        showModule('workforce', updateHash);
+        return;
+      }
+      tabLinks.forEach(function (link) {
+        link.classList.toggle('is-active', link.getAttribute('data-module') === id);
+      });
+      if (updateHash) {
+        if (history.replaceState) history.replaceState(null, '', '#' + id);
+        else location.hash = id;
+      }
+    }
+
+    tabLinks.forEach(function (link) {
+      link.addEventListener('click', function (e) {
+        e.preventDefault();
+        showModule(link.getAttribute('data-module'), true);
+      });
+    });
+
+    var initial = (location.hash || '#workforce').replace(/^#/, '');
+    showModule(initial, false);
+
+    window.addEventListener('hashchange', function () {
+      showModule((location.hash || '#workforce').replace(/^#/, ''), false);
+    });
+  }
+
   if ('IntersectionObserver' in window) {
     var io = new IntersectionObserver(function (entries) {
       entries.forEach(function (entry) {

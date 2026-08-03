@@ -45,16 +45,16 @@
 
     <section class="page-content">
       <div class="container">
-        <nav class="feature-jump reveal" aria-label="Jump to module">
-          <a href="#workforce">Workforce</a>
-          <a href="#operations">Operations</a>
-          <a href="#money">Money</a>
-          <a href="#supply">Supply &amp; Assets</a>
-          <a href="#properties">Properties</a>
-          <a href="#insights">Insights &amp; portals</a>
+        <nav class="feature-jump reveal" id="moduleTabs" aria-label="Choose module">
+          <a href="#workforce" data-module="workforce" class="is-active">Workforce</a>
+          <a href="#operations" data-module="operations">Operations</a>
+          <a href="#money" data-module="money">Money</a>
+          <a href="#supply" data-module="supply">Supply &amp; Assets</a>
+          <a href="#properties" data-module="properties">Properties</a>
+          <a href="#insights" data-module="insights">Insights &amp; portals</a>
         </nav>
 
-        <article class="feature-detail reveal" id="workforce">
+        <article class="feature-detail reveal is-active" id="workforce" data-module-panel="workforce">
           <div>
             <p class="module-kicker">01 · Workforce</p>
             <h2 class="module-outcome">People, time, leave, and payroll in one spine.</h2>
@@ -81,7 +81,7 @@
           </div>
         </article>
 
-        <article class="feature-detail reveal" id="operations">
+        <article class="feature-detail reveal" id="operations" data-module-panel="operations">
           <div>
             <p class="module-kicker">02 · Operations</p>
             <h2 class="module-outcome">Sell work, assign the field, prove delivery.</h2>
@@ -109,7 +109,7 @@
           </div>
         </article>
 
-        <article class="feature-detail reveal" id="money">
+        <article class="feature-detail reveal" id="money" data-module-panel="money">
           <div>
             <p class="module-kicker">03 · Money</p>
             <h2 class="module-outcome">Finance that can see completed work.</h2>
@@ -134,7 +134,7 @@
           </div>
         </article>
 
-        <article class="feature-detail reveal" id="supply">
+        <article class="feature-detail reveal" id="supply" data-module-panel="supply">
           <div>
             <p class="module-kicker">04 · Supply &amp; Assets</p>
             <h2 class="module-outcome">Stock and equipment that keep jobs moving.</h2>
@@ -157,7 +157,7 @@
           </div>
         </article>
 
-        <article class="feature-detail reveal" id="properties">
+        <article class="feature-detail reveal" id="properties" data-module-panel="properties">
           <div>
             <p class="module-kicker">05 · Properties</p>
             <h2 class="module-outcome">Sites and residents beside the work.</h2>
@@ -179,7 +179,7 @@
           </div>
         </article>
 
-        <article class="feature-detail reveal" id="insights">
+        <article class="feature-detail reveal" id="insights" data-module-panel="insights">
           <div>
             <p class="module-kicker">06 · Insights &amp; portals</p>
             <h2 class="module-outcome">Signal for leadership. Scoped access for partners.</h2>
