@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
@@ -12,6 +12,7 @@ export default function SuppliersPage() {
   const [suppliers, setSuppliers] = useState<Contractor[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [search, setSearch] = useState('')
   const [xeroLinked,    setXeroLinked]    = useState<Set<string>>(new Set())
   const [xeroConnected, setXeroConnected] = useState(false)
   const [xeroPushing,   setXeroPushing]   = useState<string | null>(null)
@@ -49,6 +50,18 @@ export default function SuppliersPage() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return suppliers
+    return suppliers.filter(s =>
+      [s.name, s.contact_person, s.phone, s.email, s.address]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .includes(q),
+    )
+  }, [suppliers, search])
 
   async function pushToXero(e: React.MouseEvent, supplierId: string) {
     e.stopPropagation()
@@ -125,9 +138,17 @@ export default function SuppliersPage() {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-divider shrink-0 bg-surface">
-        <h1 className="text-[20px] font-semibold text-text-primary">Suppliers</h1>
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-divider shrink-0 bg-surface gap-3">
+        <div className="flex items-center gap-2 flex-1 max-w-sm bg-surface border border-border rounded-lg px-2">
+          <span className="material-icons text-text-secondary text-[16px]">search</span>
+          <input
+            placeholder="Search suppliers…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="flex-1 bg-transparent text-text-primary text-[13px] h-[38px] outline-none placeholder:text-text-disabled"
+          />
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
           {xeroConnected && (
             <button
               onClick={syncAllToXero}
@@ -147,8 +168,8 @@ export default function SuppliersPage() {
             </button>
           )}
           <button className="btn-primary h-9 px-3 text-[13px]"
-            onClick={() => router.push('/dashboard/contractors/new?type=supplier')}>
-            + Add
+            onClick={() => router.push('/dashboard/suppliers/new')}>
+            + Add supplier
           </button>
         </div>
       </div>
@@ -156,7 +177,8 @@ export default function SuppliersPage() {
       {/* Sub-header */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-divider shrink-0">
         <p className="text-xs text-text-secondary">
-          {suppliers.length} supplier{suppliers.length !== 1 ? 's' : ''}
+          {filtered.length} of {suppliers.length} supplier{suppliers.length !== 1 ? 's' : ''}
+          <span className="text-text-disabled"> · Separate from contractors (field labour)</span>
         </p>
         <button onClick={load} className="text-[13px] text-primary hover:opacity-70 transition-opacity">
           Refresh
@@ -192,16 +214,18 @@ export default function SuppliersPage() {
               </tr>
             </thead>
             <tbody>
-              {suppliers.length === 0 ? (
+              {filtered.length === 0 ? (
                 <tr>
                   <td colSpan={xeroConnected ? 7 : 6} className="data-td text-center text-text-secondary py-10">
-                    No suppliers yet. Add suppliers here or from an inventory item.
+                    {suppliers.length === 0
+                      ? 'No suppliers yet. Add a supplier here (not a contractor) or from an inventory item.'
+                      : 'No suppliers match your search.'}
                   </td>
                 </tr>
-              ) : suppliers.map(s => (
+              ) : filtered.map(s => (
                 <tr key={s.id}
                   className="bg-surface-card cursor-pointer hover:bg-background transition-colors border-b border-divider last:border-0"
-                  onClick={() => router.push(`/dashboard/contractors/${s.id}`)}>
+                  onClick={() => router.push(`/dashboard/suppliers/${s.id}`)}>
                   <td className="data-td text-sm font-medium text-primary">{s.name}</td>
                   <td className="data-td text-sm text-text-secondary">{s.contact_person ?? '—'}</td>
                   <td className="data-td text-sm text-text-secondary">
