@@ -10,6 +10,8 @@ import {
   type EngineEmployee,
   type PunchLike,
   type PayslipOverrides,
+  type LeaveSnapshot,
+  type SalaryHistoryEntry,
 } from '@/lib/payroll-engine'
 import {
   buildPayrollGeneratePreview,
@@ -130,7 +132,7 @@ export async function unlockPayrollPeriod(
 }
 
 const EMP_SELECT =
-  'id, name, surname, is_active, monthly_salary, hourly_rate, daily_rate, daily_hours, pay_by_hour, pay_basis, uif_exempt, paye_rate_percent, medical_aid_deduction, pension_deduction, union_deduction, department, cost_center, branch, worker_type, shift_template_id, bank_name, bank_account, employment_date, account_type'
+  'id, name, surname, is_active, monthly_salary, hourly_rate, daily_rate, daily_hours, pay_by_hour, pay_basis, uif_exempt, paye_rate_percent, paye_fixed_amount, uif_rate_percent, uif_fixed_amount, medical_aid_deduction, pension_deduction, union_deduction, department, cost_center, branch, worker_type, shift_template_id, bank_name, bank_account, bank_branch_code, employment_date, termination_date, date_of_birth, tax_directive_rate_percent, pay_full_monthly_salary, overtime_rate, work_days_weekly, account_type, tax_number'
 
 export async function previewPayrollGenerate(
   supabase: SupabaseClient,
@@ -162,39 +164,51 @@ export async function previewPayrollGenerate(
   }
 }
 
-async function loadLeaveDaysInPeriod(
+async function loadLeaveRecordsInPeriod(
   supabase: SupabaseClient,
   companyId: string,
   employeeId: string,
   periodStart: string,
   periodEnd: string
-): Promise<{ paid: number; unpaid: number }> {
+): Promise<LeaveSnapshot[]> {
   const { data } = await supabase
     .from('leave_requests')
-    .select('leave_type, start_date, end_date, total_days, half_day_start, half_day_end')
+    .select('leave_type, start_date, end_date, total_days, half_day_start, half_day_end, status')
     .eq('company_id', companyId)
     .eq('employee_id', employeeId)
     .eq('status', 'approved')
     .lte('start_date', periodEnd)
     .gte('end_date', periodStart)
 
-  let paid = 0
-  let unpaid = 0
-  for (const row of data ?? []) {
-    const start = row.start_date > periodStart ? row.start_date : periodStart
-    const end = row.end_date < periodEnd ? row.end_date : periodEnd
-    const days =
-      Math.max(
-        0,
-        Math.round(
-          (new Date(end).getTime() - new Date(start).getTime()) / 86400000
-        ) + 1
-      )
-    const type = (row.leave_type ?? '').toLowerCase()
-    if (type.includes('unpaid')) unpaid += days
-    else paid += days
-  }
-  return { paid, unpaid }
+  return (data ?? []).map(row => ({
+    leaveType: row.leave_type ?? 'Annual Leave',
+    startDate: row.start_date as string,
+    endDate: row.end_date as string,
+    halfDayStart: Boolean(row.half_day_start),
+    halfDayEnd: Boolean(row.half_day_end),
+    totalDays: Number(row.total_days ?? 0),
+    isApproved: true,
+  }))
+}
+
+async function loadSalaryHistory(
+  supabase: SupabaseClient,
+  companyId: string,
+  employeeId: string
+): Promise<SalaryHistoryEntry[]> {
+  const { data } = await supabase
+    .from('employee_salary_history')
+    .select('effective_date, monthly_salary, hourly_rate, daily_rate')
+    .eq('company_id', companyId)
+    .eq('employee_id', employeeId)
+    .order('effective_date', { ascending: false })
+
+  return (data ?? []).map(row => ({
+    effective_date: row.effective_date as string,
+    monthly_salary: Number(row.monthly_salary ?? 0),
+    hourly_rate: Number(row.hourly_rate ?? 0),
+    daily_rate: Number(row.daily_rate ?? 0),
+  }))
 }
 
 async function loadYtdPrior(
@@ -276,16 +290,19 @@ export async function generatePayrollPeriod(
       continue
     }
 
-    const leave = await loadLeaveDaysInPeriod(supabase, companyId, raw.id, periodStart, periodEnd)
-    const ytdPrior = await loadYtdPrior(supabase, companyId, raw.id, periodStart)
+    const [leaveRecords, salaryHistory, ytdPrior] = await Promise.all([
+      loadLeaveRecordsInPeriod(supabase, companyId, raw.id, periodStart, periodEnd),
+      loadSalaryHistory(supabase, companyId, raw.id),
+      loadYtdPrior(supabase, companyId, raw.id, periodStart),
+    ])
     const slip = calculatePayslip({
       employee: raw,
       settings,
       punches: punchRows,
       periodStart,
       periodEnd,
-      paidLeaveDays: leave.paid,
-      unpaidLeaveDays: leave.unpaid,
+      leaveRecords,
+      salaryHistory,
       ytdPrior,
     })
     if (!slip) {
@@ -372,19 +389,17 @@ export async function recalculatePayslip(
     .gte('date_time', `${payment.period_start}T00:00:00`)
     .lte('date_time', `${payment.period_end}T23:59:59`)
 
-  const leave = await loadLeaveDaysInPeriod(
-    supabase,
-    companyId,
-    payment.employee_id,
-    payment.period_start,
-    payment.period_end
-  )
-  const ytdPrior = await loadYtdPrior(
-    supabase,
-    companyId,
-    payment.employee_id,
-    payment.period_start
-  )
+  const [leaveRecords, salaryHistory, ytdPrior] = await Promise.all([
+    loadLeaveRecordsInPeriod(
+      supabase,
+      companyId,
+      payment.employee_id,
+      payment.period_start,
+      payment.period_end
+    ),
+    loadSalaryHistory(supabase, companyId, payment.employee_id),
+    loadYtdPrior(supabase, companyId, payment.employee_id, payment.period_start),
+  ])
 
   const mergedOverrides: PayslipOverrides = {
     payFullBaseSalary: overrides?.payFullBaseSalary ?? payment.pay_full_base_salary ?? false,
@@ -408,8 +423,8 @@ export async function recalculatePayslip(
     periodStart: payment.period_start,
     periodEnd: payment.period_end,
     overrides: mergedOverrides,
-    paidLeaveDays: leave.paid,
-    unpaidLeaveDays: leave.unpaid,
+    leaveRecords,
+    salaryHistory,
     ytdPrior,
   })
   if (!slip) return { ok: false, message: 'Could not calculate payslip for this employee/period.' }

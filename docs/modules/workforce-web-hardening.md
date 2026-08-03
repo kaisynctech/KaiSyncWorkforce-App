@@ -22,6 +22,7 @@ Dual-write mirrors kept for MAUI readers (do not drop without MAUI migration):
 1. **Employees:** prefer `set_employee_active` / `setEmployeeActive(false)`. Hard `delete_employee` is owner/HR only for purge.
 2. **Work teams:** prefer `is_active = false` (`setWorkTeamActive`). No hard delete in web UI.
 
-## Security follow-ups (DB — not applied in Phase 5)
+## Security follow-ups
 
-- Review `EXECUTE` grants on `hr_generate_payroll`, `hr_lock_payroll_period`, `hr_unlock_payroll_period`, `hr_recalculate_payslip` (historically permissive). Revoke anon / add permission checks only via approved migration.
+- ✅ Applied: revoked `anon`/`PUBLIC` `EXECUTE` on `hr_generate_payroll`, `hr_lock_payroll_period`, `hr_unlock_payroll_period`, `hr_recalculate_payslip` (authenticated + service_role retained). See migration `20260803160000_revoke_anon_payroll_rpc_grants.sql`.
+- Remaining: prefer Edge/RPC generate using the TS engine so browser math is not the sole authority for persisted pay.
