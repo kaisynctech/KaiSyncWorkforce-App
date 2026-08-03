@@ -6,8 +6,12 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { getInitials } from '@/lib/utils'
-import { employmentTypesMatch } from '@/lib/employee-taxonomy'
-import { withMemberCount, type WorkTeamRow } from '@/lib/work-teams'
+import { listBranches, listEmployeesScoped } from '@/lib/employees'
+import { loadScopedEmployeeIds } from '@/lib/employee-scope'
+import { employmentTypesMatch, normalizeAccessLevel } from '@/lib/employee-taxonomy'
+import { decideLeaveRequest, formatLeaveDecideError } from '@/lib/leave'
+import { getCompanyAnnualDays, loadLeaveSettings, type LeaveSettingsMap } from '@/lib/leave-settings'
+import { createWorkTeam, listWorkTeams, withMemberCount, type WorkTeamRow } from '@/lib/work-teams'
 import type { Employee, AccessLevel, LeaveRequest, WorkTeam } from '@/types/database'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -17,14 +21,6 @@ const ACCESS_BADGES: Record<AccessLevel, { label: string; cls: string }> = {
   manager:  { label: 'Manager',  cls: 'bg-warning-dark text-warning' },
   hr:       { label: 'HR',       cls: 'bg-accent-light/30 text-primary-dark' },
   employee: { label: 'Employee', cls: 'bg-success-dark text-success' },
-}
-
-const LEAVE_DEFAULTS: Record<string, number> = {
-  annual_leave:          15,
-  sick_leave:            30,
-  family_responsibility:  3,
-  maternity_leave:       90,
-  study_leave:            5,
 }
 
 // ─── Local types ──────────────────────────────────────────────────────────────
@@ -62,7 +58,8 @@ type PendingEmployee = {
 
 function buildLeaveBalances(
   employees: Employee[],
-  requests: Pick<LeaveRequest, 'employee_id' | 'leave_type' | 'total_days' | 'start_date'>[]
+  requests: Pick<LeaveRequest, 'employee_id' | 'leave_type' | 'total_days' | 'start_date'>[],
+  leaveSettings: LeaveSettingsMap
 ): LeaveBalance[] {
   const empMap = new Map(employees.map(e => [e.id, `${e.name} ${e.surname}`.trim()]))
 
@@ -96,7 +93,7 @@ function buildLeaveBalances(
 
   return Array.from(groups.values())
     .map(g => {
-      const annualDays = LEAVE_DEFAULTS[g.leaveType] ?? 5
+      const annualDays = getCompanyAnnualDays(g.leaveType, leaveSettings)
       return {
         employeeId:      g.employeeId,
         employeeName:    g.employeeName,
@@ -128,7 +125,10 @@ export default function EmployeesPage() {
 
   // ── Core ──────────────────────────────────────────────────────────────────
   const [companyId,      setCompanyId]      = useState<string | null>(null)
+  const [myEmployeeId,   setMyEmployeeId]   = useState<string | null>(null)
   const [myAccessLevel,  setMyAccessLevel]  = useState<AccessLevel | null>(null)
+  const [scopedIds,      setScopedIds]      = useState<Set<string> | null>(null)
+  const [leaveSettings,  setLeaveSettings]  = useState<LeaveSettingsMap>({})
   const [tab,            setTab]            = useState<Tab>('employees')
   const [error,          setError]          = useState<string | null>(null)
 
@@ -184,21 +184,14 @@ export default function EmployeesPage() {
     if (!member) { setError('not_linked'); setEmpLoading(false); return }
 
     setCompanyId(member.companyId)
+    setMyEmployeeId(member.employeeId)
 
     const today = new Date().toISOString().split('T')[0]
-    const [meRes, empRes, branchRes, onLeaveRes] = await Promise.all([
-      supabase.from('employees')
-        .select('access_level')
-        .eq('id', member.employeeId)
-        .single(),
-      supabase.from('employees')
-        .select('*')
-        .eq('company_id', member.companyId)
-        .order('name'),
-      supabase.from('branches')
-        .select('id, name')
-        .eq('company_id', member.companyId)
-        .order('name'),
+    const [empRes, branchRes, scopeRes, settingsRes, onLeaveRes] = await Promise.all([
+      listEmployeesScoped(supabase, member.companyId, member.employeeId),
+      listBranches(supabase, member.companyId),
+      loadScopedEmployeeIds(supabase, member.companyId, member.employeeId),
+      loadLeaveSettings(supabase, member.companyId),
       supabase.from('leave_requests')
         .select('employee_id, leave_type, end_date, employees(name, surname)')
         .eq('company_id', member.companyId)
@@ -207,26 +200,46 @@ export default function EmployeesPage() {
         .gte('end_date', today),
     ])
 
-    setMyAccessLevel(
-      (meRes.data as { access_level: AccessLevel } | null)?.access_level ?? null
+    if (!empRes.ok) { setError(empRes.message); setEmpLoading(false); return }
+    if (!scopeRes.ok) { setError(scopeRes.message); setEmpLoading(false); return }
+
+    setMyAccessLevel(normalizeAccessLevel(scopeRes.viewer.access_level) as AccessLevel)
+    setScopedIds(scopeRes.seesAll ? null : scopeRes.ids)
+    if (settingsRes.ok) setLeaveSettings(settingsRes.data)
+    setEmployees(empRes.data)
+    setBranches(
+      branchRes.ok
+        ? branchRes.data.map(b => ({ id: b.id, name: b.name }))
+        : []
     )
-    setEmployees((empRes.data ?? []) as Employee[])
-    setBranches((branchRes.data ?? []) as Branch[])
-    setOnLeave((onLeaveRes.data ?? []) as unknown as OnLeaveRecord[])
+
+    const leaveRows = (onLeaveRes.data ?? []) as unknown as OnLeaveRecord[]
+    setOnLeave(
+      scopeRes.seesAll
+        ? leaveRows
+        : leaveRows.filter(r => scopeRes.ids.has(r.employee_id))
+    )
     setEmpLoading(false)
   }
 
   // ── Tab 2 ─────────────────────────────────────────────────────────────────
   async function loadTeams() {
-    if (!companyId) return
+    if (!companyId || !myEmployeeId) return
     setTeamsLoading(true)
     const supabase = createClient()
-    const { data } = await supabase
-      .from('work_teams')
-      .select('id, company_id, name, description, leader_employee_id, member_ids, is_active, created_at')
-      .eq('company_id', companyId)
-      .order('name')
-    setTeams((data ?? []).map(t => withMemberCount(t as WorkTeamRow)) as WorkTeam[])
+    const teamsRes = await listWorkTeams(supabase, companyId)
+    if (!teamsRes.ok) {
+      setError(teamsRes.message)
+      setTeamsLoading(false)
+      return
+    }
+    let rows = teamsRes.data
+    if (scopedIds) {
+      rows = rows.filter(
+        t => t.leader_employee_id === myEmployeeId || (t.member_ids ?? []).includes(myEmployeeId)
+      )
+    }
+    setTeams(rows.map(t => withMemberCount(t as WorkTeamRow)) as WorkTeam[])
     setTeamsLoaded(true)
     setTeamsLoading(false)
   }
@@ -235,13 +248,11 @@ export default function EmployeesPage() {
     if (!newTeamName.trim() || !companyId) return
     setTeamBusy(true)
     const supabase = createClient()
-    const { error: insertErr } = await supabase.from('work_teams').insert({
-      company_id: companyId,
-      name: newTeamName.trim(),
-      is_active: true,
-      member_ids: [],
+    const created = await createWorkTeam(supabase, {
+      companyId,
+      name: newTeamName,
     })
-    if (insertErr) setError(insertErr.message)
+    if (!created.ok) setError(created.message)
     setNewTeamName('')
     setShowCreateTeam(false)
     setTeamBusy(false)
@@ -272,13 +283,14 @@ export default function EmployeesPage() {
         .order('created_at', { ascending: false }),
     ])
 
+    const approved = (data ?? []) as Pick<LeaveRequest, 'employee_id' | 'leave_type' | 'total_days' | 'start_date'>[]
+    const pending = (pendingData ?? []) as LeaveRequest[]
+    const inScope = (employeeId: string) => !scopedIds || scopedIds.has(employeeId)
+
     setLeaveBalances(
-      buildLeaveBalances(
-        employees,
-        (data ?? []) as Pick<LeaveRequest, 'employee_id' | 'leave_type' | 'total_days' | 'start_date'>[]
-      )
+      buildLeaveBalances(employees, approved.filter(r => inScope(r.employee_id)), leaveSettings)
     )
-    setPendingLeave((pendingData ?? []) as LeaveRequest[])
+    setPendingLeave(pending.filter(r => inScope(r.employee_id)))
     setLeaveLoaded(true)
     setLeaveLoading(false)
   }
@@ -286,14 +298,18 @@ export default function EmployeesPage() {
   async function decideLeave(requestId: string, decision: 'approved' | 'declined') {
     if (!companyId) return
     setLeaveActionBusy(requestId)
+    setError(null)
     const supabase = createClient()
-    await supabase.rpc('decide_leave_request', {
-      p_company_id: companyId,
-      p_leave_request_id: requestId,
-      p_decision: decision,
-      p_note: null,
+    const result = await decideLeaveRequest(supabase, {
+      companyId,
+      leaveRequestId: requestId,
+      decision,
     })
     setLeaveActionBusy(null)
+    if (!result.ok) {
+      setError(formatLeaveDecideError(result.message))
+      return
+    }
     setLeaveLoaded(false)
     await loadLeave()
   }
@@ -316,18 +332,32 @@ export default function EmployeesPage() {
 
   async function approvePending(employeeId: string) {
     setPendingBusy(employeeId)
+    setError(null)
     const supabase = createClient()
-    await supabase.rpc('approve_pending_employee', { p_employee_id: employeeId })
+    const { error: rpcErr } = await supabase.rpc('approve_pending_employee', {
+      p_employee_id: employeeId,
+    })
     setPendingBusy(null)
+    if (rpcErr) {
+      setError(rpcErr.message)
+      return
+    }
     setPendingLoaded(false)
     await loadPending()
   }
 
   async function rejectPending(employeeId: string) {
     setPendingBusy(employeeId)
+    setError(null)
     const supabase = createClient()
-    await supabase.rpc('reject_pending_employee', { p_employee_id: employeeId })
+    const { error: rpcErr } = await supabase.rpc('reject_pending_employee', {
+      p_employee_id: employeeId,
+    })
     setPendingBusy(null)
+    if (rpcErr) {
+      setError(rpcErr.message)
+      return
+    }
     setPendingLoaded(false)
     await loadPending()
   }
@@ -335,17 +365,27 @@ export default function EmployeesPage() {
   async function approveAll() {
     if (!pending.length) return
     setPendingBusy('all')
+    setError(null)
     const supabase = createClient()
+    const failures: string[] = []
     for (const emp of pending) {
-      await supabase.rpc('approve_pending_employee', { p_employee_id: emp.id })
+      const { error: rpcErr } = await supabase.rpc('approve_pending_employee', {
+        p_employee_id: emp.id,
+      })
+      if (rpcErr) failures.push(rpcErr.message)
     }
     setPendingBusy(null)
+    if (failures.length) {
+      setError(failures[0])
+    }
     setPendingLoaded(false)
     await loadPending()
   }
 
   // ── Derived ───────────────────────────────────────────────────────────────
-  const canSeeLeave = myAccessLevel !== null && ['owner', 'hr'].includes(myAccessLevel)
+  // Owner / HR / managers with leave.approve — managers see scoped queue only
+  const canSeeLeave = myAccessLevel !== null &&
+    ['owner', 'hr', 'manager'].includes(normalizeAccessLevel(myAccessLevel))
 
   const TABS: { key: Tab; label: string }[] = [
     { key: 'employees', label: 'Employees' },
@@ -363,7 +403,7 @@ export default function EmployeesPage() {
   ]
 
   const filteredEmployees = employees.filter(e => {
-    if (filterRole    && e.access_level    !== filterRole)    return false
+    if (filterRole && normalizeAccessLevel(e.access_level) !== filterRole) return false
     if (filterBranch  && e.branch_id       !== filterBranch)  return false
     if (filterEmpType && !employmentTypesMatch(e.employment_type, filterEmpType)) return false
     if (filterStatus === 'active'   && !e.is_active) return false

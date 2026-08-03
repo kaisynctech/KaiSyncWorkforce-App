@@ -13,10 +13,8 @@ import {
   ACCESS_LEVELS,
   EMPLOYMENT_TYPES,
   WORKER_TYPES,
-  normalizeEmploymentType,
-  normalizeWorkerType,
 } from '@/lib/employee-taxonomy'
-import { buildEmployeeCreatePayload } from '@/lib/employee-create-payload'
+import { createEmployee, listBranches, listManagerOptions, listShiftTemplates } from '@/lib/employees'
 import { sendEmployeeInvite } from '@/lib/employee-invite'
 import type { Branch, ShiftTemplate, Employee } from '@/types/database'
 
@@ -82,18 +80,17 @@ export default function CreateEmployeePage() {
     setCompanyId(member.companyId)
 
     const [br, tmpl, mgr] = await Promise.all([
-      supabase.from('branches').select('id, name, address').eq('company_id', member.companyId).order('name'),
-      supabase.from('employee_shift_templates').select('id, name, start_time, end_time, is_default').eq('company_id', member.companyId).order('name'),
-      supabase.from('employees').select('id, name, surname')
-        .eq('company_id', member.companyId)
-        .eq('is_active', true)
-        .in('access_level', ['owner', 'manager', 'hr', 'hr_admin'])
-        .order('name'),
+      listBranches(supabase, member.companyId),
+      listShiftTemplates(supabase, member.companyId),
+      listManagerOptions(supabase, member.companyId),
     ])
 
-    setBranches((br.data ?? []) as Branch[])
-    setTemplates((tmpl.data ?? []) as ShiftTemplate[])
-    setManagers((mgr.data ?? []) as Pick<Employee, 'id' | 'name' | 'surname'>[])
+    if (br.ok) setBranches(br.data)
+    if (tmpl.ok) setTemplates(tmpl.data)
+    if (mgr.ok) setManagers(mgr.data)
+    if (!br.ok || !tmpl.ok || !mgr.ok) {
+      setError([br, tmpl, mgr].find(r => !r.ok && 'message' in r)?.message ?? 'Failed to load form options.')
+    }
   }
 
   const daysNum = parseFloat(workDays) || 5
@@ -119,69 +116,62 @@ export default function CreateEmployeePage() {
     setError(null)
 
     const supabase = createClient()
-    const resolvedWorkerType = normalizeWorkerType(workerType)
-    const resolvedEmploymentType = normalizeEmploymentType(employmentType)
+    const created = await createEmployee(supabase, {
+      companyId,
+      name: firstName,
+      surname: lastName,
+      email,
+      phone,
+      idNumber,
+      position,
+      department,
+      branchId,
+      branchName: branches.find(b => b.id === branchId)?.name ?? null,
+      shiftTemplateId: templateId,
+      employmentType,
+      workerType,
+      accessLevel,
+      managerId,
+      employmentDate,
+      monthlySalary: salaryNum,
+      payByHour,
+      payBasis,
+      payeRatePercent: payeRate ? parseFloat(payeRate) : null,
+      uifExempt: exemptUif,
+      medicalAidDeduction: medicalAid ? parseFloat(medicalAid) : 0,
+      pensionDeduction: pension ? parseFloat(pension) : 0,
+      unionDeduction: union ? parseFloat(union) : 0,
+      workDaysWeekly: daysNum,
+      dailyHours: hoursNum,
+      hourlyRate: salaryNum ? computedHourlyRate : 0,
+      dailyRate: salaryNum ? computedDailyRate : 0,
+      bankName,
+      bankAccount: accountNumber,
+      bankBranchCode,
+      accountType,
+    })
 
-    // Payload must satisfy live NOT NULL columns — never send null for money/rate fields.
-    const { data, error: insertError } = await supabase
-      .from('employees')
-      .insert(buildEmployeeCreatePayload({
-        companyId,
-        name: firstName,
-        surname: lastName,
-        email,
-        phone,
-        idNumber,
-        position,
-        department,
-        branchId,
-        branchName: branches.find(b => b.id === branchId)?.name ?? null,
-        shiftTemplateId: templateId,
-        employmentType: resolvedEmploymentType,
-        workerType: resolvedWorkerType,
-        accessLevel,
-        managerId,
-        employmentDate,
-        monthlySalary: salaryNum,
-        payByHour,
-        payBasis,
-        payeRatePercent: payeRate ? parseFloat(payeRate) : null,
-        uifExempt: exemptUif,
-        medicalAidDeduction: medicalAid ? parseFloat(medicalAid) : 0,
-        pensionDeduction: pension ? parseFloat(pension) : 0,
-        unionDeduction: union ? parseFloat(union) : 0,
-        workDaysWeekly: daysNum,
-        dailyHours: hoursNum,
-        hourlyRate: salaryNum ? computedHourlyRate : 0,
-        dailyRate: salaryNum ? computedDailyRate : 0,
-        bankName,
-        bankAccount: accountNumber,
-        bankBranchCode,
-        accountType,
-      }))
-      .select()
-      .single()
-
-    if (insertError) {
-      setError(insertError.message)
+    if (!created.ok) {
+      setError(created.message)
       setSaving(false)
       return
     }
 
-    if (sendInvite && data) {
+    if (sendInvite) {
       const invite = await sendEmployeeInvite(supabase, {
-        employeeId: data.id,
+        employeeId: created.data.id,
         email: email.trim(),
       })
       if (!invite.ok) {
         setSaving(false)
         setError(`Employee created, but invite failed: ${invite.message}`)
-        router.push(`/dashboard/employees/${data.id}`)
+        router.push(`/dashboard/employees/${created.data.id}`)
         return
       }
     }
 
-    router.push(`/dashboard/employees/${data.id}`)
+    setSaving(false)
+    router.push(`/dashboard/employees/${created.data.id}`)
   }
 
   if (error === 'not_linked') return (

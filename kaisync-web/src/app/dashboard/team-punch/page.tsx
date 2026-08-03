@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
-import { memberIdsOf, withMemberCount, type WorkTeamRow } from '@/lib/work-teams'
+import { filterTeamsByScope, loadScopedEmployeeIds } from '@/lib/employee-scope'
+import { getWorkTeam, listWorkTeams, memberIdsOf } from '@/lib/work-teams'
 import type { WorkTeam } from '@/types/database'
 
 interface TeamEmployee {
@@ -56,37 +57,36 @@ export default function TeamPunchPage() {
     setCompanyId(member.companyId)
     setSelfEmployeeId(member.employeeId)
 
-    const { data, error: qErr } = await supabase
-      .from('work_teams')
-      .select('id, company_id, name, description, leader_employee_id, member_ids, is_active')
-      .eq('company_id', member.companyId)
-      .eq('is_active', true)
-      .order('name')
-
-    if (qErr) setActionError(qErr.message)
-    setTeams((data ?? []).map(t => withMemberCount(t as WorkTeamRow)) as WorkTeam[])
+    const [result, scopeRes] = await Promise.all([
+      listWorkTeams(supabase, member.companyId, { activeOnly: true }),
+      loadScopedEmployeeIds(supabase, member.companyId, member.employeeId),
+    ])
+    if (!result.ok) {
+      setActionError(result.message)
+      setTeams([])
+    } else if (!scopeRes.ok) {
+      setActionError(scopeRes.message)
+      setTeams([])
+    } else {
+      setTeams(filterTeamsByScope(scopeRes.viewer, result.data) as WorkTeam[])
+    }
     setLoading(false)
   }, [])
 
   useEffect(() => { loadTeams() }, [loadTeams])
 
   const loadMembers = useCallback(async (teamId: string) => {
-    if (!teamId) { setMembers([]); return }
+    if (!teamId || !companyId) { setMembers([]); return }
     setActionError(null)
     const supabase = createClient()
-    const { data: team, error: teamErr } = await supabase
-      .from('work_teams')
-      .select('id, member_ids, leader_employee_id')
-      .eq('id', teamId)
-      .maybeSingle()
-
-    if (teamErr) {
-      setActionError(teamErr.message)
+    const teamRes = await getWorkTeam(supabase, companyId, teamId)
+    if (!teamRes.ok || !teamRes.data) {
+      setActionError(teamRes.ok ? 'Team not found' : teamRes.message)
       setMembers([])
       return
     }
 
-    const empIds = memberIdsOf(team as WorkTeamRow)
+    const empIds = memberIdsOf(teamRes.data)
     if (empIds.length === 0) {
       setMembers([])
       setSelected(new Set())
@@ -134,7 +134,7 @@ export default function TeamPunchPage() {
       }
     }))
     setSelected(new Set())
-  }, [])
+  }, [companyId])
 
   useEffect(() => { loadMembers(selectedTeamId) }, [selectedTeamId, loadMembers])
 

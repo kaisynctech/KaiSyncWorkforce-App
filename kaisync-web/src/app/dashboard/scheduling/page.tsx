@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import { listEmployeesScoped } from '@/lib/employees'
 import type { CalendarEvent } from '@/types/database'
 
 type ViewMode = 'day' | 'week'
@@ -90,7 +91,7 @@ export default function SchedulingPage() {
       to   = `${next.toISOString().split('T')[0]}T00:00:00`
     }
 
-    const [{ data }, { data: empData }] = await Promise.all([
+    const [{ data }, empRes] = await Promise.all([
       supabase
         .from('calendar_events')
         .select('*')
@@ -98,15 +99,15 @@ export default function SchedulingPage() {
         .gte('start_time', from)
         .lt('start_time', to)
         .order('start_time'),
-      supabase
-        .from('employees')
-        .select('id, name, surname')
-        .eq('company_id', member.companyId)
-        .eq('is_active', true)
-        .order('name'),
+      listEmployeesScoped(supabase, member.companyId, member.employeeId, { activeOnly: true }),
     ])
     setEvents((data ?? []) as CalendarEvent[])
-    setEmployees((empData ?? []) as EmpOption[])
+    if (empRes.ok) {
+      setEmployees(empRes.data.map(e => ({ id: e.id, name: e.name, surname: e.surname })))
+    } else {
+      setError(empRes.message)
+      setEmployees([])
+    }
     setLoading(false)
   }, [])
 

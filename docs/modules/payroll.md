@@ -102,6 +102,17 @@ Payroll has the **most migration history** of any module, reflecting its sensiti
 
 > Payment approvals are modeled by `Models/PaymentApproval.cs`; payroll persistence/audit flows through the MAUI payroll helpers and corresponding payslip tables. Exact table/RPC names are catalogued in `backend/01-database.md` / `backend/02-rpcs.md`.
 
+## Web app (`kaisync-web`) — Phase 4/5 status
+
+The HR web payroll UI uses live `payment_approvals` + `company_settings.payroll_preferences`.
+
+- **Generate / recalculate:** prefs-aware TypeScript engine in `kaisync-web/src/lib/payroll-engine.ts` (OT, flat PAYE %, UIF, fixed deductions, breakdowns). This is **not** yet a full port of `SarsPayeCalculator` — the “Use SARS tax tables” setting is stored for parity and shows a web warning when enabled.
+- **Approve / reject:** `approve_payment_run` / `reject_payment_run`.
+- **Release:** updates `shared_with_employee` (same as MAUI share).
+- **Unit tests:** `npm test` covers engine, readiness, settings prefs, access normalize, and manager scoping.
+
+See also: `docs/modules/workforce-web-hardening.md`, `docs/deployment/workforce-web-smoke-checklist.md`.
+
 ## Permissions
 
 - **View:** `payments.view_payroll` — Owner & HR Admin/Admin only by default. Managers and employees cannot see payroll.

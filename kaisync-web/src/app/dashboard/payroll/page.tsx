@@ -2,10 +2,21 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { FilterChip } from '@/components/ui/FilterChip'
+import {
+  approvePaymentRun,
+  generatePayrollPeriod,
+  lockPayrollPeriod,
+  previewPayrollGenerate,
+  rejectPaymentRun,
+  releasePayslipToEmployee,
+  unlockPayrollPeriod,
+} from '@/lib/payroll'
+import type { PayrollGeneratePreview } from '@/lib/payroll-readiness'
 
 // Matches actual `payment_approvals` table columns
 type PayrollRecord = {
@@ -31,6 +42,7 @@ type PayrollRecord = {
     bank_account:    string | null
     bank_branch_code: string | null
     id_number:       string | null
+    account_type:    string | null
   }
 }
 
@@ -88,6 +100,8 @@ export default function PayrollPage() {
   const [generating,   setGenerating]   = useState(false)
   const [approving,    setApproving]    = useState(false)
   const [releasing,    setReleasing]    = useState(false)
+  const [genPreview,   setGenPreview]   = useState<PayrollGeneratePreview | null>(null)
+  const [showGenModal, setShowGenModal] = useState(false)
 
   // Reload whenever the date range changes
   useEffect(() => { loadPayroll(dateFrom, dateTo) }, [dateFrom, dateTo])
@@ -109,7 +123,7 @@ export default function PayrollPage() {
     const [{ data: paymentsData }, { data: locks }] = await Promise.all([
       supabase
         .from('payment_approvals')
-        .select('*, employee:employees(name, surname, employee_code, bank_name, bank_account, bank_branch_code, id_number)')
+        .select('*, employee:employees(name, surname, employee_code, bank_name, bank_account, bank_branch_code, id_number, account_type)')
         .eq('company_id', cid)
         .gte('period_start', from)
         .lte('period_end', to)
@@ -130,69 +144,84 @@ export default function PayrollPage() {
   async function toggleLock() {
     const cid = companyIdRef.current
     if (!cid) return
+    setError(null)
     const supabase = createClient()
-    if (isLocked) {
-      await supabase.rpc('hr_unlock_payroll_period', {
-        p_company_id:   cid,
-        p_period_start: dateFrom,
-        p_period_end:   dateTo,
-      })
-    } else {
-      await supabase.rpc('hr_lock_payroll_period', {
-        p_company_id:   cid,
-        p_period_start: dateFrom,
-        p_period_end:   dateTo,
-      })
-    }
+    const result = isLocked
+      ? await unlockPayrollPeriod(supabase, cid, dateFrom, dateTo)
+      : await lockPayrollPeriod(supabase, cid, dateFrom, dateTo)
+    if (!result.ok) setError(result.message)
     await loadPayroll(dateFrom, dateTo)
   }
 
-  async function handleGenerate() {
+  async function openGenerate() {
     const cid = companyIdRef.current
     if (!cid) return
-    if (!window.confirm(`Generate payroll for ${dateFrom} to ${dateTo}?`)) return
-    setGenerating(true)
     setError(null)
     const supabase = createClient()
-    const { data, error: rpcErr } = await supabase.rpc('hr_generate_payroll', {
-      p_company_id:   cid,
-      p_period_start: dateFrom,
-      p_period_end:   dateTo,
-    })
-    if (rpcErr) {
-      setError(rpcErr.message)
-    } else {
-      setSuccess(`Generated ${data ?? 0} payslip${(data ?? 0) !== 1 ? 's' : ''}`)
-      await loadPayroll(dateFrom, dateTo)
-    }
+    const preview = await previewPayrollGenerate(supabase, cid, dateFrom, dateTo)
+    if (!preview.ok) { setError(preview.message); return }
+    setGenPreview(preview.data)
+    setShowGenModal(true)
+  }
+
+  async function confirmGenerate() {
+    const cid = companyIdRef.current
+    if (!cid) return
+    setGenerating(true)
+    setError(null)
+    setSuccess(null)
+    const supabase = createClient()
+    const result = await generatePayrollPeriod(supabase, cid, dateFrom, dateTo)
     setGenerating(false)
+    setShowGenModal(false)
+    if (!result.ok) {
+      setError(result.message)
+      return
+    }
+    const { generated, skipped, errors } = result.data
+    let msg = `Generated ${generated} payslip${generated !== 1 ? 's' : ''}`
+    if (skipped) msg += ` (${skipped} skipped)`
+    if (errors.length) msg += `. ${errors.length} error(s): ${errors[0]}`
+    setSuccess(msg)
+    await loadPayroll(dateFrom, dateTo)
   }
 
   async function approvePayslip(id: string) {
+    const cid = companyIdRef.current
+    if (!cid) return
     setError(null)
     const supabase = createClient()
-    const { error: rpcErr } = await supabase.rpc('approve_payslip', { payment_id: id })
-    if (rpcErr) setError(rpcErr.message)
+    const result = await approvePaymentRun(supabase, cid, id)
+    if (!result.ok) setError(result.message)
+    else setSuccess('Payslip approved')
     await loadPayroll(dateFrom, dateTo)
   }
 
   async function rejectPayslip(id: string) {
+    const cid = companyIdRef.current
+    if (!cid) return
     setError(null)
     const supabase = createClient()
-    const { error: rpcErr } = await supabase.rpc('reject_payslip', { payment_id: id })
-    if (rpcErr) setError(rpcErr.message)
+    const result = await rejectPaymentRun(supabase, cid, id)
+    if (!result.ok) setError(result.message)
+    else setSuccess('Payslip rejected')
     await loadPayroll(dateFrom, dateTo)
   }
 
   async function releasePayslip(id: string) {
+    const cid = companyIdRef.current
+    if (!cid) return
     setError(null)
     const supabase = createClient()
-    const { error: rpcErr } = await supabase.rpc('release_payslip_to_employee', { payment_id: id })
-    if (rpcErr) setError(rpcErr.message)
+    const result = await releasePayslipToEmployee(supabase, cid, id)
+    if (!result.ok) setError(result.message)
+    else setSuccess('Payslip released to employee')
     await loadPayroll(dateFrom, dateTo)
   }
 
   async function approveAll() {
+    const cid = companyIdRef.current
+    if (!cid) return
     const pending = filtered.filter(p => p.status === 'pending')
     if (!pending.length) return
     if (!window.confirm(`Approve all ${pending.length} pending payslip${pending.length !== 1 ? 's' : ''}?`)) return
@@ -201,15 +230,18 @@ export default function PayrollPage() {
     const supabase = createClient()
     const failures: string[] = []
     for (const p of pending) {
-      const { error: rpcErr } = await supabase.rpc('approve_payslip', { payment_id: p.id })
-      if (rpcErr) failures.push(rpcErr.message)
+      const result = await approvePaymentRun(supabase, cid, p.id)
+      if (!result.ok) failures.push(result.message)
     }
     if (failures.length) setError(failures[0])
+    else setSuccess(`Approved ${pending.length} payslip${pending.length !== 1 ? 's' : ''}`)
     await loadPayroll(dateFrom, dateTo)
     setApproving(false)
   }
 
   async function releaseAll() {
+    const cid = companyIdRef.current
+    if (!cid) return
     const releasable = filtered.filter(p => p.status === 'approved' && p.shared_with_employee === false)
     if (!releasable.length) { setError('No approved-but-unreleased payslips in this view.'); return }
     if (!window.confirm(`Release ${releasable.length} approved payslip${releasable.length !== 1 ? 's' : ''} to employees?`)) return
@@ -218,10 +250,11 @@ export default function PayrollPage() {
     const supabase = createClient()
     const failures: string[] = []
     for (const p of releasable) {
-      const { error: rpcErr } = await supabase.rpc('release_payslip_to_employee', { payment_id: p.id })
-      if (rpcErr) failures.push(rpcErr.message)
+      const result = await releasePayslipToEmployee(supabase, cid, p.id)
+      if (!result.ok) failures.push(result.message)
     }
     if (failures.length) setError(failures[0])
+    else setSuccess(`Released ${releasable.length} payslip${releasable.length !== 1 ? 's' : ''}`)
     await loadPayroll(dateFrom, dateTo)
     setReleasing(false)
   }
@@ -271,7 +304,7 @@ export default function PayrollPage() {
           emp?.bank_name        ?? '',
           emp?.bank_account     ?? '',
           emp?.bank_branch_code ?? '',
-          'Savings',
+          emp?.account_type ?? 'Savings',
           (p.net_pay ?? 0).toFixed(2),
           `"SALARY ${p.period_start}"`,
         ].join(',')
@@ -345,12 +378,16 @@ export default function PayrollPage() {
         <div className="flex items-center justify-between gap-2">
           <h1 className="text-[18px] font-semibold text-text-primary shrink-0">Payroll</h1>
           <div className="flex items-center gap-1.5 flex-wrap justify-end">
-            <button className="bg-surface-dark rounded-md h-9 w-9 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors">
+            <Link
+              href="/dashboard/payroll/settings"
+              className="bg-surface-dark rounded-md h-9 w-9 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
+              title="Payroll settings"
+            >
               <span className="material-icons text-[18px]">settings</span>
-            </button>
+            </Link>
             {/* Lock/Unlock — writes to payroll_period_locks */}
             <button
-              onClick={toggleLock}
+              onClick={() => void toggleLock()}
               title={isLocked ? 'Unlock period' : 'Lock period'}
               className="bg-surface-dark rounded-md h-9 w-9 flex items-center justify-center transition-colors hover:text-text-primary"
               style={{ color: isLocked ? '#DC2626' : undefined }}
@@ -378,9 +415,8 @@ export default function PayrollPage() {
             >
               IRP5
             </button>
-            {/* Generate — calls hr_generate_payroll RPC */}
             <button
-              onClick={handleGenerate}
+              onClick={() => void openGenerate()}
               disabled={generating || isLocked}
               className="h-9 px-3 text-[12px] rounded-md bg-surface-dark border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
             >
@@ -557,6 +593,56 @@ export default function PayrollPage() {
           </table>
         </div>
       </div>
+
+      {showGenModal && genPreview && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-surface rounded-xl shadow-lg w-full max-w-md p-5 space-y-3">
+            <h3 className="font-semibold text-text-primary">Generate payroll</h3>
+            <p className="text-[13px] text-text-secondary">
+              Period {dateFrom} → {dateTo}. Uses payroll settings (OT, UIF, PAYE rates) and period punches.
+            </p>
+            <ul className="text-[13px] text-text-primary space-y-1">
+              <li><strong>{genPreview.readyCount}</strong> ready to generate</li>
+              {genPreview.duplicateCount > 0 && (
+                <li className="text-text-secondary">{genPreview.duplicateCount} already have payslips (skipped)</li>
+              )}
+              {genPreview.missingRatesCount > 0 && (
+                <li className="text-warning">{genPreview.missingRatesCount} missing pay rates</li>
+              )}
+              {genPreview.missingBankCount > 0 && (
+                <li className="text-warning">{genPreview.missingBankCount} missing banking</li>
+              )}
+              {genPreview.contractorCount > 0 && (
+                <li className="text-text-secondary">{genPreview.contractorCount} contractors — review statutory</li>
+              )}
+            </ul>
+            {genPreview.detailLines.length > 0 && (
+              <div className="max-h-28 overflow-y-auto text-[12px] text-text-secondary space-y-0.5">
+                {genPreview.detailLines.slice(0, 8).map(line => (
+                  <p key={line}>{line}</p>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2 justify-end pt-1">
+              <button
+                type="button"
+                onClick={() => setShowGenModal(false)}
+                className="btn-outlined h-9 px-4 text-[13px]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmGenerate()}
+                disabled={generating || genPreview.readyCount === 0}
+                className="btn-primary h-9 px-4 text-[13px] disabled:opacity-50"
+              >
+                {generating ? 'Generating…' : `Generate ${genPreview.readyCount}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -14,11 +14,20 @@ import {
   ACCESS_LEVELS,
   EMPLOYMENT_TYPES,
   WORKER_TYPES,
+  normalizeAccessLevel,
   normalizeEmploymentType,
   normalizeWorkerType,
 } from '@/lib/employee-taxonomy'
 import { sendEmployeeInvite } from '@/lib/employee-invite'
-import { deleteEmployee, setEmployeeActive } from '@/lib/employee-lifecycle'
+import {
+  deleteEmployee,
+  getEmployee,
+  listBranches,
+  listManagerOptions,
+  listShiftTemplates,
+  setEmployeeActive,
+  updateEmployee,
+} from '@/lib/employees'
 import type { Branch, ShiftTemplate, Employee } from '@/types/database'
 
 const ACCOUNT_TYPES = ['Cheque', 'Savings', 'Transmission']
@@ -80,21 +89,20 @@ export default function EditEmployeePage() {
     setCompanyId(member.companyId)
 
     const [empRes, br, tmpl, mgr] = await Promise.all([
-      supabase.from('employees').select('*').eq('id', id).eq('company_id', member.companyId).maybeSingle(),
-      supabase.from('branches').select('id, name').eq('company_id', member.companyId).order('name'),
-      supabase.from('employee_shift_templates').select('id, name, start_time, end_time, is_default').eq('company_id', member.companyId).order('name'),
-      supabase.from('employees').select('id, name, surname')
-        .eq('company_id', member.companyId).eq('is_active', true)
-        .in('access_level', ['owner', 'manager', 'hr', 'hr_admin']).order('name'),
+      getEmployee(supabase, member.companyId, id),
+      listBranches(supabase, member.companyId),
+      listShiftTemplates(supabase, member.companyId),
+      listManagerOptions(supabase, member.companyId, id),
     ])
 
-    const emp = empRes.data as Employee | null
+    if (!empRes.ok) { setError(empRes.message); setLoading(false); return }
+    const emp = empRes.data
     if (!emp) { setLoading(false); return }
 
     setEmployee(emp)
-    setBranches((br.data ?? []) as Branch[])
-    setTemplates((tmpl.data ?? []) as ShiftTemplate[])
-    setManagers((mgr.data ?? []) as Pick<Employee, 'id' | 'name' | 'surname'>[])
+    if (br.ok) setBranches(br.data)
+    if (tmpl.ok) setTemplates(tmpl.data)
+    if (mgr.ok) setManagers(mgr.data)
 
     // Populate form
     setIsActive(emp.is_active)
@@ -110,7 +118,7 @@ export default function EditEmployeePage() {
     setTemplateId(emp.shift_template_id ?? '')
     setEmploymentType(normalizeEmploymentType(emp.employment_type))
     setWorkerType(normalizeWorkerType(emp.worker_type))
-    setAccessLevel(emp.access_level)
+    setAccessLevel(normalizeAccessLevel(emp.access_level))
     const raw = emp as Employee & {
       paye_rate_percent?: number | null
       uif_exempt?: boolean | null
@@ -154,50 +162,45 @@ export default function EditEmployeePage() {
     const branchName = branchId
       ? (branches.find(b => b.id === branchId)?.name ?? null)
       : null
-    const dept = department.trim() || null
 
-    // Column names must match live DB. Sync legacy branch text + cost_center.
-    const { error: updateError } = await supabase
-      .from('employees')
-      .update({
-        name: firstName.trim(),
-        surname: lastName.trim(),
-        email: email.trim() || null,
-        phone: phone.trim() || null,
-        id_number: idNumber.trim() || null,
-        position: position.trim() || null,
-        department: dept,
-        cost_center: dept,
-        branch_id: branchId || null,
-        branch: branchName,
-        shift_template_id: templateId || null,
-        employment_type: normalizeEmploymentType(employmentType),
-        worker_type: normalizeWorkerType(workerType),
-        access_level: accessLevel,
-        manager_id: managerId || null,
-        employment_date: employmentDate || null,
-        monthly_salary: salaryNum,
-        pay_by_hour: payByHour,
-        pay_basis: payByHour ? payBasis : null,
-        paye_rate_percent: payeRate ? parseFloat(payeRate) : null,
-        uif_exempt: exemptUif,
-        medical_aid_deduction: medicalAid ? parseFloat(medicalAid) : 0,
-        pension_deduction: pension ? parseFloat(pension) : 0,
-        union_deduction: union ? parseFloat(union) : 0,
-        work_days_weekly: daysNum,
-        daily_hours: hoursNum,
-        hourly_rate: salaryNum ? computedHourlyRate : 0,
-        daily_rate: salaryNum ? computedDailyRate : 0,
-        bank_name: bankName.trim() || null,
-        bank_account: accountNumber.trim() || null,
-        bank_branch_code: bankBranchCode.trim() || null,
-        account_type: accountType || null,
-      })
-      .eq('id', id)
+    const updated = await updateEmployee(supabase, id, {
+      companyId,
+      name: firstName,
+      surname: lastName,
+      email,
+      phone,
+      idNumber,
+      position,
+      department,
+      branchId: branchId || null,
+      branchName,
+      shiftTemplateId: templateId || null,
+      employmentType,
+      workerType,
+      accessLevel,
+      managerId: managerId || null,
+      employmentDate: employmentDate || null,
+      monthlySalary: salaryNum,
+      payByHour,
+      payBasis,
+      payeRatePercent: payeRate ? parseFloat(payeRate) : null,
+      uifExempt: exemptUif,
+      medicalAidDeduction: medicalAid ? parseFloat(medicalAid) : 0,
+      pensionDeduction: pension ? parseFloat(pension) : 0,
+      unionDeduction: union ? parseFloat(union) : 0,
+      workDaysWeekly: daysNum,
+      dailyHours: hoursNum,
+      hourlyRate: salaryNum ? computedHourlyRate : 0,
+      dailyRate: salaryNum ? computedDailyRate : 0,
+      bankName,
+      bankAccount: accountNumber,
+      bankBranchCode,
+      accountType,
+    })
 
-    if (updateError) {
+    if (!updated.ok) {
       setSaving(false)
-      setError(updateError.message)
+      setError(updated.message)
       return
     }
 

@@ -13,6 +13,7 @@ export const WORKER_TYPES = [
   { value: 'subcontractor', label: 'Subcontractor' },
 ] as const
 
+/** Canonical web access levels written to employees.access_level */
 export const ACCESS_LEVELS = [
   { value: 'employee', label: 'Employee' },
   { value: 'manager', label: 'Manager' },
@@ -22,6 +23,33 @@ export const ACCESS_LEVELS = [
 
 export type EmploymentTypeValue = (typeof EMPLOYMENT_TYPES)[number]['value']
 export type WorkerTypeValue = (typeof WORKER_TYPES)[number]['value']
+export type AccessLevelValue = (typeof ACCESS_LEVELS)[number]['value']
+
+/** Levels that may manage / report-to pickers (includes legacy hr_admin stored values). */
+export const MANAGER_ACCESS_LEVELS = ['owner', 'manager', 'hr', 'hr_admin'] as const
+
+/**
+ * Normalize any stored/legacy access_level to canonical web values.
+ * hr_admin / hradmin / admin → hr
+ */
+export function normalizeAccessLevel(raw: string | null | undefined): AccessLevelValue {
+  const key = (raw ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+  if (key === 'owner') return 'owner'
+  if (key === 'manager') return 'manager'
+  if (key === 'hr' || key === 'hr_admin' || key === 'hradmin' || key === 'admin') return 'hr'
+  return 'employee'
+}
+
+export function labelAccessLevel(raw: string | null | undefined): string {
+  const v = normalizeAccessLevel(raw)
+  return ACCESS_LEVELS.find(l => l.value === v)?.label ?? (raw || '—')
+}
+
+/** True when the person uses the company/HR dashboard (not field employee portal). */
+export function isCompanyDashboardAccess(raw: string | null | undefined): boolean {
+  const v = normalizeAccessLevel(raw)
+  return v === 'owner' || v === 'hr' || v === 'manager'
+}
 
 /** Normalize stored / imported employment_type to canonical lowercase values. */
 export function normalizeEmploymentType(raw: string | null | undefined): string {

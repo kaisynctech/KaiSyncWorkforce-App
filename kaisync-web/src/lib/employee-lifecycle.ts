@@ -1,3 +1,12 @@
+/**
+ * Employee activate / deactivate / delete.
+ *
+ * Soft-delete-first policy (Workforce Phase 5):
+ * - Prefer setEmployeeActive(isActive: false) for offboarding / archive.
+ * - Hard deleteEmployee is owner/HR only, audited server-side, and removes
+ *   that employee’s punches first — use only when the record must be purged.
+ */
+
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 /** Soft activate/deactivate via audited RPC (also syncs company_relationships). */
@@ -14,7 +23,10 @@ export async function setEmployeeActive(
   return { ok: true }
 }
 
-/** Hard delete via audited RPC (owner/hr). Removes punches for that employee first. */
+/**
+ * Hard delete via audited RPC (owner/hr). Prefer setEmployeeActive(false) first.
+ * Removes punches for that employee before deleting the row.
+ */
 export async function deleteEmployee(
   supabase: SupabaseClient,
   opts: { companyId: string; employeeId: string }

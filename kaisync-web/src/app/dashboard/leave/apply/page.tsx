@@ -7,9 +7,13 @@ import { createClient } from '@/lib/supabase/client'
 import { SectionCard, FormField, entryClass } from '@/components/SectionCard'
 import { FormSelect } from '@/components/FormSelect'
 import { FormDateInput } from '@/components/FormDateInput'
-
-/** Canonical leave type labels stored on leave_requests.leave_type (no leave_types table). */
-const DEFAULT_LEAVE_TYPES = ['Annual Leave', 'Sick Leave', 'Family Responsibility', 'Unpaid Leave']
+import { calcLeaveTotalDays, LEAVE_TYPES } from '@/lib/leave-policy'
+import {
+  getCompanyAnnualDays,
+  loadLeaveSettings,
+  resolveLeaveTypeOptions,
+  type LeaveSettingsMap,
+} from '@/lib/leave-settings'
 
 function ApplyLeaveContent() {
   const router = useRouter()
@@ -18,6 +22,8 @@ function ApplyLeaveContent() {
 
   const [employeeName, setEmployeeName] = useState('')
   const [companyId, setCompanyId] = useState<string | null>(null)
+  const [leaveSettings, setLeaveSettings] = useState<LeaveSettingsMap>({})
+  const [usedByType, setUsedByType] = useState<Record<string, number>>({})
   const [backHref, setBackHref] = useState('/dashboard/employees')
   const [leaveType, setLeaveType] = useState('Annual Leave')
   const [startDate, setStartDate] = useState('')
@@ -29,7 +35,7 @@ function ApplyLeaveContent() {
   useEffect(() => {
     if (!employeeId) { router.push('/dashboard/employees'); return }
     setBackHref(`/dashboard/employees/${employeeId}`)
-    loadEmployee(employeeId)
+    void loadEmployee(employeeId)
   }, [employeeId])
 
   async function loadEmployee(empId: string) {
@@ -42,15 +48,25 @@ function ApplyLeaveContent() {
 
     if (!emp) { router.push('/dashboard/employees'); return }
     setEmployeeName(`${emp.name} ${emp.surname}`)
-    setCompanyId(emp.company_id as string)
-  }
+    const cid = emp.company_id as string
+    setCompanyId(cid)
 
-  function calcTotalDays(start: string, end: string): number {
-    if (!start || !end) return 0
-    const s = new Date(start)
-    const e = new Date(end)
-    if (e < s) return 0
-    return Math.round((e.getTime() - s.getTime()) / 86400000) + 1
+    const yearStart = `${new Date().getFullYear()}-01-01`
+    const [settingsRes, usedRes] = await Promise.all([
+      loadLeaveSettings(supabase, cid),
+      supabase
+        .from('leave_requests')
+        .select('leave_type, total_days')
+        .eq('employee_id', empId)
+        .eq('status', 'approved')
+        .gte('start_date', yearStart),
+    ])
+    if (settingsRes.ok) setLeaveSettings(settingsRes.data)
+    const used: Record<string, number> = {}
+    for (const row of (usedRes.data ?? []) as { leave_type: string; total_days: number }[]) {
+      used[row.leave_type] = (used[row.leave_type] ?? 0) + (row.total_days ?? 0)
+    }
+    setUsedByType(used)
   }
 
   async function submit() {
@@ -65,10 +81,8 @@ function ApplyLeaveContent() {
     setIsBusy(true)
     setError(null)
     const supabase = createClient()
-    const totalDays = calcTotalDays(startDate, endDate)
+    const totalDays = calcLeaveTotalDays(startDate, endDate)
 
-    // HR applies on behalf of an employee — direct insert (RLS: company member).
-    // Worker self-service uses employee_submit_leave_request with a session token.
     const { error: insertErr } = await supabase.from('leave_requests').insert({
       company_id: companyId,
       employee_id: employeeId,
@@ -90,7 +104,11 @@ function ApplyLeaveContent() {
     router.push(`/dashboard/employees/${employeeId}`)
   }
 
-  const totalDays = calcTotalDays(startDate, endDate)
+  const totalDays = startDate && endDate ? calcLeaveTotalDays(startDate, endDate) : 0
+  const typeOptions = resolveLeaveTypeOptions(leaveSettings)
+  const annual = getCompanyAnnualDays(leaveType, leaveSettings)
+  const used = usedByType[leaveType] ?? 0
+  const remaining = Math.max(0, annual - used)
 
   return (
     <div className="p-4 space-y-4 max-w-lg mx-auto pb-8 overflow-y-auto">
@@ -115,8 +133,27 @@ function ApplyLeaveContent() {
           value={leaveType}
           onChange={e => setLeaveType(e.target.value)}
         >
-          {DEFAULT_LEAVE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+          {(typeOptions.length ? typeOptions : LEAVE_TYPES.map(t => ({ key: t.key, label: t.label }))).map(t => (
+            <option key={t.key} value={t.key}>{t.label}</option>
+          ))}
         </FormSelect>
+
+        <div className="bg-surface-elevated rounded-lg px-3 py-2 text-[13px] flex flex-wrap gap-x-4 gap-y-1">
+          <span>
+            <span className="text-text-secondary">Annual: </span>
+            <span className="font-semibold text-text-primary">{annual}</span>
+          </span>
+          <span>
+            <span className="text-text-secondary">Used YTD: </span>
+            <span className="font-semibold text-text-primary">{used}</span>
+          </span>
+          <span>
+            <span className="text-text-secondary">Remaining: </span>
+            <span className={`font-semibold ${remaining <= 0 ? 'text-error' : 'text-success'}`}>
+              {remaining}
+            </span>
+          </span>
+        </div>
 
         <div className="grid grid-cols-[1fr_auto_1fr] gap-x-2 items-end">
           <FormDateInput
@@ -151,7 +188,7 @@ function ApplyLeaveContent() {
       {error && <p className="text-error text-[13px] px-1">{error}</p>}
 
       <button
-        onClick={submit}
+        onClick={() => void submit()}
         disabled={isBusy || !startDate || !endDate || !reason.trim()}
         className="w-full h-11 bg-primary text-white rounded-md font-semibold text-[15px] hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >

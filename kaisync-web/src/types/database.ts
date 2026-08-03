@@ -10,7 +10,10 @@ export interface Employee {
   access_level: AccessLevel
   is_active: boolean
   department: string | null
-  job_title: string | null
+  /** Dual-write mirror of department for payroll/MAUI readers */
+  cost_center?: string | null
+  /** @deprecated not a live column — use position */
+  job_title?: string | null
   position: string | null
   email: string | null
   phone: string | null
@@ -37,8 +40,14 @@ export interface Employee {
   daily_hours: number | null
   pay_by_hour: boolean
   pay_basis: string | null
+  /** Canonical reports-to: employees.id */
   manager_id: string | null
+  /** Legacy MAUI scope: manager's auth.users id */
+  manager_user_id?: string | null
+  /** Canonical branch FK → branches.id */
   branch_id: string | null
+  /** Dual-write mirror of branches.name */
+  branch?: string | null
   shift_template_id: string | null
   bank_name: string | null
   bank_account: string | null
@@ -473,16 +482,21 @@ export interface EmployeePayment {
   id: string
   employee_id: string
   company_id: string
-  period_label: string
+  period_start?: string
+  period_end?: string
+  /** @deprecated not a live column — derive from period_start/period_end */
+  period_label?: string
   gross_pay: number
   deductions: number
   net_pay: number
-  hours: number
-  status: 'pending' | 'approved' | 'paid' | 'rejected'
-  is_visible_to_employee: boolean
-  can_release_to_employee: boolean
-  is_period_locked: boolean
-  can_edit_overrides: boolean
+  hours?: number
+  status: 'pending' | 'approved' | 'paid' | 'rejected' | string
+  shared_with_employee?: boolean
+  /** @deprecated use shared_with_employee */
+  is_visible_to_employee?: boolean
+  can_release_to_employee?: boolean
+  is_period_locked?: boolean
+  can_edit_overrides?: boolean
   pay_full_base_salary: boolean
   waive_penalties: boolean
   manual_paye_override: number | null
@@ -490,19 +504,19 @@ export interface EmployeePayment {
   adjustment_note: string | null
   bonus_amount: number | null
   bonus_note: string | null
-  days_worked: number
-  approved_leave: number
+  days_worked?: number
+  approved_leave?: number
   absent_days: number
   regular_hours: number
   overtime_hours: number
   regular_pay: number
   overtime_pay: number
-  has_earnings_lines: boolean
-  has_deduction_lines: boolean
-  has_ytd: boolean
-  has_policy_snapshot: boolean
-  has_audit_entries: boolean
-  policy_snapshot_summary: string | null
+  has_earnings_lines?: boolean
+  has_deduction_lines?: boolean
+  has_ytd?: boolean
+  has_policy_snapshot?: boolean
+  has_audit_entries?: boolean
+  policy_snapshot_summary?: string | null
   employee?: { name: string; surname: string }
   earnings_lines?: PayrollLineItem[]
   deduction_lines?: PayrollLineItem[]
