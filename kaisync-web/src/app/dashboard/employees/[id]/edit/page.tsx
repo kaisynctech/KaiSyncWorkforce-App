@@ -10,10 +10,16 @@ import { SectionCard, FormField, entryClass } from '@/components/SectionCard'
 import { FormSelect } from '@/components/FormSelect'
 import { FormDateInput } from '@/components/FormDateInput'
 import { Toggle } from '@/components/Toggle'
+import {
+  ACCESS_LEVELS,
+  EMPLOYMENT_TYPES,
+  WORKER_TYPES,
+  normalizeEmploymentType,
+  normalizeWorkerType,
+} from '@/lib/employee-taxonomy'
+import { sendEmployeeInvite } from '@/lib/employee-invite'
 import type { Branch, ShiftTemplate, Employee } from '@/types/database'
 
-const EMPLOYMENT_TYPES = ['Permanent', 'Contract', 'Part-Time', 'Student']
-const ACCESS_LEVELS = ['employee', 'manager', 'hr', 'owner']
 const ACCOUNT_TYPES = ['Cheque', 'Savings', 'Transmission']
 
 export default function EditEmployeePage() {
@@ -40,10 +46,12 @@ export default function EditEmployeePage() {
   const [position, setPosition] = useState('')
   const [branchId, setBranchId] = useState('')
   const [templateId, setTemplateId] = useState('')
-  const [employmentType, setEmploymentType] = useState('Permanent')
+  const [employmentType, setEmploymentType] = useState('permanent')
+  const [workerType, setWorkerType] = useState('employee')
   const [accessLevel, setAccessLevel] = useState('employee')
   const [managerId, setManagerId] = useState('')
   const [employmentDate, setEmploymentDate] = useState('')
+  const [inviteMsg, setInviteMsg] = useState<string | null>(null)
   const [monthlySalary, setMonthlySalary] = useState('')
   const [payByHour, setPayByHour] = useState(false)
   const [payBasis, setPayBasis] = useState('hourly')
@@ -94,7 +102,8 @@ export default function EditEmployeePage() {
     setPosition(emp.position ?? '')
     setBranchId(emp.branch_id ?? '')
     setTemplateId(emp.shift_template_id ?? '')
-    setEmploymentType(emp.employment_type ?? 'Permanent')
+    setEmploymentType(normalizeEmploymentType(emp.employment_type))
+    setWorkerType(normalizeWorkerType(emp.worker_type))
     setAccessLevel(emp.access_level)
     const raw = emp as Employee & {
       paye_rate_percent?: number | null
@@ -149,7 +158,8 @@ export default function EditEmployeePage() {
         position: position.trim() || null,
         branch_id: branchId || null,
         shift_template_id: templateId || null,
-        employment_type: employmentType,
+        employment_type: normalizeEmploymentType(employmentType),
+        worker_type: normalizeWorkerType(workerType),
         access_level: accessLevel,
         manager_id: managerId || null,
         employment_date: employmentDate || null,
@@ -178,8 +188,14 @@ export default function EditEmployeePage() {
   }
 
   async function handleSendInvite() {
+    if (!email.trim()) {
+      setInviteMsg('Email is required to send an invite.')
+      return
+    }
+    setInviteMsg(null)
     const supabase = createClient()
-    try { await supabase.rpc('send_employee_invite', { employee_id: id }) } catch { /* no-op */ }
+    const result = await sendEmployeeInvite(supabase, { employeeId: id, email })
+    setInviteMsg(result.ok ? 'Invite sent.' : result.message)
   }
 
   async function handleArchive() {
@@ -271,6 +287,14 @@ export default function EditEmployeePage() {
         </div>
 
         {error && <p className="px-4 pb-[10px] text-error text-[13px]">{error}</p>}
+        {inviteMsg && (
+          <p className={cn(
+            'px-4 pb-[10px] text-[13px]',
+            inviteMsg === 'Invite sent.' ? 'text-success' : 'text-error'
+          )}>
+            {inviteMsg}
+          </p>
+        )}
       </div>
 
       {/* Scrollable form */}
@@ -305,11 +329,29 @@ export default function EditEmployeePage() {
             <option value="">None</option>
             {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
           </FormSelect>
-          <FormSelect label="Employment type" value={employmentType} onChange={e => setEmploymentType(e.target.value)}>
-            {EMPLOYMENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+          <FormSelect
+            label="Employment type"
+            value={employmentType}
+            onChange={e => setEmploymentType(e.target.value)}
+            hint="Contract kind: permanent, contract, part-time, or student."
+          >
+            {EMPLOYMENT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
           </FormSelect>
-          <FormSelect label="Access level" value={accessLevel} onChange={e => setAccessLevel(e.target.value)}>
-            {ACCESS_LEVELS.map(l => <option key={l} value={l}>{l.charAt(0).toUpperCase() + l.slice(1)}</option>)}
+          <FormSelect
+            label="Worker type"
+            value={workerType}
+            onChange={e => setWorkerType(e.target.value)}
+            hint="Payroll classification. Required — not the same as access level."
+          >
+            {WORKER_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+          </FormSelect>
+          <FormSelect
+            label="Access level"
+            value={accessLevel}
+            onChange={e => setAccessLevel(e.target.value)}
+            hint="App permissions (who can manage HR, teams, etc.)."
+          >
+            {ACCESS_LEVELS.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
           </FormSelect>
           <FormSelect label="Reports to (manager)" value={managerId} onChange={e => setManagerId(e.target.value)}>
             <option value="">None</option>

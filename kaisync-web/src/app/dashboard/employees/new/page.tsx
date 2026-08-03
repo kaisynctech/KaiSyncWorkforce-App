@@ -9,10 +9,17 @@ import { SectionCard, FormField, entryClass } from '@/components/SectionCard'
 import { FormSelect } from '@/components/FormSelect'
 import { FormDateInput } from '@/components/FormDateInput'
 import { Toggle } from '@/components/Toggle'
+import {
+  ACCESS_LEVELS,
+  EMPLOYMENT_TYPES,
+  WORKER_TYPES,
+  normalizeEmploymentType,
+  normalizeWorkerType,
+} from '@/lib/employee-taxonomy'
+import { sendEmployeeInvite } from '@/lib/employee-invite'
 import type { Branch, ShiftTemplate, Employee } from '@/types/database'
 
-const EMPLOYMENT_TYPES = ['Permanent', 'Contract', 'Part-Time', 'Student']
-const ACCESS_LEVELS = ['employee', 'manager', 'hr', 'owner']
+const ACCOUNT_TYPES = ['Cheque', 'Savings', 'Transmission']
 
 export default function CreateEmployeePage() {
   const router = useRouter()
@@ -32,9 +39,10 @@ export default function CreateEmployeePage() {
 
   // Employment
   const [position, setPosition] = useState('')
+  const [department, setDepartment] = useState('')
   const [branchId, setBranchId] = useState('')
   const [templateId, setTemplateId] = useState('')
-  const [employmentType, setEmploymentType] = useState('Permanent')
+  const [employmentType, setEmploymentType] = useState('permanent')
   const [workerType, setWorkerType] = useState('employee')
   const [accessLevel, setAccessLevel] = useState('employee')
   const [managerId, setManagerId] = useState('')
@@ -51,6 +59,12 @@ export default function CreateEmployeePage() {
   const [union, setUnion] = useState('')
   const [workDays, setWorkDays] = useState('5')
   const [dailyHours, setDailyHours] = useState('8')
+
+  // Banking
+  const [bankName, setBankName] = useState('')
+  const [accountNumber, setAccountNumber] = useState('')
+  const [bankBranchCode, setBankBranchCode] = useState('')
+  const [accountType, setAccountType] = useState('Cheque')
 
   // Invite
   const [sendInvite, setSendInvite] = useState(false)
@@ -96,10 +110,17 @@ export default function CreateEmployeePage() {
       setError('First name and last name are required.')
       return
     }
+    if (sendInvite && !email.trim()) {
+      setError('Email is required when Send email invite is enabled.')
+      return
+    }
     setSaving(true)
     setError(null)
 
     const supabase = createClient()
+    const resolvedWorkerType = normalizeWorkerType(workerType)
+    const resolvedEmploymentType = normalizeEmploymentType(employmentType)
+
     // Column names must match live DB (not MAUI DTO aliases).
     const { data, error: insertError } = await supabase
       .from('employees')
@@ -111,10 +132,11 @@ export default function CreateEmployeePage() {
         phone: phone.trim() || null,
         id_number: idNumber.trim() || null,
         position: position.trim() || null,
+        department: department.trim() || null,
         branch_id: branchId || null,
         shift_template_id: templateId || null,
-        employment_type: employmentType,
-        worker_type: workerType.trim() || 'employee',
+        employment_type: resolvedEmploymentType,
+        worker_type: resolvedWorkerType,
         access_level: accessLevel,
         manager_id: managerId || null,
         employment_date: employmentDate || null,
@@ -130,7 +152,12 @@ export default function CreateEmployeePage() {
         daily_hours: hoursNum,
         hourly_rate: salaryNum ? computedHourlyRate : null,
         daily_rate: salaryNum ? computedDailyRate : null,
+        bank_name: bankName.trim() || null,
+        bank_account: accountNumber.trim() || null,
+        bank_branch_code: bankBranchCode.trim() || null,
+        account_type: accountType || null,
         is_active: true,
+        registration_status: 'active',
       })
       .select()
       .single()
@@ -142,7 +169,16 @@ export default function CreateEmployeePage() {
     }
 
     if (sendInvite && data) {
-      try { await supabase.rpc('send_employee_invite', { employee_id: data.id }) } catch { /* no-op */ }
+      const invite = await sendEmployeeInvite(supabase, {
+        employeeId: data.id,
+        email: email.trim(),
+      })
+      if (!invite.ok) {
+        setSaving(false)
+        setError(`Employee created, but invite failed: ${invite.message}`)
+        router.push(`/dashboard/employees/${data.id}`)
+        return
+      }
     }
 
     router.push(`/dashboard/employees/${data.id}`)
@@ -202,6 +238,11 @@ export default function CreateEmployeePage() {
             placeholder="e.g. Cleaner, Guard, Technician" className={entryClass} />
         </FormField>
 
+        <FormField label="Department">
+          <input type="text" value={department} onChange={e => setDepartment(e.target.value)}
+            placeholder="e.g. Operations, Finance" className={entryClass} />
+        </FormField>
+
         <FormSelect label="Branch" value={branchId} onChange={e => setBranchId(e.target.value)}>
           <option value="">Select branch (optional)</option>
           {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
@@ -219,13 +260,32 @@ export default function CreateEmployeePage() {
           )}
         </div>
 
-        <FormSelect label="Employment type" value={employmentType} onChange={e => setEmploymentType(e.target.value)}>
-          {EMPLOYMENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+        <FormSelect
+          label="Employment type"
+          value={employmentType}
+          onChange={e => setEmploymentType(e.target.value)}
+          hint="Contract kind: permanent, contract, part-time, or student."
+        >
+          {EMPLOYMENT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
         </FormSelect>
 
-        <FormSelect label="Access level" value={accessLevel} onChange={e => setAccessLevel(e.target.value)}>
+        <FormSelect
+          label="Worker type"
+          value={workerType}
+          onChange={e => setWorkerType(e.target.value)}
+          hint="Payroll classification. Required — defaults to Employee."
+        >
+          {WORKER_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+        </FormSelect>
+
+        <FormSelect
+          label="Access level"
+          value={accessLevel}
+          onChange={e => setAccessLevel(e.target.value)}
+          hint="App permissions (who can manage HR, teams, etc.). Not the same as worker type."
+        >
           {ACCESS_LEVELS.map(l => (
-            <option key={l} value={l}>{l.charAt(0).toUpperCase() + l.slice(1)}</option>
+            <option key={l.value} value={l.value}>{l.label}</option>
           ))}
         </FormSelect>
 
@@ -327,18 +387,37 @@ export default function CreateEmployeePage() {
         )}
       </SectionCard>
 
+      {/* BANKING */}
+      <SectionCard title="BANKING DETAILS">
+        <FormField label="Bank name">
+          <input type="text" value={bankName} onChange={e => setBankName(e.target.value)}
+            placeholder="e.g. Nedbank" className={entryClass} />
+        </FormField>
+        <FormField label="Account number">
+          <input type="text" value={accountNumber} onChange={e => setAccountNumber(e.target.value)}
+            placeholder="12-digit account number" className={entryClass} />
+        </FormField>
+        <FormField label="Branch code">
+          <input type="text" value={bankBranchCode} onChange={e => setBankBranchCode(e.target.value)}
+            placeholder="6-digit branch code" className={entryClass} />
+        </FormField>
+        <FormSelect label="Account type" value={accountType} onChange={e => setAccountType(e.target.value)}>
+          {ACCOUNT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+        </FormSelect>
+      </SectionCard>
+
       {/* INVITE */}
       <SectionCard>
         <div className="flex items-center justify-between">
           <div>
             <p className="text-[15px] font-medium text-text-primary">Send email invite</p>
-            <p className="text-[11px] text-text-secondary">Employee will receive a login link</p>
+            <p className="text-[11px] text-text-secondary">Requires email — sends a login link</p>
           </div>
           <Toggle checked={sendInvite} onChange={setSendInvite} />
         </div>
       </SectionCard>
 
-      {error && <p className="text-error text-[13px] px-1">{error}</p>}
+      {error && error !== 'not_linked' && <p className="text-error text-[13px] px-1">{error}</p>}
 
       <button
         type="submit"
