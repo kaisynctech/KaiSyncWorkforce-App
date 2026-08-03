@@ -323,3 +323,109 @@ export async function recordInvoicePayment(
     note: method,
   })
 }
+
+export type ReorderLineInput = {
+  inventoryItemId: string
+  description: string
+  quantity: number
+  unitCost: number
+  supplierId: string
+}
+
+/**
+ * Create one draft supplier invoice per preferred supplier from reorder lines.
+ * Returns created invoice ids (ordered by supplier groups).
+ */
+export async function createDraftSupplierReorderInvoices(
+  supabase: SupabaseClient,
+  args: {
+    companyId: string
+    actorId: string | null
+    actorName: string | null
+    lines: ReorderLineInput[]
+    vatRate?: number
+  },
+): Promise<{ invoiceIds: string[]; skippedNoSupplier: number }> {
+  const vatRate = args.vatRate ?? 0.15
+  const withSupplier = args.lines.filter(l => l.supplierId && l.quantity > 0)
+  const skippedNoSupplier = args.lines.length - withSupplier.length
+
+  const bySupplier = new Map<string, ReorderLineInput[]>()
+  for (const line of withSupplier) {
+    const list = bySupplier.get(line.supplierId) ?? []
+    list.push(line)
+    bySupplier.set(line.supplierId, list)
+  }
+
+  const invoiceIds: string[] = []
+  const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+
+  for (const [supplierId, group] of bySupplier) {
+    const calcLines = group.map(l =>
+      calculateLine(l.quantity, l.unitCost, vatRate, false, 'standard'),
+    )
+    const totals = summariseLines(calcLines)
+    const invoiceNumber = `RO-${stamp}-${supplierId.slice(0, 6).toUpperCase()}`
+
+    const { data: inv, error: invErr } = await supabase
+      .from('supplier_invoices')
+      .insert({
+        company_id: args.companyId,
+        supplier_id: supplierId,
+        invoice_number: invoiceNumber,
+        subtotal: totals.subtotal,
+        vat_rate: vatRate,
+        vat_amount: totals.vatAmount,
+        total_amount: totals.totalAmount,
+        amount_paid: 0,
+        balance_due: totals.totalAmount,
+        is_vat_inclusive: false,
+        tax_type: 'standard',
+        status: 'draft',
+        approval_status: 'pending',
+        notes: 'Draft reorder from inventory low-stock',
+        created_by: args.actorId,
+      })
+      .select('id')
+      .single()
+
+    if (invErr || !inv) throw new Error(invErr?.message ?? 'Failed to create draft supplier invoice')
+
+    const lineRows = group.map((l, idx) => {
+      const calc = calcLines[idx]
+      return {
+        company_id: args.companyId,
+        invoice_id: inv.id as string,
+        line_no: idx + 1,
+        inventory_item_id: l.inventoryItemId,
+        description: l.description,
+        quantity: l.quantity,
+        unit_price: l.unitCost,
+        subtotal: calc.subtotal,
+        vat_rate: vatRate,
+        vat_amount: calc.vatAmount,
+        total_amount: calc.totalAmount,
+        is_vat_inclusive: false,
+        tax_type: 'standard',
+      }
+    })
+
+    const { error: lineErr } = await supabase.from('supplier_invoice_lines').insert(lineRows)
+    if (lineErr) throw new Error(lineErr.message)
+
+    await logFinanceAudit(supabase, {
+      companyId: args.companyId,
+      entityType: 'supplier_invoice',
+      entityId: inv.id as string,
+      action: 'created',
+      amount: totals.totalAmount,
+      actorId: args.actorId,
+      actorName: args.actorName,
+      note: `Draft reorder (${group.length} line${group.length === 1 ? '' : 's'})`,
+    })
+
+    invoiceIds.push(inv.id as string)
+  }
+
+  return { invoiceIds, skippedNoSupplier }
+}

@@ -12,6 +12,14 @@ import {
   isWarrantyExpiringSoon,
   type AssetStatus,
 } from '@/lib/supply-assets'
+import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
+import {
+  DEFAULT_PAGE_SIZE,
+  PAGE_SIZE_OPTIONS,
+  escapeIlike,
+  pageRange,
+  totalPages,
+} from '@/lib/list-pagination'
 import type { Asset, Employee, Site, Unit } from '@/types/database'
 
 const fmtDate = (d: string | null | undefined) => {
@@ -100,39 +108,28 @@ export default function AssetsPage() {
   const [error, setError] = useState<string | null>(null)
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
+  const [searchDebounced, setSearchDebounced] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
+  const [total, setTotal] = useState(0)
+  const [perms, setPerms] = useState<PermissionSet | null>(null)
   const [editing, setEditing] = useState<AssetDraft | null>(null)
   const [isNew, setIsNew] = useState(false)
   const [busy, setBusy] = useState(false)
   const [confirmRetire, setConfirmRetire] = useState<AssetRow | null>(null)
+  const [warrantyExpiringSoon, setWarrantyExpiringSoon] = useState(0)
 
-  const warrantyExpiringSoon = useMemo(
-    () => assets.filter(a => a.status !== 'retired' && isWarrantyExpiringSoon(a.warranty_expires)).length,
-    [assets],
-  )
+  const canEdit = can(perms, PERM.assetsEdit)
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    return assets.filter(a => {
-      if (statusFilter === 'warranty_expiring') {
-        if (a.status === 'retired' || !isWarrantyExpiringSoon(a.warranty_expires)) return false
-      } else if (statusFilter !== 'all' && a.status !== statusFilter) {
-        return false
-      }
-      if (!q) return true
-      return [
-        a.label,
-        a.asset_type,
-        a.serial_number,
-        a.manufacturer,
-        a.model_number,
-        a.status,
-        a.sites?.name,
-        a.units?.unit_number,
-        empName(a.assigned_employee),
-      ].filter(Boolean).join(' ').toLowerCase().includes(q)
-    })
-  }, [assets, search, statusFilter])
+  useEffect(() => {
+    const t = setTimeout(() => setSearchDebounced(search.trim()), 300)
+    return () => clearTimeout(t)
+  }, [search])
+
+  useEffect(() => { setPage(1) }, [searchDebounced, statusFilter, pageSize])
+
+  const filtered = assets
 
   const unitsForSite = useMemo(() => {
     if (!editing?.site_id) return []
@@ -147,36 +144,57 @@ export default function AssetsPage() {
     if (!member) { setError('not_linked'); setLoading(false); return }
     setCompanyId(member.companyId)
 
-    const [assetsRes, sitesRes, unitsRes, empRes, meRes] = await Promise.all([
-      supabase
-        .from('assets')
-        .select('*, sites(id, name), units(id, unit_number), assigned_employee:employees!assigned_employee_id(id, name, surname)')
-        .eq('company_id', member.companyId)
-        .order('label'),
+    const [sitesRes, unitsRes, empRes, meRes, warrantyRes] = await Promise.all([
       supabase.from('sites').select('id, name').eq('company_id', member.companyId).order('name'),
       supabase.from('units').select('id, site_id, unit_number').eq('company_id', member.companyId).order('unit_number'),
       supabase.from('employees').select('id, name, surname').eq('company_id', member.companyId).eq('is_active', true).order('name'),
-      supabase.from('employees').select('name, surname').eq('id', member.employeeId).maybeSingle(),
+      supabase.from('employees').select('name, surname, access_level').eq('id', member.employeeId).maybeSingle(),
+      supabase.from('assets').select('id, warranty_expires, status').eq('company_id', member.companyId),
     ])
 
-    if (assetsRes.error) {
-      // Fallback without embeds if FK name not resolvable yet (pre-migration)
-      const { data: plain, error: plainErr } = await supabase
-        .from('assets')
-        .select('*')
-        .eq('company_id', member.companyId)
-        .order('label')
-      if (plainErr) {
-        setError(assetsRes.error.message)
+    setPerms(await loadPermissions(supabase, member.companyId, meRes.data?.access_level))
+    setWarrantyExpiringSoon(
+      ((warrantyRes.data ?? []) as { warranty_expires: string | null; status: string }[])
+        .filter(a => a.status !== 'retired' && isWarrantyExpiringSoon(a.warranty_expires)).length,
+    )
+
+    const { from, to } = pageRange(page, pageSize)
+    let query = supabase
+      .from('assets')
+      .select('*, sites(id, name), units(id, unit_number), assigned_employee:employees!assigned_employee_id(id, name, surname)', { count: 'exact' })
+      .eq('company_id', member.companyId)
+      .order('label')
+
+    if (searchDebounced) {
+      const q = escapeIlike(searchDebounced)
+      query = query.or(`label.ilike.%${q}%,asset_type.ilike.%${q}%,serial_number.ilike.%${q}%,manufacturer.ilike.%${q}%`)
+    }
+    if (statusFilter !== 'all' && statusFilter !== 'warranty_expiring') {
+      query = query.eq('status', statusFilter)
+    }
+
+    if (statusFilter === 'warranty_expiring') {
+      const { data, error: qErr } = await query.limit(500)
+      if (qErr) {
+        setError(qErr.message)
         setAssets([])
+        setTotal(0)
       } else {
-        setAssets((plain ?? []) as AssetRow[])
-        if (assetsRes.error.message.includes('assigned_employee')) {
-          setError('Apply assets migration to enable employee assignment (site/unit still work if columns exist).')
-        }
+        const rows = ((data ?? []) as AssetRow[])
+          .filter(a => a.status !== 'retired' && isWarrantyExpiringSoon(a.warranty_expires))
+        setTotal(rows.length)
+        setAssets(rows.slice(from, from + pageSize))
       }
     } else {
-      setAssets((assetsRes.data ?? []) as AssetRow[])
+      const { data, error: qErr, count } = await query.range(from, to)
+      if (qErr) {
+        setError(qErr.message)
+        setAssets([])
+        setTotal(0)
+      } else {
+        setAssets((data ?? []) as AssetRow[])
+        setTotal(count ?? 0)
+      }
     }
 
     setSites((sitesRes.data ?? []) as Pick<Site, 'id' | 'name'>[])
@@ -186,7 +204,7 @@ export default function AssetsPage() {
       setActorName(`${meRes.data.name ?? ''} ${meRes.data.surname ?? ''}`.trim() || null)
     }
     setLoading(false)
-  }, [])
+  }, [page, pageSize, searchDebounced, statusFilter])
 
   useEffect(() => { void load() }, [load])
 
@@ -293,30 +311,40 @@ export default function AssetsPage() {
           <button onClick={() => void load()} className="bg-surface-dark rounded-md h-9 w-9 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors">
             <span className="material-icons text-[18px]">refresh</span>
           </button>
-          <button className="btn-primary h-9 px-3 text-[13px]"
-            onClick={() => { setEditing(blankAsset()); setIsNew(true); setError(null) }}>
-            + Asset
-          </button>
+          {canEdit && (
+            <button className="btn-primary h-9 px-3 text-[13px]"
+              onClick={() => { setEditing(blankAsset()); setIsNew(true); setError(null) }}>
+              + Asset
+            </button>
+          )}
         </div>
       </div>
 
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-divider shrink-0 overflow-x-auto">
-        {filterChips.map(chip => {
-          const active = statusFilter === chip.key
-          return (
-            <button
-              key={chip.key}
-              onClick={() => setStatusFilter(chip.key)}
-              className={`h-8 px-3 rounded-lg text-[12px] font-medium whitespace-nowrap transition-colors ${
-                active
-                  ? 'bg-primary text-white'
-                  : 'bg-surface-dark text-text-secondary hover:text-text-primary'
-              }`}
-            >
-              {chip.label}
-            </button>
-          )
-        })}
+      <div className="flex items-center justify-between gap-2 px-4 py-2 border-b border-divider shrink-0">
+        <div className="flex items-center gap-2 overflow-x-auto">
+          {filterChips.map(chip => {
+            const active = statusFilter === chip.key
+            return (
+              <button
+                key={chip.key}
+                onClick={() => setStatusFilter(chip.key)}
+                className={`h-8 px-3 rounded-lg text-[12px] font-medium whitespace-nowrap transition-colors ${
+                  active
+                    ? 'bg-primary text-white'
+                    : 'bg-surface-dark text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                {chip.label}
+              </button>
+            )
+          })}
+        </div>
+        <div className="flex items-center gap-2 shrink-0 text-[12px] text-text-secondary">
+          <span>{total === 0 ? '0' : `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}`}</span>
+          <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} className="dark-entry h-8 text-[12px] py-0">
+            {PAGE_SIZE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </div>
       </div>
 
       {warrantyExpiringSoon > 0 && statusFilter !== 'warranty_expiring' && (
@@ -397,7 +425,7 @@ export default function AssetsPage() {
       {editing && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-4">
           <div className="bg-surface rounded-xl shadow-lg w-full max-w-md p-5 space-y-3 max-h-[90vh] overflow-y-auto">
-            <h3 className="font-semibold text-text-primary">{isNew ? 'New Asset' : 'Edit Asset'}</h3>
+            <h3 className="font-semibold text-text-primary">{isNew ? 'New Asset' : (canEdit ? 'Edit Asset' : 'Asset')}</h3>
 
             <div className="flex flex-col gap-1">
               <label className="text-xs text-text-secondary">Label *</label>
@@ -522,7 +550,7 @@ export default function AssetsPage() {
             </div>
 
             <div className="flex gap-2 justify-between pt-1">
-              {!isNew && editing.status !== 'retired' && (
+              {canEdit && !isNew && editing.status !== 'retired' && (
                 <button
                   onClick={() => {
                     const asset = assets.find(a => a.id === editing.id)
@@ -534,16 +562,26 @@ export default function AssetsPage() {
                 </button>
               )}
               <div className="flex gap-2 ml-auto">
-                <button onClick={() => setEditing(null)} className="btn-outlined h-9 px-4 text-[13px]">Cancel</button>
-                <button onClick={() => void save()} disabled={!editing.label.trim() || busy}
-                  className="btn-primary h-9 px-4 text-[13px] disabled:opacity-50">
-                  {busy ? 'Saving…' : 'Save'}
+                <button onClick={() => setEditing(null)} className="btn-outlined h-9 px-4 text-[13px]">
+                  {canEdit ? 'Cancel' : 'Close'}
                 </button>
+                {canEdit && (
+                  <button onClick={() => void save()} disabled={!editing.label.trim() || busy}
+                    className="btn-primary h-9 px-4 text-[13px] disabled:opacity-50">
+                    {busy ? 'Saving…' : 'Save'}
+                  </button>
+                )}
               </div>
             </div>
           </div>
         </div>
       )}
+
+      <div className="flex items-center justify-between px-4 py-2 border-t border-divider shrink-0">
+        <button disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} className="btn-outlined h-8 px-3 text-[12px] disabled:opacity-40">Previous</button>
+        <span className="text-[12px] text-text-secondary">Page {page} of {totalPages(total, pageSize)}</span>
+        <button disabled={page >= totalPages(total, pageSize)} onClick={() => setPage(p => p + 1)} className="btn-outlined h-8 px-3 text-[12px] disabled:opacity-40">Next</button>
+      </div>
 
       {confirmRetire && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">

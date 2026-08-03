@@ -1,10 +1,17 @@
 'use client'
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
-import { isSupplierKind } from '@/lib/partner-kinds'
+import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
+import {
+  DEFAULT_PAGE_SIZE,
+  PAGE_SIZE_OPTIONS,
+  escapeIlike,
+  pageRange,
+  totalPages,
+} from '@/lib/list-pagination'
 import type { Contractor } from '@/types/database'
 
 export default function SuppliersPage() {
@@ -13,31 +20,67 @@ export default function SuppliersPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
-  const [xeroLinked,    setXeroLinked]    = useState<Set<string>>(new Set())
+  const [searchDebounced, setSearchDebounced] = useState('')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
+  const [total, setTotal] = useState(0)
+  const [perms, setPerms] = useState<PermissionSet | null>(null)
+  const [xeroLinked, setXeroLinked] = useState<Set<string>>(new Set())
   const [xeroConnected, setXeroConnected] = useState(false)
-  const [xeroPushing,   setXeroPushing]   = useState<string | null>(null)
-  const [companyId,     setCompanyId]     = useState<string | null>(null)
-  const [sessionToken,  setSessionToken]  = useState<string | null>(null)
+  const [xeroPushing, setXeroPushing] = useState<string | null>(null)
+  const [companyId, setCompanyId] = useState<string | null>(null)
+  const [sessionToken, setSessionToken] = useState<string | null>(null)
   const [xeroImporting, setXeroImporting] = useState(false)
-  const [xeroMsg,       setXeroMsg]       = useState<string | null>(null)
+  const [xeroMsg, setXeroMsg] = useState<string | null>(null)
+
+  const canEdit = can(perms, PERM.suppliersEdit)
+
+  useEffect(() => {
+    const t = setTimeout(() => setSearchDebounced(search.trim()), 300)
+    return () => clearTimeout(t)
+  }, [search])
+
+  useEffect(() => { setPage(1) }, [searchDebounced, pageSize])
 
   const load = useCallback(async () => {
     setLoading(true)
+    setError(null)
     const supabase = createClient()
     const member = await resolveCurrentMember(supabase)
     if (!member) { setError('not_linked'); setLoading(false); return }
     const cId = member.companyId
     setCompanyId(cId)
-    const { data } = await supabase
+
+    const { data: me } = await supabase
+      .from('employees')
+      .select('access_level')
+      .eq('id', member.employeeId)
+      .maybeSingle()
+    setPerms(await loadPermissions(supabase, cId, me?.access_level))
+
+    const { from, to } = pageRange(page, pageSize)
+    let query = supabase
       .from('contractors')
-      .select('*')
+      .select('*', { count: 'exact' })
       .eq('company_id', cId)
+      .or('partner_kind.eq.supplier,partner_kind.eq.both,is_supplier.eq.true')
       .order('name')
-    // MAUI: IsSupplierKind (partner_kind = supplier | both); keep legacy is_supplier
-    const rows = ((data ?? []) as (Contractor & { partner_kind?: string | null })[]).filter(c =>
-      isSupplierKind(c.partner_kind) || c.is_supplier === true,
-    )
-    setSuppliers(rows as Contractor[])
+
+    if (searchDebounced) {
+      const q = escapeIlike(searchDebounced)
+      query = query.or(`name.ilike.%${q}%,contact_person.ilike.%${q}%,email.ilike.%${q}%,phone.ilike.%${q}%`)
+    }
+
+    const { data, error: qErr, count } = await query.range(from, to)
+    if (qErr) {
+      setError(qErr.message)
+      setSuppliers([])
+      setTotal(0)
+    } else {
+      setSuppliers((data ?? []) as Contractor[])
+      setTotal(count ?? 0)
+    }
+
     const { data: xStatus } = await (supabase.rpc as any)('get_xero_connection_status', { p_company_id: cId })
     setXeroConnected(xStatus?.connected ?? false)
     if (xStatus?.connected) {
@@ -47,25 +90,13 @@ export default function SuppliersPage() {
     const { data: { session } } = await supabase.auth.getSession()
     setSessionToken(session?.access_token ?? null)
     setLoading(false)
-  }, [])
+  }, [page, pageSize, searchDebounced])
 
-  useEffect(() => { load() }, [load])
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    if (!q) return suppliers
-    return suppliers.filter(s =>
-      [s.name, s.contact_person, s.phone, s.email, s.address]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-        .includes(q),
-    )
-  }, [suppliers, search])
+  useEffect(() => { void load() }, [load])
 
   async function pushToXero(e: React.MouseEvent, supplierId: string) {
     e.stopPropagation()
-    if (!companyId || !sessionToken || xeroPushing) return
+    if (!canEdit || !companyId || !sessionToken || xeroPushing) return
     setXeroPushing(supplierId)
     try {
       const resp = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/xero-sync-contacts`, {
@@ -81,7 +112,7 @@ export default function SuppliersPage() {
   }
 
   async function syncAllToXero() {
-    if (!companyId || !sessionToken) return
+    if (!canEdit || !companyId || !sessionToken) return
     setXeroPushing('__all__')
     try {
       await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/xero-sync-contacts`, {
@@ -96,7 +127,7 @@ export default function SuppliersPage() {
   }
 
   async function importFromXero() {
-    if (!companyId || !sessionToken) return
+    if (!canEdit || !companyId || !sessionToken) return
     setXeroImporting(true)
     setXeroMsg(null)
     try {
@@ -106,7 +137,7 @@ export default function SuppliersPage() {
           method: 'POST',
           headers: { Authorization: `Bearer ${sessionToken}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ company_id: companyId, direction: 'pull' }),
-        }
+        },
       )
       const data = await resp.json()
       if (data.ok) {
@@ -122,22 +153,19 @@ export default function SuppliersPage() {
     }
   }
 
+  const pages = totalPages(total, pageSize)
+
   if (error === 'not_linked') return (
     <div className="flex items-center justify-center h-full">
       <div className="text-center space-y-2">
         <span className="material-icons text-[48px] text-text-disabled">person_off</span>
         <p className="text-[14px] font-semibold text-text-primary">Account not linked</p>
-        <p className="text-[13px] text-text-secondary">
-          Your account is not linked to an active employee record.<br/>
-          Please contact your administrator.
-        </p>
       </div>
     </div>
   )
 
   return (
     <div className="h-full flex flex-col">
-      {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-divider shrink-0 bg-surface gap-3">
         <div className="flex items-center gap-2 flex-1 max-w-sm bg-surface border border-border rounded-lg px-2">
           <span className="material-icons text-text-secondary text-[16px]">search</span>
@@ -149,42 +177,47 @@ export default function SuppliersPage() {
           />
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {xeroConnected && (
+          {canEdit && xeroConnected && (
             <button
-              onClick={syncAllToXero}
+              onClick={() => void syncAllToXero()}
               disabled={!!xeroPushing}
               className="h-9 px-3 text-[13px] rounded-lg border border-[#13B5EA] text-[#13B5EA] hover:bg-[#13B5EA]/10 disabled:opacity-40 transition-colors whitespace-nowrap"
             >
               {xeroPushing === '__all__' ? 'Syncing…' : 'Sync All to Xero'}
             </button>
           )}
-          {xeroConnected && (
+          {canEdit && xeroConnected && (
             <button
-              onClick={importFromXero}
+              onClick={() => void importFromXero()}
               disabled={xeroImporting}
               className="h-9 px-3 text-[13px] rounded-lg border border-[#13B5EA] text-[#13B5EA] font-medium hover:bg-[#13B5EA]/10 disabled:opacity-50 transition-colors"
             >
               {xeroImporting ? 'Importing…' : '↓ Import from Xero'}
             </button>
           )}
-          <button className="btn-primary h-9 px-3 text-[13px]"
-            onClick={() => router.push('/dashboard/suppliers/new')}>
-            + Add supplier
-          </button>
+          {canEdit && (
+            <button className="btn-primary h-9 px-3 text-[13px]"
+              onClick={() => router.push('/dashboard/suppliers/new')}>
+              + Add supplier
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Sub-header */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-divider shrink-0">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-divider shrink-0 gap-3 flex-wrap">
         <p className="text-xs text-text-secondary">
-          {filtered.length} of {suppliers.length} supplier{suppliers.length !== 1 ? 's' : ''}
-          <span className="text-text-disabled"> · Separate from contractors (field labour)</span>
+          {total === 0 ? '0 suppliers' : `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}`}
+          <span className="text-text-disabled"> · Separate from contractors</span>
         </p>
-        <button onClick={load} className="text-[13px] text-primary hover:opacity-70 transition-opacity">
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} className="dark-entry h-8 text-[12px] py-0">
+            {PAGE_SIZE_OPTIONS.map(n => <option key={n} value={n}>{n}/page</option>)}
+          </select>
+          <button onClick={() => void load()} className="text-[13px] text-primary hover:opacity-70">Refresh</button>
+        </div>
       </div>
 
+      {error && error !== 'not_linked' && <p className="mx-4 text-[12px] text-error">{error}</p>}
       {xeroMsg && (
         <p className={`mx-4 mb-2 text-[12px] px-3 py-2 rounded ${
           xeroMsg.includes('Imported') ? 'bg-green-900/30 text-green-300' : 'bg-red-900/30 text-red-300'
@@ -194,7 +227,6 @@ export default function SuppliersPage() {
         </p>
       )}
 
-      {/* Table */}
       <div className="flex-1 overflow-auto">
         {loading ? (
           <p className="text-text-secondary text-[13px] text-center py-8">Loading…</p>
@@ -208,29 +240,23 @@ export default function SuppliersPage() {
                 <th className="data-th text-left" style={{ width: 160 }}>Email</th>
                 <th className="data-th text-left" style={{ width: 140 }}>Address</th>
                 <th className="data-th text-right" style={{ width: 120 }}>Status</th>
-                {xeroConnected && (
-                  <th className="data-th text-center" style={{ width: 80 }}>Xero</th>
-                )}
+                {xeroConnected && <th className="data-th text-center" style={{ width: 80 }}>Xero</th>}
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 ? (
+              {suppliers.length === 0 ? (
                 <tr>
                   <td colSpan={xeroConnected ? 7 : 6} className="data-td text-center text-text-secondary py-10">
-                    {suppliers.length === 0
-                      ? 'No suppliers yet. Add a supplier here (not a contractor) or from an inventory item.'
-                      : 'No suppliers match your search.'}
+                    No suppliers found.
                   </td>
                 </tr>
-              ) : filtered.map(s => (
+              ) : suppliers.map(s => (
                 <tr key={s.id}
                   className="bg-surface-card cursor-pointer hover:bg-background transition-colors border-b border-divider last:border-0"
                   onClick={() => router.push(`/dashboard/suppliers/${s.id}`)}>
                   <td className="data-td text-sm font-medium text-primary">{s.name}</td>
                   <td className="data-td text-sm text-text-secondary">{s.contact_person ?? '—'}</td>
-                  <td className="data-td text-sm text-text-secondary">
-                    {[s.phone, s.email].filter(Boolean).join(' · ') || '—'}
-                  </td>
+                  <td className="data-td text-sm text-text-secondary">{s.phone ?? '—'}</td>
                   <td className="data-td text-sm text-text-secondary">{s.email ?? '—'}</td>
                   <td className="data-td text-sm text-text-secondary truncate" style={{ maxWidth: 140 }}>
                     {s.address ?? '—'}
@@ -242,15 +268,15 @@ export default function SuppliersPage() {
                     <td className="data-td text-center" onClick={e => e.stopPropagation()}>
                       {xeroLinked.has(s.id) ? (
                         <span className="text-green-400 text-[18px]" title="Synced to Xero">✓</span>
-                      ) : (
+                      ) : canEdit ? (
                         <button
-                          onClick={e => pushToXero(e, s.id)}
+                          onClick={e => void pushToXero(e, s.id)}
                           disabled={xeroPushing === s.id}
-                          className="text-[11px] px-2 py-1 rounded border border-[#13B5EA] text-[#13B5EA] hover:bg-[#13B5EA]/10 disabled:opacity-40 transition-colors whitespace-nowrap"
+                          className="text-[11px] px-2 py-1 rounded border border-[#13B5EA] text-[#13B5EA] hover:bg-[#13B5EA]/10 disabled:opacity-40"
                         >
                           {xeroPushing === s.id ? '…' : '+ Xero'}
                         </button>
-                      )}
+                      ) : null}
                     </td>
                   )}
                 </tr>
@@ -258,6 +284,12 @@ export default function SuppliersPage() {
             </tbody>
           </table>
         )}
+      </div>
+
+      <div className="flex items-center justify-between px-4 py-2 border-t border-divider shrink-0">
+        <button disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} className="btn-outlined h-8 px-3 text-[12px] disabled:opacity-40">Previous</button>
+        <span className="text-[12px] text-text-secondary">Page {page} of {pages}</span>
+        <button disabled={page >= pages} onClick={() => setPage(p => p + 1)} className="btn-outlined h-8 px-3 text-[12px] disabled:opacity-40">Next</button>
       </div>
     </div>
   )
