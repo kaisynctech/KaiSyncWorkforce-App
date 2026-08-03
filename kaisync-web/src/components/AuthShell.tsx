@@ -1,6 +1,7 @@
 'use client'
 
 import type { FocusEvent, ReactNode } from 'react'
+import { PwaInstallButton } from '@/components/PwaInstallButton'
 
 /** Shared dark auth chrome matching MAUI BackgroundDark auth screens. */
 export function AuthShell({ children }: { children: ReactNode }) {
@@ -48,9 +49,12 @@ export function AuthShell({ children }: { children: ReactNode }) {
           </p>
         </div>
 
-        <p className="text-slate-600 text-[12px] relative z-10">
-          &copy; {new Date().getFullYear()} KaiSync. All rights reserved.
-        </p>
+        <div className="relative z-10 space-y-3">
+          <PwaInstallButton className="inline-flex items-center gap-2 rounded-lg px-3 h-9 text-[13px] font-medium text-white/80 hover:text-white bg-white/10 hover:bg-white/15 transition-colors" />
+          <p className="text-slate-600 text-[12px]">
+            &copy; {new Date().getFullYear()} KaiSync. All rights reserved.
+          </p>
+        </div>
       </div>
 
       <div className="flex-1 flex flex-col items-center justify-center px-6 py-12 bg-[#0f172a]">
@@ -64,7 +68,12 @@ export function AuthShell({ children }: { children: ReactNode }) {
           <span className="text-white text-[16px] font-bold">KaiSync Workforce</span>
         </div>
 
-        <div className="w-full max-w-[400px]">{children}</div>
+        <div className="w-full max-w-[400px]">
+          {children}
+          <div className="mt-6 flex justify-center lg:hidden">
+            <PwaInstallButton className="inline-flex items-center gap-2 rounded-lg px-3 h-9 text-[13px] font-medium text-white/70 hover:text-white bg-white/10 hover:bg-white/15 transition-colors" />
+          </div>
+        </div>
       </div>
     </div>
   )
