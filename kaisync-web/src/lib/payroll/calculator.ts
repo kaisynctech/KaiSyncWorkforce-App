@@ -10,7 +10,7 @@
  *   `payroll-engine.ts` adapter for backward compatibility with existing callers.
  */
 
-import type { PayrollLineItem } from '@/types/database'
+import type { PayrollLineItem } from './types'
 import {
   addDaysISO,
   dayNumber,

@@ -2,7 +2,7 @@
  * Ports KaiFlow.Payroll/PayrollYtdHelper.cs and Irp5RecordBuilder.cs.
  */
 
-import type { PayrollLineItem } from '@/types/database'
+import type { PayrollLineItem } from './types'
 import type { ISODate } from './period'
 
 export type YtdTotals = {
