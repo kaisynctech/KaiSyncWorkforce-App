@@ -1,18 +1,29 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import { inventoryNeedsReorder, inventoryStockValue } from '@/lib/supply-assets'
 import { Toggle } from '@/components/Toggle'
 import type { InventoryItem } from '@/types/database'
 
 const fmtR = (n: number) =>
   `R ${(n ?? 0).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
+type InventoryRow = InventoryItem & {
+  supplier_partner?: { id: string; name: string } | null
+}
+
+function supplierName(item: InventoryRow): string {
+  return item.supplier_partner?.name?.trim()
+    || (typeof item.supplier === 'string' ? item.supplier.trim() : '')
+    || '—'
+}
+
 export default function InventoryPage() {
   const router = useRouter()
-  const [items, setItems] = useState<InventoryItem[]>([])
+  const [items, setItems] = useState<InventoryRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
@@ -20,34 +31,57 @@ export default function InventoryPage() {
 
   const load = useCallback(async () => {
     setLoading(true)
+    setError(null)
     const supabase = createClient()
     const member = await resolveCurrentMember(supabase)
     if (!member) { setError('not_linked'); setLoading(false); return }
 
-    const { data } = await supabase
+    const { data, error: qErr } = await supabase
       .from('inventory_items')
-      .select('*, supplier:suppliers(id, name)')
+      .select('*, supplier_partner:contractors!supplier_contractor_id(id, name)')
       .eq('company_id', member.companyId)
       .order('name')
 
-    setItems((data ?? []) as InventoryItem[])
+    if (qErr) {
+      // Fallback without embed if FK name resolution fails on older DBs
+      const { data: plain, error: plainErr } = await supabase
+        .from('inventory_items')
+        .select('*')
+        .eq('company_id', member.companyId)
+        .order('name')
+      if (plainErr) {
+        setError(plainErr.message)
+        setItems([])
+      } else {
+        setItems((plain ?? []) as InventoryRow[])
+      }
+    } else {
+      setItems((data ?? []) as InventoryRow[])
+    }
     setLoading(false)
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { void load() }, [load])
 
-  const filtered = items.filter(item => {
-    if (lowStockOnly && !item.needs_reorder) return false
-    if (search) {
-      const q = search.toLowerCase()
-      if (
-        !item.name.toLowerCase().includes(q) &&
-        !(item.sku ?? '').toLowerCase().includes(q) &&
-        !(item.supplier?.name ?? '').toLowerCase().includes(q)
-      ) return false
-    }
-    return true
-  })
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return items.filter(item => {
+      const low = inventoryNeedsReorder(item.quantity_on_hand, item.reorder_level)
+      if (lowStockOnly && !low) return false
+      if (!q) return true
+      const hay = [
+        item.name,
+        item.sku ?? '',
+        supplierName(item),
+      ].join(' ').toLowerCase()
+      return hay.includes(q)
+    })
+  }, [items, search, lowStockOnly])
+
+  const lowItems = useMemo(
+    () => items.filter(i => inventoryNeedsReorder(i.quantity_on_hand, i.reorder_level)),
+    [items],
+  )
 
   if (error === 'not_linked') return (
     <div className="flex items-center justify-center h-full">
@@ -64,7 +98,6 @@ export default function InventoryPage() {
 
   return (
     <div className="h-full flex flex-col">
-      {/* Header row */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-divider shrink-0 bg-surface">
         <div className="flex items-center gap-2 flex-1 max-w-sm bg-surface border border-border rounded-lg px-2">
           <span className="material-icons text-text-secondary text-[16px]">search</span>
@@ -76,7 +109,7 @@ export default function InventoryPage() {
           />
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={load} className="bg-surface-dark rounded-md h-9 w-9 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors">
+          <button onClick={() => void load()} className="bg-surface-dark rounded-md h-9 w-9 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors">
             <span className="material-icons text-[18px]">refresh</span>
           </button>
           <button onClick={() => router.push('/dashboard/inventory/new')} className="btn-primary h-9 px-3 text-[13px]">
@@ -85,7 +118,6 @@ export default function InventoryPage() {
         </div>
       </div>
 
-      {/* Sub-header */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-divider shrink-0 bg-surface-dark">
         <p className="text-text-secondary text-sm">{filtered.length} items</p>
         <div className="flex items-center gap-2">
@@ -94,23 +126,21 @@ export default function InventoryPage() {
         </div>
       </div>
 
-      {/* Low stock banner */}
-      {(() => {
-        const lowItems = items.filter(i => i.needs_reorder)
-        if (lowItems.length === 0) return null
-        return (
-          <div className="mx-4 mt-2 mb-1 px-3 py-2 rounded-lg border border-[#F87171] bg-[#FEF2F2] flex items-center gap-2 shrink-0">
-            <span className="material-icons text-[16px]" style={{ color: '#F87171' }}>warning</span>
-            <p className="text-[12px] font-medium" style={{ color: '#B91C1C' }}>
-              {lowItems.length} item{lowItems.length !== 1 ? 's' : ''} below reorder level:{' '}
-              {lowItems.slice(0, 3).map(i => i.name).join(', ')}
-              {lowItems.length > 3 ? ` +${lowItems.length - 3} more` : ''}
-            </p>
-          </div>
-        )
-      })()}
+      {error && error !== 'not_linked' && (
+        <p className="mx-4 mt-2 text-[12px] text-error">{error}</p>
+      )}
 
-      {/* Table */}
+      {lowItems.length > 0 && (
+        <div className="mx-4 mt-2 mb-1 px-3 py-2 rounded-lg border border-[#F87171] bg-[#FEF2F2] flex items-center gap-2 shrink-0">
+          <span className="material-icons text-[16px]" style={{ color: '#F87171' }}>warning</span>
+          <p className="text-[12px] font-medium" style={{ color: '#B91C1C' }}>
+            {lowItems.length} item{lowItems.length !== 1 ? 's' : ''} below reorder level:{' '}
+            {lowItems.slice(0, 3).map(i => i.name).join(', ')}
+            {lowItems.length > 3 ? ` +${lowItems.length - 3} more` : ''}
+          </p>
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto">
         <div className="overflow-x-auto">
           <table style={{ minWidth: 1020 }} className="w-full">
@@ -132,28 +162,32 @@ export default function InventoryPage() {
               ) : filtered.length === 0 ? (
                 <tr><td colSpan={8} className="text-center py-10 text-text-secondary text-[13px]">No inventory items found.</td></tr>
               ) : (
-                filtered.map(item => (
-                  <tr
-                    key={item.id}
-                    onClick={() => router.push(`/dashboard/inventory/${item.id}`)}
-                    className="border-b border-divider cursor-pointer hover:opacity-90 transition-opacity"
-                    style={{ backgroundColor: item.needs_reorder ? '#FEF2F2' : 'var(--color-surface-card)' }}
-                  >
-                    <td className="data-td text-text-primary text-sm font-medium">{item.name}</td>
-                    <td className="data-td text-text-secondary text-sm">{item.sku ?? '—'}</td>
-                    <td className="data-td text-sm">{item.supplier?.name ?? '—'}</td>
-                    <td className="data-td text-sm text-right">{item.quantity_on_hand}</td>
-                    <td className="data-td text-text-secondary text-sm">{item.unit_of_measure ?? '—'}</td>
-                    <td className="data-td text-sm text-right">{fmtR(item.unit_cost)}</td>
-                    <td className="data-td text-sm text-right">{fmtR(item.stock_value)}</td>
-                    <td className="data-td text-center">
-                      {item.needs_reorder
-                        ? <span className="text-sm font-medium" style={{ color: '#F87171' }}>Low</span>
-                        : <span className="text-sm" style={{ color: '#9CA3AF' }}>OK</span>
-                      }
-                    </td>
-                  </tr>
-                ))
+                filtered.map(item => {
+                  const low = inventoryNeedsReorder(item.quantity_on_hand, item.reorder_level)
+                  const value = inventoryStockValue(item.quantity_on_hand, item.unit_cost)
+                  return (
+                    <tr
+                      key={item.id}
+                      onClick={() => router.push(`/dashboard/inventory/${item.id}`)}
+                      className="border-b border-divider cursor-pointer hover:opacity-90 transition-opacity"
+                      style={{ backgroundColor: low ? '#FEF2F2' : 'var(--color-surface-card)' }}
+                    >
+                      <td className="data-td text-text-primary text-sm font-medium">{item.name}</td>
+                      <td className="data-td text-text-secondary text-sm">{item.sku ?? '—'}</td>
+                      <td className="data-td text-sm">{supplierName(item)}</td>
+                      <td className="data-td text-sm text-right">{item.quantity_on_hand}</td>
+                      <td className="data-td text-text-secondary text-sm">{item.unit_of_measure ?? '—'}</td>
+                      <td className="data-td text-sm text-right">{fmtR(item.unit_cost)}</td>
+                      <td className="data-td text-sm text-right">{fmtR(value)}</td>
+                      <td className="data-td text-center">
+                        {low
+                          ? <span className="text-sm font-medium" style={{ color: '#F87171' }}>Low</span>
+                          : <span className="text-sm" style={{ color: '#9CA3AF' }}>OK</span>
+                        }
+                      </td>
+                    </tr>
+                  )
+                })
               )}
             </tbody>
           </table>

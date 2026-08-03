@@ -125,7 +125,10 @@ function NewContractorForm() {
       return
     }
 
-    router.push(`/dashboard/contractors/${data.id}`)
+    const detailHref = partnerKind === PARTNER_KIND.supplier
+      ? `/dashboard/suppliers/${data.id}`
+      : `/dashboard/contractors/${data.id}`
+    router.push(detailHref)
     setBusy(false)
   }
 

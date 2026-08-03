@@ -331,6 +331,7 @@ export interface JobInventoryItem {
 
 export interface InventoryItem {
   id: string
+  company_id?: string
   name: string
   sku: string | null
   description: string | null
@@ -340,10 +341,12 @@ export interface InventoryItem {
   quantity_on_hand: number
   reorder_level: number
   is_active: boolean
-  needs_reorder: boolean
-  stock_value: number
-  supplier_id: string | null
-  supplier?: { id: string; name: string }
+  /** FK to contractors row used as supplier (partner_kind supplier|both) */
+  supplier_contractor_id: string | null
+  /** Legacy free-text supplier name (optional) */
+  supplier?: string | null
+  /** Joined supplier partner when selected */
+  supplier_partner?: { id: string; name: string } | null
 }
 
 export interface JobPhoto {
@@ -553,12 +556,19 @@ export interface ActiveSession {
 export interface Asset {
   id: string
   company_id: string
-  display_name: string
+  site_id?: string | null
+  unit_id?: string | null
+  label: string
   asset_type: string | null
   serial_number: string | null
   manufacturer: string | null
+  model_number?: string | null
+  install_date?: string | null
   warranty_expires: string | null
-  status_raw: 'active' | 'retired' | string
+  status: 'active' | 'retired' | 'out_of_service' | string
+  notes?: string | null
+  photo_urls?: string[] | null
+  created_at?: string
 }
 
 export interface CalendarEvent {

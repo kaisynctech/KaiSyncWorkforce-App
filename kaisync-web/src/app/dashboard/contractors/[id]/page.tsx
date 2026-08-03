@@ -4,10 +4,11 @@
 // Fixed: partner_kind + registration_number now loaded in load() and persisted in handleSave()
 // Deferred: activity feed (get_contractor_activity_feed RPC not confirmed), quote approve/reject workflow
 
-import { useEffect, useState, useCallback } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useEffect, useState, useCallback, Suspense } from 'react'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { isSupplierKind, partnerKindLabel, PARTNER_KIND } from '@/lib/partner-kinds'
 import { SectionCard, FormField, entryClass } from '@/components/SectionCard'
 import { FormSelect } from '@/components/FormSelect'
 import { Toggle } from '@/components/Toggle'
@@ -29,10 +30,6 @@ const TABS = [
 ]
 const OPERATIONAL_TABS = new Set(['Jobs', 'Projects', 'Incidents'])
 
-const PARTNER_KINDS = [
-  'Sole Proprietor', 'Partnership', 'Private Company (Pty Ltd)',
-  'Close Corporation', 'Public Company', 'Trust', 'Other',
-]
 const COMPLIANCE_PACKS = ['Standard', 'Premium', 'Basic', 'Government']
 const ACCOUNT_TYPES = ['Cheque / Current', 'Savings', 'Transmission']
 const PAYMENT_TERMS_OPTIONS = ['7 days', '14 days', '30 days', '60 days', 'On completion']
@@ -97,8 +94,22 @@ const fmtCurrency = (n: number | null) =>
   n != null ? `R ${n.toLocaleString('en-ZA', { minimumFractionDigits: 2 })}` : '—'
 
 export default function ContractorDetailPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center h-full">
+        <span className="text-text-secondary text-[13px]">Loading…</span>
+      </div>
+    }>
+      <ContractorDetailInner />
+    </Suspense>
+  )
+}
+
+function ContractorDetailInner() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const fromSuppliers = searchParams.get('from') === 'suppliers'
   const contractorId = params.id
 
   const [tab, setTab] = useState('Information')
@@ -176,7 +187,7 @@ export default function ContractorDetailPage() {
       .eq('id', contractorId)
       .single()
 
-    if (!c) { router.push('/dashboard/contractors'); return }
+    if (!c) { router.push(fromSuppliers ? '/dashboard/suppliers' : '/dashboard/contractors'); return }
     const cont = c as Contractor
     setContractor(cont)
 
@@ -308,7 +319,10 @@ export default function ContractorDetailPage() {
         is_banking_verified:         bankingVerified,
         payment_hold:                paymentHold,
         compliance_hold:             complianceHold,
-        ...( partnerKind ? { partner_kind: partnerKind } : {} ),
+        ...( partnerKind ? {
+          partner_kind: partnerKind,
+          is_supplier: partnerKind === PARTNER_KIND.supplier || partnerKind === PARTNER_KIND.both,
+        } : {} ),
         ...( regNumber.trim() ? { registration_number: regNumber.trim() } : {} ),
       })
       .eq('id', contractorId)
@@ -436,16 +450,21 @@ export default function ContractorDetailPage() {
     )
   }
 
+  const supplierModule = fromSuppliers || (isSupplierKind(partnerKind) && partnerKind === 'supplier')
+  const listHref = supplierModule ? '/dashboard/suppliers' : '/dashboard/contractors'
+  const entityLabel = supplierModule ? 'Supplier' : (partnerKindLabel(partnerKind) || 'Contractor')
+
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-divider shrink-0 bg-surface">
         <div className="flex items-center gap-3">
-          <Link href="/dashboard/contractors" className="text-text-secondary hover:text-text-primary transition-colors">
+          <Link href={listHref} className="text-text-secondary hover:text-text-primary transition-colors">
             <span className="material-icons text-[20px]">arrow_back</span>
           </Link>
           <div>
-            <h1 className="text-[20px] font-semibold text-text-primary">{contractor?.name ?? 'Contractor'}</h1>
+            <h1 className="text-[20px] font-semibold text-text-primary">{contractor?.name ?? entityLabel}</h1>
+            <p className="text-[11px] text-text-secondary mt-0.5">{entityLabel}</p>
             {xeroConnected && (
               <div className="flex items-center gap-2 mt-1">
                 {xeroLink ? (
@@ -514,9 +533,11 @@ export default function ContractorDetailPage() {
                 <input type="text" value={name} onChange={e => setName(e.target.value)}
                   placeholder="Company name" required className={entryClass} />
               </FormField>
-              <FormSelect label="Partner type" value={partnerKind} onChange={e => setPartnerKind(e.target.value)}>
-                <option value="">Select type…</option>
-                {PARTNER_KINDS.map(k => <option key={k} value={k}>{k}</option>)}
+              <FormSelect label="Partner kind" value={partnerKind} onChange={e => setPartnerKind(e.target.value)}>
+                <option value="">Select kind…</option>
+                <option value={PARTNER_KIND.contractor}>Contractor</option>
+                <option value={PARTNER_KIND.supplier}>Supplier</option>
+                <option value={PARTNER_KIND.both}>Contractor &amp; supplier</option>
               </FormSelect>
               <FormField label="Registration number">
                 <input type="text" value={regNumber} onChange={e => setRegNumber(e.target.value)}
