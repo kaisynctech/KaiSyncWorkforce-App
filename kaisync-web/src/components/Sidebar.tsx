@@ -65,14 +65,15 @@ const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
-    id: 'delivery',
-    label: 'Delivery',
+    id: 'operations',
+    label: 'Operations',
     items: [
       { label: 'Clients', href: '/dashboard/clients', icon: 'business', flag: 'clients' },
       { label: 'Projects', href: '/dashboard/projects', icon: 'folder', flag: 'projects' },
       { label: 'Jobs', href: '/dashboard/jobs', icon: 'work', flag: 'jobs' },
       { label: 'Contractors', href: '/dashboard/contractors', icon: 'engineering', flag: 'contractors' },
       { label: 'Incidents', href: '/dashboard/incidents', icon: 'warning', flag: 'incidents' },
+      { label: 'Compliance Packs', href: '/dashboard/compliance-packs', icon: 'verified', flag: 'compliancePacks' },
     ],
   },
   {
@@ -89,7 +90,6 @@ const NAV_SECTIONS: NavSection[] = [
       { label: 'Suppliers', href: '/dashboard/suppliers', icon: 'storefront', flag: 'suppliers' },
       { label: 'Inventory', href: '/dashboard/inventory', icon: 'inventory_2', flag: 'inventory' },
       { label: 'Assets', href: '/dashboard/assets', icon: 'category', flag: 'assets' },
-      { label: 'Compliance Packs', href: '/dashboard/compliance-packs', icon: 'verified', flag: 'compliancePacks' },
     ],
   },
   {
