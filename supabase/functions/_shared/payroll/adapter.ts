@@ -11,9 +11,9 @@ import type { PayrollSettings } from './prefs.ts'
 import type { PayrollLineItem } from './types.ts'
 import {
   buildPolicyFromSettings,
-  buildSessionsFromPunches,
   calculate,
   sumPunchHours,
+  type AbsenceSnapshot,
   type EmployeeSnapshot,
   type LeaveSnapshot,
   type PayBasis,
@@ -21,8 +21,10 @@ import {
 } from './calculator.ts'
 import type { YtdTotals } from './irp5.ts'
 import type { SalaryHistoryEntry } from './salary-resolver.ts'
+import { buildTemplateAwareSessions } from './sessions-from-punches.ts'
+import type { ShiftTemplateLike } from './punch-session.ts'
 
-export type { LeaveSnapshot, PunchLike, SalaryHistoryEntry }
+export type { LeaveSnapshot, PunchLike, SalaryHistoryEntry, ShiftTemplateLike }
 
 export type EngineEmployee = {
   id: string
@@ -53,6 +55,7 @@ export type EngineEmployee = {
   pay_full_monthly_salary?: boolean | null
   overtime_rate?: number | null
   work_days_weekly?: number | null
+  shift_template_id?: string | null
 }
 
 export type PayslipOverrides = {
@@ -143,6 +146,8 @@ export function calculatePayslip(input: {
   unpaidLeaveDays?: number
   absentDays?: number
   leaveRecords?: LeaveSnapshot[]
+  absences?: AbsenceSnapshot[]
+  shiftTemplate?: ShiftTemplateLike | null
   salaryHistory?: SalaryHistoryEntry[] | null
   ytdPrior?: { gross_pay: number; paye: number; uif: number; net_pay: number }
 }): EnginePayslip | null {
@@ -153,7 +158,18 @@ export function calculatePayslip(input: {
 
   const snapshot = buildEmployeeSnapshot(emp, dailyHours)
   const policy = buildPolicyFromSettings(settings)
-  const sessions = buildSessionsFromPunches(input.punches, emp.id, input.periodStart, input.periodEnd, dailyHours)
+  const sessions = buildTemplateAwareSessions(
+    input.punches,
+    emp.id,
+    input.periodStart,
+    input.periodEnd,
+    {
+      shiftTemplate: input.shiftTemplate ?? null,
+      lateThresholdMinutes: settings.late_threshold_minutes,
+      otStartAfterMinutes: settings.ot_start_after_minutes,
+      dailyHours,
+    },
+  )
   const otMultiplier = settings.overtime_multiplier > 0 ? settings.overtime_multiplier : 1.5
 
   const priorYtd: YtdTotals = {
@@ -167,6 +183,7 @@ export function calculatePayslip(input: {
   }
 
   const leaveRecords = input.leaveRecords ?? []
+  const absences = input.absences ?? []
   const useLeaveOverride =
     leaveRecords.length === 0 && ((input.paidLeaveDays ?? 0) > 0 || (input.unpaidLeaveDays ?? 0) > 0)
 
@@ -177,7 +194,7 @@ export function calculatePayslip(input: {
     periodEnd: input.periodEnd,
     sessions,
     leave: leaveRecords,
-    absences: [],
+    absences,
     dailyHours,
     otMultiplier,
     overrides: {
@@ -192,7 +209,7 @@ export function calculatePayslip(input: {
     leaveOverride: useLeaveOverride
       ? { paidDays: input.paidLeaveDays ?? 0, unpaidDays: input.unpaidLeaveDays ?? 0 }
       : undefined,
-    absentDaysOverride: input.absentDays ?? 0,
+    absentDaysOverride: absences.length > 0 ? undefined : (input.absentDays ?? 0),
   })
 
   if (!result) return null
@@ -231,6 +248,10 @@ export function calculatePayslip(input: {
       default_paye_rate_percent: settings.default_paye_rate_percent,
       use_sars_tax_tables: settings.use_sars_tax_tables,
       pay_basis: payBasisOut,
+      shift_template_id: emp.shift_template_id ?? input.shiftTemplate?.id ?? null,
+      late_threshold_minutes: settings.late_threshold_minutes,
+      sessions_late: sessions.filter(s => s.isLate).length,
+      sessions_early: sessions.filter(s => s.isLeftEarly).length,
     },
     ytd_json: {
       gross_pay: ytd.gross_pay,

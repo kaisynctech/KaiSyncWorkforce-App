@@ -208,9 +208,8 @@ export function sumPunchHours(
 }
 
 /**
- * Derives per-day sessions from raw punches for the calculation pipeline.
- * Late/early flags require shift-schedule data not available from punches alone,
- * so they default to false (see docs/modules/payroll-web-program.md gaps).
+ * Legacy day-bucket hours helper (no template). Prefer `buildTemplateAwareSessions`
+ * in `sessions-from-punches.ts` for late/early + MAUI-parity OT.
  */
 export function buildSessionsFromPunches(
   punches: PunchLike[],
