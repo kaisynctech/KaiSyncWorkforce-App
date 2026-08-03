@@ -102,16 +102,17 @@ Payroll has the **most migration history** of any module, reflecting its sensiti
 
 > Payment approvals are modeled by `Models/PaymentApproval.cs`; payroll persistence/audit flows through the MAUI payroll helpers and corresponding payslip tables. Exact table/RPC names are catalogued in `backend/01-database.md` / `backend/02-rpcs.md`.
 
-## Web app (`kaisync-web`) — Phase 4/5 status
+## Web app (`kaisync-web`) — v2 engine status
 
 The HR web payroll UI uses live `payment_approvals` + `company_settings.payroll_preferences`.
 
-- **Generate / recalculate:** prefs-aware TypeScript engine in `kaisync-web/src/lib/payroll-engine.ts` (OT, flat PAYE %, UIF, fixed deductions, breakdowns). This is **not** yet a full port of `SarsPayeCalculator` — the “Use SARS tax tables” setting is stored for parity and shows a web warning when enabled.
+- **Generate / recalculate:** `kaisync-web/src/lib/payroll-engine.ts` is now a thin adapter over a full TypeScript port of `KaiFlow.Payroll` in `kaisync-web/src/lib/payroll/*` (`calculator.ts`, `sars-paye.ts`, `period.ts`, `leave-days.ts`, `salary-resolver.ts`, `bank-export.ts`, `irp5.ts`). SARS tax tables, statutory precedence, attendance-penalty modes, public holidays, and pro-rating are real, not flat approximations. `policy_snapshot.source` is `kaisync-web-payroll-engine-v2`.
 - **Approve / reject:** `approve_payment_run` / `reject_payment_run`.
 - **Release:** updates `shared_with_employee` (same as MAUI share).
-- **Unit tests:** `npm test` covers engine, readiness, settings prefs, access normalize, and manager scoping.
+- **Unit tests:** `npm test` covers the payroll engine (calculator parity, SARS PAYE, bank export, adapter backward-compat), readiness, settings prefs, access normalize, and manager scoping.
+- **Known gaps:** see `docs/modules/payroll-web-program.md` for the full prefs-vs-engine matrix and phase status (P0–P6) — notably, late/early attendance penalties and per-day absence tracking aren't wired end-to-end yet (punches alone can't derive them), and bank-export/IRP5/Xero push are library-only with no UI wiring.
 
-See also: `docs/modules/workforce-web-hardening.md`, `docs/deployment/workforce-web-smoke-checklist.md`.
+See also: `docs/modules/payroll-web-program.md`, `docs/modules/workforce-web-hardening.md`, `docs/deployment/workforce-web-smoke-checklist.md`.
 
 ## Permissions
 

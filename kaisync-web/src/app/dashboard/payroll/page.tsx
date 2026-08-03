@@ -17,6 +17,8 @@ import {
   unlockPayrollPeriod,
 } from '@/lib/payroll'
 import type { PayrollGeneratePreview } from '@/lib/payroll-readiness'
+import { formatBankPaymentFile, type BankFormat } from '@/lib/payroll/bank-export'
+import { buildForTaxYear, taxYearFor, toCsvRows } from '@/lib/payroll/irp5'
 
 // Matches actual `payment_approvals` table columns
 type PayrollRecord = {
@@ -34,6 +36,7 @@ type PayrollRecord = {
   shared_with_employee: boolean | null
   pay_basis: string | null
   created_at: string | null
+  deductions_breakdown?: { label?: string; amount?: number }[] | null
   employee?: {
     name: string
     surname: string
@@ -42,6 +45,7 @@ type PayrollRecord = {
     bank_account:    string | null
     bank_branch_code: string | null
     id_number:       string | null
+    tax_number?:     string | null
     account_type:    string | null
   }
 }
@@ -102,6 +106,7 @@ export default function PayrollPage() {
   const [releasing,    setReleasing]    = useState(false)
   const [genPreview,   setGenPreview]   = useState<PayrollGeneratePreview | null>(null)
   const [showGenModal, setShowGenModal] = useState(false)
+  const [bankFormat,   setBankFormat]   = useState<BankFormat>('generic')
 
   // Reload whenever the date range changes
   useEffect(() => { loadPayroll(dateFrom, dateTo) }, [dateFrom, dateTo])
@@ -123,7 +128,7 @@ export default function PayrollPage() {
     const [{ data: paymentsData }, { data: locks }] = await Promise.all([
       supabase
         .from('payment_approvals')
-        .select('*, employee:employees(name, surname, employee_code, bank_name, bank_account, bank_branch_code, id_number, account_type)')
+        .select('*, employee:employees(name, surname, employee_code, bank_name, bank_account, bank_branch_code, id_number, tax_number, account_type)')
         .eq('company_id', cid)
         .gte('period_start', from)
         .lte('period_end', to)
@@ -293,46 +298,77 @@ export default function PayrollPage() {
   }
 
   function exportBankCSV() {
-    const header = 'Account Holder,Bank Name,Account Number,Branch Code,Account Type,Amount (R),Reference'
-    const rows   = filtered
-      .filter(p => p.status === 'approved' && (p.net_pay ?? 0) > 0)
+    const bankRows = filtered
+      .filter(p => (p.status === 'approved' || p.status === 'paid') && (p.net_pay ?? 0) > 0)
       .map(p => {
         const emp = p.employee
         const name = emp ? `${emp.name} ${emp.surname}`.trim() : ''
-        return [
-          `"${name}"`,
-          emp?.bank_name        ?? '',
-          emp?.bank_account     ?? '',
-          emp?.bank_branch_code ?? '',
-          emp?.account_type ?? 'Savings',
-          (p.net_pay ?? 0).toFixed(2),
-          `"SALARY ${p.period_start}"`,
-        ].join(',')
+        return {
+          employeeName: name,
+          bankName: emp?.bank_name ?? '',
+          branchCode: emp?.bank_branch_code ?? '',
+          accountNumber: emp?.bank_account ?? '',
+          netPay: p.net_pay ?? 0,
+          reference: `SALARY ${p.period_start}`,
+          idNumber: emp?.id_number ?? null,
+        }
       })
-    downloadCSV([header, ...rows].join('\n'), `bank_payments_${dateFrom}.csv`)
+    const { headers, rows } = formatBankPaymentFile(bankFormat, bankRows)
+    const csv = [
+      headers.join(','),
+      ...rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')),
+    ].join('\n')
+    downloadCSV(csv, `bank_${bankFormat}_${dateFrom}.csv`)
   }
 
   function exportIRP5CSV() {
-    // Simplified IRP5 data extract — PAYE/UIF split requires future Mission
-    const taxYear = new Date(dateTo).getFullYear()
-    const header  = 'Employee,ID Number,Period Start,Period End,Gross Income (R),Total Deductions (R),Net Income (R),Tax Year'
-    const rows    = filtered
-      .filter(p => p.status === 'approved')
-      .map(p => {
-        const emp  = p.employee
-        const name = emp ? `${emp.name} ${emp.surname}`.trim() : ''
-        return [
-          `"${name}"`,
-          emp?.id_number ?? '',
-          p.period_start,
-          p.period_end,
-          (p.gross_pay  ?? 0).toFixed(2),
-          (p.deductions ?? 0).toFixed(2),
-          (p.net_pay    ?? 0).toFixed(2),
-          taxYear,
-        ].join(',')
+    const { start: tyStart } = taxYearFor(dateTo)
+    const taxYearStartYear = Number(tyStart.slice(0, 4))
+    const byEmp = new Map<string, {
+      name: string
+      idNumber: string | null
+      taxNumber: string | null
+      payslips: {
+        periodEnd: string
+        status: string
+        grossPay: number
+        netPay: number
+        deductions: number
+        deductionLines: { label: string; amount: number }[]
+      }[]
+    }>()
+
+    for (const p of filtered.filter(x => x.status === 'approved' || x.status === 'paid')) {
+      const emp = p.employee
+      const name = emp ? `${emp.name} ${emp.surname}`.trim() : p.employee_id
+      const key = p.employee_id
+      if (!byEmp.has(key)) {
+        byEmp.set(key, {
+          name,
+          idNumber: emp?.id_number ?? null,
+          taxNumber: emp?.tax_number ?? null,
+          payslips: [],
+        })
+      }
+      byEmp.get(key)!.payslips.push({
+        periodEnd: p.period_end,
+        status: p.status,
+        grossPay: p.gross_pay ?? 0,
+        netPay: p.net_pay ?? 0,
+        deductions: p.deductions ?? 0,
+        deductionLines: (p.deductions_breakdown ?? []).map(l => ({
+          label: l.label ?? '',
+          amount: Number(l.amount ?? 0),
+        })),
       })
-    downloadCSV([header, ...rows].join('\n'), `IRP5_${taxYear}.csv`)
+    }
+
+    const records = buildForTaxYear(taxYearStartYear, [...byEmp.values()])
+    const header = 'Employee,ID Number,Tax Number,YTD Gross (R),YTD PAYE (R),YTD UIF (R),YTD Net (R),Payslip Count'
+    const rows = toCsvRows(records).map(r =>
+      r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')
+    )
+    downloadCSV([header, ...rows].join('\n'), `IRP5_${taxYearStartYear}.csv`)
   }
 
   // ── Derived ────────────────────────────────────────────────────────────────
@@ -353,6 +389,10 @@ export default function PayrollPage() {
     .reduce((s, p) => s + (p.gross_pay ?? 0), 0)
   const approvedGross = filtered.filter(p => p.status === 'approved' || p.status === 'paid')
     .reduce((s, p) => s + (p.gross_pay ?? 0), 0)
+  const approvedNet = filtered.filter(p => p.status === 'approved' || p.status === 'paid')
+    .reduce((s, p) => s + (p.net_pay ?? 0), 0)
+  const pendingCount = filtered.filter(p => p.status === 'pending').length
+  const approvedCount = filtered.filter(p => p.status === 'approved' || p.status === 'paid').length
 
   // ── Guards ─────────────────────────────────────────────────────────────────
 
@@ -401,6 +441,17 @@ export default function PayrollPage() {
             >
               Register
             </button>
+            <select
+              value={bankFormat}
+              onChange={e => setBankFormat(e.target.value as BankFormat)}
+              className="h-9 px-2 text-[12px] rounded-md bg-surface-dark border border-border text-text-secondary"
+              title="Bank file format"
+            >
+              <option value="generic">Bank: Generic</option>
+              <option value="fnb">Bank: FNB</option>
+              <option value="absa">Bank: ABSA</option>
+              <option value="standard_bank">Bank: Standard</option>
+            </select>
             <button
               onClick={exportBankCSV}
               disabled={filtered.length === 0}
@@ -448,15 +499,23 @@ export default function PayrollPage() {
           <p className="text-error text-[13px] font-medium">{error}</p>
         )}
 
-        {/* KPI tiles */}
-        <div className="grid grid-cols-2 gap-4">
-          <div className="rounded-lg py-2 px-4 flex flex-col items-center gap-0.5 bg-surface-elevated border border-divider">
+        {/* Period cockpit */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="rounded-lg py-2 px-3 flex flex-col items-center gap-0.5 bg-surface-elevated border border-divider">
             <span className="text-[17px] font-semibold text-text-primary">{fmtR(pendingGross)}</span>
-            <span className="text-[10px] text-text-secondary">Pending Gross</span>
+            <span className="text-[10px] text-text-secondary">Pending gross ({pendingCount})</span>
           </div>
-          <div className="rounded-lg py-2 px-4 flex flex-col items-center gap-0.5 bg-surface-elevated border border-divider">
+          <div className="rounded-lg py-2 px-3 flex flex-col items-center gap-0.5 bg-surface-elevated border border-divider">
             <span className="text-[17px] font-semibold text-text-primary">{fmtR(approvedGross)}</span>
-            <span className="text-[10px] text-text-secondary">Approved Gross</span>
+            <span className="text-[10px] text-text-secondary">Approved gross ({approvedCount})</span>
+          </div>
+          <div className="rounded-lg py-2 px-3 flex flex-col items-center gap-0.5 bg-surface-elevated border border-divider">
+            <span className="text-[17px] font-semibold text-text-primary">{fmtR(approvedNet)}</span>
+            <span className="text-[10px] text-text-secondary">Approved net (bankable)</span>
+          </div>
+          <div className="rounded-lg py-2 px-3 flex flex-col items-center gap-0.5 bg-surface-elevated border border-divider">
+            <span className="text-[17px] font-semibold text-text-primary">{isLocked ? 'Locked' : 'Open'}</span>
+            <span className="text-[10px] text-text-secondary">Period status</span>
           </div>
         </div>
 

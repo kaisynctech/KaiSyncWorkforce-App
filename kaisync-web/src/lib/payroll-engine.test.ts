@@ -65,7 +65,7 @@ describe('calculatePayslip', () => {
     expect(slip!.deductions_breakdown.some(d => d.label === 'UIF')).toBe(true)
     expect(slip!.deductions_breakdown.some(d => d.label === 'PAYE')).toBe(true)
     expect(slip!.net_pay).toBeLessThan(slip!.gross_pay)
-    expect(slip!.policy_snapshot.source).toBe('kaisync-web-payroll-engine')
+    expect(slip!.policy_snapshot.source).toBe('kaisync-web-payroll-engine-v2')
   })
 
   it('skips UIF for contractors and exempt employees', () => {

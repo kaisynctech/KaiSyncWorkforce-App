@@ -234,9 +234,9 @@ export default function PayrollSettingsPage() {
             <Sw checked={s.use_sars_tax_tables} onChange={v => set('use_sars_tax_tables', v)} />
           </Row>
           {s.use_sars_tax_tables && (
-            <p className="text-[12px] text-warning px-1 pb-1">
-              Web payroll currently uses flat PAYE % (employee rate or default above).
-              Full SARS tax-table calculation remains on MAUI / KaiFlow.Payroll — this toggle is stored for parity but not applied by the web engine yet.
+            <p className="text-[12px] text-success px-1 pb-1">
+              SARS 2025/26 tax tables are applied on generate/recalculate (brackets + age rebates).
+              Employee tax directive / fixed PAYE still take precedence. Flat % is used only when this toggle is off.
             </p>
           )}
         </div>

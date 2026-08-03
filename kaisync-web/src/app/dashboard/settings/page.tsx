@@ -346,7 +346,7 @@ export default function SettingsPage() {
     )
     const data = await res.json()
     setXeroMsg(res.ok
-      ? `Pushed ${data.pushed} payslip${data.pushed === 1 ? '' : 's'} to Xero.`
+      ? (data.message ?? `Pushed ${data.pushed} payslip${data.pushed === 1 ? '' : 's'} to Xero as Draft Manual Journals.`)
       : (data.error ?? 'Push failed.'))
     setXeroPushing(false)
   }
@@ -779,7 +779,9 @@ export default function SettingsPage() {
                 <div className="flex flex-col gap-2 pt-2 border-t border-divider">
                   <div>
                     <p className="text-[13px] font-medium text-text-primary">Push Payroll</p>
-                    <p className="text-[12px] text-text-secondary">Post payslips as manual journals in Xero</p>
+                    <p className="text-[12px] text-text-secondary">
+                      Push approved payslips as Draft Manual Journals in Xero (idempotent; accountant posts in Xero)
+                    </p>
                   </div>
                   <div className="flex gap-2 items-center">
                     <input
