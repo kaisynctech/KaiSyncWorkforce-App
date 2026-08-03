@@ -1,26 +1,19 @@
 /**
  * Shared Payroll API for the HR web app.
  * Approve/reject use live RPCs; release updates shared_with_employee;
- * generate uses prefs-aware client engine (not SQL stub alone).
+ * generate/recalculate call the `payroll-generate` Edge Function, which runs the
+ * SAME calculation engine (`supabase/functions/_shared/payroll/*`, mirrored from
+ * `kaisync-web/src/lib/payroll/*`) server-side — persisted pay is never
+ * browser-authoritative. See docs/modules/payroll-web-program.md.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import {
-  calculatePayslip,
-  type EngineEmployee,
-  type PunchLike,
-  type PayslipOverrides,
-  type LeaveSnapshot,
-  type SalaryHistoryEntry,
-} from '@/lib/payroll-engine'
+import type { PayslipOverrides } from '@/lib/payroll-engine'
 import {
   buildPayrollGeneratePreview,
-  isEligibleForPeriod,
   type PayrollGeneratePreview,
   type PayrollEmployeeLike,
 } from '@/lib/payroll-readiness'
-import { loadPayrollSettings } from '@/lib/payroll-settings'
-import type { PayrollSettings } from '@/types/database'
 
 export type PayrollResult<T> =
   | { ok: true; data: T }
@@ -164,84 +157,69 @@ export async function previewPayrollGenerate(
   }
 }
 
-async function loadLeaveRecordsInPeriod(
-  supabase: SupabaseClient,
-  companyId: string,
-  employeeId: string,
-  periodStart: string,
-  periodEnd: string
-): Promise<LeaveSnapshot[]> {
-  const { data } = await supabase
-    .from('leave_requests')
-    .select('leave_type, start_date, end_date, total_days, half_day_start, half_day_end, status')
-    .eq('company_id', companyId)
-    .eq('employee_id', employeeId)
-    .eq('status', 'approved')
-    .lte('start_date', periodEnd)
-    .gte('end_date', periodStart)
-
-  return (data ?? []).map(row => ({
-    leaveType: row.leave_type ?? 'Annual Leave',
-    startDate: row.start_date as string,
-    endDate: row.end_date as string,
-    halfDayStart: Boolean(row.half_day_start),
-    halfDayEnd: Boolean(row.half_day_end),
-    totalDays: Number(row.total_days ?? 0),
-    isApproved: true,
-  }))
+type PayrollGenerateFunctionBody = {
+  company_id: string
+  action: 'generate' | 'recalculate'
+  period_start?: string
+  period_end?: string
+  payment_id?: string
+  overrides?: {
+    payFullBaseSalary?: boolean
+    waivePenalties?: boolean
+    manualPayeOverride?: number | null
+    manualAdjustment?: number | null
+    bonusAmount?: number | null
+  }
 }
 
-async function loadSalaryHistory(
+/**
+ * Calls the `payroll-generate` Edge Function — the server-side source of truth for
+ * payroll math (same engine as web, run with the service role so persisted
+ * `payment_approvals` rows can't be forged from the browser). Never falls back to a
+ * client-side calculation: if the function is unreachable or errors, the caller must
+ * see a clear failure rather than a silently different (browser-computed) payslip.
+ */
+async function callPayrollGenerateFunction(
   supabase: SupabaseClient,
-  companyId: string,
-  employeeId: string
-): Promise<SalaryHistoryEntry[]> {
-  const { data } = await supabase
-    .from('employee_salary_history')
-    .select('effective_date, monthly_salary, hourly_rate, daily_rate')
-    .eq('company_id', companyId)
-    .eq('employee_id', employeeId)
-    .order('effective_date', { ascending: false })
+  body: PayrollGenerateFunctionBody
+): Promise<PayrollResult<Record<string, unknown>>> {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  if (!supabaseUrl) {
+    return { ok: false, message: 'Payroll server is not configured (missing NEXT_PUBLIC_SUPABASE_URL).' }
+  }
 
-  return (data ?? []).map(row => ({
-    effective_date: row.effective_date as string,
-    monthly_salary: Number(row.monthly_salary ?? 0),
-    hourly_rate: Number(row.hourly_rate ?? 0),
-    daily_rate: Number(row.daily_rate ?? 0),
-  }))
-}
+  const { data: sessionData, error: sessionErr } = await supabase.auth.getSession()
+  if (sessionErr) return { ok: false, message: sessionErr.message }
+  const token = sessionData.session?.access_token
+  if (!token) return { ok: false, message: 'Not signed in.' }
 
-async function loadYtdPrior(
-  supabase: SupabaseClient,
-  companyId: string,
-  employeeId: string,
-  periodStart: string
-): Promise<{ gross_pay: number; paye: number; uif: number; net_pay: number }> {
-  const year = periodStart.slice(0, 4)
-  const { data } = await supabase
-    .from('payment_approvals')
-    .select('gross_pay, net_pay, deductions_breakdown, ytd_json')
-    .eq('company_id', companyId)
-    .eq('employee_id', employeeId)
-    .gte('period_start', `${year}-01-01`)
-    .lt('period_start', periodStart)
-    .in('status', ['approved', 'paid', 'pending'])
-
-  let gross = 0
-  let net = 0
-  let paye = 0
-  let uif = 0
-  for (const row of data ?? []) {
-    gross += Number(row.gross_pay ?? 0)
-    net += Number(row.net_pay ?? 0)
-    const lines = (row.deductions_breakdown ?? []) as { label?: string; amount?: number }[]
-    for (const line of lines) {
-      const label = (line.label ?? '').toLowerCase()
-      if (label === 'paye') paye += Number(line.amount ?? 0)
-      if (label === 'uif') uif += Number(line.amount ?? 0)
+  let res: Response
+  try {
+    res = await fetch(`${supabaseUrl}/functions/v1/payroll-generate`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  } catch (err) {
+    return {
+      ok: false,
+      message: `Could not reach the payroll server: ${err instanceof Error ? err.message : String(err)}`,
     }
   }
-  return { gross_pay: gross, paye, uif, net_pay: net }
+
+  let payload: Record<string, unknown>
+  try {
+    payload = await res.json()
+  } catch {
+    return { ok: false, message: `Payroll server returned an unexpected response (status ${res.status}).` }
+  }
+
+  if (!res.ok || payload.ok === false) {
+    const message = (payload.error as string) ?? (payload.message as string) ?? `Payroll server error (status ${res.status}).`
+    return { ok: false, message: formatPayrollActionError(message) }
+  }
+
+  return { ok: true, data: payload }
 }
 
 export async function generatePayrollPeriod(
@@ -250,105 +228,17 @@ export async function generatePayrollPeriod(
   periodStart: string,
   periodEnd: string
 ): Promise<PayrollResult<{ generated: number; skipped: number; errors: string[] }>> {
-  const settingsRes = await loadPayrollSettings(supabase, companyId)
-  if (!settingsRes.ok) return { ok: false, message: settingsRes.message }
-  const settings: PayrollSettings = settingsRes.settings
+  const result = await callPayrollGenerateFunction(supabase, {
+    company_id: companyId,
+    action: 'generate',
+    period_start: periodStart,
+    period_end: periodEnd,
+  })
+  if (!result.ok) return result
 
-  const [{ data: emps, error: empErr }, { data: existing }, { data: punches, error: punchErr }] =
-    await Promise.all([
-      supabase.from('employees').select(EMP_SELECT).eq('company_id', companyId).eq('is_active', true),
-      supabase
-        .from('payment_approvals')
-        .select('employee_id')
-        .eq('company_id', companyId)
-        .eq('period_start', periodStart)
-        .eq('period_end', periodEnd),
-      supabase
-        .from('time_punches')
-        .select('employee_id, type, date_time')
-        .eq('company_id', companyId)
-        .gte('date_time', `${periodStart}T00:00:00`)
-        .lte('date_time', `${periodEnd}T23:59:59`),
-    ])
-
-  if (empErr) return { ok: false, message: empErr.message }
-  if (punchErr) return { ok: false, message: punchErr.message }
-
-  const existingIds = new Set((existing ?? []).map(r => r.employee_id as string))
-  const punchRows = (punches ?? []) as PunchLike[]
-  let generated = 0
-  let skipped = 0
-  const errors: string[] = []
-
-  for (const raw of (emps ?? []) as (EngineEmployee & PayrollEmployeeLike)[]) {
-    if (!isEligibleForPeriod(raw, periodStart, periodEnd)) {
-      skipped++
-      continue
-    }
-    if (existingIds.has(raw.id)) {
-      skipped++
-      continue
-    }
-
-    const [leaveRecords, salaryHistory, ytdPrior] = await Promise.all([
-      loadLeaveRecordsInPeriod(supabase, companyId, raw.id, periodStart, periodEnd),
-      loadSalaryHistory(supabase, companyId, raw.id),
-      loadYtdPrior(supabase, companyId, raw.id, periodStart),
-    ])
-    const slip = calculatePayslip({
-      employee: raw,
-      settings,
-      punches: punchRows,
-      periodStart,
-      periodEnd,
-      leaveRecords,
-      salaryHistory,
-      ytdPrior,
-    })
-    if (!slip) {
-      skipped++
-      continue
-    }
-
-    const { error: insertErr } = await supabase.from('payment_approvals').insert({
-      company_id: companyId,
-      employee_id: slip.employee_id,
-      period_start: slip.period_start,
-      period_end: slip.period_end,
-      regular_hours: slip.regular_hours,
-      overtime_hours: slip.overtime_hours,
-      working_days: slip.working_days,
-      leave_days: slip.leave_days,
-      unpaid_leave_days: slip.unpaid_leave_days,
-      absent_days: slip.absent_days,
-      regular_pay: slip.regular_pay,
-      overtime_pay: slip.overtime_pay,
-      base_salary: slip.base_salary,
-      gross_pay: slip.gross_pay,
-      deductions: slip.deductions,
-      net_pay: slip.net_pay,
-      pay_basis: slip.pay_basis,
-      branch_label: slip.branch_label,
-      cost_center: slip.cost_center,
-      earnings_breakdown: slip.earnings_breakdown,
-      deductions_breakdown: slip.deductions_breakdown,
-      policy_snapshot: slip.policy_snapshot,
-      ytd_json: slip.ytd_json,
-      audit_log: slip.audit_log,
-      status: 'pending',
-      shared_with_employee: false,
-    })
-
-    if (insertErr) {
-      errors.push(`${raw.name} ${raw.surname}: ${insertErr.message}`)
-    } else {
-      generated++
-    }
-  }
-
-  if (generated === 0 && errors.length > 0) {
-    return { ok: false, message: errors[0] }
-  }
+  const generated = Number(result.data.generated ?? 0)
+  const skipped = Number(result.data.skipped ?? 0)
+  const errors = Array.isArray(result.data.errors) ? (result.data.errors as string[]) : []
   return { ok: true, data: { generated, skipped, errors } }
 }
 
@@ -358,108 +248,20 @@ export async function recalculatePayslip(
   paymentId: string,
   overrides?: PayslipOverrides
 ): Promise<PayrollResult<void>> {
-  const settingsRes = await loadPayrollSettings(supabase, companyId)
-  if (!settingsRes.ok) return { ok: false, message: settingsRes.message }
-
-  const { data: payment, error: payErr } = await supabase
-    .from('payment_approvals')
-    .select('*')
-    .eq('id', paymentId)
-    .eq('company_id', companyId)
-    .maybeSingle()
-  if (payErr) return { ok: false, message: payErr.message }
-  if (!payment) return { ok: false, message: 'Payslip not found.' }
-  if (payment.status !== 'pending') {
-    return { ok: false, message: 'Only pending payslips can be recalculated.' }
-  }
-
-  const { data: emp, error: empErr } = await supabase
-    .from('employees')
-    .select(EMP_SELECT)
-    .eq('id', payment.employee_id)
-    .maybeSingle()
-  if (empErr) return { ok: false, message: empErr.message }
-  if (!emp) return { ok: false, message: 'Employee not found.' }
-
-  const { data: punches } = await supabase
-    .from('time_punches')
-    .select('employee_id, type, date_time')
-    .eq('company_id', companyId)
-    .eq('employee_id', payment.employee_id)
-    .gte('date_time', `${payment.period_start}T00:00:00`)
-    .lte('date_time', `${payment.period_end}T23:59:59`)
-
-  const [leaveRecords, salaryHistory, ytdPrior] = await Promise.all([
-    loadLeaveRecordsInPeriod(
-      supabase,
-      companyId,
-      payment.employee_id,
-      payment.period_start,
-      payment.period_end
-    ),
-    loadSalaryHistory(supabase, companyId, payment.employee_id),
-    loadYtdPrior(supabase, companyId, payment.employee_id, payment.period_start),
-  ])
-
-  const mergedOverrides: PayslipOverrides = {
-    payFullBaseSalary: overrides?.payFullBaseSalary ?? payment.pay_full_base_salary ?? false,
-    waivePenalties: overrides?.waivePenalties ?? payment.waive_penalties ?? false,
-    manualPayeOverride:
-      overrides?.manualPayeOverride !== undefined
-        ? overrides.manualPayeOverride
-        : payment.manual_paye_override,
-    manualAdjustment:
-      overrides?.manualAdjustment !== undefined
-        ? overrides.manualAdjustment
-        : payment.manual_adjustment,
-    bonusAmount:
-      overrides?.bonusAmount !== undefined ? overrides.bonusAmount : payment.bonus_amount,
-  }
-
-  const slip = calculatePayslip({
-    employee: emp as EngineEmployee,
-    settings: settingsRes.settings,
-    punches: (punches ?? []) as PunchLike[],
-    periodStart: payment.period_start,
-    periodEnd: payment.period_end,
-    overrides: mergedOverrides,
-    leaveRecords,
-    salaryHistory,
-    ytdPrior,
+  const result = await callPayrollGenerateFunction(supabase, {
+    company_id: companyId,
+    action: 'recalculate',
+    payment_id: paymentId,
+    overrides: overrides
+      ? {
+          payFullBaseSalary: overrides.payFullBaseSalary,
+          waivePenalties: overrides.waivePenalties,
+          manualPayeOverride: overrides.manualPayeOverride,
+          manualAdjustment: overrides.manualAdjustment,
+          bonusAmount: overrides.bonusAmount,
+        }
+      : undefined,
   })
-  if (!slip) return { ok: false, message: 'Could not calculate payslip for this employee/period.' }
-
-  const priorAudit = Array.isArray(payment.audit_log) ? payment.audit_log : []
-  const { error: updErr } = await supabase
-    .from('payment_approvals')
-    .update({
-      regular_hours: slip.regular_hours,
-      overtime_hours: slip.overtime_hours,
-      working_days: slip.working_days,
-      leave_days: slip.leave_days,
-      unpaid_leave_days: slip.unpaid_leave_days,
-      absent_days: slip.absent_days,
-      regular_pay: slip.regular_pay,
-      overtime_pay: slip.overtime_pay,
-      base_salary: slip.base_salary,
-      gross_pay: slip.gross_pay,
-      deductions: slip.deductions,
-      net_pay: slip.net_pay,
-      pay_basis: slip.pay_basis,
-      branch_label: slip.branch_label,
-      cost_center: slip.cost_center,
-      earnings_breakdown: slip.earnings_breakdown,
-      deductions_breakdown: slip.deductions_breakdown,
-      policy_snapshot: slip.policy_snapshot,
-      ytd_json: slip.ytd_json,
-      pay_full_base_salary: mergedOverrides.payFullBaseSalary ?? false,
-      waive_penalties: mergedOverrides.waivePenalties ?? false,
-      manual_paye_override: mergedOverrides.manualPayeOverride ?? null,
-      manual_adjustment: mergedOverrides.manualAdjustment ?? null,
-      bonus_amount: mergedOverrides.bonusAmount ?? null,
-      audit_log: [...priorAudit, ...slip.audit_log],
-    })
-    .eq('id', paymentId)
-  if (updErr) return { ok: false, message: updErr.message }
+  if (!result.ok) return result
   return { ok: true, data: undefined }
 }

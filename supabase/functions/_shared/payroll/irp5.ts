@@ -1,9 +1,10 @@
 /**
+ * Server-side copy of `kaisync-web/src/lib/payroll/irp5.ts` (Deno-friendly relative imports).
  * Ports KaiFlow.Payroll/PayrollYtdHelper.cs and Irp5RecordBuilder.cs.
  */
 
-import type { PayrollLineItem } from './types'
-import type { ISODate } from './period'
+import type { PayrollLineItem } from './types.ts'
+import type { ISODate } from './period.ts'
 
 export type YtdTotals = {
   gross_pay: number

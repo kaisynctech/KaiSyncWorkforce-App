@@ -1,4 +1,8 @@
 /**
+ * Server-side copy of `kaisync-web/src/lib/payroll/calculator.ts` (Deno-friendly relative
+ * imports only). Keep byte-for-byte in sync with the web version — this is what makes
+ * `payroll-generate` non-repudiation-authoritative over the browser calculation.
+ *
  * Ports KaiFlow.Payroll/PayrollCalculator.cs — the full calculation pipeline.
  *
  * Deviations from the C# reference (documented in docs/modules/payroll-web-program.md):
@@ -10,7 +14,7 @@
  *   `payroll-engine.ts` adapter for backward compatibility with existing callers.
  */
 
-import type { PayrollLineItem } from './types'
+import type { PayrollLineItem } from './types.ts'
 import {
   addDaysISO,
   dayNumber,
@@ -20,11 +24,11 @@ import {
   proRateFactor,
   yearMonthOf,
   type ISODate,
-} from './period'
-import { countDaysInPeriod, isUnpaidLeave } from './leave-days'
-import { resolveAsOf, type SalaryHistoryEntry } from './salary-resolver'
-import { calculateMonthlyPaye } from './sars-paye'
-import { mergeYtd, type YtdTotals } from './irp5'
+} from './period.ts'
+import { countDaysInPeriod, isUnpaidLeave } from './leave-days.ts'
+import { resolveAsOf, type SalaryHistoryEntry } from './salary-resolver.ts'
+import { calculateMonthlyPaye } from './sars-paye.ts'
+import { mergeYtd, type YtdTotals } from './irp5.ts'
 
 export type PayBasis = 'monthly_salary' | 'hourly' | 'daily'
 

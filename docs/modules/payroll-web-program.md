@@ -15,8 +15,21 @@
 | `payroll/irp5.ts` | `PayrollYtdHelper.cs` + `Irp5RecordBuilder.cs` | SA tax-year (Mar–Feb) YTD aggregation/merge + IRP5 CSV rows |
 | `payroll/calculator.ts` | `PayrollCalculator.cs` | Full pipeline: guard → resolve salary → pay basis → pro-rate → sessions → leave → earnings → deductions → statutory → notes → YTD merge |
 | `payroll-engine.ts` | — | Thin adapter: maps `EngineEmployee` + `PayrollSettings` (flat prefs) ↔ the calculator's structured inputs/outputs. Public `calculatePayslip` / `sumPunchHours` API is unchanged. |
+| `payroll/types.ts` | — | Local `PayrollLineItem` shim (`{ label, amount }`) so `payroll/*` has zero dependency on the `@/types/database` Next.js path alias — lets the files be copied verbatim into `supabase/functions/_shared/payroll/`. |
 
-`policy_snapshot.source` is now `'kaisync-web-payroll-engine-v2'` (was `'kaisync-web-payroll-engine'`).
+`policy_snapshot.source` is `'kaisync-web-payroll-engine-v2-server'` on all persisted `payment_approvals` rows (written by the `payroll-generate` Edge Function). The unsuffixed `'kaisync-web-payroll-engine-v2'` value comes from `payroll-engine.ts`'s `calculatePayslip`, which is no longer called from any production code path — it's kept only as an unused-in-prod helper exercised by `payroll-engine.test.ts` (regression coverage that the two hand-kept-in-sync copies of the engine agree).
+
+## Server-side generate/recalculate (`payroll-generate` Edge Function)
+
+Browser generate math is **replaced**. `kaisync-web/src/lib/payroll.ts`'s `generatePayrollPeriod` and `recalculatePayslip` no longer run the calculation client-side — they call `supabase/functions/payroll-generate` (POST, `Authorization: Bearer <user JWT>`), which:
+
+- Verifies the caller via `employees.user_id`/`company_id`/`is_active`/`access_level` (owner/hr/hr_admin/admin), then does all data access with the service-role admin client (RLS-bypassing, since authorization was already enforced).
+- Runs the **identical** engine — `supabase/functions/_shared/payroll/{types,period,leave-days,salary-resolver,sars-paye,irp5,calculator}.ts` are byte-for-byte copies of `kaisync-web/src/lib/payroll/*` (Deno-friendly `./file.ts` relative imports only), plus `_shared/payroll/prefs.ts` (mirrors `payroll-settings.ts`'s `PAYROLL_SETTINGS_DEFAULTS`/`prefsToPayrollSettings`) and `_shared/payroll/adapter.ts` (server port of `payroll-engine.ts`'s `calculatePayslip`).
+- `action: 'generate'` — rejects locked periods (`payroll_period_locks`), loads `company_settings.payroll_preferences` via the `get_company_settings` RPC (called with the **caller's own session client**, since that RPC's `SECURITY DEFINER` body reads `auth.uid()` — the service-role client has none), loads active employees/existing payslips/time punches, and inserts one `pending` `payment_approvals` row per eligible, not-yet-generated employee.
+- `action: 'recalculate'` — loads the pending payslip by `payment_id` + `company_id`, merges request `overrides` with the row's persisted override columns, recalculates, and updates the row, appending a `recalculated` audit-log entry attributed to the acting user.
+- The web client (`payroll.ts`) never falls back to a client-side calculation on failure — it surfaces the Edge Function error directly, since a silently-different browser-computed payslip would defeat the purpose of moving generate server-side.
+
+This closes remaining gap #2 below (server/RPC generate using the same TS engine for non-repudiation).
 
 ## Preferences vs engine — what's enforced now
 
@@ -52,7 +65,7 @@ Session/OT derivation (`buildSessionsFromPunches`) pairs `in`/`out` punches per 
 | Phase | Status | Evidence |
 |---|---|---|
 | **P0 Truth & guardrails** | ✅ | Anon `EXECUTE` revoked on `hr_generate_*` / lock RPCs; migrations in repo; prefs matrix documented |
-| **P1 Server/engine v1** | ✅ (client TS engine v2) | Full `calculator.ts` + SARS; generate/recalc load salary history + leave snapshots. True Deno/RPC server calc still optional follow-up |
+| **P1 Server/engine v1** | ✅ | Full `calculator.ts` + SARS; generate/recalc load salary history + leave snapshots. `payroll-generate` Deno Edge Function now runs the same engine server-side (non-repudiation) |
 | **P2 Policy completeness** | ✅ / ⚠️ | Holidays, pro-rate, penalties, SARS wired. Late/early still need shift-schedule comparison |
 | **P3 Exports** | ✅ | Bank format picker (generic/FNB/ABSA/Standard) + IRP5 YTD PAYE/UIF CSV on payroll page |
 | **P4 Xero payroll** | ✅ | `xero-push-payroll` v3 deployed against `payment_approvals` + `payment_approval_id` links (was broken inventing `payslips`) |
@@ -62,8 +75,8 @@ Session/OT derivation (`buildSessionsFromPunches`) pairs `in`/`out` punches per 
 ### Remaining gaps (honest)
 
 1. Late/early penalties need punch vs shift-template comparison.
-2. Browser still owns generate math — next enterprise step is Edge/RPC generate using the same TS engine for non-repudiation.
-3. Staging smoke of generate → approve → Xero draft journals with a real connected org.
+2. ~~Browser still owns generate math~~ — **closed**: `generate`/`recalculate` now run server-side in the `payroll-generate` Edge Function (same engine, service-role data access, non-repudiation). See "Server-side generate/recalculate" above.
+3. Staging smoke of generate → approve → Xero draft journals with a real connected org, now including the `payroll-generate` EF in the path.
 
 ## Testing
 
@@ -72,4 +85,4 @@ Session/OT derivation (`buildSessionsFromPunches`) pairs `in`/`out` punches per 
 - `bank-export.test.ts` — header/row shape per bank format.
 - `payroll-engine.test.ts` — adapter-level backward compatibility (monthly + UIF/PAYE/medical, contractor/exempt UIF skip, hourly OT split, manual PAYE + bonus).
 
-Run `npm test` and `npx tsc --noEmit` in `kaisync-web` after any change to these files.
+Run `npm test` and `npx tsc --noEmit` in `kaisync-web` after any change to these files. There is no separate Deno test suite for `supabase/functions/_shared/payroll/*` yet — those files must be kept byte-for-byte identical (module-body) to `kaisync-web/src/lib/payroll/*` (only the relative-import extensions differ, e.g. `./period` → `./period.ts`), so the web unit tests above are the effective regression coverage for the server engine too. Any future edit to one copy must be mirrored to the other.
