@@ -25,14 +25,18 @@ export async function sendEmployeeInvite(
     return { ok: false, message: otpErr.message }
   }
 
-  // Best-effort status update — column may be missing on older schemas.
-  await supabase
-    .from('employees')
-    .update({
-      invite_status: 'sent',
-      invited_at: new Date().toISOString(),
-    } as Record<string, unknown>)
-    .eq('id', opts.employeeId)
+  // Live schema may not have invite_status/invited_at — ignore update failures.
+  try {
+    await supabase
+      .from('employees')
+      .update({
+        invite_status: 'sent',
+        invited_at: new Date().toISOString(),
+      } as Record<string, unknown>)
+      .eq('id', opts.employeeId)
+  } catch {
+    /* optional columns */
+  }
 
   return { ok: true }
 }
