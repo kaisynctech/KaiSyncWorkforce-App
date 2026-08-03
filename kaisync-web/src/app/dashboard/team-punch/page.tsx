@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import { memberIdsOf, withMemberCount, type WorkTeamRow } from '@/lib/work-teams'
 import type { WorkTeam } from '@/types/database'
 
 interface TeamEmployee {
@@ -32,8 +33,8 @@ export default function TeamPunchPage() {
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [selfEmployeeId, setSelfEmployeeId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
 
-  // Geolocation
   useEffect(() => {
     if (!navigator.geolocation) { setAddress('Location unavailable'); setIsGettingLocation(false); return }
     navigator.geolocation.getCurrentPosition(
@@ -55,9 +56,15 @@ export default function TeamPunchPage() {
     setCompanyId(member.companyId)
     setSelfEmployeeId(member.employeeId)
 
-    const { data } = await supabase.from('work_teams').select('id, name, description, is_active, member_count')
-      .eq('company_id', member.companyId).eq('is_active', true).order('name')
-    setTeams((data ?? []) as WorkTeam[])
+    const { data, error: qErr } = await supabase
+      .from('work_teams')
+      .select('id, company_id, name, description, leader_employee_id, member_ids, is_active')
+      .eq('company_id', member.companyId)
+      .eq('is_active', true)
+      .order('name')
+
+    if (qErr) setActionError(qErr.message)
+    setTeams((data ?? []).map(t => withMemberCount(t as WorkTeamRow)) as WorkTeam[])
     setLoading(false)
   }, [])
 
@@ -65,25 +72,45 @@ export default function TeamPunchPage() {
 
   const loadMembers = useCallback(async (teamId: string) => {
     if (!teamId) { setMembers([]); return }
+    setActionError(null)
     const supabase = createClient()
-    const { data } = await supabase
-      .from('work_team_members')
-      .select('id, employee_id, employee:employees(name, surname, position)')
-      .eq('team_id', teamId)
+    const { data: team, error: teamErr } = await supabase
+      .from('work_teams')
+      .select('id, member_ids, leader_employee_id')
+      .eq('id', teamId)
+      .maybeSingle()
 
-    const empIds = ((data ?? []) as Record<string, unknown>[]).map(r => r.employee_id as string)
+    if (teamErr) {
+      setActionError(teamErr.message)
+      setMembers([])
+      return
+    }
 
-    // time_punches uses separate 'in'/'out' rows — derive clocked-in from most recent punch per employee today
-    const { data: recentPunches } = empIds.length > 0
-      ? await supabase
-          .from('time_punches')
-          .select('employee_id, type, date_time')
-          .in('employee_id', empIds)
-          .gte('date_time', new Date(new Date().setHours(0, 0, 0, 0)).toISOString())
-          .order('date_time', { ascending: false })
-      : { data: [] }
+    const empIds = memberIdsOf(team as WorkTeamRow)
+    if (empIds.length === 0) {
+      setMembers([])
+      setSelected(new Set())
+      return
+    }
 
-    // Keep only the most recent punch per employee
+    const { data: emps, error: empErr } = await supabase
+      .from('employees')
+      .select('id, name, surname, position')
+      .in('id', empIds)
+
+    if (empErr) {
+      setActionError(empErr.message)
+      setMembers([])
+      return
+    }
+
+    const { data: recentPunches } = await supabase
+      .from('time_punches')
+      .select('employee_id, type, date_time')
+      .in('employee_id', empIds)
+      .gte('date_time', new Date(new Date().setHours(0, 0, 0, 0)).toISOString())
+      .order('date_time', { ascending: false })
+
     const latestByEmployee = new Map<string, string>()
     for (const p of (recentPunches ?? []) as { employee_id: string; type: string }[]) {
       if (!latestByEmployee.has(p.employee_id)) {
@@ -94,12 +121,18 @@ export default function TeamPunchPage() {
       [...latestByEmployee.entries()].filter(([, t]) => t === 'in').map(([id]) => id)
     )
 
-    setMembers(((data ?? []) as Record<string, unknown>[]).map(r => ({
-      id: r.id as string,
-      employee_id: r.employee_id as string,
-      employee: r.employee as { name: string; surname: string; position: string | null },
-      is_clocked_in: clockedIn.has(r.employee_id as string),
-    })))
+    const byId = new Map((emps ?? []).map(e => [e.id, e]))
+    setMembers(empIds.map(id => {
+      const emp = byId.get(id)
+      return {
+        id,
+        employee_id: id,
+        employee: emp
+          ? { name: emp.name, surname: emp.surname, position: emp.position }
+          : { name: 'Unknown', surname: '', position: null },
+        is_clocked_in: clockedIn.has(id),
+      }
+    }))
     setSelected(new Set())
   }, [])
 
@@ -116,6 +149,7 @@ export default function TeamPunchPage() {
   async function clockIn() {
     if (!companyId) return
     setBusy(true)
+    setActionError(null)
     const supabase = createClient()
     const ids = [...selected]
     if (includeSelf && selfEmployeeId) ids.push(selfEmployeeId)
@@ -126,7 +160,7 @@ export default function TeamPunchPage() {
       p_longitude: lng ?? null,
       p_address: address ?? null,
     })
-    if (rpcErr) console.error('team clock in:', rpcErr.message)
+    if (rpcErr) setActionError(rpcErr.message)
     await loadMembers(selectedTeamId)
     setSelected(new Set())
     setBusy(false)
@@ -135,6 +169,7 @@ export default function TeamPunchPage() {
   async function clockOut() {
     if (!companyId) return
     setBusy(true)
+    setActionError(null)
     const supabase = createClient()
     const ids = [...selected]
     if (includeSelf && selfEmployeeId) ids.push(selfEmployeeId)
@@ -145,7 +180,7 @@ export default function TeamPunchPage() {
       p_longitude: lng ?? null,
       p_address: address ?? null,
     })
-    if (rpcErr) console.error('team clock out:', rpcErr.message)
+    if (rpcErr) setActionError(rpcErr.message)
     await loadMembers(selectedTeamId)
     setSelected(new Set())
     setBusy(false)
@@ -168,14 +203,16 @@ export default function TeamPunchPage() {
 
   return (
     <div className="h-full flex flex-col pb-[82px]">
-      {/* Location bar */}
       <div className="flex items-center gap-2 px-4 py-2.5 border-b border-divider shrink-0 bg-surface-card">
         <span className="material-icons text-primary text-[18px]">location_on</span>
         <p className="text-[12px] text-text-secondary truncate flex-1">{address}</p>
         {isGettingLocation && <span className="text-[11px] text-text-secondary">...</span>}
       </div>
 
-      {/* Controls card */}
+      {actionError && (
+        <p className="px-4 py-2 text-error text-[13px] shrink-0">{actionError}</p>
+      )}
+
       <div className="card mx-4 mt-3 p-3.5 shrink-0 space-y-2.5">
         <div className="grid gap-2.5" style={{ gridTemplateColumns: '1fr auto' }}>
           <select value={selectedTeamId} onChange={e => setSelectedTeamId(e.target.value)}
@@ -190,7 +227,11 @@ export default function TeamPunchPage() {
         </div>
 
         <div className="grid gap-2" style={{ gridTemplateColumns: '1fr auto auto auto' }}>
-          <button className="border border-divider text-primary text-[12px] h-[34px] px-2.5 rounded-lg bg-surface-elevated hover:opacity-80">
+          <button
+            onClick={() => selectedTeamId && router.push(`/dashboard/work-teams/${selectedTeamId}`)}
+            disabled={!selectedTeamId}
+            className="border border-divider text-primary text-[12px] h-[34px] px-2.5 rounded-lg bg-surface-elevated hover:opacity-80 disabled:opacity-40"
+          >
             + Add Members
           </button>
           {members.length > 0 && (
@@ -220,15 +261,16 @@ export default function TeamPunchPage() {
         </div>
       </div>
 
-      {/* Employee list */}
       <div className="flex-1 overflow-y-auto px-4 mt-2 space-y-1">
         {loading ? (
           <p className="text-text-secondary text-[13px] text-center py-8">Loading...</p>
+        ) : !selectedTeamId ? (
+          <p className="text-text-secondary text-sm text-center py-10">Select a team to punch.</p>
         ) : members.length === 0 ? (
           <div className="flex flex-col items-center gap-2 py-10">
             <p className="text-text-secondary text-sm">No employees in this team yet.</p>
-            <button onClick={() => router.push('/dashboard/work-teams/new')}
-              className="text-[13px] text-primary hover:opacity-70">Or create a new team</button>
+            <button onClick={() => router.push(`/dashboard/work-teams/${selectedTeamId}`)}
+              className="text-[13px] text-primary hover:opacity-70">Add members to this team</button>
           </div>
         ) : members.map(m => {
           const emp = m.employee
@@ -265,7 +307,6 @@ export default function TeamPunchPage() {
         })}
       </div>
 
-      {/* Bottom action bar */}
       <div className="fixed bottom-0 left-[64px] right-0 px-4 py-3 bg-surface-dark border-t border-divider z-10">
         <div className="grid grid-cols-2 gap-3">
           <button

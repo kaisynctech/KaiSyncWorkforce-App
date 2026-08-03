@@ -1,8 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 /**
- * Send a login invite email (magic link / OTP), matching MAUI SendOtpAsync.
- * Updates invite_status when the column exists; surfaces errors to the caller.
+ * Send a login invite email (magic link / OTP).
+ * Live employees table has no invite_status / invited_at columns.
  */
 export async function sendEmployeeInvite(
   supabase: SupabaseClient,
@@ -23,19 +23,6 @@ export async function sendEmployeeInvite(
 
   if (otpErr) {
     return { ok: false, message: otpErr.message }
-  }
-
-  // Live schema may not have invite_status/invited_at — ignore update failures.
-  try {
-    await supabase
-      .from('employees')
-      .update({
-        invite_status: 'sent',
-        invited_at: new Date().toISOString(),
-      } as Record<string, unknown>)
-      .eq('id', opts.employeeId)
-  } catch {
-    /* optional columns */
   }
 
   return { ok: true }

@@ -76,16 +76,18 @@ export interface BreakSlot {
   minutes: number
 }
 
+/** Maps to public.employee_shift_templates (UUID). Not the legacy bigint shift_templates table. */
 export interface ShiftTemplate {
   id: string
   company_id: string
   name: string
-  summary: string | null
   start_time: string | null
   end_time: string | null
-  days: string | null
+  break_minutes?: number
   is_default: boolean
-  breaks: BreakSlot[]
+  breaks?: BreakSlot[]
+  /** Optional UI label; not a live column */
+  summary?: string | null
 }
 
 export interface Client {
@@ -197,11 +199,12 @@ export interface LeaveRequest {
   leave_type: string
   start_date: string
   end_date: string
-  days_requested: number
+  /** Live column on leave_requests */
+  total_days: number
   reason: string | null
-  status: 'pending' | 'approved' | 'declined' | 'cancelled'
-  reviewed_by: string | null
-  reviewed_at: string | null
+  status: 'pending' | 'approved' | 'declined' | 'rejected' | 'cancelled'
+  decision_note: string | null
+  decided_at: string | null
   created_at: string
   employees?: Pick<Employee, 'name' | 'surname' | 'employee_code'>
 }
@@ -543,12 +546,18 @@ export interface CompliancePackItem {
 }
 
 // ── Work Teams ────────────────────────────────────────────────────────────────
+/** Live public.work_teams — membership is member_ids[], not a join table. */
 export interface WorkTeam {
   id: string
+  company_id: string
   name: string
   description: string | null
+  leader_employee_id: string | null
+  member_ids: string[]
   is_active: boolean
+  /** Computed client-side from member_ids.length */
   member_count: number
+  created_at?: string
   members?: TeamMember[]
 }
 
@@ -556,7 +565,7 @@ export interface TeamMember {
   id: string
   employee_id: string
   is_leader: boolean
-  employee?: { name: string; surname: string; branch: string | null }
+  employee?: { name: string; surname: string; branch_id?: string | null; position?: string | null }
 }
 
 // ── Phase 6 ───────────────────────────────────────────────────────────────────

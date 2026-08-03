@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { getInitials } from '@/lib/utils'
 import { employmentTypesMatch } from '@/lib/employee-taxonomy'
+import { withMemberCount, type WorkTeamRow } from '@/lib/work-teams'
 import type { Employee, AccessLevel, LeaveRequest, WorkTeam } from '@/types/database'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -61,7 +62,7 @@ type PendingEmployee = {
 
 function buildLeaveBalances(
   employees: Employee[],
-  requests: Pick<LeaveRequest, 'employee_id' | 'leave_type' | 'days_requested' | 'start_date'>[]
+  requests: Pick<LeaveRequest, 'employee_id' | 'leave_type' | 'total_days' | 'start_date'>[]
 ): LeaveBalance[] {
   const empMap = new Map(employees.map(e => [e.id, `${e.name} ${e.surname}`.trim()]))
 
@@ -82,11 +83,11 @@ function buildLeaveBalances(
         employeeId:  req.employee_id,
         employeeName: empName,
         leaveType:   req.leave_type,
-        usedDays:    req.days_requested,
+        usedDays:    req.total_days,
         lastDate:    req.start_date,
       })
     } else {
-      existing.usedDays += req.days_requested
+      existing.usedDays += req.total_days
       if (!existing.lastDate || req.start_date > existing.lastDate) {
         existing.lastDate = req.start_date
       }
@@ -222,10 +223,10 @@ export default function EmployeesPage() {
     const supabase = createClient()
     const { data } = await supabase
       .from('work_teams')
-      .select('*')
+      .select('id, company_id, name, description, leader_employee_id, member_ids, is_active, created_at')
       .eq('company_id', companyId)
       .order('name')
-    setTeams((data ?? []) as WorkTeam[])
+    setTeams((data ?? []).map(t => withMemberCount(t as WorkTeamRow)) as WorkTeam[])
     setTeamsLoaded(true)
     setTeamsLoading(false)
   }
@@ -234,11 +235,13 @@ export default function EmployeesPage() {
     if (!newTeamName.trim() || !companyId) return
     setTeamBusy(true)
     const supabase = createClient()
-    await (supabase.from('work_teams') as ReturnType<typeof supabase.from>).insert({
+    const { error: insertErr } = await supabase.from('work_teams').insert({
       company_id: companyId,
       name: newTeamName.trim(),
       is_active: true,
+      member_ids: [],
     })
+    if (insertErr) setError(insertErr.message)
     setNewTeamName('')
     setShowCreateTeam(false)
     setTeamBusy(false)
@@ -256,7 +259,7 @@ export default function EmployeesPage() {
     const [{ data }, { data: pendingData }] = await Promise.all([
       supabase
         .from('leave_requests')
-        .select('employee_id, leave_type, days_requested, start_date')
+        .select('employee_id, leave_type, total_days, start_date')
         .eq('company_id', companyId)
         .eq('status', 'approved')
         .gte('start_date', yearStart)
@@ -272,7 +275,7 @@ export default function EmployeesPage() {
     setLeaveBalances(
       buildLeaveBalances(
         employees,
-        (data ?? []) as Pick<LeaveRequest, 'employee_id' | 'leave_type' | 'days_requested' | 'start_date'>[]
+        (data ?? []) as Pick<LeaveRequest, 'employee_id' | 'leave_type' | 'total_days' | 'start_date'>[]
       )
     )
     setPendingLeave((pendingData ?? []) as LeaveRequest[])
@@ -791,7 +794,7 @@ export default function EmployeesPage() {
                           <p className="text-[12px] text-text-secondary capitalize">
                             {req.leave_type.replace(/_/g, ' ')} · {fmtDate(req.start_date)}
                             {req.end_date ? ` – ${fmtDate(req.end_date)}` : ''}
-                            {req.days_requested != null ? ` · ${req.days_requested}d` : ''}
+                            {req.total_days != null ? ` · ${req.total_days}d` : ''}
                           </p>
                         </div>
                         <div className="flex gap-2 shrink-0">

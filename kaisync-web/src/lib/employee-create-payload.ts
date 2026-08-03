@@ -15,6 +15,8 @@ export type EmployeeCreateInput = {
   position?: string | null
   department?: string | null
   branchId?: string | null
+  /** Legacy text column `branch` — set from branches.name when branchId is chosen */
+  branchName?: string | null
   shiftTemplateId?: string | null
   employmentType: string
   workerType: string
@@ -65,8 +67,11 @@ export function buildEmployeeCreatePayload(input: EmployeeCreateInput): Record<s
     phone: emptyToNull(input.phone),
     id_number: emptyToNull(input.idNumber),
     position: emptyToNull(input.position),
+    // Canonical org field for web; keep cost_center in sync for dual-column readers
     department: emptyToNull(input.department),
+    cost_center: emptyToNull(input.department),
     branch_id: emptyToNull(input.branchId),
+    branch: emptyToNull(input.branchName),
     shift_template_id: emptyToNull(input.shiftTemplateId),
     employment_type: input.employmentType,
     worker_type: input.workerType,

@@ -8,6 +8,7 @@ import { SectionCard, FormField, entryClass } from '@/components/SectionCard'
 import { FormSelect } from '@/components/FormSelect'
 import { FormDateInput } from '@/components/FormDateInput'
 
+/** Canonical leave type labels stored on leave_requests.leave_type (no leave_types table). */
 const DEFAULT_LEAVE_TYPES = ['Annual Leave', 'Sick Leave', 'Family Responsibility', 'Unpaid Leave']
 
 function ApplyLeaveContent() {
@@ -16,9 +17,9 @@ function ApplyLeaveContent() {
   const employeeId = searchParams.get('employeeId')
 
   const [employeeName, setEmployeeName] = useState('')
+  const [companyId, setCompanyId] = useState<string | null>(null)
   const [backHref, setBackHref] = useState('/dashboard/employees')
   const [leaveType, setLeaveType] = useState('Annual Leave')
-  const [leaveTypes, setLeaveTypes] = useState<string[]>(DEFAULT_LEAVE_TYPES)
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [reason, setReason] = useState('')
@@ -41,18 +42,7 @@ function ApplyLeaveContent() {
 
     if (!emp) { router.push('/dashboard/employees'); return }
     setEmployeeName(`${emp.name} ${emp.surname}`)
-
-    const { data: types } = await supabase
-      .from('leave_types')
-      .select('name')
-      .eq('company_id', emp.company_id)
-      .order('name')
-
-    if (types && types.length > 0) {
-      const names = types.map((t: { name: string }) => t.name)
-      setLeaveTypes(names)
-      setLeaveType(names[0])
-    }
+    setCompanyId(emp.company_id as string)
   }
 
   function calcTotalDays(start: string, end: string): number {
@@ -64,7 +54,7 @@ function ApplyLeaveContent() {
   }
 
   async function submit() {
-    if (!employeeId || !startDate || !endDate || !reason.trim()) {
+    if (!employeeId || !companyId || !startDate || !endDate || !reason.trim()) {
       setError('Please fill in all required fields.')
       return
     }
@@ -75,20 +65,29 @@ function ApplyLeaveContent() {
     setIsBusy(true)
     setError(null)
     const supabase = createClient()
-    try {
-      const { error: rpcError } = await supabase.rpc('apply_leave', {
-        p_employee_id: employeeId,
-        p_leave_type: leaveType,
-        p_start_date: startDate,
-        p_end_date: endDate,
-        p_reason: reason.trim(),
-      })
-      if (rpcError) throw rpcError
-      router.push(`/dashboard/employees/${employeeId}`)
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to submit leave request.')
+    const totalDays = calcTotalDays(startDate, endDate)
+
+    // HR applies on behalf of an employee — direct insert (RLS: company member).
+    // Worker self-service uses employee_submit_leave_request with a session token.
+    const { error: insertErr } = await supabase.from('leave_requests').insert({
+      company_id: companyId,
+      employee_id: employeeId,
+      leave_type: leaveType,
+      start_date: startDate,
+      end_date: endDate,
+      half_day_start: false,
+      half_day_end: false,
+      total_days: totalDays,
+      status: 'pending',
+      reason: reason.trim(),
+    })
+
+    if (insertErr) {
+      setError(insertErr.message)
       setIsBusy(false)
+      return
     }
+    router.push(`/dashboard/employees/${employeeId}`)
   }
 
   const totalDays = calcTotalDays(startDate, endDate)
@@ -116,7 +115,7 @@ function ApplyLeaveContent() {
           value={leaveType}
           onChange={e => setLeaveType(e.target.value)}
         >
-          {leaveTypes.map(t => <option key={t} value={t}>{t}</option>)}
+          {DEFAULT_LEAVE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
         </FormSelect>
 
         <div className="grid grid-cols-[1fr_auto_1fr] gap-x-2 items-end">

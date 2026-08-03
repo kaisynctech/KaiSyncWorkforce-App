@@ -109,7 +109,7 @@ export default function LeavePage() {
     .filter(r => r.status === 'approved' && r.start_date >= yearStart)
     .reduce<Record<string, number>>((acc, r) => {
       const key = `${r.employee_id}:${r.leave_type}`
-      acc[key] = (acc[key] ?? 0) + r.days_requested
+      acc[key] = (acc[key] ?? 0) + (r.total_days ?? 0)
       return acc
     }, {})
 
@@ -289,7 +289,7 @@ export default function LeavePage() {
                         {req.leave_type.replace(/_/g, ' ')}
                       </span>
                       {' · '}{formatDate(req.start_date)} – {formatDate(req.end_date)}
-                      {' · '}{req.days_requested} day{req.days_requested !== 1 ? 's' : ''}
+                      {' · '}{req.total_days} day{req.total_days !== 1 ? 's' : ''}
                     </p>
                     {req.reason && (
                       <p className="text-[12px] text-text-secondary mt-1 italic">"{req.reason}"</p>
