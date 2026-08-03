@@ -18,42 +18,100 @@ interface NavItem {
   label: string
   href: string
   icon: string
-  /** null = always visible */
+  /** undefined = always visible when section is shown */
   flag?: keyof HrNavFlags
   /** Owner-only (MAUI Activity Log) */
   ownerOnly?: boolean
 }
 
-const NAV_ITEMS: NavItem[] = [
+interface NavSection {
+  id: string
+  label: string
+  items: NavItem[]
+}
+
+const NAV_STORAGE_KEY = 'kf_hr_nav_sections_v1'
+
+/** Always visible at top (not inside a collapsible group). */
+const PINNED_ITEMS: NavItem[] = [
   { label: 'Overview', href: '/dashboard/overview', icon: 'home' },
   { label: 'My Profile', href: '/dashboard/profile', icon: 'person' },
   { label: 'Messages', href: '/dashboard/messages', icon: 'chat', flag: 'messaging' },
-  { label: 'My PA', href: '/dashboard/pa', icon: 'task_alt', flag: 'myPa' },
-  { label: 'Employees', href: '/dashboard/employees', icon: 'people', flag: 'employees' },
-  { label: 'Jobs', href: '/dashboard/jobs', icon: 'work', flag: 'jobs' },
-  { label: 'Contractors', href: '/dashboard/contractors', icon: 'engineering', flag: 'contractors' },
-  { label: 'Projects', href: '/dashboard/projects', icon: 'folder', flag: 'projects' },
-  { label: 'Clients', href: '/dashboard/clients', icon: 'business', flag: 'clients' },
-  { label: 'Incidents', href: '/dashboard/incidents', icon: 'warning', flag: 'incidents' },
-  { label: 'Leave', href: '/dashboard/leave', icon: 'event_available', flag: 'leave' },
-  { label: 'Attendance', href: '/dashboard/attendance', icon: 'schedule', flag: 'attendance' },
-  { label: 'Payroll', href: '/dashboard/payroll', icon: 'payments', flag: 'payroll' },
-  { label: 'Finance', href: '/dashboard/finance', icon: 'account_balance', flag: 'finance' },
-  { label: 'Suppliers', href: '/dashboard/suppliers', icon: 'storefront', flag: 'suppliers' },
-  { label: 'Inventory', href: '/dashboard/inventory', icon: 'inventory_2', flag: 'inventory' },
-  { label: 'Assets', href: '/dashboard/assets', icon: 'category', flag: 'assets' },
-  { label: 'Compliance Packs', href: '/dashboard/compliance-packs', icon: 'verified', flag: 'compliancePacks' },
-  { label: 'Time Templates', href: '/dashboard/time-templates', icon: 'access_time', flag: 'timeTemplates' },
-  { label: 'Work Teams', href: '/dashboard/work-teams', icon: 'groups', flag: 'workTeams' },
-  { label: 'Scheduling', href: '/dashboard/scheduling', icon: 'calendar_month', flag: 'scheduling' },
-  { label: 'Team Punch', href: '/dashboard/team-punch', icon: 'punch_clock', flag: 'teamPunch' },
-  { label: 'Properties', href: '/dashboard/properties', icon: 'home_work', flag: 'properties' },
-  { label: 'Residents', href: '/dashboard/residents', icon: 'apartment', flag: 'residents' },
-  { label: 'Activity Log', href: '/dashboard/activity-log', icon: 'history', ownerOnly: true },
-  { label: 'Active Sessions', href: '/dashboard/active-sessions', icon: 'manage_accounts', flag: 'settings' },
-  { label: 'Reports', href: '/dashboard/reports', icon: 'bar_chart', flag: 'reports' },
   { label: 'Notifications', href: '/dashboard/notifications', icon: 'notifications' },
-  { label: 'Settings', href: '/dashboard/settings', icon: 'settings', flag: 'settings' },
+]
+
+/**
+ * Recommended IA — same routes/flags as before, only presentation grouping.
+ * Module gating still applied per-item via HrNavFlags.
+ */
+const NAV_SECTIONS: NavSection[] = [
+  {
+    id: 'workforce',
+    label: 'Workforce',
+    items: [
+      { label: 'Employees', href: '/dashboard/employees', icon: 'people', flag: 'employees' },
+      { label: 'Work Teams', href: '/dashboard/work-teams', icon: 'groups', flag: 'workTeams' },
+      { label: 'Leave', href: '/dashboard/leave', icon: 'event_available', flag: 'leave' },
+      { label: 'Attendance', href: '/dashboard/attendance', icon: 'schedule', flag: 'attendance' },
+      { label: 'Team Punch', href: '/dashboard/team-punch', icon: 'punch_clock', flag: 'teamPunch' },
+      { label: 'Time Templates', href: '/dashboard/time-templates', icon: 'access_time', flag: 'timeTemplates' },
+      { label: 'Scheduling', href: '/dashboard/scheduling', icon: 'calendar_month', flag: 'scheduling' },
+    ],
+  },
+  {
+    id: 'delivery',
+    label: 'Delivery',
+    items: [
+      { label: 'Clients', href: '/dashboard/clients', icon: 'business', flag: 'clients' },
+      { label: 'Projects', href: '/dashboard/projects', icon: 'folder', flag: 'projects' },
+      { label: 'Jobs', href: '/dashboard/jobs', icon: 'work', flag: 'jobs' },
+      { label: 'Contractors', href: '/dashboard/contractors', icon: 'engineering', flag: 'contractors' },
+      { label: 'Incidents', href: '/dashboard/incidents', icon: 'warning', flag: 'incidents' },
+    ],
+  },
+  {
+    id: 'money',
+    label: 'Money',
+    items: [
+      { label: 'Payroll', href: '/dashboard/payroll', icon: 'payments', flag: 'payroll' },
+      { label: 'Finance', href: '/dashboard/finance', icon: 'account_balance', flag: 'finance' },
+    ],
+  },
+  {
+    id: 'supply',
+    label: 'Supply & Assets',
+    items: [
+      { label: 'Suppliers', href: '/dashboard/suppliers', icon: 'storefront', flag: 'suppliers' },
+      { label: 'Inventory', href: '/dashboard/inventory', icon: 'inventory_2', flag: 'inventory' },
+      { label: 'Assets', href: '/dashboard/assets', icon: 'category', flag: 'assets' },
+      { label: 'Compliance Packs', href: '/dashboard/compliance-packs', icon: 'verified', flag: 'compliancePacks' },
+    ],
+  },
+  {
+    id: 'properties',
+    label: 'Properties',
+    items: [
+      { label: 'Properties', href: '/dashboard/properties', icon: 'home_work', flag: 'properties' },
+      { label: 'Residents', href: '/dashboard/residents', icon: 'apartment', flag: 'residents' },
+    ],
+  },
+  {
+    id: 'insights',
+    label: 'Insights',
+    items: [
+      { label: 'Reports', href: '/dashboard/reports', icon: 'bar_chart', flag: 'reports' },
+      { label: 'My PA', href: '/dashboard/pa', icon: 'task_alt', flag: 'myPa' },
+    ],
+  },
+  {
+    id: 'admin',
+    label: 'Admin',
+    items: [
+      { label: 'Settings', href: '/dashboard/settings', icon: 'settings', flag: 'settings' },
+      { label: 'Active Sessions', href: '/dashboard/active-sessions', icon: 'manage_accounts', flag: 'settings' },
+      { label: 'Activity Log', href: '/dashboard/activity-log', icon: 'history', ownerOnly: true },
+    ],
+  },
 ]
 
 const ALL_HR_FLAGS: HrNavFlags = {
@@ -83,6 +141,36 @@ const ALL_HR_FLAGS: HrNavFlags = {
   finance: true,
 }
 
+function itemVisible(item: NavItem, flags: HrNavFlags, isOwner: boolean): boolean {
+  if (item.ownerOnly) return isOwner
+  if (!item.flag) return true
+  return Boolean(flags[item.flag])
+}
+
+function isItemActive(pathname: string, href: string): boolean {
+  return pathname === href || pathname.startsWith(`${href}/`)
+}
+
+function readStoredOpen(): Record<string, boolean> | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = localStorage.getItem(NAV_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as unknown
+    if (!parsed || typeof parsed !== 'object') return null
+    return parsed as Record<string, boolean>
+  } catch {
+    return null
+  }
+}
+
+function writeStoredOpen(state: Record<string, boolean>) {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.setItem(NAV_STORAGE_KEY, JSON.stringify(state))
+  } catch { /* ignore quota */ }
+}
+
 interface SidebarProps {
   open: boolean
   onToggle: () => void
@@ -97,6 +185,7 @@ export default function Sidebar({ open, onToggle, company, employee, platformOnl
   const router = useRouter()
   const [flags, setFlags] = useState<HrNavFlags>(ALL_HR_FLAGS)
   const [showPlatform, setShowPlatform] = useState(platformOnly)
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     let cancelled = false
@@ -124,23 +213,66 @@ export default function Sidebar({ open, onToggle, company, employee, platformOnl
 
   const isOwner = (employee?.access_level ?? '').toLowerCase() === 'owner'
 
-  const items = useMemo(() => {
-    if (platformOnly) {
-      return [{ label: 'Platform Console', href: '/dashboard/platform', icon: 'admin_panel_settings' }]
-    }
-    const hr = NAV_ITEMS.filter(item => {
-      if (item.ownerOnly) return isOwner
-      if (!item.flag) return true
-      return Boolean(flags[item.flag])
-    })
+  const pinned = useMemo(() => {
+    if (platformOnly) return [] as NavItem[]
+    const list = PINNED_ITEMS.filter(item => itemVisible(item, flags, isOwner))
     if (showPlatform) {
       return [
         { label: 'Platform Console', href: '/dashboard/platform', icon: 'admin_panel_settings' },
-        ...hr,
+        ...list,
       ]
     }
-    return hr
+    return list
   }, [flags, isOwner, platformOnly, showPlatform])
+
+  const sections = useMemo(() => {
+    if (platformOnly) return [] as { id: string; label: string; items: NavItem[] }[]
+    return NAV_SECTIONS
+      .map(section => ({
+        ...section,
+        items: section.items.filter(item => itemVisible(item, flags, isOwner)),
+      }))
+      .filter(section => section.items.length > 0)
+  }, [flags, isOwner, platformOnly])
+
+  const platformOnlyItems = useMemo(() => {
+    if (!platformOnly) return [] as NavItem[]
+    return [{ label: 'Platform Console', href: '/dashboard/platform', icon: 'admin_panel_settings' }]
+  }, [platformOnly])
+
+  // Initialise / sync open state: restore storage, always force-open section for active route
+  useEffect(() => {
+    if (platformOnly) return
+    const stored = readStoredOpen() ?? {}
+    const next: Record<string, boolean> = { ...stored }
+    let changed = false
+    for (const section of sections) {
+      if (next[section.id] === undefined) {
+        next[section.id] = false
+        changed = true
+      }
+      const hasActive = section.items.some(item => isItemActive(pathname, item.href))
+      if (hasActive && !next[section.id]) {
+        next[section.id] = true
+        changed = true
+      }
+    }
+    setOpenSections(prev => {
+      const same =
+        sections.every(s => Boolean(prev[s.id]) === Boolean(next[s.id]))
+        && Object.keys(prev).length === Object.keys(next).length
+      return same ? prev : next
+    })
+    if (changed) writeStoredOpen(next)
+  }, [pathname, sections, platformOnly])
+
+  function toggleSection(id: string) {
+    setOpenSections(prev => {
+      const next = { ...prev, [id]: !prev[id] }
+      writeStoredOpen(next)
+      return next
+    })
+  }
 
   async function handleSignOut() {
     const supabase = createClient()
@@ -164,6 +296,44 @@ export default function Sidebar({ open, onToggle, company, employee, platformOnl
       ? 'Platform Admin'
       : ''
 
+  function renderLink(item: NavItem) {
+    const active = isItemActive(pathname, item.href)
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        title={!open ? item.label : undefined}
+        className={cn(
+          'flex items-center gap-3 mx-2 mb-0.5 rounded-lg px-3 h-10 transition-colors group',
+          active
+            ? 'bg-primary/20 text-sidebar-active'
+            : 'text-white/60 hover:text-white hover:bg-white/10',
+        )}
+      >
+        <span
+          className={cn(
+            'material-icons shrink-0 transition-colors text-[20px]',
+            active ? 'text-sidebar-active' : 'text-white/50 group-hover:text-white',
+          )}
+        >
+          {item.icon}
+        </span>
+        {open && (
+          <span className="text-[13px] font-medium truncate">{item.label}</span>
+        )}
+      </Link>
+    )
+  }
+
+  // Icon-only rail: flat list of every visible item (no section chrome) — same destinations as expanded
+  const flatRailItems = useMemo(() => {
+    if (platformOnly) return platformOnlyItems
+    return [
+      ...pinned,
+      ...sections.flatMap(s => s.items),
+    ]
+  }, [platformOnly, platformOnlyItems, pinned, sections])
+
   return (
     <>
       {open && (
@@ -176,7 +346,7 @@ export default function Sidebar({ open, onToggle, company, employee, platformOnl
       <aside
         className={cn(
           'fixed lg:relative inset-y-0 left-0 z-30 flex flex-col bg-sidebar-bg transition-all duration-200 shrink-0',
-          open ? 'w-60' : 'w-[64px]'
+          open ? 'w-60' : 'w-[64px]',
         )}
       >
         <div className="flex items-center gap-3 px-4 h-16 border-b border-white/10">
@@ -204,34 +374,51 @@ export default function Sidebar({ open, onToggle, company, employee, platformOnl
           </button>
         </div>
 
-        <nav className="flex-1 py-4 overflow-y-auto overflow-x-hidden">
-          {items.map(item => {
-            const active = pathname === item.href || pathname.startsWith(`${item.href}/`)
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  'flex items-center gap-3 mx-2 mb-0.5 rounded-lg px-3 h-10 transition-colors group',
-                  active
-                    ? 'bg-primary/20 text-sidebar-active'
-                    : 'text-white/60 hover:text-white hover:bg-white/10'
-                )}
-              >
-                <span
-                  className={cn(
-                    'material-icons shrink-0 transition-colors text-[20px]',
-                    active ? 'text-sidebar-active' : 'text-white/50 group-hover:text-white'
-                  )}
-                >
-                  {item.icon}
-                </span>
-                {open && (
-                  <span className="text-[13px] font-medium truncate">{item.label}</span>
-                )}
-              </Link>
-            )
-          })}
+        <nav className="flex-1 py-3 overflow-y-auto overflow-x-hidden">
+          {platformOnly ? (
+            platformOnlyItems.map(renderLink)
+          ) : !open ? (
+            flatRailItems.map(renderLink)
+          ) : (
+            <>
+              {pinned.map(renderLink)}
+
+              {sections.map(section => {
+                const expanded = Boolean(openSections[section.id])
+                const sectionActive = section.items.some(item => isItemActive(pathname, item.href))
+                return (
+                  <div key={section.id} className="mt-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleSection(section.id)}
+                      aria-expanded={expanded}
+                      className={cn(
+                        'flex w-[calc(100%-16px)] items-center gap-2 mx-2 mb-0.5 rounded-lg px-3 h-8 transition-colors',
+                        sectionActive
+                          ? 'text-white/80'
+                          : 'text-white/40 hover:text-white/70 hover:bg-white/5',
+                      )}
+                    >
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.08em] flex-1 text-left truncate">
+                        {section.label}
+                      </span>
+                      <span className="material-icons text-[16px] shrink-0 opacity-70">
+                        {expanded ? 'expand_more' : 'chevron_right'}
+                      </span>
+                    </button>
+                    <div
+                      className={cn(
+                        'overflow-hidden transition-[max-height,opacity] duration-200 ease-out',
+                        expanded ? 'max-h-[480px] opacity-100' : 'max-h-0 opacity-0',
+                      )}
+                    >
+                      {section.items.map(renderLink)}
+                    </div>
+                  </div>
+                )
+              })}
+            </>
+          )}
         </nav>
 
         <div className="border-t border-white/10 p-3">
