@@ -12,6 +12,7 @@ import {
 import { resolveFinanceNavFlag } from '@/lib/finance-gate'
 import { loadCompanyWorkspace } from '@/lib/employee-workspace'
 import { isPlatformAdmin } from '@/lib/platform-admin'
+import { PwaInstallButton } from '@/components/PwaInstallButton'
 import type { Company, Employee } from '@/types/database'
 
 interface NavItem {
@@ -435,6 +436,16 @@ export default function Sidebar({ open, onToggle, company, employee, platformOnl
             {pinnedBottom.map(renderLink)}
           </div>
         )}
+
+        <div className={cn('px-2 pb-1', !open && 'flex justify-center')}>
+          <PwaInstallButton
+            className={cn(
+              'flex items-center gap-2 rounded-lg px-3 h-9 text-[12px] font-medium transition-colors',
+              'text-white/55 hover:text-white hover:bg-white/10',
+              !open && 'px-2',
+            )}
+          />
+        </div>
 
         <div className="border-t border-white/10 p-3">
           <div className={cn('flex items-center gap-3', !open && 'justify-center')}>

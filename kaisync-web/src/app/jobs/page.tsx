@@ -14,7 +14,7 @@ export default function JobsPage() {
       </p>
       <div className="px-4 py-2 rounded-lg text-[13px] font-medium text-slate-300 mb-8"
         style={{ backgroundColor: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>
-        Coming soon — available in the KaiSync mobile app
+        Coming soon — use Jobs inside the KaiSync web app after sign-in
       </div>
       <Link href="/auth/id-entry"
         className="flex items-center gap-2 text-blue-400 hover:text-blue-300 text-[14px] transition-colors">

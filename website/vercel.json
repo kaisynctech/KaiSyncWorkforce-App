@@ -1,9 +1,10 @@
 {
   "cleanUrls": true,
   "rewrites": [
-    {
-      "source": "/",
-      "destination": "/index.html"
-    }
+    { "source": "/", "destination": "/index.html" }
+  ],
+  "redirects": [
+    { "source": "/download", "destination": "/install", "permanent": true },
+    { "source": "/download.html", "destination": "/install.html", "permanent": true }
   ]
 }
