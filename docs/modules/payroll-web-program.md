@@ -70,13 +70,12 @@ Session/OT derivation (`buildSessionsFromPunches`) pairs `in`/`out` punches per 
 | **P3 Exports** | ✅ | Bank format picker (generic/FNB/ABSA/Standard) + IRP5 YTD PAYE/UIF CSV on payroll page |
 | **P4 Xero payroll** | ✅ | `xero-push-payroll` v3 deployed against `payment_approvals` + `payment_approval_id` links (was broken inventing `payslips`) |
 | **P5 Ops UX** | ✅ partial | Period cockpit KPIs, readiness preview, bulk approve, bank/IRP5 exports |
-| **P6 Hardening** | ✅ partial | Anon revoke, JWT auth on Xero push, unit suite (43). Staging smoke + step-up UX still required |
+| **P6 Hardening** | ✅ | Anon revoke, JWT Xero push, step-up approve UI, live generate→approve→Xero smoke (2026-08-03), 49 unit tests |
 
 ### Remaining gaps (honest)
 
-1. ~~Late/early penalties need punch vs shift-template comparison~~ — **closed**: `sessions-from-punches.ts` + generate loads templates/`daily_absences`.
-2. ~~Browser still owns generate math~~ — **closed**: `generate`/`recalculate` now run server-side in the `payroll-generate` Edge Function (same engine, service-role data access, non-repudiation). See "Server-side generate/recalculate" above.
-3. Staging smoke of generate → approve → Xero draft journals with a real connected org, now including the `payroll-generate` EF in the path.
+1. ~~Late/early penalties~~ / ~~server generate~~ / ~~step-up UI~~ / ~~live smoke~~ — closed (see phase table).
+2. Optional polish: company timezone for punch local-time vs device TZ; sync Deno/`kaisync-web` payroll copies via a single package to avoid drift.
 
 ## Testing
 
