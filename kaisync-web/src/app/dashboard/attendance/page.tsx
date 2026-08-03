@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import { loadScopedEmployeeIds } from '@/lib/employee-scope'
 import {
   buildPunchSessions,
   earlyFlag,
@@ -165,6 +166,7 @@ export default function AttendancePage() {
   const [error, setError] = useState<string | null>(null)
 
   const companyIdRef = useRef<string | null>(null)
+  const scopedIdsRef = useRef<Set<string> | null>(null)
   const presetRef = useRef<Preset>('today')
   const customFromRef = useRef(todayStr())
   const customToRef = useRef(todayStr())
@@ -179,6 +181,10 @@ export default function AttendancePage() {
     const supabase = createClient()
     const member = await resolveCurrentMember(supabase)
     if (!member) { setError('not_linked'); setLoading(false); return }
+
+    const scopeRes = await loadScopedEmployeeIds(supabase, member.companyId, member.employeeId)
+    if (!scopeRes.ok) { setError(scopeRes.message); setLoading(false); return }
+    scopedIdsRef.current = scopeRes.seesAll ? null : scopeRes.ids
 
     companyIdRef.current = member.companyId
     setCompanyId(member.companyId)
@@ -242,7 +248,12 @@ export default function AttendancePage() {
     const lateMin = Number(cs.late_threshold_minutes ?? 30) || 30
     const otMin = Number(cs.ot_start_after_minutes ?? 30) || 30
 
-    const empMap = new Map((empData ?? []).map(e => [e.id, e as EmpRow]))
+    const scope = scopedIdsRef.current
+    const empMap = new Map(
+      (empData ?? [])
+        .filter(e => !scope || scope.has(e.id))
+        .map(e => [e.id, e as EmpRow])
+    )
     const tmplMap = new Map(
       ((tmplData ?? []) as ShiftTemplateLike[]).map(t => [t.id, t]),
     )
@@ -250,6 +261,7 @@ export default function AttendancePage() {
     const punchesByEmp = new Map<string, PunchLike[]>()
     for (const p of (punchData ?? []) as TimePunch[]) {
       if (!p.date_time) continue
+      if (scope && !scope.has(p.employee_id)) continue
       const list = punchesByEmp.get(p.employee_id) ?? []
       list.push(p as PunchLike)
       punchesByEmp.set(p.employee_id, list)

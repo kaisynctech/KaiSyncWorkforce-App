@@ -7,6 +7,9 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { cn, formatDate, formatDateTime, formatCurrency, getInitials } from '@/lib/utils'
 import { labelEmploymentType, labelWorkerType } from '@/lib/employee-taxonomy'
+import { getCompanyAnnualDays, loadLeaveSettings, type LeaveSettingsMap } from '@/lib/leave-settings'
+import { LEAVE_TYPES } from '@/lib/leave-policy'
+import { assessPayrollReadiness } from '@/lib/payroll-readiness'
 import type { Employee, LeaveRequest, TimePunch, AccessLevel } from '@/types/database'
 
 type PairSession = {
@@ -54,14 +57,24 @@ interface PayrollReady {
 }
 
 function checkPayrollReadiness(emp: Employee): PayrollReady {
-  const issues: string[] = []
-  if (!emp.monthly_salary && !emp.hourly_rate) issues.push('No salary or rate configured')
-  if (!emp.bank_name || !emp.bank_account) issues.push('Banking details missing')
-  if (!emp.id_number) issues.push('ID / Passport number missing')
+  const info = assessPayrollReadiness({
+    id: emp.id,
+    name: emp.name,
+    surname: emp.surname,
+    is_active: emp.is_active,
+    monthly_salary: emp.monthly_salary,
+    hourly_rate: emp.hourly_rate,
+    daily_rate: emp.daily_rate,
+    shift_template_id: emp.shift_template_id,
+    bank_name: emp.bank_name,
+    bank_account: emp.bank_account,
+    worker_type: emp.worker_type,
+    employment_date: emp.employment_date,
+  })
   return {
-    ready: issues.length === 0,
-    statusLabel: issues.length === 0 ? 'Ready' : 'Incomplete',
-    issues,
+    ready: info.isReady,
+    statusLabel: info.statusLabel,
+    issues: [...info.issues],
   }
 }
 
@@ -88,6 +101,8 @@ export default function EmployeeDetailPage() {
   const router = useRouter()
 
   const [employee, setEmployee] = useState<Employee | null>(null)
+  const [branchName, setBranchName] = useState<string | null>(null)
+  const [managerName, setManagerName] = useState<string | null>(null)
   const [myCompanyId, setMyCompanyId] = useState<string | null>(null)
   const [myEmployeeId, setMyEmployeeId] = useState<string | null>(null)
   const [myAccessLevel, setMyAccessLevel] = useState<AccessLevel>('employee')
@@ -106,6 +121,7 @@ export default function EmployeeDetailPage() {
 
   // Leave
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([])
+  const [leaveSettings, setLeaveSettings] = useState<LeaveSettingsMap>({})
   const [leaveLoaded, setLeaveLoaded] = useState(false)
 
   // Documents
@@ -135,8 +151,30 @@ export default function EmployeeDetailPage() {
       supabase.from('employees').select('access_level').eq('id', member.employeeId).single(),
     ])
 
-    setEmployee(emp as Employee | null)
+    const employeeRow = emp as Employee | null
+    setEmployee(employeeRow)
     setMyAccessLevel(((me as { access_level: AccessLevel } | null)?.access_level) ?? 'employee')
+
+    if (employeeRow) {
+      const [branchRes, managerRes] = await Promise.all([
+        employeeRow.branch_id
+          ? supabase.from('branches').select('name').eq('id', employeeRow.branch_id).maybeSingle()
+          : Promise.resolve({ data: null }),
+        employeeRow.manager_id
+          ? supabase.from('employees').select('name, surname').eq('id', employeeRow.manager_id).maybeSingle()
+          : Promise.resolve({ data: null }),
+      ])
+      setBranchName(
+        (branchRes.data as { name: string } | null)?.name
+          ?? employeeRow.branch
+          ?? null
+      )
+      const mgr = managerRes.data as { name: string; surname: string } | null
+      setManagerName(mgr ? `${mgr.name} ${mgr.surname}`.trim() : null)
+    } else {
+      setBranchName(null)
+      setManagerName(null)
+    }
     setLoading(false)
   }
 
@@ -174,14 +212,18 @@ export default function EmployeeDetailPage() {
   }
 
   async function loadLeave() {
-    if (!employee) return
+    if (!employee || !myCompanyId) return
     const supabase = createClient()
-    const { data } = await supabase
-      .from('leave_requests')
-      .select('*')
-      .eq('employee_id', employee.id)
-      .order('created_at', { ascending: false })
+    const [{ data }, settingsRes] = await Promise.all([
+      supabase
+        .from('leave_requests')
+        .select('*')
+        .eq('employee_id', employee.id)
+        .order('created_at', { ascending: false }),
+      loadLeaveSettings(supabase, myCompanyId),
+    ])
     setLeaveRequests((data ?? []) as LeaveRequest[])
+    if (settingsRes.ok) setLeaveSettings(settingsRes.data)
     setLeaveLoaded(true)
   }
 
@@ -326,6 +368,19 @@ export default function EmployeeDetailPage() {
               <KpiCard label="Punches" value={String(sessions)} color="text-text-primary" />
             </div>
 
+            {/* Organisation */}
+            <div className="bg-surface border border-divider rounded-lg overflow-hidden">
+              <div className="px-4 py-3 border-b border-divider">
+                <p className="text-[14px] font-semibold text-text-primary">Organisation</p>
+              </div>
+              <div className="p-4 grid grid-cols-2 gap-3">
+                <InfoCell label="Department" value={employee.department ?? '—'} />
+                <InfoCell label="Branch" value={branchName ?? '—'} />
+                <InfoCell label="Reports to" value={managerName ?? '—'} />
+                <InfoCell label="Position" value={employee.position ?? '—'} />
+              </div>
+            </div>
+
             {/* Banking details */}
             <div className="bg-surface border border-divider rounded-lg overflow-hidden">
               <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
@@ -422,7 +477,13 @@ export default function EmployeeDetailPage() {
         )}
 
         {tab === 'payments' && <PaymentsTab employee={employee} />}
-        {tab === 'leave' && <LeaveTab leaveRequests={leaveRequests} employeeId={employee.id} />}
+        {tab === 'leave' && (
+          <LeaveTab
+            leaveRequests={leaveRequests}
+            employeeId={employee.id}
+            leaveSettings={leaveSettings}
+          />
+        )}
         {tab === 'documents' && (
           <DocumentsTab
             employeeId={employee.id}
@@ -530,15 +591,15 @@ const LEAVE_STATUS_BADGES: Record<string, { label: string; cls: string }> = {
   cancelled: { label: 'Cancelled', cls: 'bg-background text-text-disabled' },
 }
 
-const LEAVE_ANNUAL_DEFAULTS: Record<string, number> = {
-  annual_leave:          15,
-  sick_leave:            30,
-  family_responsibility:  3,
-  maternity_leave:       90,
-  study_leave:            5,
-}
-
-function LeaveTab({ leaveRequests, employeeId }: { leaveRequests: LeaveRequest[]; employeeId: string }) {
+function LeaveTab({
+  leaveRequests,
+  employeeId,
+  leaveSettings,
+}: {
+  leaveRequests: LeaveRequest[]
+  employeeId: string
+  leaveSettings: LeaveSettingsMap
+}) {
   const yearStart = `${new Date().getFullYear()}-01-01`
 
   const byType = leaveRequests
@@ -548,7 +609,13 @@ function LeaveTab({ leaveRequests, employeeId }: { leaveRequests: LeaveRequest[]
       return acc
     }, {})
 
-  const leaveTypes = Array.from(new Set(leaveRequests.map(r => r.leave_type))).sort()
+  const leaveTypes = LEAVE_TYPES.map(t => t.key).filter(
+    lt => (byType[lt] ?? 0) > 0 || leaveRequests.some(r => r.leave_type === lt)
+  )
+  // Always show core types even with zero usage
+  const balanceTypes = leaveTypes.length > 0
+    ? leaveTypes
+    : LEAVE_TYPES.slice(0, 4).map(t => t.key)
 
   return (
     <div className="space-y-4">
@@ -563,48 +630,44 @@ function LeaveTab({ leaveRequests, employeeId }: { leaveRequests: LeaveRequest[]
       </div>
 
       {/* Balance summary */}
-      {leaveTypes.length > 0 && (
-        <div className="bg-surface border border-divider rounded-lg overflow-hidden">
-          <p className="px-4 py-2.5 text-[12px] font-semibold text-text-secondary border-b border-divider uppercase tracking-wide">
-            {new Date().getFullYear()} Balances
-          </p>
-          <div className="overflow-x-auto">
-            <table className="w-full text-[12px]">
-              <thead>
-                <tr className="border-b border-divider">
-                  <th className="text-left px-4 py-2 text-text-secondary font-medium">Leave Type</th>
-                  <th className="text-center px-4 py-2 text-text-secondary font-medium">Annual</th>
-                  <th className="text-center px-4 py-2 text-text-secondary font-medium">Used</th>
-                  <th className="text-center px-4 py-2 text-text-secondary font-medium">Remaining</th>
-                </tr>
-              </thead>
-              <tbody>
-                {leaveTypes.map(lt => {
-                  const annual    = LEAVE_ANNUAL_DEFAULTS[lt] ?? 5
-                  const used      = byType[lt] ?? 0
-                  const remaining = Math.max(0, annual - used)
-                  return (
-                    <tr key={lt} className="border-b border-divider last:border-0">
-                      <td className="px-4 py-2.5 font-medium text-text-primary capitalize">
-                        {lt.replace(/_/g, ' ')}
-                      </td>
-                      <td className="px-4 py-2.5 text-center text-text-secondary">{annual}</td>
-                      <td className="px-4 py-2.5 text-center text-text-secondary">{used}</td>
-                      <td className="px-4 py-2.5 text-center font-semibold">
-                        <span className={
-                          remaining <= 0 ? 'text-error' : remaining <= 3 ? 'text-warning' : 'text-success'
-                        }>
-                          {remaining}
-                        </span>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+      <div className="bg-surface border border-divider rounded-lg overflow-hidden">
+        <p className="px-4 py-2.5 text-[12px] font-semibold text-text-secondary border-b border-divider uppercase tracking-wide">
+          {new Date().getFullYear()} Balances
+        </p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-[12px]">
+            <thead>
+              <tr className="border-b border-divider">
+                <th className="text-left px-4 py-2 text-text-secondary font-medium">Leave Type</th>
+                <th className="text-center px-4 py-2 text-text-secondary font-medium">Annual</th>
+                <th className="text-center px-4 py-2 text-text-secondary font-medium">Used</th>
+                <th className="text-center px-4 py-2 text-text-secondary font-medium">Remaining</th>
+              </tr>
+            </thead>
+            <tbody>
+              {balanceTypes.map(lt => {
+                const annual = getCompanyAnnualDays(lt, leaveSettings)
+                const used = byType[lt] ?? 0
+                const remaining = Math.max(0, annual - used)
+                return (
+                  <tr key={lt} className="border-b border-divider last:border-0">
+                    <td className="px-4 py-2.5 font-medium text-text-primary">{lt}</td>
+                    <td className="px-4 py-2.5 text-center text-text-secondary">{annual}</td>
+                    <td className="px-4 py-2.5 text-center text-text-secondary">{used}</td>
+                    <td className="px-4 py-2.5 text-center font-semibold">
+                      <span className={
+                        remaining <= 0 ? 'text-error' : remaining <= 3 ? 'text-warning' : 'text-success'
+                      }>
+                        {remaining}
+                      </span>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
-      )}
+      </div>
 
       {/* Request history */}
       {leaveRequests.length === 0 ? (

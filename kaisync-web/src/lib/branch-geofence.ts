@@ -70,33 +70,53 @@ export function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: 
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
-function findBranch(branches: BranchRow[], branchName: string): BranchRow | undefined {
+function findBranchById(branches: BranchRow[], branchId: string): BranchRow | undefined {
+  return branches.find((b) => (b.is_active !== false) && b.id === branchId)
+}
+
+function findBranchByName(branches: BranchRow[], branchName: string): BranchRow | undefined {
   const target = branchName.trim().toLowerCase()
   return branches.find(
     (b) => (b.is_active !== false) && (b.name ?? '').trim().toLowerCase() === target,
   )
 }
 
+/** Prefer branch_id; fall back to legacy branch name text. */
+function resolveBranch(
+  branches: BranchRow[],
+  branchId: string | null | undefined,
+  branchName: string | null | undefined,
+): BranchRow | undefined {
+  if (branchId?.trim()) {
+    const byId = findBranchById(branches, branchId.trim())
+    if (byId) return byId
+  }
+  if (branchName?.trim()) return findBranchByName(branches, branchName)
+  return undefined
+}
+
 export function validateBranchClockIn(params: {
   enforce: boolean
   employeeBranch: string | null | undefined
+  /** Canonical FK — preferred over employeeBranch name */
+  employeeBranchId?: string | null
   branches: BranchRow[]
   radiusMeters: number
   latitude: number | null
   longitude: number | null
 }): BranchGeofenceResult {
-  const { enforce, employeeBranch, branches, radiusMeters, latitude, longitude } = params
+  const { enforce, employeeBranch, employeeBranchId, branches, radiusMeters, latitude, longitude } = params
   if (!enforce) return { allowed: true, message: '' }
 
-  const branchName = employeeBranch?.trim() ?? ''
-  if (!branchName) return { allowed: true, message: '' }
+  const branch = resolveBranch(branches, employeeBranchId, employeeBranch)
+  const branchName = branch?.name?.trim() || employeeBranch?.trim() || ''
+  if (!branch && !branchName) return { allowed: true, message: '' }
 
-  const branch = findBranch(branches, branchName)
-  if (branch?.latitude == null || branch?.longitude == null) {
+  if (!branch || branch.latitude == null || branch.longitude == null) {
     return {
       allowed: false,
-      message: `Branch "${branchName}" does not have a sign-in location yet. Ask HR to set the branch address in Settings.`,
-      branchName,
+      message: `Branch "${branchName || 'assigned'}" does not have a sign-in location yet. Ask HR to set the branch address in Settings.`,
+      branchName: branchName || undefined,
     }
   }
 
@@ -125,29 +145,31 @@ export function validateBranchClockIn(params: {
 export function getBranchGeofenceStatus(params: {
   enforce: boolean
   employeeBranch: string | null | undefined
+  /** Canonical FK — preferred over employeeBranch name */
+  employeeBranchId?: string | null
   branches: BranchRow[]
   radiusMeters: number
   latitude: number | null
   longitude: number | null
 }): BranchGeofenceStatus {
-  const { enforce, employeeBranch, branches, radiusMeters, latitude, longitude } = params
+  const { enforce, employeeBranch, employeeBranchId, branches, radiusMeters, latitude, longitude } = params
   if (!enforce) {
     return { enforcementActive: false, isWithinRadius: true, displayMessage: '' }
   }
 
-  const branchName = employeeBranch?.trim() ?? ''
-  if (!branchName) {
+  const branch = resolveBranch(branches, employeeBranchId, employeeBranch)
+  const branchName = branch?.name?.trim() || employeeBranch?.trim() || ''
+  if (!branch && !branchName) {
     return { enforcementActive: false, isWithinRadius: true, displayMessage: '' }
   }
 
-  const branch = findBranch(branches, branchName)
-  if (branch?.latitude == null || branch?.longitude == null) {
+  if (!branch || branch.latitude == null || branch.longitude == null) {
     return {
       enforcementActive: true,
       isWithinRadius: false,
       allowedRadiusMeters: radiusMeters,
-      branchName,
-      displayMessage: `Branch "${branchName}" needs a location in HR Settings before you can clock in.`,
+      branchName: branchName || undefined,
+      displayMessage: `Branch "${branchName || 'assigned'}" needs a location in HR Settings before you can clock in.`,
     }
   }
 

@@ -4,8 +4,13 @@ import { useRef, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
-import { normalizeEmploymentType, normalizeWorkerType } from '@/lib/employee-taxonomy'
-import { buildEmployeeCreatePayload } from '@/lib/employee-create-payload'
+import {
+  normalizeAccessLevel,
+  normalizeEmploymentType,
+  normalizeWorkerType,
+} from '@/lib/employee-taxonomy'
+import { resolveBranchIdByName, resolveManagerIdByName } from '@/lib/employee-org'
+import { createEmployee } from '@/lib/employees'
 import * as XLSX from 'xlsx'
 
 interface PreviewEmployee {
@@ -13,26 +18,67 @@ interface PreviewEmployee {
   email: string | null
   position: string | null
   employment_type: string | null
+  department: string | null
+  branch: string | null
+  manager: string | null
   raw: Record<string, unknown>
 }
 
-function normalise(row: Record<string, unknown>): PreviewEmployee {
-  const get = (...keys: string[]) => {
-    for (const k of keys) {
-      const v = row[k] ?? row[k.toLowerCase()] ?? row[k.toUpperCase()]
-      if (v != null && String(v).trim()) return String(v).trim()
-    }
-    return null
+const TEMPLATE_HEADERS = [
+  'Name',
+  'Surname',
+  'Email',
+  'ID Number',
+  'Position',
+  'Access Level',
+  'Employment Type',
+  'Worker Type',
+  'Department',
+  'Branch',
+  'Manager',
+  'Monthly Salary',
+  'Hourly Rate',
+  'Daily Rate',
+  'Bank Name',
+  'Bank Account',
+  'Bank Branch Code',
+  'Account Type',
+]
+
+function parseNum(raw: string | null): number {
+  if (!raw) return 0
+  const n = Number(String(raw).replace(/[,\sR]/g, ''))
+  return Number.isFinite(n) ? n : 0
+}
+
+function cell(row: Record<string, unknown>, ...keys: string[]): string | null {
+  for (const k of keys) {
+    const v = row[k] ?? row[k.toLowerCase()] ?? row[k.toUpperCase()]
+    if (v != null && String(v).trim()) return String(v).trim()
   }
-  const name = get('Name', 'First Name', 'FirstName') ?? ''
-  const surname = get('Surname', 'Last Name', 'LastName') ?? ''
+  return null
+}
+
+function normalise(row: Record<string, unknown>): PreviewEmployee {
+  const name = cell(row, 'Name', 'First Name', 'FirstName') ?? ''
+  const surname = cell(row, 'Surname', 'Last Name', 'LastName') ?? ''
   return {
-    full_name: ([name, surname].filter(Boolean).join(' ') || get('Full Name', 'FullName')) ?? '—',
-    email: get('Email', 'Email Address'),
-    position: get('Position', 'Job Title', 'JobTitle', 'Role'),
-    employment_type: get('Employment Type', 'EmploymentType', 'Type'),
+    full_name: ([name, surname].filter(Boolean).join(' ') || cell(row, 'Full Name', 'FullName')) ?? '—',
+    email: cell(row, 'Email', 'Email Address'),
+    position: cell(row, 'Position', 'Job Title', 'JobTitle', 'Role'),
+    employment_type: cell(row, 'Employment Type', 'EmploymentType', 'Type'),
+    department: cell(row, 'Department'),
+    branch: cell(row, 'Branch', 'Branch Name'),
+    manager: cell(row, 'Manager', 'Reports To', 'ReportsTo'),
     raw: row,
   }
+}
+
+function downloadLocalTemplate() {
+  const ws = XLSX.utils.aoa_to_sheet([TEMPLATE_HEADERS])
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'Employees')
+  XLSX.writeFile(wb, 'employee_import_template.xlsx')
 }
 
 export default function ImportEmployeesPage() {
@@ -47,24 +93,15 @@ export default function ImportEmployeesPage() {
   async function downloadTemplate() {
     const supabase = createClient()
     try {
-      const { data } = await supabase.rpc('get_employee_import_template_url')
-      if (data?.download_url) window.open(data.download_url, '_blank')
-      else {
-        // Build a minimal template client-side
-        const ws = XLSX.utils.aoa_to_sheet([
-          ['Name', 'Surname', 'Email', 'ID Number', 'Position', 'Access Level', 'Employment Type', 'Department'],
-        ])
-        const wb = XLSX.utils.book_new()
-        XLSX.utils.book_append_sheet(wb, ws, 'Employees')
-        XLSX.writeFile(wb, 'employee_import_template.xlsx')
+      const { data, error } = await supabase.rpc('get_employee_import_template_url')
+      if (error) {
+        downloadLocalTemplate()
+        return
       }
+      if (data?.download_url) window.open(data.download_url, '_blank')
+      else downloadLocalTemplate()
     } catch {
-      const ws = XLSX.utils.aoa_to_sheet([
-        ['Name', 'Surname', 'Email', 'ID Number', 'Position', 'Access Level', 'Employment Type', 'Department'],
-      ])
-      const wb = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(wb, ws, 'Employees')
-      XLSX.writeFile(wb, 'employee_import_template.xlsx')
+      downloadLocalTemplate()
     }
   }
 
@@ -107,12 +144,18 @@ export default function ImportEmployeesPage() {
         if (!employees.some(e => e.email)) {
           warnings.push('No email addresses detected — employees will not receive invite emails.')
         }
+        if (employees.some(e => e.branch) && !employees.every(e => e.branch)) {
+          warnings.push('Some rows have Branch blank — those employees will have no branch assigned.')
+        }
+        if (employees.some(e => e.manager) && !employees.every(e => e.manager)) {
+          warnings.push('Some rows have Manager blank — those employees will have no reports-to link.')
+        }
 
         setParseWarnings(warnings)
         setParseErrors(errors)
         setPreview(employees)
         setShowPreview(employees.length > 0)
-      } catch (e) {
+      } catch {
         setErrorMessage('Failed to parse file. Make sure it is a valid .xlsx file.')
       }
     }
@@ -130,43 +173,65 @@ export default function ImportEmployeesPage() {
     const errs: string[] = []
 
     for (const emp of preview) {
-      const get = (...keys: string[]) => {
-        for (const k of keys) {
-          const v = emp.raw[k] ?? emp.raw[k.toLowerCase()] ?? emp.raw[k.toUpperCase()]
-          if (v != null && String(v).trim()) return String(v).trim()
-        }
-        return null
-      }
-      const name    = get('Name', 'First Name', 'FirstName') ?? ''
-      const surname = get('Surname', 'Last Name', 'LastName') ?? ''
+      const name = cell(emp.raw, 'Name', 'First Name', 'FirstName') ?? ''
+      const surname = cell(emp.raw, 'Surname', 'Last Name', 'LastName') ?? ''
+      const branchLabel = cell(emp.raw, 'Branch', 'Branch Name')
+      const managerLabel = cell(emp.raw, 'Manager', 'Reports To', 'ReportsTo')
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await (supabase.from('employees') as any).insert(
-        buildEmployeeCreatePayload({
-          companyId: member.companyId,
-          name,
-          surname,
-          email: get('Email', 'Email Address'),
-          idNumber: get('ID Number', 'IDNumber', 'ID'),
-          position: get('Position', 'Job Title', 'JobTitle', 'Role'),
-          department: get('Department'),
-          accessLevel: (get('Access Level', 'AccessLevel') ?? 'employee').toLowerCase(),
-          employmentType: normalizeEmploymentType(get('Employment Type', 'EmploymentType', 'Type')),
-          workerType: normalizeWorkerType(get('Worker Type', 'WorkerType', 'Worker Category')),
-          monthlySalary: 0,
-          hourlyRate: 0,
-          dailyRate: 0,
-          workDaysWeekly: 5,
-          dailyHours: 8,
-          medicalAidDeduction: 0,
-          pensionDeduction: 0,
-          unionDeduction: 0,
-          uifExempt: false,
-          payByHour: false,
-        })
-      )
-      if (error) {
-        errs.push(`${name} ${surname}: ${error.message}`)
+      let branchId: string | null = null
+      let branchName: string | null = null
+      if (branchLabel) {
+        const branch = await resolveBranchIdByName(supabase, member.companyId, branchLabel)
+        if (!branch) {
+          errs.push(`${name} ${surname}: Branch "${branchLabel}" not found`)
+          continue
+        }
+        branchId = branch.id
+        branchName = branch.name
+      }
+
+      let managerId: string | null = null
+      if (managerLabel) {
+        managerId = await resolveManagerIdByName(supabase, member.companyId, managerLabel)
+        if (!managerId) {
+          errs.push(`${name} ${surname}: Manager "${managerLabel}" not found`)
+          continue
+        }
+      }
+
+      const created = await createEmployee(supabase, {
+        companyId: member.companyId,
+        name,
+        surname,
+        email: cell(emp.raw, 'Email', 'Email Address'),
+        idNumber: cell(emp.raw, 'ID Number', 'IDNumber', 'ID'),
+        position: cell(emp.raw, 'Position', 'Job Title', 'JobTitle', 'Role'),
+        department: cell(emp.raw, 'Department'),
+        branchId,
+        branchName,
+        managerId,
+        accessLevel: normalizeAccessLevel(cell(emp.raw, 'Access Level', 'AccessLevel')),
+        employmentType: normalizeEmploymentType(cell(emp.raw, 'Employment Type', 'EmploymentType', 'Type')),
+        workerType: normalizeWorkerType(cell(emp.raw, 'Worker Type', 'WorkerType', 'Worker Category')),
+        monthlySalary: parseNum(cell(emp.raw, 'Monthly Salary', 'MonthlySalary', 'Salary')),
+        hourlyRate: parseNum(cell(emp.raw, 'Hourly Rate', 'HourlyRate')),
+        dailyRate: parseNum(cell(emp.raw, 'Daily Rate', 'DailyRate')),
+        bankName: cell(emp.raw, 'Bank Name', 'BankName'),
+        bankAccount: cell(emp.raw, 'Bank Account', 'BankAccount', 'Account Number'),
+        bankBranchCode: cell(emp.raw, 'Bank Branch Code', 'Branch Code', 'BankBranchCode'),
+        accountType: cell(emp.raw, 'Account Type', 'AccountType'),
+        payByHour: parseNum(cell(emp.raw, 'Hourly Rate', 'HourlyRate')) > 0
+          && parseNum(cell(emp.raw, 'Monthly Salary', 'MonthlySalary', 'Salary')) <= 0,
+        workDaysWeekly: 5,
+        dailyHours: 8,
+        medicalAidDeduction: 0,
+        pensionDeduction: 0,
+        unionDeduction: 0,
+        uifExempt: false,
+      })
+
+      if (!created.ok) {
+        errs.push(`${name} ${surname}: ${created.message}`)
       } else {
         imported++
       }
@@ -174,7 +239,7 @@ export default function ImportEmployeesPage() {
 
     setIsBusy(false)
     if (errs.length > 0) {
-      setErrorMessage(`${imported} imported; ${errs.length} failed:\n${errs.slice(0, 3).join('\n')}`)
+      setErrorMessage(`${imported} imported; ${errs.length} failed:\n${errs.slice(0, 5).join('\n')}`)
     } else {
       setPreview([])
       setShowPreview(false)
@@ -198,109 +263,89 @@ export default function ImportEmployeesPage() {
 
         {/* STEP 1 */}
         <div className="card p-4 space-y-3">
-          <p className="section-label">STEP 1 — DOWNLOAD TEMPLATE</p>
-          <p className="text-text-secondary text-sm">
-            Download the blank Excel template, fill in your employees, then import the file.
+          <p className="text-[14px] font-semibold text-text-primary">1. Download template</p>
+          <p className="text-[13px] text-text-secondary">
+            Include Branch, Manager, pay rates, and banking columns for payroll readiness.
           </p>
-          <button onClick={downloadTemplate}
-            className="btn-primary w-full h-[46px] text-[14px] font-semibold rounded-[10px]">
-            📥  Download Blank Template
+          <button
+            type="button"
+            onClick={() => void downloadTemplate()}
+            className="h-10 px-4 rounded-sm bg-primary text-white text-[13px] font-medium hover:bg-primary-dark transition-colors"
+          >
+            Download template
           </button>
         </div>
 
         {/* STEP 2 */}
         <div className="card p-4 space-y-3">
-          <p className="section-label">STEP 2 — SELECT YOUR FILE</p>
-          <p className="text-text-secondary text-sm">
-            Select your completed .xlsx file — use our template or your own spreadsheet with
-            similar column names (Name, Surname, ID Number, Access Level, etc.).
-          </p>
-          <button onClick={() => fileRef.current?.click()}
-            className="w-full h-[46px] rounded-[10px] text-primary border border-divider bg-surface-elevated font-medium text-[14px] hover:opacity-80 transition-opacity">
-            📂  Browse File
+          <p className="text-[14px] font-semibold text-text-primary">2. Upload file</p>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            className="hidden"
+            onChange={e => {
+              const f = e.target.files?.[0]
+              if (f) handleFile(f)
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            className="h-10 px-4 rounded-sm border border-border text-[13px] font-medium text-text-primary hover:bg-surface-elevated transition-colors"
+          >
+            Choose .xlsx file
           </button>
-          <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden"
-            onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = '' }} />
         </div>
 
-        {/* Error banner */}
-        {errorMessage && (
-          <div className="rounded-[10px] px-3.5 py-2.5 border border-[#FCA5A5]"
-            style={{ backgroundColor: '#FEE2E2' }}>
-            <p className="text-error font-medium text-[13px]">{errorMessage}</p>
-          </div>
-        )}
-
-        {/* Warnings banner */}
-        {parseWarnings.length > 0 && (
-          <div className="rounded-[10px] px-3.5 py-2.5 border border-[#93C5FD]"
-            style={{ backgroundColor: '#EFF6FF' }}>
-            <p className="text-[11px] font-semibold text-[#1D4ED8] mb-1">NOTES</p>
-            {parseWarnings.map((w, i) => (
-              <p key={i} className="text-[11px] text-[#1E40AF]">{w}</p>
-            ))}
-          </div>
-        )}
-
-        {/* Parse errors banner */}
         {parseErrors.length > 0 && (
-          <div className="rounded-[10px] px-3.5 py-2.5 border border-[#FCD34D]"
-            style={{ backgroundColor: '#FEF3C7' }}>
-            <p className="text-[11px] font-semibold text-[#92400E] mb-1">ROWS SKIPPED OR ISSUES</p>
-            {parseErrors.map((e, i) => (
-              <p key={i} className="text-[11px] text-[#B45309]">{e}</p>
+          <div className="rounded-sm border border-error/40 bg-error-dark/30 p-3 space-y-1">
+            {parseErrors.map(e => (
+              <p key={e} className="text-[12px] text-error">{e}</p>
             ))}
           </div>
         )}
+        {parseWarnings.length > 0 && (
+          <div className="rounded-sm border border-warning/40 bg-warning-dark/30 p-3 space-y-1">
+            {parseWarnings.map(w => (
+              <p key={w} className="text-[12px] text-warning">{w}</p>
+            ))}
+          </div>
+        )}
+        {errorMessage && (
+          <div className="rounded-sm border border-error/40 bg-error-dark/30 p-3">
+            <p className="text-[12px] text-error whitespace-pre-wrap">{errorMessage}</p>
+          </div>
+        )}
 
-        {/* STEP 3 — PREVIEW */}
         {showPreview && (
           <div className="card p-4 space-y-3">
-            <div className="grid grid-cols-[1fr_auto] items-center">
-              <p className="section-label">STEP 3 — PREVIEW</p>
-              <p className="text-xs text-primary">{preview.length} employee{preview.length !== 1 ? 's' : ''}</p>
-            </div>
-            <div className="flex flex-col gap-1.5">
+            <p className="text-[14px] font-semibold text-text-primary">
+              3. Preview ({preview.length})
+            </p>
+            <div className="max-h-64 overflow-y-auto border border-divider rounded-sm divide-y divide-divider">
               {preview.map((emp, i) => (
-                <div key={i}
-                  className="bg-surface-elevated border border-divider rounded-lg px-3 py-2">
-                  <div className="grid grid-cols-[1fr_auto] items-start">
-                    <div>
-                      <p className="font-medium text-[13px] text-text-primary">{emp.full_name}</p>
-                      <div className="flex gap-2 mt-0.5 flex-wrap">
-                        <span className="text-[11px] text-text-secondary">
-                          {emp.email ?? 'No email'}
-                        </span>
-                        {emp.position && (
-                          <span className="text-[11px] text-text-secondary">{emp.position}</span>
-                        )}
-                      </div>
-                    </div>
-                    {emp.employment_type && (
-                      <span className="text-[10px] rounded-md px-1.5 py-0.5 shrink-0"
-                        style={{ backgroundColor: '#DCFCE7', color: '#166534' }}>
-                        {emp.employment_type}
-                      </span>
-                    )}
-                  </div>
+                <div key={`${emp.full_name}-${i}`} className="px-3 py-2 text-[12px]">
+                  <p className="font-medium text-text-primary">{emp.full_name}</p>
+                  <p className="text-text-secondary">
+                    {[emp.email, emp.position, emp.department, emp.branch, emp.manager]
+                      .filter(Boolean)
+                      .join(' · ') || '—'}
+                  </p>
                 </div>
               ))}
             </div>
+            <button
+              type="button"
+              disabled={isBusy}
+              onClick={() => void importEmployees()}
+              className="h-10 px-4 rounded-sm bg-primary text-white text-[13px] font-medium hover:bg-primary-dark transition-colors disabled:opacity-50"
+            >
+              {isBusy ? 'Importing…' : `Import ${preview.length} employee(s)`}
+            </button>
           </div>
         )}
       </div>
-
-      {/* Sticky import button */}
-      {showPreview && (
-        <div className="absolute bottom-0 left-[64px] right-0 px-4 py-2 border-t border-divider z-10"
-          style={{ backgroundColor: 'var(--color-background)' }}>
-          <button onClick={importEmployees} disabled={isBusy}
-            className="w-full h-[52px] rounded-xl font-bold text-[16px] text-white disabled:opacity-50 transition-opacity"
-            style={{ backgroundColor: '#16A34A' }}>
-            {isBusy ? 'Importing…' : `Import ${preview.length} Employee${preview.length !== 1 ? 's' : ''}`}
-          </button>
-        </div>
-      )}
     </div>
   )
 }

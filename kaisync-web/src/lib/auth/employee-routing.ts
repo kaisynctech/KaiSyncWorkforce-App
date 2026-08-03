@@ -3,6 +3,8 @@
  * and Employee.UsesCompanyDashboard from MAUI.
  */
 
+import { isCompanyDashboardAccess } from '@/lib/employee-taxonomy'
+
 export const AUTH_ROUTES = {
   idEntry: '/auth/id-entry',
   companyPicker: '/auth/company-selector',
@@ -17,15 +19,9 @@ export const AUTH_ROUTES = {
   hrDashboard: '/dashboard/overview',
 } as const
 
-/** Owner, HR Admin, Admin, or Manager — company (HR) dashboard. */
+/** Owner, HR, or Manager — company (HR) dashboard. Legacy hr_admin/admin map to HR. */
 export function usesCompanyDashboard(accessLevel: string | null | undefined): boolean {
-  const level = (accessLevel ?? '').toLowerCase().replace(/-/g, '_')
-  return level === 'owner'
-    || level === 'hr_admin'
-    || level === 'hradmin'
-    || level === 'admin'
-    || level === 'manager'
-    || level === 'hr'
+  return isCompanyDashboardAccess(accessLevel)
 }
 
 export function routeAfterCompanySelected(accessLevel: string | null | undefined): string {

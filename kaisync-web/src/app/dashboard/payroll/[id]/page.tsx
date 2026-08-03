@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { Toggle } from '@/components/Toggle'
 import { PayrollLineItemsTable } from '@/components/payroll-line-items-table'
+import { recalculatePayslip } from '@/lib/payroll'
 import type { EmployeePayment, PayrollLineItem, YtdTotals, PayrollAuditEntry } from '@/types/database'
 
 const fmtR = (n: number) =>
@@ -39,6 +40,7 @@ export default function PayslipDetailPage() {
   const [auditEntries, setAuditEntries] = useState<PayrollAuditEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
   // Override fields
   const [payFullSalary, setPayFullSalary] = useState(false)
@@ -91,26 +93,27 @@ export default function PayslipDetailPage() {
   async function recalculate() {
     if (!payment) return
     setBusy(true)
+    setErrorMsg(null)
     const supabase = createClient()
-    // 1. Persist override fields to the row first
+    const result = await recalculatePayslip(supabase, payment.company_id, paymentId, {
+      payFullBaseSalary: payFullSalary,
+      waivePenalties,
+      manualPayeOverride: manualPaye ? parseFloat(manualPaye) : null,
+      manualAdjustment: extraDeduction ? parseFloat(extraDeduction) : null,
+      bonusAmount: bonusAmount ? parseFloat(bonusAmount) : null,
+    })
+    // Persist note fields separately (engine doesn't write notes)
     await supabase.from('payment_approvals').update({
-      pay_full_base_salary: payFullSalary,
-      waive_penalties:      waivePenalties,
-      manual_paye_override: manualPaye ? parseFloat(manualPaye) : null,
-      manual_adjustment:    extraDeduction ? parseFloat(extraDeduction) : null,
-      adjustment_note:      adjustmentNote || null,
-      bonus_amount:         bonusAmount ? parseFloat(bonusAmount) : null,
-      bonus_note:           bonusNote || null,
+      adjustment_note: adjustmentNote || null,
+      bonus_note: bonusNote || null,
     }).eq('id', paymentId)
-    // 2. Recalculate from time_punches
-    try {
-      await supabase.rpc('hr_recalculate_payslip', {
-        p_company_id: payment.company_id,
-        p_payment_id: paymentId,
-      })
-    } catch {}
+
     setBusy(false)
-    load()
+    if (!result.ok) {
+      setErrorMsg(result.message)
+      return
+    }
+    await load()
   }
 
   if (loading) {
@@ -143,7 +146,11 @@ export default function PayslipDetailPage() {
         </Link>
         <div className="flex-1 min-w-0">
           <h1 className="text-[18px] font-semibold text-text-primary truncate">{empName}</h1>
-          <p className="text-text-secondary text-sm">{payment.period_label}</p>
+          <p className="text-text-secondary text-sm">
+            {payment.period_start && payment.period_end
+              ? `${fmtDate(payment.period_start)} – ${fmtDate(payment.period_end)}`
+              : (payment.period_label ?? '—')}
+          </p>
         </div>
         <StatusBadge label={payment.status} bg={stBg(payment.status)} fg={stFg(payment.status)} />
         <button
@@ -157,6 +164,10 @@ export default function PayslipDetailPage() {
 
       {/* Scrollable body */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 max-w-2xl">
+
+        {errorMsg && (
+          <p className="text-error text-[13px]">{errorMsg}</p>
+        )}
 
         {/* Payslip summary card */}
         <div className="card overflow-hidden">

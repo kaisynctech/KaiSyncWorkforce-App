@@ -4,6 +4,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { normalizeAccessLevel } from '@/lib/employee-taxonomy'
 
 export const PERM = {
   inventoryView: 'inventory.view',
@@ -66,7 +67,7 @@ export async function loadPermissions(
   }
 
   if (set.size === 0) {
-    const level = (accessLevel ?? 'employee').toLowerCase()
+    const level = normalizeAccessLevel(accessLevel)
     const map = FALLBACK[level] ?? FALLBACK.employee
     for (const [k, v] of Object.entries(map)) {
       if (v) set.add(k)

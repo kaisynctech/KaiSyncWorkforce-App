@@ -5,7 +5,19 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
-import { memberIdsOf, type WorkTeamMemberView, type WorkTeamRow } from '@/lib/work-teams'
+import { filterTeamsByScope, loadScopedEmployeeIds } from '@/lib/employee-scope'
+import { listEmployeesScoped } from '@/lib/employees'
+import {
+  createWorkTeam,
+  getWorkTeam,
+  memberIdsOf,
+  resolveWorkTeamMembers,
+  setWorkTeamLeader,
+  setWorkTeamMembers,
+  updateWorkTeam,
+  type WorkTeamMemberView,
+  type WorkTeamRow,
+} from '@/lib/work-teams'
 
 interface EmployeeOption {
   id: string
@@ -44,69 +56,56 @@ export default function WorkTeamDetailPage() {
     return new Set(branchIds).size > 1
   })()
 
-  async function resolveMembers(
-    supabase: ReturnType<typeof createClient>,
-    memberIds: string[],
-    leaderId: string | null
-  ): Promise<WorkTeamMemberView[]> {
-    if (memberIds.length === 0) return []
-    const { data, error: empErr } = await supabase
-      .from('employees')
-      .select('id, name, surname, branch_id')
-      .in('id', memberIds)
-    if (empErr) throw new Error(empErr.message)
-
-    const byId = new Map((data ?? []).map(e => [e.id, e]))
-    return memberIds.map(id => {
-      const emp = byId.get(id)
-      return {
-        id,
-        employee_id: id,
-        is_leader: leaderId === id,
-        employee: emp
-          ? { name: emp.name, surname: emp.surname, branch_id: emp.branch_id }
-          : undefined,
-      }
-    })
-  }
-
   const load = useCallback(async () => {
     const supabase = createClient()
     const member = await resolveCurrentMember(supabase)
     if (!member) { setError('not_linked'); return }
     setCompanyId(member.companyId)
 
-    const { data: emps } = await supabase.from('employees')
-      .select('id, name, surname, branch_id')
-      .eq('company_id', member.companyId)
-      .eq('is_active', true)
-      .order('name')
-    setAllEmployees((emps ?? []) as EmployeeOption[])
+    const [empRes, scopeRes] = await Promise.all([
+      listEmployeesScoped(supabase, member.companyId, member.employeeId, { activeOnly: true }),
+      loadScopedEmployeeIds(supabase, member.companyId, member.employeeId),
+    ])
+    if (empRes.ok) {
+      setAllEmployees(
+        empRes.data.map(e => ({
+          id: e.id,
+          name: e.name,
+          surname: e.surname,
+          branch_id: e.branch_id,
+        }))
+      )
+    }
 
     if (isNew) { setLoading(false); return }
 
-    const { data, error: teamErr } = await supabase
-      .from('work_teams')
-      .select('id, company_id, name, description, leader_employee_id, member_ids, is_active, created_at')
-      .eq('id', teamId)
-      .eq('company_id', member.companyId)
-      .maybeSingle()
-
-    if (teamErr || !data) {
+    const teamRes = await getWorkTeam(supabase, member.companyId, teamId)
+    if (!teamRes.ok || !teamRes.data) {
       router.push('/dashboard/work-teams')
       return
     }
 
-    const t = data as WorkTeamRow
+    // Managers may only open teams in their scope
+    if (scopeRes.ok && !scopeRes.seesAll) {
+      const allowed = filterTeamsByScope(scopeRes.viewer, [teamRes.data])
+      if (allowed.length === 0) {
+        setErrorMsg('You do not have access to this team.')
+        router.push('/dashboard/work-teams')
+        return
+      }
+    }
+
+    const t = teamRes.data
     setTeam(t)
     setName(t.name)
     setDescription(t.description ?? '')
     setIsActive(t.is_active)
-    try {
-      setMembers(await resolveMembers(supabase, memberIdsOf(t), t.leader_employee_id))
-    } catch (e) {
-      setErrorMsg(e instanceof Error ? e.message : 'Failed to load members')
+    const membersRes = await resolveWorkTeamMembers(supabase, memberIdsOf(t), t.leader_employee_id)
+    if (!membersRes.ok) {
+      setErrorMsg(membersRes.message)
       setMembers([])
+    } else {
+      setMembers(membersRes.data)
     }
     setLoading(false)
   }, [teamId, isNew, router])
@@ -121,29 +120,21 @@ export default function WorkTeamDetailPage() {
     const supabase = createClient()
 
     if (isNew) {
-      const { data: nt, error: e } = await supabase
-        .from('work_teams')
-        .insert({
-          name: name.trim(),
-          description: description.trim() || null,
-          is_active: isActive,
-          company_id: companyId,
-          member_ids: [],
-        })
-        .select('id')
-        .single()
-      if (e) { setErrorMsg(e.message); setSaving(false); return }
-      router.push(`/dashboard/work-teams/${nt.id}`)
+      const created = await createWorkTeam(supabase, {
+        companyId,
+        name,
+        description,
+        isActive,
+      })
+      if (!created.ok) { setErrorMsg(created.message); setSaving(false); return }
+      router.push(`/dashboard/work-teams/${created.data.id}`)
     } else {
-      const { error: e } = await supabase
-        .from('work_teams')
-        .update({
-          name: name.trim(),
-          description: description.trim() || null,
-          is_active: isActive,
-        })
-        .eq('id', teamId)
-      if (e) setErrorMsg(e.message)
+      const updated = await updateWorkTeam(supabase, teamId, {
+        name,
+        description,
+        isActive,
+      })
+      if (!updated.ok) setErrorMsg(updated.message)
       else await load()
     }
     setSaving(false)
@@ -156,12 +147,9 @@ export default function WorkTeamDetailPage() {
     setErrorMsg('')
     const nextIds = [...memberIdsOf(team), selectedEmployeeId]
     const supabase = createClient()
-    const { error: e } = await supabase
-      .from('work_teams')
-      .update({ member_ids: nextIds })
-      .eq('id', teamId)
+    const result = await setWorkTeamMembers(supabase, teamId, nextIds)
     setBusy(false)
-    if (e) { setErrorMsg(e.message); return }
+    if (!result.ok) { setErrorMsg(result.message); return }
     setSelectedEmployeeId('')
     setShowAddMember(false)
     await load()
@@ -169,18 +157,27 @@ export default function WorkTeamDetailPage() {
 
   async function removeMember(employeeId: string) {
     if (!team) return
+    const label = members.find(m => m.employee_id === employeeId)?.employee
+    const name = label ? `${label.name} ${label.surname}` : 'this member'
+    if (!window.confirm(`Remove ${name} from the team?`)) return
     setBusy(true)
     setErrorMsg('')
     const nextIds = memberIdsOf(team).filter(id => id !== employeeId)
     const nextLeader = team.leader_employee_id === employeeId ? null : team.leader_employee_id
     const supabase = createClient()
-    const { error: e } = await supabase
-      .from('work_teams')
-      .update({ member_ids: nextIds, leader_employee_id: nextLeader })
-      .eq('id', teamId)
+    const result = await setWorkTeamMembers(supabase, teamId, nextIds, nextLeader)
     setBusy(false)
-    if (e) { setErrorMsg(e.message); return }
+    if (!result.ok) { setErrorMsg(result.message); return }
     await load()
+  }
+
+  function toggleActive() {
+    if (isActive) {
+      if (!window.confirm('Deactivate this team? It will be hidden from Team Punch and default lists.')) {
+        return
+      }
+    }
+    setIsActive(v => !v)
   }
 
   async function toggleLeader(member: WorkTeamMemberView) {
@@ -189,12 +186,9 @@ export default function WorkTeamDetailPage() {
     setErrorMsg('')
     const nextLeader = member.is_leader ? null : member.employee_id
     const supabase = createClient()
-    const { error: e } = await supabase
-      .from('work_teams')
-      .update({ leader_employee_id: nextLeader })
-      .eq('id', teamId)
+    const result = await setWorkTeamLeader(supabase, teamId, nextLeader)
     setBusy(false)
-    if (e) { setErrorMsg(e.message); return }
+    if (!result.ok) { setErrorMsg(result.message); return }
     await load()
   }
 
@@ -252,7 +246,7 @@ export default function WorkTeamDetailPage() {
             <button
               role="switch"
               aria-checked={isActive}
-              onClick={() => setIsActive(v => !v)}
+              onClick={toggleActive}
               className="relative w-[44px] h-[26px] rounded-full transition-colors shrink-0"
               style={{ backgroundColor: isActive ? '#3B82F6' : 'var(--color-border)' }}
             >
@@ -282,31 +276,53 @@ export default function WorkTeamDetailPage() {
             {members.length === 0 ? (
               <p className="text-text-secondary text-[13px] text-center py-4">No members yet. Add some above.</p>
             ) : (
-              <div className="flex flex-col gap-2">
-                {members.map(m => {
-                  const emp = m.employee
-                  const fullName = emp ? `${emp.name} ${emp.surname}` : '—'
-                  return (
-                    <div key={m.employee_id} className="card p-3 grid grid-cols-[1fr_auto] items-center gap-2">
-                      <div>
-                        <p className="text-sm font-medium text-text-primary">{fullName}</p>
-                        {m.is_leader && (
-                          <p className="text-xs" style={{ color: 'var(--color-accent)' }}>Leader</p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <button onClick={() => toggleLeader(m)} disabled={busy}
-                          className="text-[12px] text-text-secondary hover:text-primary transition-colors px-1 disabled:opacity-50">
-                          {m.is_leader ? 'Unset Leader' : 'Set Leader'}
-                        </button>
-                        <button onClick={() => removeMember(m.employee_id)} disabled={busy}
-                          className="text-[12px] text-error hover:opacity-70 transition-opacity px-1 disabled:opacity-50">
-                          Remove
-                        </button>
-                      </div>
-                    </div>
-                  )
-                })}
+              <div className="bg-surface border border-divider rounded-lg overflow-hidden">
+                <table className="w-full text-[13px]">
+                  <thead>
+                    <tr className="border-b border-divider bg-surface-elevated/50">
+                      <th className="text-left px-3 py-2 font-medium text-text-secondary">Name</th>
+                      <th className="text-left px-3 py-2 font-medium text-text-secondary">Role</th>
+                      <th className="text-right px-3 py-2 font-medium text-text-secondary">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {members.map(m => {
+                      const emp = m.employee
+                      const fullName = emp ? `${emp.name} ${emp.surname}` : 'Unknown employee'
+                      return (
+                        <tr key={m.employee_id} className="border-b border-divider last:border-0">
+                          <td className="px-3 py-2.5">
+                            <p className="font-medium text-text-primary">{fullName}</p>
+                            {emp?.position && (
+                              <p className="text-[11px] text-text-secondary">{emp.position}</p>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 text-text-secondary">
+                            {m.is_leader ? 'Leader' : 'Member'}
+                          </td>
+                          <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => void toggleLeader(m)}
+                              disabled={busy}
+                              className="text-[12px] text-text-secondary hover:text-primary transition-colors px-1 disabled:opacity-50"
+                            >
+                              {m.is_leader ? 'Unset Leader' : 'Set Leader'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void removeMember(m.employee_id)}
+                              disabled={busy}
+                              className="text-[12px] text-error hover:opacity-70 transition-opacity px-1 disabled:opacity-50"
+                            >
+                              Remove
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>

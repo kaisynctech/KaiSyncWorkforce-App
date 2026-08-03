@@ -1,15 +1,25 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type MouseEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
-import { withMemberCount, type WorkTeamRow } from '@/lib/work-teams'
-import type { WorkTeam } from '@/types/database'
+import { filterTeamsByScope, loadScopedEmployeeIds } from '@/lib/employee-scope'
+import {
+  createWorkTeam,
+  listWorkTeams,
+  memberCountOf,
+  resolveTeamLeaderNames,
+  setWorkTeamActive,
+  type WorkTeamRow,
+} from '@/lib/work-teams'
+
+type StatusFilter = 'active' | 'inactive' | 'all'
 
 export default function WorkTeamsPage() {
   const router = useRouter()
-  const [teams, setTeams] = useState<WorkTeam[]>([])
+  const [teams, setTeams] = useState<WorkTeamRow[]>([])
+  const [leaderNames, setLeaderNames] = useState<Map<string, string>>(new Map())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -18,6 +28,9 @@ export default function WorkTeamsPage() {
   const [newTeamName, setNewTeamName] = useState('')
   const [newTeamDesc, setNewTeamDesc] = useState('')
   const [creating, setCreating] = useState(false)
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('active')
+  const [archiveBusy, setArchiveBusy] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -27,51 +40,86 @@ export default function WorkTeamsPage() {
     if (!member) { setError('not_linked'); setLoading(false); return }
     setCompanyId(member.companyId)
 
-    const { data, error: qErr } = await supabase
-      .from('work_teams')
-      .select('id, company_id, name, description, leader_employee_id, member_ids, is_active, created_at')
-      .eq('company_id', member.companyId)
-      .order('name')
-
-    if (qErr) {
-      setActionError(qErr.message)
+    const [result, scopeRes] = await Promise.all([
+      listWorkTeams(supabase, member.companyId),
+      loadScopedEmployeeIds(supabase, member.companyId, member.employeeId),
+    ])
+    if (!result.ok) {
+      setActionError(result.message)
+      setTeams([])
+    } else if (!scopeRes.ok) {
+      setActionError(scopeRes.message)
       setTeams([])
     } else {
-      setTeams((data ?? []).map(t => withMemberCount(t as WorkTeamRow)) as WorkTeam[])
+      const scoped = filterTeamsByScope(scopeRes.viewer, result.data)
+      setTeams(scoped)
+      const leaders = await resolveTeamLeaderNames(supabase, scoped)
+      if (leaders.ok) setLeaderNames(leaders.data)
     }
     setLoading(false)
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { void load() }, [load])
 
   async function createTeam() {
     if (!newTeamName.trim() || !companyId) return
     setCreating(true)
     setActionError(null)
     const supabase = createClient()
-    const { data, error: insertErr } = await supabase
-      .from('work_teams')
-      .insert({
-        company_id: companyId,
-        name: newTeamName.trim(),
-        description: newTeamDesc.trim() || null,
-        is_active: true,
-        member_ids: [],
-      })
-      .select('id')
-      .single()
+    const created = await createWorkTeam(supabase, {
+      companyId,
+      name: newTeamName,
+      description: newTeamDesc,
+    })
 
     setCreating(false)
-    if (insertErr) {
-      setActionError(insertErr.message)
+    if (!created.ok) {
+      setActionError(created.message)
       return
     }
     setNewTeamName('')
     setNewTeamDesc('')
     setShowCreate(false)
-    if (data?.id) router.push(`/dashboard/work-teams/${data.id}`)
-    else await load()
+    router.push(`/dashboard/work-teams/${created.data.id}`)
   }
+
+  async function toggleArchive(team: WorkTeamRow, e: MouseEvent) {
+    e.stopPropagation()
+    const nextActive = !team.is_active
+    const label = nextActive ? 'reactivate' : 'deactivate'
+    if (!window.confirm(`${label.charAt(0).toUpperCase() + label.slice(1)} team "${team.name}"?`)) {
+      return
+    }
+    setArchiveBusy(team.id)
+    setActionError(null)
+    const supabase = createClient()
+    const result = await setWorkTeamActive(supabase, team.id, nextActive)
+    setArchiveBusy(null)
+    if (!result.ok) {
+      setActionError(result.message)
+      return
+    }
+    await load()
+  }
+
+  const filtered = useMemo(() => {
+    return teams.filter(t => {
+      if (statusFilter === 'active' && !t.is_active) return false
+      if (statusFilter === 'inactive' && t.is_active) return false
+      if (search) {
+        const q = search.toLowerCase()
+        const leader = t.leader_employee_id
+          ? (leaderNames.get(t.leader_employee_id) ?? '').toLowerCase()
+          : ''
+        return (
+          t.name.toLowerCase().includes(q) ||
+          (t.description ?? '').toLowerCase().includes(q) ||
+          leader.includes(q)
+        )
+      }
+      return true
+    })
+  }, [teams, statusFilter, search, leaderNames])
 
   if (error === 'not_linked') return (
     <div className="flex items-center justify-center h-full">
@@ -88,8 +136,8 @@ export default function WorkTeamsPage() {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3 shrink-0 bg-surface-dark">
-        <h1 className="text-sm font-semibold uppercase tracking-wider text-text-primary">Work Teams</h1>
+      <div className="flex items-center justify-between px-4 py-3 shrink-0 bg-surface border-b border-divider">
+        <h1 className="text-[18px] font-semibold text-text-primary">Work Teams</h1>
         <button onClick={() => setShowCreate(true)} className="btn-primary h-9 px-3 text-[13px]">
           + Team
         </button>
@@ -99,53 +147,110 @@ export default function WorkTeamsPage() {
         <p className="px-4 py-2 text-error text-[13px] shrink-0">{actionError}</p>
       )}
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      <div className="px-4 py-3 flex flex-wrap gap-2 shrink-0">
+        <div className="flex items-center gap-2 h-10 px-3 bg-surface border border-border rounded-md flex-1 min-w-[200px]">
+          <span className="material-icons text-text-disabled text-[18px]">search</span>
+          <input
+            type="text"
+            placeholder="Search teams or leader…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="flex-1 text-[13px] bg-transparent focus:outline-none text-text-primary"
+          />
+        </div>
+        <select
+          value={statusFilter}
+          onChange={e => setStatusFilter(e.target.value as StatusFilter)}
+          className="h-10 px-3 rounded-md border border-border bg-surface text-[13px] text-text-primary"
+        >
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+          <option value="all">All</option>
+        </select>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-4 pb-4">
         {loading ? (
           <p className="text-text-secondary text-[13px] text-center py-8">Loading…</p>
-        ) : teams.length === 0 ? (
+        ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center py-12 gap-2">
             <span className="material-icons text-[48px] text-text-disabled">groups</span>
-            <p className="text-text-secondary text-[14px]">No teams yet.</p>
-            <button onClick={() => setShowCreate(true)} className="btn-primary h-9 px-4 text-[13px] mt-2">
-              + Team
-            </button>
+            <p className="text-text-secondary text-[14px]">
+              {teams.length === 0 ? 'No teams yet.' : 'No teams match your filters.'}
+            </p>
+            {teams.length === 0 && (
+              <button onClick={() => setShowCreate(true)} className="btn-primary h-9 px-4 text-[13px] mt-2">
+                + Team
+              </button>
+            )}
           </div>
         ) : (
-          teams.map(team => (
-            <div
-              key={team.id}
-              className="card p-3 cursor-pointer hover:bg-background transition-colors"
-              onClick={() => router.push(`/dashboard/work-teams/${team.id}`)}
-            >
-              <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3">
-                <div
-                  className="w-11 h-11 rounded-full flex items-center justify-center text-xl shrink-0"
-                  style={{ backgroundColor: team.is_active ? '#1D4ED8' : '#374151' }}
-                >
-                  👥
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-bold text-text-primary truncate">{team.name}</p>
-                  {team.description && (
-                    <p className="text-xs text-text-secondary truncate">{team.description}</p>
-                  )}
-                  <p className="text-xs">
-                    <span className="text-text-primary">{team.member_count}</span>
-                    <span className="text-text-secondary"> member{team.member_count !== 1 ? 's' : ''}</span>
-                  </p>
-                </div>
-                <span
-                  className="text-[11px] font-bold px-2 py-1 rounded-xl shrink-0"
-                  style={team.is_active
-                    ? { backgroundColor: '#DCFCE7', color: '#166534' }
-                    : { backgroundColor: '#F3F4F6', color: '#6B7280' }
-                  }
-                >
-                  {team.is_active ? 'Active' : 'Inactive'}
-                </span>
-              </div>
+          <div className="bg-surface border border-divider rounded-lg overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-[13px]">
+                <thead>
+                  <tr className="border-b border-divider bg-surface-elevated/50">
+                    <th className="text-left px-4 py-2.5 font-medium text-text-secondary">Team</th>
+                    <th className="text-left px-4 py-2.5 font-medium text-text-secondary">Leader</th>
+                    <th className="text-center px-4 py-2.5 font-medium text-text-secondary">Members</th>
+                    <th className="text-left px-4 py-2.5 font-medium text-text-secondary">Status</th>
+                    <th className="text-right px-4 py-2.5 font-medium text-text-secondary">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map(team => (
+                    <tr
+                      key={team.id}
+                      className="border-b border-divider last:border-0 hover:bg-background/60 cursor-pointer"
+                      onClick={() => router.push(`/dashboard/work-teams/${team.id}`)}
+                    >
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-text-primary">{team.name}</p>
+                        {team.description && (
+                          <p className="text-[11px] text-text-secondary truncate max-w-[280px]">
+                            {team.description}
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-text-secondary">
+                        {team.leader_employee_id
+                          ? (leaderNames.get(team.leader_employee_id) ?? '—')
+                          : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-center text-text-primary">
+                        {memberCountOf(team)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className="text-[11px] font-bold px-2 py-1 rounded-xl"
+                          style={team.is_active
+                            ? { backgroundColor: '#DCFCE7', color: '#166534' }
+                            : { backgroundColor: '#F3F4F6', color: '#6B7280' }
+                          }
+                        >
+                          {team.is_active ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          type="button"
+                          disabled={archiveBusy === team.id}
+                          onClick={e => void toggleArchive(team, e)}
+                          className="text-[12px] font-medium text-text-secondary hover:text-primary disabled:opacity-50"
+                        >
+                          {archiveBusy === team.id
+                            ? '…'
+                            : team.is_active
+                              ? 'Deactivate'
+                              : 'Reactivate'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          ))
+          </div>
         )}
       </div>
 
@@ -181,7 +286,7 @@ export default function WorkTeamsPage() {
                 Cancel
               </button>
               <button
-                onClick={createTeam}
+                onClick={() => void createTeam()}
                 disabled={!newTeamName.trim() || creating}
                 className="btn-primary h-9 px-4 text-[13px] disabled:opacity-50"
               >

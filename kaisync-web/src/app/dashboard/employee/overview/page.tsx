@@ -229,6 +229,7 @@ export default function EmployeeOverviewPage() {
   const tokRef          = useRef<string | null>(null)
   const tickerRef       = useRef<ReturnType<typeof setInterval> | null>(null)
   const employeeBranchRef = useRef<string | null>(null)
+  const employeeBranchIdRef = useRef<string | null>(null)
   const dispatchSettingsRef = useRef<CompanyWorkspace['dispatch_settings']>({})
   const branchesRef = useRef<BranchRow[]>([])
   const realtimeCleanupRef = useRef<(() => void) | null>(null)
@@ -298,6 +299,7 @@ export default function EmployeeOverviewPage() {
     const emp = await loadEmployeeWorkspace(supabase, empId)
     if (!emp) return
     employeeBranchRef.current = emp.branch
+    employeeBranchIdRef.current = emp.branch_id
     const pending = isPendingMembership(emp)
     const wasPending = isPendingRef.current
     isPendingRef.current = pending
@@ -348,10 +350,12 @@ export default function EmployeeOverviewPage() {
     lat: number | null,
     lng: number | null,
     branchName?: string | null,
+    branchId?: string | null,
   ) {
     const status = getBranchGeofenceStatus({
       enforce: enforceBranchSignInRadius(dispatchSettingsRef.current),
       employeeBranch: branchName ?? employeeBranchRef.current,
+      employeeBranchId: branchId ?? employeeBranchIdRef.current,
       branches: branchesRef.current,
       radiusMeters: branchSignInRadiusMeters(dispatchSettingsRef.current),
       latitude: lat,
@@ -456,6 +460,7 @@ export default function EmployeeOverviewPage() {
       const flags = moduleFlagsForCompany(company)
       setModules(flags)
       employeeBranchRef.current = emp?.branch ?? null
+      employeeBranchIdRef.current = emp?.branch_id ?? null
       dispatchSettingsRef.current = company?.dispatch_settings ?? {}
 
       const pending = isPendingMembership(emp)
@@ -475,12 +480,12 @@ export default function EmployeeOverviewPage() {
           pos => {
             setLiveLat(pos.coords.latitude)
             setLiveLng(pos.coords.longitude)
-            refreshBranchStatus(pos.coords.latitude, pos.coords.longitude, emp?.branch)
+            refreshBranchStatus(pos.coords.latitude, pos.coords.longitude, emp?.branch, emp?.branch_id)
           },
-          () => refreshBranchStatus(null, null, emp?.branch),
+          () => refreshBranchStatus(null, null, emp?.branch, emp?.branch_id),
         )
       } else {
-        refreshBranchStatus(null, null, emp?.branch)
+        refreshBranchStatus(null, null, emp?.branch, emp?.branch_id)
       }
 
       // Always subscribe — membership realtime matters while pending
@@ -771,6 +776,7 @@ export default function EmployeeOverviewPage() {
       const branchResult = validateBranchClockIn({
         enforce: enforceBranchSignInRadius(dispatchSettingsRef.current),
         employeeBranch: employeeBranchRef.current,
+        employeeBranchId: employeeBranchIdRef.current,
         branches: branchesRef.current,
         radiusMeters: branchSignInRadiusMeters(dispatchSettingsRef.current),
         latitude: geoLat ?? liveLat,

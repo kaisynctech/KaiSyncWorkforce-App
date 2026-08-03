@@ -20,6 +20,9 @@ export type EmployeeWorkspace = {
   company_id: string
   name: string
   surname: string
+  /** Canonical FK → branches.id */
+  branch_id: string | null
+  /** Legacy text mirror of branch name */
   branch: string | null
   registration_status: string
   is_active: boolean
@@ -65,7 +68,7 @@ export async function loadEmployeeWorkspace(
 ): Promise<EmployeeWorkspace | null> {
   const { data } = await supabase
     .from('employees')
-    .select('id, company_id, name, surname, branch, registration_status, is_active, access_level')
+    .select('id, company_id, name, surname, branch_id, branch, registration_status, is_active, access_level')
     .eq('id', employeeId)
     .maybeSingle()
 
@@ -75,6 +78,7 @@ export async function loadEmployeeWorkspace(
       company_id: data.company_id,
       name: data.name ?? '',
       surname: data.surname ?? '',
+      branch_id: data.branch_id ?? null,
       branch: data.branch ?? null,
       registration_status: data.registration_status ?? 'active',
       is_active: data.is_active !== false,
@@ -90,6 +94,7 @@ export async function loadEmployeeWorkspace(
       company_id: cs.company_id,
       name: cs.employee.name,
       surname: cs.employee.surname,
+      branch_id: null,
       branch: cs.employee.branch ?? null,
       registration_status: cs.employee.registration_status ?? 'active',
       is_active: cs.employee.is_active !== false,
