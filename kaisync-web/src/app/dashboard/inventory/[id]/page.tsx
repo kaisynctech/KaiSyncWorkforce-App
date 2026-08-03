@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { isSupplierKind } from '@/lib/partner-kinds'
 import { inventoryStockValue, stockMovementLabel, type StockMovementType } from '@/lib/supply-assets'
+import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
 import { Toggle } from '@/components/Toggle'
 import type { InventoryItem, InventoryStockMovement } from '@/types/database'
 
@@ -45,6 +46,8 @@ export default function InventoryDetailPage() {
 
   const [movements, setMovements] = useState<InventoryStockMovement[]>([])
   const [movementsLoading, setMovementsLoading] = useState(false)
+  const [perms, setPerms] = useState<PermissionSet | null>(null)
+  const canEdit = can(perms, PERM.inventoryEdit)
 
   const [name, setName] = useState('')
   const [sku, setSku] = useState('')
@@ -86,6 +89,12 @@ export default function InventoryDetailPage() {
     if (!member) { setError('not_linked'); setLoading(false); return }
     setCompanyId(member.companyId)
     setEmployeeId(member.employeeId)
+    const { data: me } = await supabase
+      .from('employees')
+      .select('access_level')
+      .eq('id', member.employeeId)
+      .maybeSingle()
+    setPerms(await loadPermissions(supabase, member.companyId, me?.access_level))
 
     const { data: partners } = await supabase
       .from('contractors')
@@ -291,10 +300,12 @@ export default function InventoryDetailPage() {
           </Link>
           <h1 className="text-[20px] font-semibold text-text-primary truncate">{name || (isNew ? 'New Item' : 'Item')}</h1>
         </div>
-        <button onClick={() => void save()} disabled={saving}
-          className="h-11 px-5 text-[16px] font-semibold rounded-lg bg-primary text-white hover:bg-primary-dark disabled:opacity-50 transition-colors min-w-[80px]">
-          {saving ? 'Saving…' : 'Save'}
-        </button>
+        {canEdit && (
+          <button onClick={() => void save()} disabled={saving}
+            className="h-11 px-5 text-[16px] font-semibold rounded-lg bg-primary text-white hover:bg-primary-dark disabled:opacity-50 transition-colors min-w-[80px]">
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        )}
       </div>
 
       {error && error !== 'not_linked' && <p className="px-4 py-2 text-error text-[13px] shrink-0">{error}</p>}
@@ -369,7 +380,7 @@ export default function InventoryDetailPage() {
           </div>
         </div>
 
-        {!isNew && (
+        {!isNew && canEdit && (
           <div className="grid grid-cols-2 gap-2">
             <button onClick={() => void openStockModal('receive')} className="btn-outlined h-11 text-[13px]">Receive</button>
             <button onClick={() => void openStockModal('adjust')} className="btn-outlined h-11 text-[13px]">Adjust</button>

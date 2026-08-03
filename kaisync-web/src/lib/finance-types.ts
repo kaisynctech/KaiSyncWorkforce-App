@@ -60,6 +60,24 @@ export type SupplierInvoice = {
   contractors?: { name: string } | null
 }
 
+export type SupplierInvoiceLine = {
+  id: string
+  company_id: string
+  invoice_id: string
+  line_no: number
+  inventory_item_id: string | null
+  description: string
+  quantity: number
+  unit_price: number
+  subtotal: number
+  vat_rate: number
+  vat_amount: number
+  total_amount: number
+  is_vat_inclusive: boolean
+  tax_type: string
+  created_at?: string
+}
+
 export type ContractorPayout = {
   id: string
   company_id: string

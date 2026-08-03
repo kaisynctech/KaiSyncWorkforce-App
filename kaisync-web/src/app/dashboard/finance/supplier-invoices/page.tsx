@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { calculateVatExclusive, fmtMoney } from '@/lib/finance-calc'
@@ -10,6 +11,7 @@ import type { SupplierInvoice } from '@/lib/finance-types'
 type SupplierOpt = { id: string; name: string }
 
 export default function SupplierInvoicesPage() {
+  const router = useRouter()
   const [rows, setRows] = useState<SupplierInvoice[]>([])
   const [suppliers, setSuppliers] = useState<SupplierOpt[]>([])
   const [loading, setLoading] = useState(true)
@@ -104,9 +106,13 @@ export default function SupplierInvoicesPage() {
             </thead>
             <tbody>
               {rows.map(r => (
-                <tr key={r.id} className="border-b border-divider">
+                <tr
+                  key={r.id}
+                  className="border-b border-divider cursor-pointer hover:bg-background"
+                  onClick={() => router.push(`/dashboard/finance/supplier-invoices/${r.id}`)}
+                >
                   <td className="data-td text-[13px]">{(r.contractors as { name: string } | null)?.name ?? '—'}</td>
-                  <td className="data-td text-[13px]">{r.invoice_number || '—'}</td>
+                  <td className="data-td text-[13px] text-primary">{r.invoice_number || '—'}</td>
                   <td className="data-td text-[12px] capitalize">{r.status.replace(/_/g, ' ')}</td>
                   <td className="data-td text-[12px] capitalize">{r.approval_status}</td>
                   <td className="data-td text-[13px] text-right">{fmtMoney(r.total_amount)}</td>

@@ -13,6 +13,18 @@ export function inventoryNeedsReorder(
   return qty <= reorder
 }
 
+/** Suggested purchase qty to bring stock back above reorder level. */
+export function suggestedReorderQty(
+  quantityOnHand: number | null | undefined,
+  reorderLevel: number | null | undefined,
+): number {
+  const qty = Number(quantityOnHand ?? 0)
+  const reorder = Number(reorderLevel ?? 0)
+  const gap = reorder - qty
+  if (gap > 0) return gap
+  return inventoryNeedsReorder(qty, reorder) ? 1 : 0
+}
+
 export function inventoryStockValue(
   quantityOnHand: number | null | undefined,
   unitCost: number | null | undefined,
