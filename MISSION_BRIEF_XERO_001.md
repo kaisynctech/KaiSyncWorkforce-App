@@ -292,7 +292,7 @@ Deno.serve(async (req: Request) => {
     authUrl.searchParams.set('client_id',     clientId);
     authUrl.searchParams.set('redirect_uri',  redirectUri);
     authUrl.searchParams.set('scope',
-      'accounting.contacts accounting.transactions offline_access openid profile email');
+      'accounting.contacts accounting.manualjournals offline_access openid profile email');
     authUrl.searchParams.set('state', state);
 
     return json({ ok: true, auth_url: authUrl.toString() });
