@@ -31,14 +31,14 @@ export default function HrSignInPage() {
       // Persist selected company context (parity with employee company picker)
       const { data: emp } = await supabase
         .from('employees')
-        .select('id, company_id, access_level, name, surname, companies(name, company_code)')
+        .select('id, company_id, access_level, name, surname, companies(name, code)')
         .eq('id', member.employeeId)
         .maybeSingle()
       if (emp) {
         const { saveEmpContext } = await import('@/lib/auth/code-session')
         const companies = emp.companies as
-          | { name?: string; company_code?: string }
-          | { name?: string; company_code?: string }[]
+          | { name?: string; code?: string }
+          | { name?: string; code?: string }[]
           | null
         const co = Array.isArray(companies) ? companies[0] : companies
         saveEmpContext({
@@ -48,7 +48,7 @@ export default function HrSignInPage() {
           name: emp.name ?? undefined,
           surname: emp.surname ?? undefined,
           company_name: co?.name,
-          company_code: co?.company_code ?? undefined,
+          company_code: co?.code ?? undefined,
         })
       }
       router.push('/dashboard/overview')
