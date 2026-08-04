@@ -45,6 +45,8 @@ export function hrModuleDeniedMessage(flag: HrModuleFlag): string {
     scheduling: 'Scheduling',
     payroll: 'Payroll',
     contractors: 'Contractors',
+    projects: 'Projects',
+    clients: 'Clients',
   }
   const name = labels[flag] ?? 'This module'
   return `${name} is disabled for your company. Enable it in Settings → Modules.`
@@ -53,6 +55,8 @@ export function hrModuleDeniedMessage(flag: HrModuleFlag): string {
 export function hrPermissionDeniedMessage(flag: HrModuleFlag): string {
   const labels: Partial<Record<HrModuleFlag, string>> = {
     contractors: 'Contractors',
+    projects: 'Projects',
+    clients: 'Clients',
   }
   const name = labels[flag] ?? 'This module'
   return `You do not have permission to view ${name}. Ask an owner to grant access in role permissions.`

@@ -553,6 +553,20 @@ export type ClientActionItem = {
   priority?: number
 }
 
+/** Row shape from hr_get_project_action_items */
+export type ProjectActionItem = {
+  ref_id: string
+  project_id: string
+  project_title: string
+  project_code?: string
+  action_type: string
+  summary: string
+  amount?: number | null
+  status?: string
+  created_at: string
+  priority?: number
+}
+
 // ── Payroll ──────────────────────────────────────────────────────────────────
 export interface EmployeePayment {
   id: string
