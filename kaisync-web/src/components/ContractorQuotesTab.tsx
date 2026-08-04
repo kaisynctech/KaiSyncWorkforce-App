@@ -30,11 +30,20 @@ type QuoteItem = {
 type QuoteAttachment = {
   id: string
   file_name: string | null
+  file_url: string | null
   storage_path: string | null
 }
 
 const fmtMoney = (n: number | null | undefined) =>
   `R ${Number(n ?? 0).toLocaleString('en-ZA', { minimumFractionDigits: 2 })}`
+
+function attachmentHref(a: QuoteAttachment, supabaseUrl: string | undefined): string | null {
+  if (a.file_url?.trim()) return a.file_url.trim()
+  if (a.storage_path?.trim() && supabaseUrl) {
+    return `${supabaseUrl}/storage/v1/object/public/workforce-media/${a.storage_path.replace(/^\/+/, '')}`
+  }
+  return null
+}
 
 function isReviewable(status: string) {
   return status === 'submitted' || status === 'under_review'
@@ -85,7 +94,7 @@ export function ContractorQuotesTab({
 
     const [{ data: itemRows }, { data: attRows }] = await Promise.all([
       supabase.from('contractor_quote_items').select('id, description, quantity, unit_price, line_total').eq('quote_id', q.id),
-      supabase.from('contractor_quote_attachments').select('id, file_name, storage_path').eq('quote_id', q.id),
+      supabase.from('contractor_quote_attachments').select('id, file_name, file_url, storage_path').eq('quote_id', q.id),
     ])
     setItems((itemRows ?? []) as QuoteItem[])
     setAttachments((attRows ?? []) as QuoteAttachment[])
@@ -197,11 +206,27 @@ export function ContractorQuotesTab({
         )}
 
         {attachments.length > 0 && (
-          <div className="card p-3 space-y-1">
+          <div className="card p-3 space-y-2">
             <p className="section-label">ATTACHMENTS</p>
-            {attachments.map(a => (
-              <p key={a.id} className="text-[13px] text-text-primary">{a.file_name || a.storage_path || 'File'}</p>
-            ))}
+            {attachments.map(a => {
+              const href = attachmentHref(a, process.env.NEXT_PUBLIC_SUPABASE_URL)
+              const label = a.file_name || a.storage_path || 'File'
+              return href ? (
+                <a
+                  key={a.id}
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 text-[13px] text-primary hover:underline"
+                >
+                  <span className="material-icons text-[16px]">attach_file</span>
+                  <span className="truncate">{label}</span>
+                  <span className="text-[11px] text-text-secondary shrink-0">Open</span>
+                </a>
+              ) : (
+                <p key={a.id} className="text-[13px] text-text-secondary">{label} (no download URL)</p>
+              )
+            })}
           </div>
         )}
 
