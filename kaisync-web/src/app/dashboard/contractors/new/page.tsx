@@ -13,6 +13,7 @@ import {
   PARTNER_KIND,
   type PartnerKind,
 } from '@/lib/partner-kinds'
+import { can, loadPermissions, PERM } from '@/lib/permissions'
 
 const ACCOUNT_TYPES = [
   { value: 'cheque', label: 'Cheque / Current' },
@@ -69,6 +70,24 @@ function NewContractorForm() {
   const [paymentMethod, setPaymentMethod] = useState('eft')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [permChecked, setPermChecked] = useState(false)
+  const [canCreate, setCanCreate] = useState(false)
+
+  useEffect(() => {
+    void (async () => {
+      const supabase = createClient()
+      const member = await resolveCurrentMember(supabase)
+      if (!member) { setPermChecked(true); setCanCreate(false); return }
+      const { data: me } = await supabase
+        .from('employees')
+        .select('access_level')
+        .eq('id', member.employeeId)
+        .maybeSingle()
+      const perms = await loadPermissions(supabase, member.companyId, me?.access_level)
+      setCanCreate(can(perms, PERM.contractorsCreate))
+      setPermChecked(true)
+    })()
+  }, [])
 
   const title = `New ${partnerKindLabel(partnerKind)}`
   const backHref = '/dashboard/contractors'
@@ -81,7 +100,33 @@ function NewContractorForm() {
     )
   }
 
+  if (!permChecked) {
+    return (
+      <div className="flex items-center justify-center h-64 text-[13px] text-text-secondary">
+        Loading…
+      </div>
+    )
+  }
+
+  if (!canCreate) {
+    return (
+      <div className="flex items-center justify-center h-full p-6">
+        <div className="text-center space-y-3 max-w-md">
+          <span className="material-icons text-[48px] text-text-disabled">lock</span>
+          <p className="text-[16px] font-semibold text-text-primary">Access denied</p>
+          <p className="text-[13px] text-text-secondary">
+            You do not have permission to create contractors.
+          </p>
+          <Link href={backHref} className="inline-block h-9 px-4 leading-9 rounded-md bg-primary text-white text-[13px] font-semibold">
+            Back to Contractors
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
   async function save() {
+    if (!canCreate) return
     if (!name.trim()) { setError('Company / partner name is required.'); return }
     setBusy(true)
     setError(null)

@@ -7,6 +7,7 @@ import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { FilterChip } from '@/components/ui/FilterChip'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { isContractorKind } from '@/lib/partner-kinds'
+import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
 import type { Contractor, ContractorActionItem } from '@/types/database'
 
 type FilterValue = 'active' | 'inactive' | 'all'
@@ -52,12 +53,23 @@ export default function ContractorsPage() {
   const [sessionToken,  setSessionToken]  = useState<string | null>(null)
   const [xeroImporting, setXeroImporting] = useState(false)
   const [xeroMsg,       setXeroMsg]       = useState<string | null>(null)
+  const [perms, setPerms] = useState<PermissionSet | null>(null)
+
+  const canCreate = can(perms, PERM.contractorsCreate)
+  const canEdit = can(perms, PERM.contractorsEdit)
 
   const load = useCallback(async () => {
     setLoading(true)
     const supabase = createClient()
     const member = await resolveCurrentMember(supabase)
     if (!member) { setError('not_linked'); setLoading(false); return }
+
+    const { data: me } = await supabase
+      .from('employees')
+      .select('access_level')
+      .eq('id', member.employeeId)
+      .maybeSingle()
+    setPerms(await loadPermissions(supabase, member.companyId, me?.access_level))
 
     const [cRes, aRes] = await Promise.all([
       supabase.from('contractors').select('*').eq('company_id', member.companyId).order('name'),
@@ -116,7 +128,7 @@ export default function ContractorsPage() {
 
   async function pushToXero(e: React.MouseEvent, contractorId: string) {
     e.stopPropagation()
-    if (!companyId || !sessionToken || xeroPushing) return
+    if (!canEdit || !companyId || !sessionToken || xeroPushing) return
     setXeroPushing(contractorId)
     try {
       const resp = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/xero-sync-contacts`, {
@@ -132,7 +144,7 @@ export default function ContractorsPage() {
   }
 
   async function syncAllToXero() {
-    if (!companyId || !sessionToken) return
+    if (!canEdit || !companyId || !sessionToken) return
     setXeroPushing('__all__')
     try {
       await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/xero-sync-contacts`, {
@@ -147,7 +159,7 @@ export default function ContractorsPage() {
   }
 
   async function importFromXero() {
-    if (!companyId || !sessionToken) return
+    if (!canEdit || !companyId || !sessionToken) return
     setXeroImporting(true)
     setXeroMsg(null)
     try {
@@ -206,7 +218,7 @@ export default function ContractorsPage() {
         <FilterChip label="All"      active={filter === 'all'}      onClick={() => setFilter('all')} />
         <span className="ml-2 text-[12px] text-text-secondary flex-1">{filtered.length} contractors</span>
         <button onClick={load} className="text-[13px] text-primary px-2 hover:opacity-70 transition-opacity">Refresh</button>
-        {xeroConnected && (
+        {canEdit && xeroConnected && (
           <button
             onClick={syncAllToXero}
             disabled={!!xeroPushing}
@@ -215,7 +227,7 @@ export default function ContractorsPage() {
             {xeroPushing === '__all__' ? 'Syncing…' : 'Sync All to Xero'}
           </button>
         )}
-        {xeroConnected && (
+        {canEdit && xeroConnected && (
           <button
             onClick={importFromXero}
             disabled={xeroImporting}
@@ -224,10 +236,12 @@ export default function ContractorsPage() {
             {xeroImporting ? 'Importing…' : '↓ Import from Xero'}
           </button>
         )}
-        <button
-          onClick={() => router.push('/dashboard/contractors/new')}
-          className="h-8 px-3 text-[13px] rounded-lg bg-primary text-white font-semibold hover:bg-primary-dark transition-colors"
-        >+ Add</button>
+        {canCreate && (
+          <button
+            onClick={() => router.push('/dashboard/contractors/new')}
+            className="h-8 px-3 text-[13px] rounded-lg bg-primary text-white font-semibold hover:bg-primary-dark transition-colors"
+          >+ Add</button>
+        )}
       </div>
 
       {xeroMsg && (
@@ -376,7 +390,7 @@ export default function ContractorsPage() {
                         <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
                           {xeroLinked.has(c.id) ? (
                             <span className="text-green-400 text-[18px]" title="Synced to Xero">✓</span>
-                          ) : (
+                          ) : canEdit ? (
                             <button
                               onClick={e => pushToXero(e, c.id)}
                               disabled={xeroPushing === c.id}
@@ -384,6 +398,8 @@ export default function ContractorsPage() {
                             >
                               {xeroPushing === c.id ? '…' : '+ Xero'}
                             </button>
+                          ) : (
+                            <span className="text-text-disabled text-[11px]">—</span>
                           )}
                         </td>
                       )}
