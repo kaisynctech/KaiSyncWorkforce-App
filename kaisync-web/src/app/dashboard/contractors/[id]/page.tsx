@@ -14,11 +14,10 @@ import { SectionCard, FormField, entryClass } from '@/components/SectionCard'
 import { FormSelect } from '@/components/FormSelect'
 import { Toggle } from '@/components/Toggle'
 import { StatusBadge } from '@/components/ui/StatusBadge'
-import { ComingSoon } from '@/components/ui/ComingSoon'
 import { ContractorActivityTab } from '@/components/ContractorActivityTab'
 import { ContractorQuotesTab } from '@/components/ContractorQuotesTab'
+import { ContractorInvoicesTab } from '@/components/ContractorInvoicesTab'
 import { KpiTile } from '@/components/ui/KpiTile'
-import { InfoBanner } from '@/components/ui/InfoBanner'
 import { DocFilterChip } from '@/components/ui/DocFilterChip'
 import type {
   Contractor, ComplianceDocument, JobContractor, Job, IncidentReport,
@@ -1484,13 +1483,10 @@ function ContractorDetailInner() {
           </div>
         )}
 
-        {/* ── INVOICES (MAUI stub parity) ── */}
-        {tab === 'Invoices' && (
+        {/* ── INVOICES / PAYOUTS ── */}
+        {tab === 'Invoices' && contractor && (
           <div className="flex-1 overflow-y-auto">
-            <ComingSoon />
-            <p className="text-center text-[12px] text-text-secondary -mt-4 pb-6">
-              Contractor invoices are coming soon (same as MAUI).
-            </p>
+            <ContractorInvoicesTab companyId={contractor.company_id} contractorId={contractorId} />
           </div>
         )}
       </div>
