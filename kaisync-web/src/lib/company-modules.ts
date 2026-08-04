@@ -40,7 +40,7 @@ export type ModuleSpec = {
   defaultIfMissing: boolean
 }
 
-/** Mirrors CompanyModules.All — Settings toggle list. */
+/** Full key catalogue (used for defaults / persistence). Not shown as individual Settings toggles. */
 export const COMPANY_MODULE_SPECS: ModuleSpec[] = [
   { key: CompanyModuleKeys.Ticketing, title: 'Jobs & Projects', description: 'Field jobs and CRM projects.', defaultIfMissing: true },
   { key: CompanyModuleKeys.Clients, title: 'Clients', description: 'Client register, details, linked projects and payments.', defaultIfMissing: true },
@@ -61,6 +61,126 @@ export const COMPANY_MODULE_SPECS: ModuleSpec[] = [
   { key: CompanyModuleKeys.Messaging, title: 'Messaging', description: 'In-app team messaging between employees and management.', defaultIfMissing: true },
   { key: CompanyModuleKeys.Settings, title: 'Settings', description: 'Company profile, module controls, and system preferences.', defaultIfMissing: true },
 ]
+
+/**
+ * Settings → Modules toggles — main product areas (sidebar groups), not every sub-feature.
+ * Turning a main module on/off updates all related `enabled_modules` keys together.
+ */
+export type MainModuleSpec = {
+  id: string
+  title: string
+  /** Keys written together when this main module is toggled. */
+  keys: string[]
+  /** Key used to decide current on/off state. */
+  leadKey: string
+  defaultIfMissing: boolean
+}
+
+export const MAIN_MODULE_SPECS: MainModuleSpec[] = [
+  {
+    id: 'workforce',
+    title: 'Workforce',
+    leadKey: CompanyModuleKeys.Employees,
+    keys: [
+      CompanyModuleKeys.Employees,
+      CompanyModuleKeys.Leave,
+      CompanyModuleKeys.Attendance,
+      CompanyModuleKeys.Scheduling,
+      CompanyModuleKeys.Payroll,
+    ],
+    defaultIfMissing: true,
+  },
+  {
+    id: 'operations',
+    title: 'Jobs & Projects',
+    leadKey: CompanyModuleKeys.Ticketing,
+    keys: [CompanyModuleKeys.Ticketing],
+    defaultIfMissing: true,
+  },
+  {
+    id: 'clients',
+    title: 'Clients',
+    leadKey: CompanyModuleKeys.Clients,
+    keys: [CompanyModuleKeys.Clients],
+    defaultIfMissing: true,
+  },
+  {
+    id: 'contractors',
+    title: 'Contractors',
+    leadKey: CompanyModuleKeys.Contractors,
+    keys: [CompanyModuleKeys.Contractors],
+    defaultIfMissing: true,
+  },
+  {
+    id: 'supply',
+    title: 'Supply & Assets',
+    leadKey: CompanyModuleKeys.Inventory,
+    keys: [
+      CompanyModuleKeys.Inventory,
+      CompanyModuleKeys.Suppliers,
+      CompanyModuleKeys.AssetCompliance,
+    ],
+    defaultIfMissing: true,
+  },
+  {
+    id: 'properties',
+    title: 'Property Management',
+    leadKey: CompanyModuleKeys.PropertyManagement,
+    keys: [CompanyModuleKeys.PropertyManagement],
+    defaultIfMissing: true,
+  },
+  {
+    id: 'incidents',
+    title: 'Incidents',
+    leadKey: CompanyModuleKeys.Incidents,
+    keys: [CompanyModuleKeys.Incidents],
+    defaultIfMissing: true,
+  },
+  {
+    id: 'reports',
+    title: 'Reports',
+    leadKey: CompanyModuleKeys.Reports,
+    keys: [CompanyModuleKeys.Reports],
+    defaultIfMissing: true,
+  },
+  {
+    id: 'my_pa',
+    title: 'My PA',
+    leadKey: CompanyModuleKeys.MyPa,
+    keys: [CompanyModuleKeys.MyPa],
+    defaultIfMissing: true,
+  },
+  {
+    id: 'messaging',
+    title: 'Messaging',
+    leadKey: CompanyModuleKeys.Messaging,
+    keys: [CompanyModuleKeys.Messaging],
+    defaultIfMissing: true,
+  },
+  {
+    id: 'paperless',
+    title: 'Paperless Forms',
+    leadKey: CompanyModuleKeys.Paperless,
+    keys: [CompanyModuleKeys.Paperless],
+    defaultIfMissing: false,
+  },
+]
+
+export function isMainModuleEnabled(
+  enabledModules: EnabledModules,
+  spec: MainModuleSpec,
+): boolean {
+  return isModuleEnabled(enabledModules, spec.leadKey, spec.defaultIfMissing)
+}
+
+/** Build enabled_modules patch for a main-module toggle. */
+export function mainModuleUpdates(spec: MainModuleSpec, enabled: boolean): Record<string, boolean> {
+  const updates: Record<string, boolean> = {}
+  for (const key of spec.keys) updates[key] = enabled
+  // Settings module stays available so admins can always reopen Modules.
+  updates[CompanyModuleKeys.Settings] = true
+  return updates
+}
 
 export function isModuleEnabled(
   enabledModules: EnabledModules,

@@ -5,9 +5,10 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { formatDateTime } from '@/lib/utils'
 import {
-  COMPANY_MODULE_SPECS,
+  MAIN_MODULE_SPECS,
   buildEnabledModulesMap,
-  isModuleEnabled,
+  isMainModuleEnabled,
+  mainModuleUpdates,
   type EnabledModules,
 } from '@/lib/company-modules'
 import type { Company, Employee, SecuritySettings, AuditEvent } from '@/types/database'
@@ -216,8 +217,10 @@ export default function SettingsPage() {
     setSaving(null)
   }
 
-  function toggleModule(key: string, value: boolean) {
-    setEnabledModules(prev => buildEnabledModulesMap(prev, { [key]: value }))
+  function toggleMainModule(id: string, value: boolean) {
+    const spec = MAIN_MODULE_SPECS.find(s => s.id === id)
+    if (!spec) return
+    setEnabledModules(prev => buildEnabledModulesMap(prev, mainModuleUpdates(spec, value)))
     setModulesMsg(null)
   }
 
@@ -587,22 +590,21 @@ export default function SettingsPage() {
 
       {activeTab === 'modules' && (
         <Section title="Modules" icon="extension">
-          <div className="flex flex-col gap-3">
-            <p className="text-[13px] text-text-secondary">
-              Enable or disable company modules. Disabled modules are hidden from the HR sidebar and employee portal.
+          <div className="flex flex-col gap-1">
+            <p className="text-[13px] text-text-secondary mb-2">
+              Turn main modules on or off. Disabled modules are hidden from the sidebar and employee portal.
             </p>
-            {COMPANY_MODULE_SPECS.map(spec => (
+            {MAIN_MODULE_SPECS.map(spec => (
               <Toggle
-                key={spec.key}
+                key={spec.id}
                 label={spec.title}
-                description={spec.description}
-                checked={isModuleEnabled(enabledModules, spec.key, spec.defaultIfMissing)}
-                onChange={v => toggleModule(spec.key, v)}
+                checked={isMainModuleEnabled(enabledModules, spec)}
+                onChange={v => toggleMainModule(spec.id, v)}
                 disabled={!isHrOrAbove || modulesBusy}
               />
             ))}
             {modulesMsg && (
-              <p className={`text-[12px] ${modulesMsg.includes('Failed') ? 'text-danger' : 'text-text-secondary'}`}>
+              <p className={`text-[12px] mt-2 ${modulesMsg.includes('Failed') ? 'text-danger' : 'text-text-secondary'}`}>
                 {modulesMsg}
               </p>
             )}
@@ -610,7 +612,7 @@ export default function SettingsPage() {
               <button
                 onClick={saveModules}
                 disabled={modulesBusy}
-                className="self-start h-9 px-4 rounded-md bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors"
+                className="self-start mt-3 h-9 px-4 rounded-md bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors"
               >
                 {modulesBusy ? 'Saving…' : 'Save Modules'}
               </button>
@@ -1104,27 +1106,29 @@ function Toggle({
   disabled,
 }: {
   label: string
-  description: string
+  description?: string
   checked: boolean
   onChange: (v: boolean) => void
   disabled?: boolean
 }) {
   return (
-    <div className="flex items-start gap-4 py-2 border-b border-divider last:border-0">
-      <div className="flex-1">
+    <div className="flex items-center gap-4 py-2.5 border-b border-divider last:border-0">
+      <div className="flex-1 min-w-0">
         <p className="text-[13px] font-medium text-text-primary">{label}</p>
-        <p className="text-[12px] text-text-secondary mt-0.5">{description}</p>
+        {description ? (
+          <p className="text-[12px] text-text-secondary mt-0.5">{description}</p>
+        ) : null}
       </div>
       <button
         onClick={() => !disabled && onChange(!checked)}
         disabled={disabled}
         aria-checked={checked}
         role="switch"
-        className={`relative w-10 h-5.5 rounded-pill transition-colors shrink-0 mt-0.5 disabled:opacity-50 ${checked ? 'bg-primary' : 'bg-border'}`}
+        className={`relative rounded-pill transition-colors shrink-0 disabled:opacity-50 ${checked ? 'bg-primary' : 'bg-border'}`}
         style={{ height: '22px', width: '40px' }}
       >
         <span
-          className={`absolute top-0.5 left-0.5 w-4.5 h-4.5 rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-[18px]' : 'translate-x-0'}`}
+          className={`absolute top-0.5 left-0.5 rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-[18px]' : 'translate-x-0'}`}
           style={{ width: '18px', height: '18px' }}
         />
       </button>
