@@ -148,7 +148,7 @@ export default function PayrollPage() {
 
     const cid = companyIdRef.current!
 
-    const [{ data: paymentsData }, { data: locks }] = await Promise.all([
+    const [{ data: paymentsData, error: payErr }, { data: locks, error: lockErr }] = await Promise.all([
       supabase
         .from('payment_approvals')
         .select('*, employee:employees(name, surname, employee_code, bank_name, bank_account, bank_branch_code, id_number, tax_number, account_type)')
@@ -161,6 +161,13 @@ export default function PayrollPage() {
         .select('period_start, period_end')
         .eq('company_id', cid),
     ])
+
+    if (payErr || lockErr) {
+      setError(payErr?.message ?? lockErr?.message ?? 'Failed to load payroll')
+      setPayments([])
+      setLoading(false)
+      return
+    }
 
     setPayments((paymentsData ?? []) as PayrollRecord[])
     setIsLocked(

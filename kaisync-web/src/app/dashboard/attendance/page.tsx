@@ -11,6 +11,7 @@ import {
   fmtSessionTime,
   lateFlag,
   locationDisplay,
+  mergeNonWorkDays,
   totalHrsDisplay,
   type PunchLike,
   type PunchSessionRow,
@@ -40,6 +41,18 @@ type DisplaySession = {
 }
 
 const todayStr = () => new Date().toISOString().split('T')[0]
+
+function eachDateInclusive(from: string, to: string): string[] {
+  const out: string[] = []
+  const cur = new Date(from + 'T12:00:00')
+  const end = new Date(to + 'T12:00:00')
+  if (Number.isNaN(cur.getTime()) || Number.isNaN(end.getTime())) return out
+  while (cur <= end) {
+    out.push(cur.toISOString().split('T')[0])
+    cur.setDate(cur.getDate() + 1)
+  }
+  return out
+}
 
 function getRange(
   preset: Preset,
@@ -221,30 +234,70 @@ export default function AttendancePage() {
 
   async function fetchPunchesWithParams(cid: string) {
     setLoading(true)
+    setError(null)
     const supabase = createClient()
     const { from, to } = getRange(presetRef.current, customFromRef.current, customToRef.current)
 
-    const [{ data: empData }, { data: punchData }, { data: tmplData }, { data: companyRow }, { data: coSettings }] =
-      await Promise.all([
-        supabase.from('employees')
-          .select('id, name, surname, employee_code, hourly_rate, daily_hours, shift_template_id')
-          .eq('company_id', cid)
-          .eq('is_active', true),
-        supabase.from('time_punches')
-          .select('id, employee_id, type, date_time, created_at, latitude, longitude, address, job_id, notes')
-          .eq('company_id', cid)
-          .gte('date_time', `${from}T00:00:00`)
-          .lte('date_time', `${to}T23:59:59`)
-          .order('date_time', { ascending: true }),
-        supabase.from('employee_shift_templates')
-          .select('id, start_time, end_time, break_minutes')
-          .eq('company_id', cid),
-        supabase.from('companies')
-          .select('custom_settings')
-          .eq('id', cid)
-          .maybeSingle(),
-        supabase.rpc('get_company_settings', { p_company_id: cid }),
-      ])
+    const [
+      empRes,
+      punchRes,
+      tmplRes,
+      companyRes,
+      settingsRes,
+      leaveRes,
+      absenceRes,
+    ] = await Promise.all([
+      supabase.from('employees')
+        .select('id, name, surname, employee_code, hourly_rate, daily_hours, shift_template_id')
+        .eq('company_id', cid)
+        .eq('is_active', true),
+      supabase.from('time_punches')
+        .select('id, employee_id, type, date_time, created_at, latitude, longitude, address, job_id, notes')
+        .eq('company_id', cid)
+        .gte('date_time', `${from}T00:00:00`)
+        .lte('date_time', `${to}T23:59:59`)
+        .order('date_time', { ascending: true }),
+      supabase.from('employee_shift_templates')
+        .select('id, start_time, end_time, break_minutes')
+        .eq('company_id', cid),
+      supabase.from('companies')
+        .select('custom_settings')
+        .eq('id', cid)
+        .maybeSingle(),
+      supabase.rpc('get_company_settings', { p_company_id: cid }),
+      supabase.from('leave_requests')
+        .select('employee_id, start_date, end_date, leave_type, status')
+        .eq('company_id', cid)
+        .eq('status', 'approved')
+        .lte('start_date', to)
+        .gte('end_date', from),
+      supabase.from('daily_absences')
+        .select('employee_id, date, reason, note')
+        .eq('company_id', cid)
+        .gte('date', from)
+        .lte('date', to),
+    ])
+
+    const firstErr =
+      empRes.error?.message ||
+      punchRes.error?.message ||
+      tmplRes.error?.message ||
+      companyRes.error?.message ||
+      settingsRes.error?.message ||
+      leaveRes.error?.message ||
+      absenceRes.error?.message
+    if (firstErr) {
+      setError(firstErr)
+      setSessions([])
+      setLoading(false)
+      return
+    }
+
+    const empData = empRes.data
+    const punchData = punchRes.data
+    const tmplData = tmplRes.data
+    const companyRow = companyRes.data
+    const coSettings = settingsRes.data
 
     const cs = (companyRow?.custom_settings ?? {}) as Record<string, unknown>
     const lateMin = Number(cs.late_threshold_minutes ?? 30) || 30
@@ -272,13 +325,42 @@ export default function AttendancePage() {
       punchesByEmp.set(p.employee_id, list)
     }
 
+    const leaveByEmp = new Map<string, { date: string; leave_type: string }[]>()
+    for (const l of (leaveRes.data ?? []) as {
+      employee_id: string
+      start_date: string
+      end_date: string
+      leave_type: string
+    }[]) {
+      if (scope && !scope.has(l.employee_id)) continue
+      const days = leaveByEmp.get(l.employee_id) ?? []
+      for (const d of eachDateInclusive(l.start_date, l.end_date)) {
+        if (d >= from && d <= to) days.push({ date: d, leave_type: l.leave_type })
+      }
+      leaveByEmp.set(l.employee_id, days)
+    }
+
+    const absencesByEmp = new Map<string, { date: string; reason?: string | null; note?: string | null }[]>()
+    for (const a of (absenceRes.data ?? []) as {
+      employee_id: string
+      date: string
+      reason?: string | null
+      note?: string | null
+    }[]) {
+      if (scope && !scope.has(a.employee_id)) continue
+      const list = absencesByEmp.get(a.employee_id) ?? []
+      list.push({ date: a.date, reason: a.reason, note: a.note })
+      absencesByEmp.set(a.employee_id, list)
+    }
+
     const built: DisplaySession[] = []
-    for (const [empId, punches] of punchesByEmp) {
+    const employeeIds = new Set([...empMap.keys(), ...punchesByEmp.keys(), ...leaveByEmp.keys(), ...absencesByEmp.keys()])
+    for (const empId of employeeIds) {
       const emp = empMap.get(empId)
       const template = emp?.shift_template_id
         ? tmplMap.get(emp.shift_template_id) ?? null
         : null
-      const rows = buildPunchSessions(punches, {
+      const opts = {
         employeeId: empId,
         employeeName: emp ? `${emp.name} ${emp.surname}` : 'Unknown',
         dailyHours: emp?.daily_hours ?? 8,
@@ -286,7 +368,14 @@ export default function AttendancePage() {
         otStartAfterMinutes: otMin,
         shiftTemplate: template,
         timeZone,
-      })
+      }
+      let rows = buildPunchSessions(punchesByEmp.get(empId) ?? [], opts)
+      rows = mergeNonWorkDays(
+        rows,
+        absencesByEmp.get(empId) ?? [],
+        leaveByEmp.get(empId) ?? [],
+        opts,
+      )
       for (const row of rows) built.push(toDisplay(row, emp))
     }
 
@@ -343,6 +432,10 @@ export default function AttendancePage() {
           </button>
         </div>
       </div>
+
+      {error && error !== 'not_linked' && (
+        <p className="mb-4 text-error text-[13px]">{error}</p>
+      )}
 
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         {PRESETS.map(p => (

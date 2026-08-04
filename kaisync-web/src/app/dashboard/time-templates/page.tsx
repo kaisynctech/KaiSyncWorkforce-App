@@ -21,13 +21,18 @@ export default function TimeTemplatesPage() {
     setCompanyId(member.companyId)
 
     // employee_shift_templates is the UUID-based table used by hr_ RPCs
-    const { data } = await supabase
+    const { data, error: loadErr } = await supabase
       .from('employee_shift_templates')
       .select('*')
       .eq('company_id', member.companyId)
       .order('name')
 
-    setTemplates((data ?? []) as ShiftTemplate[])
+    if (loadErr) {
+      setError(loadErr.message)
+      setTemplates([])
+    } else {
+      setTemplates((data ?? []) as ShiftTemplate[])
+    }
     setLoading(false)
   }, [])
 
@@ -35,24 +40,29 @@ export default function TimeTemplatesPage() {
 
   async function setDefault(id: string) {
     if (!companyId) return
+    setError(null)
     const supabase = createClient()
     const { error: rpcErr } = await supabase.rpc('hr_set_default_shift_template', {
       p_company_id: companyId,
       p_template_id: id,
     })
-    if (rpcErr) console.error('set default template:', rpcErr.message)
-    load()
+    if (rpcErr) {
+      setError(rpcErr.message)
+      return
+    }
+    await load()
   }
 
   async function deleteTemplate(id: string) {
     if (!companyId || !window.confirm('Delete this template?')) return
+    setError(null)
     const supabase = createClient()
     const { error: rpcErr } = await supabase.rpc('hr_delete_shift_template', {
       p_id: id,
       p_company_id: companyId,
     })
     if (rpcErr) {
-      console.error('delete template:', rpcErr.message)
+      setError(rpcErr.message)
       return
     }
     setTemplates(prev => prev.filter(t => t.id !== id))
@@ -80,6 +90,10 @@ export default function TimeTemplatesPage() {
           + Add Template
         </button>
       </div>
+
+      {error && error !== 'not_linked' && (
+        <p className="px-4 py-2 text-error text-[13px]">{error}</p>
+      )}
 
       {/* Card list */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">

@@ -62,7 +62,7 @@ export default function CreateEmployeePage() {
   const [bankName, setBankName] = useState('')
   const [accountNumber, setAccountNumber] = useState('')
   const [bankBranchCode, setBankBranchCode] = useState('')
-  const [accountType, setAccountType] = useState('Cheque')
+  const [accountType, setAccountType] = useState('')
 
   // Invite
   const [sendInvite, setSendInvite] = useState(false)
@@ -388,6 +388,7 @@ export default function CreateEmployeePage() {
             placeholder="6-digit branch code" className={entryClass} />
         </FormField>
         <FormSelect label="Account type" value={accountType} onChange={e => setAccountType(e.target.value)}>
+          <option value="">Not set</option>
           {ACCOUNT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
         </FormSelect>
       </SectionCard>

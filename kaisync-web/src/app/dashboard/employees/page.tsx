@@ -634,7 +634,7 @@ export default function EmployeesPage() {
                   </thead>
                   <tbody>
                     {filteredEmployees.map(emp => {
-                      const badge = ACCESS_BADGES[emp.access_level]
+                      const badge = ACCESS_BADGES[normalizeAccessLevel(emp.access_level)]
                       return (
                         <tr
                           key={emp.id}

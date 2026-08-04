@@ -95,6 +95,25 @@ export default function PayslipDetailPage() {
     setBusy(true)
     setErrorMsg(null)
     const supabase = createClient()
+
+    const { data: lockRow, error: lockErr } = await supabase
+      .from('payroll_period_locks')
+      .select('company_id')
+      .eq('company_id', payment.company_id)
+      .eq('period_start', payment.period_start)
+      .eq('period_end', payment.period_end)
+      .maybeSingle()
+    if (lockErr) {
+      setBusy(false)
+      setErrorMsg(lockErr.message)
+      return
+    }
+    if (lockRow) {
+      setBusy(false)
+      setErrorMsg('This payroll period is locked and cannot be recalculated.')
+      return
+    }
+
     const result = await recalculatePayslip(supabase, payment.company_id, paymentId, {
       payFullBaseSalary: payFullSalary,
       waivePenalties,
@@ -103,7 +122,7 @@ export default function PayslipDetailPage() {
       bonusAmount: bonusAmount ? parseFloat(bonusAmount) : null,
     })
     // Persist note fields separately (engine doesn't write notes)
-    await supabase.from('payment_approvals').update({
+    const { error: noteErr } = await supabase.from('payment_approvals').update({
       adjustment_note: adjustmentNote || null,
       bonus_note: bonusNote || null,
     }).eq('id', paymentId)
@@ -111,6 +130,11 @@ export default function PayslipDetailPage() {
     setBusy(false)
     if (!result.ok) {
       setErrorMsg(result.message)
+      return
+    }
+    if (noteErr) {
+      setErrorMsg(`Recalculated, but notes failed to save: ${noteErr.message}`)
+      await load()
       return
     }
     await load()
