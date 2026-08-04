@@ -7,7 +7,6 @@ import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import {
   normalizeAccessLevel,
   normalizeEmploymentType,
-  normalizeWorkerType,
 } from '@/lib/employee-taxonomy'
 import { resolveBranchIdByName, resolveManagerIdByName } from '@/lib/employee-org'
 import { createEmployee } from '@/lib/employees'
@@ -212,7 +211,7 @@ export default function ImportEmployeesPage() {
         managerId,
         accessLevel: normalizeAccessLevel(cell(emp.raw, 'Access Level', 'AccessLevel')),
         employmentType: normalizeEmploymentType(cell(emp.raw, 'Employment Type', 'EmploymentType', 'Type')),
-        workerType: normalizeWorkerType(cell(emp.raw, 'Worker Type', 'WorkerType', 'Worker Category')),
+        workerType: 'employee',
         monthlySalary: parseNum(cell(emp.raw, 'Monthly Salary', 'MonthlySalary', 'Salary')),
         hourlyRate: parseNum(cell(emp.raw, 'Hourly Rate', 'HourlyRate')),
         dailyRate: parseNum(cell(emp.raw, 'Daily Rate', 'DailyRate')),

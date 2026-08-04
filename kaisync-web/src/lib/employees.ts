@@ -15,7 +15,6 @@ import {
   MANAGER_ACCESS_LEVELS,
   normalizeAccessLevel,
   normalizeEmploymentType,
-  normalizeWorkerType,
 } from '@/lib/employee-taxonomy'
 import { executeWithStepUp } from '@/lib/step-up'
 import type { Branch, Employee, ShiftTemplate } from '@/types/database'
@@ -183,7 +182,7 @@ export async function createEmployee(
   const payload = buildEmployeeCreatePayload({
     ...input,
     employmentType: normalizeEmploymentType(input.employmentType),
-    workerType: normalizeWorkerType(input.workerType),
+    workerType: 'employee',
     accessLevel: 'employee',
     department: org.department,
     branchId: org.branch_id,
@@ -304,7 +303,7 @@ export async function updateEmployee(
       branch: org.branch,
       shift_template_id: input.shiftTemplateId || null,
       employment_type: normalizeEmploymentType(input.employmentType),
-      worker_type: normalizeWorkerType(input.workerType),
+      worker_type: 'employee',
       manager_id: org.manager_id,
       manager_user_id: org.manager_user_id,
       employment_date: input.employmentDate || null,

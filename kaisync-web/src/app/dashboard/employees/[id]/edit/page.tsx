@@ -14,10 +14,8 @@ import { StepUpDialog } from '@/components/step-up-dialog'
 import {
   CREATE_ACCESS_LEVELS,
   EMPLOYMENT_TYPES,
-  WORKER_TYPES,
   normalizeAccessLevel,
   normalizeEmploymentType,
-  normalizeWorkerType,
 } from '@/lib/employee-taxonomy'
 import { sendEmployeeInvite } from '@/lib/employee-invite'
 import {
@@ -62,7 +60,6 @@ export default function EditEmployeePage() {
   const [branchId, setBranchId] = useState('')
   const [templateId, setTemplateId] = useState('')
   const [employmentType, setEmploymentType] = useState('permanent')
-  const [workerType, setWorkerType] = useState('employee')
   const [accessLevel, setAccessLevel] = useState('employee')
   const [managerId, setManagerId] = useState('')
   const [employmentDate, setEmploymentDate] = useState('')
@@ -145,7 +142,6 @@ export default function EditEmployeePage() {
     setBranchId(emp.branch_id ?? '')
     setTemplateId(emp.shift_template_id ?? '')
     setEmploymentType(normalizeEmploymentType(emp.employment_type))
-    setWorkerType(normalizeWorkerType(emp.worker_type))
     setAccessLevel(normalizeAccessLevel(emp.access_level))
     const raw = emp as Employee & {
       paye_rate_percent?: number | null
@@ -211,7 +207,7 @@ export default function EditEmployeePage() {
         branchName,
         shiftTemplateId: templateId || null,
         employmentType,
-        workerType,
+        workerType: 'employee',
         accessLevel,
         managerId: managerId || null,
         employmentDate: employmentDate || null,
@@ -456,14 +452,6 @@ export default function EditEmployeePage() {
             hint="Contract kind: permanent, contract, part-time, or student."
           >
             {EMPLOYMENT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-          </FormSelect>
-          <FormSelect
-            label="Worker type"
-            value={workerType}
-            onChange={e => setWorkerType(e.target.value)}
-            hint="Payroll classification. Required — not the same as access level."
-          >
-            {WORKER_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
           </FormSelect>
           <FormSelect
             label="Access level"

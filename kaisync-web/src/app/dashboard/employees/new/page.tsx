@@ -12,7 +12,6 @@ import { Toggle } from '@/components/Toggle'
 import {
   CREATE_ACCESS_LEVELS,
   EMPLOYMENT_TYPES,
-  WORKER_TYPES,
 } from '@/lib/employee-taxonomy'
 import { createEmployee, listBranches, listManagerOptions, listShiftTemplates } from '@/lib/employees'
 import { sendEmployeeInvite } from '@/lib/employee-invite'
@@ -43,7 +42,6 @@ export default function CreateEmployeePage() {
   const [branchId, setBranchId] = useState('')
   const [templateId, setTemplateId] = useState('')
   const [employmentType, setEmploymentType] = useState('permanent')
-  const [workerType, setWorkerType] = useState('employee')
   const [accessLevel, setAccessLevel] = useState('employee')
   const [managerId, setManagerId] = useState('')
   const [employmentDate, setEmploymentDate] = useState('')
@@ -132,7 +130,7 @@ export default function CreateEmployeePage() {
       branchName: branches.find(b => b.id === branchId)?.name ?? null,
       shiftTemplateId: templateId,
       employmentType,
-      workerType,
+      workerType: 'employee',
       accessLevel,
       managerId,
       employmentDate,
@@ -262,15 +260,6 @@ export default function CreateEmployeePage() {
           hint="Contract kind: permanent, contract, part-time, or student."
         >
           {EMPLOYMENT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-        </FormSelect>
-
-        <FormSelect
-          label="Worker type"
-          value={workerType}
-          onChange={e => setWorkerType(e.target.value)}
-          hint="Payroll classification. Required — defaults to Employee."
-        >
-          {WORKER_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
         </FormSelect>
 
         <FormSelect
