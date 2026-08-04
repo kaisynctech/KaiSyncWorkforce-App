@@ -64,7 +64,10 @@ export interface Company {
   id: string
   name: string
   owner_user_id: string
-  company_code: string | null
+  /** Live column on `companies` (e.g. "28"). */
+  code: string | null
+  /** @deprecated Alias — use `code`. Some RPCs still return this name. */
+  company_code?: string | null
   industry: string | null
   size_range: string | null
   address: string | null

@@ -499,7 +499,7 @@ export default function SettingsPage() {
             </Field>
             <Field label="Company Code">
               <div className="flex items-center gap-2 h-10 px-3 rounded-md border border-border bg-surface-elevated text-[13px] text-text-secondary">
-                <span className="font-mono">{company?.company_code ?? 'Not set'}</span>
+                <span className="font-mono">{company?.code ?? company?.company_code ?? 'Not set'}</span>
               </div>
             </Field>
             {isOwner && (
