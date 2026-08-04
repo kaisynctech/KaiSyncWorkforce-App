@@ -1302,14 +1302,14 @@ function ContractorDetailInner() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-[14px]" style={{ color: paymentHold ? '#F59E0B' : 'var(--color-text-primary)' }}>Payment Hold</p>
-                  <p className="text-text-secondary text-[11px]">Blocks all payouts to this contractor.</p>
+                  <p className="text-text-secondary text-[11px]">Warns before create/pay — optional to proceed.</p>
                 </div>
                 <Toggle checked={paymentHold} onChange={setPaymentHold} activeColor="#D97706" />
               </div>
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-[14px]" style={{ color: complianceHold ? '#EF4444' : 'var(--color-text-primary)' }}>Compliance Hold</p>
-                  <p className="text-text-secondary text-[11px]">Compliance documents missing or expired — blocks payments.</p>
+                  <p className="text-text-secondary text-[11px]">Warns before payouts when compliance is incomplete — optional to proceed.</p>
                 </div>
                 <Toggle checked={complianceHold} onChange={setComplianceHold} activeColor="#DC2626" />
               </div>

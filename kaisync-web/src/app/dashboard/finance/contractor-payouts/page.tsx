@@ -5,9 +5,21 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { calculateVatExclusive, fmtMoney, roundFinancial } from '@/lib/finance-calc'
 import { markContractorPayoutPaid } from '@/lib/finance-api'
+import {
+  collectContractorPayoutRisks,
+  confirmBatchContractorPayoutRisks,
+  confirmContractorPayoutRisks,
+  fetchContractorPayoutRiskFlagsByIds,
+} from '@/lib/contractor-payout-gate'
 import type { ContractorPayout } from '@/lib/finance-types'
 
-type ContractorOpt = { id: string; name: string }
+type ContractorOpt = {
+  id: string
+  name: string
+  banking_verified: boolean | null
+  payment_hold: boolean | null
+  compliance_hold: boolean | null
+}
 
 function netPayable(p: ContractorPayout) {
   return roundFinancial(Number(p.total_amount ?? 0) - Number(p.retention_amount ?? 0))
@@ -42,7 +54,7 @@ export default function ContractorPayoutsPage() {
         .order('created_at', { ascending: false }),
       supabase
         .from('contractors')
-        .select('id, name')
+        .select('id, name, banking_verified, payment_hold, compliance_hold')
         .eq('company_id', member.companyId)
         .eq('is_active', true)
         .order('name'),
@@ -61,6 +73,8 @@ export default function ContractorPayoutsPage() {
 
   async function create() {
     if (!companyId || !contractorId || !(Number(amount) > 0)) return
+    const selectedContractor = contractors.find(c => c.id === contractorId)
+    if (selectedContractor && !confirmContractorPayoutRisks(selectedContractor, 'Create payout')) return
     setBusy(true)
     const supabase = createClient()
     const calc = calculateVatExclusive(Number(amount), 0.15)
@@ -95,8 +109,16 @@ export default function ContractorPayoutsPage() {
 
   async function runPayment() {
     if (!actor || selected.size === 0) return
-    setBusy(true)
     const supabase = createClient()
+    const picks = rows.filter(r => selected.has(r.id))
+    const flagsById = await fetchContractorPayoutRiskFlagsByIds(
+      supabase,
+      picks.map(r => r.contractor_id).filter((id): id is string => Boolean(id)),
+    )
+    const flagged = [...flagsById.values()].filter(f => collectContractorPayoutRisks(f).length > 0)
+    if (!confirmBatchContractorPayoutRisks(flagged, 'Mark paid')) return
+
+    setBusy(true)
     for (const id of selected) {
       await markContractorPayoutPaid(supabase, id, 'eft', actor.id, actor.name)
     }

@@ -5,6 +5,10 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { calculateVatExclusive, fmtMoney, roundFinancial } from '@/lib/finance-calc'
+import {
+  confirmContractorPayoutRisks,
+  fetchContractorPayoutRiskFlags,
+} from '@/lib/contractor-payout-gate'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import type { ContractorPayout } from '@/lib/finance-types'
 
@@ -91,9 +95,12 @@ export function ContractorInvoicesTab({
       setError('Enter a valid amount (ex VAT).')
       return
     }
+    const supabase = createClient()
+    const flags = await fetchContractorPayoutRiskFlags(supabase, contractorId)
+    if (flags && !confirmContractorPayoutRisks(flags, 'Create payout')) return
+
     setBusy(true)
     setError(null)
-    const supabase = createClient()
     const calc = calculateVatExclusive(value, 0.15)
     const { error: insErr } = await supabase.from('contractor_payouts').insert({
       company_id: companyId,

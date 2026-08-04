@@ -12,6 +12,10 @@ import {
   rejectContractorPayout,
   rejectSupplierInvoice,
 } from '@/lib/finance-api'
+import {
+  confirmContractorPayoutRisks,
+  fetchContractorPayoutRiskFlags,
+} from '@/lib/contractor-payout-gate'
 import type { FinanceAuditEntry, ContractorPayout, SupplierInvoice } from '@/lib/finance-types'
 
 type PendingItem =
@@ -181,6 +185,10 @@ export default function FinanceApprovalsPage() {
                       disabled={busy === key}
                       onClick={() => act(key, async () => {
                         const supabase = createClient()
+                        if (r.contractor_id) {
+                          const flags = await fetchContractorPayoutRiskFlags(supabase, r.contractor_id)
+                          if (flags && !confirmContractorPayoutRisks(flags, 'Mark paid')) return
+                        }
                         if (needsApprove) await approveContractorPayout(supabase, r.id, actor!.id, actor!.name)
                         await markContractorPayoutPaid(supabase, r.id, 'eft', actor!.id, actor!.name)
                       })}
