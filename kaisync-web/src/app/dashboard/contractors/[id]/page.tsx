@@ -253,7 +253,7 @@ function ContractorDetailInner() {
     const supabase = createClient()
     const { data } = await supabase
       .from('job_contractors')
-      .select('*, jobs(id, title, status, scheduled_start, project_id)')
+      .select('*, jobs(id, title, status, scheduled_start, deal_id)')
       .eq('contractor_id', contractorId)
     setContractorJobs((data ?? []) as JobContractorRow[])
     setTabsLoaded(prev => new Set([...prev, 'Jobs']))

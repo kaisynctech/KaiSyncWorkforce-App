@@ -207,7 +207,7 @@ export default function ProjectsPage() {
                       <td className="data-td text-text-primary font-semibold text-[12px] text-right">{progress}%</td>
                       <td className="data-td text-center pr-2">
                         <button
-                          onClick={() => router.push(`/dashboard/projects/${p.id}`)}
+                          onClick={() => router.push(`/dashboard/projects/${p.id}?tab=payments`)}
                           className="bg-primary text-white rounded-lg h-7 px-2 text-[10px] font-medium"
                         >
                           + Pay
