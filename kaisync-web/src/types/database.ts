@@ -277,7 +277,6 @@ export interface Contractor {
   name: string
   contractor_code: string | null
   partner_kind?: string | null
-  is_supplier?: boolean
   registration_number?: string | null
   contact_person: string | null
   phone: string | null
@@ -292,16 +291,16 @@ export interface Contractor {
   rating: number
   notes: string | null
   contractor_code_expires_at: string | null
-  compliance_pack: string | null
+  compliance_pack_id: string | null
   bank_name: string | null
   bank_account: string | null
   account_holder_name: string | null
-  branch_code: string | null
+  bank_branch_code: string | null
   account_type: string | null
   swift_bic: string | null
   payment_terms: string | null
   preferred_payment_method: string | null
-  is_banking_verified: boolean
+  banking_verified: boolean
   payment_hold: boolean
   compliance_hold: boolean
   created_at: string
@@ -309,6 +308,7 @@ export interface Contractor {
 
 export interface ContractorTeamMember {
   id: string
+  company_id: string
   contractor_id: string
   employee_id: string
   role: string | null
@@ -318,11 +318,14 @@ export interface ContractorTeamMember {
 
 export interface PendingBankingUpdate {
   id: string
+  company_id: string
   contractor_id: string
   account_holder_name: string | null
   bank_name: string | null
   bank_account: string | null
+  bank_branch_code: string | null
   account_type: string | null
+  swift_bic: string | null
   submitted_at: string
   status: 'pending' | 'approved' | 'rejected'
 }
@@ -468,24 +471,44 @@ export interface PaymentApproval {
 
 export interface ComplianceDocument {
   id: string
+  company_id: string
   contractor_id: string
   document_type: string
-  document_name: string | null
-  is_required: boolean
-  status: 'valid' | 'expired' | 'pending' | 'rejected' | 'expiring'
+  document_name: string
+  file_url: string
+  storage_path: string | null
+  issue_date: string | null
   expiry_date: string | null
-  rejection_reason: string | null
+  approval_status: 'pending' | 'approved' | 'rejected'
+  rejected_reason: string | null
+  is_required: boolean
+  is_current: boolean
+  uploaded_by_role: string
   created_at: string
 }
 
-export interface ContractorActionItem {
+export interface ContractorCompliancePack {
   id: string
   company_id: string
+  name: string
+  pack_code: string
+  description: string | null
+  is_default: boolean
+  is_archived: boolean
+}
+
+/** Row shape from hr_get_contractor_action_items */
+export interface ContractorActionItem {
+  ref_id: string
   contractor_id: string
+  contractor_name: string
+  contractor_code: string
   action_type: string
   summary: string
+  amount: number | null
+  status: string
   created_at: string
-  contractors?: Pick<Contractor, 'name'>
+  priority: number
 }
 
 // ── Payroll ──────────────────────────────────────────────────────────────────

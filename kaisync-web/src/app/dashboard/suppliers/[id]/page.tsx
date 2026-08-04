@@ -13,10 +13,24 @@ import type { ComplianceDocument, Contractor, InventoryItem } from '@/types/data
 const TABS = ['Information', 'Payments', 'Inventory', 'Compliance'] as const
 type Tab = (typeof TABS)[number]
 
-const ACCOUNT_TYPES = ['Cheque / Current', 'Savings', 'Transmission']
-const PAYMENT_TERMS_OPTIONS = ['7 days', '14 days', '30 days', '60 days', 'On completion']
-const PAYMENT_METHODS = ['EFT', 'Cheque', 'Cash', 'Credit Card']
-const COMPLIANCE_PACKS = ['Standard', 'Premium', 'Basic', 'Government']
+const ACCOUNT_TYPES = [
+  { value: 'cheque', label: 'Cheque / Current' },
+  { value: 'savings', label: 'Savings' },
+  { value: 'transmission', label: 'Transmission' },
+]
+const PAYMENT_TERMS_OPTIONS = [
+  { value: '7_days', label: '7 days' },
+  { value: '14_days', label: '14 days' },
+  { value: '30_days', label: '30 days' },
+  { value: '60_days', label: '60 days' },
+  { value: 'on_completion', label: 'On completion' },
+]
+const PAYMENT_METHODS = [
+  { value: 'eft', label: 'EFT' },
+  { value: 'cheque', label: 'Cheque' },
+  { value: 'cash', label: 'Cash' },
+  { value: 'credit_card', label: 'Credit Card' },
+]
 
 const fmtR = (n: number) =>
   `R ${(n ?? 0).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -88,7 +102,7 @@ export default function SupplierDetailPage() {
     }
 
     const cont = c as Contractor & { partner_kind?: string | null; registration_number?: string | null }
-    if (!isSupplierKind(cont.partner_kind) && cont.is_supplier !== true) {
+    if (!isSupplierKind(cont.partner_kind)) {
       router.replace(`/dashboard/contractors/${supplierId}`)
       return
     }
@@ -111,20 +125,21 @@ export default function SupplierDetailPage() {
     setAccHolder(cont.account_holder_name ?? '')
     setPayBankName(cont.bank_name ?? '')
     setPayAccNumber(cont.bank_account ?? '')
-    setPayBranchCode(cont.branch_code ?? '')
+    setPayBranchCode(cont.bank_branch_code ?? '')
     setPaySwiftBic(cont.swift_bic ?? '')
-    setPayAccountType(cont.account_type ?? '')
-    setPayTerms(cont.payment_terms ?? '')
-    setPayMethod(cont.preferred_payment_method ?? '')
-    setBankingVerified(cont.is_banking_verified ?? false)
+    setPayAccountType(cont.account_type ?? 'cheque')
+    setPayTerms(cont.payment_terms ?? '30_days')
+    setPayMethod(cont.preferred_payment_method ?? 'eft')
+    setBankingVerified(cont.banking_verified ?? false)
     setPaymentHold(cont.payment_hold ?? false)
     setComplianceHold(cont.compliance_hold ?? false)
-    setCompliancePack(cont.compliance_pack ?? '')
+    setCompliancePack(cont.compliance_pack_id ?? '')
 
     const { data: docs } = await supabase
-      .from('compliance_documents')
+      .from('contractor_documents')
       .select('*')
       .eq('contractor_id', supplierId)
+      .eq('is_current', true)
     setComplianceDocs((docs ?? []) as ComplianceDocument[])
 
     const cId = cont.company_id
@@ -168,7 +183,6 @@ export default function SupplierDetailPage() {
       .update({
         name: name.trim(),
         partner_kind: partnerKind,
-        is_supplier: true,
         registration_number: regNumber.trim() || null,
         tax_number: taxNumber.trim() || null,
         is_vat_registered: isVatRegistered,
@@ -179,16 +193,16 @@ export default function SupplierDetailPage() {
         address: address.trim() || null,
         notes: notes.trim() || null,
         is_active: isActive,
-        compliance_pack: compliancePack || null,
+        compliance_pack_id: compliancePack || null,
         account_holder_name: accHolder.trim() || null,
         bank_name: payBankName.trim() || null,
         bank_account: payAccNumber.trim() || null,
-        branch_code: payBranchCode.trim() || null,
+        bank_branch_code: payBranchCode.trim() || null,
         swift_bic: paySwiftBic.trim() || null,
         account_type: payAccountType || null,
         payment_terms: payTerms || null,
         preferred_payment_method: payMethod || null,
-        is_banking_verified: bankingVerified,
+        banking_verified: bankingVerified,
         payment_hold: paymentHold,
         compliance_hold: complianceHold,
       })
@@ -373,7 +387,7 @@ export default function SupplierDetailPage() {
                 onChange={e => setPayBranchCode(e.target.value)} inputMode="numeric" className="dark-entry" />
               <FormSelect value={payAccountType} onChange={e => setPayAccountType(e.target.value)}>
                 <option value="">Account type…</option>
-                {ACCOUNT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                {ACCOUNT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
               </FormSelect>
               <input placeholder="SWIFT / BIC" value={paySwiftBic}
                 onChange={e => setPaySwiftBic(e.target.value)} className="dark-entry" />
@@ -383,11 +397,11 @@ export default function SupplierDetailPage() {
               <p className="section-label">PAYMENT SETTINGS</p>
               <FormSelect value={payTerms} onChange={e => setPayTerms(e.target.value)}>
                 <option value="">Payment terms…</option>
-                {PAYMENT_TERMS_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+                {PAYMENT_TERMS_OPTIONS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
               </FormSelect>
               <FormSelect value={payMethod} onChange={e => setPayMethod(e.target.value)}>
                 <option value="">Preferred payment method…</option>
-                {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+                {PAYMENT_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
               </FormSelect>
               <div className="flex items-center justify-between">
                 <div>
@@ -468,10 +482,10 @@ export default function SupplierDetailPage() {
         {tab === 'Compliance' && (
           <div className="flex-1 overflow-y-auto p-4 space-y-4 max-w-2xl">
             <SectionCard title="COMPLIANCE PACK">
-              <FormSelect label="Pack" value={compliancePack} onChange={e => setCompliancePack(e.target.value)}>
-                <option value="">None</option>
-                {COMPLIANCE_PACKS.map(p => <option key={p} value={p}>{p}</option>)}
-              </FormSelect>
+              <p className="text-[12px] text-text-secondary">
+                Compliance packs are managed on the contractor record when this partner is also a contractor.
+                Documents below load from contractor_documents.
+              </p>
             </SectionCard>
             <SectionCard title="DOCUMENTS">
               {complianceDocs.length === 0 ? (
@@ -481,7 +495,7 @@ export default function SupplierDetailPage() {
                   {complianceDocs.map(doc => (
                     <li key={doc.id} className="flex items-center justify-between text-[13px] border-b border-divider py-2">
                       <span className="text-text-primary">{doc.document_type}</span>
-                      <span className="text-text-secondary capitalize">{doc.status}</span>
+                      <span className="text-text-secondary capitalize">{doc.approval_status}</span>
                     </li>
                   ))}
                 </ul>

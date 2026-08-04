@@ -119,17 +119,16 @@ function NewContractorForm() {
       bank_name: bankName.trim() || null,
       bank_account: bankAccount.trim() || null,
       account_holder_name: accountHolder.trim() || null,
-      branch_code: branchCode.trim() || null,
+      bank_branch_code: branchCode.trim() || null,
       account_type: accountType || null,
       payment_terms: paymentTerms || null,
       preferred_payment_method: paymentMethod || null,
       is_active: true,
       rating: 0,
-      is_banking_verified: false,
+      banking_verified: false,
       payment_hold: false,
       compliance_hold: false,
-      // Legacy flag for older web lists that still filter is_supplier
-      is_supplier: partnerKind === PARTNER_KIND.supplier || partnerKind === PARTNER_KIND.both,
+      portal_enabled: false,
     }
 
     const { data, error: insertErr } = await supabase
@@ -166,7 +165,7 @@ function NewContractorForm() {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 max-w-2xl">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 w-full max-w-4xl">
         {error && (
           <div className="rounded-lg border border-error/30 bg-error/10 px-3 py-2 text-[13px] text-error">
             {error}

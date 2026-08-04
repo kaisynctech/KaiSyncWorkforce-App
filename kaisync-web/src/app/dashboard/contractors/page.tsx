@@ -12,17 +12,23 @@ import type { Contractor, ContractorActionItem } from '@/types/database'
 type FilterValue = 'active' | 'inactive' | 'all'
 
 const ACTION_TYPE_COLORS: Record<string, { bg: string; fg: string }> = {
-  compliance: { bg: '#FEE2E2', fg: '#991B1B' },
-  payment:    { bg: '#FEF3C7', fg: '#92400E' },
-  review:     { bg: '#DBEAFE', fg: '#1E40AF' },
+  quote_pending:     { bg: '#DBEAFE', fg: '#1E40AF' },
+  banking_pending:   { bg: '#FEF3C7', fg: '#92400E' },
+  document_pending:  { bg: '#E5E7EB', fg: '#374151' },
+  document_expiring: { bg: '#FEE2E2', fg: '#991B1B' },
+  compliance:        { bg: '#FEE2E2', fg: '#991B1B' },
+  payment:           { bg: '#FEF3C7', fg: '#92400E' },
+  review:            { bg: '#DBEAFE', fg: '#1E40AF' },
 }
 
 function getDefaultColor() { return { bg: '#E5E7EB', fg: '#374151' } }
 
 function getBankingBadge(c: Contractor) {
-  return c.bank_name && c.bank_account
+  return c.banking_verified
     ? { bg: '#DCFCE7', fg: '#166534', label: 'Verified' }
-    : { bg: '#1E293B', fg: '#94A3B8', label: 'Pending' }
+    : c.bank_name && c.bank_account
+      ? { bg: '#FEF3C7', fg: '#92400E', label: 'Pending' }
+      : { bg: '#1E293B', fg: '#94A3B8', label: 'None' }
 }
 
 function getStatusBadge(c: Contractor) {
@@ -55,18 +61,26 @@ export default function ContractorsPage() {
 
     const [cRes, aRes] = await Promise.all([
       supabase.from('contractors').select('*').eq('company_id', member.companyId).order('name'),
-      supabase
-        .from('contractor_action_items')
-        .select('*, contractors(name)')
-        .eq('company_id', member.companyId)
-        .order('created_at', { ascending: false })
-        .limit(20),
+      supabase.rpc('hr_get_contractor_action_items', { p_company_id: member.companyId }),
     ])
 
-    const rows = ((cRes.data ?? []) as (Contractor & { partner_kind?: string | null })[])
-      .filter(c => isContractorKind(c.partner_kind) || (!c.partner_kind && !c.is_supplier))
-    setContractors(rows as Contractor[])
-    setActionItems((aRes.data ?? []) as ContractorActionItem[])
+    if (cRes.error) {
+      setError(cRes.error.message)
+      setLoading(false)
+      return
+    }
+
+    const rows = ((cRes.data ?? []) as Contractor[])
+      .filter(c => isContractorKind(c.partner_kind) || !c.partner_kind)
+    setContractors(rows)
+
+    const actionRaw = aRes.data
+    const actionList = Array.isArray(actionRaw)
+      ? actionRaw
+      : typeof actionRaw === 'string'
+        ? JSON.parse(actionRaw)
+        : []
+    setActionItems((actionList ?? []) as ContractorActionItem[])
 
     const cId = member.companyId
     setCompanyId(cId)
@@ -256,19 +270,30 @@ export default function ContractorsPage() {
             actionItems.map(item => {
               const colors = ACTION_TYPE_COLORS[item.action_type] ?? getDefaultColor()
               return (
-                <div key={item.id}
+                <div key={`${item.action_type}-${item.ref_id}`}
                   className="grid items-center gap-x-2 px-3 py-2 border-t border-divider"
                   style={{ gridTemplateColumns: '110px 1fr 90px 70px' }}>
                   <span className="rounded-[5px] px-[6px] py-[3px] text-[10px] font-medium w-fit"
                     style={{ backgroundColor: colors.bg, color: colors.fg }}>
-                    {item.action_type}
+                    {item.action_type.replace(/_/g, ' ')}
                   </span>
                   <div className="overflow-hidden">
-                    <p className="text-text-primary text-[12px] font-medium truncate">{item.contractors?.name ?? '—'}</p>
+                    <p className="text-text-primary text-[12px] font-medium truncate">{item.contractor_name ?? '—'}</p>
                     <p className="text-text-secondary text-[11px] truncate">{item.summary}</p>
                   </div>
                   <p className="text-text-secondary text-[11px] text-right">{fmtDate(item.created_at)}</p>
-                  <button className="text-primary text-[11px] h-[30px] text-right hover:opacity-70 transition-opacity">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const tab =
+                        item.action_type === 'banking_pending' ? 'Payments'
+                          : item.action_type.startsWith('document_') ? 'Compliance'
+                            : item.action_type === 'quote_pending' ? 'Quotes'
+                              : 'Information'
+                      router.push(`/dashboard/contractors/${item.contractor_id}?tab=${tab}`)
+                    }}
+                    className="text-primary text-[11px] h-[30px] text-right hover:opacity-70 transition-opacity"
+                  >
                     Open →
                   </button>
                 </div>
@@ -314,10 +339,14 @@ export default function ContractorsPage() {
                 filtered.map(c => {
                   const banking = getBankingBadge(c)
                   const status = getStatusBadge(c)
-                  const payment = { bg: '#DCFCE7', fg: '#166534', label: 'Clear' }
-                  const compliance = c.compliance_pack
-                    ? { bg: '#DCFCE7', fg: '#166534', label: 'Compliant' }
-                    : { bg: '#1E293B', fg: '#94A3B8', label: 'No Pack' }
+                  const payment = c.payment_hold
+                    ? { bg: '#FEE2E2', fg: '#991B1B', label: 'Hold' }
+                    : { bg: '#DCFCE7', fg: '#166534', label: 'Clear' }
+                  const compliance = c.compliance_hold
+                    ? { bg: '#FEE2E2', fg: '#991B1B', label: 'Hold' }
+                    : c.compliance_pack_id
+                      ? { bg: '#DCFCE7', fg: '#166534', label: 'Pack' }
+                      : { bg: '#1E293B', fg: '#94A3B8', label: 'No Pack' }
 
                   return (
                     <tr
