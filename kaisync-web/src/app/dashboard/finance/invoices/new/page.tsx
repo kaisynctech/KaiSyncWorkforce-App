@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useEffect, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { calculateVatExclusive, roundFinancial } from '@/lib/finance-calc'
@@ -9,9 +9,18 @@ import { calculateVatExclusive, roundFinancial } from '@/lib/finance-calc'
 type ClientOpt = { id: string; name: string }
 
 export default function NewFinanceInvoicePage() {
+  return (
+    <Suspense fallback={<p className="text-center text-[13px] text-text-secondary py-10">Loading…</p>}>
+      <NewFinanceInvoiceInner />
+    </Suspense>
+  )
+}
+
+function NewFinanceInvoiceInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [clients, setClients] = useState<ClientOpt[]>([])
-  const [clientId, setClientId] = useState('')
+  const [clientId, setClientId] = useState(() => searchParams.get('clientId') ?? '')
   const [issueDate, setIssueDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [dueDate, setDueDate] = useState('')
   const [description, setDescription] = useState('Professional services')
@@ -19,6 +28,11 @@ export default function NewFinanceInvoicePage() {
   const [vatRate, setVatRate] = useState('15')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const fromQuery = searchParams.get('clientId')
+    if (fromQuery) setClientId(fromQuery)
+  }, [searchParams])
 
   useEffect(() => {
     void (async () => {

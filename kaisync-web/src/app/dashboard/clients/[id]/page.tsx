@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState, type DragEvent } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { Suspense, useEffect, useState, type DragEvent } from 'react'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
@@ -12,15 +12,42 @@ import {
   nextClientCode,
 } from '@/lib/client-create-payload'
 import { createClientRecord } from '@/lib/clients'
+import { logClientEvent } from '@/lib/client-events'
 import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
 import { Toggle } from '@/components/Toggle'
 import { StatusBadge } from '@/components/ui/StatusBadge'
-import type { Client, Site, Project } from '@/types/database'
+import { ClientActivityTab } from '@/components/ClientActivityTab'
+import { fmtMoney } from '@/lib/finance-calc'
+import type { Client, Site, Project, ProjectDocument } from '@/types/database'
+import type { FinanceInvoice } from '@/lib/finance-types'
 
-const CLIENT_TABS = ['info', 'projects', 'jobs'] as const
+const CLIENT_TABS = ['info', 'projects', 'jobs', 'invoices', 'documents', 'activity'] as const
 type ClientTab = typeof CLIENT_TABS[number]
 
-type ClientJob = { id: string; title: string; status: string; created_at: string }
+const TAB_LABELS: Record<ClientTab, string> = {
+  info: 'Information',
+  projects: 'Projects',
+  jobs: 'Jobs',
+  invoices: 'Invoices',
+  documents: 'Documents',
+  activity: 'Activity',
+}
+
+type ClientJob = {
+  id: string
+  title: string
+  status: string
+  created_at: string
+  job_code: string | null
+  deal_id: string | null
+  assignee_employee_id: string | null
+  project_code?: string | null
+  assignee_name?: string | null
+}
+
+type ClientDocRow = ProjectDocument & {
+  project_title?: string | null
+}
 
 const JOB_STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
   open:        { bg: '#DBEAFE', fg: '#1E40AF' },
@@ -41,20 +68,51 @@ const PROJECT_STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
 const PROJECT_STATUS_OPTIONS = ['draft', 'sent', 'negotiation', 'in_progress', 'won', 'lost']
 const BOARD_STAGES = ['draft', 'sent', 'negotiation', 'in_progress', 'won', 'lost'] as const
 
+const INVOICE_STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
+  draft:          { bg: '#E5E7EB', fg: '#6B7280' },
+  sent:           { bg: '#DBEAFE', fg: '#1E40AF' },
+  viewed:         { bg: '#E0E7FF', fg: '#3730A3' },
+  partially_paid: { bg: '#FEF3C7', fg: '#92400E' },
+  paid:           { bg: '#DCFCE7', fg: '#166534' },
+  overdue:        { bg: '#FEE2E2', fg: '#991B1B' },
+  cancelled:      { bg: '#E5E7EB', fg: '#6B7280' },
+}
+
 const fmtCurrency = (n: number | null) =>
   n != null ? `R ${n.toLocaleString('en-ZA', { minimumFractionDigits: 0 })}` : '—'
 
+function empName(e: { name?: string; surname?: string } | null | undefined): string {
+  if (!e) return '—'
+  return `${e.name ?? ''} ${e.surname ?? ''}`.trim() || '—'
+}
+
 export default function ClientDetailPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center h-full">
+        <span className="text-text-secondary text-[13px]">Loading…</span>
+      </div>
+    }>
+      <ClientDetailInner />
+    </Suspense>
+  )
+}
+
+function ClientDetailInner() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const clientId = params.id
   const isNew = clientId === 'new'
+  const focusId = searchParams.get('focus')
 
   const [tab, setTab] = useState<ClientTab>('info')
   const [client, setClient] = useState<Client | null>(null)
   const [sites, setSites] = useState<Site[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [clientJobs, setClientJobs] = useState<ClientJob[]>([])
+  const [invoices, setInvoices] = useState<FinanceInvoice[]>([])
+  const [documents, setDocuments] = useState<ClientDocRow[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [isBusy, setIsBusy] = useState(false)
@@ -86,7 +144,138 @@ export default function ClientDetailPage() {
   const showRelatedTabs = !isNew && !!client
   const hasClientCode = !!client?.client_code
 
-  useEffect(() => { load() }, [clientId])
+  useEffect(() => {
+    const t = searchParams.get('tab')
+    if (t && (CLIENT_TABS as readonly string[]).includes(t)) setTab(t as ClientTab)
+  }, [searchParams])
+
+  useEffect(() => {
+    if (tab !== 'invoices' || !focusId) return
+    const el = document.getElementById(`client-invoice-${focusId}`)
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [tab, focusId, invoices, loading])
+
+  useEffect(() => {
+    if (tab !== 'projects' || !focusId) return
+    const el = document.getElementById(`client-project-${focusId}`)
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [tab, focusId, projects, loading])
+
+  useEffect(() => { void load() }, [clientId])
+
+  async function loadJobs(
+    supabase: ReturnType<typeof createClient>,
+    projectRows: Project[],
+  ): Promise<ClientJob[]> {
+    const rich = await supabase
+      .from('jobs')
+      .select(`
+        id, title, status, created_at, job_code, deal_id, assignee_employee_id,
+        client_deals:deal_id(project_code),
+        assignee:assignee_employee_id(name, surname)
+      `)
+      .eq('client_id', clientId)
+      .order('created_at', { ascending: false })
+
+    if (!rich.error && rich.data) {
+      return (rich.data as unknown as Array<Record<string, unknown>>).map(j => {
+        const deal = j.client_deals as { project_code?: string | null } | null
+        const assignee = j.assignee as { name?: string; surname?: string } | null
+        return {
+          id: String(j.id),
+          title: String(j.title ?? ''),
+          status: String(j.status ?? ''),
+          created_at: String(j.created_at ?? ''),
+          job_code: (j.job_code as string | null) ?? null,
+          deal_id: (j.deal_id as string | null) ?? null,
+          assignee_employee_id: (j.assignee_employee_id as string | null) ?? null,
+          project_code: deal?.project_code ?? null,
+          assignee_name: empName(assignee),
+        }
+      })
+    }
+
+    const { data: plain } = await supabase
+      .from('jobs')
+      .select('id, title, status, created_at, job_code, deal_id, assignee_employee_id')
+      .eq('client_id', clientId)
+      .order('created_at', { ascending: false })
+
+    const rows = (plain ?? []) as Array<{
+      id: string
+      title: string
+      status: string
+      created_at: string
+      job_code: string | null
+      deal_id: string | null
+      assignee_employee_id: string | null
+    }>
+
+    const codeByDeal = new Map(projectRows.map(p => [p.id, p.project_code]))
+    const assigneeIds = [...new Set(rows.map(r => r.assignee_employee_id).filter((id): id is string => Boolean(id)))]
+    const nameById = new Map<string, string>()
+    if (assigneeIds.length > 0) {
+      const { data: emps } = await supabase
+        .from('employees')
+        .select('id, name, surname')
+        .in('id', assigneeIds)
+      for (const e of emps ?? []) {
+        nameById.set((e as { id: string }).id, empName(e as { name?: string; surname?: string }))
+      }
+    }
+
+    return rows.map(j => ({
+      ...j,
+      project_code: j.deal_id ? (codeByDeal.get(j.deal_id) ?? null) : null,
+      assignee_name: j.assignee_employee_id ? (nameById.get(j.assignee_employee_id) ?? '—') : '—',
+    }))
+  }
+
+  async function loadDocuments(
+    supabase: ReturnType<typeof createClient>,
+    dealIds: string[],
+  ): Promise<ClientDocRow[]> {
+    if (dealIds.length === 0) return []
+
+    const joined = await supabase
+      .from('project_documents')
+      .select('id, company_id, deal_id, document_name, document_type, file_url, created_at, client_deals!inner(id, title, client_id)')
+      .eq('client_deals.client_id', clientId)
+      .order('created_at', { ascending: false })
+
+    if (!joined.error && joined.data) {
+      return (joined.data as unknown as Array<Record<string, unknown>>).map(d => {
+        const deal = d.client_deals as { title?: string } | null
+        return {
+          id: String(d.id),
+          company_id: String(d.company_id),
+          deal_id: String(d.deal_id),
+          document_name: String(d.document_name ?? ''),
+          document_type: (d.document_type as string | null) ?? null,
+          file_url: String(d.file_url ?? ''),
+          created_at: String(d.created_at ?? ''),
+          project_title: deal?.title ?? null,
+        }
+      })
+    }
+
+    const { data } = await supabase
+      .from('project_documents')
+      .select('id, company_id, deal_id, document_name, document_type, file_url, created_at')
+      .in('deal_id', dealIds)
+      .order('created_at', { ascending: false })
+
+    const titleByDeal = new Map(
+      (await supabase.from('client_deals').select('id, title').in('id', dealIds)).data?.map(
+        (p: { id: string; title: string }) => [p.id, p.title],
+      ) ?? [],
+    )
+
+    return ((data ?? []) as ProjectDocument[]).map(d => ({
+      ...d,
+      project_title: titleByDeal.get(d.deal_id) ?? null,
+    }))
+  }
 
   async function load() {
     setLoading(true)
@@ -113,11 +302,15 @@ export default function ClientDetailPage() {
       return
     }
 
-    const [cRes, sRes, pRes, jRes] = await Promise.all([
+    const [cRes, sRes, pRes, iRes] = await Promise.all([
       supabase.from('clients').select('*').eq('id', clientId).single(),
       supabase.from('sites').select('*').eq('client_id', clientId),
       supabase.from('client_deals').select('*, employees:manager_employee_id(name, surname)').eq('client_id', clientId).order('created_at', { ascending: false }),
-      supabase.from('jobs').select('id, title, status, created_at').eq('client_id', clientId).order('created_at', { ascending: false }),
+      supabase
+        .from('finance_invoices')
+        .select('id, invoice_number, status, issue_date, due_date, total_amount, balance_due, client_id, company_id')
+        .eq('client_id', clientId)
+        .order('issue_date', { ascending: false }),
     ])
 
     if (!cRes.data) { router.push('/dashboard/clients'); return }
@@ -133,9 +326,18 @@ export default function ClientDetailPage() {
     setNotes(c.notes ?? '')
     setPortalEnabled(c.portal_enabled ?? false)
 
+    const projectRows = (pRes.data ?? []) as Project[]
     setSites((sRes.data ?? []) as Site[])
-    setProjects((pRes.data ?? []) as Project[])
-    setClientJobs((jRes.data ?? []) as ClientJob[])
+    setProjects(projectRows)
+    setInvoices((iRes.data ?? []) as FinanceInvoice[])
+
+    const [jobs, docs] = await Promise.all([
+      loadJobs(supabase, projectRows),
+      loadDocuments(supabase, projectRows.map(p => p.id)),
+    ])
+    setClientJobs(jobs)
+    setDocuments(docs)
+
     const cId = c.company_id
     const { data: xStatus } = await (supabase.rpc as any)('get_xero_connection_status', { p_company_id: cId })
     setXeroConnected(xStatus?.connected ?? false)
@@ -184,6 +386,7 @@ export default function ClientDetailPage() {
     setError(null)
     const supabase = createClient()
     const type = normalizeClientType(clientType)
+    const prevPortal = client?.portal_enabled ?? false
 
     if (isNew) {
       const member = await resolveCurrentMember(supabase)
@@ -203,7 +406,6 @@ export default function ClientDetailPage() {
       if (!created.ok) { setError(created.message); setSaving(false); return }
       router.push(`/dashboard/clients/${created.data.id}`)
     } else {
-      // Omit client_code so an existing permanent code is never blanked on save
       const payload: Record<string, unknown> = {
         name: name.trim(),
         type,
@@ -216,15 +418,33 @@ export default function ClientDetailPage() {
       }
 
       const { error: e } = await supabase.from('clients').update(payload).eq('id', clientId)
-      if (e) setError(e.message)
-      else setClient(prev => prev
-        ? { ...prev, ...payload, type, portal_enabled: portalEnabled } as Client
-        : prev)
+      if (e) {
+        setError(e.message)
+      } else {
+        setClient(prev => prev
+          ? { ...prev, ...payload, type, portal_enabled: portalEnabled } as Client
+          : prev)
+        if (client?.company_id) {
+          await logClientEvent(supabase, {
+            companyId: client.company_id,
+            screen: 'HrClientDetails',
+            action: 'client_profile_updated',
+            meta: { client_id: clientId, name: name.trim() },
+          })
+          if (prevPortal !== portalEnabled) {
+            await logClientEvent(supabase, {
+              companyId: client.company_id,
+              screen: 'HrClientDetails',
+              action: portalEnabled ? 'client_portal_enabled' : 'client_portal_disabled',
+              meta: { client_id: clientId },
+            })
+          }
+        }
+      }
     }
     setSaving(false)
   }
 
-  /** Assign a permanent C#### code once if missing — never rotates/replaces an existing code. */
   async function ensurePermanentClientCode(): Promise<string | null> {
     if (!canEdit) return null
     if (!client?.company_id) return null
@@ -253,16 +473,39 @@ export default function ClientDetailPage() {
 
   async function handlePortalToggle(next: boolean) {
     if (!canEdit) return
+    const prev = portalEnabled
     setPortalEnabled(next)
-    if (isNew || !next || hasClientCode || !client?.company_id) return
+    if (isNew || !client?.company_id) return
 
     setIsBusy(true)
     setError(null)
-    const code = await ensurePermanentClientCode()
-    if (code) {
-      const supabase = createClient()
+    const supabase = createClient()
+
+    if (next && !hasClientCode) {
+      const code = await ensurePermanentClientCode()
+      if (!code) { setPortalEnabled(prev); setIsBusy(false); return }
       await supabase.from('clients').update({ portal_enabled: true }).eq('id', clientId)
+      await logClientEvent(supabase, {
+        companyId: client.company_id,
+        screen: 'HrClientDetails',
+        action: 'client_portal_enabled',
+        meta: { client_id: clientId },
+      })
       await load()
+    } else {
+      const { error: e } = await supabase.from('clients').update({ portal_enabled: next }).eq('id', clientId)
+      if (e) {
+        setError(e.message)
+        setPortalEnabled(prev)
+      } else {
+        setClient(c => c ? { ...c, portal_enabled: next } : c)
+        await logClientEvent(supabase, {
+          companyId: client.company_id,
+          screen: 'HrClientDetails',
+          action: next ? 'client_portal_enabled' : 'client_portal_disabled',
+          meta: { client_id: clientId },
+        })
+      }
     }
     setIsBusy(false)
   }
@@ -282,6 +525,12 @@ export default function ClientDetailPage() {
     if (e) {
       setError(e.message)
     } else {
+      await logClientEvent(supabase, {
+        companyId: client.company_id,
+        screen: 'HrClientDetails',
+        action: 'client_site_added',
+        meta: { client_id: clientId, site_name: siteName.trim() },
+      })
       setSiteName('')
       setSiteAddress('')
       setAddingSite(false)
@@ -329,6 +578,15 @@ export default function ClientDetailPage() {
     }
   }
 
+  function selectTab(t: ClientTab) {
+    setTab(t)
+    if (!isNew) {
+      const params = new URLSearchParams(searchParams.toString())
+      params.set('tab', t)
+      router.replace(`/dashboard/clients/${clientId}?${params.toString()}`, { scroll: false })
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -339,7 +597,6 @@ export default function ClientDetailPage() {
 
   return (
     <div className="h-full flex flex-col">
-      {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-divider shrink-0 bg-surface">
         <div className="flex items-center gap-3">
           <Link href="/dashboard/clients" className="text-text-secondary hover:text-text-primary transition-colors">
@@ -392,23 +649,20 @@ export default function ClientDetailPage() {
 
       {error && <p className="px-4 py-2 text-error text-[13px] shrink-0">{error}</p>}
 
-      {/* Tab bar */}
       {showRelatedTabs && (
-        <div className="grid grid-cols-3 gap-2 mx-4 my-2 shrink-0">
+        <div className="flex flex-wrap gap-2 mx-4 my-2 shrink-0 overflow-x-auto">
           {CLIENT_TABS.map(t => (
-            <button key={t} onClick={() => setTab(t)}
-              className="h-[38px] rounded-[10px] text-[12px] font-medium transition-colors"
+            <button key={t} onClick={() => selectTab(t)}
+              className="h-[38px] px-3 rounded-[10px] text-[12px] font-medium transition-colors whitespace-nowrap shrink-0"
               style={{ backgroundColor: tab === t ? '#3B82F6' : '#FFFFFF', color: tab === t ? '#FFFFFF' : '#6B7280' }}>
-              {t === 'info' ? 'Information' : t === 'projects' ? 'Projects' : 'Jobs'}
+              {TAB_LABELS[t]}
             </button>
           ))}
         </div>
       )}
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 max-w-2xl">
+      <div className={`flex-1 overflow-y-auto p-4 space-y-4 ${tab === 'activity' ? 'max-w-3xl' : 'max-w-2xl'}`}>
 
-        {/* ── INFORMATION ── */}
         {(isNew || tab === 'info') && (
           <>
             <div className="card p-4 space-y-3">
@@ -441,7 +695,6 @@ export default function ClientDetailPage() {
                 rows={3} className="dark-entry min-h-[72px] py-3 resize-none" />
             </div>
 
-            {/* Client Portal Access */}
             <div className="card p-4 space-y-3">
               <p className="section-label">CLIENT PORTAL</p>
               <div className="flex items-center justify-between py-1">
@@ -488,7 +741,6 @@ export default function ClientDetailPage() {
               )}
             </div>
 
-            {/* Sites */}
             {showRelatedTabs && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
@@ -548,7 +800,6 @@ export default function ClientDetailPage() {
           </>
         )}
 
-        {/* ── PROJECTS ── */}
         {showRelatedTabs && tab === 'projects' && (
           <div className="space-y-3">
             <div className="flex items-center justify-between">
@@ -558,7 +809,6 @@ export default function ClientDetailPage() {
                   className="btn-primary h-9 px-[14px] text-[13px]">+ Project</button>
               )}
             </div>
-            {/* View toggle */}
             <div className="flex gap-2">
               {(['table', 'board'] as const).map(v => (
                 <button key={v} onClick={() => setProjectView(v)}
@@ -591,9 +841,10 @@ export default function ClientDetailPage() {
                         {column.map(p => (
                           <div
                             key={p.id}
+                            id={`client-project-${p.id}`}
                             draggable={canEdit}
                             onDragStart={e => e.dataTransfer.setData('text/project-id', p.id)}
-                            className="card p-2.5 cursor-grab active:cursor-grabbing space-y-1.5"
+                            className={`card p-2.5 cursor-grab active:cursor-grabbing space-y-1.5 ${focusId === p.id ? 'ring-2 ring-primary' : ''}`}
                           >
                             <button
                               onClick={() => router.push(`/dashboard/projects/${p.id}`)}
@@ -642,7 +893,8 @@ export default function ClientDetailPage() {
                       projects.map(p => {
                         const sc = PROJECT_STATUS_COLORS[p.status ?? 'draft'] ?? PROJECT_STATUS_COLORS.draft
                         return (
-                          <tr key={p.id} className="bg-surface border-b border-divider last:border-0">
+                          <tr key={p.id} id={`client-project-${p.id}`}
+                            className={`bg-surface border-b border-divider last:border-0 ${focusId === p.id ? 'ring-2 ring-inset ring-primary' : ''}`}>
                             <td className="data-td">
                               <button onClick={() => router.push(`/dashboard/projects/${p.id}`)}
                                 className="text-text-primary text-[12px] font-medium hover:text-primary transition-colors">
@@ -683,7 +935,6 @@ export default function ClientDetailPage() {
           </div>
         )}
 
-        {/* ── JOBS ── */}
         {showRelatedTabs && tab === 'jobs' && (
           <div className="space-y-3">
             <div className="flex items-center justify-between">
@@ -694,26 +945,32 @@ export default function ClientDetailPage() {
               )}
             </div>
             <div className="overflow-x-auto bg-surface rounded-lg border border-divider">
-              <table style={{ minWidth: 420 }} className="w-full">
+              <table style={{ minWidth: 640 }} className="w-full">
                 <thead>
                   <tr className="bg-surface-elevated border-b border-divider">
+                    <th style={{ width: 90 }} className="data-th">Code</th>
                     <th className="data-th">Title</th>
-                    <th style={{ width: 120 }} className="data-th text-center">Status</th>
-                    <th style={{ width: 72  }} className="data-th"></th>
+                    <th style={{ width: 110 }} className="data-th text-center">Status</th>
+                    <th style={{ width: 100 }} className="data-th">Project</th>
+                    <th style={{ width: 120 }} className="data-th">Assignee</th>
+                    <th style={{ width: 64 }} className="data-th"></th>
                   </tr>
                 </thead>
                 <tbody>
                   {clientJobs.length === 0 ? (
-                    <tr><td colSpan={3} className="text-text-secondary text-center py-6 text-[13px]">No jobs for this client.</td></tr>
+                    <tr><td colSpan={6} className="text-text-secondary text-center py-6 text-[13px]">No jobs for this client.</td></tr>
                   ) : (
                     clientJobs.map(j => {
                       const sc = JOB_STATUS_COLORS[j.status] ?? { bg: '#E5E7EB', fg: '#6B7280' }
                       return (
                         <tr key={j.id} className="bg-surface border-b border-divider last:border-0">
+                          <td className="data-td text-text-secondary font-mono text-[12px]">{j.job_code ?? '—'}</td>
                           <td className="data-td text-text-primary text-[13px] truncate">{j.title}</td>
                           <td className="data-td text-center">
                             <StatusBadge label={j.status.replace('_', ' ')} bg={sc.bg} fg={sc.fg} />
                           </td>
+                          <td className="data-td text-text-secondary text-[12px] font-mono">{j.project_code ?? '—'}</td>
+                          <td className="data-td text-text-secondary text-[12px] truncate">{j.assignee_name ?? '—'}</td>
                           <td className="data-td">
                             <button onClick={() => router.push(`/dashboard/jobs/${j.id}`)}
                               className="text-primary text-[11px] font-medium h-[30px]">Open →</button>
@@ -726,6 +983,103 @@ export default function ClientDetailPage() {
               </table>
             </div>
           </div>
+        )}
+
+        {showRelatedTabs && tab === 'invoices' && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="section-label">INVOICES</p>
+              {canEdit && (
+                <button onClick={() => router.push(`/dashboard/finance/invoices/new?clientId=${clientId}`)}
+                  className="btn-primary h-9 px-[14px] text-[13px]">+ Invoice</button>
+              )}
+            </div>
+            <div className="overflow-x-auto bg-surface rounded-lg border border-divider">
+              <table style={{ minWidth: 640 }} className="w-full">
+                <thead>
+                  <tr className="bg-surface-elevated border-b border-divider">
+                    <th className="data-th">Number</th>
+                    <th style={{ width: 100 }} className="data-th text-center">Status</th>
+                    <th style={{ width: 100 }} className="data-th">Issue</th>
+                    <th style={{ width: 100 }} className="data-th">Due</th>
+                    <th style={{ width: 90 }} className="data-th text-right">Total</th>
+                    <th style={{ width: 90 }} className="data-th text-right">Balance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {invoices.length === 0 ? (
+                    <tr><td colSpan={6} className="text-text-secondary text-center py-6 text-[13px]">No invoices for this client.</td></tr>
+                  ) : (
+                    invoices.map(inv => {
+                      const sc = INVOICE_STATUS_COLORS[inv.status] ?? INVOICE_STATUS_COLORS.draft
+                      return (
+                        <tr
+                          key={inv.id}
+                          id={`client-invoice-${inv.id}`}
+                          onClick={() => router.push(`/dashboard/finance/invoices/${inv.id}`)}
+                          className={`bg-surface hover:bg-background cursor-pointer border-b border-divider last:border-0 ${focusId === inv.id ? 'ring-2 ring-inset ring-primary' : ''}`}
+                        >
+                          <td className="data-td text-text-primary text-[13px] font-medium">{inv.invoice_number || '(draft)'}</td>
+                          <td className="data-td text-center">
+                            <StatusBadge label={inv.status.replace(/_/g, ' ')} bg={sc.bg} fg={sc.fg} />
+                          </td>
+                          <td className="data-td text-text-secondary text-[12px]">{inv.issue_date ?? '—'}</td>
+                          <td className="data-td text-text-secondary text-[12px]">{inv.due_date ?? '—'}</td>
+                          <td className="data-td text-text-secondary text-[12px] text-right">{fmtMoney(inv.total_amount)}</td>
+                          <td className="data-td text-text-secondary text-[12px] text-right">{fmtMoney(inv.balance_due)}</td>
+                        </tr>
+                      )
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {showRelatedTabs && tab === 'documents' && (
+          <div className="space-y-3">
+            <p className="section-label">DOCUMENTS</p>
+            <div className="overflow-x-auto bg-surface rounded-lg border border-divider">
+              <table style={{ minWidth: 520 }} className="w-full">
+                <thead>
+                  <tr className="bg-surface-elevated border-b border-divider">
+                    <th className="data-th">Name</th>
+                    <th style={{ width: 100 }} className="data-th">Type</th>
+                    <th style={{ width: 140 }} className="data-th">Project</th>
+                    <th style={{ width: 64 }} className="data-th"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {documents.length === 0 ? (
+                    <tr><td colSpan={4} className="text-text-secondary text-center py-6 text-[13px]">No documents for this client.</td></tr>
+                  ) : (
+                    documents.map(d => (
+                      <tr key={d.id} className="bg-surface border-b border-divider last:border-0">
+                        <td className="data-td text-text-primary text-[13px] truncate">{d.document_name}</td>
+                        <td className="data-td text-text-secondary text-[12px]">{d.document_type ?? '—'}</td>
+                        <td className="data-td text-text-secondary text-[12px] truncate">{d.project_title ?? '—'}</td>
+                        <td className="data-td">
+                          {d.file_url ? (
+                            <a href={d.file_url} target="_blank" rel="noopener noreferrer"
+                              className="text-primary text-[11px] font-medium h-[30px] inline-flex items-center">
+                              Open →
+                            </a>
+                          ) : (
+                            <span className="text-text-disabled text-[11px]">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {showRelatedTabs && tab === 'activity' && client && (
+          <ClientActivityTab companyId={client.company_id} clientId={clientId} />
         )}
       </div>
     </div>

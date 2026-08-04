@@ -8,6 +8,7 @@ import {
   nextClientCode,
   type ClientCreateInput,
 } from '@/lib/client-create-payload'
+import { logClientEvent } from '@/lib/client-events'
 
 export type ClientResult<T> =
   | { ok: true; data: T }
@@ -82,7 +83,14 @@ export async function createClientRecord(
       .single()
 
     if (error) return { ok: false, message: error.message }
-    return { ok: true, data: { id: (data as { id: string }).id } }
+    const id = (data as { id: string }).id
+    await logClientEvent(supabase, {
+      companyId: input.companyId,
+      screen: 'HrClientDetails',
+      action: 'client_created',
+      meta: { client_id: id, name: input.name.trim() },
+    })
+    return { ok: true, data: { id } }
   } catch (e: unknown) {
     return { ok: false, message: e instanceof Error ? e.message : String(e) }
   }

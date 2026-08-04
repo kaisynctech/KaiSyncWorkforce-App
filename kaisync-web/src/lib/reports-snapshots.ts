@@ -13,6 +13,7 @@ const PHASE2_TABS = new Set([
   'incidents',
   'inventory',
   'contractors',
+  'clients',
   'property',
   'telemetry',
 ])
@@ -45,6 +46,8 @@ export async function buildPhase2Snapshot(
       return buildInventory(supabase, companyId, from, to)
     case 'contractors':
       return buildContractors(supabase, companyId, from, to)
+    case 'clients':
+      return buildClients(supabase, companyId)
     case 'property':
       return buildProperty(supabase, companyId)
     case 'telemetry':
@@ -292,6 +295,80 @@ async function buildContractors(
     .slice(0, 20)
 
   return { active, pending_compliance, pending_payments, payment_summary }
+}
+
+async function buildClients(
+  supabase: SupabaseClient,
+  companyId: string,
+): Promise<ReportSnapshot> {
+  const [{ data: clients }, { data: deals }, { data: jobs }, { data: invoices }] =
+    await Promise.all([
+      supabase
+        .from('clients')
+        .select('id, name, portal_enabled')
+        .eq('company_id', companyId),
+      supabase
+        .from('client_deals')
+        .select('id, status, client_id')
+        .eq('company_id', companyId),
+      supabase
+        .from('jobs')
+        .select('id, status, client_id')
+        .eq('company_id', companyId)
+        .not('client_id', 'is', null),
+      supabase
+        .from('finance_invoices')
+        .select('client_id, balance_due, status')
+        .eq('company_id', companyId)
+        .not('client_id', 'is', null),
+    ])
+
+  const ct = clients ?? []
+  const total = ct.length
+  const portal_enabled = ct.filter(c => c.portal_enabled).length
+  const active_deals = (deals ?? []).filter(d =>
+    ['sent', 'negotiation', 'in_progress', 'won'].includes(String(d.status)),
+  ).length
+  const open_jobs = (jobs ?? []).filter(j =>
+    ['open', 'scheduled', 'in_progress'].includes(String(j.status)),
+  ).length
+  const outstanding_balance = (invoices ?? [])
+    .filter(i =>
+      ['sent', 'viewed', 'partially_paid', 'overdue'].includes(String(i.status)) &&
+      Number(i.balance_due ?? 0) > 0,
+    )
+    .reduce((s, i) => s + Number(i.balance_due ?? 0), 0)
+
+  const balanceBy = new Map<string, number>()
+  for (const i of invoices ?? []) {
+    if (Number(i.balance_due ?? 0) <= 0) continue
+    const id = i.client_id as string
+    balanceBy.set(id, (balanceBy.get(id) ?? 0) + Number(i.balance_due ?? 0))
+  }
+  const jobsBy = new Map<string, number>()
+  for (const j of jobs ?? []) {
+    const id = j.client_id as string
+    if (!id) continue
+    jobsBy.set(id, (jobsBy.get(id) ?? 0) + 1)
+  }
+
+  const top_clients = ct
+    .map(c => ({
+      name: c.name as string,
+      balance: balanceBy.get(c.id as string) ?? 0,
+      jobs: jobsBy.get(c.id as string) ?? 0,
+    }))
+    .sort((a, b) => b.balance - a.balance)
+    .slice(0, 20)
+
+  return {
+    total,
+    portal_enabled,
+    active_deals,
+    open_jobs,
+    outstanding_balance,
+    top_clients,
+  }
 }
 
 async function buildProperty(
