@@ -92,7 +92,8 @@ export async function resolveContractorByCode(
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e)
     if (msg.includes('PORTAL_CODE_EXPIRED')) {
-      throw new Error('Your portal code has expired. Contact your administrator.')
+      // Legacy: codes no longer expire; treat as invalid/rotated.
+      throw new Error('Portal code is no longer valid. Contact your administrator for the current code.')
     }
     throw e
   }

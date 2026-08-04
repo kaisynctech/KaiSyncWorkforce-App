@@ -830,11 +830,9 @@ function ContractorDetailInner() {
                     style={{ backgroundColor: '#FEF3C7', color: '#92400E' }}>
                     Rotate portal code
                   </button>
-                  {contractor?.contractor_code_expires_at && (
-                    <p className="text-[11px] text-text-secondary">
-                      Expires: {fmtDate(contractor.contractor_code_expires_at)}
-                    </p>
-                  )}
+                  <p className="text-[11px] text-text-secondary">
+                    This code does not expire. Rotate it to revoke old access and issue a new code.
+                  </p>
                 </>
               )}
               {!hasContractorCode && portalEnabled && (
