@@ -21,6 +21,11 @@ export const ACCESS_LEVELS = [
   { value: 'owner', label: 'Owner' },
 ] as const
 
+/** Levels assignable when creating an employee (Owner requires ownership transfer). */
+export const CREATE_ACCESS_LEVELS = ACCESS_LEVELS.filter(
+  (l) => l.value !== 'owner'
+) as ReadonlyArray<(typeof ACCESS_LEVELS)[number]>
+
 export type EmploymentTypeValue = (typeof EMPLOYMENT_TYPES)[number]['value']
 export type WorkerTypeValue = (typeof WORKER_TYPES)[number]['value']
 export type AccessLevelValue = (typeof ACCESS_LEVELS)[number]['value']

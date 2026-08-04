@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -10,8 +10,9 @@ import { SectionCard, FormField, entryClass } from '@/components/SectionCard'
 import { FormSelect } from '@/components/FormSelect'
 import { FormDateInput } from '@/components/FormDateInput'
 import { Toggle } from '@/components/Toggle'
+import { StepUpDialog } from '@/components/step-up-dialog'
 import {
-  ACCESS_LEVELS,
+  CREATE_ACCESS_LEVELS,
   EMPLOYMENT_TYPES,
   WORKER_TYPES,
   normalizeAccessLevel,
@@ -38,6 +39,7 @@ export default function EditEmployeePage() {
 
   const [employee, setEmployee] = useState<Employee | null>(null)
   const [companyId, setCompanyId] = useState<string | null>(null)
+  const [callerRole, setCallerRole] = useState<string | null>(null)
   const [branches, setBranches] = useState<Branch[]>([])
   const [templates, setTemplates] = useState<ShiftTemplate[]>([])
   const [managers, setManagers] = useState<Pick<Employee, 'id' | 'name' | 'surname'>[]>([])
@@ -80,6 +82,29 @@ export default function EditEmployeePage() {
   const [bankBranchCode, setBankBranchCode] = useState('')
   const [accountType, setAccountType] = useState('Cheque')
 
+  const [stepUpOpen, setStepUpOpen] = useState(false)
+  const [stepUpBusy, setStepUpBusy] = useState(false)
+  const [stepUpError, setStepUpError] = useState<string | null>(null)
+  const stepUpResolverRef = useRef<((password: string | null) => void) | null>(null)
+
+  function promptStepUpPassword(): Promise<string | null> {
+    setStepUpError(null)
+    setStepUpBusy(false)
+    setStepUpOpen(true)
+    return new Promise(resolve => {
+      stepUpResolverRef.current = resolve
+    })
+  }
+
+  function finishStepUpPrompt(password: string | null) {
+    const resolve = stepUpResolverRef.current
+    stepUpResolverRef.current = null
+    setStepUpOpen(false)
+    setStepUpBusy(false)
+    setStepUpError(null)
+    resolve?.(password)
+  }
+
   useEffect(() => { loadData() }, [id])
 
   async function loadData() {
@@ -88,12 +113,15 @@ export default function EditEmployeePage() {
     if (!member) { setError('not_linked'); setLoading(false); return }
     setCompanyId(member.companyId)
 
-    const [empRes, br, tmpl, mgr] = await Promise.all([
+    const [empRes, br, tmpl, mgr, roleRes] = await Promise.all([
       getEmployee(supabase, member.companyId, id),
       listBranches(supabase, member.companyId),
       listShiftTemplates(supabase, member.companyId),
       listManagerOptions(supabase, member.companyId, id),
+      supabase.rpc('get_my_role', { p_company_id: member.companyId }),
     ])
+
+    setCallerRole(typeof roleRes.data === 'string' ? roleRes.data : null)
 
     if (!empRes.ok) { setError(empRes.message); setLoading(false); return }
     const emp = empRes.data
@@ -140,7 +168,11 @@ export default function EditEmployeePage() {
     setBankName(emp.bank_name ?? '')
     setAccountNumber(emp.bank_account ?? '')
     setBankBranchCode(emp.bank_branch_code ?? '')
-    setAccountType(raw.account_type ?? 'Cheque')
+    setAccountType(
+      raw.account_type
+        ? raw.account_type.charAt(0).toUpperCase() + raw.account_type.slice(1).toLowerCase()
+        : 'Cheque'
+    )
 
     setLoading(false)
   }
@@ -163,40 +195,45 @@ export default function EditEmployeePage() {
       ? (branches.find(b => b.id === branchId)?.name ?? null)
       : null
 
-    const updated = await updateEmployee(supabase, id, {
-      companyId,
-      name: firstName,
-      surname: lastName,
-      email,
-      phone,
-      idNumber,
-      position,
-      department,
-      branchId: branchId || null,
-      branchName,
-      shiftTemplateId: templateId || null,
-      employmentType,
-      workerType,
-      accessLevel,
-      managerId: managerId || null,
-      employmentDate: employmentDate || null,
-      monthlySalary: salaryNum,
-      payByHour,
-      payBasis,
-      payeRatePercent: payeRate ? parseFloat(payeRate) : null,
-      uifExempt: exemptUif,
-      medicalAidDeduction: medicalAid ? parseFloat(medicalAid) : 0,
-      pensionDeduction: pension ? parseFloat(pension) : 0,
-      unionDeduction: union ? parseFloat(union) : 0,
-      workDaysWeekly: daysNum,
-      dailyHours: hoursNum,
-      hourlyRate: salaryNum ? computedHourlyRate : 0,
-      dailyRate: salaryNum ? computedDailyRate : 0,
-      bankName,
-      bankAccount: accountNumber,
-      bankBranchCode,
-      accountType,
-    })
+    const updated = await updateEmployee(
+      supabase,
+      id,
+      {
+        companyId,
+        name: firstName,
+        surname: lastName,
+        email,
+        phone,
+        idNumber,
+        position,
+        department,
+        branchId: branchId || null,
+        branchName,
+        shiftTemplateId: templateId || null,
+        employmentType,
+        workerType,
+        accessLevel,
+        managerId: managerId || null,
+        employmentDate: employmentDate || null,
+        monthlySalary: salaryNum,
+        payByHour,
+        payBasis,
+        payeRatePercent: payeRate ? parseFloat(payeRate) : null,
+        uifExempt: exemptUif,
+        medicalAidDeduction: medicalAid ? parseFloat(medicalAid) : 0,
+        pensionDeduction: pension ? parseFloat(pension) : 0,
+        unionDeduction: union ? parseFloat(union) : 0,
+        workDaysWeekly: daysNum,
+        dailyHours: hoursNum,
+        hourlyRate: salaryNum ? computedHourlyRate : 0,
+        dailyRate: salaryNum ? computedDailyRate : 0,
+        bankName,
+        bankAccount: accountNumber,
+        bankBranchCode,
+        accountType,
+      },
+      { promptPassword: promptStepUpPassword }
+    )
 
     if (!updated.ok) {
       setSaving(false)
@@ -432,9 +469,22 @@ export default function EditEmployeePage() {
             label="Access level"
             value={accessLevel}
             onChange={e => setAccessLevel(e.target.value)}
-            hint="App permissions (who can manage HR, teams, etc.)."
+            hint={
+              accessLevel === 'owner'
+                ? 'Owner can only be changed via ownership transfer in Settings.'
+                : 'App permissions. Owner is assigned via ownership transfer, not edit.'
+            }
+            disabled={accessLevel === 'owner'}
           >
-            {ACCESS_LEVELS.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
+            {accessLevel === 'owner' ? (
+              <option value="owner">Owner</option>
+            ) : (
+              CREATE_ACCESS_LEVELS
+                .filter(l => callerRole === 'owner' || l.value !== 'hr' || accessLevel === 'hr')
+                .map(l => (
+                  <option key={l.value} value={l.value}>{l.label}</option>
+                ))
+            )}
           </FormSelect>
           <FormSelect label="Reports to (manager)" value={managerId} onChange={e => setManagerId(e.target.value)}>
             <option value="">None</option>
@@ -515,6 +565,17 @@ export default function EditEmployeePage() {
           </FormSelect>
         </SectionCard>
       </div>
+
+      <StepUpDialog
+        open={stepUpOpen}
+        busy={stepUpBusy}
+        error={stepUpError}
+        onCancel={() => finishStepUpPrompt(null)}
+        onVerify={password => {
+          setStepUpBusy(true)
+          finishStepUpPrompt(password)
+        }}
+      />
     </div>
   )
 }
