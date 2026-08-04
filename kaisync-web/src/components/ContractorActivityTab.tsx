@@ -9,6 +9,7 @@ type AppEvent = {
   action: string
   screen: string
   level: string
+  auth_user_id?: string | null
   meta: Record<string, unknown> | null
 }
 
@@ -68,7 +69,49 @@ function mStr(meta: Record<string, unknown> | null, key: string): string {
   return v == null ? '' : String(v)
 }
 
+function trunc(s: string, max: number): string {
+  return s.length <= max ? s : `${s.slice(0, max)}…`
+}
+
+function formatFieldChanges(meta: Record<string, unknown> | null): string {
+  const raw = meta?.field_changes
+  if (!Array.isArray(raw) || raw.length === 0) return ''
+  const changes = raw
+    .map(item => {
+      if (!item || typeof item !== 'object') return null
+      const row = item as Record<string, unknown>
+      const label = String(row.label ?? '')
+      if (!label) return null
+      return { label, from: String(row.from ?? ''), to: String(row.to ?? '') }
+    })
+    .filter((c): c is { label: string; from: string; to: string } => c != null)
+
+  if (changes.length === 0) return ''
+  if (changes.length > 2) {
+    return `${changes.map(c => c.label).join(', ')} updated`
+  }
+  return changes.map(c => {
+    if (c.label === 'VAT Registered') {
+      return `VAT Registered ${c.to === 'true' ? 'enabled' : 'disabled'}`
+    }
+    const from = trunc(c.from, 28)
+    const to = trunc(c.to, 28)
+    if (!from && to) return `${c.label} set to ${to}`
+    if (from && !to) return `${c.label} cleared`
+    if (!from && !to) return `${c.label} updated`
+    return `${c.label}: ${from} → ${to}`
+  }).join('  ·  ')
+}
+
 function description(action: string, meta: Record<string, unknown> | null): string {
+  const fieldChanges = formatFieldChanges(meta)
+  if (action === 'contractor_profile_updated' && fieldChanges) return fieldChanges
+
+  const legacyChanges = meta?.changes
+  if (action === 'contractor_profile_updated' && Array.isArray(legacyChanges) && legacyChanges.length > 0) {
+    return `Changed: ${legacyChanges.map(String).join(', ')}`
+  }
+
   const docName = mStr(meta, 'document_name')
   const docType = mStr(meta, 'document_type')
   const packName = mStr(meta, 'pack_name')
@@ -101,10 +144,35 @@ function category(action: string): Exclude<Filter, 'all' | 'portal'> | 'other' {
   return 'other'
 }
 
-function actor(screen: string): string {
+function roleFromScreen(screen: string): string {
   if (screen === 'ContractorPortal') return 'Contractor'
   if (screen.toLowerCase().includes('hr') || screen === 'contractor_quotes') return 'HR'
   return 'System'
+}
+
+function actorDisplay(
+  screen: string,
+  meta: Record<string, unknown> | null,
+  authNameByUserId: Map<string, string>,
+  authUserId?: string | null,
+): string {
+  const named =
+    mStr(meta, 'actor_name') ||
+    mStr(meta, 'employee_name') ||
+    mStr(meta, 'user_name') ||
+    mStr(meta, 'reviewed_by_name') ||
+    mStr(meta, 'changed_by_name')
+  if (named) return named
+
+  if (authUserId) {
+    const fromAuth = authNameByUserId.get(authUserId)
+    if (fromAuth) return fromAuth
+  }
+
+  if (screen === 'ContractorPortal') {
+    return mStr(meta, 'contractor_name') || 'Contractor'
+  }
+  return roleFromScreen(screen)
 }
 
 function source(screen: string): string {
@@ -121,6 +189,7 @@ export function ContractorActivityTab({
   contractorId: string
 }) {
   const [events, setEvents] = useState<AppEvent[]>([])
+  const [actorNames, setActorNames] = useState<Map<string, string>>(new Map())
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<Filter>('all')
   const [error, setError] = useState<string | null>(null)
@@ -136,7 +205,30 @@ export function ContractorActivityTab({
       p_limit: 200,
     })
     if (rpcErr) setError(rpcErr.message)
-    setEvents((data ?? []) as AppEvent[])
+    const rows = (data ?? []) as AppEvent[]
+    setEvents(rows)
+
+    const authIds = [...new Set(
+      rows.map(e => e.auth_user_id).filter((id): id is string => Boolean(id)),
+    )]
+    if (authIds.length > 0) {
+      const { data: emps } = await supabase
+        .from('employees')
+        .select('user_id, name, surname')
+        .eq('company_id', companyId)
+        .in('user_id', authIds)
+      const map = new Map<string, string>()
+      for (const e of emps ?? []) {
+        const uid = (e as { user_id?: string | null }).user_id
+        if (!uid) continue
+        const name = `${(e as { name?: string }).name ?? ''} ${(e as { surname?: string }).surname ?? ''}`.trim()
+        if (name) map.set(uid, name)
+      }
+      setActorNames(map)
+    } else {
+      setActorNames(new Map())
+    }
+
     setLoading(false)
   }, [companyId, contractorId])
 
@@ -181,6 +273,7 @@ export function ContractorActivityTab({
           {filtered.map(e => {
             const colors = badgeColors(e.action)
             const desc = description(e.action, e.meta)
+            const who = actorDisplay(e.screen, e.meta, actorNames, e.auth_user_id)
             return (
               <div key={String(e.id)} className="card p-3 flex gap-3 items-start">
                 <span
@@ -192,7 +285,7 @@ export function ContractorActivityTab({
                 <div className="min-w-0 flex-1">
                   {desc && <p className="text-[13px] text-text-primary">{desc}</p>}
                   <p className="text-[11px] text-text-secondary mt-0.5">
-                    {new Date(e.created_at).toLocaleString('en-ZA')} · {actor(e.screen)} · {source(e.screen)}
+                    {new Date(e.created_at).toLocaleString('en-ZA')} · {who} · {source(e.screen)}
                   </p>
                 </div>
               </div>
