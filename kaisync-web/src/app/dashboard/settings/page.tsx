@@ -655,8 +655,8 @@ export default function SettingsPage() {
                 <div>
                   <p className="text-[13px] font-medium text-text-primary">Contractor Portal Code</p>
                   <p className="text-[12px] text-text-secondary">
-                    Open Contractors → contractor → Information → Rotate Code
-                    (RPC: hr_rotate_contractor_code).
+                    Each contractor has a permanent code assigned at create (or first portal enable).
+                    Codes are not rotated — turn off Portal user on the contractor to revoke access.
                   </p>
                 </div>
                 {isHrOrAbove && (

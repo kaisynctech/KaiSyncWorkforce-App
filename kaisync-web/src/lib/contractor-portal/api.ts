@@ -90,12 +90,7 @@ export async function resolveContractorByCode(
       company_code: str(row.company_code) || companyCode.trim().toUpperCase(),
     }
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e)
-    if (msg.includes('PORTAL_CODE_EXPIRED')) {
-      // Legacy: codes no longer expire; treat as invalid/rotated.
-      throw new Error('Portal code is no longer valid. Contact your administrator for the current code.')
-    }
-    throw e
+    throw e instanceof Error ? e : new Error(String(e))
   }
 }
 

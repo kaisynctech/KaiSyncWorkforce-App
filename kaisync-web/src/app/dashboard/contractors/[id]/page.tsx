@@ -9,7 +9,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
-import { partnerKindLabel, PARTNER_KIND } from '@/lib/partner-kinds'
+import { partnerKindLabel, PARTNER_KIND, nextContractorCode } from '@/lib/partner-kinds'
 import { SectionCard, FormField, entryClass } from '@/components/SectionCard'
 import { FormSelect } from '@/components/FormSelect'
 import { Toggle } from '@/components/Toggle'
@@ -407,45 +407,46 @@ function ContractorDetailInner() {
     setSaving(false)
   }
 
-  async function handleRotateCode() {
-    if (!contractor?.company_id) return
-    setIsBusy(true)
-    setError(null)
+  /** Assign a permanent CT#### code once if missing — never rotates/replaces an existing code. */
+  async function ensurePermanentContractorCode(): Promise<string | null> {
+    if (!contractor?.company_id) return null
+    if (contractor.contractor_code) return contractor.contractor_code
+
     const supabase = createClient()
-    const { error: e } = await supabase.rpc('hr_rotate_contractor_code', {
-      p_company_id: contractor.company_id,
-      p_contractor_id: contractorId,
-    })
+    const [{ data: company }, { data: existing }] = await Promise.all([
+      supabase.from('companies').select('code').eq('id', contractor.company_id).maybeSingle(),
+      supabase.from('contractors').select('contractor_code').eq('company_id', contractor.company_id),
+    ])
+    const companyCode = (company as { code?: string | null } | null)?.code ?? ''
+    const code = nextContractorCode(
+      companyCode,
+      (existing ?? []).map(r => (r as { contractor_code: string | null }).contractor_code),
+    )
+    const { error: e } = await supabase
+      .from('contractors')
+      .update({ contractor_code: code })
+      .eq('id', contractorId)
+      .is('contractor_code', null)
     if (e) {
       setError(e.message)
-      setIsBusy(false)
-      return
+      return null
     }
-    if (!portalEnabled) {
-      await supabase.from('contractors').update({ portal_enabled: true }).eq('id', contractorId)
-      setPortalEnabled(true)
-    }
-    await load()
-    setIsBusy(false)
+    return code
   }
 
   async function handlePortalToggle(next: boolean) {
     setPortalEnabled(next)
-    if (next && !hasContractorCode && contractor?.company_id) {
-      setIsBusy(true)
-      setError(null)
+    if (!next || hasContractorCode || !contractor?.company_id) return
+
+    setIsBusy(true)
+    setError(null)
+    const code = await ensurePermanentContractorCode()
+    if (code) {
       const supabase = createClient()
-      const { error: e } = await supabase.rpc('hr_rotate_contractor_code', {
-        p_company_id: contractor.company_id,
-        p_contractor_id: contractorId,
-      })
-      if (e) setError(e.message)
-      else {
-        await supabase.from('contractors').update({ portal_enabled: true }).eq('id', contractorId)
-        await load()
-      }
-      setIsBusy(false)
+      await supabase.from('contractors').update({ portal_enabled: true }).eq('id', contractorId)
+      await load()
     }
+    setIsBusy(false)
   }
 
   async function approveBanking() {
@@ -825,18 +826,19 @@ function ContractorDetailInner() {
                     <input readOnly value={contractor?.contractor_code ?? ''}
                       className={`${entryClass} text-text-secondary cursor-default`} />
                   </FormField>
-                  <button onClick={handleRotateCode}
-                    className="h-10 px-4 text-[12px] rounded-lg font-semibold transition-colors"
-                    style={{ backgroundColor: '#FEF3C7', color: '#92400E' }}>
-                    Rotate portal code
-                  </button>
                   <p className="text-[11px] text-text-secondary">
-                    This code does not expire. Rotate it to revoke old access and issue a new code.
+                    Permanent login code (assigned once). Contractors sign in with company code + this code.
+                    Disable Portal user to revoke access without changing the code.
                   </p>
                 </>
               )}
               {!hasContractorCode && portalEnabled && (
-                <p className="text-[12px] text-text-secondary">Generating portal code…</p>
+                <p className="text-[12px] text-text-secondary">Assigning portal code…</p>
+              )}
+              {!hasContractorCode && !portalEnabled && (
+                <p className="text-[11px] text-text-secondary">
+                  Enable Portal user to assign a permanent code (same format as create: CT…).
+                </p>
               )}
             </SectionCard>
 
