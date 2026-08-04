@@ -67,9 +67,11 @@ export function ProjectPaymentsTab({
 
   async function syncAmountPaid(companyId: string, total: number) {
     const supabase = createClient()
-    // Prefer client_deals.amount_paid (MAUI source of truth); also try projects.paid_amount
-    await supabase.from('client_deals').update({ amount_paid: total }).eq('id', projectId).eq('company_id', companyId)
-    await supabase.from('projects').update({ paid_amount: total }).eq('id', projectId).eq('company_id', companyId)
+    await supabase
+      .from('client_deals')
+      .update({ amount_paid: total })
+      .eq('id', projectId)
+      .eq('company_id', companyId)
   }
 
   async function addPayment() {

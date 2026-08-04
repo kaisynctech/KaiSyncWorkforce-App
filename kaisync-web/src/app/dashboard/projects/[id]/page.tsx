@@ -4,8 +4,8 @@
 // Fixed: Pipeline tab now shows visual stage chip selector (replaced ComingSoon)
 // Deferred: client messaging thread, payment recording/receipt attachment, post-update timeline entries
 
-import { useEffect, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useEffect, useRef, useState } from 'react'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
@@ -17,7 +17,13 @@ const PROJECT_TABS = ['details', 'docs', 'quotation', 'pipeline', 'payments']
 const TAB_LABELS: Record<string, string> = {
   details: 'Details', docs: 'Docs', quotation: 'Quotation', pipeline: 'Pipeline', payments: 'Payments',
 }
-const STATUS_OPTIONS = ['draft', 'sent', 'in_progress', 'won', 'lost']
+const STATUS_OPTIONS = ['draft', 'sent', 'negotiation', 'in_progress', 'won', 'lost']
+const DOC_TYPE_OPTIONS = [
+  { value: 'contract', label: 'Contract' },
+  { value: 'specification', label: 'Specification' },
+  { value: 'permit', label: 'Permit' },
+  { value: 'other', label: 'Other' },
+]
 
 const fmtDate = (d: string) =>
   new Intl.DateTimeFormat('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(d))
@@ -25,11 +31,16 @@ const fmtDate = (d: string) =>
 const fmtCurrency = (n: number) =>
   `R ${n.toLocaleString('en-ZA', { minimumFractionDigits: 2 })}`
 
+const lineAmount = (l: ProjectQuotationLine) =>
+  Number(l.quantity ?? 0) * Number(l.unit_price ?? 0)
+
 export default function ProjectDetailPage() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const projectId = params.id
   const isNew = projectId === 'new'
+  const fileRef = useRef<HTMLInputElement>(null)
 
   const [tab, setTab] = useState('details')
   const [project, setProject] = useState<Project | null>(null)
@@ -40,6 +51,8 @@ export default function ProjectDetailPage() {
   const [lines, setLines] = useState<ProjectQuotationLine[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [docBusy, setDocBusy] = useState(false)
+  const [docType, setDocType] = useState('contract')
   const [error, setError] = useState<string | null>(null)
 
   // Form state
@@ -64,10 +77,15 @@ export default function ProjectDetailPage() {
 
   // Quotation lines editing
   const [newLineDesc, setNewLineDesc] = useState('')
-  const [newLineDetail, setNewLineDetail] = useState('')
-  const [newLineAmount, setNewLineAmount] = useState('')
+  const [newLineQty, setNewLineQty] = useState('1')
+  const [newLineUnitPrice, setNewLineUnitPrice] = useState('')
 
   useEffect(() => { load() }, [projectId])
+
+  useEffect(() => {
+    const t = searchParams.get('tab')
+    if (t && PROJECT_TABS.includes(t)) setTab(t)
+  }, [searchParams])
 
   async function load() {
     setLoading(true)
@@ -89,8 +107,8 @@ export default function ProjectDetailPage() {
       supabase.from('clients').select('id, name, client_code').order('name'),
       supabase.from('employees').select('id, name, surname').eq('is_active', true).order('name'),
       supabase.from('jobs').select('id, title, status').eq('deal_id', projectId).order('created_at', { ascending: false }),
-      supabase.from('project_documents').select('*').eq('project_id', projectId).order('created_at', { ascending: false }),
-      supabase.from('project_quotation_lines').select('*').eq('project_id', projectId).order('sort_order'),
+      supabase.from('project_documents').select('*').eq('deal_id', projectId).order('created_at', { ascending: false }),
+      supabase.from('project_quotation_lines').select('*').eq('deal_id', projectId).order('line_no'),
     ])
 
     if (!pRes.data) { router.push('/dashboard/projects'); return }
@@ -159,23 +177,72 @@ export default function ProjectDetailPage() {
     setSaving(false)
   }
 
-  async function addLine() {
-    if (!newLineDesc.trim()) return
+  async function syncOfferAmount(nextLines: ProjectQuotationLine[]) {
+    const offer = nextLines.reduce((s, l) => s + lineAmount(l), 0)
     const supabase = createClient()
-    const { data } = await supabase.from('project_quotation_lines').insert({
-      project_id: projectId,
+    await supabase.from('client_deals').update({ offer_amount: offer }).eq('id', projectId)
+    setProject(prev => prev ? { ...prev, offer_amount: offer } : prev)
+  }
+
+  async function addLine() {
+    if (!newLineDesc.trim() || !project) return
+    const qty = parseFloat(newLineQty) || 1
+    const unitPrice = parseFloat(newLineUnitPrice) || 0
+    const supabase = createClient()
+    const { data, error: e } = await supabase.from('project_quotation_lines').insert({
+      company_id: project.company_id,
+      deal_id: projectId,
+      line_no: lines.length + 1,
       description: newLineDesc.trim(),
-      detail: newLineDetail.trim() || null,
-      amount: parseFloat(newLineAmount) || 0,
-      sort_order: lines.length,
+      quantity: qty,
+      unit_price: unitPrice,
     }).select().single()
-    if (data) { setLines(prev => [...prev, data as ProjectQuotationLine]); setNewLineDesc(''); setNewLineDetail(''); setNewLineAmount('') }
+    if (e) { setError(e.message); return }
+    if (data) {
+      const next = [...lines, data as ProjectQuotationLine]
+      setLines(next)
+      setNewLineDesc('')
+      setNewLineQty('1')
+      setNewLineUnitPrice('')
+      await syncOfferAmount(next)
+    }
   }
 
   async function deleteLine(id: string) {
     const supabase = createClient()
     await supabase.from('project_quotation_lines').delete().eq('id', id)
-    setLines(prev => prev.filter(l => l.id !== id))
+    const next = lines.filter(l => l.id !== id)
+    setLines(next)
+    await syncOfferAmount(next)
+  }
+
+  async function uploadDoc(file: File) {
+    if (!project) return
+    setDocBusy(true)
+    setError(null)
+    const supabase = createClient()
+    const ext = file.name.includes('.') ? `.${file.name.split('.').pop()!.toLowerCase()}` : ''
+    const path = `project_documents/${project.company_id}/${projectId}/hr_${crypto.randomUUID()}${ext}`
+    const { error: upErr } = await supabase.storage
+      .from('workforce-media')
+      .upload(path, file, { upsert: true, contentType: file.type || undefined })
+    if (upErr) {
+      setError(upErr.message)
+      setDocBusy(false)
+      return
+    }
+    const { data: pub } = supabase.storage.from('workforce-media').getPublicUrl(path)
+    const { data, error: insErr } = await supabase.from('project_documents').insert({
+      company_id: project.company_id,
+      deal_id: projectId,
+      document_name: file.name,
+      document_type: docType || 'other',
+      file_url: pub.publicUrl,
+    }).select().single()
+    if (insErr) setError(insErr.message)
+    else if (data) setDocs(prev => [data as ProjectDocument, ...prev])
+    if (fileRef.current) fileRef.current.value = ''
+    setDocBusy(false)
   }
 
   async function deleteDoc(doc: ProjectDocument) {
@@ -185,7 +252,7 @@ export default function ProjectDetailPage() {
     setDocs(prev => prev.filter(d => d.id !== doc.id))
   }
 
-  const subtotal = lines.reduce((s, l) => s + (l.amount ?? 0), 0)
+  const subtotal = lines.reduce((s, l) => s + lineAmount(l), 0)
   const vat      = subtotal * 0.15
   const total    = subtotal + vat
 
@@ -390,15 +457,33 @@ export default function ProjectDetailPage() {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <p className="section-label">PROJECT DOCUMENTS</p>
-                <div className="flex gap-2">
-                  <select className="text-[11px] h-9 px-2 rounded-lg border border-border bg-surface text-text-secondary w-[140px]">
-                    <option>Document type…</option>
-                    <option>Contract</option>
-                    <option>Specification</option>
-                    <option>Permit</option>
-                    <option>Other</option>
+                <div className="flex gap-2 items-center">
+                  <select
+                    value={docType}
+                    onChange={e => setDocType(e.target.value)}
+                    className="text-[11px] h-9 px-2 rounded-lg border border-border bg-surface text-text-secondary w-[140px]"
+                  >
+                    {DOC_TYPE_OPTIONS.map(o => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
                   </select>
-                  <button className="btn-primary h-9 px-3 text-[12px]">+ Upload</button>
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    className="hidden"
+                    onChange={e => {
+                      const file = e.target.files?.[0]
+                      if (file) void uploadDoc(file)
+                    }}
+                  />
+                  <button
+                    type="button"
+                    disabled={docBusy}
+                    onClick={() => fileRef.current?.click()}
+                    className="btn-primary h-9 px-3 text-[12px] disabled:opacity-50"
+                  >
+                    {docBusy ? 'Uploading…' : '+ Upload'}
+                  </button>
                 </div>
               </div>
               <div className="card overflow-hidden">
@@ -422,7 +507,7 @@ export default function ProjectDetailPage() {
                           <td className="data-td text-text-secondary text-[12px]">{d.document_type ?? '—'}</td>
                           <td className="data-td text-text-secondary text-[11px] text-center">{fmtDate(d.created_at)}</td>
                           <td className="data-td text-center">
-                            <a href={d.url} target="_blank" rel="noreferrer"
+                            <a href={d.file_url} target="_blank" rel="noreferrer"
                               className="text-primary text-[11px] font-medium">Open</a>
                           </td>
                           <td className="data-td text-center">
@@ -504,8 +589,9 @@ export default function ProjectDetailPage() {
                   <thead>
                     <tr className="bg-surface-elevated border-b border-divider">
                       <th className="data-th">Description</th>
-                      <th style={{ width: 88 }} className="data-th">Detail</th>
-                      <th style={{ width: 88 }} className="data-th text-right">Amount</th>
+                      <th style={{ width: 72 }} className="data-th text-right">Qty</th>
+                      <th style={{ width: 96 }} className="data-th text-right">Unit price</th>
+                      <th style={{ width: 96 }} className="data-th text-right">Amount</th>
                       <th style={{ width: 40 }} className="data-th"></th>
                     </tr>
                   </thead>
@@ -513,8 +599,9 @@ export default function ProjectDetailPage() {
                     {lines.map(l => (
                       <tr key={l.id} className="border-b border-divider">
                         <td className="data-td text-text-primary text-[13px]">{l.description}</td>
-                        <td className="data-td text-text-secondary text-[12px]">{l.detail ?? '—'}</td>
-                        <td className="data-td text-right text-[12px] font-medium text-text-primary">{fmtCurrency(l.amount)}</td>
+                        <td className="data-td text-text-secondary text-[12px] text-right">{l.quantity}</td>
+                        <td className="data-td text-text-secondary text-[12px] text-right">{fmtCurrency(l.unit_price)}</td>
+                        <td className="data-td text-right text-[12px] font-medium text-text-primary">{fmtCurrency(lineAmount(l))}</td>
                         <td className="data-td text-center">
                           <button onClick={() => deleteLine(l.id)} className="text-error text-[12px]">✕</button>
                         </td>
@@ -527,12 +614,15 @@ export default function ProjectDetailPage() {
                           className="dark-entry text-[13px]" />
                       </td>
                       <td className="data-td">
-                        <input placeholder="Detail…" value={newLineDetail} onChange={e => setNewLineDetail(e.target.value)}
-                          className="dark-entry text-[12px]" />
+                        <input placeholder="1" value={newLineQty} onChange={e => setNewLineQty(e.target.value)}
+                          inputMode="decimal" className="dark-entry text-[12px] text-right" />
                       </td>
                       <td className="data-td">
-                        <input placeholder="0.00" value={newLineAmount} onChange={e => setNewLineAmount(e.target.value)}
+                        <input placeholder="0.00" value={newLineUnitPrice} onChange={e => setNewLineUnitPrice(e.target.value)}
                           inputMode="decimal" className="dark-entry text-[12px] text-right" />
+                      </td>
+                      <td className="data-td text-right text-[12px] text-text-secondary">
+                        {fmtCurrency((parseFloat(newLineQty) || 0) * (parseFloat(newLineUnitPrice) || 0))}
                       </td>
                       <td className="data-td text-center">
                         <button onClick={addLine} className="text-primary text-[18px] font-light leading-none">+</button>
@@ -540,17 +630,17 @@ export default function ProjectDetailPage() {
                     </tr>
                     {/* Totals */}
                     <tr className="border-b border-divider">
-                      <td colSpan={2} className="data-td text-text-secondary text-[12px]">Total (excl. VAT)</td>
+                      <td colSpan={3} className="data-td text-text-secondary text-[12px]">Total (excl. VAT)</td>
                       <td className="data-td text-right text-[12px] text-text-secondary">{fmtCurrency(subtotal)}</td>
                       <td />
                     </tr>
                     <tr className="border-b border-divider">
-                      <td colSpan={2} className="data-td text-text-secondary text-[12px]">VAT (15%)</td>
+                      <td colSpan={3} className="data-td text-text-secondary text-[12px]">VAT (15%)</td>
                       <td className="data-td text-right text-[12px] text-text-secondary">{fmtCurrency(vat)}</td>
                       <td />
                     </tr>
                     <tr>
-                      <td colSpan={2} className="data-td text-text-primary text-[13px] font-semibold">Total (incl. VAT)</td>
+                      <td colSpan={3} className="data-td text-text-primary text-[13px] font-semibold">Total (incl. VAT)</td>
                       <td className="data-td text-right text-[14px] font-semibold text-primary">{fmtCurrency(total)}</td>
                       <td />
                     </tr>

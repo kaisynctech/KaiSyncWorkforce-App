@@ -186,7 +186,6 @@ export default function ClientDetailPage() {
     const supabase = createClient()
     // Prefer client_deals (MAUI); also update projects if that table/view is used
     await supabase.from('client_deals').update({ status: newStatus }).eq('id', p.id)
-    await supabase.from('projects').update({ status: newStatus }).eq('id', p.id)
     await supabase.from('client_deal_updates').insert({
       deal_id: p.id,
       company_id: p.company_id,
@@ -493,7 +492,12 @@ export default function ClientDetailPage() {
                             </td>
                             <td className="data-td text-text-secondary text-[12px] text-right">{fmtCurrency(p.offer_amount)}</td>
                             <td className="data-td text-center">
-                              <button className="bg-primary text-white rounded-lg h-7 px-2 text-[10px] font-medium">+ Pay</button>
+                              <button
+                                onClick={() => router.push(`/dashboard/projects/${p.id}?tab=payments`)}
+                                className="bg-primary text-white rounded-lg h-7 px-2 text-[10px] font-medium"
+                              >
+                                + Pay
+                              </button>
                             </td>
                           </tr>
                         )

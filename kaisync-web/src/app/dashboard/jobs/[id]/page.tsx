@@ -32,10 +32,11 @@ const PRIORITY_COLORS: Record<string, { bg: string; fg: string }> = {
 type JobDetail = Job & {
   clients:  { name: string; client_code: string | null } | null
   sites:    { name: string; address: string | null } | null
-  projects: { name: string } | null
+  client_deals: { id: string; title: string; project_code: string | null } | null
 }
 
 type ClientRow       = { id: string; name: string }
+type DealRow         = { id: string; title: string; project_code: string | null; client_id: string | null }
 type ContractorRow   = { id: string; name: string; contractor_code: string | null }
 type InventoryRow    = { id: string; name: string; unit_cost: number | null; quantity_on_hand: number | null }
 
@@ -84,7 +85,9 @@ export default function JobDetailPage() {
   const [editStart,       setEditStart]       = useState('')
   const [editEnd,         setEditEnd]         = useState('')
   const [editClientId,    setEditClientId]    = useState<string | null>(null)
+  const [editDealId,      setEditDealId]      = useState<string | null>(null)
   const [clients,         setClients]         = useState<ClientRow[]>([])
+  const [deals,           setDeals]           = useState<DealRow[]>([])
 
   // ── Contractor modal ─────────────────────────────────────────────────────
   const [showContractorModal,   setShowContractorModal]   = useState(false)
@@ -115,9 +118,9 @@ export default function JobDetailPage() {
     setCompanyId(member.companyId)
     setMyEmployeeId(member.employeeId)
 
-    const [jobRes, empRes, jcRes, leRes, invRes, photoRes, assignRes, clientRes, contractorRes, invItemsRes] =
+    const [jobRes, empRes, jcRes, leRes, invRes, photoRes, assignRes, clientRes, dealRes, contractorRes, invItemsRes] =
       await Promise.all([
-        supabase.from('jobs').select('*, clients(*), sites(*), projects(*)').eq('id', jobId).single(),
+        supabase.from('jobs').select('*, clients(*), sites(*), client_deals:deal_id(id, title, project_code)').eq('id', jobId).single(),
         supabase.from('employees').select('id, name, surname').eq('company_id', member.companyId).eq('is_active', true).order('name'),
         supabase.from('job_contractors').select('*, contractors(name, contractor_code)').eq('job_id', jobId),
         supabase.from('labor_entries').select('*').eq('job_id', jobId).order('work_date'),
@@ -125,6 +128,7 @@ export default function JobDetailPage() {
         supabase.from('job_photos').select('*').eq('job_id', jobId),
         supabase.from('job_employees').select('employee_id').eq('job_id', jobId),
         supabase.from('clients').select('id, name').eq('company_id', member.companyId).order('name'),
+        supabase.from('client_deals').select('id, title, project_code, client_id').eq('company_id', member.companyId).order('title'),
         supabase.from('contractors').select('id, name, contractor_code').eq('company_id', member.companyId).eq('is_active', true).order('name'),
         supabase.from('inventory_items').select('id, name, unit_cost, quantity_on_hand').eq('company_id', member.companyId).order('name'),
       ])
@@ -163,6 +167,7 @@ export default function JobDetailPage() {
     setPhotos((photoRes.data       ?? []) as JobPhoto[])
     setAssignedIds(new Set((assignRes.data ?? []).map((r: { employee_id: string }) => r.employee_id)))
     setClients((clientRes.data     ?? []) as ClientRow[])
+    setDeals((dealRes.data         ?? []) as DealRow[])
     setAllContractors((contractorRes.data ?? []) as ContractorRow[])
     setAllInventory((invItemsRes.data     ?? []) as InventoryRow[])
   }
@@ -177,6 +182,7 @@ export default function JobDetailPage() {
     setEditStart(job.scheduled_start ? job.scheduled_start.slice(0, 16) : '')
     setEditEnd(job.scheduled_end ? job.scheduled_end.slice(0, 16) : '')
     setEditClientId(job.client_id ?? null)
+    setEditDealId(job.deal_id ?? null)
     setIsEditing(true)
   }
 
@@ -185,6 +191,7 @@ export default function JobDetailPage() {
     setSaving(true)
     setError(null)
     const supabase = createClient()
+    const selectedDeal = editDealId ? deals.find(d => d.id === editDealId) ?? null : null
     const { error: e } = await supabase.from('jobs').update({
       title:           editTitle.trim(),
       description:     editDescription.trim() || null,
@@ -192,6 +199,7 @@ export default function JobDetailPage() {
       scheduled_start: editStart ? new Date(editStart).toISOString() : null,
       scheduled_end:   editEnd ? new Date(editEnd).toISOString() : null,
       client_id:       editClientId,
+      deal_id:         editDealId,
     }).eq('id', jobId)
     if (e) {
       setError(e.message)
@@ -204,6 +212,10 @@ export default function JobDetailPage() {
         scheduled_start: editStart ? new Date(editStart).toISOString() : null,
         scheduled_end:   editEnd ? new Date(editEnd).toISOString() : null,
         client_id:       editClientId,
+        deal_id:         editDealId,
+        client_deals:    selectedDeal
+          ? { id: selectedDeal.id, title: selectedDeal.title, project_code: selectedDeal.project_code }
+          : null,
       } : prev)
       setIsEditing(false)
     }
@@ -503,12 +515,42 @@ export default function JobDetailPage() {
               <label className="text-[11px] text-text-secondary mb-1 block">Client</label>
               <FormSelect
                 value={editClientId ?? ''}
-                onChange={e => setEditClientId(e.target.value || null)}
+                onChange={e => {
+                  const next = e.target.value || null
+                  setEditClientId(next)
+                  if (editDealId) {
+                    const deal = deals.find(d => d.id === editDealId)
+                    if (deal?.client_id && next && deal.client_id !== next) setEditDealId(null)
+                  }
+                }}
               >
                 <option value="">No client</option>
                 {clients.map(c => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
+              </FormSelect>
+            </div>
+            <div>
+              <label className="text-[11px] text-text-secondary mb-1 block">Project</label>
+              <FormSelect
+                value={editDealId ?? ''}
+                onChange={e => {
+                  const next = e.target.value || null
+                  setEditDealId(next)
+                  if (next) {
+                    const deal = deals.find(d => d.id === next)
+                    if (deal?.client_id) setEditClientId(deal.client_id)
+                  }
+                }}
+              >
+                <option value="">No project</option>
+                {deals
+                  .filter(d => !editClientId || !d.client_id || d.client_id === editClientId)
+                  .map(d => (
+                    <option key={d.id} value={d.id}>
+                      {d.title}{d.project_code ? ` (${d.project_code})` : ''}
+                    </option>
+                  ))}
               </FormSelect>
             </div>
           </div>
@@ -554,9 +596,15 @@ export default function JobDetailPage() {
 
                 <span className="text-[12px] text-text-secondary">Project</span>
                 <div className="flex items-center gap-2">
-                  <span className="text-[13px] text-text-primary">{job.projects?.name ?? '—'}</span>
-                  {job.projects && (
-                    <button className="text-primary text-[11px] h-[28px] px-2 hover:opacity-70 transition-opacity">Open</button>
+                  <span className="text-[13px] text-text-primary">{job.client_deals?.title ?? '—'}</span>
+                  {job.client_deals && (
+                    <button
+                      type="button"
+                      onClick={() => router.push(`/dashboard/projects/${job.client_deals!.id}`)}
+                      className="text-primary text-[11px] h-[28px] px-2 hover:opacity-70 transition-opacity"
+                    >
+                      Open
+                    </button>
                   )}
                 </div>
               </div>

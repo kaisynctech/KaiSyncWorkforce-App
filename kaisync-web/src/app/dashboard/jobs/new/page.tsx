@@ -14,6 +14,7 @@ export default function CreateJobPage() {
 
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [clients, setClients] = useState<Client[]>([])
+  const [deals, setDeals] = useState<{ id: string; title: string; project_code: string | null; client_id: string | null }[]>([])
   const [employees, setEmployees] = useState<Pick<Employee, 'id' | 'name' | 'surname'>[]>([])
 
   const [title, setTitle] = useState('')
@@ -25,6 +26,7 @@ export default function CreateJobPage() {
   const [endDate, setEndDate] = useState('')
   const [endTime, setEndTime] = useState('')
   const [clientId, setClientId] = useState('')
+  const [dealId, setDealId] = useState('')
   const [address, setAddress] = useState('')
   const [assignedEmployeeId, setAssignedEmployeeId] = useState('')
 
@@ -39,14 +41,16 @@ export default function CreateJobPage() {
     if (!member) { setError('not_linked'); return }
     setCompanyId(member.companyId)
 
-    const [cl, emp] = await Promise.all([
+    const [cl, emp, dl] = await Promise.all([
       supabase.from('clients').select('id, name, client_code').eq('company_id', member.companyId).order('name'),
       supabase.from('employees').select('id, name, surname')
         .eq('company_id', member.companyId).eq('is_active', true).order('name'),
+      supabase.from('client_deals').select('id, title, project_code, client_id').eq('company_id', member.companyId).order('title'),
     ])
 
     setClients((cl.data ?? []) as Client[])
     setEmployees((emp.data ?? []) as Pick<Employee, 'id' | 'name' | 'surname'>[])
+    setDeals((dl.data ?? []) as { id: string; title: string; project_code: string | null; client_id: string | null }[])
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -77,6 +81,7 @@ export default function CreateJobPage() {
         scheduled_start: scheduledStart,
         scheduled_end: scheduledEnd,
         client_id: clientId || null,
+        deal_id: dealId || null,
         address: address.trim() || null,
         assigned_employee_id: assignedEmployeeId || null,
         status: 'open',
@@ -155,9 +160,20 @@ export default function CreateJobPage() {
         </div>
       </SectionCard>
 
-      {/* CLIENT */}
-      <SectionCard title="CLIENT">
-        <FormSelect label="Client" value={clientId} onChange={e => setClientId(e.target.value)}>
+      {/* CLIENT & PROJECT */}
+      <SectionCard title="CLIENT & PROJECT">
+        <FormSelect
+          label="Client"
+          value={clientId}
+          onChange={e => {
+            const next = e.target.value
+            setClientId(next)
+            if (dealId) {
+              const deal = deals.find(d => d.id === dealId)
+              if (deal?.client_id && next && deal.client_id !== next) setDealId('')
+            }
+          }}
+        >
           <option value="">No client</option>
           {clients.map(c => (
             <option key={c.id} value={c.id}>
@@ -165,9 +181,27 @@ export default function CreateJobPage() {
             </option>
           ))}
         </FormSelect>
-        <p className="text-[12px] text-text-disabled">
-          + Add new client — coming in Phase 3
-        </p>
+        <FormSelect
+          label="Project"
+          value={dealId}
+          onChange={e => {
+            const next = e.target.value
+            setDealId(next)
+            if (next) {
+              const deal = deals.find(d => d.id === next)
+              if (deal?.client_id) setClientId(deal.client_id)
+            }
+          }}
+        >
+          <option value="">No project</option>
+          {deals
+            .filter(d => !clientId || !d.client_id || d.client_id === clientId)
+            .map(d => (
+              <option key={d.id} value={d.id}>
+                {d.title}{d.project_code ? ` (${d.project_code})` : ''}
+              </option>
+            ))}
+        </FormSelect>
       </SectionCard>
 
       {/* LOCATION */}

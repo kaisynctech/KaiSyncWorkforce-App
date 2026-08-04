@@ -162,21 +162,23 @@ export interface Project {
 
 export interface ProjectDocument {
   id: string
-  project_id: string
+  company_id: string
+  deal_id: string
   document_name: string
   document_type: string | null
-  url: string
-  storage_path: string
+  file_url: string
   created_at: string
 }
 
 export interface ProjectQuotationLine {
   id: string
-  project_id: string
+  company_id: string
+  deal_id: string
+  line_no: number
   description: string
-  detail: string | null
-  amount: number
-  sort_order: number
+  quantity: number
+  unit_price: number
+  created_at?: string
 }
 
 export interface Job {
@@ -204,6 +206,8 @@ export interface Job {
   created_at: string
   clients?: { name: string; client_code?: string | null } | null
   sites?: Pick<Site, 'name' | 'address'> | null
+  /** Embed via jobs.deal_id → client_deals */
+  client_deals?: { id: string; title: string; project_code: string | null } | null
 }
 
 export interface LeaveRequest {
