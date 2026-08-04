@@ -118,6 +118,32 @@ export interface Client {
   created_at: string
 }
 
+export interface ClientDocument {
+  id: string
+  company_id: string
+  client_id: string
+  document_name: string
+  document_type: string
+  file_url: string
+  storage_path: string | null
+  file_size_bytes: number | null
+  mime_type: string | null
+  uploaded_by: string | null
+  created_at: string
+  updated_at?: string
+}
+
+export interface ClientNote {
+  id: string
+  company_id: string
+  client_id: string
+  body: string
+  created_by: string | null
+  created_at: string
+  /** Joined display */
+  author_name?: string | null
+}
+
 export type JobStatus = 'open' | 'scheduled' | 'in_progress' | 'completed' | 'cancelled'
 export type JobPriority = 'low' | 'medium' | 'high' | 'normal' | 'none'
 

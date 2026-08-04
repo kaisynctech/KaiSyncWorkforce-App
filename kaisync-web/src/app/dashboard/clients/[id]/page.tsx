@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useEffect, useState, type DragEvent } from 'react'
+import { Suspense, useEffect, useRef, useState, type DragEvent } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -18,10 +18,10 @@ import { Toggle } from '@/components/Toggle'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { ClientActivityTab } from '@/components/ClientActivityTab'
 import { fmtMoney } from '@/lib/finance-calc'
-import type { Client, Site, Project, ProjectDocument } from '@/types/database'
+import type { Client, ClientDocument, ClientNote, Site, Project, ProjectDocument } from '@/types/database'
 import type { FinanceInvoice } from '@/lib/finance-types'
 
-const CLIENT_TABS = ['info', 'projects', 'jobs', 'invoices', 'documents', 'activity'] as const
+const CLIENT_TABS = ['info', 'projects', 'jobs', 'invoices', 'documents', 'notes', 'activity'] as const
 type ClientTab = typeof CLIENT_TABS[number]
 
 const TAB_LABELS: Record<ClientTab, string> = {
@@ -30,7 +30,23 @@ const TAB_LABELS: Record<ClientTab, string> = {
   jobs: 'Jobs',
   invoices: 'Invoices',
   documents: 'Documents',
+  notes: 'Notes',
   activity: 'Activity',
+}
+
+const DOC_TYPES = [
+  { value: 'contract', label: 'Contract' },
+  { value: 'msa', label: 'MSA' },
+  { value: 'nda', label: 'NDA' },
+  { value: 'insurance', label: 'Insurance' },
+  { value: 'purchase_order', label: 'Purchase Order' },
+  { value: 'invoice', label: 'Invoice' },
+  { value: 'correspondence', label: 'Correspondence' },
+  { value: 'other', label: 'Other' },
+] as const
+
+function docTypeLabel(value: string): string {
+  return DOC_TYPES.find(t => t.value === value)?.label ?? value
 }
 
 type ClientJob = {
@@ -112,10 +128,16 @@ function ClientDetailInner() {
   const [projects, setProjects] = useState<Project[]>([])
   const [clientJobs, setClientJobs] = useState<ClientJob[]>([])
   const [invoices, setInvoices] = useState<FinanceInvoice[]>([])
-  const [documents, setDocuments] = useState<ClientDocRow[]>([])
+  const [clientDocs, setClientDocs] = useState<ClientDocument[]>([])
+  const [projectDocs, setProjectDocs] = useState<ClientDocRow[]>([])
+  const [timelineNotes, setTimelineNotes] = useState<ClientNote[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [isBusy, setIsBusy] = useState(false)
+  const [docBusy, setDocBusy] = useState(false)
+  const [uploadDocType, setUploadDocType] = useState('other')
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [noteDraft, setNoteDraft] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [companyCode, setCompanyCode] = useState('')
   const [perms, setPerms] = useState<PermissionSet | null>(null)
@@ -277,6 +299,73 @@ function ClientDetailInner() {
     }))
   }
 
+  async function loadClientDocuments(
+    supabase: ReturnType<typeof createClient>,
+  ): Promise<ClientDocument[]> {
+    const { data, error: e } = await supabase
+      .from('client_documents')
+      .select('*')
+      .eq('client_id', clientId)
+      .order('created_at', { ascending: false })
+    if (e) {
+      setError(e.message)
+      return []
+    }
+    return (data ?? []) as ClientDocument[]
+  }
+
+  async function loadTimelineNotes(
+    supabase: ReturnType<typeof createClient>,
+  ): Promise<ClientNote[]> {
+    const joined = await supabase
+      .from('client_notes')
+      .select('id, company_id, client_id, body, created_by, created_at, employees:created_by(name, surname)')
+      .eq('client_id', clientId)
+      .order('created_at', { ascending: false })
+
+    if (!joined.error && joined.data) {
+      return (joined.data as unknown as Array<Record<string, unknown>>).map(n => {
+        const emp = n.employees as { name?: string; surname?: string } | null
+        return {
+          id: String(n.id),
+          company_id: String(n.company_id),
+          client_id: String(n.client_id),
+          body: String(n.body ?? ''),
+          created_by: (n.created_by as string | null) ?? null,
+          created_at: String(n.created_at ?? ''),
+          author_name: emp ? empName(emp) : null,
+        }
+      })
+    }
+
+    const { data, error: e } = await supabase
+      .from('client_notes')
+      .select('id, company_id, client_id, body, created_by, created_at')
+      .eq('client_id', clientId)
+      .order('created_at', { ascending: false })
+    if (e) {
+      setError(e.message)
+      return []
+    }
+
+    const rows = (data ?? []) as ClientNote[]
+    const authorIds = [...new Set(rows.map(r => r.created_by).filter((id): id is string => Boolean(id)))]
+    const nameById = new Map<string, string>()
+    if (authorIds.length > 0) {
+      const { data: emps } = await supabase
+        .from('employees')
+        .select('id, name, surname')
+        .in('id', authorIds)
+      for (const emp of emps ?? []) {
+        nameById.set((emp as { id: string }).id, empName(emp as { name?: string; surname?: string }))
+      }
+    }
+    return rows.map(n => ({
+      ...n,
+      author_name: n.created_by ? (nameById.get(n.created_by) ?? null) : null,
+    }))
+  }
+
   async function load() {
     setLoading(true)
     const supabase = createClient()
@@ -331,12 +420,16 @@ function ClientDetailInner() {
     setProjects(projectRows)
     setInvoices((iRes.data ?? []) as FinanceInvoice[])
 
-    const [jobs, docs] = await Promise.all([
+    const [jobs, docs, cDocs, tNotes] = await Promise.all([
       loadJobs(supabase, projectRows),
       loadDocuments(supabase, projectRows.map(p => p.id)),
+      loadClientDocuments(supabase),
+      loadTimelineNotes(supabase),
     ])
     setClientJobs(jobs)
-    setDocuments(docs)
+    setProjectDocs(docs)
+    setClientDocs(cDocs)
+    setTimelineNotes(tNotes)
 
     const cId = c.company_id
     const { data: xStatus } = await (supabase.rpc as any)('get_xero_connection_status', { p_company_id: cId })
@@ -538,6 +631,131 @@ function ClientDetailInner() {
       setSites((data ?? []) as Site[])
     }
     setIsBusy(false)
+  }
+
+  async function uploadClientDocument(file: File) {
+    if (!canEdit || !client) return
+    setDocBusy(true)
+    setError(null)
+    const supabase = createClient()
+    const member = await resolveCurrentMember(supabase)
+    if (!member) {
+      setError('Account not linked to an active employee.')
+      setDocBusy(false)
+      return
+    }
+    const ext = file.name.includes('.') ? `.${file.name.split('.').pop()!.toLowerCase()}` : ''
+    const path = `client_documents/${client.company_id}/${clientId}/hr_${crypto.randomUUID()}${ext}`
+    const { error: upErr } = await supabase.storage
+      .from('workforce-media')
+      .upload(path, file, { upsert: true, contentType: file.type || undefined })
+    if (upErr) {
+      setError(upErr.message)
+      setDocBusy(false)
+      return
+    }
+    const { data: pub } = supabase.storage.from('workforce-media').getPublicUrl(path)
+    const { error: insErr } = await supabase.from('client_documents').insert({
+      company_id: client.company_id,
+      client_id: clientId,
+      document_name: file.name,
+      document_type: uploadDocType || 'other',
+      file_url: pub.publicUrl,
+      storage_path: path,
+      file_size_bytes: file.size,
+      mime_type: file.type || null,
+      uploaded_by: member.employeeId,
+    })
+    if (insErr) {
+      setError(insErr.message)
+    } else {
+      await logClientEvent(supabase, {
+        companyId: client.company_id,
+        screen: 'HrClientDetails',
+        action: 'client_document_uploaded',
+        meta: {
+          client_id: clientId,
+          document_name: file.name,
+          document_type: uploadDocType || 'other',
+        },
+      })
+      setClientDocs(await loadClientDocuments(supabase))
+    }
+    if (fileRef.current) fileRef.current.value = ''
+    setDocBusy(false)
+  }
+
+  async function deleteClientDocument(doc: ClientDocument) {
+    if (!canEdit || !client) return
+    if (!window.confirm(`Delete "${doc.document_name}"?`)) return
+    setError(null)
+    const supabase = createClient()
+    if (doc.storage_path) {
+      await supabase.storage.from('workforce-media').remove([doc.storage_path])
+    }
+    const { error: e } = await supabase.from('client_documents').delete().eq('id', doc.id)
+    if (e) {
+      setError(e.message)
+      return
+    }
+    await logClientEvent(supabase, {
+      companyId: client.company_id,
+      screen: 'HrClientDetails',
+      action: 'client_document_deleted',
+      meta: {
+        client_id: clientId,
+        document_name: doc.document_name,
+        document_type: doc.document_type,
+      },
+    })
+    setClientDocs(prev => prev.filter(d => d.id !== doc.id))
+  }
+
+  async function addNote() {
+    if (!canEdit || !client) return
+    const body = noteDraft.trim()
+    if (!body) { setError('Note text is required.'); return }
+    setIsBusy(true)
+    setError(null)
+    const supabase = createClient()
+    const member = await resolveCurrentMember(supabase)
+    if (!member) {
+      setError('Account not linked to an active employee.')
+      setIsBusy(false)
+      return
+    }
+    const { error: e } = await supabase.from('client_notes').insert({
+      company_id: client.company_id,
+      client_id: clientId,
+      body,
+      created_by: member.employeeId,
+    })
+    if (e) {
+      setError(e.message)
+    } else {
+      await logClientEvent(supabase, {
+        companyId: client.company_id,
+        screen: 'HrClientDetails',
+        action: 'client_note_added',
+        meta: { client_id: clientId, description: body.slice(0, 120) },
+      })
+      setNoteDraft('')
+      setTimelineNotes(await loadTimelineNotes(supabase))
+    }
+    setIsBusy(false)
+  }
+
+  async function deleteNote(note: ClientNote) {
+    if (!canEdit || !client) return
+    if (!window.confirm('Delete this note?')) return
+    setError(null)
+    const supabase = createClient()
+    const { error: e } = await supabase.from('client_notes').delete().eq('id', note.id)
+    if (e) {
+      setError(e.message)
+      return
+    }
+    setTimelineNotes(prev => prev.filter(n => n.id !== note.id))
   }
 
   async function updateProjectStatus(p: Project, newStatus: string) {
@@ -1038,43 +1256,188 @@ function ClientDetailInner() {
         )}
 
         {showRelatedTabs && tab === 'documents' && (
-          <div className="space-y-3">
-            <p className="section-label">DOCUMENTS</p>
-            <div className="overflow-x-auto bg-surface rounded-lg border border-divider">
-              <table style={{ minWidth: 520 }} className="w-full">
-                <thead>
-                  <tr className="bg-surface-elevated border-b border-divider">
-                    <th className="data-th">Name</th>
-                    <th style={{ width: 100 }} className="data-th">Type</th>
-                    <th style={{ width: 140 }} className="data-th">Project</th>
-                    <th style={{ width: 64 }} className="data-th"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {documents.length === 0 ? (
-                    <tr><td colSpan={4} className="text-text-secondary text-center py-6 text-[13px]">No documents for this client.</td></tr>
-                  ) : (
-                    documents.map(d => (
-                      <tr key={d.id} className="bg-surface border-b border-divider last:border-0">
-                        <td className="data-td text-text-primary text-[13px] truncate">{d.document_name}</td>
-                        <td className="data-td text-text-secondary text-[12px]">{d.document_type ?? '—'}</td>
-                        <td className="data-td text-text-secondary text-[12px] truncate">{d.project_title ?? '—'}</td>
-                        <td className="data-td">
-                          {d.file_url ? (
-                            <a href={d.file_url} target="_blank" rel="noopener noreferrer"
-                              className="text-primary text-[11px] font-medium h-[30px] inline-flex items-center">
-                              Open →
-                            </a>
-                          ) : (
-                            <span className="text-text-disabled text-[11px]">—</span>
-                          )}
+          <div className="space-y-6">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <p className="section-label">CLIENT DOCUMENTS</p>
+                {canEdit && (
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={uploadDocType}
+                      onChange={e => setUploadDocType(e.target.value)}
+                      className="text-[11px] h-[34px] px-2 rounded-lg border border-border bg-surface text-text-secondary"
+                    >
+                      {DOC_TYPES.map(t => (
+                        <option key={t.value} value={t.value}>{t.label}</option>
+                      ))}
+                    </select>
+                    <input
+                      ref={fileRef}
+                      type="file"
+                      className="hidden"
+                      onChange={e => {
+                        const file = e.target.files?.[0]
+                        if (file) void uploadClientDocument(file)
+                      }}
+                    />
+                    <button
+                      type="button"
+                      disabled={docBusy}
+                      onClick={() => fileRef.current?.click()}
+                      className="btn-primary h-[34px] px-[14px] text-[12px] disabled:opacity-50"
+                    >
+                      {docBusy ? 'Uploading…' : '+ Upload'}
+                    </button>
+                  </div>
+                )}
+              </div>
+              <div className="overflow-x-auto bg-surface rounded-lg border border-divider">
+                <table style={{ minWidth: 520 }} className="w-full">
+                  <thead>
+                    <tr className="bg-surface-elevated border-b border-divider">
+                      <th className="data-th">Name</th>
+                      <th style={{ width: 120 }} className="data-th">Type</th>
+                      <th style={{ width: 110 }} className="data-th">Date</th>
+                      <th style={{ width: 64 }} className="data-th"></th>
+                      {canEdit && <th style={{ width: 64 }} className="data-th"></th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {clientDocs.length === 0 ? (
+                      <tr>
+                        <td colSpan={canEdit ? 5 : 4} className="text-text-secondary text-center py-6 text-[13px]">
+                          No client documents yet.
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                    ) : (
+                      clientDocs.map(d => (
+                        <tr key={d.id} className="bg-surface border-b border-divider last:border-0">
+                          <td className="data-td text-text-primary text-[13px] truncate">{d.document_name}</td>
+                          <td className="data-td text-text-secondary text-[12px]">{docTypeLabel(d.document_type)}</td>
+                          <td className="data-td text-text-secondary text-[12px]">
+                            {d.created_at ? new Date(d.created_at).toLocaleDateString('en-ZA') : '—'}
+                          </td>
+                          <td className="data-td">
+                            {d.file_url ? (
+                              <a href={d.file_url} target="_blank" rel="noopener noreferrer"
+                                className="text-primary text-[11px] font-medium h-[30px] inline-flex items-center">
+                                Open →
+                              </a>
+                            ) : (
+                              <span className="text-text-disabled text-[11px]">—</span>
+                            )}
+                          </td>
+                          {canEdit && (
+                            <td className="data-td">
+                              <button
+                                type="button"
+                                onClick={() => void deleteClientDocument(d)}
+                                className="text-error text-[11px] font-medium h-[30px] inline-flex items-center hover:opacity-70"
+                              >
+                                Delete
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
+
+            <div className="space-y-3">
+              <p className="section-label">FROM PROJECTS</p>
+              <div className="overflow-x-auto bg-surface rounded-lg border border-divider">
+                <table style={{ minWidth: 520 }} className="w-full">
+                  <thead>
+                    <tr className="bg-surface-elevated border-b border-divider">
+                      <th className="data-th">Name</th>
+                      <th style={{ width: 100 }} className="data-th">Type</th>
+                      <th style={{ width: 140 }} className="data-th">Project</th>
+                      <th style={{ width: 64 }} className="data-th"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {projectDocs.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="text-text-secondary text-center py-6 text-[13px]">
+                          No project documents for this client.
+                        </td>
+                      </tr>
+                    ) : (
+                      projectDocs.map(d => (
+                        <tr key={d.id} className="bg-surface border-b border-divider last:border-0">
+                          <td className="data-td text-text-primary text-[13px] truncate">{d.document_name}</td>
+                          <td className="data-td text-text-secondary text-[12px]">{d.document_type ?? '—'}</td>
+                          <td className="data-td text-text-secondary text-[12px] truncate">{d.project_title ?? '—'}</td>
+                          <td className="data-td">
+                            {d.file_url ? (
+                              <a href={d.file_url} target="_blank" rel="noopener noreferrer"
+                                className="text-primary text-[11px] font-medium h-[30px] inline-flex items-center">
+                                Open →
+                              </a>
+                            ) : (
+                              <span className="text-text-disabled text-[11px]">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showRelatedTabs && tab === 'notes' && (
+          <div className="space-y-4">
+            <p className="section-label">TIMELINE NOTES</p>
+            {canEdit && (
+              <div className="card p-4 space-y-3">
+                <textarea
+                  placeholder="Add a note…"
+                  value={noteDraft}
+                  onChange={e => setNoteDraft(e.target.value)}
+                  rows={3}
+                  className="dark-entry min-h-[72px] py-3 resize-none"
+                />
+                <button
+                  type="button"
+                  disabled={isBusy || !noteDraft.trim()}
+                  onClick={() => void addNote()}
+                  className="btn-primary h-[38px] px-4 text-[13px] disabled:opacity-50"
+                >
+                  {isBusy ? 'Adding…' : 'Add note'}
+                </button>
+              </div>
+            )}
+            {timelineNotes.length === 0 ? (
+              <p className="text-text-secondary text-[13px] py-6 text-center">No timeline notes yet.</p>
+            ) : (
+              <div className="space-y-2">
+                {timelineNotes.map(n => (
+                  <div key={n.id} className="card p-3 space-y-1">
+                    <p className="text-[13px] text-text-primary whitespace-pre-wrap">{n.body}</p>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[11px] text-text-secondary">
+                        {n.author_name || '—'} · {new Date(n.created_at).toLocaleString('en-ZA')}
+                      </p>
+                      {canEdit && (
+                        <button
+                          type="button"
+                          onClick={() => void deleteNote(n)}
+                          className="text-error text-[11px] font-medium hover:opacity-70"
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

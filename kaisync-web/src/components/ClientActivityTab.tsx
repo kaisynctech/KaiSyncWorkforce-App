@@ -29,6 +29,9 @@ function eventLabel(action: string): string {
     client_portal_enabled: 'Portal Enabled',
     client_portal_disabled: 'Portal Disabled',
     client_site_added: 'Site Added',
+    client_document_uploaded: 'Document Uploaded',
+    client_document_deleted: 'Document Deleted',
+    client_note_added: 'Note Added',
   }
   if (map[action]) return map[action]
   const s = action.replace(/^client_/, '').replace(/_/g, ' ')
@@ -92,6 +95,12 @@ function description(action: string, meta: Record<string, unknown> | null): stri
   if (action === 'client_site_added') {
     const site = mStr(meta, 'site_name') || mStr(meta, 'name')
     return site ? `Site: ${site}` : ''
+  }
+  if (action === 'client_document_uploaded' || action === 'client_document_deleted') {
+    return mStr(meta, 'document_name')
+  }
+  if (action === 'client_note_added') {
+    return mStr(meta, 'description')
   }
   return mStr(meta, 'description') || mStr(meta, 'name') || ''
 }
