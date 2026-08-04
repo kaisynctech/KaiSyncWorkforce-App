@@ -19,21 +19,25 @@ The migration seeds the owner account when `kaisynctech@gmail.com` exists in `au
 | `company_subscriptions` | Billing snapshot per company (plan, employee count, monthly charge) |
 | `platform_feedback` | Tenant feedback, bugs, feature requests |
 
-### KaiFlow Standard pricing
+### KaiSync Workforce Business pricing
 
 | Component | Value |
 |-----------|-------|
 | Base plan | R2,500/month |
-| Included employees | 25 |
+| Included employees | 25 active |
+| Included portal contractors | 50 (`contractors.portal_enabled` + active) |
+| Included properties | 20 active `sites` |
 | Additional employees | R99/month each |
+| Additional portal contractors | R49/month each |
+| Additional properties | R49/month each |
 
 Examples:
 
-- 25 employees → R2,500
-- 30 employees → R2,500 + (5 × R99) = R2,995
-- 100 employees → R2,500 + (75 × R99) = R9,925
+- 25 employees + ≤50 portal contractors + ≤20 properties → R2,500
+- 25 employees + 300 portal contractors → R2,500 + (250 × R49) = R14,750
+- 30 employees + 60 portal contractors + 25 properties → R2,500 + (5×99) + (10×49) + (5×49) = R3,730
 
-SQL function `kaiflow_calculate_monthly_charge()` mirrors the client `BillingCalculationService`.
+SQL function `kaiflow_calculate_monthly_charge(emp, contractors, properties, …)` and tenant RPC `company_get_billing_summary` power Settings → Billing.
 
 ## Key RPCs
 

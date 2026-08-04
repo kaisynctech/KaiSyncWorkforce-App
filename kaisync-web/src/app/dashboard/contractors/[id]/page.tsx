@@ -137,6 +137,7 @@ function ContractorDetailInner() {
   const [regNumber, setRegNumber] = useState('')
   const [rating, setRating] = useState(0)
   const [isActive, setIsActive] = useState(true)
+  const [portalEnabled, setPortalEnabled] = useState(false)
   const [taxNumber, setTaxNumber] = useState('')
   const [isVatRegistered, setIsVatRegistered] = useState(false)
   const [vatNumber, setVatNumber] = useState('')
@@ -201,6 +202,7 @@ function ContractorDetailInner() {
     setName(cont.name ?? '')
     setRating(cont.rating ?? 0)
     setIsActive(cont.is_active ?? true)
+    setPortalEnabled(cont.portal_enabled ?? false)
     setTaxNumber(cont.tax_number ?? '')
     setIsVatRegistered(cont.is_vat_registered ?? false)
     setVatNumber(cont.vat_number ?? '')
@@ -314,6 +316,7 @@ function ContractorDetailInner() {
         notes:                       notes.trim() || null,
         rating,
         is_active:                   isActive,
+        portal_enabled:              portalEnabled,
         compliance_pack:             compliancePack || null,
         account_holder_name:         accHolder.trim() || null,
         bank_name:                   payBankName.trim() || null,
@@ -335,13 +338,35 @@ function ContractorDetailInner() {
       .eq('id', contractorId)
 
     if (e) setError(e.message)
-    else setContractor(prev => prev ? { ...prev, name: name.trim(), is_active: isActive, rating } : prev)
+    else setContractor(prev => prev
+      ? { ...prev, name: name.trim(), is_active: isActive, portal_enabled: portalEnabled, rating }
+      : prev)
     setSaving(false)
   }
 
   async function handleRotateCode() {
     const supabase = createClient()
-    try { await supabase.rpc('rotate_contractor_portal_code', { p_contractor_id: contractorId }); load() } catch {}
+    try {
+      await supabase.rpc('rotate_contractor_portal_code', { p_contractor_id: contractorId })
+      if (!portalEnabled) {
+        await supabase.from('contractors').update({ portal_enabled: true }).eq('id', contractorId)
+        setPortalEnabled(true)
+      }
+      load()
+    } catch { /* ignore */ }
+  }
+
+  async function handlePortalToggle(next: boolean) {
+    setPortalEnabled(next)
+    if (next && !hasContractorCode) {
+      // Enabling portal without a code: generate one so they can sign in.
+      const supabase = createClient()
+      try {
+        await supabase.rpc('rotate_contractor_portal_code', { p_contractor_id: contractorId })
+        await supabase.from('contractors').update({ portal_enabled: true }).eq('id', contractorId)
+        load()
+      } catch { /* ignore */ }
+    }
   }
 
   async function approveBanking() {
@@ -597,27 +622,38 @@ function ContractorDetailInner() {
               </FormField>
             </SectionCard>
 
-            {hasContractorCode && (
-              <SectionCard title="CONTRACTOR PORTAL CODE">
-                <p className="text-[12px] text-text-secondary">
-                  Share with the subcontractor team — one code for sign-in, site time, photos, and messages.
-                </p>
-                <FormField label="Auto-generated">
-                  <input readOnly value={contractor?.contractor_code ?? ''}
-                    className={`${entryClass} text-text-secondary cursor-default`} />
-                </FormField>
-                <button onClick={handleRotateCode}
-                  className="h-10 px-4 text-[12px] rounded-lg font-semibold transition-colors"
-                  style={{ backgroundColor: '#FEF3C7', color: '#92400E' }}>
-                  Rotate portal code
-                </button>
-                {contractor?.contractor_code_expires_at && (
-                  <p className="text-[11px] text-text-secondary">
-                    Expires: {fmtDate(contractor.contractor_code_expires_at)}
+            <SectionCard title="CONTRACTOR PORTAL">
+              <div className="flex items-center justify-between py-1">
+                <div>
+                  <p className="text-[14px] font-medium text-text-primary">Portal user</p>
+                  <p className="text-[12px] text-text-secondary">
+                    Enables portal login and uses 1 contractor seat (50 included, then R49/month).
                   </p>
-                )}
-              </SectionCard>
-            )}
+                </div>
+                <Toggle checked={portalEnabled} onChange={handlePortalToggle} />
+              </div>
+              {hasContractorCode && (
+                <>
+                  <FormField label="Portal code">
+                    <input readOnly value={contractor?.contractor_code ?? ''}
+                      className={`${entryClass} text-text-secondary cursor-default`} />
+                  </FormField>
+                  <button onClick={handleRotateCode}
+                    className="h-10 px-4 text-[12px] rounded-lg font-semibold transition-colors"
+                    style={{ backgroundColor: '#FEF3C7', color: '#92400E' }}>
+                    Rotate portal code
+                  </button>
+                  {contractor?.contractor_code_expires_at && (
+                    <p className="text-[11px] text-text-secondary">
+                      Expires: {fmtDate(contractor.contractor_code_expires_at)}
+                    </p>
+                  )}
+                </>
+              )}
+              {!hasContractorCode && portalEnabled && (
+                <p className="text-[12px] text-text-secondary">Generating portal code…</p>
+              )}
+            </SectionCard>
 
             <SectionCard title="CONTACT">
               <FormField label="Contact person">

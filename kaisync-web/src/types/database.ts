@@ -126,6 +126,8 @@ export interface Site {
   has_coordinates?: boolean
   latitude?: number | null
   longitude?: number | null
+  /** Active properties count toward billing seats. */
+  is_active?: boolean
 }
 
 export interface Project {
@@ -278,6 +280,8 @@ export interface Contractor {
   is_vat_registered: boolean
   vat_number: string | null
   is_active: boolean
+  /** Portal access + billable contractor seat when true (with is_active). */
+  portal_enabled?: boolean
   rating: number
   notes: string | null
   contractor_code_expires_at: string | null

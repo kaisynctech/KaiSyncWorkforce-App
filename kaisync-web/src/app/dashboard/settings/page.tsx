@@ -11,6 +11,7 @@ import {
   type EnabledModules,
 } from '@/lib/company-modules'
 import type { Company, Employee, SecuritySettings, AuditEvent } from '@/types/database'
+import { formatZar, loadCompanyBillingSummary, type BillingSummary } from '@/lib/billing'
 
 // ─── Local types ──────────────────────────────────────────────────────────────
 
@@ -64,6 +65,11 @@ export default function SettingsPage() {
   const [xeroMsg,            setXeroMsg]            = useState<string | null>(null)
   const [payrollPeriodStart, setPayrollPeriodStart] = useState('')
   const [payrollPeriodEnd,   setPayrollPeriodEnd]   = useState('')
+
+  // ── Billing ─────────────────────────────────────────────────────────────
+  const [billing, setBilling] = useState<BillingSummary | null>(null)
+  const [billingError, setBillingError] = useState<string | null>(null)
+  const [billingLoading, setBillingLoading] = useState(false)
 
   useEffect(() => { load() }, [])
   useEffect(() => {
@@ -127,7 +133,22 @@ export default function SettingsPage() {
     setHrAdmins(emps.filter(e => ['owner', 'hr', 'manager'].includes(e.access_level)))
 
     await loadXero(member.companyId)
+    await loadBilling(member.companyId)
     setLoading(false)
+  }
+
+  async function loadBilling(cId: string) {
+    setBillingLoading(true)
+    setBillingError(null)
+    const supabase = createClient()
+    const res = await loadCompanyBillingSummary(supabase, cId)
+    if (!res.ok) {
+      setBilling(null)
+      setBillingError(res.message)
+    } else {
+      setBilling(res.summary)
+    }
+    setBillingLoading(false)
   }
 
   async function loadXero(cId: string) {
@@ -427,7 +448,78 @@ export default function SettingsPage() {
         </div>
       </Section>
 
-      {/* 2. Modules */}
+      {/* 2. Billing */}
+      {isHrOrAbove && (
+        <Section title="Billing" icon="payments">
+          <div className="flex flex-col gap-4">
+            <p className="text-[13px] text-text-secondary">
+              Live monthly amount based on active employees, portal contractors, and active properties.
+              Payment collection is handled by KaiSync — this is your current subscription estimate.
+            </p>
+            {billingLoading && (
+              <p className="text-[13px] text-text-secondary">Calculating…</p>
+            )}
+            {billingError && (
+              <p className="text-[13px] text-danger">{billingError}</p>
+            )}
+            {billing && !billingLoading && (
+              <>
+                <div className="rounded-lg border border-border bg-surface-elevated p-4">
+                  <p className="text-[12px] text-text-secondary uppercase tracking-wide">Amount due monthly</p>
+                  <p className="text-[28px] font-semibold text-text-primary mt-1">
+                    {formatZar(Number(billing.monthly_charge))}
+                  </p>
+                  <p className="text-[13px] text-text-secondary mt-1">
+                    {billing.plan_name} · status {billing.status}
+                    {billing.renewal_date ? ` · renews ${billing.renewal_date}` : ''}
+                  </p>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <MeterCard
+                    label="Employees"
+                    count={billing.employees.count}
+                    included={billing.employees.included}
+                    overage={billing.employees.overage}
+                    unitPrice={billing.employees.unit_price}
+                  />
+                  <MeterCard
+                    label="Portal contractors"
+                    count={billing.contractors.count}
+                    included={billing.contractors.included}
+                    overage={billing.contractors.overage}
+                    unitPrice={billing.contractors.unit_price}
+                  />
+                  <MeterCard
+                    label="Properties"
+                    count={billing.properties.count}
+                    included={billing.properties.included}
+                    overage={billing.properties.overage}
+                    unitPrice={billing.properties.unit_price}
+                  />
+                </div>
+                <div className="flex flex-col gap-2 border-t border-divider pt-3">
+                  {(billing.lines ?? []).map((line, i) => (
+                    <div key={i} className="flex items-center justify-between gap-3 text-[13px]">
+                      <span className="text-text-secondary">{line.description}</span>
+                      <span className="font-medium text-text-primary shrink-0">{formatZar(Number(line.amount))}</span>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => companyId && loadBilling(companyId)}
+                  disabled={billingLoading}
+                  className="self-start h-9 px-4 rounded-md border border-border text-[13px] font-semibold text-text-primary hover:bg-surface-elevated disabled:opacity-50"
+                >
+                  Refresh
+                </button>
+              </>
+            )}
+          </div>
+        </Section>
+      )}
+
+      {/* 3. Modules */}
       <Section title="Modules" icon="extension">
         <div className="flex flex-col gap-3">
           <p className="text-[13px] text-text-secondary">
@@ -982,6 +1074,34 @@ function RowInfo({ label, value }: { label: string; value: string }) {
     <div className="flex items-center justify-between py-2 border-b border-divider last:border-0">
       <p className="text-[13px] text-text-secondary">{label}</p>
       <p className="text-[13px] font-medium text-text-primary">{value}</p>
+    </div>
+  )
+}
+
+function MeterCard({
+  label,
+  count,
+  included,
+  overage,
+  unitPrice,
+}: {
+  label: string
+  count: number
+  included: number
+  overage: number
+  unitPrice: number
+}) {
+  return (
+    <div className="rounded-lg border border-border p-3">
+      <p className="text-[12px] text-text-secondary">{label}</p>
+      <p className="text-[18px] font-semibold text-text-primary mt-0.5">
+        {count} <span className="text-[12px] font-normal text-text-secondary">/ {included} included</span>
+      </p>
+      <p className="text-[11px] text-text-secondary mt-1">
+        {overage > 0
+          ? `${overage} over · ${formatZar(unitPrice)} each`
+          : `Within included · then ${formatZar(unitPrice)}`}
+      </p>
     </div>
   )
 }
