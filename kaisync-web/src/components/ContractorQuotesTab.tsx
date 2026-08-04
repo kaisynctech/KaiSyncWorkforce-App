@@ -52,9 +52,12 @@ function isReviewable(status: string) {
 export function ContractorQuotesTab({
   companyId,
   contractorId,
+  initialQuoteId,
 }: {
   companyId: string
   contractorId: string
+  /** Open this quote when the tab loads (Action Centre deep-link). */
+  initialQuoteId?: string | null
 }) {
   const [quotes, setQuotes] = useState<QuoteRow[]>([])
   const [selected, setSelected] = useState<QuoteRow | null>(null)
@@ -111,6 +114,16 @@ export function ContractorQuotesTab({
       setQuotes(prev => prev.map(x => x.id === q.id ? refreshed : x))
     }
   }
+
+  // Action Centre deep-link: open the specific quote once
+  useEffect(() => {
+    if (!initialQuoteId || loading || quotes.length === 0) return
+    if (selected?.id === initialQuoteId) return
+    const match = quotes.find(q => q.id === initialQuoteId)
+    if (match) void openQuote(match)
+    // intentionally only when list/identity ready
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialQuoteId, loading, quotes])
 
   async function runAction(kind: 'approve' | 'reject' | 'revise') {
     if (!selected || !hrEmployeeId) return

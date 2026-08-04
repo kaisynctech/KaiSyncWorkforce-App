@@ -130,14 +130,18 @@ export default function ContractorsPage() {
     e.stopPropagation()
     if (!canEdit || !companyId || !sessionToken || xeroPushing) return
     setXeroPushing(contractorId)
+    setXeroMsg(null)
     try {
       const resp = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/xero-sync-contacts`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${sessionToken}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ company_id: companyId, record_id: contractorId, record_type: 'contractor' }),
       })
-      const data = await resp.json()
+      const data = await resp.json().catch(() => ({} as { ok?: boolean; error?: string }))
       if (data.ok) setXeroLinked(prev => new Set([...prev, contractorId]))
+      else setXeroMsg(data.error ?? `Xero push failed (${resp.status})`)
+    } catch {
+      setXeroMsg('Xero push failed — network or server error')
     } finally {
       setXeroPushing(null)
     }
@@ -146,13 +150,22 @@ export default function ContractorsPage() {
   async function syncAllToXero() {
     if (!canEdit || !companyId || !sessionToken) return
     setXeroPushing('__all__')
+    setXeroMsg(null)
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/xero-sync-contacts`, {
+      const resp = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/xero-sync-contacts`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${sessionToken}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ company_id: companyId }),
       })
-      await load()
+      const data = await resp.json().catch(() => ({} as { ok?: boolean; error?: string; synced?: number }))
+      if (data.ok) {
+        setXeroMsg(`Synced to Xero${data.synced != null ? `: ${data.synced} contact(s)` : ''}.`)
+        await load()
+      } else {
+        setXeroMsg(data.error ?? `Xero sync failed (${resp.status})`)
+      }
+    } catch {
+      setXeroMsg('Xero sync failed — network or server error')
     } finally {
       setXeroPushing(null)
     }
@@ -246,7 +259,9 @@ export default function ContractorsPage() {
 
       {xeroMsg && (
         <p className={`mx-4 mb-2 text-[12px] px-3 py-2 rounded ${
-          xeroMsg.includes('Imported') ? 'bg-green-900/30 text-green-300' : 'bg-red-900/30 text-red-300'
+          xeroMsg.includes('Imported') || xeroMsg.includes('Synced')
+            ? 'bg-green-900/30 text-green-300'
+            : 'bg-red-900/30 text-red-300'
         }`}>
           {xeroMsg}
           <button onClick={() => setXeroMsg(null)} className="ml-2 opacity-60 hover:opacity-100">✕</button>
@@ -304,7 +319,12 @@ export default function ContractorsPage() {
                           : item.action_type.startsWith('document_') ? 'Compliance'
                             : item.action_type === 'quote_pending' ? 'Quotes'
                               : 'Information'
-                      router.push(`/dashboard/contractors/${item.contractor_id}?tab=${tab}`)
+                      const params = new URLSearchParams({
+                        tab,
+                        focus: item.ref_id,
+                        focusType: item.action_type,
+                      })
+                      router.push(`/dashboard/contractors/${item.contractor_id}?${params.toString()}`)
                     }}
                     className="text-primary text-[11px] h-[30px] text-right hover:opacity-70 transition-opacity"
                   >

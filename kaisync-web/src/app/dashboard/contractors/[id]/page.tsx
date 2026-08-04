@@ -155,6 +155,8 @@ function ContractorDetailInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const fromSuppliers = searchParams.get('from') === 'suppliers'
+  const focusId = searchParams.get('focus')
+  const focusType = searchParams.get('focusType')
   const contractorId = params.id
 
   // Legacy deep-link: send supplier module traffic to dedicated supplier detail
@@ -174,8 +176,11 @@ function ContractorDetailInner() {
   const [xeroLink,      setXeroLink]      = useState<{ xero_contact_id: string; last_synced_at: string } | null>(null)
   const [xeroConnected, setXeroConnected] = useState(false)
   const [xeroPushing,   setXeroPushing]   = useState(false)
+  const [xeroMsg,       setXeroMsg]       = useState<string | null>(null)
   const [sessionToken,  setSessionToken]  = useState<string | null>(null)
   const [perms, setPerms] = useState<PermissionSet | null>(null)
+  const [codeCopied, setCodeCopied] = useState(false)
+  const [focusDocId, setFocusDocId] = useState<string | null>(null)
   const canEdit = can(perms, PERM.contractorsEdit)
 
   // Information tab
@@ -236,7 +241,23 @@ function ContractorDetailInner() {
   useEffect(() => {
     const t = searchParams.get('tab')
     if (t && TABS.includes(t)) setTab(t)
-  }, [searchParams])
+    if (focusType?.startsWith('document_') && focusId) {
+      setFocusDocId(focusId)
+      setDocFilter('all')
+    }
+  }, [searchParams, focusId, focusType])
+
+  useEffect(() => {
+    if (tab !== 'Payments' || focusType !== 'banking_pending') return
+    const el = document.getElementById('pending-banking-review')
+    el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [tab, focusType, pendingBanking, loading])
+
+  useEffect(() => {
+    if (tab !== 'Compliance' || !focusDocId) return
+    const el = document.getElementById(`compliance-doc-${focusDocId}`)
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [tab, focusDocId, complianceDocs, loading])
 
   useEffect(() => { load() }, [contractorId])
 
@@ -645,18 +666,41 @@ function ContractorDetailInner() {
   }
 
   async function pushToXero() {
-    if (!contractor?.company_id || !sessionToken || xeroPushing) return
+    if (!canEdit || !contractor?.company_id || !sessionToken || xeroPushing) return
     setXeroPushing(true)
+    setXeroMsg(null)
     try {
       const resp = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/xero-sync-contacts`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${sessionToken}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ company_id: contractor.company_id, record_id: contractorId, record_type: 'contractor' }),
       })
-      const data = await resp.json()
-      if (data.ok) setXeroLink({ xero_contact_id: data.xero_contact_id, last_synced_at: new Date().toISOString() })
+      const data = await resp.json().catch(() => ({} as { ok?: boolean; error?: string; xero_contact_id?: string }))
+      if (data.ok) {
+        setXeroLink({
+          xero_contact_id: data.xero_contact_id ?? xeroLink?.xero_contact_id ?? '',
+          last_synced_at: new Date().toISOString(),
+        })
+        setXeroMsg('Synced to Xero.')
+      } else {
+        setXeroMsg(data.error ?? `Xero push failed (${resp.status})`)
+      }
+    } catch {
+      setXeroMsg('Xero push failed — network or server error')
     } finally {
       setXeroPushing(false)
+    }
+  }
+
+  async function copyPortalCode() {
+    const code = contractor?.contractor_code
+    if (!code) return
+    try {
+      await navigator.clipboard.writeText(code)
+      setCodeCopied(true)
+      window.setTimeout(() => setCodeCopied(false), 2000)
+    } catch {
+      setError('Could not copy portal code to clipboard.')
     }
   }
 
@@ -789,18 +833,26 @@ function ContractorDetailInner() {
                     <span className="text-text-disabled text-[11px]">
                       {new Date(xeroLink.last_synced_at).toLocaleDateString()}
                     </span>
-                    <button onClick={pushToXero} disabled={xeroPushing}
+                    <button onClick={pushToXero} disabled={xeroPushing || !canEdit}
                       className="text-[11px] text-[#13B5EA] hover:opacity-70 disabled:opacity-40">
                       Update in Xero
                     </button>
                   </>
                 ) : (
-                  <button onClick={pushToXero} disabled={xeroPushing}
+                  <button onClick={pushToXero} disabled={xeroPushing || !canEdit}
                     className="inline-flex items-center gap-1 text-[12px] px-3 py-1 rounded border border-[#13B5EA] text-[#13B5EA] hover:bg-[#13B5EA]/10 disabled:opacity-40 transition-colors">
                     {xeroPushing ? 'Pushing…' : '+ Push to Xero'}
                   </button>
                 )}
               </div>
+            )}
+            {xeroMsg && (
+              <p className={`text-[11px] mt-1 ${
+                xeroMsg.includes('Synced') ? 'text-green-400' : 'text-error'
+              }`}>
+                {xeroMsg}
+                <button type="button" onClick={() => setXeroMsg(null)} className="ml-2 opacity-60 hover:opacity-100">✕</button>
+              </p>
             )}
           </div>
         </div>
@@ -911,8 +963,17 @@ function ContractorDetailInner() {
               {hasContractorCode && (
                 <>
                   <FormField label="Portal code">
-                    <input readOnly value={contractor?.contractor_code ?? ''}
-                      className={`${entryClass} text-text-secondary cursor-default`} />
+                    <div className="flex gap-2">
+                      <input readOnly value={contractor?.contractor_code ?? ''}
+                        className={`${entryClass} text-text-secondary cursor-default flex-1`} />
+                      <button
+                        type="button"
+                        onClick={() => void copyPortalCode()}
+                        className="h-11 px-3 rounded-lg border border-border text-[12px] font-medium text-primary shrink-0 hover:bg-surface-elevated"
+                      >
+                        {codeCopied ? 'Copied' : 'Copy'}
+                      </button>
+                    </div>
                   </FormField>
                   <p className="text-[11px] text-text-secondary">
                     Permanent login code (assigned once). Contractors sign in with company code + this code.
@@ -1186,7 +1247,13 @@ function ContractorDetailInner() {
                         const showWarn = daysToExpiry <= 30 && daysToExpiry >= 0
                         const expiryColor = daysToExpiry < 0 ? '#FCA5A5' : showWarn ? '#F59E0B' : 'var(--color-text-secondary)'
                         return (
-                          <tr key={doc.id} className="bg-surface border-b border-divider last:border-0">
+                          <tr
+                            id={`compliance-doc-${doc.id}`}
+                            key={doc.id}
+                            className={`bg-surface border-b border-divider last:border-0 ${
+                              focusDocId === doc.id ? 'ring-2 ring-primary/60 ring-inset' : ''
+                            }`}
+                          >
                             <td className="data-td text-[12px] truncate text-text-secondary">{documentTypeLabel(doc.document_type)}</td>
                             <td className="data-td">
                               <p className="text-[12px] text-text-primary truncate">{doc.document_name}</p>
@@ -1242,7 +1309,7 @@ function ContractorDetailInner() {
         {tab === 'Payments' && (
           <div className="flex-1 overflow-y-auto p-4 space-y-4 w-full">
             {hasPendingBanking && pendingBankingDisplay && (
-              <div className="rounded-[10px] border border-[#78350F] bg-[#1A1200] p-[14px] space-y-[10px]">
+              <div id="pending-banking-review" className="rounded-[10px] border border-[#78350F] bg-[#1A1200] p-[14px] space-y-[10px]">
                 <div className="flex items-center gap-2">
                   <span className="material-icons text-[18px]" style={{ color: '#FCD34D' }}>info</span>
                   <div>
@@ -1578,14 +1645,22 @@ function ContractorDetailInner() {
         {/* ── QUOTES ── */}
         {tab === 'Quotes' && contractor && (
           <div className="flex-1 overflow-y-auto">
-            <ContractorQuotesTab companyId={contractor.company_id} contractorId={contractorId} />
+            <ContractorQuotesTab
+              companyId={contractor.company_id}
+              contractorId={contractorId}
+              initialQuoteId={focusType === 'quote_pending' ? focusId : null}
+            />
           </div>
         )}
 
         {/* ── INVOICES / PAYOUTS ── */}
         {tab === 'Invoices' && contractor && (
           <div className="flex-1 overflow-y-auto">
-            <ContractorInvoicesTab companyId={contractor.company_id} contractorId={contractorId} />
+            <ContractorInvoicesTab
+              companyId={contractor.company_id}
+              contractorId={contractorId}
+              canEdit={canEdit}
+            />
           </div>
         )}
       </div>
