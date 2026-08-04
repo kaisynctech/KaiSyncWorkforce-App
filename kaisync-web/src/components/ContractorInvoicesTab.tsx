@@ -6,6 +6,10 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { calculateVatExclusive, fmtMoney, roundFinancial } from '@/lib/finance-calc'
 import {
+  approveContractorPayout,
+  markContractorPayoutPaid,
+} from '@/lib/finance-api'
+import {
   confirmContractorPayoutRisks,
   fetchContractorPayoutRiskFlags,
 } from '@/lib/contractor-payout-gate'
@@ -41,9 +45,11 @@ const fmtDate = (d: string | null | undefined) => {
 export function ContractorInvoicesTab({
   companyId,
   contractorId,
+  canEdit = false,
 }: {
   companyId: string
   contractorId: string
+  canEdit?: boolean
 }) {
   const [rows, setRows] = useState<PayoutRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -52,14 +58,24 @@ export function ContractorInvoicesTab({
   const [amount, setAmount] = useState('')
   const [notes, setNotes] = useState('')
   const [busy, setBusy] = useState(false)
+  const [busyId, setBusyId] = useState<string | null>(null)
   const [employeeId, setEmployeeId] = useState<string | null>(null)
+  const [actorName, setActorName] = useState<string>('User')
 
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
     const supabase = createClient()
     const member = await resolveCurrentMember(supabase)
-    if (member) setEmployeeId(member.employeeId)
+    if (member) {
+      setEmployeeId(member.employeeId)
+      const { data: emp } = await supabase
+        .from('employees')
+        .select('name, surname')
+        .eq('id', member.employeeId)
+        .maybeSingle()
+      if (emp) setActorName(`${emp.name} ${emp.surname}`)
+    }
 
     const { data, error: qErr } = await supabase
       .from('contractor_payouts')
@@ -129,6 +145,41 @@ export function ContractorInvoicesTab({
     await load()
   }
 
+  async function approvePayout(row: PayoutRow) {
+    if (!canEdit || !employeeId) return
+    setBusyId(row.id)
+    setError(null)
+    const supabase = createClient()
+    try {
+      await approveContractorPayout(supabase, row.id, employeeId, actorName)
+      await load()
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Approve failed')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function markPaid(row: PayoutRow) {
+    if (!canEdit || !employeeId) return
+    const supabase = createClient()
+    const flags = await fetchContractorPayoutRiskFlags(supabase, contractorId)
+    if (flags && !confirmContractorPayoutRisks(flags, 'Mark paid')) return
+    setBusyId(row.id)
+    setError(null)
+    try {
+      if (row.approval_status !== 'approved') {
+        await approveContractorPayout(supabase, row.id, employeeId, actorName)
+      }
+      await markContractorPayoutPaid(supabase, row.id, 'eft', employeeId, actorName)
+      await load()
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Mark paid failed')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   return (
     <div className="p-4 space-y-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -148,7 +199,8 @@ export function ContractorInvoicesTab({
           <button
             type="button"
             onClick={() => setShowAdd(true)}
-            className="btn-primary h-9 px-3 text-[12px]"
+            disabled={!canEdit}
+            className="btn-primary h-9 px-3 text-[12px] disabled:opacity-50"
           >
             + Payout
           </button>
@@ -190,12 +242,13 @@ export function ContractorInvoicesTab({
                 <th className="data-th text-right">Net</th>
                 <th className="data-th text-left">Paid</th>
                 <th className="data-th text-left">Notes</th>
+                {canEdit && <th className="data-th text-right">Actions</th>}
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="text-center text-[13px] text-text-secondary py-10">
+                  <td colSpan={canEdit ? 8 : 7} className="text-center text-[13px] text-text-secondary py-10">
                     No payouts yet for this contractor.
                   </td>
                 </tr>
@@ -203,6 +256,8 @@ export function ContractorInvoicesTab({
                 rows.map(r => {
                   const pc = PAYOUT_COLORS[r.payout_status] ?? PAYOUT_COLORS.pending
                   const ac = APPROVAL_COLORS[r.approval_status] ?? APPROVAL_COLORS.pending
+                  const canApprove = r.approval_status === 'pending' && r.payout_status !== 'paid' && r.payout_status !== 'cancelled'
+                  const canPay = r.payout_status !== 'paid' && r.payout_status !== 'cancelled'
                   return (
                     <tr key={r.id} className="border-b border-divider last:border-0">
                       <td className="data-td text-[12px] text-text-secondary">{fmtDate(r.created_at)}</td>
@@ -226,6 +281,32 @@ export function ContractorInvoicesTab({
                       <td className="data-td text-[12px] text-text-secondary truncate max-w-[160px]">
                         {r.notes ?? '—'}
                       </td>
+                      {canEdit && (
+                        <td className="data-td text-right">
+                          <div className="inline-flex gap-1 justify-end">
+                            {canApprove && (
+                              <button
+                                type="button"
+                                disabled={busyId === r.id}
+                                onClick={() => void approvePayout(r)}
+                                className="h-7 px-2 rounded text-[11px] bg-success-dark text-success disabled:opacity-40"
+                              >
+                                Approve
+                              </button>
+                            )}
+                            {canPay && (
+                              <button
+                                type="button"
+                                disabled={busyId === r.id}
+                                onClick={() => void markPaid(r)}
+                                className="h-7 px-2 rounded text-[11px] bg-primary text-white disabled:opacity-40"
+                              >
+                                Mark paid
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   )
                 })
