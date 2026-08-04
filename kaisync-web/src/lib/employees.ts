@@ -17,11 +17,29 @@ import {
   normalizeEmploymentType,
   normalizeWorkerType,
 } from '@/lib/employee-taxonomy'
+import { executeWithStepUp } from '@/lib/step-up'
 import type { Branch, Employee, ShiftTemplate } from '@/types/database'
 
 export type EmployeeResult<T> =
   | { ok: true; data: T }
   | { ok: false; message: string }
+
+async function getCallerRole(
+  supabase: SupabaseClient,
+  companyId: string
+): Promise<string | null> {
+  const { data, error } = await supabase.rpc('get_my_role', { p_company_id: companyId })
+  if (error) return null
+  return typeof data === 'string' ? data : null
+}
+
+function normBank(v: string | null | undefined): string {
+  return (v ?? '').trim()
+}
+
+function normAccountType(v: string | null | undefined): string {
+  return (v ?? '').trim().toLowerCase()
+}
 
 export async function listEmployees(
   supabase: SupabaseClient,
@@ -126,30 +144,79 @@ export async function createEmployee(
   supabase: SupabaseClient,
   input: EmployeeCreateInput
 ): Promise<EmployeeResult<Employee>> {
+  const desiredRole = normalizeAccessLevel(input.accessLevel)
+
+  // Owner cannot be assigned at create — use ownership transfer.
+  if (desiredRole === 'owner') {
+    return {
+      ok: false,
+      message: 'Owner cannot be assigned when creating an employee. Create as HR/Manager, then transfer ownership.',
+    }
+  }
+
+  // Validate elevate permission before insert (avoids orphan employee + failed role).
+  if (desiredRole === 'manager' || desiredRole === 'hr') {
+    const callerRole = await getCallerRole(supabase, input.companyId)
+    if (callerRole !== 'owner' && callerRole !== 'hr') {
+      return {
+        ok: false,
+        message: 'Only Owner or HR can assign Manager or HR access levels.',
+      }
+    }
+    if (desiredRole === 'hr' && callerRole !== 'owner') {
+      return {
+        ok: false,
+        message: 'Only the company Owner can assign the HR access level.',
+      }
+    }
+  }
+
   const org = await buildOrgWriteFields(supabase, input.companyId, {
     department: input.department,
     branchId: input.branchId,
     branchName: input.branchName,
     managerId: input.managerId,
   })
+
+  // ARCH-009: INSERT RLS only allows access_level = 'employee'.
+  // Elevate manager/hr after insert via set_employee_role (SECURITY DEFINER).
   const payload = buildEmployeeCreatePayload({
     ...input,
     employmentType: normalizeEmploymentType(input.employmentType),
     workerType: normalizeWorkerType(input.workerType),
-    accessLevel: normalizeAccessLevel(input.accessLevel),
+    accessLevel: 'employee',
     department: org.department,
     branchId: org.branch_id,
     branchName: org.branch,
     managerId: org.manager_id,
     managerUserId: org.manager_user_id,
   })
+
   const { data, error } = await supabase
     .from('employees')
     .insert(payload)
     .select()
     .single()
   if (error) return { ok: false, message: error.message }
-  return { ok: true, data: data as Employee }
+
+  let employee = data as Employee
+
+  if (desiredRole === 'manager' || desiredRole === 'hr') {
+    const { error: roleErr } = await supabase.rpc('set_employee_role', {
+      p_company_id: input.companyId,
+      p_employee_id: employee.id,
+      p_new_role: desiredRole,
+    })
+    if (roleErr) {
+      return {
+        ok: false,
+        message: `Employee created, but role could not be set to ${desiredRole}: ${roleErr.message}`,
+      }
+    }
+    employee = { ...employee, access_level: desiredRole }
+  }
+
+  return { ok: true, data: employee }
 }
 
 export type EmployeeUpdateInput = {
@@ -187,17 +254,41 @@ export type EmployeeUpdateInput = {
   accountType?: string | null
 }
 
+export type EmployeeUpdateOptions = {
+  /** Required when banking fields change and company has step-up enabled. */
+  promptPassword?: () => Promise<string | null>
+}
+
 export async function updateEmployee(
   supabase: SupabaseClient,
   employeeId: string,
-  input: EmployeeUpdateInput
+  input: EmployeeUpdateInput,
+  opts?: EmployeeUpdateOptions
 ): Promise<EmployeeResult<void>> {
+  const desiredRole = normalizeAccessLevel(input.accessLevel)
+
+  const currentRes = await getEmployee(supabase, input.companyId, employeeId)
+  if (!currentRes.ok) return currentRes
+  const current = currentRes.data
+  if (!current) return { ok: false, message: 'Employee not found.' }
+
+  const currentRole = normalizeAccessLevel(current.access_level)
+  if (desiredRole === 'owner' && currentRole !== 'owner') {
+    return {
+      ok: false,
+      message: 'Owner cannot be assigned here. Use ownership transfer in Settings.',
+    }
+  }
+
   const org = await buildOrgWriteFields(supabase, input.companyId, {
     department: input.department,
     branchId: input.branchId,
     branchName: input.branchName,
     managerId: input.managerId,
   })
+
+  // Direct UPDATE only for ARCH-007-granted (+ post-ARCH-007 org/pay) columns.
+  // access_level → set_employee_role; banking → update_employee_banking.
   const { error } = await supabase
     .from('employees')
     .update({
@@ -214,7 +305,6 @@ export async function updateEmployee(
       shift_template_id: input.shiftTemplateId || null,
       employment_type: normalizeEmploymentType(input.employmentType),
       worker_type: normalizeWorkerType(input.workerType),
-      access_level: normalizeAccessLevel(input.accessLevel),
       manager_id: org.manager_id,
       manager_user_id: org.manager_user_id,
       employment_date: input.employmentDate || null,
@@ -230,13 +320,61 @@ export async function updateEmployee(
       daily_hours: input.dailyHours,
       hourly_rate: input.hourlyRate,
       daily_rate: input.dailyRate,
-      bank_name: input.bankName?.trim() || null,
-      bank_account: input.bankAccount?.trim() || null,
-      bank_branch_code: input.bankBranchCode?.trim() || null,
-      account_type: input.accountType || null,
     })
     .eq('id', employeeId)
+    .eq('company_id', input.companyId)
   if (error) return { ok: false, message: error.message }
+
+  // Never mutate owner via this path; use transfer_company_ownership.
+  if (currentRole !== 'owner' && desiredRole !== 'owner' && desiredRole !== currentRole) {
+    const { error: roleErr } = await supabase.rpc('set_employee_role', {
+      p_company_id: input.companyId,
+      p_employee_id: employeeId,
+      p_new_role: desiredRole,
+    })
+    if (roleErr) return { ok: false, message: roleErr.message }
+  }
+
+  const nextBank = {
+    bank_name: normBank(input.bankName) || null,
+    bank_account: normBank(input.bankAccount) || null,
+    bank_branch_code: normBank(input.bankBranchCode) || null,
+    account_type: normAccountType(input.accountType) || null,
+  }
+  const bankingChanged =
+    normBank(current.bank_name) !== (nextBank.bank_name ?? '') ||
+    normBank(current.bank_account) !== (nextBank.bank_account ?? '') ||
+    normBank(current.bank_branch_code) !== (nextBank.bank_branch_code ?? '') ||
+    normAccountType(current.account_type) !== (nextBank.account_type ?? '')
+
+  if (bankingChanged) {
+    const prompt = opts?.promptPassword
+    if (!prompt) {
+      return {
+        ok: false,
+        message: 'Banking details changed — step-up verification is required to save them.',
+      }
+    }
+    const bankResult = await executeWithStepUp(
+      supabase,
+      input.companyId,
+      async () => {
+        const { error: bankErr } = await supabase.rpc('update_employee_banking', {
+          p_company_id: input.companyId,
+          p_employee_id: employeeId,
+          p_bank_account: nextBank.bank_account,
+          p_bank_name: nextBank.bank_name,
+          p_bank_branch_code: nextBank.bank_branch_code,
+          p_account_type: nextBank.account_type,
+        })
+        if (bankErr) return { ok: false as const, message: bankErr.message }
+        return { ok: true as const, data: undefined }
+      },
+      prompt
+    )
+    if (!bankResult.ok) return bankResult
+  }
+
   return { ok: true, data: undefined }
 }
 

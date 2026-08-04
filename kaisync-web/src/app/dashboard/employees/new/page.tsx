@@ -10,7 +10,7 @@ import { FormSelect } from '@/components/FormSelect'
 import { FormDateInput } from '@/components/FormDateInput'
 import { Toggle } from '@/components/Toggle'
 import {
-  ACCESS_LEVELS,
+  CREATE_ACCESS_LEVELS,
   EMPLOYMENT_TYPES,
   WORKER_TYPES,
 } from '@/lib/employee-taxonomy'
@@ -25,6 +25,7 @@ export default function CreateEmployeePage() {
 
   // Context
   const [companyId, setCompanyId] = useState<string | null>(null)
+  const [callerRole, setCallerRole] = useState<string | null>(null)
   const [branches, setBranches] = useState<Branch[]>([])
   const [templates, setTemplates] = useState<ShiftTemplate[]>([])
   const [managers, setManagers] = useState<Pick<Employee, 'id' | 'name' | 'surname'>[]>([])
@@ -79,12 +80,14 @@ export default function CreateEmployeePage() {
     if (!member) { setError('not_linked'); return }
     setCompanyId(member.companyId)
 
-    const [br, tmpl, mgr] = await Promise.all([
+    const [br, tmpl, mgr, roleRes] = await Promise.all([
       listBranches(supabase, member.companyId),
       listShiftTemplates(supabase, member.companyId),
       listManagerOptions(supabase, member.companyId),
+      supabase.rpc('get_my_role', { p_company_id: member.companyId }),
     ])
 
+    setCallerRole(typeof roleRes.data === 'string' ? roleRes.data : null)
     if (br.ok) setBranches(br.data)
     if (tmpl.ok) setTemplates(tmpl.data)
     if (mgr.ok) setManagers(mgr.data)
@@ -274,9 +277,11 @@ export default function CreateEmployeePage() {
           label="Access level"
           value={accessLevel}
           onChange={e => setAccessLevel(e.target.value)}
-          hint="App permissions (who can manage HR, teams, etc.). Not the same as worker type."
+          hint="App permissions (who can manage HR, teams, etc.). Owner is assigned via ownership transfer, not create."
         >
-          {ACCESS_LEVELS.map(l => (
+          {CREATE_ACCESS_LEVELS
+            .filter(l => callerRole === 'owner' || l.value !== 'hr')
+            .map(l => (
             <option key={l.value} value={l.value}>{l.label}</option>
           ))}
         </FormSelect>
