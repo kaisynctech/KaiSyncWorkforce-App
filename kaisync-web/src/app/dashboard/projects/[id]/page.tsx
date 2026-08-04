@@ -1,8 +1,6 @@
 'use client'
 
-// AUDIT MIS-2026-00013: Found 1 gap vs HrProjectDetailViewModel.
-// Fixed: Pipeline tab now shows visual stage chip selector (replaced ComingSoon)
-// Deferred: client messaging thread, payment recording/receipt attachment, post-update timeline entries
+// Projects detail: create/edit client_deals with permission-aware helpers.
 
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
@@ -11,11 +9,20 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { Toggle } from '@/components/Toggle'
 import { ProjectPaymentsTab } from '@/components/ProjectPaymentsTab'
+import { ProjectActivityTab } from '@/components/ProjectActivityTab'
+import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
+import {
+  allocateProjectCode,
+  createProject,
+  sendProjectQuotation,
+  updateProject,
+} from '@/lib/projects'
 import type { Project, Client, Employee, Job, ProjectDocument, ProjectQuotationLine } from '@/types/database'
 
-const PROJECT_TABS = ['details', 'docs', 'quotation', 'pipeline', 'payments']
+const PROJECT_TABS = ['details', 'docs', 'quotation', 'pipeline', 'payments', 'activity']
 const TAB_LABELS: Record<string, string> = {
-  details: 'Details', docs: 'Docs', quotation: 'Quotation', pipeline: 'Pipeline', payments: 'Payments',
+  details: 'Details', docs: 'Docs', quotation: 'Quotation', pipeline: 'Pipeline',
+  payments: 'Payments', activity: 'Activity',
 }
 const STATUS_OPTIONS = ['draft', 'sent', 'negotiation', 'in_progress', 'won', 'lost']
 const DOC_TYPE_OPTIONS = [
@@ -54,6 +61,12 @@ export default function ProjectDetailPage() {
   const [docBusy, setDocBusy] = useState(false)
   const [docType, setDocType] = useState('contract')
   const [error, setError] = useState<string | null>(null)
+  const [companyId, setCompanyId] = useState<string | null>(null)
+  const [perms, setPerms] = useState<PermissionSet | null>(null)
+  const [sendBusy, setSendBusy] = useState(false)
+
+  const canCreate = can(perms, PERM.projectsCreate)
+  const canEdit = can(perms, PERM.projectsEdit)
 
   // Form state
   const [title, setTitle] = useState('')
@@ -90,22 +103,34 @@ export default function ProjectDetailPage() {
   async function load() {
     setLoading(true)
     const supabase = createClient()
+    const member = await resolveCurrentMember(supabase)
+    if (!member) { setError('not_linked'); setLoading(false); return }
+    setCompanyId(member.companyId)
+
+    const { data: me } = await supabase
+      .from('employees')
+      .select('access_level')
+      .eq('id', member.employeeId)
+      .maybeSingle()
+    setPerms(await loadPermissions(supabase, member.companyId, me?.access_level))
 
     if (isNew) {
       const [cRes, mRes] = await Promise.all([
-        supabase.from('clients').select('id, name, client_code').order('name'),
-        supabase.from('employees').select('id, name, surname').eq('is_active', true).order('name'),
+        supabase.from('clients').select('id, name, client_code').eq('company_id', member.companyId).order('name'),
+        supabase.from('employees').select('id, name, surname').eq('company_id', member.companyId).eq('is_active', true).order('name'),
       ])
       setClients((cRes.data ?? []) as Client[])
       setManagers((mRes.data ?? []) as Employee[])
+      const codeRes = await allocateProjectCode(supabase, member.companyId)
+      if (codeRes.ok) setCode(codeRes.data)
       setLoading(false)
       return
     }
 
     const [pRes, cRes, mRes, jRes, dRes, lRes] = await Promise.all([
-      supabase.from('client_deals').select('*, clients(id, name), employees:manager_employee_id(id, name, surname)').eq('id', projectId).single(),
-      supabase.from('clients').select('id, name, client_code').order('name'),
-      supabase.from('employees').select('id, name, surname').eq('is_active', true).order('name'),
+      supabase.from('client_deals').select('*, clients(id, name), employees:manager_employee_id(id, name, surname)').eq('id', projectId).eq('company_id', member.companyId).single(),
+      supabase.from('clients').select('id, name, client_code').eq('company_id', member.companyId).order('name'),
+      supabase.from('employees').select('id, name, surname').eq('company_id', member.companyId).eq('is_active', true).order('name'),
       supabase.from('jobs').select('id, title, status').eq('deal_id', projectId).order('created_at', { ascending: false }),
       supabase.from('project_documents').select('*').eq('deal_id', projectId).order('created_at', { ascending: false }),
       supabase.from('project_quotation_lines').select('*').eq('deal_id', projectId).order('line_no'),
@@ -137,13 +162,18 @@ export default function ProjectDetailPage() {
     setLoading(false)
   }
 
-  function generateCode() {
-    const ts = Date.now().toString(36).toUpperCase()
-    setCode(`P28${ts}`)
+  async function generateCode() {
+    if (!companyId) return
+    const supabase = createClient()
+    const codeRes = await allocateProjectCode(supabase, companyId)
+    if (!codeRes.ok) { setError(codeRes.message); return }
+    setCode(codeRes.data)
   }
 
   async function save() {
     if (!title.trim()) { setError('Project name is required.'); return }
+    if (isNew && !canCreate) { setError('You do not have permission to create projects.'); return }
+    if (!isNew && !canEdit) { setError('You do not have permission to edit projects.'); return }
     setSaving(true)
     setError(null)
     const supabase = createClient()
@@ -167,14 +197,53 @@ export default function ProjectDetailPage() {
     if (isNew) {
       const member = await resolveCurrentMember(supabase)
       if (!member) { setError('Your account is not linked to an active employee record. Please contact your administrator.'); setSaving(false); return }
-      const { data: np, error: e } = await supabase.from('client_deals').insert({ ...payload, company_id: member.companyId }).select().single()
-      if (e) { setError(e.message); setSaving(false); return }
-      router.push(`/dashboard/projects/${np.id}`)
+      const created = await createProject(supabase, {
+        companyId: member.companyId,
+        title: payload.title,
+        projectCode: payload.project_code,
+        clientId: payload.client_id,
+        managerEmployeeId: payload.manager_employee_id,
+        status: payload.status,
+        notes: payload.notes,
+        agreementNotes: payload.agreement_notes,
+        quotationNotes: payload.quotation_notes,
+        quotationValidUntil: payload.quotation_valid_until,
+        siteStartDate: payload.site_start_date,
+        expectedCompletionDate: payload.expected_completion_date,
+        nextVisitDate: payload.next_visit_date,
+        expectedCloseDate: payload.expected_close_date,
+        assignCode: !payload.project_code,
+      })
+      if (!created.ok) { setError(created.message); setSaving(false); return }
+      router.push(`/dashboard/projects/${created.data.id}`)
     } else {
-      const { error: e } = await supabase.from('client_deals').update(payload).eq('id', projectId)
-      if (e) setError(e.message)
+      if (!companyId) { setError('Company not resolved.'); setSaving(false); return }
+      const updated = await updateProject(supabase, {
+        companyId,
+        projectId,
+        payload,
+        previousStatus: project?.status ?? null,
+      })
+      if (!updated.ok) setError(updated.message)
+      else setProject(prev => prev ? { ...prev, ...payload, status } as Project : prev)
     }
     setSaving(false)
+  }
+
+  async function handleSendQuotation() {
+    if (!companyId || !canEdit || lines.length === 0) return
+    setSendBusy(true)
+    setError(null)
+    const supabase = createClient()
+    const result = await sendProjectQuotation(supabase, {
+      companyId,
+      projectId,
+      previousStatus: project?.status ?? null,
+    })
+    setSendBusy(false)
+    if (!result.ok) { setError(result.message); return }
+    setStatus('sent')
+    setProject(prev => prev ? { ...prev, status: 'sent' } : prev)
   }
 
   async function syncOfferAmount(nextLines: ProjectQuotationLine[]) {
@@ -281,10 +350,12 @@ export default function ProjectDetailPage() {
           </Link>
           <h1 className="text-[20px] font-semibold text-text-primary">{title || 'New Project'}</h1>
         </div>
-        <button onClick={save} disabled={saving}
-          className="h-11 px-5 text-[16px] font-semibold rounded-lg bg-primary text-white hover:bg-primary-dark disabled:opacity-50 transition-colors min-w-[96px]">
-          {saving ? 'Saving…' : 'Save'}
-        </button>
+        {(isNew ? canCreate : canEdit) && (
+          <button onClick={save} disabled={saving}
+            className="h-11 px-5 text-[16px] font-semibold rounded-lg bg-primary text-white hover:bg-primary-dark disabled:opacity-50 transition-colors min-w-[96px]">
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        )}
       </div>
 
       {error && <p className="px-4 py-2 text-error text-[13px] shrink-0">{error}</p>}
@@ -327,7 +398,7 @@ export default function ProjectDetailPage() {
               <div className="grid grid-cols-[132px_1px_1fr_auto] border-b border-divider">
                 <span className="data-th border-r border-divider py-2">Project code</span>
                 <span />
-                <input placeholder="P28xxxx" value={code} onChange={e => setCode(e.target.value)}
+                <input placeholder="P{CODE}0001" value={code} onChange={e => setCode(e.target.value)}
                   className="dark-entry rounded-none border-0 bg-transparent focus:ring-0 focus:shadow-none" />
                 <button onClick={generateCode}
                   className="px-3 text-[11px] text-text-secondary border-l border-divider hover:text-text-primary transition-colors">
@@ -370,7 +441,12 @@ export default function ProjectDetailPage() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <p className="section-label">LINKED JOBS</p>
-                  <button className="btn-primary h-10 px-[14px] text-[12px]">+ Add job</button>
+                  <Link
+                    href={`/dashboard/jobs/new?dealId=${projectId}`}
+                    className="btn-primary h-10 px-[14px] text-[12px] inline-flex items-center"
+                  >
+                    + Add job
+                  </Link>
                 </div>
                 {jobs.length > 0 ? (
                   <div className="card overflow-hidden">
@@ -649,10 +725,15 @@ export default function ProjectDetailPage() {
               </div>
             </div>
 
-            <button disabled={lines.length === 0}
-              className="btn-primary h-11 w-full text-[14px] font-semibold disabled:opacity-40">
-              Send quotation
-            </button>
+            {canEdit && (
+              <button
+                onClick={handleSendQuotation}
+                disabled={lines.length === 0 || sendBusy || status === 'sent'}
+                className="btn-primary h-11 w-full text-[14px] font-semibold disabled:opacity-40"
+              >
+                {sendBusy ? 'Sending…' : status === 'sent' ? 'Quotation sent' : 'Send quotation'}
+              </button>
+            )}
           </div>
         )}
 
@@ -668,8 +749,9 @@ export default function ProjectDetailPage() {
                 return (
                   <button
                     key={s}
-                    onClick={() => setStatus(s)}
-                    className="flex items-center gap-2 rounded-xl px-4 h-10 text-[13px] font-semibold transition-colors border shrink-0"
+                    onClick={() => canEdit && setStatus(s)}
+                    disabled={!canEdit}
+                    className="flex items-center gap-2 rounded-xl px-4 h-10 text-[13px] font-semibold transition-colors border shrink-0 disabled:opacity-50"
                     style={{
                       backgroundColor: isCurrent ? '#1D4ED8' : isPast ? '#0F2918' : '#1E293B',
                       borderColor:     isCurrent ? '#3B82F6' : isPast ? '#166534' : '#334155',
@@ -683,7 +765,7 @@ export default function ProjectDetailPage() {
                 )
               })}
             </div>
-            {project?.status !== status && (
+            {canEdit && project?.status !== status && (
               <p className="text-[12px]" style={{ color: '#FCD34D' }}>
                 Stage changed — click Save in the header to persist.
               </p>
@@ -700,6 +782,11 @@ export default function ProjectDetailPage() {
               setProject(prev => prev ? { ...prev, amount_paid: paid } : prev)
             }}
           />
+        )}
+
+        {/* ── ACTIVITY ── */}
+        {!isNew && tab === 'activity' && companyId && (
+          <ProjectActivityTab companyId={companyId} projectId={projectId} />
         )}
       </div>
     </div>

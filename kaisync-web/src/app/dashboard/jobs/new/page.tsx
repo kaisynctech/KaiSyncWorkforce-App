@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useEffect, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
@@ -10,7 +10,17 @@ import { FormSelect } from '@/components/FormSelect'
 import type { Client, Employee } from '@/types/database'
 
 export default function CreateJobPage() {
+  return (
+    <Suspense fallback={<p className="text-center text-[13px] text-text-secondary py-10">Loading…</p>}>
+      <CreateJobInner />
+    </Suspense>
+  )
+}
+
+function CreateJobInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const preselectedDealId = searchParams.get('dealId') ?? ''
 
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [clients, setClients] = useState<Client[]>([])
@@ -26,7 +36,7 @@ export default function CreateJobPage() {
   const [endDate, setEndDate] = useState('')
   const [endTime, setEndTime] = useState('')
   const [clientId, setClientId] = useState('')
-  const [dealId, setDealId] = useState('')
+  const [dealId, setDealId] = useState(preselectedDealId)
   const [address, setAddress] = useState('')
   const [assignedEmployeeId, setAssignedEmployeeId] = useState('')
 
@@ -48,9 +58,16 @@ export default function CreateJobPage() {
       supabase.from('client_deals').select('id, title, project_code, client_id').eq('company_id', member.companyId).order('title'),
     ])
 
+    const dealRows = (dl.data ?? []) as { id: string; title: string; project_code: string | null; client_id: string | null }[]
     setClients((cl.data ?? []) as Client[])
     setEmployees((emp.data ?? []) as Pick<Employee, 'id' | 'name' | 'surname'>[])
-    setDeals((dl.data ?? []) as { id: string; title: string; project_code: string | null; client_id: string | null }[])
+    setDeals(dealRows)
+
+    if (preselectedDealId) {
+      setDealId(preselectedDealId)
+      const deal = dealRows.find(d => d.id === preselectedDealId)
+      if (deal?.client_id) setClientId(deal.client_id)
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
