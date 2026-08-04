@@ -89,19 +89,42 @@ export default function EmployeeSidebar({ open, onToggle, company, employee }: S
         'fixed lg:relative inset-y-0 left-0 z-30 flex flex-col bg-sidebar-bg transition-all duration-200 shrink-0',
         open ? 'w-60' : 'w-[64px]',
       )}>
-        <div className="flex items-center gap-3 px-4 h-16 border-b border-white/10">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0">
-            <span className="material-icons text-white text-[18px]">bolt</span>
-          </div>
-          {open && (
-            <div className="flex-1 overflow-hidden">
-              <p className="text-white text-[13px] font-semibold truncate">{company?.name ?? 'KaiSync'}</p>
-              <p className="text-white/50 text-[11px] truncate">Employee Portal</p>
-            </div>
+        <div
+          className={cn(
+            'flex items-center h-16 border-b border-white/10 shrink-0',
+            open ? 'gap-3 px-4' : 'justify-center px-1',
           )}
-          <button onClick={onToggle} className="text-white/50 hover:text-white transition-colors ml-auto" aria-label="Toggle sidebar">
-            <span className="material-icons text-[20px]">{open ? 'chevron_left' : 'chevron_right'}</span>
-          </button>
+        >
+          {open ? (
+            <>
+              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0">
+                <span className="material-icons text-white text-[18px]">bolt</span>
+              </div>
+              <div className="flex-1 overflow-hidden min-w-0">
+                <p className="text-white text-[13px] font-semibold truncate">{company?.name ?? 'KaiSync'}</p>
+                <p className="text-white/50 text-[11px] truncate">Employee Portal</p>
+              </div>
+              <button
+                type="button"
+                onClick={onToggle}
+                className="text-white/50 hover:text-white transition-colors shrink-0"
+                aria-label="Collapse sidebar"
+                title="Collapse sidebar"
+              >
+                <span className="material-icons text-[20px]">chevron_left</span>
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={onToggle}
+              className="w-10 h-10 rounded-lg bg-primary/90 hover:bg-primary flex items-center justify-center text-white transition-colors"
+              aria-label="Expand sidebar"
+              title="Expand sidebar"
+            >
+              <span className="material-icons text-[22px]">chevron_right</span>
+            </button>
+          )}
         </div>
 
         <nav className="flex-1 py-4 overflow-y-auto overflow-x-hidden">

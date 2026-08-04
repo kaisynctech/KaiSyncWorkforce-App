@@ -146,10 +146,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <div className="flex flex-col flex-1 overflow-hidden bg-background">
         <header className="flex items-center h-14 px-5 bg-surface border-b border-divider shrink-0">
           <button
+            type="button"
             onClick={() => setSidebarOpen(v => !v)}
-            className="lg:hidden mr-3 text-text-secondary hover:text-text-primary transition-colors"
+            className={`mr-3 text-text-secondary hover:text-text-primary transition-colors ${
+              sidebarOpen ? 'lg:hidden' : ''
+            }`}
+            aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
+            title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
           >
-            <span className="material-icons">menu</span>
+            <span className="material-icons">{sidebarOpen ? 'menu_open' : 'menu'}</span>
           </button>
           <div className="flex-1" />
           <div className="flex items-center gap-3">
