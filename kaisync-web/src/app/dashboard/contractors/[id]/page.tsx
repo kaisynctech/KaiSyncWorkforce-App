@@ -607,6 +607,10 @@ function ContractorDetailInner() {
 
   async function addTeamMember() {
     if (!canEdit || !addMemberId || !contractor) return
+    if (members.some(m => m.employee_id === addMemberId)) {
+      setError('That employee is already linked to this contractor.')
+      return
+    }
     setIsBusy(true)
     setError(null)
     const supabase = createClient()
@@ -617,8 +621,14 @@ function ContractorDetailInner() {
       role: addMemberRole.trim() || null,
       is_primary: members.length === 0,
     })
-    if (e) setError(e.message)
-    else {
+    if (e) {
+      const msg = e.message.toLowerCase()
+      setError(
+        msg.includes('duplicate') || msg.includes('unique') || e.code === '23505'
+          ? 'That employee is already linked to this contractor.'
+          : e.message,
+      )
+    } else {
       setAddMemberId('')
       setAddMemberRole('')
       await loadTeam()
