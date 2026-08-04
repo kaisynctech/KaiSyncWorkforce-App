@@ -588,8 +588,11 @@ export interface CompliancePack {
 }
 
 export interface CompliancePackItem {
-  doc_type_id: string
-  requirement: 'required' | 'recommended' | 'none'
+  document_type: string
+  requirement: 'required' | 'recommended' | string
+  sort_order?: number
+  /** @deprecated legacy nested shape — live rows use document_type */
+  doc_type_id?: string
   doc_type?: { name: string }
 }
 

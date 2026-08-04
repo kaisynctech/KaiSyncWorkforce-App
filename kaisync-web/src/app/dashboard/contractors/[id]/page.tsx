@@ -4,12 +4,23 @@
 // Fixed: partner_kind + registration_number now loaded in load() and persisted in handleSave()
 // Deferred: activity feed (get_contractor_activity_feed RPC not confirmed), quote approve/reject workflow
 
-import { useEffect, useState, useCallback, Suspense, useRef } from 'react'
+import { useEffect, useState, useCallback, Suspense, useRef, useMemo } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { partnerKindLabel, PARTNER_KIND, nextContractorCode } from '@/lib/partner-kinds'
+import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
+import {
+  buildComplianceView,
+  checklistStatusLabel,
+  documentTypeLabel,
+} from '@/lib/contractor-portal/compliance'
+import {
+  CONTRACTOR_DOC_TYPES,
+  type CompliancePackItem,
+  type ContractorDocument,
+} from '@/lib/contractor-portal/types'
 import { SectionCard, FormField, entryClass } from '@/components/SectionCard'
 import { FormSelect } from '@/components/FormSelect'
 import { Toggle } from '@/components/Toggle'
@@ -19,7 +30,6 @@ import { ContractorQuotesTab } from '@/components/ContractorQuotesTab'
 import { ContractorInvoicesTab } from '@/components/ContractorInvoicesTab'
 import { KpiTile } from '@/components/ui/KpiTile'
 import { DocFilterChip } from '@/components/ui/DocFilterChip'
-import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
 import type {
   Contractor, ComplianceDocument, JobContractor, Job, IncidentReport,
   ContractorTeamMember, PendingBankingUpdate, Project, ContractorCompliancePack, Employee,
@@ -50,16 +60,14 @@ const PAYMENT_METHODS = [
   { value: 'credit_card', label: 'Credit Card' },
 ]
 
-const DOC_UPLOAD_TYPES = [
-  'company_registration',
-  'tax_clearance',
-  'vat_certificate',
-  'bank_confirmation',
-  'public_liability_insurance',
-  'professional_indemnity',
-  'coida',
-  'other',
-]
+const CHECKLIST_STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
+  complete: { bg: '#DCFCE7', fg: '#166534' },
+  expiring: { bg: '#FEF3C7', fg: '#92400E' },
+  expired:  { bg: '#FEE2E2', fg: '#991B1B' },
+  pending:  { bg: '#E5E7EB', fg: '#6B7280' },
+  rejected: { bg: '#FEE2E2', fg: '#991B1B' },
+  missing:  { bg: '#1E293B', fg: '#94A3B8' },
+}
 
 const STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
   approved:  { bg: '#DCFCE7', fg: '#166534' },
@@ -187,6 +195,7 @@ function ContractorDetailInner() {
   const [notes, setNotes] = useState('')
   const [compliancePackId, setCompliancePackId] = useState('')
   const [compliancePacks, setCompliancePacks] = useState<ContractorCompliancePack[]>([])
+  const [packItems, setPackItems] = useState<CompliancePackItem[]>([])
   const fileRef = useRef<HTMLInputElement>(null)
   const [uploadDocType, setUploadDocType] = useState('other')
   const [docBusy, setDocBusy] = useState(false)
@@ -230,6 +239,22 @@ function ContractorDetailInner() {
   }, [searchParams])
 
   useEffect(() => { load() }, [contractorId])
+
+  useEffect(() => {
+    void (async () => {
+      if (!compliancePackId) {
+        setPackItems([])
+        return
+      }
+      const supabase = createClient()
+      const { data } = await supabase
+        .from('contractor_compliance_pack_items')
+        .select('document_type, requirement, sort_order')
+        .eq('pack_id', compliancePackId)
+        .order('sort_order')
+      setPackItems((data ?? []) as CompliancePackItem[])
+    })()
+  }, [compliancePackId])
 
   useEffect(() => {
     if (tab === 'Jobs'      && !tabsLoaded.has('Jobs'))      loadJobs()
@@ -625,17 +650,49 @@ function ContractorDetailInner() {
     }
   }
 
-  // Compliance calculations
-  const requiredDocs      = complianceDocs.filter(d => d.is_required)
-  const validRequired     = requiredDocs.filter(d => docDisplayStatus(d) === 'approved').length
-  const expiringRequired  = requiredDocs.filter(d => docDisplayStatus(d) === 'expiring').length
-  const expiredRequired   = requiredDocs.filter(d => docDisplayStatus(d) === 'expired').length
-  const pendingRequired   = requiredDocs.filter(d => d.approval_status === 'pending').length
-  const rejectedRequired  = requiredDocs.filter(d => d.approval_status === 'rejected').length
-  const compScore = requiredDocs.length > 0
-    ? Math.round((validRequired / requiredDocs.length) * 100)
-    : 0
+  // Compliance calculations — pack checklist when assigned (parity with portal/MAUI)
+  const portalDocs = useMemo<ContractorDocument[]>(
+    () => complianceDocs.map(d => ({
+      id: d.id,
+      company_id: d.company_id,
+      contractor_id: d.contractor_id,
+      document_type: d.document_type,
+      document_name: d.document_name,
+      file_url: d.file_url,
+      storage_path: d.storage_path,
+      approval_status: d.approval_status,
+      rejected_reason: d.rejected_reason,
+      is_required: d.is_required,
+      is_current: d.is_current,
+      uploaded_by_role: d.uploaded_by_role,
+      expiry_date: d.expiry_date,
+      created_at: d.created_at,
+      updated_at: d.created_at,
+    })),
+    [complianceDocs],
+  )
+  const complianceView = useMemo(
+    () => buildComplianceView(portalDocs, packItems),
+    [portalDocs, packItems],
+  )
+  const requiredDocsCount = complianceView.required_count
+  const validRequired = complianceView.complete_count
+  const expiringRequired = complianceView.checklist.filter(r => r.is_required && r.status === 'expiring').length
+  const expiredRequired = complianceView.checklist.filter(r => r.is_required && r.status === 'expired').length
+  const pendingRequired = complianceView.checklist.filter(r => r.is_required && r.status === 'pending').length
+  const rejectedRequired = complianceView.checklist.filter(r => r.is_required && r.status === 'rejected').length
+  const missingRequired = complianceView.missing_count
+  const compScore = complianceView.score_percent
   const compScoreColor = compScore >= 80 ? '#22C55E' : compScore >= 50 ? '#F59E0B' : '#EF4444'
+  const compStatusLabel = complianceView.status_label === 'Near Compliant'
+    ? 'At Risk'
+    : complianceView.status_label === 'Not Configured'
+      ? 'Not Configured'
+      : complianceView.status_label === 'Compliant'
+        ? 'Compliant'
+        : complianceView.status_label === 'Partial'
+          ? 'At Risk'
+          : 'Non-Compliant'
 
   const expiringDocs = complianceDocs.filter(d => docDisplayStatus(d) === 'expiring')
 
@@ -900,9 +957,9 @@ function ContractorDetailInner() {
               </FormSelect>
               {compliancePackId ? (
                 <div className="grid grid-cols-3 gap-2">
-                  <KpiTile value={requiredDocs.length} label="Required" bg="#1E293B" valueFg="#94A3B8" labelFg="#94A3B8" />
-                  <KpiTile value={validRequired}       label="Complete" bg="#14532D" valueFg="#22C55E" labelFg="#4ADE80" />
-                  <KpiTile value={expiredRequired + rejectedRequired} label="Missing" bg="#2D0A0A" valueFg="#FCA5A5" labelFg="#FCA5A5" />
+                  <KpiTile value={requiredDocsCount} label="Required" bg="#1E293B" valueFg="#94A3B8" labelFg="#94A3B8" />
+                  <KpiTile value={validRequired} label="Complete" bg="#14532D" valueFg="#22C55E" labelFg="#4ADE80" />
+                  <KpiTile value={missingRequired + rejectedRequired + expiredRequired} label="Missing" bg="#2D0A0A" valueFg="#FCA5A5" labelFg="#FCA5A5" />
                 </div>
               ) : (
                 <p className="text-text-secondary text-[12px]">
@@ -911,28 +968,28 @@ function ContractorDetailInner() {
               )}
             </SectionCard>
 
-            {complianceDocs.length > 0 && (
+            {complianceView.has_pack && complianceView.checklist.length > 0 && (
               <SectionCard title="REQUIRED DOCUMENTS CHECKLIST">
                 <p className="text-[11px] text-text-secondary">
                   Based on the assigned compliance pack. Required rows (Req.) count toward the compliance score.
+                  Missing types appear here even before a file is uploaded.
                 </p>
                 <div className="border-t border-divider mt-1 divide-y divide-divider/40">
-                  {complianceDocs.map(doc => {
-                    const status = docDisplayStatus(doc)
-                    const sc = STATUS_COLORS[status] ?? STATUS_COLORS.pending
+                  {complianceView.checklist.map(row => {
+                    const sc = CHECKLIST_STATUS_COLORS[row.status] ?? CHECKLIST_STATUS_COLORS.missing
                     return (
-                      <div key={doc.id} className="flex items-center gap-3 py-2">
+                      <div key={row.document_type} className="flex items-center gap-3 py-2">
                         <span className="rounded-[6px] px-[6px] py-[3px] text-[9px] font-medium shrink-0"
-                          style={{ backgroundColor: doc.is_required ? '#450A0A' : '#1E293B', color: doc.is_required ? '#FCA5A5' : '#94A3B8' }}>
-                          {doc.is_required ? 'Req.' : 'Opt.'}
+                          style={{ backgroundColor: row.is_required ? '#450A0A' : '#1E293B', color: row.is_required ? '#FCA5A5' : '#94A3B8' }}>
+                          {row.is_required ? 'Req.' : 'Opt.'}
                         </span>
-                        <span className="text-text-primary text-[12px] flex-1">{doc.document_type}</span>
-                        {doc.expiry_date && (
-                          <span className="text-text-secondary text-[11px] shrink-0">{fmtDate(doc.expiry_date)}</span>
+                        <span className="text-text-primary text-[12px] flex-1">{row.type_label}</span>
+                        {row.expiry_display && (
+                          <span className="text-text-secondary text-[11px] shrink-0">{row.expiry_display}</span>
                         )}
                         <span className="rounded-lg px-2 py-[3px] text-[10px] font-medium shrink-0"
                           style={{ backgroundColor: sc.bg, color: sc.fg }}>
-                          {status}
+                          {checklistStatusLabel(row.status)}
                         </span>
                       </div>
                     )
@@ -945,21 +1002,25 @@ function ContractorDetailInner() {
               <div className="flex items-center gap-4">
                 <div className="flex flex-col items-center shrink-0">
                   <span className="text-[30px] font-bold" style={{ color: compScoreColor }}>{compScore}%</span>
-                  <span className="text-[10px] text-text-secondary">({validRequired} required)</span>
+                  <span className="text-[10px] text-text-secondary">({validRequired}/{requiredDocsCount} required)</span>
                 </div>
                 <div className="flex-1 space-y-1">
                   <div className="h-[10px] rounded-full overflow-hidden bg-surface-elevated">
                     <div className="h-full rounded-full transition-all duration-300"
                       style={{ width: `${compScore}%`, backgroundColor: compScoreColor }} />
                   </div>
-                  <p className="text-[10px] text-text-secondary">Required documents valid</p>
+                  <p className="text-[10px] text-text-secondary">
+                    {complianceView.has_pack
+                      ? 'Required pack types with approved, non-expired documents'
+                      : 'Legacy mode: documents marked required'}
+                  </p>
                 </div>
                 <span className="rounded-lg px-[10px] py-[6px] text-[12px] font-medium shrink-0"
                   style={{
                     backgroundColor: compScore >= 80 ? '#DCFCE7' : compScore >= 50 ? '#FEF3C7' : '#FEE2E2',
                     color: compScore >= 80 ? '#166534' : compScore >= 50 ? '#92400E' : '#991B1B',
                   }}>
-                  {compScore >= 80 ? 'Compliant' : compScore >= 50 ? 'At Risk' : 'Non-Compliant'}
+                  {compStatusLabel}
                 </span>
               </div>
 
@@ -971,12 +1032,21 @@ function ContractorDetailInner() {
                 <KpiTile value={rejectedRequired} label="Rejected" bg="#2D0F0F" valueFg="#F87171" labelFg="#F87171" />
               </div>
 
-              {requiredDocs.length === 0 && (
+              {requiredDocsCount === 0 && (
                 <div className="rounded-lg border px-3 py-[10px] flex items-center gap-2"
                   style={{ borderColor: '#334155', backgroundColor: '#0F172A' }}>
                   <span className="material-icons text-[16px]" style={{ color: '#64748B' }}>info</span>
                   <p className="text-[12px] flex-1" style={{ color: '#64748B' }}>
                     No required documents configured. Assign a compliance pack first.
+                  </p>
+                </div>
+              )}
+              {missingRequired > 0 && (
+                <div className="rounded-lg border px-3 py-[10px] flex items-center gap-2"
+                  style={{ borderColor: '#334155', backgroundColor: '#0F172A' }}>
+                  <span className="material-icons text-[16px]" style={{ color: '#94A3B8' }}>description</span>
+                  <p className="text-[12px] flex-1" style={{ color: '#94A3B8' }}>
+                    {missingRequired} required type{missingRequired > 1 ? 's' : ''} still missing an upload.
                   </p>
                 </div>
               )}
@@ -1012,11 +1082,7 @@ function ContractorDetailInner() {
                   <p className="text-[11px] font-semibold text-text-secondary tracking-wider uppercase">Expiring Within 30 Days</p>
                   {expiringDocs.map(doc => (
                     <div key={doc.id} className="flex items-center gap-2">
-                      {doc.is_required && (
-                        <span className="rounded-[6px] px-[6px] py-[3px] text-[9px] font-medium shrink-0"
-                          style={{ backgroundColor: '#450A0A', color: '#FCA5A5' }}>Req.</span>
-                      )}
-                      <span className="text-text-primary text-[12px] flex-1">{doc.document_type}</span>
+                      <span className="text-text-primary text-[12px] flex-1">{documentTypeLabel(doc.document_type)}</span>
                       {doc.expiry_date && (
                         <span className="text-[11px] shrink-0" style={{ color: '#F59E0B' }}>{fmtDate(doc.expiry_date)}</span>
                       )}
@@ -1038,8 +1104,8 @@ function ContractorDetailInner() {
                       onChange={e => setUploadDocType(e.target.value)}
                       className="text-[11px] h-[34px] px-2 rounded-lg border border-border bg-surface text-text-secondary"
                     >
-                      {DOC_UPLOAD_TYPES.map(t => (
-                        <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>
+                      {CONTRACTOR_DOC_TYPES.map(t => (
+                        <option key={t.value} value={t.value}>{t.label}</option>
                       ))}
                     </select>
                     <input
@@ -1051,14 +1117,16 @@ function ContractorDetailInner() {
                         if (file) void uploadDocument(file)
                       }}
                     />
-                    <button
-                      type="button"
-                      disabled={docBusy}
-                      onClick={() => fileRef.current?.click()}
-                      className="btn-primary h-[34px] px-[14px] text-[12px] disabled:opacity-50"
-                    >
-                      {docBusy ? 'Uploading…' : '+ Upload'}
-                    </button>
+                    {canEdit && (
+                      <button
+                        type="button"
+                        disabled={docBusy}
+                        onClick={() => fileRef.current?.click()}
+                        className="btn-primary h-[34px] px-[14px] text-[12px] disabled:opacity-50"
+                      >
+                        {docBusy ? 'Uploading…' : '+ Upload'}
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -1109,7 +1177,7 @@ function ContractorDetailInner() {
                         const expiryColor = daysToExpiry < 0 ? '#FCA5A5' : showWarn ? '#F59E0B' : 'var(--color-text-secondary)'
                         return (
                           <tr key={doc.id} className="bg-surface border-b border-divider last:border-0">
-                            <td className="data-td text-[12px] truncate text-text-secondary">{doc.document_type}</td>
+                            <td className="data-td text-[12px] truncate text-text-secondary">{documentTypeLabel(doc.document_type)}</td>
                             <td className="data-td">
                               <p className="text-[12px] text-text-primary truncate">{doc.document_name}</p>
                               {doc.approval_status === 'rejected' && doc.rejected_reason && (
