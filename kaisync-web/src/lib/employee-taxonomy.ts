@@ -13,6 +13,11 @@ export const WORKER_TYPES = [
   { value: 'subcontractor', label: 'Subcontractor' },
 ] as const
 
+/** Employees module only — contractors/subcontractors belong in Contractors. */
+export const EMPLOYEE_WORKER_TYPES = [
+  { value: 'employee', label: 'Employee' },
+] as const
+
 /** Canonical web access levels written to employees.access_level */
 export const ACCESS_LEVELS = [
   { value: 'employee', label: 'Employee' },
