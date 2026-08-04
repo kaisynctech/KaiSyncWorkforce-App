@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import { Toggle } from '@/components/Toggle'
 import type { Site } from '@/types/database'
 
 export default function PropertiesPage() {
@@ -52,6 +53,7 @@ export default function PropertiesPage() {
       radius_meters: parseInt(form.radius_meters) || 50,
       latitude: lat,
       longitude: lng,
+      is_active: true,
     }).select().single()
     if (data) setSites(prev => [...prev, data as Site].sort((a, b) => a.name.localeCompare(b.name)))
     setForm({ name: '', address: '', radius_meters: '50', latitude: '', longitude: '' })
@@ -59,8 +61,19 @@ export default function PropertiesPage() {
     setBusy(false)
   }
 
+  async function setSiteActive(siteId: string, isActive: boolean) {
+    const supabase = createClient()
+    const { error: e } = await supabase.from('sites').update({ is_active: isActive }).eq('id', siteId)
+    if (e) {
+      setError(e.message)
+      return
+    }
+    setSites(prev => prev.map(s => (s.id === siteId ? { ...s, is_active: isActive } : s)))
+  }
+
   const hasCoords = (site: Site) =>
     site.latitude != null && site.longitude != null
+  const activeCount = sites.filter(s => s.is_active !== false).length
 
   if (error === 'not_linked') return (
     <div className="flex items-center justify-center h-full">
@@ -79,7 +92,14 @@ export default function PropertiesPage() {
     <div className="h-full flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 bg-surface-dark shrink-0">
-        <h1 className="text-[20px] font-semibold text-text-primary">Properties &amp; Sites</h1>
+        <div>
+          <h1 className="text-[20px] font-semibold text-text-primary">Properties &amp; Sites</h1>
+          {!loading && (
+            <p className="text-[12px] text-text-secondary mt-0.5">
+              {activeCount} active · billable (20 included, then R49/property)
+            </p>
+          )}
+        </div>
         <button
           className="w-10 h-10 rounded-full bg-primary text-white text-[20px] flex items-center justify-center hover:bg-primary-dark transition-colors"
           onClick={() => setShowCreate(true)}
@@ -112,7 +132,7 @@ export default function PropertiesPage() {
             </p>
           </div>
         ) : sites.map(site => (
-          <div key={site.id} className="card p-3">
+          <div key={site.id} className={`card p-3 ${site.is_active === false ? 'opacity-60' : ''}`}>
             <div className="grid gap-3 items-center" style={{ gridTemplateColumns: 'auto 1fr auto' }}>
               {/* Icon */}
               <div className="w-11 h-11 rounded-lg bg-primary flex items-center justify-center text-[18px] shrink-0">
@@ -124,18 +144,25 @@ export default function PropertiesPage() {
                 {site.address && <p className="text-xs text-text-secondary truncate">{site.address}</p>}
                 <p className="text-[12px] text-text-secondary">
                   Radius: <strong>{site.radius_meters ?? 50}m</strong>
+                  {' · '}
+                  {site.is_active === false ? 'Inactive' : 'Active'}
                 </p>
               </div>
-              {/* GPS badge */}
-              <span
-                className="text-[11px] font-bold px-2 py-1 rounded-xl shrink-0"
-                style={hasCoords(site)
-                  ? { backgroundColor: '#DCFCE7', color: '#166534' }
-                  : { backgroundColor: '#F3F4F6', color: '#6B7280' }
-                }
-              >
-                {hasCoords(site) ? 'GPS' : 'No GPS'}
-              </span>
+              <div className="flex flex-col items-end gap-2 shrink-0">
+                <span
+                  className="text-[11px] font-bold px-2 py-1 rounded-xl"
+                  style={hasCoords(site)
+                    ? { backgroundColor: '#DCFCE7', color: '#166534' }
+                    : { backgroundColor: '#F3F4F6', color: '#6B7280' }
+                  }
+                >
+                  {hasCoords(site) ? 'GPS' : 'No GPS'}
+                </span>
+                <Toggle
+                  checked={site.is_active !== false}
+                  onChange={v => { void setSiteActive(site.id, v) }}
+                />
+              </div>
             </div>
           </div>
         ))}

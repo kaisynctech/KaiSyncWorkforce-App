@@ -7,10 +7,33 @@ public interface IBillingCalculationService
     const decimal DefaultBasePrice = 2500m;
     const int DefaultIncludedEmployees = 25;
     const decimal DefaultAdditionalEmployeePrice = 99m;
+    const int DefaultIncludedContractors = 50;
+    const decimal DefaultAdditionalContractorPrice = 49m;
+    const int DefaultIncludedProperties = 20;
+    const decimal DefaultAdditionalPropertyPrice = 49m;
 
-    decimal CalculateMonthlyCharge(int employeeCount, decimal? basePrice = null, int? includedEmployees = null, decimal? additionalPrice = null);
+    decimal CalculateMonthlyCharge(
+        int employeeCount,
+        int contractorCount = 0,
+        int propertyCount = 0,
+        decimal? basePrice = null,
+        int? includedEmployees = null,
+        decimal? additionalEmployeePrice = null,
+        int? includedContractors = null,
+        decimal? additionalContractorPrice = null,
+        int? includedProperties = null,
+        decimal? additionalPropertyPrice = null);
+
     int CalculateEmployeeOverage(int employeeCount, int? includedEmployees = null);
-    MonthlyBillingInvoice GenerateMonthlyInvoice(Guid companyId, string companyName, int employeeCount, DateOnly? periodMonth = null);
+    int CalculateContractorOverage(int contractorCount, int? includedContractors = null);
+    int CalculatePropertyOverage(int propertyCount, int? includedProperties = null);
+    MonthlyBillingInvoice GenerateMonthlyInvoice(
+        Guid companyId,
+        string companyName,
+        int employeeCount,
+        int contractorCount = 0,
+        int propertyCount = 0,
+        DateOnly? periodMonth = null);
     Task<CompanySubscriptionBilling?> RefreshCompanySubscriptionAsync(Guid companyId, CancellationToken ct = default);
 }
 
@@ -25,13 +48,26 @@ public sealed class BillingCalculationService : IBillingCalculationService
         _telemetry = telemetry;
     }
 
-    public decimal CalculateMonthlyCharge(int employeeCount, decimal? basePrice = null, int? includedEmployees = null, decimal? additionalPrice = null)
+    public decimal CalculateMonthlyCharge(
+        int employeeCount,
+        int contractorCount = 0,
+        int propertyCount = 0,
+        decimal? basePrice = null,
+        int? includedEmployees = null,
+        decimal? additionalEmployeePrice = null,
+        int? includedContractors = null,
+        decimal? additionalContractorPrice = null,
+        int? includedProperties = null,
+        decimal? additionalPropertyPrice = null)
     {
         var baseP = basePrice ?? IBillingCalculationService.DefaultBasePrice;
-        var included = includedEmployees ?? IBillingCalculationService.DefaultIncludedEmployees;
-        var perAdd = additionalPrice ?? IBillingCalculationService.DefaultAdditionalEmployeePrice;
-        var overage = CalculateEmployeeOverage(employeeCount, included);
-        return baseP + (overage * perAdd);
+        var empOver = CalculateEmployeeOverage(employeeCount, includedEmployees);
+        var ctOver = CalculateContractorOverage(contractorCount, includedContractors);
+        var propOver = CalculatePropertyOverage(propertyCount, includedProperties);
+        return baseP
+            + (empOver * (additionalEmployeePrice ?? IBillingCalculationService.DefaultAdditionalEmployeePrice))
+            + (ctOver * (additionalContractorPrice ?? IBillingCalculationService.DefaultAdditionalContractorPrice))
+            + (propOver * (additionalPropertyPrice ?? IBillingCalculationService.DefaultAdditionalPropertyPrice));
     }
 
     public int CalculateEmployeeOverage(int employeeCount, int? includedEmployees = null)
@@ -40,24 +76,71 @@ public sealed class BillingCalculationService : IBillingCalculationService
         return Math.Max(0, employeeCount - included);
     }
 
-    public MonthlyBillingInvoice GenerateMonthlyInvoice(Guid companyId, string companyName, int employeeCount, DateOnly? periodMonth = null)
+    public int CalculateContractorOverage(int contractorCount, int? includedContractors = null)
     {
-        var overage = CalculateEmployeeOverage(employeeCount);
-        var overageCharge = overage * IBillingCalculationService.DefaultAdditionalEmployeePrice;
-        var total = CalculateMonthlyCharge(employeeCount);
+        var included = includedContractors ?? IBillingCalculationService.DefaultIncludedContractors;
+        return Math.Max(0, contractorCount - included);
+    }
+
+    public int CalculatePropertyOverage(int propertyCount, int? includedProperties = null)
+    {
+        var included = includedProperties ?? IBillingCalculationService.DefaultIncludedProperties;
+        return Math.Max(0, propertyCount - included);
+    }
+
+    public MonthlyBillingInvoice GenerateMonthlyInvoice(
+        Guid companyId,
+        string companyName,
+        int employeeCount,
+        int contractorCount = 0,
+        int propertyCount = 0,
+        DateOnly? periodMonth = null)
+    {
+        var empOver = CalculateEmployeeOverage(employeeCount);
+        var ctOver = CalculateContractorOverage(contractorCount);
+        var propOver = CalculatePropertyOverage(propertyCount);
+        var empCharge = empOver * IBillingCalculationService.DefaultAdditionalEmployeePrice;
+        var ctCharge = ctOver * IBillingCalculationService.DefaultAdditionalContractorPrice;
+        var propCharge = propOver * IBillingCalculationService.DefaultAdditionalPropertyPrice;
+        var total = CalculateMonthlyCharge(employeeCount, contractorCount, propertyCount);
         var period = periodMonth ?? new DateOnly(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1);
 
         var lines = new List<BillingInvoiceLine>
         {
-            new() { Description = $"KaiFlow Standard base ({IBillingCalculationService.DefaultIncludedEmployees} employees)", Amount = IBillingCalculationService.DefaultBasePrice },
+            new()
+            {
+                Description =
+                    $"KaiSync Business base ({IBillingCalculationService.DefaultIncludedEmployees} employees, " +
+                    $"{IBillingCalculationService.DefaultIncludedContractors} portal contractors, " +
+                    $"{IBillingCalculationService.DefaultIncludedProperties} properties)",
+                Amount = IBillingCalculationService.DefaultBasePrice
+            },
         };
-        if (overage > 0)
-            lines.Add(new() { Description = $"Additional employees ({overage} × R{IBillingCalculationService.DefaultAdditionalEmployeePrice:N0})", Amount = overageCharge });
+        if (empOver > 0)
+            lines.Add(new()
+            {
+                Description = $"Additional employees ({empOver} × R{IBillingCalculationService.DefaultAdditionalEmployeePrice:N0})",
+                Amount = empCharge
+            });
+        if (ctOver > 0)
+            lines.Add(new()
+            {
+                Description = $"Additional portal contractors ({ctOver} × R{IBillingCalculationService.DefaultAdditionalContractorPrice:N0})",
+                Amount = ctCharge
+            });
+        if (propOver > 0)
+            lines.Add(new()
+            {
+                Description = $"Additional properties ({propOver} × R{IBillingCalculationService.DefaultAdditionalPropertyPrice:N0})",
+                Amount = propCharge
+            });
 
         _telemetry.LogEvent("billing_calculated", new()
         {
             ["company_id"] = companyId.ToString(),
             ["employees"] = employeeCount.ToString(),
+            ["contractors"] = contractorCount.ToString(),
+            ["properties"] = propertyCount.ToString(),
             ["total"] = total.ToString("F2"),
         });
 
@@ -68,8 +151,8 @@ public sealed class BillingCalculationService : IBillingCalculationService
             EmployeeCount = employeeCount,
             BasePrice = IBillingCalculationService.DefaultBasePrice,
             IncludedEmployees = IBillingCalculationService.DefaultIncludedEmployees,
-            OverageEmployees = overage,
-            OverageCharge = overageCharge,
+            OverageEmployees = empOver,
+            OverageCharge = empCharge + ctCharge + propCharge,
             TotalCharge = total,
             Lines = lines,
             PeriodMonth = period,
@@ -91,6 +174,7 @@ public sealed class BillingCalculationService : IBillingCalculationService
         return result;
     }
 }
+
 
 public interface IFeedbackService
 {
@@ -200,3 +284,4 @@ public sealed class PlatformReportingService : IPlatformReportingService
             headers, rows, downloadToDevice: true);
     }
 }
+
