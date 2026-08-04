@@ -90,7 +90,11 @@ export async function resolveContractorByCode(
       company_code: str(row.company_code) || companyCode.trim().toUpperCase(),
     }
   } catch (e: unknown) {
-    throw e instanceof Error ? e : new Error(String(e))
+    const msg = e instanceof Error ? e.message : String(e)
+    if (msg.includes('ACCOUNT_LOCKED')) {
+      throw new Error('Too many failed sign-in attempts. Please try again later.')
+    }
+    throw e instanceof Error ? e : new Error(msg)
   }
 }
 

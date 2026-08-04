@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { FormSelect } from '@/components/FormSelect'
 import { StatusBadge } from '@/components/ui/StatusBadge'
+import { isContractorKind } from '@/lib/partner-kinds'
 import type { Job, Employee, JobContractor, LaborEntry, JobInventoryItem, JobPhoto } from '@/types/database'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -37,7 +38,7 @@ type JobDetail = Job & {
 
 type ClientRow       = { id: string; name: string }
 type DealRow         = { id: string; title: string; project_code: string | null; client_id: string | null }
-type ContractorRow   = { id: string; name: string; contractor_code: string | null }
+type ContractorRow   = { id: string; name: string; contractor_code: string | null; partner_kind?: string | null }
 type InventoryRow    = { id: string; name: string; unit_cost: number | null; quantity_on_hand: number | null }
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
@@ -129,7 +130,7 @@ export default function JobDetailPage() {
         supabase.from('job_employees').select('employee_id').eq('job_id', jobId),
         supabase.from('clients').select('id, name').eq('company_id', member.companyId).order('name'),
         supabase.from('client_deals').select('id, title, project_code, client_id').eq('company_id', member.companyId).order('title'),
-        supabase.from('contractors').select('id, name, contractor_code').eq('company_id', member.companyId).eq('is_active', true).order('name'),
+        supabase.from('contractors').select('id, name, contractor_code, partner_kind').eq('company_id', member.companyId).eq('is_active', true).order('name'),
         supabase.from('inventory_items').select('id, name, unit_cost, quantity_on_hand').eq('company_id', member.companyId).order('name'),
       ])
 
@@ -168,7 +169,9 @@ export default function JobDetailPage() {
     setAssignedIds(new Set((assignRes.data ?? []).map((r: { employee_id: string }) => r.employee_id)))
     setClients((clientRes.data     ?? []) as ClientRow[])
     setDeals((dealRes.data         ?? []) as DealRow[])
-    setAllContractors((contractorRes.data ?? []) as ContractorRow[])
+    setAllContractors(
+      ((contractorRes.data ?? []) as ContractorRow[]).filter(c => isContractorKind(c.partner_kind)),
+    )
     setAllInventory((invItemsRes.data     ?? []) as InventoryRow[])
   }
 

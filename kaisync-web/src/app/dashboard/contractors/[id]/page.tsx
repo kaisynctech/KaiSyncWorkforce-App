@@ -1,15 +1,16 @@
 'use client'
 
-// AUDIT MIS-2026-00013: Found 1 gap vs HrContractorDetailsViewModel.
-// Fixed: partner_kind + registration_number now loaded in load() and persisted in handleSave()
-// Deferred: activity feed (get_contractor_activity_feed RPC not confirmed), quote approve/reject workflow
-
 import { useEffect, useState, useCallback, Suspense, useRef, useMemo } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
-import { partnerKindLabel, PARTNER_KIND, nextContractorCode } from '@/lib/partner-kinds'
+import {
+  isContractorKind,
+  partnerKindLabel,
+  PARTNER_KIND,
+  nextContractorCode,
+} from '@/lib/partner-kinds'
 import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
 import {
   buildComplianceView,
@@ -181,6 +182,7 @@ function ContractorDetailInner() {
   const [perms, setPerms] = useState<PermissionSet | null>(null)
   const [codeCopied, setCodeCopied] = useState(false)
   const [focusDocId, setFocusDocId] = useState<string | null>(null)
+  const [redirectingSupplier, setRedirectingSupplier] = useState(false)
   const canEdit = can(perms, PERM.contractorsEdit)
 
   // Information tab
@@ -305,6 +307,12 @@ function ContractorDetailInner() {
 
     if (!c) { router.push(fromSuppliers ? '/dashboard/suppliers' : '/dashboard/contractors'); return }
     const cont = c as Contractor
+    // Pure suppliers belong on the suppliers module — keep contractor routes contractor-kind only.
+    if (!isContractorKind(cont.partner_kind) && cont.partner_kind) {
+      setRedirectingSupplier(true)
+      router.replace(`/dashboard/suppliers/${contractorId}`)
+      return
+    }
     setContractor(cont)
 
     setName(cont.name ?? '')
@@ -793,7 +801,7 @@ function ContractorDetailInner() {
     accountTypeLabel: pendingBanking.account_type ?? '—',
   } : null
 
-  if (fromSuppliers) {
+  if (fromSuppliers || redirectingSupplier) {
     return (
       <div className="flex items-center justify-center h-full">
         <span className="text-text-secondary text-[13px]">Opening supplier…</span>
@@ -903,9 +911,12 @@ function ContractorDetailInner() {
               <FormSelect label="Partner kind" value={partnerKind} onChange={e => setPartnerKind(e.target.value)}>
                 <option value="">Select kind…</option>
                 <option value={PARTNER_KIND.contractor}>Contractor</option>
-                <option value={PARTNER_KIND.supplier}>Supplier</option>
                 <option value={PARTNER_KIND.both}>Contractor &amp; supplier</option>
               </FormSelect>
+              <p className="text-[11px] text-text-secondary -mt-1">
+                Pure suppliers are managed under{' '}
+                <Link href="/dashboard/suppliers" className="text-primary hover:underline">Suppliers</Link>.
+              </p>
               <FormField label="Registration number">
                 <input type="text" value={regNumber} onChange={e => setRegNumber(e.target.value)}
                   placeholder="e.g. 2023/123456/07" className={entryClass} />

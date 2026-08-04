@@ -6,11 +6,18 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { FilterChip } from '@/components/ui/FilterChip'
 import { StatusBadge } from '@/components/ui/StatusBadge'
+import { KpiTile } from '@/components/ui/KpiTile'
 import { isContractorKind } from '@/lib/partner-kinds'
 import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
 import type { Contractor, ContractorActionItem } from '@/types/database'
 
 type FilterValue = 'active' | 'inactive' | 'all'
+
+type ContractorKpis = {
+  active: number
+  pendingCompliance: number
+  pendingPayments: number
+}
 
 const ACTION_TYPE_COLORS: Record<string, { bg: string; fg: string }> = {
   quote_pending:     { bg: '#DBEAFE', fg: '#1E40AF' },
@@ -54,6 +61,7 @@ export default function ContractorsPage() {
   const [xeroImporting, setXeroImporting] = useState(false)
   const [xeroMsg,       setXeroMsg]       = useState<string | null>(null)
   const [perms, setPerms] = useState<PermissionSet | null>(null)
+  const [kpis, setKpis] = useState<ContractorKpis>({ active: 0, pendingCompliance: 0, pendingPayments: 0 })
 
   const canCreate = can(perms, PERM.contractorsCreate)
   const canEdit = can(perms, PERM.contractorsEdit)
@@ -71,9 +79,15 @@ export default function ContractorsPage() {
       .maybeSingle()
     setPerms(await loadPermissions(supabase, member.companyId, me?.access_level))
 
-    const [cRes, aRes] = await Promise.all([
+    const today = new Date().toISOString().slice(0, 10)
+    const [cRes, aRes, snapRes] = await Promise.all([
       supabase.from('contractors').select('*').eq('company_id', member.companyId).order('name'),
       supabase.rpc('hr_get_contractor_action_items', { p_company_id: member.companyId }),
+      supabase.rpc('hr_get_contractors_snapshot', {
+        p_company_id: member.companyId,
+        p_from: today,
+        p_to: today,
+      }),
     ])
 
     if (cRes.error) {
@@ -93,6 +107,18 @@ export default function ContractorsPage() {
         ? JSON.parse(actionRaw)
         : []
     setActionItems((actionList ?? []) as ContractorActionItem[])
+
+    const snap = (snapRes.data ?? {}) as {
+      active?: number
+      pending_compliance?: number
+      pending_payments?: number
+    }
+    // Scope active/compliance to contractor-kind rows; payments come from snapshot RPC.
+    setKpis({
+      active: rows.filter(c => c.is_active).length,
+      pendingCompliance: rows.filter(c => c.compliance_hold).length,
+      pendingPayments: Number(snap.pending_payments ?? 0),
+    })
 
     const cId = member.companyId
     setCompanyId(cId)
@@ -223,6 +249,14 @@ export default function ContractorsPage() {
           className="w-full bg-surface border border-border text-text-primary placeholder:text-text-disabled rounded-lg px-3 py-2 text-[14px] focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors"
         />
       </div>
+
+      {!loading && (
+        <div className="grid grid-cols-3 gap-2 mx-4 mt-3">
+          <KpiTile value={kpis.active} label="Active" bg="#0F2918" valueFg="#22C55E" labelFg="#4ADE80" />
+          <KpiTile value={kpis.pendingCompliance} label="Compliance" bg="#292012" valueFg="#FCD34D" labelFg="#FCD34D" />
+          <KpiTile value={kpis.pendingPayments} label="Pending pay" bg="#1E293B" valueFg="#94A3B8" labelFg="#64748B" />
+        </div>
+      )}
 
       {/* Filter toolbar */}
       <div className="flex items-center gap-[6px] mx-4 my-2 flex-wrap">

@@ -11,6 +11,7 @@ import {
   confirmContractorPayoutRisks,
   fetchContractorPayoutRiskFlagsByIds,
 } from '@/lib/contractor-payout-gate'
+import { isContractorKind } from '@/lib/partner-kinds'
 import type { ContractorPayout } from '@/lib/finance-types'
 
 type ContractorOpt = {
@@ -54,13 +55,19 @@ export default function ContractorPayoutsPage() {
         .order('created_at', { ascending: false }),
       supabase
         .from('contractors')
-        .select('id, name, banking_verified, payment_hold, compliance_hold')
+        .select('id, name, banking_verified, payment_hold, compliance_hold, partner_kind')
         .eq('company_id', member.companyId)
         .eq('is_active', true)
         .order('name'),
     ])
     setRows((data ?? []) as ContractorPayout[])
-    setContractors((cons ?? []) as ContractorOpt[])
+    setContractors(
+      ((cons ?? []) as (ContractorOpt & { partner_kind?: string | null })[])
+        .filter(c => isContractorKind(c.partner_kind))
+        .map(({ id, name, banking_verified, payment_hold, compliance_hold }) => ({
+          id, name, banking_verified, payment_hold, compliance_hold,
+        })),
+    )
     setLoading(false)
   }, [])
 
