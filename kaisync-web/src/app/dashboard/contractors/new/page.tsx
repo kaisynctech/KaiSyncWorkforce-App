@@ -6,13 +6,12 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import {
-  isContractorKind,
-  nextContractorCode,
   partnerKindFromQuery,
   partnerKindLabel,
   PARTNER_KIND,
   type PartnerKind,
 } from '@/lib/partner-kinds'
+import { createContractor } from '@/lib/contractors'
 import { can, loadPermissions, PERM } from '@/lib/permissions'
 
 const ACCOUNT_TYPES = [
@@ -134,61 +133,35 @@ function NewContractorForm() {
     const member = await resolveCurrentMember(supabase)
     if (!member) { setError('Account not linked to an active employee.'); setBusy(false); return }
 
-    let contractorCode: string | null = null
-    if (isContractorKind(partnerKind)) {
-      const [{ data: company }, { data: existing }] = await Promise.all([
-        supabase.from('companies').select('code').eq('id', member.companyId).maybeSingle(),
-        supabase.from('contractors').select('contractor_code').eq('company_id', member.companyId),
-      ])
-      const companyCode = (company as { code?: string | null } | null)?.code ?? ''
-      contractorCode = nextContractorCode(
-        companyCode,
-        (existing ?? []).map(r => (r as { contractor_code: string | null }).contractor_code),
-      )
-    }
+    const created = await createContractor(supabase, {
+      companyId: member.companyId,
+      name,
+      partnerKind,
+      contactPerson,
+      phone,
+      email,
+      address,
+      taxNumber,
+      registrationNumber,
+      isVatRegistered,
+      vatNumber,
+      notes,
+      bankName,
+      bankAccount,
+      accountHolderName: accountHolder,
+      bankBranchCode: branchCode,
+      accountType,
+      paymentTerms,
+      preferredPaymentMethod: paymentMethod,
+    })
 
-    const payload = {
-      company_id: member.companyId,
-      name: name.trim(),
-      partner_kind: partnerKind,
-      contractor_code: contractorCode,
-      contact_person: contactPerson.trim() || null,
-      phone: phone.trim() || null,
-      email: email.trim() || null,
-      address: address.trim() || null,
-      tax_number: taxNumber.trim() || null,
-      registration_number: registrationNumber.trim() || null,
-      is_vat_registered: isVatRegistered,
-      vat_number: isVatRegistered ? (vatNumber.trim() || null) : null,
-      notes: notes.trim() || null,
-      bank_name: bankName.trim() || null,
-      bank_account: bankAccount.trim() || null,
-      account_holder_name: accountHolder.trim() || null,
-      bank_branch_code: branchCode.trim() || null,
-      account_type: accountType || null,
-      payment_terms: paymentTerms || null,
-      preferred_payment_method: paymentMethod || null,
-      is_active: true,
-      rating: 0,
-      banking_verified: false,
-      payment_hold: false,
-      compliance_hold: false,
-      portal_enabled: false,
-    }
-
-    const { data, error: insertErr } = await supabase
-      .from('contractors')
-      .insert(payload)
-      .select('id')
-      .single()
-
-    if (insertErr) {
-      setError(insertErr.message)
+    if (!created.ok) {
+      setError(created.message)
       setBusy(false)
       return
     }
 
-    router.push(`/dashboard/contractors/${data.id}`)
+    router.push(`/dashboard/contractors/${created.data.id}`)
     setBusy(false)
   }
 

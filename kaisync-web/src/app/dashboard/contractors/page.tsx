@@ -285,6 +285,14 @@ export default function ContractorsPage() {
         )}
         {canCreate && (
           <button
+            onClick={() => router.push('/dashboard/contractors/import')}
+            className="h-8 px-3 text-[13px] rounded-lg border border-border text-text-primary font-medium hover:bg-surface-elevated transition-colors"
+          >
+            Import
+          </button>
+        )}
+        {canCreate && (
+          <button
             onClick={() => router.push('/dashboard/contractors/new')}
             className="h-8 px-3 text-[13px] rounded-lg bg-primary text-white font-semibold hover:bg-primary-dark transition-colors"
           >+ Add</button>
