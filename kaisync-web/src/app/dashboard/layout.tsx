@@ -90,7 +90,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           setCompany({
             id: session.company.id,
             name: session.company.name,
-            company_code: session.company.code,
+            code: session.company.code,
             owner_user_id: '',
             industry: null,
             size_range: null,
