@@ -1,23 +1,20 @@
 'use client'
 
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import { CLIENT_TYPE_LABELS } from '@/lib/client-create-payload'
+import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
+import { KpiTile } from '@/components/ui/KpiTile'
 import type { Client } from '@/types/database'
-
-const CLIENT_TYPE_LABELS: Record<string, string> = {
-  individual: 'Individual',
-  company:    'Company',
-  government: 'Government',
-  ngo:        'NGO',
-}
 
 export default function ClientsPage() {
   const router = useRouter()
   const [clients, setClients] = useState<Client[]>([])
   const [loading, setLoading] = useState(true)
   const [searchText, setSearchText] = useState('')
+  const [perms, setPerms] = useState<PermissionSet | null>(null)
   const [xeroLinked,    setXeroLinked]    = useState<Set<string>>(new Set())
   const [xeroConnected, setXeroConnected] = useState(false)
   const [xeroPushing,   setXeroPushing]   = useState<string | null>(null)
@@ -26,6 +23,8 @@ export default function ClientsPage() {
   const [xeroImporting, setXeroImporting] = useState(false)
   const [xeroMsg,       setXeroMsg]       = useState<string | null>(null)
 
+  const canEdit = can(perms, PERM.clientsEdit)
+
   const load = useCallback(async () => {
     setLoading(true)
     const supabase = createClient()
@@ -33,6 +32,14 @@ export default function ClientsPage() {
     if (!member) { setLoading(false); return }
     const cId = member.companyId
     setCompanyId(cId)
+
+    const { data: me } = await supabase
+      .from('employees')
+      .select('access_level')
+      .eq('id', member.employeeId)
+      .maybeSingle()
+    setPerms(await loadPermissions(supabase, member.companyId, me?.access_level))
+
     const { data } = await supabase
       .from('clients')
       .select('*')
@@ -52,6 +59,12 @@ export default function ClientsPage() {
 
   useEffect(() => { load() }, [load])
 
+  const kpis = useMemo(() => ({
+    total: clients.length,
+    portalEnabled: clients.filter(c => c.portal_enabled).length,
+    withCode: clients.filter(c => !!c.client_code).length,
+  }), [clients])
+
   const filtered = clients.filter(c => {
     if (!searchText) return true
     const q = searchText.toLowerCase()
@@ -66,38 +79,51 @@ export default function ClientsPage() {
 
   async function pushToXero(e: React.MouseEvent, clientId: string) {
     e.stopPropagation()
-    if (!companyId || !sessionToken || xeroPushing) return
+    if (!canEdit || !companyId || !sessionToken || xeroPushing) return
     setXeroPushing(clientId)
+    setXeroMsg(null)
     try {
       const resp = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/xero-sync-contacts`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${sessionToken}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ company_id: companyId, record_id: clientId, record_type: 'client' }),
       })
-      const data = await resp.json()
+      const data = await resp.json().catch(() => ({} as { ok?: boolean; error?: string }))
       if (data.ok) setXeroLinked(prev => new Set([...prev, clientId]))
+      else setXeroMsg(data.error ?? `Xero push failed (${resp.status})`)
+    } catch {
+      setXeroMsg('Xero push failed — network or server error')
     } finally {
       setXeroPushing(null)
     }
   }
 
   async function syncAllToXero() {
-    if (!companyId || !sessionToken) return
+    if (!canEdit || !companyId || !sessionToken) return
     setXeroPushing('__all__')
+    setXeroMsg(null)
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/xero-sync-contacts`, {
+      const resp = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/xero-sync-contacts`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${sessionToken}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ company_id: companyId }),
       })
-      await load()
+      const data = await resp.json().catch(() => ({} as { ok?: boolean; error?: string; synced?: number }))
+      if (data.ok) {
+        setXeroMsg(`Synced to Xero${data.synced != null ? `: ${data.synced} contact(s)` : ''}.`)
+        await load()
+      } else {
+        setXeroMsg(data.error ?? `Xero sync failed (${resp.status})`)
+      }
+    } catch {
+      setXeroMsg('Xero sync failed — network or server error')
     } finally {
       setXeroPushing(null)
     }
   }
 
   async function importFromXero() {
-    if (!companyId || !sessionToken) return
+    if (!canEdit || !companyId || !sessionToken) return
     setXeroImporting(true)
     setXeroMsg(null)
     try {
@@ -109,7 +135,7 @@ export default function ClientsPage() {
           body: JSON.stringify({ company_id: companyId, direction: 'pull' }),
         }
       )
-      const data = await resp.json()
+      const data = await resp.json().catch(() => ({} as { ok?: boolean; error?: string; created?: number; matched?: number }))
       if (data.ok) {
         setXeroMsg(`Imported from Xero: ${data.created} new record${data.created !== 1 ? 's' : ''} created, ${data.matched} existing linked.`)
         await load()
@@ -125,12 +151,26 @@ export default function ClientsPage() {
 
   return (
     <div className="h-full flex flex-col">
-      {/* Search + add */}
-      <div className="flex items-center gap-2 mx-4 mt-4 mb-0">
+      {/* Search */}
+      <div className="px-4 pt-4 pb-0">
         <input type="search" placeholder="Search by name, code, email, phone…"
-          className="flex-1 bg-surface border border-border text-text-primary placeholder:text-text-disabled rounded-lg px-3 py-2 text-[14px] focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors"
+          className="w-full bg-surface border border-border text-text-primary placeholder:text-text-disabled rounded-lg px-3 py-2 text-[14px] focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors"
           value={searchText} onChange={e => setSearchText(e.target.value)} />
-        {xeroConnected && (
+      </div>
+
+      {!loading && (
+        <div className="grid grid-cols-3 gap-2 mx-4 mt-3">
+          <KpiTile value={kpis.total} label="Total clients" bg="#1E293B" valueFg="#94A3B8" labelFg="#64748B" />
+          <KpiTile value={kpis.portalEnabled} label="Portal enabled" bg="#0F2918" valueFg="#22C55E" labelFg="#4ADE80" />
+          <KpiTile value={kpis.withCode} label="With code" bg="#1E293B" valueFg="#94A3B8" labelFg="#64748B" />
+        </div>
+      )}
+
+      {/* Toolbar */}
+      <div className="flex items-center gap-2 mx-4 my-2 flex-wrap">
+        <p className="text-text-secondary text-[12px] flex-1">{filtered.length} client{filtered.length !== 1 ? 's' : ''}</p>
+        <button onClick={load} className="text-primary text-[13px] px-2 hover:opacity-70 transition-opacity">Refresh</button>
+        {canEdit && xeroConnected && (
           <button
             onClick={syncAllToXero}
             disabled={!!xeroPushing}
@@ -139,7 +179,7 @@ export default function ClientsPage() {
             {xeroPushing === '__all__' ? 'Syncing…' : 'Sync All to Xero'}
           </button>
         )}
-        {xeroConnected && (
+        {canEdit && xeroConnected && (
           <button
             onClick={importFromXero}
             disabled={xeroImporting}
@@ -148,21 +188,27 @@ export default function ClientsPage() {
             {xeroImporting ? 'Importing…' : '↓ Import from Xero'}
           </button>
         )}
-        <button onClick={() => router.push('/dashboard/clients/new')}
-          className="btn-primary h-[42px] px-3 text-[13px] whitespace-nowrap">
-          + Add Client
-        </button>
-      </div>
-
-      {/* Count + refresh */}
-      <div className="flex items-center justify-between mx-4 my-2">
-        <p className="text-text-secondary text-[12px]">{filtered.length} client{filtered.length !== 1 ? 's' : ''}</p>
-        <button onClick={load} className="text-primary text-[13px] px-2 hover:opacity-70 transition-opacity">Refresh</button>
+        {canEdit && (
+          <button
+            onClick={() => router.push('/dashboard/clients/import')}
+            className="h-[42px] px-3 text-[13px] rounded-lg border border-border text-text-primary font-medium hover:bg-surface-elevated transition-colors"
+          >
+            Import
+          </button>
+        )}
+        {canEdit && (
+          <button onClick={() => router.push('/dashboard/clients/new')}
+            className="btn-primary h-[42px] px-3 text-[13px] whitespace-nowrap">
+            + Add Client
+          </button>
+        )}
       </div>
 
       {xeroMsg && (
         <p className={`mx-4 mb-2 text-[12px] px-3 py-2 rounded ${
-          xeroMsg.includes('Imported') ? 'bg-green-900/30 text-green-300' : 'bg-red-900/30 text-red-300'
+          xeroMsg.includes('Imported') || xeroMsg.includes('Synced')
+            ? 'bg-green-900/30 text-green-300'
+            : 'bg-red-900/30 text-red-300'
         }`}>
           {xeroMsg}
           <button onClick={() => setXeroMsg(null)} className="ml-2 opacity-60 hover:opacity-100">✕</button>
@@ -216,7 +262,7 @@ export default function ClientsPage() {
                       <td className="data-td text-center" onClick={e => e.stopPropagation()}>
                         {xeroLinked.has(c.id) ? (
                           <span className="text-green-400 text-[18px]" title="Synced to Xero">✓</span>
-                        ) : (
+                        ) : canEdit ? (
                           <button
                             onClick={e => pushToXero(e, c.id)}
                             disabled={xeroPushing === c.id}
@@ -224,6 +270,8 @@ export default function ClientsPage() {
                           >
                             {xeroPushing === c.id ? '…' : '+ Xero'}
                           </button>
+                        ) : (
+                          <span className="text-text-disabled text-[11px]">—</span>
                         )}
                       </td>
                     )}

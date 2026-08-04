@@ -639,8 +639,8 @@ export default function SettingsPage() {
           <Section title="Portal Codes" icon="vpn_key">
             <div className="flex flex-col gap-3">
               <p className="text-[13px] text-text-secondary">
-                Employee and contractor portal access use per-person codes (not a single company-wide
-                contractor code). Rotate a contractor code on that contractor&apos;s Information tab.
+                Employee, contractor, and client portal access use permanent per-record codes.
+                Turn off Portal user on that record to revoke access — codes are not rotated or expired.
               </p>
               <div className="flex items-center justify-between py-3 border-b border-divider">
                 <div>
@@ -651,7 +651,7 @@ export default function SettingsPage() {
                   </p>
                 </div>
               </div>
-              <div className="flex items-center justify-between py-3">
+              <div className="flex items-center justify-between py-3 border-b border-divider">
                 <div>
                   <p className="text-[13px] font-medium text-text-primary">Contractor Portal Code</p>
                   <p className="text-[12px] text-text-secondary">
@@ -665,6 +665,23 @@ export default function SettingsPage() {
                     className="h-8 px-3 rounded-md border border-border text-text-primary text-[12px] font-semibold hover:bg-surface-elevated transition-colors inline-flex items-center"
                   >
                     Open Contractors
+                  </Link>
+                )}
+              </div>
+              <div className="flex items-center justify-between py-3">
+                <div>
+                  <p className="text-[13px] font-medium text-text-primary">Client Portal Code</p>
+                  <p className="text-[12px] text-text-secondary">
+                    Each client has a permanent C#### code assigned when Portal user is enabled.
+                    Codes are not rotated — turn off Portal user on the client to revoke access.
+                  </p>
+                </div>
+                {isHrOrAbove && (
+                  <Link
+                    href="/dashboard/clients"
+                    className="h-8 px-3 rounded-md border border-border text-text-primary text-[12px] font-semibold hover:bg-surface-elevated transition-colors inline-flex items-center"
+                  >
+                    Open Clients
                   </Link>
                 )}
               </div>

@@ -107,6 +107,8 @@ export interface Client {
   company_id: string
   name: string
   client_code: string | null
+  portal_enabled?: boolean | null
+  client_code_expires_at?: string | null
   email: string | null
   phone: string | null
   address: string | null

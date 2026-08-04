@@ -16,6 +16,8 @@ export const PERM = {
   contractorsView: 'contractors.view',
   contractorsCreate: 'contractors.create',
   contractorsEdit: 'contractors.edit',
+  clientsView: 'clients.view',
+  clientsEdit: 'clients.edit',
 } as const
 
 export type PermissionKey = (typeof PERM)[keyof typeof PERM]
@@ -28,30 +30,35 @@ const FALLBACK: Record<string, Partial<Record<PermissionKey, boolean>>> = {
     [PERM.suppliersView]: true, [PERM.suppliersEdit]: true,
     [PERM.assetsView]: true, [PERM.assetsEdit]: true,
     [PERM.contractorsView]: true, [PERM.contractorsCreate]: true, [PERM.contractorsEdit]: true,
+    [PERM.clientsView]: true, [PERM.clientsEdit]: true,
   },
   hr: {
     [PERM.inventoryView]: true, [PERM.inventoryEdit]: true,
     [PERM.suppliersView]: true, [PERM.suppliersEdit]: true,
     [PERM.assetsView]: true, [PERM.assetsEdit]: true,
     [PERM.contractorsView]: true, [PERM.contractorsCreate]: true, [PERM.contractorsEdit]: true,
+    [PERM.clientsView]: true, [PERM.clientsEdit]: true,
   },
   hr_admin: {
     [PERM.inventoryView]: true, [PERM.inventoryEdit]: true,
     [PERM.suppliersView]: true, [PERM.suppliersEdit]: true,
     [PERM.assetsView]: true, [PERM.assetsEdit]: true,
     [PERM.contractorsView]: true, [PERM.contractorsCreate]: true, [PERM.contractorsEdit]: true,
+    [PERM.clientsView]: true, [PERM.clientsEdit]: true,
   },
   manager: {
     [PERM.inventoryView]: true, [PERM.inventoryEdit]: true,
     [PERM.suppliersView]: true, [PERM.suppliersEdit]: false,
     [PERM.assetsView]: true, [PERM.assetsEdit]: true,
     [PERM.contractorsView]: true, [PERM.contractorsCreate]: true, [PERM.contractorsEdit]: true,
+    [PERM.clientsView]: true, [PERM.clientsEdit]: true,
   },
   employee: {
     [PERM.inventoryView]: true, [PERM.inventoryEdit]: false,
     [PERM.suppliersView]: false, [PERM.suppliersEdit]: false,
     [PERM.assetsView]: false, [PERM.assetsEdit]: false,
     [PERM.contractorsView]: false, [PERM.contractorsCreate]: false, [PERM.contractorsEdit]: false,
+    [PERM.clientsView]: true, [PERM.clientsEdit]: false,
   },
 }
 

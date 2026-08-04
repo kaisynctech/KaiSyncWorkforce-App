@@ -192,10 +192,10 @@ export async function resolveClientByCode(
     }
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e)
-    if (msg.includes('PORTAL_CODE_EXPIRED')) {
-      throw new Error('Your portal code has expired. Contact your administrator.')
+    if (msg.includes('ACCOUNT_LOCKED')) {
+      throw new Error('Too many failed sign-in attempts. Please try again later.')
     }
-    throw e
+    throw e instanceof Error ? e : new Error(msg)
   }
 }
 
