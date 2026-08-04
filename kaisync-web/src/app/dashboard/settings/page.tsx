@@ -25,6 +25,31 @@ type BranchRow = {
 
 type HrEmployee = Pick<Employee, 'id' | 'name' | 'surname' | 'email' | 'access_level'>
 
+type SettingsTab =
+  | 'general'
+  | 'billing'
+  | 'modules'
+  | 'security'
+  | 'organisation'
+  | 'integrations'
+  | 'advanced'
+
+const SETTINGS_TABS: { key: SettingsTab; label: string; hrOnly?: boolean }[] = [
+  { key: 'general', label: 'General' },
+  { key: 'billing', label: 'Billing', hrOnly: true },
+  { key: 'modules', label: 'Modules' },
+  { key: 'security', label: 'Security' },
+  { key: 'organisation', label: 'Organisation', hrOnly: true },
+  { key: 'integrations', label: 'Integrations' },
+  { key: 'advanced', label: 'Advanced' },
+]
+
+function parseSettingsTab(raw: string | null): SettingsTab | null {
+  if (!raw) return null
+  const key = raw.toLowerCase() as SettingsTab
+  return SETTINGS_TABS.some(t => t.key === key) ? key : null
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
@@ -71,14 +96,32 @@ export default function SettingsPage() {
   const [billingError, setBillingError] = useState<string | null>(null)
   const [billingLoading, setBillingLoading] = useState(false)
 
+  const [tab, setTab] = useState<SettingsTab>('general')
+
   useEffect(() => { load() }, [])
   useEffect(() => {
     if (typeof window === 'undefined') return
     const p = new URLSearchParams(window.location.search)
+    const fromQuery = parseSettingsTab(p.get('tab'))
+    if (fromQuery) setTab(fromQuery)
     const s = p.get('xero')
-    if (s === 'connected') setXeroMsg('Xero connected successfully.')
-    if (s === 'error')     setXeroMsg('Xero connection failed. Please try again.')
+    if (s === 'connected') {
+      setXeroMsg('Xero connected successfully.')
+      setTab('integrations')
+    }
+    if (s === 'error') {
+      setXeroMsg('Xero connection failed. Please try again.')
+      setTab('integrations')
+    }
   }, [])
+
+  function selectTab(next: SettingsTab) {
+    setTab(next)
+    if (typeof window === 'undefined') return
+    const url = new URL(window.location.href)
+    url.searchParams.set('tab', next)
+    window.history.replaceState({}, '', url.toString())
+  }
 
   // ── Load ──────────────────────────────────────────────────────────────────
 
@@ -404,53 +447,76 @@ export default function SettingsPage() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   const inputCls = 'w-full h-10 px-3 bg-background border border-border rounded-lg text-[13px] text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30'
+  const visibleTabs = SETTINGS_TABS.filter(t => !t.hrOnly || isHrOrAbove)
+  const activeTab = visibleTabs.some(t => t.key === tab) ? tab : 'general'
 
   return (
-    <div className="p-6 max-w-3xl mx-auto pb-16">
-      <h1 className="text-[22px] font-semibold text-text-primary mb-6">Settings</h1>
-
-      {/* 1. General */}
-      <Section title="General" icon="business">
-        <div className="flex flex-col gap-4">
-          <Field label="Company Name">
-            <input
-              type="text"
-              value={companyName}
-              onChange={e => setCompanyName(e.target.value)}
-              disabled={!isOwner}
-              className="input"
-            />
-          </Field>
-          <Field label="Industry">
-            <input
-              type="text"
-              value={industry}
-              onChange={e => setIndustry(e.target.value)}
-              disabled={!isOwner}
-              placeholder="e.g. Healthcare"
-              className="input"
-            />
-          </Field>
-          <Field label="Company Code">
-            <div className="flex items-center gap-2 h-10 px-3 rounded-md border border-border bg-surface-elevated text-[13px] text-text-secondary">
-              <span className="font-mono">{company?.company_code ?? 'Not set'}</span>
-            </div>
-          </Field>
-          {isOwner && (
+    <div className="h-full flex flex-col min-h-0">
+      <div className="px-4 sm:px-6 pt-5 pb-0 shrink-0">
+        <h1 className="text-[22px] font-semibold text-text-primary mb-4">Settings</h1>
+        <div className="flex gap-1 border-b border-divider overflow-x-auto">
+          {visibleTabs.map(t => (
             <button
-              onClick={saveCompanyName}
-              disabled={saving === 'company'}
-              className="self-start h-9 px-4 rounded-md bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors"
+              key={t.key}
+              type="button"
+              onClick={() => selectTab(t.key)}
+              className={`h-10 px-3 sm:px-4 text-[13px] font-medium border-b-2 -mb-px whitespace-nowrap transition-colors ${
+                activeTab === t.key
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-text-secondary hover:text-text-primary'
+              }`}
             >
-              {saving === 'company' ? 'Saving…' : 'Save Changes'}
+              {t.label}
             </button>
-          )}
+          ))}
         </div>
-      </Section>
+      </div>
 
-      {/* 2. Billing */}
-      {isHrOrAbove && (
-        <Section title="Billing" icon="payments">
+      <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-5 pb-16">
+        <div className="max-w-3xl">
+
+      {activeTab === 'general' && (
+        <Section title="Company" icon="business">
+          <div className="flex flex-col gap-4">
+            <Field label="Company Name">
+              <input
+                type="text"
+                value={companyName}
+                onChange={e => setCompanyName(e.target.value)}
+                disabled={!isOwner}
+                className="input"
+              />
+            </Field>
+            <Field label="Industry">
+              <input
+                type="text"
+                value={industry}
+                onChange={e => setIndustry(e.target.value)}
+                disabled={!isOwner}
+                placeholder="e.g. Healthcare"
+                className="input"
+              />
+            </Field>
+            <Field label="Company Code">
+              <div className="flex items-center gap-2 h-10 px-3 rounded-md border border-border bg-surface-elevated text-[13px] text-text-secondary">
+                <span className="font-mono">{company?.company_code ?? 'Not set'}</span>
+              </div>
+            </Field>
+            {isOwner && (
+              <button
+                onClick={saveCompanyName}
+                disabled={saving === 'company'}
+                className="self-start h-9 px-4 rounded-md bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors"
+              >
+                {saving === 'company' ? 'Saving…' : 'Save Changes'}
+              </button>
+            )}
+          </div>
+        </Section>
+      )}
+
+      {activeTab === 'billing' && isHrOrAbove && (
+        <Section title="Subscription" icon="payments">
           <div className="flex flex-col gap-4">
             <p className="text-[13px] text-text-secondary">
               Live monthly amount based on active employees, portal contractors, and active properties.
@@ -519,481 +585,478 @@ export default function SettingsPage() {
         </Section>
       )}
 
-      {/* 3. Modules */}
-      <Section title="Modules" icon="extension">
-        <div className="flex flex-col gap-3">
-          <p className="text-[13px] text-text-secondary">
-            Enable or disable company modules. Disabled modules are hidden from the HR sidebar and employee portal.
-          </p>
-          {COMPANY_MODULE_SPECS.map(spec => (
-            <Toggle
-              key={spec.key}
-              label={spec.title}
-              description={spec.description}
-              checked={isModuleEnabled(enabledModules, spec.key, spec.defaultIfMissing)}
-              onChange={v => toggleModule(spec.key, v)}
-              disabled={!isHrOrAbove || modulesBusy}
-            />
-          ))}
-          {modulesMsg && (
-            <p className={`text-[12px] ${modulesMsg.includes('Failed') ? 'text-danger' : 'text-text-secondary'}`}>
-              {modulesMsg}
-            </p>
-          )}
-          {isHrOrAbove && (
-            <button
-              onClick={saveModules}
-              disabled={modulesBusy}
-              className="self-start h-9 px-4 rounded-md bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors"
-            >
-              {modulesBusy ? 'Saving…' : 'Save Modules'}
-            </button>
-          )}
-        </div>
-      </Section>
-
-      {/* 3. Security */}
-      <Section title="Security" icon="security">
-        <div className="flex flex-col gap-4">
-          <Toggle
-            label="Require step-up verification for sensitive actions"
-            description="Users must re-authenticate before making privileged changes."
-            checked={security?.step_up_required ?? false}
-            onChange={v => toggleSecurity('step_up_required', v)}
-            disabled={!isOwner || saving === 'step_up_required'}
-          />
-          <Toggle
-            label="Require portal code for punch-in"
-            description="Employees must enter their portal code to clock in."
-            checked={security?.require_portal_code_for_punch ?? false}
-            onChange={v => toggleSecurity('require_portal_code_for_punch', v)}
-            disabled={!isOwner || saving === 'require_portal_code_for_punch'}
-          />
-          <RowInfo label="Session timeout" value={`${security?.session_timeout_minutes ?? '—'} minutes`} />
-          <RowInfo label="Lockout threshold" value={`${security?.lockout_threshold ?? '—'} failed attempts`} />
-        </div>
-      </Section>
-
-      {/* 3. Portal Codes */}
-      <Section title="Portal Codes" icon="vpn_key">
-        <div className="flex flex-col gap-3">
-          <p className="text-[13px] text-text-secondary">
-            Portal codes grant employees and contractors access to the employee portal. Rotating a code
-            immediately invalidates all existing sessions for that type.
-          </p>
-          <div className="flex items-center justify-between py-3 border-b border-divider">
-            <div>
-              <p className="text-[13px] font-medium text-text-primary">Employee Portal Code</p>
-              <p className="text-[12px] text-text-secondary">Used by employees to sign in</p>
-            </div>
-            {isHrOrAbove && (
-              <button
-                onClick={() => rotatePortalCode('employee')}
-                disabled={saving === 'rotate_employee'}
-                className="h-8 px-3 rounded-md bg-warning-dark text-warning text-[12px] font-semibold hover:bg-amber-100 disabled:opacity-50 transition-colors"
-              >
-                {saving === 'rotate_employee' ? '…' : 'Rotate'}
-              </button>
-            )}
-          </div>
-          <div className="flex items-center justify-between py-3">
-            <div>
-              <p className="text-[13px] font-medium text-text-primary">Contractor Portal Code</p>
-              <p className="text-[12px] text-text-secondary">Used by contractors to sign in</p>
-            </div>
-            {isHrOrAbove && (
-              <button
-                onClick={() => rotatePortalCode('contractor')}
-                disabled={saving === 'rotate_contractor'}
-                className="h-8 px-3 rounded-md bg-warning-dark text-warning text-[12px] font-semibold hover:bg-amber-100 disabled:opacity-50 transition-colors"
-              >
-                {saving === 'rotate_contractor' ? '…' : 'Rotate'}
-              </button>
-            )}
-          </div>
-        </div>
-      </Section>
-
-      {/* 4. Branch Management */}
-      {isHrOrAbove && (
-        <Section title="Branch Management" icon="account_tree">
+      {activeTab === 'modules' && (
+        <Section title="Modules" icon="extension">
           <div className="flex flex-col gap-3">
             <p className="text-[13px] text-text-secondary">
-              Branches are physical locations or divisions within your company. Employees can be assigned to a branch.
+              Enable or disable company modules. Disabled modules are hidden from the HR sidebar and employee portal.
             </p>
-
-            {/* Create new branch */}
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={newBranchName}
-                onChange={e => setNewBranchName(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && createBranch()}
-                placeholder="New branch name…"
-                className={inputCls}
+            {COMPANY_MODULE_SPECS.map(spec => (
+              <Toggle
+                key={spec.key}
+                label={spec.title}
+                description={spec.description}
+                checked={isModuleEnabled(enabledModules, spec.key, spec.defaultIfMissing)}
+                onChange={v => toggleModule(spec.key, v)}
+                disabled={!isHrOrAbove || modulesBusy}
               />
+            ))}
+            {modulesMsg && (
+              <p className={`text-[12px] ${modulesMsg.includes('Failed') ? 'text-danger' : 'text-text-secondary'}`}>
+                {modulesMsg}
+              </p>
+            )}
+            {isHrOrAbove && (
               <button
-                onClick={createBranch}
-                disabled={!newBranchName.trim() || branchBusy}
-                className="h-10 px-4 rounded-lg bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors shrink-0"
+                onClick={saveModules}
+                disabled={modulesBusy}
+                className="self-start h-9 px-4 rounded-md bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors"
               >
-                {branchBusy ? '…' : 'Add'}
+                {modulesBusy ? 'Saving…' : 'Save Modules'}
+              </button>
+            )}
+          </div>
+        </Section>
+      )}
+
+      {activeTab === 'security' && (
+        <>
+          <Section title="Security" icon="security">
+            <div className="flex flex-col gap-4">
+              <Toggle
+                label="Require step-up verification for sensitive actions"
+                description="Users must re-authenticate before making privileged changes."
+                checked={security?.step_up_required ?? false}
+                onChange={v => toggleSecurity('step_up_required', v)}
+                disabled={!isOwner || saving === 'step_up_required'}
+              />
+              <Toggle
+                label="Require portal code for punch-in"
+                description="Employees must enter their portal code to clock in."
+                checked={security?.require_portal_code_for_punch ?? false}
+                onChange={v => toggleSecurity('require_portal_code_for_punch', v)}
+                disabled={!isOwner || saving === 'require_portal_code_for_punch'}
+              />
+              <RowInfo label="Session timeout" value={`${security?.session_timeout_minutes ?? '—'} minutes`} />
+              <RowInfo label="Lockout threshold" value={`${security?.lockout_threshold ?? '—'} failed attempts`} />
+            </div>
+          </Section>
+
+          <Section title="Portal Codes" icon="vpn_key">
+            <div className="flex flex-col gap-3">
+              <p className="text-[13px] text-text-secondary">
+                Portal codes grant employees and contractors access to the employee portal. Rotating a code
+                immediately invalidates all existing sessions for that type.
+              </p>
+              <div className="flex items-center justify-between py-3 border-b border-divider">
+                <div>
+                  <p className="text-[13px] font-medium text-text-primary">Employee Portal Code</p>
+                  <p className="text-[12px] text-text-secondary">Used by employees to sign in</p>
+                </div>
+                {isHrOrAbove && (
+                  <button
+                    onClick={() => rotatePortalCode('employee')}
+                    disabled={saving === 'rotate_employee'}
+                    className="h-8 px-3 rounded-md bg-warning-dark text-warning text-[12px] font-semibold hover:bg-amber-100 disabled:opacity-50 transition-colors"
+                  >
+                    {saving === 'rotate_employee' ? '…' : 'Rotate'}
+                  </button>
+                )}
+              </div>
+              <div className="flex items-center justify-between py-3">
+                <div>
+                  <p className="text-[13px] font-medium text-text-primary">Contractor Portal Code</p>
+                  <p className="text-[12px] text-text-secondary">Used by contractors to sign in</p>
+                </div>
+                {isHrOrAbove && (
+                  <button
+                    onClick={() => rotatePortalCode('contractor')}
+                    disabled={saving === 'rotate_contractor'}
+                    className="h-8 px-3 rounded-md bg-warning-dark text-warning text-[12px] font-semibold hover:bg-amber-100 disabled:opacity-50 transition-colors"
+                  >
+                    {saving === 'rotate_contractor' ? '…' : 'Rotate'}
+                  </button>
+                )}
+              </div>
+            </div>
+          </Section>
+
+          <Section title="Active Sessions" icon="devices">
+            <p className="text-[13px] text-text-secondary">
+              Session management is available in the MAUI HR app under Settings → Active Sessions.
+            </p>
+          </Section>
+        </>
+      )}
+
+      {activeTab === 'organisation' && isHrOrAbove && (
+        <>
+          <Section title="Branch Management" icon="account_tree">
+            <div className="flex flex-col gap-3">
+              <p className="text-[13px] text-text-secondary">
+                Branches are physical locations or divisions within your company. Employees can be assigned to a branch.
+              </p>
+
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newBranchName}
+                  onChange={e => setNewBranchName(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && createBranch()}
+                  placeholder="New branch name…"
+                  className={inputCls}
+                />
+                <button
+                  onClick={createBranch}
+                  disabled={!newBranchName.trim() || branchBusy}
+                  className="h-10 px-4 rounded-lg bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors shrink-0"
+                >
+                  {branchBusy ? '…' : 'Add'}
+                </button>
+              </div>
+
+              {branches.length === 0 ? (
+                <p className="text-[13px] text-text-disabled py-2">No branches yet.</p>
+              ) : (
+                <div className="border border-divider rounded-lg overflow-hidden">
+                  {branches.map(branch => (
+                    <div key={branch.id} className="flex items-center gap-2 px-3 py-2.5 border-b border-divider last:border-0">
+                      {editingBranchId === branch.id ? (
+                        <>
+                          <input
+                            value={editBranchName}
+                            onChange={e => setEditBranchName(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && renameBranch(branch.id)}
+                            className="flex-1 h-8 px-2 bg-background border border-border rounded text-[13px] text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                            autoFocus
+                          />
+                          <button
+                            onClick={() => renameBranch(branch.id)}
+                            disabled={!editBranchName.trim() || branchBusy}
+                            className="h-8 px-3 rounded text-[12px] font-semibold bg-primary text-white hover:bg-primary-dark disabled:opacity-50 transition-colors"
+                          >
+                            Save
+                          </button>
+                          <button
+                            onClick={() => setEditingBranchId(null)}
+                            className="h-8 px-3 rounded text-[12px] text-text-secondary border border-border hover:text-text-primary transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <span className="flex-1 text-[13px] text-text-primary">{branch.name}</span>
+                          {!branch.is_active && (
+                            <span className="text-[11px] text-text-disabled px-1.5 py-0.5 rounded bg-background border border-border">Inactive</span>
+                          )}
+                          <button
+                            onClick={() => { setEditingBranchId(branch.id); setEditBranchName(branch.name) }}
+                            className="h-8 px-3 rounded text-[12px] text-text-secondary border border-border hover:text-primary hover:border-primary transition-colors"
+                          >
+                            Rename
+                          </button>
+                          <button
+                            onClick={() => deleteBranch(branch.id)}
+                            disabled={branchBusy}
+                            className="h-8 px-3 rounded text-[12px] font-medium text-error border border-error/30 hover:bg-error-dark disabled:opacity-50 transition-colors"
+                          >
+                            Delete
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </Section>
+
+          {isOwner && (
+            <Section title="HR Admins" icon="admin_panel_settings">
+              <div className="flex flex-col gap-3">
+                <p className="text-[13px] text-text-secondary">
+                  Employees with HR or manager access can manage attendance, payroll, and leave.
+                </p>
+
+                {hrAdmins.length === 0 ? (
+                  <p className="text-[13px] text-text-disabled py-2">No HR admins found.</p>
+                ) : (
+                  <div className="border border-divider rounded-lg overflow-hidden">
+                    {hrAdmins.map(emp => {
+                      const isMe    = emp.id === myEmpId
+                      const isOwnerRow = emp.access_level === 'owner'
+                      return (
+                        <div key={emp.id} className="flex items-center justify-between px-3 py-2.5 border-b border-divider last:border-0 gap-3">
+                          <div className="min-w-0">
+                            <p className="text-[13px] font-medium text-text-primary truncate">
+                              {emp.name} {emp.surname}
+                              {isMe && <span className="ml-1.5 text-[11px] text-text-disabled font-normal">(you)</span>}
+                            </p>
+                            <p className="text-[11px] text-text-secondary">
+                              {emp.email ?? '—'} · <span className="capitalize">{emp.access_level}</span>
+                            </p>
+                          </div>
+                          {!isOwnerRow && !isMe && (
+                            <button
+                              onClick={() => demoteFromAdmin(emp.id)}
+                              disabled={hrBusy}
+                              className="h-8 px-3 rounded text-[12px] text-error border border-error/30 hover:bg-error-dark disabled:opacity-50 transition-colors shrink-0"
+                            >
+                              Remove admin
+                            </button>
+                          )}
+                          {(isOwnerRow || isMe) && (
+                            <span className="text-[11px] text-text-disabled shrink-0">
+                              {isOwnerRow ? 'Owner' : 'Self'}
+                            </span>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+
+                {promotable.length > 0 && (
+                  <div className="flex gap-2 items-center pt-1">
+                    <select
+                      value={promoteEmployeeId}
+                      onChange={e => setPromoteEmployeeId(e.target.value)}
+                      className="flex-1 h-10 px-3 bg-background border border-border rounded-lg text-[13px] text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    >
+                      <option value="">Select employee to promote…</option>
+                      {promotable.map(e => (
+                        <option key={e.id} value={e.id}>{e.name} {e.surname}</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={promoteToAdmin}
+                      disabled={!promoteEmployeeId || hrBusy}
+                      className="h-10 px-4 rounded-lg bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors shrink-0"
+                    >
+                      {hrBusy ? '…' : 'Grant HR'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </Section>
+          )}
+        </>
+      )}
+
+      {activeTab === 'integrations' && (
+        <Section title="Integrations" icon="hub">
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between py-2 border-b border-divider">
+              <div>
+                <p className="text-[13px] font-medium text-text-primary">SAGE Payroll</p>
+                <p className="text-[12px] text-text-secondary">Export payroll data to SAGE</p>
+              </div>
+              <p className="text-[12px] text-text-disabled italic">Configure in MAUI admin app</p>
+            </div>
+            <div className="flex flex-col gap-3 py-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[13px] font-medium text-text-primary">Xero</p>
+                  <p className="text-[12px] text-text-secondary">
+                    {xeroConnected
+                      ? `Connected to ${xeroConn?.tenant_name ?? 'Xero'}`
+                      : 'Sync contacts and push payroll to Xero'}
+                  </p>
+                </div>
+                {isOwner && (
+                  xeroConnected ? (
+                    <span className="flex items-center gap-1.5 text-[12px] font-semibold text-success">
+                      <span className="material-icons text-[14px]">check_circle</span>Connected
+                    </span>
+                  ) : (
+                    <button
+                      onClick={connectXero}
+                      disabled={xeroConnecting}
+                      className="h-8 px-3 rounded-md bg-primary text-white text-[12px] font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors"
+                    >
+                      {xeroConnecting ? 'Connecting…' : 'Connect Xero'}
+                    </button>
+                  )
+                )}
+              </div>
+
+              {xeroConnected && isOwner && (
+                <>
+                  <div className="flex items-center justify-between pt-2 border-t border-divider">
+                    <div>
+                      <p className="text-[13px] font-medium text-text-primary">Sync Contacts</p>
+                      <p className="text-[12px] text-text-secondary">Push employees and contractors to Xero</p>
+                    </div>
+                    <button
+                      onClick={syncXeroContacts}
+                      disabled={xeroSyncing}
+                      className="h-8 px-3 rounded-md bg-surface border border-border text-[12px] font-semibold text-text-secondary hover:border-primary hover:text-primary disabled:opacity-50 transition-colors"
+                    >
+                      {xeroSyncing ? 'Syncing…' : 'Sync Now'}
+                    </button>
+                  </div>
+
+                  <div className="flex flex-col gap-2 pt-2 border-t border-divider">
+                    <div>
+                      <p className="text-[13px] font-medium text-text-primary">Push Payroll</p>
+                      <p className="text-[12px] text-text-secondary">
+                        Push approved payslips as Draft Manual Journals in Xero (idempotent; accountant posts in Xero)
+                      </p>
+                    </div>
+                    <div className="flex gap-2 items-center flex-wrap">
+                      <input
+                        type="date"
+                        value={payrollPeriodStart}
+                        onChange={e => setPayrollPeriodStart(e.target.value)}
+                        className={inputCls}
+                      />
+                      <span className="text-[12px] text-text-disabled shrink-0">to</span>
+                      <input
+                        type="date"
+                        value={payrollPeriodEnd}
+                        onChange={e => setPayrollPeriodEnd(e.target.value)}
+                        className={inputCls}
+                      />
+                      <button
+                        onClick={pushPayroll}
+                        disabled={xeroPushing || !payrollPeriodStart || !payrollPeriodEnd}
+                        className="h-10 px-4 rounded-lg bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors shrink-0"
+                      >
+                        {xeroPushing ? '…' : 'Push'}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {xeroMsg && (
+                <p className={`text-[12px] ${
+                  xeroMsg.toLowerCase().includes('fail') ||
+                  xeroMsg.toLowerCase().includes('error') ||
+                  xeroMsg.toLowerCase().includes('failed')
+                    ? 'text-error' : 'text-text-secondary'
+                }`}>
+                  {xeroMsg}
+                </p>
+              )}
+            </div>
+          </div>
+        </Section>
+      )}
+
+      {activeTab === 'advanced' && (
+        <>
+          <Section title="Attendance" icon="schedule">
+            <div className="flex flex-col gap-3">
+              <RowInfo label="Overtime threshold" value="40 hours/week" />
+              <RowInfo label="Allow self punch-in" value="Enabled" />
+              <p className="text-[12px] text-text-secondary pt-1">
+                Attendance settings can be configured in the MAUI admin app.
+              </p>
+            </div>
+          </Section>
+
+          <Section title="Leave Policies" icon="event_available">
+            <div className="flex flex-col gap-3">
+              <RowInfo label="Annual leave days" value="21 days" />
+              <RowInfo label="Sick leave days" value="30 days" />
+              <RowInfo label="Family responsibility" value="3 days" />
+              <p className="text-[12px] text-text-secondary pt-1">
+                Leave policies can be configured in the MAUI admin app.
+              </p>
+            </div>
+          </Section>
+
+          <Section title="Payroll" icon="payments">
+            <div className="flex flex-col gap-3">
+              <RowInfo label="Pay period" value="Monthly" />
+              <RowInfo label="Overtime multiplier" value="1.5×" />
+              <p className="text-[12px] text-text-secondary pt-1">
+                Full payroll configuration is under Payroll → Settings.
+              </p>
+            </div>
+          </Section>
+
+          <Section title="Notifications" icon="notifications">
+            <p className="text-[13px] text-text-secondary">
+              Email notification preferences are managed per-user in the MAUI app.
+            </p>
+          </Section>
+
+          <Section title="Backup & Export" icon="backup">
+            <div className="flex flex-col gap-3">
+              <p className="text-[13px] text-text-secondary">
+                Point-in-time recovery is enabled on your Supabase database. Full data exports can be
+                triggered from the MAUI admin app.
+              </p>
+              <button className="self-start flex items-center gap-2 h-9 px-4 rounded-md bg-surface border border-border text-[13px] text-text-secondary font-medium hover:border-primary hover:text-primary transition-colors">
+                <span className="material-icons text-[16px]">download</span>
+                Request Data Export
               </button>
             </div>
+          </Section>
 
-            {/* Branch list */}
-            {branches.length === 0 ? (
-              <p className="text-[13px] text-text-disabled py-2">No branches yet.</p>
+          <Section title="Audit Log" icon="history">
+            {auditEvents.length === 0 ? (
+              <p className="text-[13px] text-text-secondary">No audit events found.</p>
             ) : (
-              <div className="border border-divider rounded-lg overflow-hidden">
-                {branches.map(branch => (
-                  <div key={branch.id} className="flex items-center gap-2 px-3 py-2.5 border-b border-divider last:border-0">
-                    {editingBranchId === branch.id ? (
-                      <>
-                        <input
-                          value={editBranchName}
-                          onChange={e => setEditBranchName(e.target.value)}
-                          onKeyDown={e => e.key === 'Enter' && renameBranch(branch.id)}
-                          className="flex-1 h-8 px-2 bg-background border border-border rounded text-[13px] text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-                          autoFocus
-                        />
-                        <button
-                          onClick={() => renameBranch(branch.id)}
-                          disabled={!editBranchName.trim() || branchBusy}
-                          className="h-8 px-3 rounded text-[12px] font-semibold bg-primary text-white hover:bg-primary-dark disabled:opacity-50 transition-colors"
-                        >
-                          Save
-                        </button>
-                        <button
-                          onClick={() => setEditingBranchId(null)}
-                          className="h-8 px-3 rounded text-[12px] text-text-secondary border border-border hover:text-text-primary transition-colors"
-                        >
-                          Cancel
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <span className="flex-1 text-[13px] text-text-primary">{branch.name}</span>
-                        {!branch.is_active && (
-                          <span className="text-[11px] text-text-disabled px-1.5 py-0.5 rounded bg-background border border-border">Inactive</span>
-                        )}
-                        <button
-                          onClick={() => { setEditingBranchId(branch.id); setEditBranchName(branch.name) }}
-                          className="h-8 px-3 rounded text-[12px] text-text-secondary border border-border hover:text-primary hover:border-primary transition-colors"
-                        >
-                          Rename
-                        </button>
-                        <button
-                          onClick={() => deleteBranch(branch.id)}
-                          disabled={branchBusy}
-                          className="h-8 px-3 rounded text-[12px] font-medium text-error border border-error/30 hover:bg-error-dark disabled:opacity-50 transition-colors"
-                        >
-                          Delete
-                        </button>
-                      </>
-                    )}
+              <div className="flex flex-col">
+                {auditEvents.map(ev => (
+                  <div key={ev.id} className="flex items-start gap-3 py-2.5 border-b border-divider last:border-0">
+                    <span className="material-icons text-text-disabled text-[16px] mt-0.5">info</span>
+                    <div className="flex-1">
+                      <p className="text-[12px] font-medium text-text-primary">{ev.event_type}</p>
+                      {ev.target_table && (
+                        <p className="text-[11px] text-text-secondary">{ev.target_table}</p>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-text-disabled shrink-0">{formatDateTime(ev.created_at)}</p>
                   </div>
                 ))}
               </div>
             )}
-          </div>
-        </Section>
-      )}
+          </Section>
 
-      {/* 5. HR Users */}
-      {isOwner && (
-        <Section title="HR Admins" icon="admin_panel_settings">
-          <div className="flex flex-col gap-3">
-            <p className="text-[13px] text-text-secondary">
-              Employees with HR or manager access can manage attendance, payroll, and leave.
-            </p>
-
-            {/* Current HR admins */}
-            {hrAdmins.length === 0 ? (
-              <p className="text-[13px] text-text-disabled py-2">No HR admins found.</p>
-            ) : (
-              <div className="border border-divider rounded-lg overflow-hidden">
-                {hrAdmins.map(emp => {
-                  const isMe    = emp.id === myEmpId
-                  const isOwnerRow = emp.access_level === 'owner'
-                  return (
-                    <div key={emp.id} className="flex items-center justify-between px-3 py-2.5 border-b border-divider last:border-0 gap-3">
-                      <div className="min-w-0">
-                        <p className="text-[13px] font-medium text-text-primary truncate">
-                          {emp.name} {emp.surname}
-                          {isMe && <span className="ml-1.5 text-[11px] text-text-disabled font-normal">(you)</span>}
-                        </p>
-                        <p className="text-[11px] text-text-secondary">
-                          {emp.email ?? '—'} · <span className="capitalize">{emp.access_level}</span>
-                        </p>
-                      </div>
-                      {!isOwnerRow && !isMe && (
-                        <button
-                          onClick={() => demoteFromAdmin(emp.id)}
-                          disabled={hrBusy}
-                          className="h-8 px-3 rounded text-[12px] text-error border border-error/30 hover:bg-error-dark disabled:opacity-50 transition-colors shrink-0"
-                        >
-                          Remove admin
-                        </button>
-                      )}
-                      {(isOwnerRow || isMe) && (
-                        <span className="text-[11px] text-text-disabled shrink-0">
-                          {isOwnerRow ? 'Owner' : 'Self'}
-                        </span>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-
-            {/* Promote employee */}
-            {promotable.length > 0 && (
-              <div className="flex gap-2 items-center pt-1">
-                <select
-                  value={promoteEmployeeId}
-                  onChange={e => setPromoteEmployeeId(e.target.value)}
-                  className="flex-1 h-10 px-3 bg-background border border-border rounded-lg text-[13px] text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-                >
-                  <option value="">Select employee to promote…</option>
-                  {promotable.map(e => (
-                    <option key={e.id} value={e.id}>{e.name} {e.surname}</option>
-                  ))}
-                </select>
-                <button
-                  onClick={promoteToAdmin}
-                  disabled={!promoteEmployeeId || hrBusy}
-                  className="h-10 px-4 rounded-lg bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors shrink-0"
-                >
-                  {hrBusy ? '…' : 'Grant HR'}
+          {isOwner && (
+            <Section title="Ownership Transfer" icon="swap_horiz">
+              <div className="flex flex-col gap-3">
+                <p className="text-[13px] text-text-secondary">
+                  Transfer company ownership to another HR member or manager. This action requires step-up
+                  verification and generates a one-time confirmation code.
+                </p>
+                <button className="self-start h-9 px-4 rounded-md bg-warning-dark text-warning text-[13px] font-semibold hover:bg-amber-100 transition-colors">
+                  Initiate Ownership Transfer
                 </button>
               </div>
-            )}
-          </div>
-        </Section>
-      )}
+            </Section>
+          )}
 
-      {/* 6. Attendance */}
-      <Section title="Attendance" icon="schedule">
-        <div className="flex flex-col gap-3">
-          <RowInfo label="Overtime threshold" value="40 hours/week" />
-          <RowInfo label="Allow self punch-in" value="Enabled" />
-          <p className="text-[12px] text-text-secondary pt-1">
-            Attendance settings can be configured in the MAUI admin app.
-          </p>
-        </div>
-      </Section>
-
-      {/* 7. Leave */}
-      <Section title="Leave Policies" icon="event_available">
-        <div className="flex flex-col gap-3">
-          <RowInfo label="Annual leave days" value="21 days" />
-          <RowInfo label="Sick leave days" value="30 days" />
-          <RowInfo label="Family responsibility" value="3 days" />
-          <p className="text-[12px] text-text-secondary pt-1">
-            Leave policies can be configured in the MAUI admin app.
-          </p>
-        </div>
-      </Section>
-
-      {/* 8. Payroll */}
-      <Section title="Payroll" icon="payments">
-        <div className="flex flex-col gap-3">
-          <RowInfo label="Pay period" value="Monthly" />
-          <RowInfo label="Overtime multiplier" value="1.5×" />
-          <p className="text-[12px] text-text-secondary pt-1">
-            Payroll configuration can be edited in the MAUI admin app.
-          </p>
-        </div>
-      </Section>
-
-      {/* 9. Notifications */}
-      <Section title="Notifications" icon="notifications">
-        <p className="text-[13px] text-text-secondary">
-          Email notification preferences are managed per-user in the MAUI app.
-        </p>
-      </Section>
-
-      {/* 10. Integrations */}
-      <Section title="Integrations" icon="extension">
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center justify-between py-2 border-b border-divider">
-            <div>
-              <p className="text-[13px] font-medium text-text-primary">SAGE Payroll</p>
-              <p className="text-[12px] text-text-secondary">Export payroll data to SAGE</p>
-            </div>
-            <p className="text-[12px] text-text-disabled italic">Configure in MAUI admin app</p>
-          </div>
-          {/* Xero */}
-          <div className="flex flex-col gap-3 py-2">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[13px] font-medium text-text-primary">Xero</p>
-                <p className="text-[12px] text-text-secondary">
-                  {xeroConnected
-                    ? `Connected to ${xeroConn?.tenant_name ?? 'Xero'}`
-                    : 'Sync contacts and push payroll to Xero'}
-                </p>
-              </div>
-              {isOwner && (
-                xeroConnected ? (
-                  <span className="flex items-center gap-1.5 text-[12px] font-semibold text-success">
-                    <span className="material-icons text-[14px]">check_circle</span>Connected
-                  </span>
-                ) : (
-                  <button
-                    onClick={connectXero}
-                    disabled={xeroConnecting}
-                    className="h-8 px-3 rounded-md bg-primary text-white text-[12px] font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors"
-                  >
-                    {xeroConnecting ? 'Connecting…' : 'Connect Xero'}
-                  </button>
-                )
-              )}
-            </div>
-
-            {xeroConnected && isOwner && (
-              <>
-                <div className="flex items-center justify-between pt-2 border-t border-divider">
+          {isOwner && (
+            <Section title="Danger Zone" icon="warning" danger>
+              <div className="flex flex-col gap-4">
+                <div className="flex items-center justify-between gap-4 flex-wrap">
                   <div>
-                    <p className="text-[13px] font-medium text-text-primary">Sync Contacts</p>
-                    <p className="text-[12px] text-text-secondary">Push employees and contractors to Xero</p>
-                  </div>
-                  <button
-                    onClick={syncXeroContacts}
-                    disabled={xeroSyncing}
-                    className="h-8 px-3 rounded-md bg-surface border border-border text-[12px] font-semibold text-text-secondary hover:border-primary hover:text-primary disabled:opacity-50 transition-colors"
-                  >
-                    {xeroSyncing ? 'Syncing…' : 'Sync Now'}
-                  </button>
-                </div>
-
-                <div className="flex flex-col gap-2 pt-2 border-t border-divider">
-                  <div>
-                    <p className="text-[13px] font-medium text-text-primary">Push Payroll</p>
+                    <p className="text-[13px] font-medium text-text-primary">Delete Company</p>
                     <p className="text-[12px] text-text-secondary">
-                      Push approved payslips as Draft Manual Journals in Xero (idempotent; accountant posts in Xero)
+                      Permanently delete this company and all associated data. This cannot be undone.
                     </p>
                   </div>
-                  <div className="flex gap-2 items-center">
-                    <input
-                      type="date"
-                      value={payrollPeriodStart}
-                      onChange={e => setPayrollPeriodStart(e.target.value)}
-                      className={inputCls}
-                    />
-                    <span className="text-[12px] text-text-disabled shrink-0">to</span>
-                    <input
-                      type="date"
-                      value={payrollPeriodEnd}
-                      onChange={e => setPayrollPeriodEnd(e.target.value)}
-                      className={inputCls}
-                    />
-                    <button
-                      onClick={pushPayroll}
-                      disabled={xeroPushing || !payrollPeriodStart || !payrollPeriodEnd}
-                      className="h-10 px-4 rounded-lg bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors shrink-0"
-                    >
-                      {xeroPushing ? '…' : 'Push'}
-                    </button>
-                  </div>
+                  <button
+                    disabled
+                    className="h-9 px-4 rounded-md bg-error-dark text-error text-[13px] font-semibold opacity-50 cursor-not-allowed"
+                  >
+                    Delete Company
+                  </button>
                 </div>
-              </>
-            )}
-
-            {xeroMsg && (
-              <p className={`text-[12px] ${
-                xeroMsg.toLowerCase().includes('fail') ||
-                xeroMsg.toLowerCase().includes('error') ||
-                xeroMsg.toLowerCase().includes('failed')
-                  ? 'text-error' : 'text-text-secondary'
-              }`}>
-                {xeroMsg}
-              </p>
-            )}
-          </div>
-        </div>
-      </Section>
-
-      {/* 11. Backup & Export */}
-      <Section title="Backup & Export" icon="backup">
-        <div className="flex flex-col gap-3">
-          <p className="text-[13px] text-text-secondary">
-            Point-in-time recovery is enabled on your Supabase database. Full data exports can be
-            triggered from the MAUI admin app.
-          </p>
-          <button className="self-start flex items-center gap-2 h-9 px-4 rounded-md bg-surface border border-border text-[13px] text-text-secondary font-medium hover:border-primary hover:text-primary transition-colors">
-            <span className="material-icons text-[16px]">download</span>
-            Request Data Export
-          </button>
-        </div>
-      </Section>
-
-      {/* 12. Audit Log */}
-      <Section title="Audit Log" icon="history">
-        {auditEvents.length === 0 ? (
-          <p className="text-[13px] text-text-secondary">No audit events found.</p>
-        ) : (
-          <div className="flex flex-col">
-            {auditEvents.map(ev => (
-              <div key={ev.id} className="flex items-start gap-3 py-2.5 border-b border-divider last:border-0">
-                <span className="material-icons text-text-disabled text-[16px] mt-0.5">info</span>
-                <div className="flex-1">
-                  <p className="text-[12px] font-medium text-text-primary">{ev.event_type}</p>
-                  {ev.target_table && (
-                    <p className="text-[11px] text-text-secondary">{ev.target_table}</p>
-                  )}
-                </div>
-                <p className="text-[11px] text-text-disabled shrink-0">{formatDateTime(ev.created_at)}</p>
               </div>
-            ))}
-          </div>
-        )}
-      </Section>
-
-      {/* 13. Active Sessions */}
-      <Section title="Active Sessions" icon="devices">
-        <p className="text-[13px] text-text-secondary">
-          Session management is available in the MAUI HR app under Settings → Active Sessions.
-        </p>
-      </Section>
-
-      {/* 14. Ownership Transfer */}
-      {isOwner && (
-        <Section title="Ownership Transfer" icon="swap_horiz">
-          <div className="flex flex-col gap-3">
-            <p className="text-[13px] text-text-secondary">
-              Transfer company ownership to another HR member or manager. This action requires step-up
-              verification and generates a one-time confirmation code.
-            </p>
-            <button className="self-start h-9 px-4 rounded-md bg-warning-dark text-warning text-[13px] font-semibold hover:bg-amber-100 transition-colors">
-              Initiate Ownership Transfer
-            </button>
-          </div>
-        </Section>
+            </Section>
+          )}
+        </>
       )}
 
-      {/* 15. Danger Zone */}
-      {isOwner && (
-        <Section title="Danger Zone" icon="warning" danger>
-          <div className="flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[13px] font-medium text-text-primary">Delete Company</p>
-                <p className="text-[12px] text-text-secondary">
-                  Permanently delete this company and all associated data. This cannot be undone.
-                </p>
-              </div>
-              <button
-                disabled
-                className="h-9 px-4 rounded-md bg-error-dark text-error text-[13px] font-semibold opacity-50 cursor-not-allowed"
-              >
-                Delete Company
-              </button>
-            </div>
-          </div>
-        </Section>
-      )}
+        </div>
+      </div>
     </div>
   )
 }
