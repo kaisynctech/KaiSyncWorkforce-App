@@ -18,7 +18,7 @@ import {
 
 type Preset = '7d' | '30d' | 'month' | 'year'
 type TabKey = 'executive' | 'financial' | 'payroll' | 'workforce' | 'operational' |
-  'incidents' | 'inventory' | 'contractors' | 'property' | 'telemetry' | 'exports'
+  'incidents' | 'inventory' | 'contractors' | 'clients' | 'property' | 'telemetry' | 'exports'
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'executive',   label: 'Executive' },
@@ -29,6 +29,7 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'incidents',   label: 'Incidents' },
   { key: 'inventory',   label: 'Inventory' },
   { key: 'contractors', label: 'Contractors' },
+  { key: 'clients',     label: 'Clients' },
   { key: 'property',    label: 'Property' },
   { key: 'telemetry',   label: 'Telemetry' },
   { key: 'exports',     label: 'Exports' },
@@ -44,6 +45,7 @@ const RPC_MAP: Partial<Record<TabKey, string>> = {
   incidents:   'hr_get_incidents_snapshot',
   inventory:   'hr_get_inventory_snapshot',
   contractors: 'hr_get_contractors_snapshot',
+  clients:     'hr_get_clients_snapshot',
   property:    'hr_get_property_snapshot',
   telemetry:   'hr_get_telemetry_snapshot',
 }
@@ -436,6 +438,54 @@ function ContractorsTab({ data }: { data: RpcData | null }) {
   )
 }
 
+// Clients
+function ClientsTab({ data }: { data: RpcData | null }) {
+  const d = data ?? {}
+  const rows = (d.top_clients as Record<string, unknown>[] | null) ?? []
+  const hasData = Object.keys(d).length > 0
+  if (!hasData) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 gap-2">
+        <span className="material-icons text-[40px] text-text-disabled">business</span>
+        <p className="text-[14px] text-text-secondary font-semibold">No client data</p>
+      </div>
+    )
+  }
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+        <Kpi title="Total" value={fmtN(d.total as number)} />
+        <Kpi title="Portal enabled" value={fmtN(d.portal_enabled as number)} />
+        <Kpi title="Active deals" value={fmtN(d.active_deals as number)} />
+        <Kpi title="Open jobs" value={fmtN(d.open_jobs as number)} />
+        <Kpi title="Outstanding" value={fmtR(d.outstanding_balance as number)} />
+      </div>
+      {rows.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full" style={{ minWidth: 360 }}>
+            <thead>
+              <tr className="bg-surface-elevated">
+                <th className="data-th text-left">Client</th>
+                <th className="data-th text-right">Balance</th>
+                <th className="data-th text-right">Jobs</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={i} className="bg-surface-card border-b border-divider last:border-0">
+                  <td className="data-td text-sm text-text-primary">{r.name as string}</td>
+                  <td className="data-td text-sm text-text-secondary text-right">{fmtR(r.balance as number)}</td>
+                  <td className="data-td text-sm text-text-secondary text-right">{fmtN(r.jobs as number)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // Property
 function PropertyTab({ data }: { data: RpcData | null }) {
   const d       = data ?? {}
@@ -689,6 +739,7 @@ export default function ReportsPage() {
     incidents:   <IncidentsTab   data={data} />,
     inventory:   <InventoryTab   data={data} />,
     contractors: <ContractorsTab data={data} />,
+    clients:     <ClientsTab     data={data} />,
     property:    <PropertyTab    data={data} />,
     telemetry:   <TelemetryTab   data={data} />,
     exports:     <ExportsTab     companyId={companyId} preset={preset} />,
