@@ -89,16 +89,16 @@ export default function NewSupplierPage() {
       bank_name: bankName.trim() || null,
       bank_account: bankAccount.trim() || null,
       account_holder_name: accountHolder.trim() || null,
-      branch_code: branchCode.trim() || null,
+      bank_branch_code: branchCode.trim() || null,
       account_type: accountType || null,
       payment_terms: paymentTerms || null,
       preferred_payment_method: paymentMethod || null,
       is_active: true,
       rating: 0,
-      is_banking_verified: false,
+      banking_verified: false,
       payment_hold: false,
       compliance_hold: false,
-      is_supplier: true,
+      portal_enabled: false,
     }
 
     const { data, error: insertErr } = await supabase

@@ -40,14 +40,14 @@ export default function SupplierInvoicesPage() {
         .order('created_at', { ascending: false }),
       supabase
         .from('contractors')
-        .select('id, name, partner_kind, is_supplier')
+        .select('id, name, partner_kind')
         .eq('company_id', member.companyId)
         .order('name'),
     ])
     setRows((data ?? []) as SupplierInvoice[])
     setSuppliers(
-      ((cons ?? []) as { id: string; name: string; partner_kind?: string | null; is_supplier?: boolean }[])
-        .filter(c => isSupplierKind(c.partner_kind) || c.is_supplier === true)
+      ((cons ?? []) as { id: string; name: string; partner_kind?: string | null }[])
+        .filter(c => isSupplierKind(c.partner_kind))
         .map(c => ({ id: c.id, name: c.name })),
     )
     setLoading(false)

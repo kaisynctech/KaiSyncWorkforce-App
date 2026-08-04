@@ -63,7 +63,7 @@ export default function SuppliersPage() {
       .from('contractors')
       .select('*', { count: 'exact' })
       .eq('company_id', cId)
-      .or('partner_kind.eq.supplier,partner_kind.eq.both,is_supplier.eq.true')
+      .or('partner_kind.eq.supplier,partner_kind.eq.both')
       .order('name')
 
     if (searchDebounced) {

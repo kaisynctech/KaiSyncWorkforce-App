@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { formatDateTime } from '@/lib/utils'
@@ -242,15 +243,6 @@ export default function SettingsPage() {
     setEnabledModules(payload)
     setModulesMsg('Modules saved. Sidebar updates on next navigation refresh.')
     setModulesBusy(false)
-  }
-
-  async function rotatePortalCode(type: 'employee' | 'contractor') {
-    if (!company) return
-    setSaving(`rotate_${type}`)
-    const supabase = createClient()
-    await supabase.rpc('rotate_portal_code', { p_company_id: company.id, p_code_type: type })
-    await load()
-    setSaving(null)
   }
 
   async function toggleSecurity(field: keyof SecuritySettings, value: boolean) {
@@ -647,37 +639,33 @@ export default function SettingsPage() {
           <Section title="Portal Codes" icon="vpn_key">
             <div className="flex flex-col gap-3">
               <p className="text-[13px] text-text-secondary">
-                Portal codes grant employees and contractors access to the employee portal. Rotating a code
-                immediately invalidates all existing sessions for that type.
+                Employee and contractor portal access use per-person codes (not a single company-wide
+                contractor code). Rotate a contractor code on that contractor&apos;s Information tab.
               </p>
               <div className="flex items-center justify-between py-3 border-b border-divider">
                 <div>
                   <p className="text-[13px] font-medium text-text-primary">Employee Portal Code</p>
-                  <p className="text-[12px] text-text-secondary">Used by employees to sign in</p>
+                  <p className="text-[12px] text-text-secondary">
+                    Company-wide employee portal rotation is not available here yet. Manage employee
+                    access from employee records.
+                  </p>
                 </div>
-                {isHrOrAbove && (
-                  <button
-                    onClick={() => rotatePortalCode('employee')}
-                    disabled={saving === 'rotate_employee'}
-                    className="h-8 px-3 rounded-md bg-warning-dark text-warning text-[12px] font-semibold hover:bg-amber-100 disabled:opacity-50 transition-colors"
-                  >
-                    {saving === 'rotate_employee' ? '…' : 'Rotate'}
-                  </button>
-                )}
               </div>
               <div className="flex items-center justify-between py-3">
                 <div>
                   <p className="text-[13px] font-medium text-text-primary">Contractor Portal Code</p>
-                  <p className="text-[12px] text-text-secondary">Used by contractors to sign in</p>
+                  <p className="text-[12px] text-text-secondary">
+                    Open Contractors → contractor → Information → Rotate Code
+                    (RPC: hr_rotate_contractor_code).
+                  </p>
                 </div>
                 {isHrOrAbove && (
-                  <button
-                    onClick={() => rotatePortalCode('contractor')}
-                    disabled={saving === 'rotate_contractor'}
-                    className="h-8 px-3 rounded-md bg-warning-dark text-warning text-[12px] font-semibold hover:bg-amber-100 disabled:opacity-50 transition-colors"
+                  <Link
+                    href="/dashboard/contractors"
+                    className="h-8 px-3 rounded-md border border-border text-text-primary text-[12px] font-semibold hover:bg-surface-elevated transition-colors inline-flex items-center"
                   >
-                    {saving === 'rotate_contractor' ? '…' : 'Rotate'}
-                  </button>
+                    Open Contractors
+                  </Link>
                 )}
               </div>
             </div>

@@ -4,10 +4,11 @@
 // Fixed: partner_kind + registration_number now loaded in load() and persisted in handleSave()
 // Deferred: activity feed (get_contractor_activity_feed RPC not confirmed), quote approve/reject workflow
 
-import { useEffect, useState, useCallback, Suspense } from 'react'
+import { useEffect, useState, useCallback, Suspense, useRef } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { partnerKindLabel, PARTNER_KIND } from '@/lib/partner-kinds'
 import { SectionCard, FormField, entryClass } from '@/components/SectionCard'
 import { FormSelect } from '@/components/FormSelect'
@@ -21,7 +22,7 @@ import { InfoBanner } from '@/components/ui/InfoBanner'
 import { DocFilterChip } from '@/components/ui/DocFilterChip'
 import type {
   Contractor, ComplianceDocument, JobContractor, Job, IncidentReport,
-  ContractorTeamMember, PendingBankingUpdate, Project,
+  ContractorTeamMember, PendingBankingUpdate, Project, ContractorCompliancePack, Employee,
 } from '@/types/database'
 
 const TABS = [
@@ -30,13 +31,38 @@ const TABS = [
 ]
 const OPERATIONAL_TABS = new Set(['Jobs', 'Projects', 'Incidents'])
 
-const COMPLIANCE_PACKS = ['Standard', 'Premium', 'Basic', 'Government']
-const ACCOUNT_TYPES = ['Cheque / Current', 'Savings', 'Transmission']
-const PAYMENT_TERMS_OPTIONS = ['7 days', '14 days', '30 days', '60 days', 'On completion']
-const PAYMENT_METHODS = ['EFT', 'Cheque', 'Cash', 'Credit Card']
+const ACCOUNT_TYPES = [
+  { value: 'cheque', label: 'Cheque / Current' },
+  { value: 'savings', label: 'Savings' },
+  { value: 'transmission', label: 'Transmission' },
+]
+const PAYMENT_TERMS_OPTIONS = [
+  { value: '7_days', label: '7 days' },
+  { value: '14_days', label: '14 days' },
+  { value: '30_days', label: '30 days' },
+  { value: '60_days', label: '60 days' },
+  { value: 'on_completion', label: 'On completion' },
+]
+const PAYMENT_METHODS = [
+  { value: 'eft', label: 'EFT' },
+  { value: 'cheque', label: 'Cheque' },
+  { value: 'cash', label: 'Cash' },
+  { value: 'credit_card', label: 'Credit Card' },
+]
+
+const DOC_UPLOAD_TYPES = [
+  'company_registration',
+  'tax_clearance',
+  'vat_certificate',
+  'bank_confirmation',
+  'public_liability_insurance',
+  'professional_indemnity',
+  'coida',
+  'other',
+]
 
 const STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
-  valid:     { bg: '#DCFCE7', fg: '#166534' },
+  approved:  { bg: '#DCFCE7', fg: '#166534' },
   expiring:  { bg: '#FEF3C7', fg: '#92400E' },
   expired:   { bg: '#FEE2E2', fg: '#991B1B' },
   pending:   { bg: '#E5E7EB', fg: '#6B7280' },
@@ -44,7 +70,7 @@ const STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
 }
 
 const DOC_APPROVAL_COLORS: Record<string, { bg: string; fg: string; label: string }> = {
-  valid:    { bg: '#DCFCE7', fg: '#166534', label: 'Approved' },
+  approved: { bg: '#DCFCE7', fg: '#166534', label: 'Approved' },
   pending:  { bg: '#1E293B', fg: '#94A3B8', label: 'Pending' },
   rejected: { bg: '#FEE2E2', fg: '#991B1B', label: 'Rejected' },
   expired:  { bg: '#450A0A', fg: '#FCA5A5', label: 'Expired' },
@@ -76,15 +102,26 @@ const INCIDENT_STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
 type DocFilterType = 'all' | 'approved' | 'pending' | 'rejected' | 'expired'
 
 type JobContractorRow = JobContractor & {
-  jobs?: Pick<Job, 'id' | 'title' | 'status' | 'scheduled_start' | 'deal_id'> | null
+  jobs?: Pick<Job, 'id' | 'title' | 'status' | 'scheduled_start' | 'deal_id' | 'job_code'> | null
 }
 
 type ProjectContractorRow = {
   id: string
   contractor_id: string
-  project_id: string
+  deal_id: string
   role: string | null
   projects?: Pick<Project, 'id' | 'title' | 'project_code' | 'status'> | null
+}
+
+function docDisplayStatus(doc: ComplianceDocument): keyof typeof DOC_APPROVAL_COLORS {
+  if (doc.approval_status === 'rejected') return 'rejected'
+  if (doc.approval_status === 'pending') return 'pending'
+  if (doc.expiry_date) {
+    const days = (new Date(doc.expiry_date).getTime() - Date.now()) / 86400000
+    if (days < 0) return 'expired'
+    if (days <= 30) return 'expiring'
+  }
+  return 'approved'
 }
 
 const fmtDate = (d: string) =>
@@ -146,11 +183,16 @@ function ContractorDetailInner() {
   const [email, setEmail] = useState('')
   const [address, setAddress] = useState('')
   const [notes, setNotes] = useState('')
-  const [compliancePack, setCompliancePack] = useState('')
+  const [compliancePackId, setCompliancePackId] = useState('')
+  const [compliancePacks, setCompliancePacks] = useState<ContractorCompliancePack[]>([])
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [uploadDocType, setUploadDocType] = useState('other')
+  const [docBusy, setDocBusy] = useState(false)
 
   // Compliance tab
   const [docFilter, setDocFilter] = useState<DocFilterType>('all')
   const [documentSearch, setDocumentSearch] = useState('')
+  const [docSort, setDocSort] = useState<'newest' | 'name' | 'expiry'>('newest')
 
   // Payments tab
   const [accHolder, setAccHolder] = useState('')
@@ -158,9 +200,9 @@ function ContractorDetailInner() {
   const [payAccNumber, setPayAccNumber] = useState('')
   const [payBranchCode, setPayBranchCode] = useState('')
   const [paySwiftBic, setPaySwiftBic] = useState('')
-  const [payAccountType, setPayAccountType] = useState('')
-  const [payTerms, setPayTerms] = useState('')
-  const [payMethod, setPayMethod] = useState('')
+  const [payAccountType, setPayAccountType] = useState('cheque')
+  const [payTerms, setPayTerms] = useState('30_days')
+  const [payMethod, setPayMethod] = useState('eft')
   const [bankingVerified, setBankingVerified] = useState(false)
   const [paymentHold, setPaymentHold] = useState(false)
   const [complianceHold, setComplianceHold] = useState(false)
@@ -168,6 +210,9 @@ function ContractorDetailInner() {
 
   // Lazy-loaded tab data
   const [members, setMembers] = useState<ContractorTeamMember[]>([])
+  const [companyEmployees, setCompanyEmployees] = useState<Pick<Employee, 'id' | 'name' | 'surname'>[]>([])
+  const [addMemberId, setAddMemberId] = useState('')
+  const [addMemberRole, setAddMemberRole] = useState('')
   const [contractorJobs, setContractorJobs] = useState<JobContractorRow[]>([])
   const [contractorProjects, setContractorProjects] = useState<ProjectContractorRow[]>([])
   const [contractorIncidents, setContractorIncidents] = useState<IncidentReport[]>([])
@@ -176,6 +221,11 @@ function ContractorDetailInner() {
   const [incidentsLoading, setIncidentsLoading] = useState(false)
   const [membersLoading, setMembersLoading] = useState(false)
   const [tabsLoaded, setTabsLoaded] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    const t = searchParams.get('tab')
+    if (t && TABS.includes(t)) setTab(t)
+  }, [searchParams])
 
   useEffect(() => { load() }, [contractorId])
 
@@ -211,29 +261,30 @@ function ContractorDetailInner() {
     setEmail(cont.email ?? '')
     setAddress(cont.address ?? '')
     setNotes(cont.notes ?? '')
-    setCompliancePack(cont.compliance_pack ?? '')
-    const _raw = cont as unknown as Record<string, unknown>
-    setPartnerKind((_raw.partner_kind as string) ?? '')
-    setRegNumber((_raw.registration_number as string) ?? '')
+    setCompliancePackId(cont.compliance_pack_id ?? '')
+    setPartnerKind(cont.partner_kind ?? '')
+    setRegNumber(cont.registration_number ?? '')
 
     setAccHolder(cont.account_holder_name ?? '')
     setPayBankName(cont.bank_name ?? '')
     setPayAccNumber(cont.bank_account ?? '')
-    setPayBranchCode(cont.branch_code ?? '')
+    setPayBranchCode(cont.bank_branch_code ?? '')
     setPaySwiftBic(cont.swift_bic ?? '')
-    setPayAccountType(cont.account_type ?? '')
-    setPayTerms(cont.payment_terms ?? '')
-    setPayMethod(cont.preferred_payment_method ?? '')
-    setBankingVerified(cont.is_banking_verified ?? false)
+    setPayAccountType(cont.account_type ?? 'cheque')
+    setPayTerms(cont.payment_terms ?? '30_days')
+    setPayMethod(cont.preferred_payment_method ?? 'eft')
+    setBankingVerified(cont.banking_verified ?? false)
     setPaymentHold(cont.payment_hold ?? false)
     setComplianceHold(cont.compliance_hold ?? false)
 
-    const [docsRes, pendingRes] = await Promise.all([
-      supabase.from('compliance_documents').select('*').eq('contractor_id', contractorId),
+    const [docsRes, pendingRes, packsRes] = await Promise.all([
+      supabase.from('contractor_documents').select('*').eq('contractor_id', contractorId).eq('is_current', true).order('created_at', { ascending: false }),
       supabase.from('contractor_banking_updates').select('*').eq('contractor_id', contractorId).eq('status', 'pending').maybeSingle(),
+      supabase.from('contractor_compliance_packs').select('*').eq('company_id', cont.company_id).eq('is_archived', false).order('sort_order'),
     ])
     setComplianceDocs((docsRes.data ?? []) as ComplianceDocument[])
     setPendingBanking(pendingRes.data as PendingBankingUpdate | null)
+    setCompliancePacks((packsRes.data ?? []) as ContractorCompliancePack[])
     const cId = cont.company_id
     const { data: xStatus } = await (supabase.rpc as any)('get_xero_connection_status', { p_company_id: cId })
     setXeroConnected(xStatus?.connected ?? false)
@@ -253,7 +304,7 @@ function ContractorDetailInner() {
     const supabase = createClient()
     const { data } = await supabase
       .from('job_contractors')
-      .select('*, jobs(id, title, status, scheduled_start, deal_id)')
+      .select('*, jobs(id, title, status, scheduled_start, deal_id, job_code)')
       .eq('contractor_id', contractorId)
     setContractorJobs((data ?? []) as JobContractorRow[])
     setTabsLoaded(prev => new Set([...prev, 'Jobs']))
@@ -288,11 +339,18 @@ function ContractorDetailInner() {
   const loadTeam = useCallback(async () => {
     setMembersLoading(true)
     const supabase = createClient()
-    const { data } = await supabase
-      .from('contractor_employees')
-      .select('*, employees(name, surname)')
-      .eq('contractor_id', contractorId)
-    setMembers((data ?? []) as ContractorTeamMember[])
+    const member = await resolveCurrentMember(supabase)
+    const [linksRes, empRes] = await Promise.all([
+      supabase
+        .from('contractor_member_links')
+        .select('*, employees(name, surname)')
+        .eq('contractor_id', contractorId),
+      member
+        ? supabase.from('employees').select('id, name, surname').eq('company_id', member.companyId).eq('is_active', true).order('name')
+        : Promise.resolve({ data: [] as Pick<Employee, 'id' | 'name' | 'surname'>[] }),
+    ])
+    setMembers((linksRes.data ?? []) as ContractorTeamMember[])
+    setCompanyEmployees((empRes.data ?? []) as Pick<Employee, 'id' | 'name' | 'surname'>[])
     setTabsLoaded(prev => new Set([...prev, 'Team']))
     setMembersLoading(false)
   }, [contractorId])
@@ -317,97 +375,218 @@ function ContractorDetailInner() {
         rating,
         is_active:                   isActive,
         portal_enabled:              portalEnabled,
-        compliance_pack:             compliancePack || null,
+        compliance_pack_id:          compliancePackId || null,
         account_holder_name:         accHolder.trim() || null,
         bank_name:                   payBankName.trim() || null,
         bank_account:                payAccNumber.trim() || null,
-        branch_code:                 payBranchCode.trim() || null,
+        bank_branch_code:            payBranchCode.trim() || null,
         swift_bic:                   paySwiftBic.trim() || null,
         account_type:                payAccountType || null,
         payment_terms:               payTerms || null,
         preferred_payment_method:    payMethod || null,
-        is_banking_verified:         bankingVerified,
+        banking_verified:            bankingVerified,
         payment_hold:                paymentHold,
         compliance_hold:             complianceHold,
-        ...( partnerKind ? {
-          partner_kind: partnerKind,
-          is_supplier: partnerKind === PARTNER_KIND.supplier || partnerKind === PARTNER_KIND.both,
-        } : {} ),
-        ...( regNumber.trim() ? { registration_number: regNumber.trim() } : {} ),
+        ...(partnerKind ? { partner_kind: partnerKind } : {}),
+        registration_number:         regNumber.trim() || null,
       })
       .eq('id', contractorId)
 
     if (e) setError(e.message)
     else setContractor(prev => prev
-      ? { ...prev, name: name.trim(), is_active: isActive, portal_enabled: portalEnabled, rating }
+      ? {
+          ...prev,
+          name: name.trim(),
+          is_active: isActive,
+          portal_enabled: portalEnabled,
+          rating,
+          compliance_pack_id: compliancePackId || null,
+          banking_verified: bankingVerified,
+          bank_branch_code: payBranchCode.trim() || null,
+        }
       : prev)
     setSaving(false)
   }
 
   async function handleRotateCode() {
+    if (!contractor?.company_id) return
+    setIsBusy(true)
+    setError(null)
     const supabase = createClient()
-    try {
-      await supabase.rpc('rotate_contractor_portal_code', { p_contractor_id: contractorId })
-      if (!portalEnabled) {
-        await supabase.from('contractors').update({ portal_enabled: true }).eq('id', contractorId)
-        setPortalEnabled(true)
-      }
-      load()
-    } catch { /* ignore */ }
+    const { error: e } = await supabase.rpc('hr_rotate_contractor_code', {
+      p_company_id: contractor.company_id,
+      p_contractor_id: contractorId,
+    })
+    if (e) {
+      setError(e.message)
+      setIsBusy(false)
+      return
+    }
+    if (!portalEnabled) {
+      await supabase.from('contractors').update({ portal_enabled: true }).eq('id', contractorId)
+      setPortalEnabled(true)
+    }
+    await load()
+    setIsBusy(false)
   }
 
   async function handlePortalToggle(next: boolean) {
     setPortalEnabled(next)
-    if (next && !hasContractorCode) {
-      // Enabling portal without a code: generate one so they can sign in.
+    if (next && !hasContractorCode && contractor?.company_id) {
+      setIsBusy(true)
+      setError(null)
       const supabase = createClient()
-      try {
-        await supabase.rpc('rotate_contractor_portal_code', { p_contractor_id: contractorId })
+      const { error: e } = await supabase.rpc('hr_rotate_contractor_code', {
+        p_company_id: contractor.company_id,
+        p_contractor_id: contractorId,
+      })
+      if (e) setError(e.message)
+      else {
         await supabase.from('contractors').update({ portal_enabled: true }).eq('id', contractorId)
-        load()
-      } catch { /* ignore */ }
+        await load()
+      }
+      setIsBusy(false)
     }
   }
 
   async function approveBanking() {
     if (!pendingBanking) return
     setIsBusy(true)
+    setError(null)
     const supabase = createClient()
-    try {
-      await supabase.from('contractor_banking_updates').update({ status: 'approved' }).eq('id', pendingBanking.id)
-      load()
-    } catch {}
+    const member = await resolveCurrentMember(supabase)
+    if (!member) { setError('Account not linked.'); setIsBusy(false); return }
+    const { error: e } = await supabase.rpc('hr_approve_contractor_banking', {
+      p_update_id: pendingBanking.id,
+      p_reviewed_by: member.employeeId,
+    })
+    if (e) setError(e.message)
+    else await load()
     setIsBusy(false)
   }
 
   async function rejectBanking() {
     if (!pendingBanking) return
+    const reason = window.prompt('Rejection reason (required):')
+    if (!reason?.trim()) return
     setIsBusy(true)
+    setError(null)
     const supabase = createClient()
-    try {
-      await supabase.from('contractor_banking_updates').update({ status: 'rejected' }).eq('id', pendingBanking.id)
+    const member = await resolveCurrentMember(supabase)
+    if (!member) { setError('Account not linked.'); setIsBusy(false); return }
+    const { error: e } = await supabase.rpc('hr_reject_contractor_banking', {
+      p_update_id: pendingBanking.id,
+      p_reviewed_by: member.employeeId,
+      p_reason: reason.trim(),
+    })
+    if (e) setError(e.message)
+    else {
       setPendingBanking(null)
-    } catch {}
+      await load()
+    }
     setIsBusy(false)
   }
 
   async function approveDocument(doc: ComplianceDocument) {
     const supabase = createClient()
-    await supabase.from('compliance_documents').update({ status: 'valid' }).eq('id', doc.id)
-    setComplianceDocs(prev => prev.map(d => d.id === doc.id ? { ...d, status: 'valid' as const } : d))
+    const member = await resolveCurrentMember(supabase)
+    const { error: e } = await supabase.from('contractor_documents').update({
+      approval_status: 'approved',
+      approved_at: new Date().toISOString(),
+      approved_by: member?.employeeId ?? null,
+      rejected_reason: null,
+    }).eq('id', doc.id)
+    if (e) { setError(e.message); return }
+    setComplianceDocs(prev => prev.map(d => d.id === doc.id
+      ? { ...d, approval_status: 'approved' as const, rejected_reason: null }
+      : d))
   }
 
   async function rejectDocument(doc: ComplianceDocument) {
+    const reason = window.prompt('Rejection reason:')
+    if (reason == null) return
     const supabase = createClient()
-    await supabase.from('compliance_documents').update({ status: 'rejected' }).eq('id', doc.id)
-    setComplianceDocs(prev => prev.map(d => d.id === doc.id ? { ...d, status: 'rejected' as const } : d))
+    const { error: e } = await supabase.from('contractor_documents').update({
+      approval_status: 'rejected',
+      rejected_reason: reason.trim() || null,
+    }).eq('id', doc.id)
+    if (e) { setError(e.message); return }
+    setComplianceDocs(prev => prev.map(d => d.id === doc.id
+      ? { ...d, approval_status: 'rejected' as const, rejected_reason: reason.trim() || null }
+      : d))
   }
 
   async function deleteDocument(doc: ComplianceDocument) {
-    if (!window.confirm(`Delete "${doc.document_type}"?`)) return
+    if (!window.confirm(`Delete "${doc.document_name}"?`)) return
     const supabase = createClient()
-    await supabase.from('compliance_documents').delete().eq('id', doc.id)
+    if (doc.storage_path) {
+      await supabase.storage.from('workforce-media').remove([doc.storage_path])
+    }
+    await supabase.from('contractor_documents').delete().eq('id', doc.id)
     setComplianceDocs(prev => prev.filter(d => d.id !== doc.id))
+  }
+
+  async function uploadDocument(file: File) {
+    if (!contractor) return
+    setDocBusy(true)
+    setError(null)
+    const supabase = createClient()
+    const ext = file.name.includes('.') ? `.${file.name.split('.').pop()!.toLowerCase()}` : ''
+    const path = `contractor_documents/${contractor.company_id}/${contractorId}/hr_${crypto.randomUUID()}${ext}`
+    const { error: upErr } = await supabase.storage
+      .from('workforce-media')
+      .upload(path, file, { upsert: true, contentType: file.type || undefined })
+    if (upErr) {
+      setError(upErr.message)
+      setDocBusy(false)
+      return
+    }
+    const { data: pub } = supabase.storage.from('workforce-media').getPublicUrl(path)
+    const { data, error: insErr } = await supabase.from('contractor_documents').insert({
+      company_id: contractor.company_id,
+      contractor_id: contractorId,
+      document_type: uploadDocType || 'other',
+      document_name: file.name,
+      file_url: pub.publicUrl,
+      storage_path: path,
+      approval_status: 'approved',
+      approved_at: new Date().toISOString(),
+      is_required: false,
+      is_current: true,
+      uploaded_by_role: 'hr',
+    }).select().single()
+    if (insErr) setError(insErr.message)
+    else if (data) setComplianceDocs(prev => [data as ComplianceDocument, ...prev])
+    if (fileRef.current) fileRef.current.value = ''
+    setDocBusy(false)
+  }
+
+  async function addTeamMember() {
+    if (!addMemberId || !contractor) return
+    setIsBusy(true)
+    setError(null)
+    const supabase = createClient()
+    const { error: e } = await supabase.from('contractor_member_links').insert({
+      company_id: contractor.company_id,
+      contractor_id: contractorId,
+      employee_id: addMemberId,
+      role: addMemberRole.trim() || null,
+      is_primary: members.length === 0,
+    })
+    if (e) setError(e.message)
+    else {
+      setAddMemberId('')
+      setAddMemberRole('')
+      await loadTeam()
+    }
+    setIsBusy(false)
+  }
+
+  async function removeTeamMember(id: string) {
+    if (!window.confirm('Remove this team member link?')) return
+    const supabase = createClient()
+    await supabase.from('contractor_member_links').delete().eq('id', id)
+    setMembers(prev => prev.filter(m => m.id !== id))
   }
 
   async function pushToXero() {
@@ -428,41 +607,50 @@ function ContractorDetailInner() {
 
   // Compliance calculations
   const requiredDocs      = complianceDocs.filter(d => d.is_required)
-  const validRequired     = requiredDocs.filter(d => d.status === 'valid').length
-  const expiringRequired  = requiredDocs.filter(d => d.status === 'expiring').length
-  const expiredRequired   = requiredDocs.filter(d => d.status === 'expired').length
-  const pendingRequired   = requiredDocs.filter(d => d.status === 'pending').length
-  const rejectedRequired  = requiredDocs.filter(d => d.status === 'rejected').length
+  const validRequired     = requiredDocs.filter(d => docDisplayStatus(d) === 'approved').length
+  const expiringRequired  = requiredDocs.filter(d => docDisplayStatus(d) === 'expiring').length
+  const expiredRequired   = requiredDocs.filter(d => docDisplayStatus(d) === 'expired').length
+  const pendingRequired   = requiredDocs.filter(d => d.approval_status === 'pending').length
+  const rejectedRequired  = requiredDocs.filter(d => d.approval_status === 'rejected').length
   const compScore = requiredDocs.length > 0
     ? Math.round((validRequired / requiredDocs.length) * 100)
     : 0
   const compScoreColor = compScore >= 80 ? '#22C55E' : compScore >= 50 ? '#F59E0B' : '#EF4444'
 
-  const expiringDocs = complianceDocs.filter(d => {
-    if (!d.expiry_date) return false
-    const days = (new Date(d.expiry_date).getTime() - Date.now()) / 86400000
-    return days <= 30 && days >= 0
-  })
+  const expiringDocs = complianceDocs.filter(d => docDisplayStatus(d) === 'expiring')
 
   // Document table computed
   const totalDocuments    = complianceDocs.length
-  const approvedDocCount  = complianceDocs.filter(d => d.status === 'valid').length
-  const pendingDocCount   = complianceDocs.filter(d => d.status === 'pending').length
-  const rejectedDocCount  = complianceDocs.filter(d => d.status === 'rejected').length
-  const expiredDocCount   = complianceDocs.filter(d => d.status === 'expired').length
+  const approvedDocCount  = complianceDocs.filter(d => docDisplayStatus(d) === 'approved').length
+  const pendingDocCount   = complianceDocs.filter(d => d.approval_status === 'pending').length
+  const rejectedDocCount  = complianceDocs.filter(d => d.approval_status === 'rejected').length
+  const expiredDocCount   = complianceDocs.filter(d => docDisplayStatus(d) === 'expired').length
 
   const filteredDocuments = complianceDocs
     .filter(d => {
-      if (docFilter === 'approved') return d.status === 'valid'
-      if (docFilter === 'pending')  return d.status === 'pending'
-      if (docFilter === 'rejected') return d.status === 'rejected'
-      if (docFilter === 'expired')  return d.status === 'expired'
+      const status = docDisplayStatus(d)
+      if (docFilter === 'approved') return status === 'approved'
+      if (docFilter === 'pending')  return status === 'pending'
+      if (docFilter === 'rejected') return status === 'rejected'
+      if (docFilter === 'expired')  return status === 'expired'
       return true
     })
-    .filter(d => !documentSearch || d.document_type.toLowerCase().includes(documentSearch.toLowerCase()))
+    .filter(d => !documentSearch
+      || d.document_type.toLowerCase().includes(documentSearch.toLowerCase())
+      || d.document_name.toLowerCase().includes(documentSearch.toLowerCase()))
+    .sort((a, b) => {
+      if (docSort === 'name') return a.document_name.localeCompare(b.document_name)
+      if (docSort === 'expiry') {
+        if (!a.expiry_date && !b.expiry_date) return 0
+        if (!a.expiry_date) return 1
+        if (!b.expiry_date) return -1
+        return a.expiry_date.localeCompare(b.expiry_date)
+      }
+      return b.created_at.localeCompare(a.created_at)
+    })
 
   const hasContractorCode   = !!contractor?.contractor_code
-  const showDocumentsSection = compliancePack !== '' || complianceDocs.length > 0
+  const showDocumentsSection = compliancePackId !== '' || complianceDocs.length > 0
   const hasPendingBanking   = !!pendingBanking
 
   const pendingBankingDisplay = pendingBanking ? {
@@ -684,13 +872,13 @@ function ContractorDetailInner() {
 
         {/* ── COMPLIANCE ── */}
         {tab === 'Compliance' && (
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 max-w-2xl">
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 w-full">
             <SectionCard title="COMPLIANCE PACK">
-              <FormSelect label="Select compliance pack" value={compliancePack} onChange={e => setCompliancePack(e.target.value)}>
+              <FormSelect label="Select compliance pack" value={compliancePackId} onChange={e => setCompliancePackId(e.target.value)}>
                 <option value="">None</option>
-                {COMPLIANCE_PACKS.map(p => <option key={p} value={p}>{p}</option>)}
+                {compliancePacks.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </FormSelect>
-              {compliancePack ? (
+              {compliancePackId ? (
                 <div className="grid grid-cols-3 gap-2">
                   <KpiTile value={requiredDocs.length} label="Required" bg="#1E293B" valueFg="#94A3B8" labelFg="#94A3B8" />
                   <KpiTile value={validRequired}       label="Complete" bg="#14532D" valueFg="#22C55E" labelFg="#4ADE80" />
@@ -710,7 +898,8 @@ function ContractorDetailInner() {
                 </p>
                 <div className="border-t border-divider mt-1 divide-y divide-divider/40">
                   {complianceDocs.map(doc => {
-                    const sc = STATUS_COLORS[doc.status] ?? STATUS_COLORS.pending
+                    const status = docDisplayStatus(doc)
+                    const sc = STATUS_COLORS[status] ?? STATUS_COLORS.pending
                     return (
                       <div key={doc.id} className="flex items-center gap-3 py-2">
                         <span className="rounded-[6px] px-[6px] py-[3px] text-[9px] font-medium shrink-0"
@@ -723,7 +912,7 @@ function ContractorDetailInner() {
                         )}
                         <span className="rounded-lg px-2 py-[3px] text-[10px] font-medium shrink-0"
                           style={{ backgroundColor: sc.bg, color: sc.fg }}>
-                          {doc.status}
+                          {status}
                         </span>
                       </div>
                     )
@@ -821,9 +1010,36 @@ function ContractorDetailInner() {
             {/* Document table — shown when compliance pack set or docs exist */}
             {showDocumentsSection && (
               <div className="space-y-3">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
                   <p className="section-label">COMPLIANCE DOCUMENTS</p>
-                  <button className="btn-primary h-[34px] px-[14px] text-[12px]">+ Upload</button>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={uploadDocType}
+                      onChange={e => setUploadDocType(e.target.value)}
+                      className="text-[11px] h-[34px] px-2 rounded-lg border border-border bg-surface text-text-secondary"
+                    >
+                      {DOC_UPLOAD_TYPES.map(t => (
+                        <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>
+                      ))}
+                    </select>
+                    <input
+                      ref={fileRef}
+                      type="file"
+                      className="hidden"
+                      onChange={e => {
+                        const file = e.target.files?.[0]
+                        if (file) void uploadDocument(file)
+                      }}
+                    />
+                    <button
+                      type="button"
+                      disabled={docBusy}
+                      onClick={() => fileRef.current?.click()}
+                      className="btn-primary h-[34px] px-[14px] text-[12px] disabled:opacity-50"
+                    >
+                      {docBusy ? 'Uploading…' : '+ Upload'}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="flex gap-1.5 flex-wrap">
@@ -841,8 +1057,8 @@ function ContractorDetailInner() {
                       onChange={e => setDocumentSearch(e.target.value)}
                       className="flex-1 bg-transparent text-text-primary text-[13px] h-[38px] outline-none placeholder:text-text-disabled" />
                   </div>
-                  <FormSelect value="" onChange={() => {}}>
-                    <option value="">Sort: Newest first</option>
+                  <FormSelect value={docSort} onChange={e => setDocSort(e.target.value as 'newest' | 'name' | 'expiry')}>
+                    <option value="newest">Sort: Newest first</option>
                     <option value="name">Sort: Name A–Z</option>
                     <option value="expiry">Sort: Expiry</option>
                   </FormSelect>
@@ -863,7 +1079,8 @@ function ContractorDetailInner() {
                     </thead>
                     <tbody>
                       {filteredDocuments.map(doc => {
-                        const approval = DOC_APPROVAL_COLORS[doc.status] ?? DOC_APPROVAL_COLORS.pending
+                        const status = docDisplayStatus(doc)
+                        const approval = DOC_APPROVAL_COLORS[status] ?? DOC_APPROVAL_COLORS.pending
                         const hasExpiry = !!doc.expiry_date
                         const daysToExpiry = hasExpiry
                           ? (new Date(doc.expiry_date!).getTime() - Date.now()) / 86400000
@@ -874,9 +1091,9 @@ function ContractorDetailInner() {
                           <tr key={doc.id} className="bg-surface border-b border-divider last:border-0">
                             <td className="data-td text-[12px] truncate text-text-secondary">{doc.document_type}</td>
                             <td className="data-td">
-                              <p className="text-[12px] text-text-primary truncate">{doc.document_name ?? doc.document_type}</p>
-                              {doc.status === 'rejected' && doc.rejection_reason && (
-                                <p className="text-[10px] truncate" style={{ color: '#FCA5A5' }}>↳ {doc.rejection_reason}</p>
+                              <p className="text-[12px] text-text-primary truncate">{doc.document_name}</p>
+                              {doc.approval_status === 'rejected' && doc.rejected_reason && (
+                                <p className="text-[10px] truncate" style={{ color: '#FCA5A5' }}>↳ {doc.rejected_reason}</p>
                               )}
                             </td>
                             <td className="data-td">
@@ -900,11 +1117,11 @@ function ContractorDetailInner() {
                               {fmtDate(doc.created_at)}
                             </td>
                             <td className="data-td text-right">
-                              <button className="text-primary text-[11px] font-medium px-[5px] h-[30px]">View</button>
-                              {doc.status !== 'valid' && (
+                              <a href={doc.file_url} target="_blank" rel="noreferrer" className="text-primary text-[11px] font-medium px-[5px] h-[30px] inline-flex items-center">View</a>
+                              {doc.approval_status !== 'approved' && (
                                 <button onClick={() => approveDocument(doc)} className="text-[11px] font-medium px-[5px] h-[30px]" style={{ color: '#22C55E' }}>Approve</button>
                               )}
-                              {doc.status !== 'rejected' && (
+                              {doc.approval_status !== 'rejected' && (
                                 <button onClick={() => rejectDocument(doc)} className="text-[11px] font-medium px-[5px] h-[30px]" style={{ color: '#FCD34D' }}>Reject</button>
                               )}
                               <button onClick={() => deleteDocument(doc)} className="text-error text-[11px] font-medium px-[5px] h-[30px]">Delete</button>
@@ -925,7 +1142,7 @@ function ContractorDetailInner() {
 
         {/* ── PAYMENTS ── */}
         {tab === 'Payments' && (
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 max-w-2xl">
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 w-full">
             {hasPendingBanking && pendingBankingDisplay && (
               <div className="rounded-[10px] border border-[#78350F] bg-[#1A1200] p-[14px] space-y-[10px]">
                 <div className="flex items-center gap-2">
@@ -970,7 +1187,7 @@ function ContractorDetailInner() {
                 onChange={e => setPayBranchCode(e.target.value)} inputMode="numeric" className="dark-entry" />
               <FormSelect value={payAccountType} onChange={e => setPayAccountType(e.target.value)}>
                 <option value="">Account type…</option>
-                {ACCOUNT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                {ACCOUNT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
               </FormSelect>
               <input placeholder="SWIFT / BIC (international transfers)" value={paySwiftBic}
                 onChange={e => setPaySwiftBic(e.target.value)} className="dark-entry" />
@@ -980,11 +1197,11 @@ function ContractorDetailInner() {
               <p className="section-label">PAYMENT SETTINGS</p>
               <FormSelect value={payTerms} onChange={e => setPayTerms(e.target.value)}>
                 <option value="">Payment terms…</option>
-                {PAYMENT_TERMS_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+                {PAYMENT_TERMS_OPTIONS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
               </FormSelect>
               <FormSelect value={payMethod} onChange={e => setPayMethod(e.target.value)}>
                 <option value="">Preferred payment method…</option>
-                {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+                {PAYMENT_METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
               </FormSelect>
               <div className="flex items-center justify-between">
                 <div>
@@ -1014,15 +1231,35 @@ function ContractorDetailInner() {
 
         {/* ── TEAM ── */}
         {tab === 'Team' && (
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 max-w-2xl">
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 w-full">
             {membersLoading ? (
               <p className="text-text-secondary text-[13px] text-center py-8">Loading…</p>
             ) : (
               <div className="space-y-2">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <p className="section-label flex-1">TEAM MEMBERS</p>
-                  <button className="text-primary text-[13px] px-2">Invite</button>
-                  <button className="btn-outlined h-9 px-3 text-[12px]">+ Add</button>
+                  <FormSelect value={addMemberId} onChange={e => setAddMemberId(e.target.value)}>
+                    <option value="">Select employee…</option>
+                    {companyEmployees
+                      .filter(e => !members.some(m => m.employee_id === e.id))
+                      .map(e => (
+                        <option key={e.id} value={e.id}>{e.name} {e.surname}</option>
+                      ))}
+                  </FormSelect>
+                  <input
+                    value={addMemberRole}
+                    onChange={e => setAddMemberRole(e.target.value)}
+                    placeholder="Role (optional)"
+                    className="dark-entry h-9 w-[140px] text-[12px]"
+                  />
+                  <button
+                    type="button"
+                    disabled={!addMemberId || isBusy}
+                    onClick={() => void addTeamMember()}
+                    className="btn-outlined h-9 px-3 text-[12px] disabled:opacity-50"
+                  >
+                    + Add
+                  </button>
                 </div>
                 <div className="bg-surface rounded-lg border border-divider overflow-hidden">
                   <table className="w-full">
@@ -1031,11 +1268,12 @@ function ContractorDetailInner() {
                         <th className="data-th">Employee</th>
                         <th style={{ width: 120 }} className="data-th text-center">Role</th>
                         <th style={{ width:  80 }} className="data-th text-right">Primary</th>
+                        <th style={{ width:  64 }} className="data-th"></th>
                       </tr>
                     </thead>
                     <tbody>
                       {members.length === 0 ? (
-                        <tr><td colSpan={3} className="text-text-secondary text-center py-4 text-[13px]">No members linked.</td></tr>
+                        <tr><td colSpan={4} className="text-text-secondary text-center py-4 text-[13px]">No members linked.</td></tr>
                       ) : (
                         members.map(m => (
                           <tr key={m.id} className="bg-surface border-b border-divider last:border-0">
@@ -1044,6 +1282,9 @@ function ContractorDetailInner() {
                             </td>
                             <td className="data-td text-text-secondary text-center">{m.role ?? '—'}</td>
                             <td className="data-td text-text-secondary text-right">{m.is_primary ? 'Yes' : '—'}</td>
+                            <td className="data-td text-center">
+                              <button type="button" onClick={() => void removeTeamMember(m.id)} className="text-error text-[12px]">✕</button>
+                            </td>
                           </tr>
                         ))
                       )}
@@ -1084,12 +1325,9 @@ function ContractorDetailInner() {
                       contractorJobs.map(jc => {
                         const j = jc.jobs
                         const statusColors = JOB_STATUS_COLORS[j?.status ?? 'open'] ?? JOB_STATUS_COLORS.open
-                        const hasFin = (jc.paid_amount ?? 0) > 0 || (jc.approved_amount ?? 0) > 0
-                        const variance = (jc.paid_amount ?? 0) - (jc.agreed_amount ?? 0)
                         return (
-                          <>
                             <tr key={jc.id} className="bg-surface border-b border-divider">
-                              <td className="data-td text-text-secondary font-medium text-[12px]">—</td>
+                              <td className="data-td text-text-secondary font-medium text-[12px]">{j?.job_code ?? '—'}</td>
                               <td className="data-td text-text-primary text-[13px] truncate">{j?.title ?? '—'}</td>
                               <td className="data-td text-text-secondary text-center text-[12px]">{jc.role ?? '—'}</td>
                               <td className="data-td text-center">
@@ -1102,28 +1340,23 @@ function ContractorDetailInner() {
                                 {fmtCurrency(jc.agreed_amount)}
                               </td>
                               <td className="data-td text-center">
-                                <button className="rounded w-[34px] h-7 text-[11px]" style={{ backgroundColor: '#1A2A1A', color: '#4ADE80' }}>📄</button>
+                                {j?.id ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => router.push(`/dashboard/jobs/${j.id}/contractor-docs`)}
+                                    className="rounded w-[34px] h-7 text-[11px]"
+                                    style={{ backgroundColor: '#1A2A1A', color: '#4ADE80' }}
+                                    title="Contractor documents"
+                                  >
+                                    📄
+                                  </button>
+                                ) : '—'}
                               </td>
                               <td className="data-td">
                                 <button onClick={() => j?.id && router.push(`/dashboard/jobs/${j.id}`)}
                                   className="text-primary text-[11px] font-medium h-[30px]">Open →</button>
                               </td>
                             </tr>
-                            {hasFin && (
-                              <tr key={`${jc.id}-fin`} className="bg-surface border-b border-divider">
-                                <td colSpan={2} className="px-[12px] pb-[6px] pt-0">
-                                  <div className="flex gap-2 text-[10px]">
-                                    <span className="text-text-secondary">Finance:</span>
-                                    <span style={{ color: '#22C55E' }}>Paid {fmtCurrency(jc.paid_amount)}</span>
-                                    <span style={{ color: '#0EA5E9' }}>Approved {fmtCurrency(jc.approved_amount)}</span>
-                                    <span style={{ color: variance >= 0 ? '#EF4444' : '#22C55E' }}>
-                                      {variance >= 0 ? `↑ Over R${Math.abs(variance).toFixed(2)}` : `↓ Under R${Math.abs(variance).toFixed(2)}`}
-                                    </span>
-                                  </div>
-                                </td>
-                              </tr>
-                            )}
-                          </>
                         )
                       })
                     )}
