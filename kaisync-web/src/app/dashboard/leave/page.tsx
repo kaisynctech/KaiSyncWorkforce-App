@@ -79,6 +79,8 @@ export default function LeavePage() {
     ])
 
     if (!scopeRes.ok) { setError(scopeRes.message); setLoading(false); return }
+    if (reqsRes.error) { setError(reqsRes.error.message); setLoading(false); return }
+    if (onLeaveRes.error) { setError(onLeaveRes.error.message); setLoading(false); return }
     const ids = scopeRes.seesAll ? null : scopeRes.ids
     setSeesAll(scopeRes.seesAll || viewerSeesAllCompany(scopeRes.viewer.access_level))
     if (settingsRes.ok) setLeaveSettings(settingsRes.data)
@@ -170,7 +172,7 @@ export default function LeavePage() {
           <p className="text-[12px] text-text-secondary mt-0.5">{pendingCount} pending</p>
         </div>
         <Link
-          href="/dashboard/employees"
+          href="/dashboard/leave/apply"
           className="h-9 px-3 rounded-sm border border-border text-[13px] font-medium text-text-primary hover:bg-surface-elevated transition-colors inline-flex items-center"
         >
           Apply for employee

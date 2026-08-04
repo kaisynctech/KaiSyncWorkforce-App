@@ -4,6 +4,8 @@ import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import { listEmployeesScoped } from '@/lib/employees'
 import { SectionCard, FormField, entryClass } from '@/components/SectionCard'
 import { FormSelect } from '@/components/FormSelect'
 import { FormDateInput } from '@/components/FormDateInput'
@@ -18,42 +20,90 @@ import {
 function ApplyLeaveContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const employeeId = searchParams.get('employeeId')
+  const queryEmployeeId = searchParams.get('employeeId')
 
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState(queryEmployeeId ?? '')
+  const [employeeOptions, setEmployeeOptions] = useState<{ id: string; label: string }[]>([])
   const [employeeName, setEmployeeName] = useState('')
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [leaveSettings, setLeaveSettings] = useState<LeaveSettingsMap>({})
   const [usedByType, setUsedByType] = useState<Record<string, number>>({})
-  const [backHref, setBackHref] = useState('/dashboard/employees')
+  const [backHref, setBackHref] = useState('/dashboard/leave')
   const [leaveType, setLeaveType] = useState('Annual Leave')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [reason, setReason] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [isBusy, setIsBusy] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!employeeId) { router.push('/dashboard/employees'); return }
-    setBackHref(`/dashboard/employees/${employeeId}`)
-    void loadEmployee(employeeId)
-  }, [employeeId])
+    void bootstrap()
+  }, [])
+
+  useEffect(() => {
+    if (!selectedEmployeeId || !companyId) return
+    setBackHref(
+      queryEmployeeId
+        ? `/dashboard/employees/${selectedEmployeeId}`
+        : '/dashboard/leave'
+    )
+    void loadEmployee(selectedEmployeeId)
+  }, [selectedEmployeeId, companyId, queryEmployeeId])
+
+  async function bootstrap() {
+    setLoading(true)
+    const supabase = createClient()
+    const member = await resolveCurrentMember(supabase)
+    if (!member) {
+      setError('Your account is not linked to an active employee record.')
+      setLoading(false)
+      return
+    }
+    setCompanyId(member.companyId)
+
+    const empRes = await listEmployeesScoped(
+      supabase,
+      member.companyId,
+      member.employeeId,
+      { activeOnly: true }
+    )
+    if (!empRes.ok) {
+      setError(empRes.message)
+      setLoading(false)
+      return
+    }
+    setEmployeeOptions(
+      empRes.data.map(e => ({ id: e.id, label: `${e.name} ${e.surname}` }))
+    )
+
+    if (queryEmployeeId) {
+      setSelectedEmployeeId(queryEmployeeId)
+    }
+    setLoading(false)
+  }
 
   async function loadEmployee(empId: string) {
+    if (!companyId) return
     const supabase = createClient()
-    const { data: emp } = await supabase
+    const { data: emp, error: empErr } = await supabase
       .from('employees')
       .select('name, surname, company_id')
       .eq('id', empId)
+      .eq('company_id', companyId)
       .single()
 
-    if (!emp) { router.push('/dashboard/employees'); return }
+    if (empErr || !emp) {
+      setError(empErr?.message ?? 'Employee not found.')
+      setEmployeeName('')
+      return
+    }
     setEmployeeName(`${emp.name} ${emp.surname}`)
-    const cid = emp.company_id as string
-    setCompanyId(cid)
+    setError(null)
 
     const yearStart = `${new Date().getFullYear()}-01-01`
     const [settingsRes, usedRes] = await Promise.all([
-      loadLeaveSettings(supabase, cid),
+      loadLeaveSettings(supabase, companyId),
       supabase
         .from('leave_requests')
         .select('leave_type, total_days')
@@ -62,6 +112,9 @@ function ApplyLeaveContent() {
         .gte('start_date', yearStart),
     ])
     if (settingsRes.ok) setLeaveSettings(settingsRes.data)
+    if (usedRes.error) {
+      setError(usedRes.error.message)
+    }
     const used: Record<string, number> = {}
     for (const row of (usedRes.data ?? []) as { leave_type: string; total_days: number }[]) {
       used[row.leave_type] = (used[row.leave_type] ?? 0) + (row.total_days ?? 0)
@@ -70,7 +123,7 @@ function ApplyLeaveContent() {
   }
 
   async function submit() {
-    if (!employeeId || !companyId || !startDate || !endDate || !reason.trim()) {
+    if (!selectedEmployeeId || !companyId || !startDate || !endDate || !reason.trim()) {
       setError('Please fill in all required fields.')
       return
     }
@@ -85,7 +138,7 @@ function ApplyLeaveContent() {
 
     const { error: insertErr } = await supabase.from('leave_requests').insert({
       company_id: companyId,
-      employee_id: employeeId,
+      employee_id: selectedEmployeeId,
       leave_type: leaveType,
       start_date: startDate,
       end_date: endDate,
@@ -101,7 +154,11 @@ function ApplyLeaveContent() {
       setIsBusy(false)
       return
     }
-    router.push(`/dashboard/employees/${employeeId}`)
+    router.push(
+      queryEmployeeId
+        ? `/dashboard/employees/${selectedEmployeeId}`
+        : '/dashboard/leave'
+    )
   }
 
   const totalDays = startDate && endDate ? calcLeaveTotalDays(startDate, endDate) : 0
@@ -109,6 +166,10 @@ function ApplyLeaveContent() {
   const annual = getCompanyAnnualDays(leaveType, leaveSettings)
   const used = usedByType[leaveType] ?? 0
   const remaining = Math.max(0, annual - used)
+
+  if (loading) {
+    return <div className="p-4 text-text-secondary text-[13px]">Loading…</div>
+  }
 
   return (
     <div className="p-4 space-y-4 max-w-lg mx-auto pb-8 overflow-y-auto">
@@ -120,13 +181,27 @@ function ApplyLeaveContent() {
       </div>
 
       <SectionCard title="LEAVE APPLICATION">
-        <FormField label="Employee">
-          <input
-            readOnly
-            value={employeeName}
-            className={`${entryClass} text-text-secondary cursor-default`}
-          />
-        </FormField>
+        {queryEmployeeId ? (
+          <FormField label="Employee">
+            <input
+              readOnly
+              value={employeeName}
+              className={`${entryClass} text-text-secondary cursor-default`}
+            />
+          </FormField>
+        ) : (
+          <FormSelect
+            label="Employee *"
+            value={selectedEmployeeId}
+            onChange={e => setSelectedEmployeeId(e.target.value)}
+            hint="Select who this leave application is for."
+          >
+            <option value="">Select employee…</option>
+            {employeeOptions.map(e => (
+              <option key={e.id} value={e.id}>{e.label}</option>
+            ))}
+          </FormSelect>
+        )}
 
         <FormSelect
           label="Leave type"
@@ -189,7 +264,7 @@ function ApplyLeaveContent() {
 
       <button
         onClick={() => void submit()}
-        disabled={isBusy || !startDate || !endDate || !reason.trim()}
+        disabled={isBusy || !selectedEmployeeId || !startDate || !endDate || !reason.trim()}
         className="w-full h-11 bg-primary text-white rounded-md font-semibold text-[15px] hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
         {isBusy ? 'Submitting…' : 'Submit Leave Application'}

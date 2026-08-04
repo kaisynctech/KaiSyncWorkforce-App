@@ -369,6 +369,18 @@ async function handleRecalculate(
     return json({ ok: false, error: 'Only pending payslips can be recalculated.' }, 400)
   }
 
+  const { data: lockRow, error: lockErr } = await admin
+    .from('payroll_period_locks')
+    .select('company_id')
+    .eq('company_id', companyId)
+    .eq('period_start', payment.period_start)
+    .eq('period_end', payment.period_end)
+    .maybeSingle()
+  if (lockErr) return json({ ok: false, error: lockErr.message }, 500)
+  if (lockRow) {
+    return json({ ok: false, error: 'This payroll period is locked and cannot be recalculated.' }, 409)
+  }
+
   const settingsRes = await loadSettings(userClient, companyId)
   if (!settingsRes.ok) return json({ ok: false, error: settingsRes.message }, 400)
 

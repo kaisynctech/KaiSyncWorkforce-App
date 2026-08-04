@@ -51,6 +51,14 @@ function csvEscape(v: string) {
   return v
 }
 
+function timeFromIso(iso: string | null | undefined, fallback: string): string {
+  if (!iso) return fallback
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return fallback
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 export default function SchedulingPage() {
   const [selectedDate, setSelectedDate] = useState(todayStr())
   const [viewMode, setViewMode] = useState<ViewMode>('day')
@@ -59,9 +67,11 @@ export default function SchedulingPage() {
   const [loading, setLoading] = useState(true)
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [employeeId, setEmployeeId] = useState<string | null>(null)
-  const [showCreate, setShowCreate] = useState(false)
+  const [showEditor, setShowEditor] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [formError, setFormError] = useState<string | null>(null)
 
   const [newTitle, setNewTitle] = useState('')
   const [newType, setNewType] = useState<EventType>('shift')
@@ -91,7 +101,7 @@ export default function SchedulingPage() {
       to   = `${next.toISOString().split('T')[0]}T00:00:00`
     }
 
-    const [{ data }, empRes] = await Promise.all([
+    const [{ data, error: evErr }, empRes] = await Promise.all([
       supabase
         .from('calendar_events')
         .select('*')
@@ -101,7 +111,12 @@ export default function SchedulingPage() {
         .order('start_time'),
       listEmployeesScoped(supabase, member.companyId, member.employeeId, { activeOnly: true }),
     ])
-    setEvents((data ?? []) as CalendarEvent[])
+    if (evErr) {
+      setError(evErr.message)
+      setEvents([])
+    } else {
+      setEvents((data ?? []) as CalendarEvent[])
+    }
     if (empRes.ok) {
       setEmployees(empRes.data.map(e => ({ id: e.id, name: e.name, surname: e.surname })))
     } else {
@@ -111,7 +126,37 @@ export default function SchedulingPage() {
     setLoading(false)
   }, [])
 
-  useEffect(() => { load(selectedDate, viewMode) }, [load, selectedDate, viewMode])
+  useEffect(() => { void load(selectedDate, viewMode) }, [load, selectedDate, viewMode])
+
+  function resetForm() {
+    setNewTitle('')
+    setNewType('shift')
+    setNewStart('09:00')
+    setNewEnd('10:00')
+    setNewDesc('')
+    setNewAssignee('')
+    setEditingId(null)
+    setFormError(null)
+  }
+
+  function openCreate() {
+    resetForm()
+    setShowEditor(true)
+  }
+
+  function openEdit(ev: CalendarEvent) {
+    setEditingId(ev.id)
+    setNewTitle(ev.title)
+    setNewType((ev.event_type as EventType) || 'shift')
+    setNewStart(timeFromIso(ev.start_time, '09:00'))
+    setNewEnd(timeFromIso(ev.end_time, '10:00'))
+    setNewDesc(ev.description ?? '')
+    setNewAssignee(ev.attendee_ids?.[0] ?? '')
+    setFormError(null)
+    const day = ev.start_time.slice(0, 10)
+    if (day) setSelectedDate(day)
+    setShowEditor(true)
+  }
 
   function downloadCSV() {
     const headers = ['Title', 'Type', 'Start', 'End', 'Description', 'Attendees']
@@ -139,9 +184,10 @@ export default function SchedulingPage() {
     URL.revokeObjectURL(url)
   }
 
-  async function createEvent() {
+  async function saveEvent() {
     if (!newTitle.trim() || !companyId || !employeeId) return
     setBusy(true)
+    setFormError(null)
     const supabase = createClient()
     const startIso = `${selectedDate}T${newStart}:00`
     const endIso = `${selectedDate}T${newEnd}:00`
@@ -179,25 +225,81 @@ export default function SchedulingPage() {
       }
     }
 
-    const { data } = await supabase
-      .from('calendar_events')
-      .insert({
-        company_id: companyId,
-        title: newTitle.trim(),
-        start_time: startIso,
-        end_time: endIso,
-        description: newDesc.trim() || null,
-        event_type: newType,
-        attendee_ids: newAssignee ? [newAssignee] : [],
-        created_by: employeeId,
-      })
-      .select()
-      .single()
-    if (data) {
-      setEvents(prev => [...prev, data as CalendarEvent].sort((a, b) => a.start_time.localeCompare(b.start_time)))
+    const payload = {
+      title: newTitle.trim(),
+      start_time: startIso,
+      end_time: endIso,
+      description: newDesc.trim() || null,
+      event_type: newType,
+      attendee_ids: newAssignee ? [newAssignee] : [],
     }
-    setNewTitle(''); setNewType('shift'); setNewStart('09:00'); setNewEnd('10:00'); setNewDesc(''); setNewAssignee('')
-    setShowCreate(false)
+
+    if (editingId) {
+      const { data, error: updErr } = await supabase
+        .from('calendar_events')
+        .update(payload)
+        .eq('id', editingId)
+        .eq('company_id', companyId)
+        .select()
+        .single()
+      if (updErr) {
+        setFormError(updErr.message)
+        setBusy(false)
+        return
+      }
+      if (data) {
+        setEvents(prev =>
+          prev
+            .map(e => (e.id === editingId ? (data as CalendarEvent) : e))
+            .sort((a, b) => a.start_time.localeCompare(b.start_time))
+        )
+      }
+    } else {
+      const { data, error: insErr } = await supabase
+        .from('calendar_events')
+        .insert({
+          company_id: companyId,
+          created_by: employeeId,
+          ...payload,
+        })
+        .select()
+        .single()
+      if (insErr) {
+        setFormError(insErr.message)
+        setBusy(false)
+        return
+      }
+      if (data) {
+        setEvents(prev =>
+          [...prev, data as CalendarEvent].sort((a, b) => a.start_time.localeCompare(b.start_time))
+        )
+      }
+    }
+
+    resetForm()
+    setShowEditor(false)
+    setBusy(false)
+  }
+
+  async function deleteEvent() {
+    if (!editingId || !companyId) return
+    if (!window.confirm('Delete this schedule event?')) return
+    setBusy(true)
+    setFormError(null)
+    const supabase = createClient()
+    const { error: delErr } = await supabase
+      .from('calendar_events')
+      .delete()
+      .eq('id', editingId)
+      .eq('company_id', companyId)
+    if (delErr) {
+      setFormError(delErr.message)
+      setBusy(false)
+      return
+    }
+    setEvents(prev => prev.filter(e => e.id !== editingId))
+    resetForm()
+    setShowEditor(false)
     setBusy(false)
   }
 
@@ -224,7 +326,7 @@ export default function SchedulingPage() {
         <h1 className="text-[20px] font-semibold text-text-primary">Scheduling</h1>
         <div className="flex gap-2">
           <button
-            onClick={() => setShowCreate(true)}
+            onClick={openCreate}
             className="btn-primary h-9 px-3 text-[13px]">
             + Shift
           </button>
@@ -237,6 +339,10 @@ export default function SchedulingPage() {
           </button>
         </div>
       </div>
+
+      {error && error !== 'not_linked' && (
+        <p className="px-4 py-2 text-error text-[13px]">{error}</p>
+      )}
 
       <div className="px-4 py-2.5 flex items-center gap-3 bg-surface-dark border-b border-divider shrink-0">
         <label className="text-xs font-medium text-text-secondary">Date:</label>
@@ -279,14 +385,16 @@ export default function SchedulingPage() {
                   </div>
                   <div className="flex flex-col gap-0.5">
                     {dayEvents.map(ev => (
-                      <div
+                      <button
+                        type="button"
                         key={ev.id}
-                        className="rounded px-1 py-0.5 text-[10px] leading-tight truncate"
+                        onClick={() => openEdit(ev)}
+                        className="rounded px-1 py-0.5 text-[10px] leading-tight truncate text-left"
                         style={{ backgroundColor: '#1D4ED820', color: '#60A5FA' }}
                       >
                         <span className="font-medium">{fmtTime(ev.start_time)}</span>
                         {' '}{ev.title}
-                      </div>
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -309,7 +417,12 @@ export default function SchedulingPage() {
                 .filter(Boolean)
                 .join(', ')
               return (
-                <div key={ev.id} className="card p-0 overflow-hidden">
+                <button
+                  type="button"
+                  key={ev.id}
+                  onClick={() => openEdit(ev)}
+                  className="card p-0 overflow-hidden text-left w-full hover:ring-1 hover:ring-primary/30 transition"
+                >
                   <div className="grid h-full" style={{ gridTemplateColumns: '4px 1fr' }}>
                     <div className="bg-primary rounded-l-xl" />
                     <div className="p-3">
@@ -332,17 +445,22 @@ export default function SchedulingPage() {
                       )}
                     </div>
                   </div>
-                </div>
+                </button>
               )
             })}
           </div>
         )}
       </div>
 
-      {showCreate && (
+      {showEditor && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-surface rounded-xl shadow-lg w-full max-w-sm p-5 space-y-3">
-            <h3 className="font-semibold text-text-primary">New Event</h3>
+            <h3 className="font-semibold text-text-primary">
+              {editingId ? 'Edit Event' : 'New Event'}
+            </h3>
+            {formError && (
+              <p className="text-[13px] text-error">{formError}</p>
+            )}
             <div className="flex flex-col gap-1">
               <label className="text-xs text-text-secondary">Title *</label>
               <input value={newTitle} onChange={e => setNewTitle(e.target.value)}
@@ -396,14 +514,34 @@ export default function SchedulingPage() {
                 rows={2} placeholder="Notes…"
                 className="dark-entry w-full resize-none" />
             </div>
-            <div className="flex gap-2 justify-end">
-              <button onClick={() => setShowCreate(false)} className="btn-outlined h-9 px-4 text-[13px]">
-                Cancel
-              </button>
-              <button onClick={createEvent} disabled={!newTitle.trim() || busy}
-                className="btn-primary h-9 px-4 text-[13px] disabled:opacity-50">
-                {busy ? 'Saving…' : 'Save'}
-              </button>
+            <div className="flex gap-2 justify-between">
+              {editingId ? (
+                <button
+                  type="button"
+                  onClick={() => void deleteEvent()}
+                  disabled={busy}
+                  className="h-9 px-3 text-[13px] text-error hover:opacity-80 disabled:opacity-50"
+                >
+                  Delete
+                </button>
+              ) : <span />}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => { resetForm(); setShowEditor(false) }}
+                  className="btn-outlined h-9 px-4 text-[13px]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void saveEvent()}
+                  disabled={!newTitle.trim() || busy}
+                  className="btn-primary h-9 px-4 text-[13px] disabled:opacity-50"
+                >
+                  {busy ? 'Saving…' : 'Save'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

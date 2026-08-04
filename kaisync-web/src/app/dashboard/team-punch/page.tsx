@@ -104,12 +104,16 @@ export default function TeamPunchPage() {
       return
     }
 
-    const { data: recentPunches } = await supabase
+    const { data: recentPunches, error: punchErr } = await supabase
       .from('time_punches')
       .select('employee_id, type, date_time')
       .in('employee_id', empIds)
       .gte('date_time', new Date(new Date().setHours(0, 0, 0, 0)).toISOString())
       .order('date_time', { ascending: false })
+
+    if (punchErr) {
+      setActionError(punchErr.message)
+    }
 
     const latestByEmployee = new Map<string, string>()
     for (const p of (recentPunches ?? []) as { employee_id: string; type: string }[]) {

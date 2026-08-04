@@ -77,7 +77,7 @@ export default function EditEmployeePage() {
   const [bankName, setBankName] = useState('')
   const [accountNumber, setAccountNumber] = useState('')
   const [bankBranchCode, setBankBranchCode] = useState('')
-  const [accountType, setAccountType] = useState('Cheque')
+  const [accountType, setAccountType] = useState('')
 
   const [stepUpOpen, setStepUpOpen] = useState(false)
   const [stepUpBusy, setStepUpBusy] = useState(false)
@@ -167,7 +167,7 @@ export default function EditEmployeePage() {
     setAccountType(
       raw.account_type
         ? raw.account_type.charAt(0).toUpperCase() + raw.account_type.slice(1).toLowerCase()
-        : 'Cheque'
+        : ''
     )
 
     setLoading(false)
@@ -549,6 +549,7 @@ export default function EditEmployeePage() {
             <input type="text" value={bankBranchCode} onChange={e => setBankBranchCode(e.target.value)} placeholder="6-digit branch code" className={entryClass} />
           </FormField>
           <FormSelect label="Account type" value={accountType} onChange={e => setAccountType(e.target.value)}>
+            <option value="">Not set</option>
             {ACCOUNT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
           </FormSelect>
         </SectionCard>

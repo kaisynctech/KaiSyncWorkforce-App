@@ -340,11 +340,24 @@ export async function updateEmployee(
     bank_branch_code: normBank(input.bankBranchCode) || null,
     account_type: normAccountType(input.accountType) || null,
   }
+  const currHasBanking = Boolean(
+    normBank(current.bank_name) ||
+      normBank(current.bank_account) ||
+      normBank(current.bank_branch_code) ||
+      normAccountType(current.account_type)
+  )
+  const nextHasCoreBanking = Boolean(
+    nextBank.bank_name || nextBank.bank_account || nextBank.bank_branch_code
+  )
+  // Ignore account_type-only defaults when no real banking was set before or after.
+  const accountTypeChanged =
+    normAccountType(current.account_type) !== (nextBank.account_type ?? '') &&
+    (currHasBanking || nextHasCoreBanking || Boolean(normAccountType(current.account_type)))
   const bankingChanged =
     normBank(current.bank_name) !== (nextBank.bank_name ?? '') ||
     normBank(current.bank_account) !== (nextBank.bank_account ?? '') ||
     normBank(current.bank_branch_code) !== (nextBank.bank_branch_code ?? '') ||
-    normAccountType(current.account_type) !== (nextBank.account_type ?? '')
+    accountTypeChanged
 
   if (bankingChanged) {
     const prompt = opts?.promptPassword
