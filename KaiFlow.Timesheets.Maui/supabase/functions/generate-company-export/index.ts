@@ -23,6 +23,7 @@ const EXPORT_TABLES: { table: string; sensitive?: boolean }[] = [
   { table: 'job_feedback' },
   { table: 'clients' },
   { table: 'client_notes' },
+  { table: 'client_documents' },
   { table: 'client_payments', sensitive: true },
   { table: 'client_deals' },
   { table: 'client_deal_updates' },
