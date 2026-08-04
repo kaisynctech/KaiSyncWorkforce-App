@@ -92,10 +92,10 @@ function NewContractorForm() {
     let contractorCode: string | null = null
     if (isContractorKind(partnerKind)) {
       const [{ data: company }, { data: existing }] = await Promise.all([
-        supabase.from('companies').select('company_code').eq('id', member.companyId).maybeSingle(),
+        supabase.from('companies').select('code').eq('id', member.companyId).maybeSingle(),
         supabase.from('contractors').select('contractor_code').eq('company_id', member.companyId),
       ])
-      const companyCode = (company as { company_code?: string | null } | null)?.company_code ?? ''
+      const companyCode = (company as { code?: string | null } | null)?.code ?? ''
       contractorCode = nextContractorCode(
         companyCode,
         (existing ?? []).map(r => (r as { contractor_code: string | null }).contractor_code),

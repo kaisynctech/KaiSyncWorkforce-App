@@ -84,9 +84,9 @@ export default function ClientDetailPage() {
 
     const { data: { user } } = await supabase.auth.getUser()
     if (user) {
-      const { data: me } = await supabase.from('employees').select('companies(company_code)').eq('user_id', user.id).maybeSingle()
+      const { data: me } = await supabase.from('employees').select('companies(code)').eq('user_id', user.id).maybeSingle()
       const companies = (me as Record<string, unknown>)?.['companies'] as Record<string, unknown> | null
-      setCompanyCode((companies?.['company_code'] as string) ?? '')
+      setCompanyCode((companies?.['code'] as string) ?? '')
     }
 
     if (isNew) { setLoading(false); return }
