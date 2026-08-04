@@ -13,6 +13,9 @@ export const PERM = {
   suppliersEdit: 'suppliers.edit',
   assetsView: 'assets.view',
   assetsEdit: 'assets.edit',
+  contractorsView: 'contractors.view',
+  contractorsCreate: 'contractors.create',
+  contractorsEdit: 'contractors.edit',
 } as const
 
 export type PermissionKey = (typeof PERM)[keyof typeof PERM]
@@ -24,26 +27,31 @@ const FALLBACK: Record<string, Partial<Record<PermissionKey, boolean>>> = {
     [PERM.inventoryView]: true, [PERM.inventoryEdit]: true,
     [PERM.suppliersView]: true, [PERM.suppliersEdit]: true,
     [PERM.assetsView]: true, [PERM.assetsEdit]: true,
+    [PERM.contractorsView]: true, [PERM.contractorsCreate]: true, [PERM.contractorsEdit]: true,
   },
   hr: {
     [PERM.inventoryView]: true, [PERM.inventoryEdit]: true,
     [PERM.suppliersView]: true, [PERM.suppliersEdit]: true,
     [PERM.assetsView]: true, [PERM.assetsEdit]: true,
+    [PERM.contractorsView]: true, [PERM.contractorsCreate]: true, [PERM.contractorsEdit]: true,
   },
   hr_admin: {
     [PERM.inventoryView]: true, [PERM.inventoryEdit]: true,
     [PERM.suppliersView]: true, [PERM.suppliersEdit]: true,
     [PERM.assetsView]: true, [PERM.assetsEdit]: true,
+    [PERM.contractorsView]: true, [PERM.contractorsCreate]: true, [PERM.contractorsEdit]: true,
   },
   manager: {
     [PERM.inventoryView]: true, [PERM.inventoryEdit]: true,
     [PERM.suppliersView]: true, [PERM.suppliersEdit]: false,
     [PERM.assetsView]: true, [PERM.assetsEdit]: true,
+    [PERM.contractorsView]: true, [PERM.contractorsCreate]: true, [PERM.contractorsEdit]: true,
   },
   employee: {
     [PERM.inventoryView]: true, [PERM.inventoryEdit]: false,
     [PERM.suppliersView]: false, [PERM.suppliersEdit]: false,
     [PERM.assetsView]: false, [PERM.assetsEdit]: false,
+    [PERM.contractorsView]: false, [PERM.contractorsCreate]: false, [PERM.contractorsEdit]: false,
   },
 }
 

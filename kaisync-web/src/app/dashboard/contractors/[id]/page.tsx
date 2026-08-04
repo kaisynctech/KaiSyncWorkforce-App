@@ -19,6 +19,7 @@ import { ContractorQuotesTab } from '@/components/ContractorQuotesTab'
 import { ContractorInvoicesTab } from '@/components/ContractorInvoicesTab'
 import { KpiTile } from '@/components/ui/KpiTile'
 import { DocFilterChip } from '@/components/ui/DocFilterChip'
+import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
 import type {
   Contractor, ComplianceDocument, JobContractor, Job, IncidentReport,
   ContractorTeamMember, PendingBankingUpdate, Project, ContractorCompliancePack, Employee,
@@ -166,6 +167,8 @@ function ContractorDetailInner() {
   const [xeroConnected, setXeroConnected] = useState(false)
   const [xeroPushing,   setXeroPushing]   = useState(false)
   const [sessionToken,  setSessionToken]  = useState<string | null>(null)
+  const [perms, setPerms] = useState<PermissionSet | null>(null)
+  const canEdit = can(perms, PERM.contractorsEdit)
 
   // Information tab
   const [name, setName] = useState('')
@@ -238,6 +241,16 @@ function ContractorDetailInner() {
   async function load() {
     setLoading(true)
     const supabase = createClient()
+    const member = await resolveCurrentMember(supabase)
+    if (member) {
+      const { data: me } = await supabase
+        .from('employees')
+        .select('access_level')
+        .eq('id', member.employeeId)
+        .maybeSingle()
+      setPerms(await loadPermissions(supabase, member.companyId, me?.access_level))
+    }
+
     const { data: c } = await supabase
       .from('contractors')
       .select('*')
@@ -355,6 +368,7 @@ function ContractorDetailInner() {
   }, [contractorId])
 
   async function handleSave() {
+    if (!canEdit) { setError('You do not have permission to edit contractors.'); return }
     if (!name.trim()) { setError('Company name is required.'); return }
     setSaving(true)
     setError(null)
@@ -409,6 +423,7 @@ function ContractorDetailInner() {
 
   /** Assign a permanent CT#### code once if missing — never rotates/replaces an existing code. */
   async function ensurePermanentContractorCode(): Promise<string | null> {
+    if (!canEdit) return null
     if (!contractor?.company_id) return null
     if (contractor.contractor_code) return contractor.contractor_code
 
@@ -435,6 +450,7 @@ function ContractorDetailInner() {
   }
 
   async function handlePortalToggle(next: boolean) {
+    if (!canEdit) return
     setPortalEnabled(next)
     if (!next || hasContractorCode || !contractor?.company_id) return
 
@@ -450,7 +466,7 @@ function ContractorDetailInner() {
   }
 
   async function approveBanking() {
-    if (!pendingBanking) return
+    if (!canEdit || !pendingBanking) return
     setIsBusy(true)
     setError(null)
     const supabase = createClient()
@@ -466,7 +482,7 @@ function ContractorDetailInner() {
   }
 
   async function rejectBanking() {
-    if (!pendingBanking) return
+    if (!canEdit || !pendingBanking) return
     const reason = window.prompt('Rejection reason (required):')
     if (!reason?.trim()) return
     setIsBusy(true)
@@ -488,6 +504,7 @@ function ContractorDetailInner() {
   }
 
   async function approveDocument(doc: ComplianceDocument) {
+    if (!canEdit) return
     const supabase = createClient()
     const member = await resolveCurrentMember(supabase)
     const { error: e } = await supabase.from('contractor_documents').update({
@@ -503,6 +520,7 @@ function ContractorDetailInner() {
   }
 
   async function rejectDocument(doc: ComplianceDocument) {
+    if (!canEdit) return
     const reason = window.prompt('Rejection reason:')
     if (reason == null) return
     const supabase = createClient()
@@ -517,6 +535,7 @@ function ContractorDetailInner() {
   }
 
   async function deleteDocument(doc: ComplianceDocument) {
+    if (!canEdit) return
     if (!window.confirm(`Delete "${doc.document_name}"?`)) return
     const supabase = createClient()
     if (doc.storage_path) {
@@ -527,7 +546,7 @@ function ContractorDetailInner() {
   }
 
   async function uploadDocument(file: File) {
-    if (!contractor) return
+    if (!canEdit || !contractor) return
     setDocBusy(true)
     setError(null)
     const supabase = createClient()
@@ -562,7 +581,7 @@ function ContractorDetailInner() {
   }
 
   async function addTeamMember() {
-    if (!addMemberId || !contractor) return
+    if (!canEdit || !addMemberId || !contractor) return
     setIsBusy(true)
     setError(null)
     const supabase = createClient()
@@ -583,6 +602,7 @@ function ContractorDetailInner() {
   }
 
   async function removeTeamMember(id: string) {
+    if (!canEdit) return
     if (!window.confirm('Remove this team member link?')) return
     const supabase = createClient()
     await supabase.from('contractor_member_links').delete().eq('id', id)
@@ -719,7 +739,8 @@ function ContractorDetailInner() {
         </div>
         <button
           onClick={handleSave}
-          disabled={saving}
+          disabled={saving || !canEdit}
+          title={!canEdit ? 'You do not have permission to edit contractors' : undefined}
           className="h-11 px-5 text-[15px] font-semibold rounded-lg bg-primary text-white hover:bg-primary-dark disabled:opacity-50 transition-colors min-w-[96px]"
         >
           {saving ? 'Saving…' : 'Save'}
