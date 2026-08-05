@@ -5,34 +5,45 @@ on:
   pull_request:
     branches: [main]
 env:
+  NODE_VERSION: '22.x'
   DOTNET_VERSION: '10.0.x'
-  PROJECT: KaiFlow.Timesheets.Maui/KaiFlow.Timesheets.Maui.csproj
 jobs:
-  gate-build:
-    name: Gate 1 — Build (Windows + Android)
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
-      - name: Install MAUI workloads
-        run: dotnet workload install maui-windows maui-android
-      - name: Build Windows
-        run: dotnet build ${{ env.PROJECT }} -f net10.0-windows10.0.19041.0 -c Release --no-restore
-      - name: Build Android
-        run: dotnet build ${{ env.PROJECT }} -f net10.0-android -c Release --no-restore
-  gate-tests:
-    name: Gate 2 — Unit Tests
+  gate-web:
+    name: Gate 1 — Web build (kaisync-web)
     runs-on: ubuntu-latest
-    needs: gate-build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: kaisync-web/package-lock.json
+      - name: Install dependencies
+        working-directory: kaisync-web
+        run: npm ci
+      - name: Typecheck
+        working-directory: kaisync-web
+        run: npx tsc --noEmit
+      - name: Lint
+        working-directory: kaisync-web
+        run: npm run lint
+      - name: Unit tests
+        working-directory: kaisync-web
+        run: npm test
+      - name: Production build
+        working-directory: kaisync-web
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+
+  gate-dotnet-libs:
+    name: Gate 2 — Shared .NET library tests
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
-      - name: Test Timesheets
-        run: dotnet test KaiFlow.Timesheets.Tests/KaiFlow.Timesheets.Tests.csproj -c Release --logger trx
       - name: Test Finance
         run: dotnet test KaiFlow.Finance.Tests/KaiFlow.Finance.Tests.csproj -c Release --logger trx
       - name: Test Payroll
@@ -43,10 +54,11 @@ jobs:
         with:
           name: test-results
           path: '**/*.trx'
+
   gate-migration-equivalence:
     name: Gate 3 — Migration Equivalence
     runs-on: ubuntu-latest
-    needs: gate-build
+    needs: gate-web
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_PROJECT_ID: vcivtjwreybaxgtdhtou
@@ -58,6 +70,7 @@ jobs:
           version: latest
       - name: Run equivalence check
         run: python3 .github/scripts/check_migration_equivalence.py
+
   gate-fingerprint:
     name: Gate 4 — Schema Fingerprint
     runs-on: ubuntu-latest
@@ -81,11 +94,12 @@ jobs:
             > staging_fingerprint.txt
       - name: Compare against production fingerprint
         run: |
-          if ! diff -u KaiFlow.Timesheets.Maui/supabase/production_fingerprint.txt staging_fingerprint.txt; then
+          if ! diff -u supabase/production_fingerprint.txt staging_fingerprint.txt; then
             echo "::error::Schema fingerprint mismatch — staging schema does not match production."
             exit 1
           fi
           echo "Fingerprints match."
+
   gate-anon-grants:
     name: Gate 5 — No New Anon Grants on SECURITY DEFINER Functions
     runs-on: ubuntu-latest

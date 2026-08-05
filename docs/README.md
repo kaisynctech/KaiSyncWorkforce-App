@@ -1,6 +1,6 @@
 # KaiFlow Enterprise Workforce Platform — Documentation Suite
 
-> **Production system:** `KaiFlow.Timesheets.Maui` (.NET MAUI client) + `KaiFlow.Payroll` (calculation library) + Supabase (PostgreSQL, Auth, Realtime, Storage).
+> **Production system:** `kaisync-web` (Next.js) + Supabase (PostgreSQL, Auth, Realtime, Storage, Edge Functions). Shared calculation reference libraries: `KaiFlow.Payroll`, `KaiFlow.Finance`, `KaiFlow.Accounting`.
 >
 > **Flutter folders in this repository are REFERENCE ONLY and are not production architecture.**
 
