@@ -1,15 +1,15 @@
 'use client'
 
-// AUDIT MIS-2026-00013: Found 3 gaps vs HrIncidentDetailsViewModel.
-// Fixed: (1) Assign button wired with employee picker modal, (2) Resolved/Close now prompt for resolution notes, (3) employees loaded for assign picker
-// Deferred: status history timeline (incident_status_history table existence not confirmed)
-
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
 import { StatusBadge } from '@/components/ui/StatusBadge'
-import type { IncidentReport, IncidentComment } from '@/types/database'
+import { hrAddIncidentComment, hrUpdateIncident } from '@/lib/incidents'
+import { resolveIncidentPhotoUrl } from '@/lib/incident-media'
+import type { IncidentComment, IncidentReport, IncidentStatusHistory } from '@/types/database'
 
 const SEVERITY_COLORS: Record<string, { bg: string; fg: string }> = {
   critical: { bg: '#FEE2E2', fg: '#991B1B' },
@@ -43,52 +43,93 @@ export default function IncidentDetailPage() {
 
   const [incident, setIncident] = useState<IncidentReport | null>(null)
   const [comments, setComments] = useState<IncidentComment[]>([])
+  const [history, setHistory] = useState<IncidentStatusHistory[]>([])
+  const [photoUrls, setPhotoUrls] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [newComment, setNewComment] = useState('')
   const [posting, setPosting] = useState(false)
   const [employees, setEmployees] = useState<{ id: string; name: string; surname: string }[]>([])
   const [showAssignModal, setShowAssignModal] = useState(false)
   const [assigningEmpId, setAssigningEmpId] = useState('')
+  const [companyId, setCompanyId] = useState<string | null>(null)
+  const [myEmployeeId, setMyEmployeeId] = useState<string | null>(null)
+  const [myName, setMyName] = useState<string | null>(null)
+  const [perms, setPerms] = useState<PermissionSet | null>(null)
 
-  useEffect(() => { load() }, [incidentId])
+  const canEdit = can(perms, PERM.incidentsEdit)
+
+  useEffect(() => { void load() }, [incidentId])
 
   async function load() {
     setLoading(true)
+    setError(null)
     const supabase = createClient()
-    const [incRes, commRes] = await Promise.all([
+    const member = await resolveCurrentMember(supabase)
+    if (!member) { setError('not_linked'); setLoading(false); return }
+    setCompanyId(member.companyId)
+    setMyEmployeeId(member.employeeId)
+
+    const { data: me } = await supabase
+      .from('employees')
+      .select('access_level, name, surname')
+      .eq('id', member.employeeId)
+      .maybeSingle()
+    setMyName(me ? `${me.name} ${me.surname}`.trim() : null)
+    setPerms(await loadPermissions(supabase, member.companyId, me?.access_level))
+
+    const [incRes, commRes, histRes, empRes] = await Promise.all([
       supabase.from('incident_reports')
         .select('*, jobs(title), assignee:employees!assignee_id(name, surname), reporter:employees!employee_id(name, surname)')
         .eq('id', incidentId)
+        .eq('company_id', member.companyId)
         .single(),
       supabase.from('incident_comments')
         .select('*, employees:author_employee_id(name, surname)')
         .eq('incident_id', incidentId)
         .order('created_at'),
+      supabase.from('incident_status_history')
+        .select('*')
+        .eq('incident_id', incidentId)
+        .order('created_at', { ascending: false }),
+      supabase.from('employees').select('id, name, surname')
+        .eq('company_id', member.companyId).eq('is_active', true).order('name'),
     ])
-    if (!incRes.data) { router.push('/dashboard/incidents'); return }
-    setIncident(incRes.data as IncidentReport)
-    setComments((commRes.data ?? []) as IncidentComment[])
-    const compId = (incRes.data as Record<string, unknown>).company_id as string | undefined
-    if (compId) {
-      const empRes = await supabase.from('employees').select('id, name, surname')
-        .eq('company_id', compId).eq('is_active', true).order('name')
-      setEmployees((empRes.data ?? []) as { id: string; name: string; surname: string }[])
+
+    if (incRes.error || !incRes.data) {
+      router.push('/dashboard/incidents')
+      return
     }
+
+    const row = incRes.data as IncidentReport
+    setIncident(row)
+    setComments((commRes.data ?? []) as IncidentComment[])
+    setHistory((histRes.data ?? []) as IncidentStatusHistory[])
+    setEmployees((empRes.data ?? []) as { id: string; name: string; surname: string }[])
+
+    const paths = (row.photo_urls ?? []).filter(Boolean)
+    if (paths.length > 0) {
+      const urls = await Promise.all(paths.map(p => resolveIncidentPhotoUrl(supabase, p)))
+      setPhotoUrls(urls.filter((u): u is string => Boolean(u)))
+    } else {
+      setPhotoUrls([])
+    }
+
     setLoading(false)
   }
 
   async function setStatus(newStatus: string, resolutionNotes?: string) {
+    if (!canEdit || !companyId) return
+    setError(null)
     const supabase = createClient()
-    const payload: Record<string, unknown> = { status: newStatus }
-    if (resolutionNotes !== undefined) payload.resolution_notes = resolutionNotes
-    if (newStatus === 'closed') payload.is_closed = true
-    await supabase.from('incident_reports').update(payload).eq('id', incidentId)
-    setIncident(prev => prev ? {
-      ...prev,
+    const res = await hrUpdateIncident(supabase, {
+      companyId,
+      incidentId,
       status: newStatus,
-      ...(newStatus === 'closed' ? { is_closed: true } : {}),
-      ...(resolutionNotes !== undefined ? { resolution_notes: resolutionNotes } : {}),
-    } : prev)
+      resolutionNotes: resolutionNotes ?? null,
+    })
+    if (!res.ok) { setError(res.message); return }
+    await load()
   }
 
   async function resolveOrClose(newStatus: 'resolved' | 'closed') {
@@ -99,36 +140,40 @@ export default function IncidentDetailPage() {
   }
 
   async function assignIncident() {
+    if (!canEdit || !companyId) return
+    setError(null)
     const supabase = createClient()
-    await supabase.from('incident_reports').update({ assignee_id: assigningEmpId || null }).eq('id', incidentId)
-    const emp = employees.find(e => e.id === assigningEmpId)
-    setIncident(prev => prev ? {
-      ...prev,
-      assignee_id: assigningEmpId || null,
-      assignee: emp ? { name: emp.name, surname: emp.surname } : null,
-    } : prev)
+    const res = await hrUpdateIncident(supabase, {
+      companyId,
+      incidentId,
+      assigneeId: assigningEmpId || null,
+      clearAssignee: !assigningEmpId,
+    })
+    if (!res.ok) { setError(res.message); return }
     setShowAssignModal(false)
     setAssigningEmpId('')
+    await load()
   }
 
   async function addComment() {
-    if (!newComment.trim()) return
+    if (!newComment.trim() || !companyId || !myEmployeeId) return
     setPosting(true)
+    setError(null)
     const supabase = createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setPosting(false); return }
-
-    const { data: me } = await supabase.from('employees').select('id, name, surname').eq('user_id', user.id).maybeSingle()
-    const { data: c } = await supabase.from('incident_comments').insert({
-      incident_id: incidentId,
+    const res = await hrAddIncidentComment(supabase, {
+      companyId,
+      incidentId,
       body: newComment.trim(),
-      author_id: me?.id ?? user.id,
-    }).select('*, employees(name, surname)').single()
-
-    if (c) {
-      setComments(prev => [...prev, c as IncidentComment])
-      setNewComment('')
+      authorEmployeeId: myEmployeeId,
+      authorName: myName,
+    })
+    if (!res.ok) {
+      setError(res.message)
+      setPosting(false)
+      return
     }
+    setNewComment('')
+    await load()
     setPosting(false)
   }
 
@@ -142,11 +187,10 @@ export default function IncidentDetailPage() {
 
   if (!incident) return null
 
-  const canManage = incident.status !== 'closed'
+  const canManage = canEdit && incident.status !== 'closed'
 
   return (
     <div className="h-full flex flex-col">
-      {/* Header bar */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-divider shrink-0 bg-surface">
         <Link href="/dashboard/incidents" className="text-text-secondary hover:text-text-primary transition-colors">
           <span className="material-icons text-[20px]">arrow_back</span>
@@ -156,10 +200,11 @@ export default function IncidentDetailPage() {
         </h1>
       </div>
 
-      {/* Scrollable body */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 max-w-2xl">
+        {error && (
+          <div className="rounded-lg border border-error/30 bg-error/5 px-3 py-2 text-[13px] text-error">{error}</div>
+        )}
 
-        {/* Header card */}
         <div className="card p-4 flex justify-between items-start gap-3">
           <div className="space-y-1 flex-1 min-w-0">
             <h2 className="font-bold text-[18px] text-text-primary truncate">{incident.title ?? incident.description}</h2>
@@ -171,14 +216,12 @@ export default function IncidentDetailPage() {
           <StatusBadge label={incident.severity} bg={sevBg(incident.severity)} fg={sevFg(incident.severity)} />
         </div>
 
-        {/* Linked job */}
         {incident.jobs?.title && (
           <div className="card p-4">
             <p className="text-text-primary text-[14px]">Linked job: {incident.jobs.title}</p>
           </div>
         )}
 
-        {/* Reported by */}
         {incident.reporter && (
           <div className="card p-4 flex items-center gap-3">
             <span className="text-text-secondary text-[13px] whitespace-nowrap">Reported by</span>
@@ -188,7 +231,6 @@ export default function IncidentDetailPage() {
           </div>
         )}
 
-        {/* Description */}
         <div className="card p-4 space-y-2">
           <p className="section-label">DESCRIPTION</p>
           <p className="text-text-primary text-[14px] leading-relaxed">{incident.description}</p>
@@ -197,15 +239,25 @@ export default function IncidentDetailPage() {
           )}
         </div>
 
-        {/* Resolution */}
-        {incident.status === 'closed' && (
+        {photoUrls.length > 0 && (
+          <div className="card p-4 space-y-2">
+            <p className="section-label">PHOTOS</p>
+            <div className="grid grid-cols-2 gap-2">
+              {photoUrls.map(url => (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img key={url} src={url} alt="Incident" className="rounded-lg border border-divider object-cover w-full h-32" />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {(incident.status === 'closed' || incident.status === 'resolved') && (
           <div className="card p-4 space-y-2">
             <p className="section-label">RESOLUTION</p>
             <p className="text-text-secondary text-[14px]">{incident.resolution_notes || 'No notes.'}</p>
           </div>
         )}
 
-        {/* Assigned to */}
         <div className="card p-4 flex items-center justify-between">
           <div>
             <p className="section-label">ASSIGNED TO</p>
@@ -221,16 +273,31 @@ export default function IncidentDetailPage() {
           )}
         </div>
 
-        {/* Action buttons */}
         {canManage && (
           <div className="flex gap-2">
-            <button onClick={() => setStatus('investigating')} className="btn-outlined text-[11px] h-9 px-3">Investigating</button>
-            <button onClick={() => resolveOrClose('resolved')} className="btn-outlined text-[11px] h-9 px-3">Resolved</button>
-            <button onClick={() => resolveOrClose('closed')}   className="btn-primary  text-[11px] h-9 px-3">Close</button>
+            <button onClick={() => void setStatus('investigating')} className="btn-outlined text-[11px] h-9 px-3">Investigating</button>
+            <button onClick={() => void resolveOrClose('resolved')} className="btn-outlined text-[11px] h-9 px-3">Resolved</button>
+            <button onClick={() => void resolveOrClose('closed')} className="btn-primary text-[11px] h-9 px-3">Close</button>
           </div>
         )}
 
-        {/* Comments */}
+        <div className="card p-4 space-y-3">
+          <p className="section-label">STATUS HISTORY</p>
+          {history.length === 0 ? (
+            <p className="text-text-secondary text-[13px]">No status changes recorded yet.</p>
+          ) : (
+            history.map(h => (
+              <div key={h.id} className="py-1.5 border-b border-divider last:border-0">
+                <p className="text-[13px] text-text-primary capitalize">
+                  {(h.old_status ?? '—')} → {h.new_status}
+                </p>
+                {h.notes && <p className="text-[12px] text-text-secondary">{h.notes}</p>}
+                <p className="text-[10px] text-text-secondary">{fmtDateTime(h.created_at)}</p>
+              </div>
+            ))
+          )}
+        </div>
+
         <div className="card p-4 space-y-3">
           <p className="section-label">COMMENTS</p>
           {comments.length === 0 && (
@@ -239,7 +306,8 @@ export default function IncidentDetailPage() {
           {comments.map(c => (
             <div key={c.id} className="py-1.5 space-y-0.5 border-b border-divider last:border-0">
               <p className="text-text-primary text-[12px] font-medium">
-                {c.employees ? `${c.employees.name} ${c.employees.surname}` : 'Unknown'}
+                {c.author_name
+                  ?? (c.employees ? `${c.employees.name} ${c.employees.surname}` : 'Unknown')}
               </p>
               <p className="text-text-primary text-[14px]">{c.body}</p>
               <p className="text-text-secondary text-[10px]">{fmtDate(c.created_at)}</p>
@@ -248,9 +316,9 @@ export default function IncidentDetailPage() {
           <div className="flex gap-2 pt-1">
             <input placeholder="Add a comment…" value={newComment}
               onChange={e => setNewComment(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && !posting && addComment()}
+              onKeyDown={e => e.key === 'Enter' && !posting && void addComment()}
               className="flex-1 dark-entry" />
-            <button onClick={addComment} disabled={posting}
+            <button onClick={() => void addComment()} disabled={posting}
               className="btn-primary h-[42px] px-4 text-[13px] disabled:opacity-50">
               Post
             </button>
@@ -258,7 +326,6 @@ export default function IncidentDetailPage() {
         </div>
       </div>
 
-      {/* Assign employee modal */}
       {showAssignModal && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-surface rounded-xl shadow-lg w-full max-w-sm p-5 space-y-3">
@@ -270,12 +337,9 @@ export default function IncidentDetailPage() {
                 <option key={e.id} value={e.id}>{e.name} {e.surname}</option>
               ))}
             </select>
-            {employees.length === 0 && (
-              <p className="text-text-secondary text-[12px]">No employees loaded — save the incident first.</p>
-            )}
             <div className="flex gap-2 justify-end">
               <button onClick={() => setShowAssignModal(false)} className="btn-outlined h-9 px-4 text-[13px]">Cancel</button>
-              <button onClick={assignIncident} className="btn-primary h-9 px-4 text-[13px]">Assign</button>
+              <button onClick={() => void assignIncident()} className="btn-primary h-9 px-4 text-[13px]">Assign</button>
             </div>
           </div>
         </div>

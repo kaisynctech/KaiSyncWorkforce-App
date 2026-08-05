@@ -476,6 +476,8 @@ function ContractorDetailInner() {
           }
         : prev)
       if (contractor?.company_id) {
+        const prevPack = contractor.compliance_pack_id ?? null
+        const nextPack = compliancePackId || null
         void logContractorEvent(supabase, {
           companyId: contractor.company_id,
           screen: 'HrContractorDetails',
@@ -489,6 +491,18 @@ function ContractorDetailInner() {
             partner_kind: partnerKind,
           },
         })
+        if (prevPack !== nextPack) {
+          void logContractorEvent(supabase, {
+            companyId: contractor.company_id,
+            screen: 'HrContractorDetails',
+            action: 'contractor_compliance_pack_changed',
+            meta: {
+              contractor_id: contractorId,
+              previous_pack_id: prevPack,
+              compliance_pack_id: nextPack,
+            },
+          })
+        }
       }
     }
     setSaving(false)
