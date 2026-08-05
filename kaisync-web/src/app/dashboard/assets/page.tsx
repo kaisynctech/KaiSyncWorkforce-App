@@ -5,13 +5,13 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import {
   ASSET_STATUSES,
-  appendAssetServiceNote,
   assetStatusLabel,
   extendWarrantyDate,
   isWarrantyExpired,
   isWarrantyExpiringSoon,
   type AssetStatus,
 } from '@/lib/supply-assets'
+import { createAsset, retireAsset as retireAssetApi, updateAsset } from '@/lib/assets'
 import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
 import {
   DEFAULT_PAGE_SIZE,
@@ -20,7 +20,33 @@ import {
   pageRange,
   totalPages,
 } from '@/lib/list-pagination'
+import { KpiTile } from '@/components/ui/KpiTile'
 import type { Asset, Employee, Site, Unit } from '@/types/database'
+
+type AssetKpis = {
+  total: number
+  active: number
+  outOfService: number
+  retired: number
+  warrantyExpiring: number
+  unassigned: number
+}
+
+type AssetActionItem = {
+  id: string
+  asset_id: string
+  asset_label: string
+  action_type: string
+  title: string
+  detail: string
+}
+
+const ACTION_TYPE_COLORS: Record<string, { bg: string; fg: string }> = {
+  warranty_expired:  { bg: '#FEE2E2', fg: '#991B1B' },
+  warranty_expiring: { bg: '#FEF3C7', fg: '#92400E' },
+  out_of_service:    { bg: '#FEF3C7', fg: '#92400E' },
+  unassigned:        { bg: '#E5E7EB', fg: '#374151' },
+}
 
 const fmtDate = (d: string | null | undefined) => {
   if (!d) return '—'
@@ -119,6 +145,10 @@ export default function AssetsPage() {
   const [busy, setBusy] = useState(false)
   const [confirmRetire, setConfirmRetire] = useState<AssetRow | null>(null)
   const [warrantyExpiringSoon, setWarrantyExpiringSoon] = useState(0)
+  const [kpis, setKpis] = useState<AssetKpis>({
+    total: 0, active: 0, outOfService: 0, retired: 0, warrantyExpiring: 0, unassigned: 0,
+  })
+  const [actionItems, setActionItems] = useState<AssetActionItem[]>([])
 
   const canEdit = can(perms, PERM.assetsEdit)
 
@@ -144,19 +174,100 @@ export default function AssetsPage() {
     if (!member) { setError('not_linked'); setLoading(false); return }
     setCompanyId(member.companyId)
 
-    const [sitesRes, unitsRes, empRes, meRes, warrantyRes] = await Promise.all([
-      supabase.from('sites').select('id, name').eq('company_id', member.companyId).order('name'),
-      supabase.from('units').select('id, site_id, unit_number').eq('company_id', member.companyId).order('unit_number'),
-      supabase.from('employees').select('id, name, surname').eq('company_id', member.companyId).eq('is_active', true).order('name'),
-      supabase.from('employees').select('name, surname, access_level').eq('id', member.employeeId).maybeSingle(),
-      supabase.from('assets').select('id, warranty_expires, status').eq('company_id', member.companyId),
-    ])
+    const today = new Date()
+    const todayIso = today.toISOString().slice(0, 10)
+    const soon = new Date(today)
+    soon.setDate(soon.getDate() + 30)
+    const soonIso = soon.toISOString().slice(0, 10)
+
+    const assetScope = () =>
+      supabase.from('assets').select('id', { count: 'exact', head: true }).eq('company_id', member.companyId)
+
+    const [sitesRes, unitsRes, empRes, meRes, totalRes, activeRes, oosRes, retiredRes, unassignedRes, signalRes] =
+      await Promise.all([
+        supabase.from('sites').select('id, name').eq('company_id', member.companyId).order('name'),
+        supabase.from('units').select('id, site_id, unit_number').eq('company_id', member.companyId).order('unit_number'),
+        supabase.from('employees').select('id, name, surname').eq('company_id', member.companyId).eq('is_active', true).order('name'),
+        supabase.from('employees').select('name, surname, access_level').eq('id', member.employeeId).maybeSingle(),
+        assetScope(),
+        assetScope().eq('status', 'active'),
+        assetScope().eq('status', 'out_of_service'),
+        assetScope().eq('status', 'retired'),
+        assetScope().is('assigned_employee_id', null).neq('status', 'retired'),
+        supabase
+          .from('assets')
+          .select('id, label, status, warranty_expires, assigned_employee_id')
+          .eq('company_id', member.companyId)
+          .neq('status', 'retired')
+          .order('label')
+          .limit(400),
+      ])
 
     setPerms(await loadPermissions(supabase, member.companyId, meRes.data?.access_level))
-    setWarrantyExpiringSoon(
-      ((warrantyRes.data ?? []) as { warranty_expires: string | null; status: string }[])
-        .filter(a => a.status !== 'retired' && isWarrantyExpiringSoon(a.warranty_expires)).length,
-    )
+
+    const signals = (signalRes.data ?? []) as {
+      id: string
+      label: string | null
+      status: string
+      warranty_expires: string | null
+      assigned_employee_id: string | null
+    }[]
+    const warrantySoonCount = signals.filter(a => isWarrantyExpiringSoon(a.warranty_expires)).length
+    setWarrantyExpiringSoon(warrantySoonCount)
+
+    setKpis({
+      total: totalRes.count ?? 0,
+      active: activeRes.count ?? 0,
+      outOfService: oosRes.count ?? 0,
+      retired: retiredRes.count ?? 0,
+      warrantyExpiring: warrantySoonCount,
+      unassigned: unassignedRes.count ?? 0,
+    })
+
+    const actions: AssetActionItem[] = []
+    for (const a of signals) {
+      const label = a.label?.trim() || 'Untitled asset'
+      if (isWarrantyExpired(a.warranty_expires)) {
+        actions.push({
+          id: `${a.id}-wexp`,
+          asset_id: a.id,
+          asset_label: label,
+          action_type: 'warranty_expired',
+          title: 'Warranty expired',
+          detail: 'Review service / replace coverage',
+        })
+      } else if (isWarrantyExpiringSoon(a.warranty_expires)) {
+        actions.push({
+          id: `${a.id}-wsoon`,
+          asset_id: a.id,
+          asset_label: label,
+          action_type: 'warranty_expiring',
+          title: 'Warranty expiring',
+          detail: 'Expires within 30 days',
+        })
+      }
+      if (a.status === 'out_of_service') {
+        actions.push({
+          id: `${a.id}-oos`,
+          asset_id: a.id,
+          asset_label: label,
+          action_type: 'out_of_service',
+          title: 'Out of service',
+          detail: 'Asset unavailable for use',
+        })
+      }
+      if (!a.assigned_employee_id && a.status === 'active') {
+        actions.push({
+          id: `${a.id}-un`,
+          asset_id: a.id,
+          asset_label: label,
+          action_type: 'unassigned',
+          title: 'Unassigned custody',
+          detail: 'No employee assigned',
+        })
+      }
+    }
+    setActionItems(actions.slice(0, 25))
 
     const { from, to } = pageRange(page, pageSize)
     let query = supabase
@@ -172,29 +283,21 @@ export default function AssetsPage() {
     if (statusFilter !== 'all' && statusFilter !== 'warranty_expiring') {
       query = query.eq('status', statusFilter)
     }
-
     if (statusFilter === 'warranty_expiring') {
-      const { data, error: qErr } = await query.limit(500)
-      if (qErr) {
-        setError(qErr.message)
-        setAssets([])
-        setTotal(0)
-      } else {
-        const rows = ((data ?? []) as AssetRow[])
-          .filter(a => a.status !== 'retired' && isWarrantyExpiringSoon(a.warranty_expires))
-        setTotal(rows.length)
-        setAssets(rows.slice(from, from + pageSize))
-      }
+      query = query
+        .neq('status', 'retired')
+        .gte('warranty_expires', todayIso)
+        .lte('warranty_expires', soonIso)
+    }
+
+    const { data, error: qErr, count } = await query.range(from, to)
+    if (qErr) {
+      setError(qErr.message)
+      setAssets([])
+      setTotal(0)
     } else {
-      const { data, error: qErr, count } = await query.range(from, to)
-      if (qErr) {
-        setError(qErr.message)
-        setAssets([])
-        setTotal(0)
-      } else {
-        setAssets((data ?? []) as AssetRow[])
-        setTotal(count ?? 0)
-      }
+      setAssets((data ?? []) as AssetRow[])
+      setTotal(count ?? 0)
     }
 
     setSites((sitesRes.data ?? []) as Pick<Site, 'id' | 'name'>[])
@@ -209,35 +312,30 @@ export default function AssetsPage() {
   useEffect(() => { void load() }, [load])
 
   async function save() {
+    if (!canEdit) { setError('You do not have permission to edit assets.'); return }
     if (!editing?.label?.trim()) { setError('Asset label is required.'); return }
     if (!companyId) { setError('Company context missing.'); return }
     setBusy(true)
     setError(null)
     const supabase = createClient()
 
-    let notes = editing.notes.trim() || null
-    if (editing.serviceNote.trim()) {
-      notes = appendAssetServiceNote(notes, editing.serviceNote, actorName)
-    }
-
-    const payload = {
-      company_id: companyId,
-      label: editing.label.trim(),
-      asset_type: editing.asset_type.trim() || null,
-      serial_number: editing.serial_number.trim() || null,
-      manufacturer: editing.manufacturer.trim() || null,
-      model_number: editing.model_number.trim() || null,
-      warranty_expires: editing.warranty_expires || null,
+    const input = {
+      label: editing.label,
+      assetType: editing.asset_type,
+      serialNumber: editing.serial_number,
+      manufacturer: editing.manufacturer,
+      modelNumber: editing.model_number,
+      warrantyExpires: editing.warranty_expires || null,
       status: editing.status,
-      notes,
-      site_id: editing.site_id || null,
-      unit_id: editing.unit_id || null,
-      assigned_employee_id: editing.assigned_employee_id || null,
+      notes: editing.notes,
+      siteId: editing.site_id || null,
+      unitId: editing.unit_id || null,
+      assignedEmployeeId: editing.assigned_employee_id || null,
     }
 
     if (isNew) {
-      const { data, error: e } = await supabase.from('assets').insert(payload).select().single()
-      if (e) { setError(e.message); setBusy(false); return }
+      const created = await createAsset(supabase, { companyId, ...input })
+      if (!created.ok) { setError(created.message); setBusy(false); return }
       setEditing(null)
       setBusy(false)
       await load()
@@ -245,8 +343,15 @@ export default function AssetsPage() {
     }
 
     if (editing.id) {
-      const { error: e } = await supabase.from('assets').update(payload).eq('id', editing.id)
-      if (e) { setError(e.message); setBusy(false); return }
+      const updated = await updateAsset(supabase, {
+        companyId,
+        assetId: editing.id,
+        input,
+        serviceNote: editing.serviceNote,
+        actorName,
+        previousNotes: editing.notes,
+      })
+      if (!updated.ok) { setError(updated.message); setBusy(false); return }
       setEditing(null)
       setBusy(false)
       await load()
@@ -256,15 +361,13 @@ export default function AssetsPage() {
   }
 
   async function retireAsset(asset: AssetRow) {
+    if (!canEdit || !companyId) return
     setBusy(true)
     setError(null)
     const supabase = createClient()
-    const { error: e } = await supabase
-      .from('assets')
-      .update({ status: 'retired' })
-      .eq('id', asset.id)
-    if (e) {
-      setError(e.message)
+    const result = await retireAssetApi(supabase, { companyId, assetId: asset.id })
+    if (!result.ok) {
+      setError(result.message)
       setBusy(false)
       return
     }
@@ -320,7 +423,58 @@ export default function AssetsPage() {
         </div>
       </div>
 
-      <div className="flex items-center justify-between gap-2 px-4 py-2 border-b border-divider shrink-0">
+      <div className="mx-4 mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+        <KpiTile value={kpis.total} label="Total" bg="#1E293B" valueFg="#94A3B8" labelFg="#64748B" />
+        <KpiTile value={kpis.active} label="Active" bg="#0F2918" valueFg="#22C55E" labelFg="#4ADE80" />
+        <KpiTile value={kpis.outOfService} label="Out of service" bg="#1E293B" valueFg="#FCD34D" labelFg="#64748B" />
+        <KpiTile value={kpis.retired} label="Retired" bg="#1E293B" valueFg="#94A3B8" labelFg="#64748B" />
+        <KpiTile value={kpis.warrantyExpiring} label="Warranty 30d" bg="#1E293B" valueFg="#FCD34D" labelFg="#64748B" />
+        <KpiTile value={kpis.unassigned} label="Unassigned" bg="#1E293B" valueFg="#94A3B8" labelFg="#64748B" />
+      </div>
+
+      {actionItems.length > 0 && (
+        <div className="mx-4 mt-3 card overflow-hidden">
+          <div className="px-3 py-2 border-b border-divider flex items-center justify-between">
+            <p className="text-[11px] font-semibold tracking-wider uppercase text-text-secondary">Action Centre</p>
+            <span className="text-[11px] text-text-disabled">{actionItems.length} item{actionItems.length !== 1 ? 's' : ''}</span>
+          </div>
+          <ul className="divide-y divide-divider max-h-48 overflow-y-auto">
+            {actionItems.map(item => {
+              const colors = ACTION_TYPE_COLORS[item.action_type] ?? { bg: '#E5E7EB', fg: '#374151' }
+              return (
+                <li
+                  key={item.id}
+                  className="px-3 py-2 flex items-center gap-3 cursor-pointer hover:bg-background transition-colors"
+                  onClick={() => {
+                    void (async () => {
+                      const row = assets.find(a => a.id === item.asset_id)
+                      if (row) { setEditing(toDraft(row)); setIsNew(false); setError(null); return }
+                      const supabase = createClient()
+                      const { data } = await supabase
+                        .from('assets')
+                        .select('*, sites(id, name), units(id, unit_number), assigned_employee:employees!assigned_employee_id(id, name, surname)')
+                        .eq('id', item.asset_id)
+                        .maybeSingle()
+                      if (data) { setEditing(toDraft(data as AssetRow)); setIsNew(false); setError(null) }
+                    })()
+                  }}
+                >
+                  <span className="text-[10px] px-2 py-0.5 rounded-lg shrink-0" style={{ backgroundColor: colors.bg, color: colors.fg }}>
+                    {item.title}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13px] font-medium text-text-primary truncate">{item.asset_label}</p>
+                    <p className="text-[11px] text-text-secondary truncate">{item.detail}</p>
+                  </div>
+                  <span className="material-icons text-[16px] text-text-disabled">chevron_right</span>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between gap-2 px-4 py-2 border-b border-divider shrink-0 mt-2">
         <div className="flex items-center gap-2 overflow-x-auto">
           {filterChips.map(chip => {
             const active = statusFilter === chip.key
@@ -346,19 +500,6 @@ export default function AssetsPage() {
           </select>
         </div>
       </div>
-
-      {warrantyExpiringSoon > 0 && statusFilter !== 'warranty_expiring' && (
-        <button
-          type="button"
-          onClick={() => setStatusFilter('warranty_expiring')}
-          className="mx-4 mt-3 px-3 py-2 rounded-lg border border-[#F59E0B] bg-[#FFFBEB] flex items-center gap-2 shrink-0 text-left hover:opacity-90"
-        >
-          <span className="material-icons text-[16px]" style={{ color: '#D97706' }}>warning</span>
-          <p className="text-[12px] font-medium" style={{ color: '#92400E' }}>
-            {warrantyExpiringSoon} warrant{warrantyExpiringSoon !== 1 ? 'ies' : 'y'} expiring in 30 days — click to filter
-          </p>
-        </button>
-      )}
 
       {error && error !== 'not_linked' && (
         <p className="mx-4 mt-2 text-[12px] text-error">{error}</p>
@@ -433,8 +574,14 @@ export default function AssetsPage() {
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div className="flex flex-col gap-1">
-                <label className="text-xs text-text-secondary">Asset type</label>
-                <input value={editing.asset_type} onChange={e => setEditing(prev => prev ? { ...prev, asset_type: e.target.value } : prev)} className="dark-entry w-full" />
+                <label className="text-xs text-text-secondary">Asset type *</label>
+                <input
+                  value={editing.asset_type}
+                  onChange={e => setEditing(prev => prev ? { ...prev, asset_type: e.target.value } : prev)}
+                  placeholder="General"
+                  disabled={!canEdit}
+                  className="dark-entry w-full disabled:opacity-60"
+                />
               </div>
               <div className="flex flex-col gap-1">
                 <label className="text-xs text-text-secondary">Serial</label>

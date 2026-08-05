@@ -12,7 +12,32 @@ import {
   pageRange,
   totalPages,
 } from '@/lib/list-pagination'
+import { KpiTile } from '@/components/ui/KpiTile'
 import type { Contractor } from '@/types/database'
+
+type SupplierKpis = {
+  total: number
+  active: number
+  paymentHold: number
+  complianceHold: number
+  linkedInventory: number
+}
+
+type SupplierActionItem = {
+  id: string
+  supplier_id: string
+  supplier_name: string
+  action_type: string
+  title: string
+  detail: string
+}
+
+const ACTION_TYPE_COLORS: Record<string, { bg: string; fg: string }> = {
+  payment_hold:     { bg: '#FEF3C7', fg: '#92400E' },
+  compliance_hold:  { bg: '#FEE2E2', fg: '#991B1B' },
+  banking_pending:  { bg: '#DBEAFE', fg: '#1E40AF' },
+  inactive:         { bg: '#E5E7EB', fg: '#374151' },
+}
 
 export default function SuppliersPage() {
   const router = useRouter()
@@ -32,6 +57,10 @@ export default function SuppliersPage() {
   const [sessionToken, setSessionToken] = useState<string | null>(null)
   const [xeroImporting, setXeroImporting] = useState(false)
   const [xeroMsg, setXeroMsg] = useState<string | null>(null)
+  const [kpis, setKpis] = useState<SupplierKpis>({
+    total: 0, active: 0, paymentHold: 0, complianceHold: 0, linkedInventory: 0,
+  })
+  const [actionItems, setActionItems] = useState<SupplierActionItem[]>([])
 
   const canEdit = can(perms, PERM.suppliersEdit)
 
@@ -71,24 +100,114 @@ export default function SuppliersPage() {
       query = query.or(`name.ilike.%${q}%,contact_person.ilike.%${q}%,email.ilike.%${q}%,phone.ilike.%${q}%`)
     }
 
-    const { data, error: qErr, count } = await query.range(from, to)
-    if (qErr) {
-      setError(qErr.message)
+    const supplierScope = () =>
+      supabase
+        .from('contractors')
+        .select('id', { count: 'exact', head: true })
+        .eq('company_id', cId)
+        .or('partner_kind.eq.supplier,partner_kind.eq.both')
+
+    const [
+      pageRes,
+      totalRes,
+      activeRes,
+      payHoldRes,
+      compHoldRes,
+      invRes,
+      signalRes,
+      xStatusRes,
+      sessionRes,
+    ] = await Promise.all([
+      query.range(from, to),
+      supplierScope(),
+      supplierScope().eq('is_active', true),
+      supplierScope().eq('payment_hold', true),
+      supplierScope().eq('compliance_hold', true),
+      supabase
+        .from('inventory_items')
+        .select('id', { count: 'exact', head: true })
+        .eq('company_id', cId)
+        .not('supplier_contractor_id', 'is', null),
+      supabase
+        .from('contractors')
+        .select('id, name, is_active, payment_hold, compliance_hold, banking_verified, bank_name, bank_account')
+        .eq('company_id', cId)
+        .or('partner_kind.eq.supplier,partner_kind.eq.both')
+        .order('name')
+        .limit(300),
+      (supabase.rpc as any)('get_xero_connection_status', { p_company_id: cId }),
+      supabase.auth.getSession(),
+    ])
+
+    if (pageRes.error) {
+      setError(pageRes.error.message)
       setSuppliers([])
       setTotal(0)
     } else {
-      setSuppliers((data ?? []) as Contractor[])
-      setTotal(count ?? 0)
+      setSuppliers((pageRes.data ?? []) as Contractor[])
+      setTotal(pageRes.count ?? 0)
     }
 
-    const { data: xStatus } = await (supabase.rpc as any)('get_xero_connection_status', { p_company_id: cId })
+    setKpis({
+      total: totalRes.count ?? 0,
+      active: activeRes.count ?? 0,
+      paymentHold: payHoldRes.count ?? 0,
+      complianceHold: compHoldRes.count ?? 0,
+      linkedInventory: invRes.count ?? 0,
+    })
+
+    const signals = (signalRes.data ?? []) as {
+      id: string
+      name: string
+      is_active: boolean | null
+      payment_hold: boolean | null
+      compliance_hold: boolean | null
+      banking_verified: boolean | null
+      bank_name: string | null
+      bank_account: string | null
+    }[]
+    const actions: SupplierActionItem[] = []
+    for (const s of signals) {
+      if (s.payment_hold) {
+        actions.push({
+          id: `${s.id}-pay`,
+          supplier_id: s.id,
+          supplier_name: s.name,
+          action_type: 'payment_hold',
+          title: 'Payment hold',
+          detail: 'Payouts blocked for this supplier',
+        })
+      }
+      if (s.compliance_hold) {
+        actions.push({
+          id: `${s.id}-comp`,
+          supplier_id: s.id,
+          supplier_name: s.name,
+          action_type: 'compliance_hold',
+          title: 'Compliance hold',
+          detail: 'Compliance incomplete — review documents',
+        })
+      }
+      if (!s.banking_verified && s.bank_name && s.bank_account) {
+        actions.push({
+          id: `${s.id}-bank`,
+          supplier_id: s.id,
+          supplier_name: s.name,
+          action_type: 'banking_pending',
+          title: 'Banking pending verification',
+          detail: 'Bank details on file but not verified',
+        })
+      }
+    }
+    setActionItems(actions.slice(0, 25))
+
+    const xStatus = xStatusRes.data
     setXeroConnected(xStatus?.connected ?? false)
     if (xStatus?.connected) {
       const { data: linkedIds } = await (supabase.rpc as any)('get_xero_linked_records', { p_company_id: cId, p_record_type: 'contractor' })
       setXeroLinked(new Set((linkedIds ?? []) as string[]))
     }
-    const { data: { session } } = await supabase.auth.getSession()
-    setSessionToken(session?.access_token ?? null)
+    setSessionToken(sessionRes.data.session?.access_token ?? null)
     setLoading(false)
   }, [page, pageSize, searchDebounced])
 
@@ -196,6 +315,14 @@ export default function SuppliersPage() {
             </button>
           )}
           {canEdit && (
+            <button
+              className="h-9 px-3 text-[13px] rounded-lg border border-border text-text-primary hover:bg-surface-elevated transition-colors"
+              onClick={() => router.push('/dashboard/suppliers/import')}
+            >
+              Import CSV
+            </button>
+          )}
+          {canEdit && (
             <button className="btn-primary h-9 px-3 text-[13px]"
               onClick={() => router.push('/dashboard/suppliers/new')}>
               + Add supplier
@@ -204,7 +331,45 @@ export default function SuppliersPage() {
         </div>
       </div>
 
-      <div className="flex items-center justify-between px-4 py-2 border-b border-divider shrink-0 gap-3 flex-wrap">
+      <div className="mx-4 mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+        <KpiTile value={kpis.total} label="Total" bg="#1E293B" valueFg="#94A3B8" labelFg="#64748B" />
+        <KpiTile value={kpis.active} label="Active" bg="#0F2918" valueFg="#22C55E" labelFg="#4ADE80" />
+        <KpiTile value={kpis.paymentHold} label="Payment hold" bg="#1E293B" valueFg="#FCD34D" labelFg="#64748B" />
+        <KpiTile value={kpis.complianceHold} label="Compliance hold" bg="#1E293B" valueFg="#FCA5A5" labelFg="#64748B" />
+        <KpiTile value={kpis.linkedInventory} label="Linked stock" bg="#1E293B" valueFg="#94A3B8" labelFg="#64748B" />
+      </div>
+
+      {actionItems.length > 0 && (
+        <div className="mx-4 mt-3 card overflow-hidden">
+          <div className="px-3 py-2 border-b border-divider flex items-center justify-between">
+            <p className="text-[11px] font-semibold tracking-wider uppercase text-text-secondary">Action Centre</p>
+            <span className="text-[11px] text-text-disabled">{actionItems.length} item{actionItems.length !== 1 ? 's' : ''}</span>
+          </div>
+          <ul className="divide-y divide-divider max-h-48 overflow-y-auto">
+            {actionItems.map(item => {
+              const colors = ACTION_TYPE_COLORS[item.action_type] ?? { bg: '#E5E7EB', fg: '#374151' }
+              return (
+                <li
+                  key={item.id}
+                  className="px-3 py-2 flex items-center gap-3 cursor-pointer hover:bg-background transition-colors"
+                  onClick={() => router.push(`/dashboard/suppliers/${item.supplier_id}`)}
+                >
+                  <span className="text-[10px] px-2 py-0.5 rounded-lg shrink-0" style={{ backgroundColor: colors.bg, color: colors.fg }}>
+                    {item.title}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13px] font-medium text-text-primary truncate">{item.supplier_name}</p>
+                    <p className="text-[11px] text-text-secondary truncate">{item.detail}</p>
+                  </div>
+                  <span className="material-icons text-[16px] text-text-disabled">chevron_right</span>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between px-4 py-2 border-b border-divider shrink-0 gap-3 flex-wrap mt-2">
         <p className="text-xs text-text-secondary">
           {total === 0 ? '0 suppliers' : `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}`}
           <span className="text-text-disabled"> · Separate from contractors</span>

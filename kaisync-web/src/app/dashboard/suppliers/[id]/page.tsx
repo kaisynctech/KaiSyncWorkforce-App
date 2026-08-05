@@ -4,13 +4,17 @@ import { useCallback, useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { SectionCard, FormField, entryClass } from '@/components/SectionCard'
 import { FormSelect } from '@/components/FormSelect'
 import { Toggle } from '@/components/Toggle'
+import { ContractorActivityTab } from '@/components/ContractorActivityTab'
+import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
 import { isSupplierKind, PARTNER_KIND, type PartnerKind } from '@/lib/partner-kinds'
+import { updateSupplier } from '@/lib/suppliers'
 import type { ComplianceDocument, Contractor, InventoryItem } from '@/types/database'
 
-const TABS = ['Information', 'Payments', 'Inventory', 'Compliance'] as const
+const TABS = ['Information', 'Payments', 'Inventory', 'Compliance', 'Activity'] as const
 type Tab = (typeof TABS)[number]
 
 const ACCOUNT_TYPES = [
@@ -84,11 +88,24 @@ export default function SupplierDetailPage() {
   const [xeroConnected, setXeroConnected] = useState(false)
   const [xeroPushing, setXeroPushing] = useState(false)
   const [sessionToken, setSessionToken] = useState<string | null>(null)
+  const [perms, setPerms] = useState<PermissionSet | null>(null)
+
+  const canEdit = can(perms, PERM.suppliersEdit)
 
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
     const supabase = createClient()
+    const member = await resolveCurrentMember(supabase)
+    if (member) {
+      const { data: me } = await supabase
+        .from('employees')
+        .select('access_level')
+        .eq('id', member.employeeId)
+        .maybeSingle()
+      setPerms(await loadPermissions(supabase, member.companyId, me?.access_level))
+    }
+
     const { data: c, error: qErr } = await supabase
       .from('contractors')
       .select('*')
@@ -174,13 +191,18 @@ export default function SupplierDetailPage() {
   }, [tab, supplierId])
 
   async function handleSave() {
+    if (!canEdit) { setError('You do not have permission to edit suppliers.'); return }
     if (!name.trim()) { setError('Supplier name is required.'); return }
+    if (!supplier?.company_id) { setError('Company context missing.'); return }
     setSaving(true)
     setError(null)
     const supabase = createClient()
-    const { error: e } = await supabase
-      .from('contractors')
-      .update({
+    const result = await updateSupplier(supabase, {
+      companyId: supplier.company_id,
+      supplierId,
+      previousPartnerKind: supplier.partner_kind,
+      previousContractorCode: supplier.contractor_code,
+      payload: {
         name: name.trim(),
         partner_kind: partnerKind,
         registration_number: regNumber.trim() || null,
@@ -205,16 +227,16 @@ export default function SupplierDetailPage() {
         banking_verified: bankingVerified,
         payment_hold: paymentHold,
         compliance_hold: complianceHold,
-      })
-      .eq('id', supplierId)
+      },
+    })
 
-    if (e) setError(e.message)
+    if (!result.ok) setError(result.message)
     else setSupplier(prev => prev ? { ...prev, name: name.trim(), is_active: isActive, partner_kind: partnerKind } : prev)
     setSaving(false)
   }
 
   async function pushToXero() {
-    if (!supplier?.company_id || !sessionToken || xeroPushing) return
+    if (!canEdit || !supplier?.company_id || !sessionToken || xeroPushing) return
     setXeroPushing(true)
     try {
       const resp = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/xero-sync-contacts`, {
@@ -256,7 +278,7 @@ export default function SupplierDetailPage() {
             <p className="text-[11px] text-text-secondary">
               Supplier{partnerKind === PARTNER_KIND.both ? ' · also contractor' : ''}
             </p>
-            {xeroConnected && (
+            {xeroConnected && canEdit && (
               <div className="flex items-center gap-2 mt-1">
                 {xeroLink ? (
                   <>
@@ -276,15 +298,22 @@ export default function SupplierDetailPage() {
                 )}
               </div>
             )}
+            {xeroConnected && !canEdit && xeroLink && (
+              <span className="inline-flex items-center gap-1 text-[12px] text-green-400 mt-1">
+                <span className="text-[14px]">✓</span> Synced to Xero
+              </span>
+            )}
           </div>
         </div>
-        <button
-          onClick={() => void handleSave()}
-          disabled={saving}
-          className="h-10 px-5 text-[14px] font-semibold rounded-lg bg-primary text-white hover:bg-primary-dark disabled:opacity-50 transition-colors shrink-0"
-        >
-          {saving ? 'Saving…' : 'Save'}
-        </button>
+        {canEdit && (
+          <button
+            onClick={() => void handleSave()}
+            disabled={saving}
+            className="h-10 px-5 text-[14px] font-semibold rounded-lg bg-primary text-white hover:bg-primary-dark disabled:opacity-50 transition-colors shrink-0"
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        )}
       </div>
 
       {error && <p className="px-4 py-2 text-error text-[13px] shrink-0">{error}</p>}
@@ -501,6 +530,12 @@ export default function SupplierDetailPage() {
                 </ul>
               )}
             </SectionCard>
+          </div>
+        )}
+
+        {tab === 'Activity' && supplier?.company_id && (
+          <div className="flex-1 overflow-y-auto p-4">
+            <ContractorActivityTab companyId={supplier.company_id} contractorId={supplierId} />
           </div>
         )}
       </div>

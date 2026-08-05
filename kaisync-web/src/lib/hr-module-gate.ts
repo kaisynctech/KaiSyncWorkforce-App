@@ -47,6 +47,9 @@ export function hrModuleDeniedMessage(flag: HrModuleFlag): string {
     contractors: 'Contractors',
     projects: 'Projects',
     clients: 'Clients',
+    suppliers: 'Suppliers',
+    assets: 'Assets',
+    inventory: 'Inventory',
   }
   const name = labels[flag] ?? 'This module'
   return `${name} is disabled for your company. Enable it in Settings → Modules.`
@@ -57,6 +60,9 @@ export function hrPermissionDeniedMessage(flag: HrModuleFlag): string {
     contractors: 'Contractors',
     projects: 'Projects',
     clients: 'Clients',
+    suppliers: 'Suppliers',
+    assets: 'Assets',
+    inventory: 'Inventory',
   }
   const name = labels[flag] ?? 'This module'
   return `You do not have permission to view ${name}. Ask an owner to grant access in role permissions.`
