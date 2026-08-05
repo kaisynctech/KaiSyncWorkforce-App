@@ -1,11 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
 import { PARTNER_KIND, type PartnerKind } from '@/lib/partner-kinds'
+import { createSupplier } from '@/lib/suppliers'
 
 const ACCOUNT_TYPES = [
   { value: 'cheque', label: 'Cheque / Current' },
@@ -59,11 +61,36 @@ export default function NewSupplierPage() {
   const [paymentMethod, setPaymentMethod] = useState('eft')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [perms, setPerms] = useState<PermissionSet | null>(null)
+  const [permsLoaded, setPermsLoaded] = useState(false)
+
+  const canEdit = can(perms, PERM.suppliersEdit)
+  const canCreateDual = can(perms, PERM.contractorsCreate)
+
+  useEffect(() => {
+    void (async () => {
+      const supabase = createClient()
+      const member = await resolveCurrentMember(supabase)
+      if (!member) { setPermsLoaded(true); return }
+      const { data: me } = await supabase
+        .from('employees')
+        .select('access_level')
+        .eq('id', member.employeeId)
+        .maybeSingle()
+      setPerms(await loadPermissions(supabase, member.companyId, me?.access_level))
+      setPermsLoaded(true)
+    })()
+  }, [])
 
   async function save() {
+    if (!canEdit) { setError('You do not have permission to create suppliers.'); return }
     if (!name.trim()) { setError('Supplier name is required.'); return }
     if (partnerKind !== PARTNER_KIND.supplier && partnerKind !== PARTNER_KIND.both) {
       setError('Choose Supplier or Contractor & supplier.')
+      return
+    }
+    if (partnerKind === PARTNER_KIND.both && !canCreateDual) {
+      setError('Creating a dual contractor & supplier requires contractors.create permission.')
       return
     }
     setBusy(true)
@@ -72,49 +99,49 @@ export default function NewSupplierPage() {
     const member = await resolveCurrentMember(supabase)
     if (!member) { setError('Account not linked to an active employee.'); setBusy(false); return }
 
-    const payload = {
-      company_id: member.companyId,
-      name: name.trim(),
-      partner_kind: partnerKind,
-      contractor_code: null as string | null,
-      contact_person: contactPerson.trim() || null,
-      phone: phone.trim() || null,
-      email: email.trim() || null,
-      address: address.trim() || null,
-      tax_number: taxNumber.trim() || null,
-      registration_number: registrationNumber.trim() || null,
-      is_vat_registered: isVatRegistered,
-      vat_number: isVatRegistered ? (vatNumber.trim() || null) : null,
-      notes: notes.trim() || null,
-      bank_name: bankName.trim() || null,
-      bank_account: bankAccount.trim() || null,
-      account_holder_name: accountHolder.trim() || null,
-      bank_branch_code: branchCode.trim() || null,
-      account_type: accountType || null,
-      payment_terms: paymentTerms || null,
-      preferred_payment_method: paymentMethod || null,
-      is_active: true,
-      rating: 0,
-      banking_verified: false,
-      payment_hold: false,
-      compliance_hold: false,
-      portal_enabled: false,
-    }
+    const created = await createSupplier(supabase, {
+      companyId: member.companyId,
+      name,
+      partnerKind,
+      contactPerson,
+      phone,
+      email,
+      address,
+      taxNumber,
+      registrationNumber,
+      isVatRegistered,
+      vatNumber,
+      notes,
+      bankName,
+      bankAccount,
+      accountHolderName: accountHolder,
+      bankBranchCode: branchCode,
+      accountType,
+      paymentTerms,
+      preferredPaymentMethod: paymentMethod,
+    })
 
-    const { data, error: insertErr } = await supabase
-      .from('contractors')
-      .insert(payload)
-      .select('id')
-      .single()
-
-    if (insertErr) {
-      setError(insertErr.message)
+    if (!created.ok) {
+      setError(created.message)
       setBusy(false)
       return
     }
 
-    router.push(`/dashboard/suppliers/${data.id}`)
+    router.push(`/dashboard/suppliers/${created.data.id}`)
     setBusy(false)
+  }
+
+  if (permsLoaded && !canEdit) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center space-y-2 px-4">
+          <span className="material-icons text-[48px] text-text-disabled">lock</span>
+          <p className="text-[14px] font-semibold text-text-primary">Permission required</p>
+          <p className="text-[13px] text-text-secondary">You do not have permission to create suppliers.</p>
+          <Link href="/dashboard/suppliers" className="text-primary text-[13px]">Back to suppliers</Link>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -131,7 +158,7 @@ export default function NewSupplierPage() {
         </div>
         <button
           onClick={() => void save()}
-          disabled={busy}
+          disabled={busy || !canEdit}
           className="h-10 px-5 text-[14px] font-semibold rounded-lg bg-primary text-white hover:bg-primary-dark disabled:opacity-50 transition-colors"
         >
           {busy ? 'Saving…' : 'Save'}
@@ -154,13 +181,15 @@ export default function NewSupplierPage() {
               className="dark-entry w-full"
             >
               <option value={PARTNER_KIND.supplier}>Supplier only</option>
-              <option value={PARTNER_KIND.both}>Also acts as contractor</option>
+              <option value={PARTNER_KIND.both} disabled={!canCreateDual}>
+                Also acts as contractor{!canCreateDual ? ' (needs contractors.create)' : ''}
+              </option>
             </select>
           </Field>
           {partnerKind === PARTNER_KIND.both && (
             <p className="text-[11px] text-text-secondary">
-              “Also acts as contractor” will also list this partner under Contractors for job assignment.
-              Portal code is managed from the Contractors module if needed.
+              Dual partners get a contractor code and appear under Contractors for job assignment.
+              Requires contractors.create permission.
             </p>
           )}
           <Field label="Supplier / trading name *">
