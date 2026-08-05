@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { logContractorEvent } from '@/lib/contractor-events'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import {
   partnerKindFromQuery,
@@ -160,6 +161,17 @@ function NewContractorForm() {
       setBusy(false)
       return
     }
+
+    void logContractorEvent(supabase, {
+      companyId: member.companyId,
+      screen: 'HrContractorCreate',
+      action: 'contractor.created',
+      meta: {
+        contractor_id: created.data.id,
+        name: name.trim(),
+        partner_kind: partnerKind,
+      },
+    })
 
     router.push(`/dashboard/contractors/${created.data.id}`)
     setBusy(false)

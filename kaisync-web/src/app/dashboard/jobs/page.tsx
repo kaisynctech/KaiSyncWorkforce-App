@@ -1,14 +1,30 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
+import {
+  DEFAULT_PAGE_SIZE,
+  PAGE_SIZE_OPTIONS,
+  escapeIlike,
+  pageRange,
+  totalPages,
+} from '@/lib/list-pagination'
+import { KpiTile } from '@/components/ui/KpiTile'
 import { cn, formatDate, formatCurrency } from '@/lib/utils'
 import type { Job, JobStatus } from '@/types/database'
 
 type Scope = 'all' | 'mine'
+
+type JobKpis = {
+  total: number
+  open: number
+  inProgress: number
+  unassigned: number
+}
 
 const STATUS_OPTIONS: { value: JobStatus | 'all'; label: string }[] = [
   { value: 'all', label: 'All' },
@@ -58,75 +74,108 @@ export default function JobsPage() {
   const router = useRouter()
 
   const [jobs, setJobs] = useState<Job[]>([])
-  const [companyId, setCompanyId] = useState<string | null>(null)
-  const [myEmployeeId, setMyEmployeeId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [scope, setScope] = useState<Scope>('all')
   const [search, setSearch] = useState('')
+  const [searchDebounced, setSearchDebounced] = useState('')
   const [statusFilter, setStatusFilter] = useState<JobStatus | 'all'>('all')
   const [filterOpen, setFilterOpen] = useState(false)
   const [dateFilter, setDateFilter] = useState(false)
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
+  const [total, setTotal] = useState(0)
+  const [perms, setPerms] = useState<PermissionSet | null>(null)
+  const [kpis, setKpis] = useState<JobKpis>({ total: 0, open: 0, inProgress: 0, unassigned: 0 })
 
-  useEffect(() => { loadJobs() }, [scope])
+  const canCreate = can(perms, PERM.jobsCreate)
+  const canViewAll = can(perms, PERM.jobsViewAll)
 
-  async function loadJobs() {
+  useEffect(() => {
+    const t = setTimeout(() => setSearchDebounced(search.trim()), 300)
+    return () => clearTimeout(t)
+  }, [search])
+
+  useEffect(() => { setPage(1) }, [searchDebounced, statusFilter, scope, pageSize, dateFrom, dateTo, dateFilter])
+
+  const loadJobs = useCallback(async () => {
     setLoading(true)
     const supabase = createClient()
     const member = await resolveCurrentMember(supabase)
     if (!member) { setError('not_linked'); setLoading(false); return }
-    setCompanyId(member.companyId)
-    setMyEmployeeId(member.employeeId)
 
+    const { data: me } = await supabase
+      .from('employees')
+      .select('access_level')
+      .eq('id', member.employeeId)
+      .maybeSingle()
+    const nextPerms = await loadPermissions(supabase, member.companyId, me?.access_level)
+    setPerms(nextPerms)
+
+    const effectiveScope: Scope =
+      scope === 'all' && !can(nextPerms, PERM.jobsViewAll) ? 'mine' : scope
+
+    const jobScope = () =>
+      supabase.from('jobs').select('id', { count: 'exact', head: true }).eq('company_id', member.companyId)
+
+    const { from, to } = pageRange(page, pageSize)
     let query = supabase
       .from('jobs')
-      .select('*, clients(name, client_code)')
+      .select('*, clients(name, client_code)', { count: 'exact' })
       .eq('company_id', member.companyId)
       .order('created_at', { ascending: false })
 
-    if (scope === 'mine') {
+    if (effectiveScope === 'mine') {
       query = query.or(`assignee_employee_id.eq.${member.employeeId},assigned_employee_ids.cs.{${member.employeeId}}`)
     }
+    if (statusFilter !== 'all') query = query.eq('status', statusFilter)
+    if (searchDebounced) {
+      const q = escapeIlike(searchDebounced)
+      query = query.or(`title.ilike.%${q}%,job_code.ilike.%${q}%`)
+    }
+    if (dateFilter && dateFrom) query = query.gte('scheduled_start', dateFrom)
+    if (dateFilter && dateTo) query = query.lte('scheduled_end', `${dateTo}T23:59:59`)
 
-    const { data, error: qErr } = await query
-    if (qErr) {
-      console.error('[Jobs] load failed:', qErr.message)
-      setError(qErr.message)
+    const [pageRes, totalRes, openRes, inProgRes, unassignedRes] = await Promise.all([
+      query.range(from, to),
+      jobScope(),
+      jobScope().in('status', ['open', 'scheduled', 'in_progress']),
+      jobScope().eq('status', 'in_progress'),
+      jobScope().is('assignee_employee_id', null).neq('status', 'completed').neq('status', 'cancelled'),
+    ])
+
+    if (pageRes.error) {
+      setError(pageRes.error.message)
       setJobs([])
+      setTotal(0)
     } else {
       setError(null)
-      setJobs((data ?? []) as Job[])
+      setJobs((pageRes.data ?? []) as Job[])
+      setTotal(pageRes.count ?? 0)
     }
-    setLoading(false)
-  }
 
-  const filtered = jobs.filter(job => {
-    if (statusFilter !== 'all' && job.status !== statusFilter) return false
-    if (dateFilter) {
-      if (dateFrom && job.scheduled_start && job.scheduled_start < dateFrom) return false
-      if (dateTo && job.scheduled_end && job.scheduled_end > dateTo + 'T23:59:59') return false
-    }
-    if (search) {
-      const q = search.toLowerCase()
-      const clientName = (job.clients as { name: string } | null | undefined)?.name ?? ''
-      return (
-        (job.title ?? '').toLowerCase().includes(q) ||
-        clientName.toLowerCase().includes(q) ||
-        (job.job_code ?? '').toLowerCase().includes(q) ||
-        job.id.toLowerCase().includes(q)
-      )
-    }
-    return true
-  })
+    setKpis({
+      total: totalRes.count ?? 0,
+      open: openRes.count ?? 0,
+      inProgress: inProgRes.count ?? 0,
+      unassigned: unassignedRes.count ?? 0,
+    })
+    setLoading(false)
+  }, [scope, page, pageSize, searchDebounced, statusFilter, dateFilter, dateFrom, dateTo])
+
+  useEffect(() => { void loadJobs() }, [loadJobs])
+
+  const filtered = jobs
+  const pages = totalPages(total, pageSize)
 
   function downloadCSV() {
-    const headers = ['ID', 'Title', 'Client', 'Status', 'Priority', 'Start', 'End', 'Estimated Cost']
+    const headers = ['Code', 'Title', 'Client', 'Status', 'Priority', 'Start', 'End', 'Estimated Cost']
     const rows = filtered.map(job => {
       const client = (job.clients as { name: string } | undefined)?.name ?? ''
       return [
-        job.id.slice(0, 8).toUpperCase(),
+        job.job_code ?? job.id.slice(0, 8).toUpperCase(),
         job.title,
         client,
         job.status,
@@ -178,13 +227,15 @@ export default function JobsPage() {
             <span className="material-icons text-[16px]">download</span>
             Export
           </button>
-          <Link
-            href="/dashboard/jobs/new"
-            className="flex items-center gap-1.5 h-9 px-3 rounded-sm bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark transition-colors"
-          >
-            <span className="material-icons text-[16px]">add</span>
-            New Job
-          </Link>
+          {canCreate && (
+            <Link
+              href="/dashboard/jobs/new"
+              className="flex items-center gap-1.5 h-9 px-3 rounded-sm bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark transition-colors"
+            >
+              <span className="material-icons text-[16px]">add</span>
+              New Job
+            </Link>
+          )}
         </div>
       </div>
 
@@ -194,17 +245,25 @@ export default function JobsPage() {
         </div>
       )}
 
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <KpiTile value={kpis.total} label="Total" bg="#1E293B" valueFg="#94A3B8" labelFg="#64748B" />
+        <KpiTile value={kpis.open} label="Open" bg="#0F2918" valueFg="#22C55E" labelFg="#4ADE80" />
+        <KpiTile value={kpis.inProgress} label="In progress" bg="#1E293B" valueFg="#FCD34D" labelFg="#64748B" />
+        <KpiTile value={kpis.unassigned} label="Unassigned" bg="#1E293B" valueFg="#FCA5A5" labelFg="#64748B" />
+      </div>
+
       {/* Scope toggle */}
       <div className="grid grid-cols-2 gap-2">
         {([
-          { value: 'all' as Scope, label: `All Jobs (${jobs.length})` },
-          { value: 'mine' as Scope, label: 'My Jobs' },
-        ]).map(({ value, label }) => (
+          { value: 'all' as Scope, label: `All Jobs${canViewAll ? ` (${kpis.total})` : ''}`, disabled: !canViewAll },
+          { value: 'mine' as Scope, label: 'My Jobs', disabled: false },
+        ]).map(({ value, label, disabled }) => (
           <button
             key={value}
-            onClick={() => setScope(value)}
+            onClick={() => !disabled && setScope(value)}
+            disabled={disabled}
             className={cn(
-              'h-9 rounded-[10px] text-[12px] font-medium transition-colors',
+              'h-9 rounded-[10px] text-[12px] font-medium transition-colors disabled:opacity-40',
               scope === value ? 'bg-primary text-white' : 'bg-surface text-text-secondary border border-divider hover:text-text-primary'
             )}
           >
@@ -213,7 +272,14 @@ export default function JobsPage() {
         ))}
       </div>
 
-      <p className="text-[12px] text-text-secondary">{filtered.length} job{filtered.length !== 1 ? 's' : ''}</p>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <p className="text-[12px] text-text-secondary">
+          {total === 0 ? '0 jobs' : `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}`}
+        </p>
+        <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} className="dark-entry h-8 text-[12px] py-0 w-auto">
+          {PAGE_SIZE_OPTIONS.map(n => <option key={n} value={n}>{n}/page</option>)}
+        </select>
+      </div>
 
       {/* Filter toolbar */}
       <div className="space-y-2">
@@ -354,6 +420,12 @@ export default function JobsPage() {
             </table>
           </div>
         )}
+      </div>
+
+      <div className="flex items-center justify-between">
+        <button disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} className="btn-outlined h-8 px-3 text-[12px] disabled:opacity-40">Previous</button>
+        <span className="text-[12px] text-text-secondary">Page {page} of {pages}</span>
+        <button disabled={page >= pages} onClick={() => setPage(p => p + 1)} className="btn-outlined h-8 px-3 text-[12px] disabled:opacity-40">Next</button>
       </div>
     </div>
   )

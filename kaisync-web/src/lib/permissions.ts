@@ -22,6 +22,10 @@ export const PERM = {
   projectsViewAll: 'projects.view_all',
   projectsCreate: 'projects.create',
   projectsEdit: 'projects.edit',
+  jobsView: 'jobs.view',
+  jobsViewAll: 'jobs.view_all',
+  jobsCreate: 'jobs.create',
+  jobsEdit: 'jobs.edit',
 } as const
 
 export type PermissionKey = (typeof PERM)[keyof typeof PERM]
@@ -36,6 +40,7 @@ const FALLBACK: Record<string, Partial<Record<PermissionKey, boolean>>> = {
     [PERM.contractorsView]: true, [PERM.contractorsCreate]: true, [PERM.contractorsEdit]: true,
     [PERM.clientsView]: true, [PERM.clientsEdit]: true,
     [PERM.projectsView]: true, [PERM.projectsViewAll]: true, [PERM.projectsCreate]: true, [PERM.projectsEdit]: true,
+    [PERM.jobsView]: true, [PERM.jobsViewAll]: true, [PERM.jobsCreate]: true, [PERM.jobsEdit]: true,
   },
   hr: {
     [PERM.inventoryView]: true, [PERM.inventoryEdit]: true,
@@ -44,6 +49,7 @@ const FALLBACK: Record<string, Partial<Record<PermissionKey, boolean>>> = {
     [PERM.contractorsView]: true, [PERM.contractorsCreate]: true, [PERM.contractorsEdit]: true,
     [PERM.clientsView]: true, [PERM.clientsEdit]: true,
     [PERM.projectsView]: true, [PERM.projectsViewAll]: true, [PERM.projectsCreate]: true, [PERM.projectsEdit]: true,
+    [PERM.jobsView]: true, [PERM.jobsViewAll]: true, [PERM.jobsCreate]: true, [PERM.jobsEdit]: true,
   },
   hr_admin: {
     [PERM.inventoryView]: true, [PERM.inventoryEdit]: true,
@@ -52,6 +58,7 @@ const FALLBACK: Record<string, Partial<Record<PermissionKey, boolean>>> = {
     [PERM.contractorsView]: true, [PERM.contractorsCreate]: true, [PERM.contractorsEdit]: true,
     [PERM.clientsView]: true, [PERM.clientsEdit]: true,
     [PERM.projectsView]: true, [PERM.projectsViewAll]: true, [PERM.projectsCreate]: true, [PERM.projectsEdit]: true,
+    [PERM.jobsView]: true, [PERM.jobsViewAll]: true, [PERM.jobsCreate]: true, [PERM.jobsEdit]: true,
   },
   manager: {
     [PERM.inventoryView]: true, [PERM.inventoryEdit]: true,
@@ -60,6 +67,7 @@ const FALLBACK: Record<string, Partial<Record<PermissionKey, boolean>>> = {
     [PERM.contractorsView]: true, [PERM.contractorsCreate]: true, [PERM.contractorsEdit]: true,
     [PERM.clientsView]: true, [PERM.clientsEdit]: true,
     [PERM.projectsView]: true, [PERM.projectsViewAll]: false, [PERM.projectsCreate]: true, [PERM.projectsEdit]: true,
+    [PERM.jobsView]: true, [PERM.jobsViewAll]: false, [PERM.jobsCreate]: true, [PERM.jobsEdit]: true,
   },
   employee: {
     [PERM.inventoryView]: true, [PERM.inventoryEdit]: false,
@@ -68,6 +76,7 @@ const FALLBACK: Record<string, Partial<Record<PermissionKey, boolean>>> = {
     [PERM.contractorsView]: false, [PERM.contractorsCreate]: false, [PERM.contractorsEdit]: false,
     [PERM.clientsView]: true, [PERM.clientsEdit]: false,
     [PERM.projectsView]: true, [PERM.projectsViewAll]: false, [PERM.projectsCreate]: false, [PERM.projectsEdit]: false,
+    [PERM.jobsView]: true, [PERM.jobsViewAll]: false, [PERM.jobsCreate]: false, [PERM.jobsEdit]: false,
   },
 }
 

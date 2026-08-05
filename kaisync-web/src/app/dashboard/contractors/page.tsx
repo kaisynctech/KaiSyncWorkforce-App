@@ -7,9 +7,16 @@ import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { FilterChip } from '@/components/ui/FilterChip'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { KpiTile } from '@/components/ui/KpiTile'
-import { isContractorKind } from '@/lib/partner-kinds'
 import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
+import {
+  DEFAULT_PAGE_SIZE,
+  PAGE_SIZE_OPTIONS,
+  escapeIlike,
+  pageRange,
+  totalPages,
+} from '@/lib/list-pagination'
 import type { Contractor, ContractorActionItem } from '@/types/database'
+import * as XLSX from 'xlsx'
 
 type FilterValue = 'active' | 'inactive' | 'all'
 
@@ -62,9 +69,20 @@ export default function ContractorsPage() {
   const [xeroMsg,       setXeroMsg]       = useState<string | null>(null)
   const [perms, setPerms] = useState<PermissionSet | null>(null)
   const [kpis, setKpis] = useState<ContractorKpis>({ active: 0, pendingCompliance: 0, pendingPayments: 0 })
+  const [searchDebounced, setSearchDebounced] = useState('')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
+  const [total, setTotal] = useState(0)
 
   const canCreate = can(perms, PERM.contractorsCreate)
   const canEdit = can(perms, PERM.contractorsEdit)
+
+  useEffect(() => {
+    const t = setTimeout(() => setSearchDebounced(searchText.trim()), 300)
+    return () => clearTimeout(t)
+  }, [searchText])
+
+  useEffect(() => { setPage(1) }, [searchDebounced, filter, pageSize])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -80,25 +98,50 @@ export default function ContractorsPage() {
     setPerms(await loadPermissions(supabase, member.companyId, me?.access_level))
 
     const today = new Date().toISOString().slice(0, 10)
-    const [cRes, aRes, snapRes] = await Promise.all([
-      supabase.from('contractors').select('*').eq('company_id', member.companyId).order('name'),
+    const contractorScope = () =>
+      supabase
+        .from('contractors')
+        .select('id', { count: 'exact', head: true })
+        .eq('company_id', member.companyId)
+        .or('partner_kind.eq.contractor,partner_kind.eq.both,partner_kind.is.null')
+
+    const { from, to } = pageRange(page, pageSize)
+    let listQuery = supabase
+      .from('contractors')
+      .select('*', { count: 'exact' })
+      .eq('company_id', member.companyId)
+      .or('partner_kind.eq.contractor,partner_kind.eq.both,partner_kind.is.null')
+      .order('name')
+
+    if (filter === 'active') listQuery = listQuery.eq('is_active', true)
+    if (filter === 'inactive') listQuery = listQuery.eq('is_active', false)
+    if (searchDebounced) {
+      const q = escapeIlike(searchDebounced)
+      listQuery = listQuery.or(`name.ilike.%${q}%,contact_person.ilike.%${q}%,contractor_code.ilike.%${q}%`)
+    }
+
+    const [cRes, aRes, snapRes, activeRes, holdRes] = await Promise.all([
+      listQuery.range(from, to),
       supabase.rpc('hr_get_contractor_action_items', { p_company_id: member.companyId }),
       supabase.rpc('hr_get_contractors_snapshot', {
         p_company_id: member.companyId,
         p_from: today,
         p_to: today,
       }),
+      contractorScope().eq('is_active', true),
+      contractorScope().eq('compliance_hold', true),
     ])
 
     if (cRes.error) {
       setError(cRes.error.message)
+      setContractors([])
+      setTotal(0)
       setLoading(false)
       return
     }
 
-    const rows = ((cRes.data ?? []) as Contractor[])
-      .filter(c => isContractorKind(c.partner_kind) || !c.partner_kind)
-    setContractors(rows)
+    setContractors((cRes.data ?? []) as Contractor[])
+    setTotal(cRes.count ?? 0)
 
     const actionRaw = aRes.data
     const actionList = Array.isArray(actionRaw)
@@ -113,10 +156,9 @@ export default function ContractorsPage() {
       pending_compliance?: number
       pending_payments?: number
     }
-    // Scope active/compliance to contractor-kind rows; payments come from snapshot RPC.
     setKpis({
-      active: rows.filter(c => c.is_active).length,
-      pendingCompliance: rows.filter(c => c.compliance_hold).length,
+      active: activeRes.count ?? Number(snap.active ?? 0),
+      pendingCompliance: holdRes.count ?? Number(snap.pending_compliance ?? 0),
       pendingPayments: Number(snap.pending_payments ?? 0),
     })
 
@@ -131,23 +173,46 @@ export default function ContractorsPage() {
     const { data: { session } } = await supabase.auth.getSession()
     setSessionToken(session?.access_token ?? null)
     setLoading(false)
-  }, [])
+  }, [page, pageSize, filter, searchDebounced])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { void load() }, [load])
 
-  const filtered = contractors.filter(c => {
-    if (filter === 'active' && !c.is_active) return false
-    if (filter === 'inactive' && c.is_active) return false
-    if (searchText) {
-      const q = searchText.toLowerCase()
-      return (
-        c.name.toLowerCase().includes(q) ||
-        (c.contact_person ?? '').toLowerCase().includes(q) ||
-        (c.contractor_code ?? '').toLowerCase().includes(q)
-      )
+  const filtered = contractors
+
+  async function exportCsv() {
+    if (!companyId) return
+    const supabase = createClient()
+    let query = supabase
+      .from('contractors')
+      .select('name, contractor_code, partner_kind, contact_person, phone, email, is_active, payment_hold, compliance_hold')
+      .eq('company_id', companyId)
+      .or('partner_kind.eq.contractor,partner_kind.eq.both,partner_kind.is.null')
+      .order('name')
+      .limit(5000)
+    if (filter === 'active') query = query.eq('is_active', true)
+    if (filter === 'inactive') query = query.eq('is_active', false)
+    if (searchDebounced) {
+      const q = escapeIlike(searchDebounced)
+      query = query.or(`name.ilike.%${q}%,contact_person.ilike.%${q}%,contractor_code.ilike.%${q}%`)
     }
-    return true
-  })
+    const { data, error: qErr } = await query
+    if (qErr) { setError(qErr.message); return }
+    const rows = (data ?? []).map(c => ({
+      Name: c.name,
+      Code: c.contractor_code ?? '',
+      Kind: c.partner_kind ?? 'contractor',
+      Contact: c.contact_person ?? '',
+      Phone: c.phone ?? '',
+      Email: c.email ?? '',
+      Active: c.is_active === false ? 'No' : 'Yes',
+      'Payment hold': c.payment_hold ? 'Yes' : 'No',
+      'Compliance hold': c.compliance_hold ? 'Yes' : 'No',
+    }))
+    const ws = XLSX.utils.json_to_sheet(rows)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Contractors')
+    XLSX.writeFile(wb, `contractors_export_${new Date().toISOString().slice(0, 10)}.xlsx`)
+  }
 
   const fmtDate = (d: string) =>
     new Intl.DateTimeFormat('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(d))
@@ -263,8 +328,16 @@ export default function ContractorsPage() {
         <FilterChip label="Active"   active={filter === 'active'}   onClick={() => setFilter('active')} />
         <FilterChip label="Inactive" active={filter === 'inactive'} onClick={() => setFilter('inactive')} />
         <FilterChip label="All"      active={filter === 'all'}      onClick={() => setFilter('all')} />
-        <span className="ml-2 text-[12px] text-text-secondary flex-1">{filtered.length} contractors</span>
-        <button onClick={load} className="text-[13px] text-primary px-2 hover:opacity-70 transition-opacity">Refresh</button>
+        <span className="ml-2 text-[12px] text-text-secondary flex-1">
+          {total === 0 ? '0 contractors' : `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}`}
+        </span>
+        <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} className="dark-entry h-8 text-[12px] py-0 w-auto">
+          {PAGE_SIZE_OPTIONS.map(n => <option key={n} value={n}>{n}/page</option>)}
+        </select>
+        <button onClick={() => void exportCsv()} className="h-8 px-3 text-[13px] rounded-lg border border-border text-text-primary font-medium hover:bg-surface-elevated transition-colors">
+          Export
+        </button>
+        <button onClick={() => void load()} className="text-[13px] text-primary px-2 hover:opacity-70 transition-opacity">Refresh</button>
         {canEdit && xeroConnected && (
           <button
             onClick={syncAllToXero}
@@ -471,6 +544,17 @@ export default function ContractorsPage() {
               )}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between px-4 py-3 border-t border-divider">
+        <span className="text-[12px] text-text-secondary">
+          {total === 0 ? '0 contractors' : `Showing ${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}`}
+        </span>
+        <div className="flex items-center gap-2">
+          <button disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} className="btn-outlined h-8 px-3 text-[12px] disabled:opacity-40">Previous</button>
+          <span className="text-[12px] text-text-secondary">Page {page} of {totalPages(total, pageSize)}</span>
+          <button disabled={page >= totalPages(total, pageSize)} onClick={() => setPage(p => p + 1)} className="btn-outlined h-8 px-3 text-[12px] disabled:opacity-40">Next</button>
         </div>
       </div>
     </div>

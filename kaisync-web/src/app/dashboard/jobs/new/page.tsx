@@ -7,6 +7,8 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { SectionCard, FormField, entryClass } from '@/components/SectionCard'
 import { FormSelect } from '@/components/FormSelect'
+import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
+import { createJob } from '@/lib/jobs'
 import type { Client, Employee } from '@/types/database'
 
 export default function CreateJobPage() {
@@ -24,9 +26,11 @@ function CreateJobInner() {
   const preselectedClientId = searchParams.get('clientId') ?? ''
 
   const [companyId, setCompanyId] = useState<string | null>(null)
+  const [employeeId, setEmployeeId] = useState<string | null>(null)
   const [clients, setClients] = useState<Client[]>([])
   const [deals, setDeals] = useState<{ id: string; title: string; project_code: string | null; client_id: string | null }[]>([])
   const [employees, setEmployees] = useState<Pick<Employee, 'id' | 'name' | 'surname'>[]>([])
+  const [perms, setPerms] = useState<PermissionSet | null>(null)
 
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -44,20 +48,26 @@ function CreateJobInner() {
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
-  useEffect(() => { loadContext() }, [])
+  const canCreate = can(perms, PERM.jobsCreate)
+
+  useEffect(() => { void loadContext() }, [])
 
   async function loadContext() {
     const supabase = createClient()
     const member = await resolveCurrentMember(supabase)
     if (!member) { setError('not_linked'); return }
     setCompanyId(member.companyId)
+    setEmployeeId(member.employeeId)
 
-    const [cl, emp, dl] = await Promise.all([
+    const [cl, emp, dl, me] = await Promise.all([
       supabase.from('clients').select('id, name, client_code').eq('company_id', member.companyId).order('name'),
       supabase.from('employees').select('id, name, surname')
         .eq('company_id', member.companyId).eq('is_active', true).order('name'),
       supabase.from('client_deals').select('id, title, project_code, client_id').eq('company_id', member.companyId).order('title'),
+      supabase.from('employees').select('access_level').eq('id', member.employeeId).maybeSingle(),
     ])
+
+    setPerms(await loadPermissions(supabase, member.companyId, me.data?.access_level))
 
     const dealRows = (dl.data ?? []) as { id: string; title: string; project_code: string | null; client_id: string | null }[]
     setClients((cl.data ?? []) as Client[])
@@ -75,6 +85,7 @@ function CreateJobInner() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (!canCreate) { setError('You do not have permission to create jobs.'); return }
     if (!companyId || !title.trim()) {
       setError('Job title is required.')
       return
@@ -90,30 +101,27 @@ function CreateJobInner() {
       : null
 
     const supabase = createClient()
-    const { error: insertError } = await supabase
-      .from('jobs')
-      .insert({
-        company_id: companyId,
-        title: title.trim(),
-        description: description.trim() || null,
-        priority,
-        estimated_cost: estimatedCost ? parseFloat(estimatedCost) : null,
-        scheduled_start: scheduledStart,
-        scheduled_end: scheduledEnd,
-        client_id: clientId || null,
-        deal_id: dealId || null,
-        address: address.trim() || null,
-        assignee_employee_id: assignedEmployeeId || null,
-        status: 'open',
-      })
-      .select()
-      .single()
+    const assignee = assignedEmployeeId || null
+    const created = await createJob(supabase, {
+      companyId,
+      title,
+      description,
+      priority,
+      estimatedCost: estimatedCost ? parseFloat(estimatedCost) : null,
+      scheduledStart,
+      scheduledEnd,
+      clientId: clientId || null,
+      dealId: dealId || null,
+      address,
+      assigneeEmployeeId: assignee,
+      assignedEmployeeIds: assignee ? [assignee] : [],
+      createdByEmployeeId: employeeId,
+      assignCode: true,
+    })
 
     setSaving(false)
-    if (insertError) { setError(insertError.message); return }
-    if (dealId) router.push(`/dashboard/projects/${dealId}`)
-    else if (clientId) router.push(`/dashboard/clients/${clientId}?tab=jobs`)
-    else router.push('/dashboard/jobs')
+    if (!created.ok) { setError(created.message); return }
+    router.push(`/dashboard/jobs/${created.data.id}`)
   }
 
   if (error === 'not_linked') return (
@@ -129,6 +137,19 @@ function CreateJobInner() {
     </div>
   )
 
+  if (perms && !canCreate) {
+    return (
+      <div className="flex items-center justify-center h-full p-6">
+        <div className="text-center space-y-3 max-w-md">
+          <span className="material-icons text-[48px] text-text-disabled">lock</span>
+          <p className="text-[16px] font-semibold text-text-primary">Permission required</p>
+          <p className="text-[13px] text-text-secondary">You do not have permission to create jobs.</p>
+          <Link href="/dashboard/jobs" className="text-primary text-[13px]">Back to jobs</Link>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <form onSubmit={handleSubmit} className="p-4 space-y-4 max-w-2xl mx-auto pb-8">
       <div className="flex items-center gap-2 mb-1">
@@ -138,7 +159,6 @@ function CreateJobInner() {
         <h1 className="text-[19px] font-bold text-text-primary">New Job</h1>
       </div>
 
-      {/* JOB DETAILS */}
       <SectionCard title="JOB DETAILS">
         <FormField label="Title *">
           <input type="text" value={title} onChange={e => setTitle(e.target.value)}
@@ -164,7 +184,6 @@ function CreateJobInner() {
         </FormField>
       </SectionCard>
 
-      {/* SCHEDULE */}
       <SectionCard title="SCHEDULE">
         <div className="grid grid-cols-2 gap-3">
           <FormField label="Start date">
@@ -182,7 +201,6 @@ function CreateJobInner() {
         </div>
       </SectionCard>
 
-      {/* CLIENT & PROJECT */}
       <SectionCard title="CLIENT & PROJECT">
         <FormSelect
           label="Client"
@@ -226,7 +244,6 @@ function CreateJobInner() {
         </FormSelect>
       </SectionCard>
 
-      {/* LOCATION */}
       <SectionCard title="LOCATION">
         <FormField label="Address">
           <input type="text" value={address} onChange={e => setAddress(e.target.value)}
@@ -234,7 +251,6 @@ function CreateJobInner() {
         </FormField>
       </SectionCard>
 
-      {/* ASSIGNMENT */}
       <SectionCard title="ASSIGNMENT">
         <FormSelect label="Assign to employee" value={assignedEmployeeId}
           onChange={e => setAssignedEmployeeId(e.target.value)}>
@@ -249,7 +265,7 @@ function CreateJobInner() {
 
       <button
         type="submit"
-        disabled={saving || !title.trim()}
+        disabled={saving || !title.trim() || !canCreate}
         className="w-full h-[52px] bg-primary text-white rounded-md font-semibold text-[15px] hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
         {saving ? 'Creating…' : 'Create Job'}

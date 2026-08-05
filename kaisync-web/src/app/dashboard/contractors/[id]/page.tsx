@@ -12,6 +12,7 @@ import {
   nextContractorCode,
 } from '@/lib/partner-kinds'
 import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
+import { logContractorEvent } from '@/lib/contractor-events'
 import {
   buildComplianceView,
   checklistStatusLabel,
@@ -459,19 +460,37 @@ function ContractorDetailInner() {
       })
       .eq('id', contractorId)
 
-    if (e) setError(e.message)
-    else setContractor(prev => prev
-      ? {
-          ...prev,
-          name: name.trim(),
-          is_active: isActive,
-          portal_enabled: portalEnabled,
-          rating,
-          compliance_pack_id: compliancePackId || null,
-          banking_verified: bankingVerified,
-          bank_branch_code: payBranchCode.trim() || null,
-        }
-      : prev)
+    if (e) {
+      setError(e.message)
+    } else {
+      setContractor(prev => prev
+        ? {
+            ...prev,
+            name: name.trim(),
+            is_active: isActive,
+            portal_enabled: portalEnabled,
+            rating,
+            compliance_pack_id: compliancePackId || null,
+            banking_verified: bankingVerified,
+            bank_branch_code: payBranchCode.trim() || null,
+          }
+        : prev)
+      if (contractor?.company_id) {
+        void logContractorEvent(supabase, {
+          companyId: contractor.company_id,
+          screen: 'HrContractorDetails',
+          action: 'contractor.updated',
+          meta: {
+            contractor_id: contractorId,
+            name: name.trim(),
+            is_active: isActive,
+            payment_hold: paymentHold,
+            compliance_hold: complianceHold,
+            partner_kind: partnerKind,
+          },
+        })
+      }
+    }
     setSaving(false)
   }
 
