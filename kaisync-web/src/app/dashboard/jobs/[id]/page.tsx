@@ -8,6 +8,8 @@ import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { FormSelect } from '@/components/FormSelect'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { isContractorKind } from '@/lib/partner-kinds'
+import { appendJobPhoto, openJobTeamThread, setJobAssignments } from '@/lib/jobs'
+import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
 import type { Job, Employee, JobContractor, LaborEntry, JobInventoryItem, JobPhoto } from '@/types/database'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -77,6 +79,10 @@ export default function JobDetailPage() {
   const [saving,         setSaving]         = useState(false)
   const [deleting,       setDeleting]       = useState(false)
   const [photoBusy,      setPhotoBusy]      = useState(false)
+  const [perms,          setPerms]          = useState<PermissionSet | null>(null)
+  const [chatBusy,       setChatBusy]       = useState(false)
+
+  const canEdit = can(perms, PERM.jobsEdit)
 
   // ── Edit form ───────────────────────────────────────────────────────────────
   const [isEditing,       setIsEditing]       = useState(false)
@@ -119,24 +125,49 @@ export default function JobDetailPage() {
     setCompanyId(member.companyId)
     setMyEmployeeId(member.employeeId)
 
-    const [jobRes, empRes, jcRes, leRes, invRes, photoRes, assignRes, clientRes, dealRes, contractorRes, invItemsRes] =
+    const [jobRes, empRes, jcRes, leRes, invRes, clientRes, dealRes, contractorRes, invItemsRes, meRes] =
       await Promise.all([
         supabase.from('jobs').select('*, clients(*), sites(*), client_deals:deal_id(id, title, project_code)').eq('id', jobId).single(),
         supabase.from('employees').select('id, name, surname').eq('company_id', member.companyId).eq('is_active', true).order('name'),
         supabase.from('job_contractors').select('*, contractors(name, contractor_code)').eq('job_id', jobId),
         supabase.from('labor_entries').select('*').eq('job_id', jobId).order('work_date'),
         supabase.from('inventory_usage').select('id, job_id, inventory_item_id, quantity_used, unit_cost_at_use, inventory_items(name, supplier)').eq('job_id', jobId),
-        supabase.from('job_photos').select('*').eq('job_id', jobId),
-        supabase.from('job_employees').select('employee_id').eq('job_id', jobId),
         supabase.from('clients').select('id, name').eq('company_id', member.companyId).order('name'),
         supabase.from('client_deals').select('id, title, project_code, client_id').eq('company_id', member.companyId).order('title'),
         supabase.from('contractors').select('id, name, contractor_code, partner_kind').eq('company_id', member.companyId).eq('is_active', true).order('name'),
         supabase.from('inventory_items').select('id, name, unit_cost, quantity_on_hand').eq('company_id', member.companyId).order('name'),
+        supabase.from('employees').select('access_level').eq('id', member.employeeId).maybeSingle(),
       ])
 
+    setPerms(await loadPermissions(supabase, member.companyId, meRes.data?.access_level))
+
     if (jobRes.data) {
-      setJob(jobRes.data as JobDetail)
-      setStatusUpdate(jobRes.data.status)
+      const row = jobRes.data as JobDetail & {
+        photo_urls_before?: string[] | null
+        photo_urls_after?: string[] | null
+        assigned_employee_ids?: string[] | null
+        assignee_employee_id?: string | null
+      }
+      setJob(row)
+      setStatusUpdate(row.status)
+      const before = (row.photo_urls_before ?? []).map((url, i) => ({
+        id: `before-${i}`,
+        job_id: jobId,
+        photo_type: 'before' as const,
+        storage_path: url,
+        url,
+      }))
+      const after = (row.photo_urls_after ?? []).map((url, i) => ({
+        id: `after-${i}`,
+        job_id: jobId,
+        photo_type: 'after' as const,
+        storage_path: url,
+        url,
+      }))
+      setPhotos([...before, ...after] as JobPhoto[])
+      const team = new Set<string>(row.assigned_employee_ids ?? [])
+      if (row.assignee_employee_id) team.add(row.assignee_employee_id)
+      setAssignedIds(team)
     }
     setEmployees((empRes.data     ?? []) as Pick<Employee, 'id' | 'name' | 'surname'>[])
     setJobContractors((jcRes.data  ?? []) as JobContractor[])
@@ -165,8 +196,6 @@ export default function JobDetailPage() {
         } satisfies JobInventoryItem
       }))
     }
-    setPhotos((photoRes.data       ?? []) as JobPhoto[])
-    setAssignedIds(new Set((assignRes.data ?? []).map((r: { employee_id: string }) => r.employee_id)))
     setClients((clientRes.data     ?? []) as ClientRow[])
     setDeals((dealRes.data         ?? []) as DealRow[])
     setAllContractors(
@@ -301,15 +330,19 @@ export default function JobDetailPage() {
   }
 
   async function handleSaveTeam() {
+    if (!canEdit || !companyId) return
     setSaving(true)
     setError(null)
     const supabase = createClient()
-    await supabase.from('job_employees').delete().eq('job_id', jobId)
-    if (assignedIds.size > 0) {
-      const rows = Array.from(assignedIds).map(emp_id => ({ job_id: jobId, employee_id: emp_id }))
-      const { error: e } = await supabase.from('job_employees').insert(rows)
-      if (e) { setError(e.message); setSaving(false); return }
-    }
+    const ids = Array.from(assignedIds)
+    const result = await setJobAssignments(supabase, {
+      companyId,
+      jobId,
+      assigneeEmployeeId: job?.assignee_employee_id ?? ids[0] ?? null,
+      assignedEmployeeIds: ids,
+    })
+    if (!result.ok) setError(result.message)
+    else setJob(prev => prev ? { ...prev, assigned_employee_ids: ids } : prev)
     setSaving(false)
   }
 
@@ -349,18 +382,44 @@ export default function JobDetailPage() {
   }
 
   async function uploadPhoto(type: 'before' | 'after', file: File) {
+    if (!canEdit || !companyId) return
     setPhotoBusy(true)
+    setError(null)
     const supabase = createClient()
-    const path = `jobs/${jobId}/${type}/${Date.now()}_${file.name}`
-    const { error: upErr } = await supabase.storage.from('workforce-media').upload(path, file)
-    if (upErr) { setError(upErr.message); setPhotoBusy(false); return }
-    const { data: signed } = await supabase.storage.from('workforce-media').createSignedUrl(path, 3600)
-    const { data: photoData, error: photoErr } = await supabase
-      .from('job_photos')
-      .insert({ job_id: jobId, photo_type: type, storage_path: path, url: signed?.signedUrl ?? path })
-      .select().single()
-    if (!photoErr && photoData) setPhotos(prev => [...prev, photoData as JobPhoto])
+    const result = await appendJobPhoto(supabase, {
+      companyId,
+      jobId,
+      phase: type,
+      file,
+    })
+    if (!result.ok) {
+      setError(result.message)
+      setPhotoBusy(false)
+      return
+    }
+    const { data: signed } = await supabase.storage.from('workforce-media').createSignedUrl(result.data, 3600)
+    setPhotos(prev => [
+      ...prev,
+      {
+        id: `${type}-${Date.now()}`,
+        job_id: jobId,
+        photo_type: type,
+        storage_path: result.data,
+        url: signed?.signedUrl ?? result.data,
+      } as JobPhoto,
+    ])
     setPhotoBusy(false)
+  }
+
+  async function openChat() {
+    if (!companyId) return
+    setChatBusy(true)
+    setError(null)
+    const supabase = createClient()
+    const result = await openJobTeamThread(supabase, { companyId, jobId })
+    setChatBusy(false)
+    if (!result.ok) { setError(result.message); return }
+    router.push(`/dashboard/messages?threadId=${result.data}`)
   }
 
   async function handleRemoveContractor(jcId: string) {
@@ -417,27 +476,33 @@ export default function JobDetailPage() {
 
       {/* ── Action bar ── */}
       <div className="flex gap-2 overflow-x-auto pb-1">
+        {canEdit && (
+          <button
+            onClick={() => void handleSaveTeam()}
+            disabled={saving || isEditing}
+            className="h-[42px] px-[18px] text-sm min-w-[72px] rounded-xl bg-primary text-white font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors shrink-0"
+          >
+            Save team
+          </button>
+        )}
         <button
-          onClick={handleSaveTeam}
-          disabled={saving || isEditing}
-          className="h-[42px] px-[18px] text-sm min-w-[72px] rounded-xl bg-primary text-white font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors shrink-0"
+          type="button"
+          onClick={() => void openChat()}
+          disabled={chatBusy}
+          className="h-[42px] px-[18px] text-sm min-w-[72px] rounded-xl border border-primary text-primary font-semibold hover:bg-primary/5 transition-colors shrink-0 disabled:opacity-50"
         >
-          Save
+          {chatBusy ? '…' : 'Chat'}
         </button>
-        <Link
-          href={`/dashboard/jobs/${jobId}/chat`}
-          className="h-[42px] px-[18px] text-sm min-w-[72px] rounded-xl border border-primary text-primary font-semibold hover:bg-primary/5 transition-colors shrink-0 flex items-center justify-center"
-        >
-          Chat
-        </Link>
         {/* Edit / Save edit / Cancel */}
-        <button
-          onClick={isEditing ? saveEdit : startEdit}
-          disabled={saving}
-          className="h-[42px] px-[18px] text-sm min-w-[72px] rounded-xl border border-border text-text-primary font-semibold hover:border-primary hover:text-primary disabled:opacity-50 transition-colors shrink-0"
-        >
-          {saving && isEditing ? '…' : isEditing ? 'Save' : 'Edit'}
-        </button>
+        {canEdit && (
+          <button
+            onClick={isEditing ? () => void saveEdit() : startEdit}
+            disabled={saving}
+            className="h-[42px] px-[18px] text-sm min-w-[72px] rounded-xl border border-border text-text-primary font-semibold hover:border-primary hover:text-primary disabled:opacity-50 transition-colors shrink-0"
+          >
+            {saving && isEditing ? '…' : isEditing ? 'Save' : 'Edit'}
+          </button>
+        )}
         {isEditing && (
           <button
             onClick={() => setIsEditing(false)}
