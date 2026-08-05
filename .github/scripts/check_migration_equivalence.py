@@ -12,7 +12,7 @@ import sys
 import urllib.request
 import urllib.error
 
-MIGRATIONS_DIR = "KaiFlow.Timesheets.Maui/supabase/migrations"
+MIGRATIONS_DIR = "supabase/migrations"
 PROJECT_ID = os.environ["SUPABASE_PROJECT_ID"]
 ACCESS_TOKEN = os.environ["SUPABASE_ACCESS_TOKEN"]
 

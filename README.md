@@ -4,26 +4,29 @@ Production workforce platform for KaiSync Tech — attendance, payroll, finance,
 
 | Component | Path |
 |-----------|------|
-| **MAUI client** | `KaiFlow.Timesheets.Maui/` |
+| **Web app (production client)** | `kaisync-web/` |
+| **Supabase backend** | `supabase/` (migrations, edge functions, smoke) |
 | **Marketing website** | `website/` → [kaisyncworkforce.vercel.app](https://kaisyncworkforce.vercel.app) |
 | **Documentation** | `docs/` |
-| **Supabase backend** | `KaiFlow.Timesheets.Maui/supabase/` |
+| **Shared .NET libs (reference / parity tests)** | `KaiFlow.Payroll/`, `KaiFlow.Finance/`, `KaiFlow.Accounting/` |
+
+> The former .NET MAUI client (`KaiFlow.Timesheets.Maui`) has been removed. **kaisync-web** is the sole production application.
 
 ## Quick start
 
 ```powershell
-cd KaiFlow.Timesheets.Maui
-dotnet build
+cd kaisync-web
+npm install
+npm run dev
 ```
 
-See [docs/README.md](docs/README.md) for architecture, deployment, and pilot go-live guides.
+Supabase schema source of truth:
 
-## Downloads (v1.0.2)
+```text
+supabase/migrations/
+```
 
-| Platform | File |
-|----------|------|
-| Windows | [KaiFlowSetup-v1.0.2.exe](https://github.com/kaisynctech/KaiSyncWorkforce-App/releases/download/v1.0.2/KaiFlowSetup-v1.0.2.exe) |
-| Android | [KaiSync-Workforce-v1.0.2.apk](https://github.com/kaisynctech/KaiSyncWorkforce-App/releases/download/v1.0.2/com.kaisynctech.kaiflow.timesheets-Signed.apk) |
+See [docs/README.md](docs/README.md) for architecture, deployment, and operations guides.
 
 ## License
 

@@ -4,9 +4,9 @@
 
 KaiFlow is a **multi-tenant enterprise workforce-management platform**. It combines time & attendance, field-job management, project/CRM, payroll, leave, incidents, inventory & suppliers, contractor management, property management, messaging, a personal-assistant productivity layer, and reporting into a single application backed by a single shared backend.
 
-The production client is a **.NET MAUI** application (`KaiFlow.Timesheets.Maui`) targeting Windows, Android, iOS, and Mac Catalyst from one codebase. Payroll math lives in a separate referenced class library (`KaiFlow.Payroll`). The backend is **Supabase** (PostgreSQL, GoTrue authentication, Realtime, and Storage).
+The production client is **`kaisync-web`** (Next.js). Schema, RPCs, RLS, and Edge Functions live under repo-root `supabase/`. Shared calculation libraries (`KaiFlow.Payroll`, `KaiFlow.Finance`, `KaiFlow.Accounting`) remain for reference and CI parity tests.
 
-> The repository also contains Flutter folders. These are **reference only** and must never be treated as production architecture. All statements in this suite refer to the MAUI + Supabase system.
+> Historical .NET MAUI and Flutter clients are retired / reference-only and must not be treated as the production architecture.
 
 ## Enterprise purpose
 

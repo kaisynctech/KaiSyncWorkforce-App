@@ -1,6 +1,6 @@
 # Backend — Database (Supabase / PostgreSQL)
 
-> Source of truth: `KaiFlow.Timesheets.Maui/supabase/migrations` (161 `.sql` files). Production project ref: `vcivtjwreybaxgtdhtou`.
+> Source of truth: `supabase/migrations` (versioned `.sql` files). Production project ref: `vcivtjwreybaxgtdhtou`.
 
 ## Supabase architecture
 

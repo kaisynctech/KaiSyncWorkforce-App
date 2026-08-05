@@ -1,6 +1,6 @@
 # Backend — Migration History
 
-161 SQL migrations under `KaiFlow.Timesheets.Maui/supabase/migrations`, named `YYYYMMDDHHMMSS_description.sql` (apply order = timestamp order). They fall into three eras.
+SQL migrations live under `supabase/migrations`, named `YYYYMMDDHHMMSS_description.sql` (apply order = timestamp order). They fall into three eras.
 
 ## Phase A — Pre-UUID legacy (Apr 28 – May 12, 2026)
 
