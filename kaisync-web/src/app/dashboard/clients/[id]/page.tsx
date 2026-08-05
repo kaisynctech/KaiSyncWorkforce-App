@@ -1023,7 +1023,7 @@ function ClientDetailInner() {
             <div className="flex items-center justify-between">
               <p className="section-label">PROJECTS (CRM)</p>
               {canEdit && (
-                <button onClick={() => router.push('/dashboard/projects/new')}
+                <button onClick={() => router.push(`/dashboard/projects/new?clientId=${clientId}`)}
                   className="btn-primary h-9 px-[14px] text-[13px]">+ Project</button>
               )}
             </div>

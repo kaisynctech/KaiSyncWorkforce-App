@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import { logProjectEvent } from '@/lib/project-events'
 
 type Payment = {
   id: string
@@ -22,10 +23,12 @@ const fmtMoney = (n: number) =>
 export function ProjectPaymentsTab({
   projectId,
   offerAmount,
+  canEdit = true,
   onPaidUpdated,
 }: {
   projectId: string
   offerAmount: number | null
+  canEdit?: boolean
   onPaidUpdated?: (paid: number) => void
 }) {
   const [payments, setPayments] = useState<Payment[]>([])
@@ -75,6 +78,7 @@ export function ProjectPaymentsTab({
   }
 
   async function addPayment() {
+    if (!canEdit) return
     const value = Number(amount)
     if (!value || value <= 0) { setError('Enter a valid amount.'); return }
     setBusy(true)
@@ -100,6 +104,12 @@ export function ProjectPaymentsTab({
 
     const nextTotal = paidTotal + value
     await syncAmountPaid(member.companyId, nextTotal)
+    await logProjectEvent(supabase, {
+      companyId: member.companyId,
+      screen: 'HrProjectDetails',
+      action: 'payment_recorded',
+      meta: { project_id: projectId, amount: value, payment_method: method },
+    })
     setAmount('')
     setReference('')
     setNotes('')
@@ -127,12 +137,14 @@ export function ProjectPaymentsTab({
 
       <div className="flex items-center justify-between">
         <p className="section-label">PAYMENTS</p>
-        <button onClick={() => setShowForm(v => !v)} className="btn-primary h-9 px-3 text-[13px]">
-          {showForm ? 'Cancel' : '+ Add payment'}
-        </button>
+        {canEdit && (
+          <button onClick={() => setShowForm(v => !v)} className="btn-primary h-9 px-3 text-[13px]">
+            {showForm ? 'Cancel' : '+ Add payment'}
+          </button>
+        )}
       </div>
 
-      {showForm && (
+      {canEdit && showForm && (
         <div className="card p-4 space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1">

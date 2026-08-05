@@ -164,6 +164,7 @@ export async function sendProjectQuotation(
     .from('client_deals')
     .update({
       status: 'sent',
+      quotation_sent_at: new Date().toISOString(),
       last_update_at: new Date().toISOString(),
       last_update_summary: 'Quotation sent',
     })

@@ -15,6 +15,7 @@ import {
 } from '@/lib/list-pagination'
 import { KpiTile } from '@/components/ui/KpiTile'
 import type { Client, ClientActionItem } from '@/types/database'
+import * as XLSX from 'xlsx'
 
 type ClientKpis = {
   total: number
@@ -150,7 +151,44 @@ export default function ClientsPage() {
   const fmtDate = (d: string) =>
     new Intl.DateTimeFormat('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(d))
 
-  function openActionItem(item: ClientActionItem) {
+  async function exportCsv() {
+    if (!companyId) return
+    const supabase = createClient()
+    let query = supabase
+      .from('clients')
+      .select('name, client_code, type, contact_person, phone, email, address, notes, portal_enabled, is_active')
+      .eq('company_id', companyId)
+      .order('name')
+      .limit(5000)
+
+    if (searchDebounced) {
+      const q = escapeIlike(searchDebounced)
+      query = query.or(`name.ilike.%${q}%,client_code.ilike.%${q}%,email.ilike.%${q}%,phone.ilike.%${q}%`)
+    }
+
+    const { data, error: qErr } = await query
+    if (qErr) { setError(qErr.message); return }
+
+    const rows = (data ?? []).map(c => ({
+      Name: c.name,
+      Code: c.client_code ?? '',
+      Type: CLIENT_TYPE_LABELS[(c.type as keyof typeof CLIENT_TYPE_LABELS)] ?? c.type ?? '',
+      'Contact Person': c.contact_person ?? '',
+      Phone: c.phone ?? '',
+      Email: c.email ?? '',
+      Address: c.address ?? '',
+      Notes: c.notes ?? '',
+      'Portal Enabled': c.portal_enabled ? 'Yes' : 'No',
+      Active: c.is_active === false ? 'No' : 'Yes',
+    }))
+
+    const ws = XLSX.utils.json_to_sheet(rows)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Clients')
+    XLSX.writeFile(wb, `clients_export_${new Date().toISOString().slice(0, 10)}.xlsx`)
+  }
+
+  async function openActionItem(item: ClientActionItem) {
     if (item.action_type.startsWith('invoice_')) {
       router.push(`/dashboard/finance/invoices/${item.ref_id}`)
       return
@@ -160,7 +198,18 @@ export default function ClientsPage() {
       return
     }
     if (item.action_type === 'portal_message') {
-      router.push(`/dashboard/clients/${item.client_id}?tab=info`)
+      const supabase = createClient()
+      const { data: msg } = await supabase
+        .from('app_messages')
+        .select('thread_id')
+        .eq('id', item.ref_id)
+        .maybeSingle()
+      const threadId = (msg as { thread_id?: string } | null)?.thread_id
+      if (threadId) {
+        router.push(`/dashboard/messages?threadId=${threadId}`)
+        return
+      }
+      router.push(`/dashboard/clients/${item.client_id}`)
       return
     }
     router.push(`/dashboard/clients/${item.client_id}`)
@@ -293,6 +342,12 @@ export default function ClientsPage() {
             {xeroImporting ? 'Importing…' : '↓ Import from Xero'}
           </button>
         )}
+        <button
+          onClick={() => void exportCsv()}
+          className="h-[42px] px-3 text-[13px] rounded-lg border border-border text-text-primary font-medium hover:bg-surface-elevated transition-colors"
+        >
+          Export
+        </button>
         {canEdit && (
           <button
             onClick={() => router.push('/dashboard/clients/import')}
