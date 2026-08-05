@@ -472,6 +472,7 @@ export interface IncidentReport {
   assignee_id: string | null
   is_closed: boolean | null
   resolution_notes: string | null
+  photo_urls?: string[] | null
   created_at: string
   jobs?: { title: string } | null
   reporter?: { name: string; surname: string } | null
@@ -480,11 +481,24 @@ export interface IncidentReport {
 
 export interface IncidentComment {
   id: string
+  company_id?: string
   incident_id: string
   body: string
-  author_id: string
+  author_employee_id: string | null
+  author_name?: string | null
   created_at: string
   employees?: { name: string; surname: string } | null
+}
+
+export interface IncidentStatusHistory {
+  id: string
+  company_id: string
+  incident_id: string
+  changed_by_employee_id: string | null
+  old_status: string | null
+  new_status: string
+  notes: string | null
+  created_at: string
 }
 
 export interface PaymentApproval {
