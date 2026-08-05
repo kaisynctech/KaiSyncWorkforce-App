@@ -36,6 +36,7 @@ const ACTION_TYPE_COLORS: Record<string, { bg: string; fg: string }> = {
   deposit_due:        { bg: '#FEF3C7', fg: '#92400E' },
   quotation_pending:  { bg: '#DBEAFE', fg: '#1E40AF' },
   stale_deal:         { bg: '#E5E7EB', fg: '#374151' },
+  deal_stale:         { bg: '#E5E7EB', fg: '#374151' },
   portal_message:     { bg: '#E0E7FF', fg: '#3730A3' },
 }
 
@@ -208,7 +209,7 @@ export default function ProjectsPage() {
     }
   }
 
-  function openActionItem(item: ProjectActionItem) {
+  async function openActionItem(item: ProjectActionItem) {
     if (item.action_type === 'invoice_overdue') {
       router.push(`/dashboard/finance/invoices/${item.ref_id}`)
       return
@@ -217,8 +218,27 @@ export default function ProjectsPage() {
       router.push(`/dashboard/projects/${item.project_id}?tab=quotation`)
       return
     }
-    if (item.action_type === 'deposit_due' || item.action_type === 'portal_message') {
+    if (item.action_type === 'deposit_due') {
       router.push(`/dashboard/projects/${item.project_id}?tab=payments`)
+      return
+    }
+    if (item.action_type === 'portal_message') {
+      const supabase = createClient()
+      const { data: msg } = await supabase
+        .from('app_messages')
+        .select('thread_id')
+        .eq('id', item.ref_id)
+        .maybeSingle()
+      const threadId = (msg as { thread_id?: string } | null)?.thread_id
+      if (threadId) {
+        router.push(`/dashboard/messages?threadId=${threadId}`)
+        return
+      }
+      router.push(`/dashboard/projects/${item.project_id}`)
+      return
+    }
+    if (item.action_type === 'deal_stale' || item.action_type === 'stale_deal') {
+      router.push(`/dashboard/projects/${item.project_id}?tab=pipeline`)
       return
     }
     router.push(`/dashboard/projects/${item.project_id}`)
@@ -242,6 +262,14 @@ export default function ProjectsPage() {
         <h1 className="text-[20px] font-semibold text-text-primary">Projects</h1>
         <div className="flex gap-2">
           <button onClick={() => void load()} className="btn-outlined h-9 px-3 text-[13px]">Refresh</button>
+          {canCreate && (
+            <button
+              onClick={() => router.push('/dashboard/projects/import')}
+              className="h-9 px-3 text-[13px] rounded-lg border border-border text-text-primary hover:bg-surface-elevated transition-colors"
+            >
+              Import CSV
+            </button>
+          )}
           {canCreate && (
             <button onClick={() => router.push('/dashboard/projects/new')} className="btn-primary h-9 px-3 text-[13px]">
               + Project

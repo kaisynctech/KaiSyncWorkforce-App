@@ -17,6 +17,7 @@ import {
   sendProjectQuotation,
   updateProject,
 } from '@/lib/projects'
+import { logProjectEvent } from '@/lib/project-events'
 import type { Project, Client, Employee, Job, ProjectDocument, ProjectQuotationLine } from '@/types/database'
 
 const PROJECT_TABS = ['details', 'docs', 'quotation', 'pipeline', 'payments', 'activity']
@@ -121,6 +122,8 @@ export default function ProjectDetailPage() {
       ])
       setClients((cRes.data ?? []) as Client[])
       setManagers((mRes.data ?? []) as Employee[])
+      const preClient = searchParams.get('clientId')
+      if (preClient) setClientId(preClient)
       const codeRes = await allocateProjectCode(supabase, member.companyId)
       if (codeRes.ok) setCode(codeRes.data)
       setLoading(false)
@@ -247,14 +250,16 @@ export default function ProjectDetailPage() {
   }
 
   async function syncOfferAmount(nextLines: ProjectQuotationLine[]) {
+    if (!companyId) return
     const offer = nextLines.reduce((s, l) => s + lineAmount(l), 0)
     const supabase = createClient()
-    await supabase.from('client_deals').update({ offer_amount: offer }).eq('id', projectId)
+    await supabase.from('client_deals').update({ offer_amount: offer }).eq('id', projectId).eq('company_id', companyId)
     setProject(prev => prev ? { ...prev, offer_amount: offer } : prev)
   }
 
   async function addLine() {
-    if (!newLineDesc.trim() || !project) return
+    if (!canEdit || !newLineDesc.trim() || !project) return
+    const description = newLineDesc.trim()
     const qty = parseFloat(newLineQty) || 1
     const unitPrice = parseFloat(newLineUnitPrice) || 0
     const supabase = createClient()
@@ -262,7 +267,7 @@ export default function ProjectDetailPage() {
       company_id: project.company_id,
       deal_id: projectId,
       line_no: lines.length + 1,
-      description: newLineDesc.trim(),
+      description,
       quantity: qty,
       unit_price: unitPrice,
     }).select().single()
@@ -274,19 +279,32 @@ export default function ProjectDetailPage() {
       setNewLineQty('1')
       setNewLineUnitPrice('')
       await syncOfferAmount(next)
+      await logProjectEvent(supabase, {
+        companyId: project.company_id,
+        screen: 'HrProjectDetails',
+        action: 'quotation_line_added',
+        meta: { project_id: projectId, description },
+      })
     }
   }
 
   async function deleteLine(id: string) {
+    if (!canEdit || !project) return
     const supabase = createClient()
     await supabase.from('project_quotation_lines').delete().eq('id', id)
     const next = lines.filter(l => l.id !== id)
     setLines(next)
     await syncOfferAmount(next)
+    await logProjectEvent(supabase, {
+      companyId: project.company_id,
+      screen: 'HrProjectDetails',
+      action: 'quotation_line_removed',
+      meta: { project_id: projectId },
+    })
   }
 
   async function uploadDoc(file: File) {
-    if (!project) return
+    if (!canEdit || !project) return
     setDocBusy(true)
     setError(null)
     const supabase = createClient()
@@ -309,16 +327,31 @@ export default function ProjectDetailPage() {
       file_url: pub.publicUrl,
     }).select().single()
     if (insErr) setError(insErr.message)
-    else if (data) setDocs(prev => [data as ProjectDocument, ...prev])
+    else if (data) {
+      setDocs(prev => [data as ProjectDocument, ...prev])
+      await logProjectEvent(supabase, {
+        companyId: project.company_id,
+        screen: 'HrProjectDetails',
+        action: 'document_uploaded',
+        meta: { project_id: projectId, document_name: file.name },
+      })
+    }
     if (fileRef.current) fileRef.current.value = ''
     setDocBusy(false)
   }
 
   async function deleteDoc(doc: ProjectDocument) {
+    if (!canEdit || !project) return
     if (!window.confirm('Delete this document?')) return
     const supabase = createClient()
     await supabase.from('project_documents').delete().eq('id', doc.id)
     setDocs(prev => prev.filter(d => d.id !== doc.id))
+    await logProjectEvent(supabase, {
+      companyId: project.company_id,
+      screen: 'HrProjectDetails',
+      action: 'document_deleted',
+      meta: { project_id: projectId, document_name: doc.document_name },
+    })
   }
 
   const subtotal = lines.reduce((s, l) => s + lineAmount(l), 0)
@@ -441,12 +474,14 @@ export default function ProjectDetailPage() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <p className="section-label">LINKED JOBS</p>
-                  <Link
-                    href={`/dashboard/jobs/new?dealId=${projectId}`}
-                    className="btn-primary h-10 px-[14px] text-[12px] inline-flex items-center"
-                  >
-                    + Add job
-                  </Link>
+                  {canEdit && (
+                    <Link
+                      href={`/dashboard/jobs/new?dealId=${projectId}`}
+                      className="btn-primary h-10 px-[14px] text-[12px] inline-flex items-center"
+                    >
+                      + Add job
+                    </Link>
+                  )}
                 </div>
                 {jobs.length > 0 ? (
                   <div className="card overflow-hidden">
@@ -533,34 +568,36 @@ export default function ProjectDetailPage() {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <p className="section-label">PROJECT DOCUMENTS</p>
-                <div className="flex gap-2 items-center">
-                  <select
-                    value={docType}
-                    onChange={e => setDocType(e.target.value)}
-                    className="text-[11px] h-9 px-2 rounded-lg border border-border bg-surface text-text-secondary w-[140px]"
-                  >
-                    {DOC_TYPE_OPTIONS.map(o => (
-                      <option key={o.value} value={o.value}>{o.label}</option>
-                    ))}
-                  </select>
-                  <input
-                    ref={fileRef}
-                    type="file"
-                    className="hidden"
-                    onChange={e => {
-                      const file = e.target.files?.[0]
-                      if (file) void uploadDoc(file)
-                    }}
-                  />
-                  <button
-                    type="button"
-                    disabled={docBusy}
-                    onClick={() => fileRef.current?.click()}
-                    className="btn-primary h-9 px-3 text-[12px] disabled:opacity-50"
-                  >
-                    {docBusy ? 'Uploading…' : '+ Upload'}
-                  </button>
-                </div>
+                {canEdit && (
+                  <div className="flex gap-2 items-center">
+                    <select
+                      value={docType}
+                      onChange={e => setDocType(e.target.value)}
+                      className="text-[11px] h-9 px-2 rounded-lg border border-border bg-surface text-text-secondary w-[140px]"
+                    >
+                      {DOC_TYPE_OPTIONS.map(o => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                    <input
+                      ref={fileRef}
+                      type="file"
+                      className="hidden"
+                      onChange={e => {
+                        const file = e.target.files?.[0]
+                        if (file) void uploadDoc(file)
+                      }}
+                    />
+                    <button
+                      type="button"
+                      disabled={docBusy}
+                      onClick={() => fileRef.current?.click()}
+                      className="btn-primary h-9 px-3 text-[12px] disabled:opacity-50"
+                    >
+                      {docBusy ? 'Uploading…' : '+ Upload'}
+                    </button>
+                  </div>
+                )}
               </div>
               <div className="card overflow-hidden">
                 <table className="w-full">
@@ -587,7 +624,9 @@ export default function ProjectDetailPage() {
                               className="text-primary text-[11px] font-medium">Open</a>
                           </td>
                           <td className="data-td text-center">
-                            <button onClick={() => deleteDoc(d)} className="text-error text-[12px] font-medium">✕</button>
+                            {canEdit && (
+                              <button onClick={() => void deleteDoc(d)} className="text-error text-[12px] font-medium">✕</button>
+                            )}
                           </td>
                         </tr>
                       ))
@@ -679,7 +718,9 @@ export default function ProjectDetailPage() {
                         <td className="data-td text-text-secondary text-[12px] text-right">{fmtCurrency(l.unit_price)}</td>
                         <td className="data-td text-right text-[12px] font-medium text-text-primary">{fmtCurrency(lineAmount(l))}</td>
                         <td className="data-td text-center">
-                          <button onClick={() => deleteLine(l.id)} className="text-error text-[12px]">✕</button>
+                          {canEdit && (
+                            <button onClick={() => void deleteLine(l.id)} className="text-error text-[12px]">✕</button>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -701,7 +742,9 @@ export default function ProjectDetailPage() {
                         {fmtCurrency((parseFloat(newLineQty) || 0) * (parseFloat(newLineUnitPrice) || 0))}
                       </td>
                       <td className="data-td text-center">
-                        <button onClick={addLine} className="text-primary text-[18px] font-light leading-none">+</button>
+                        {canEdit && (
+                          <button onClick={() => void addLine()} className="text-primary text-[18px] font-light leading-none">+</button>
+                        )}
                       </td>
                     </tr>
                     {/* Totals */}
@@ -778,6 +821,7 @@ export default function ProjectDetailPage() {
           <ProjectPaymentsTab
             projectId={projectId}
             offerAmount={project?.offer_amount ?? null}
+            canEdit={canEdit}
             onPaidUpdated={(paid) => {
               setProject(prev => prev ? { ...prev, amount_paid: paid } : prev)
             }}

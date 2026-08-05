@@ -21,6 +21,7 @@ function CreateJobInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const preselectedDealId = searchParams.get('dealId') ?? ''
+  const preselectedClientId = searchParams.get('clientId') ?? ''
 
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [clients, setClients] = useState<Client[]>([])
@@ -35,7 +36,7 @@ function CreateJobInner() {
   const [startTime, setStartTime] = useState('')
   const [endDate, setEndDate] = useState('')
   const [endTime, setEndTime] = useState('')
-  const [clientId, setClientId] = useState('')
+  const [clientId, setClientId] = useState(preselectedClientId)
   const [dealId, setDealId] = useState(preselectedDealId)
   const [address, setAddress] = useState('')
   const [assignedEmployeeId, setAssignedEmployeeId] = useState('')
@@ -67,6 +68,8 @@ function CreateJobInner() {
       setDealId(preselectedDealId)
       const deal = dealRows.find(d => d.id === preselectedDealId)
       if (deal?.client_id) setClientId(deal.client_id)
+    } else if (preselectedClientId) {
+      setClientId(preselectedClientId)
     }
   }
 
@@ -87,7 +90,7 @@ function CreateJobInner() {
       : null
 
     const supabase = createClient()
-    const { data, error: insertError } = await supabase
+    const { error: insertError } = await supabase
       .from('jobs')
       .insert({
         company_id: companyId,
@@ -100,7 +103,7 @@ function CreateJobInner() {
         client_id: clientId || null,
         deal_id: dealId || null,
         address: address.trim() || null,
-        assigned_employee_id: assignedEmployeeId || null,
+        assignee_employee_id: assignedEmployeeId || null,
         status: 'open',
       })
       .select()
@@ -108,7 +111,9 @@ function CreateJobInner() {
 
     setSaving(false)
     if (insertError) { setError(insertError.message); return }
-    router.push('/dashboard/jobs')
+    if (dealId) router.push(`/dashboard/projects/${dealId}`)
+    else if (clientId) router.push(`/dashboard/clients/${clientId}?tab=jobs`)
+    else router.push('/dashboard/jobs')
   }
 
   if (error === 'not_linked') return (
