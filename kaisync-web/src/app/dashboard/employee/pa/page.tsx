@@ -467,7 +467,13 @@ export default function MyPAPage() {
         status: normalizePaStatus(t.status),
       })))
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to load tasks.')
+      const msg =
+        e instanceof Error
+          ? e.message
+          : typeof e === 'object' && e !== null && 'message' in e
+            ? String((e as { message: unknown }).message)
+            : 'Failed to load tasks.'
+      setError(msg)
     }
     setLoading(false)
   }
