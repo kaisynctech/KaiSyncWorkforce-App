@@ -20,6 +20,7 @@ export default function SupplierInvoiceDetailPage() {
   const [unlinkedPos, setUnlinkedPos] = useState<UnlinkedPo[]>([])
   const [showLinkModal, setShowLinkModal] = useState(false)
   const [linking, setLinking] = useState(false)
+  const [paying, setPaying] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
@@ -53,7 +54,7 @@ export default function SupplierInvoiceDetailPage() {
       return
     }
     if (lineErr) setError(lineErr.message)
-    const typedInv = inv as SupplierInvoice & { po_id?: string | null }
+    const typedInv = inv as SupplierInvoice & { po_id?: string | null; project_id?: string | null }
     setInvoice(typedInv)
     setLines((lineRows ?? []) as SupplierInvoiceLine[])
 
@@ -79,6 +80,31 @@ export default function SupplierInvoiceDetailPage() {
     setShowLinkModal(false)
     setLinking(false)
     showToast('Invoice linked to PO.')
+    void load()
+  }
+
+  async function recordPayment() {
+    if (!invoice || paying) return
+    setPaying(true)
+    setError(null)
+    const supabase = createClient()
+    const now = new Date().toISOString()
+    await supabase.from('supplier_invoices').update({
+      amount_paid: invoice.total_amount,
+      balance_due: 0,
+      status: 'paid',
+      paid_at: now,
+      updated_at: now,
+    }).eq('id', invoiceId)
+    // Sync project costs if invoice is linked to a project deal
+    const projectId = (invoice as SupplierInvoice & { project_id?: string | null }).project_id
+    if (projectId) {
+      await (supabase.rpc as unknown as (name: string, args: Record<string, unknown>) => Promise<{ data: null }>)(
+        'sync_project_costs', { p_deal_id: projectId }
+      )
+    }
+    setPaying(false)
+    showToast('Payment recorded.')
     void load()
   }
 
@@ -115,7 +141,24 @@ export default function SupplierInvoiceDetailPage() {
             </p>
           </div>
         </div>
-        <p className="text-[16px] font-semibold text-text-primary">{fmtMoney(invoice.total_amount)}</p>
+        <div className="flex items-center gap-2">
+          <p className="text-[16px] font-semibold text-text-primary">{fmtMoney(invoice.total_amount)}</p>
+          {invoice.status !== 'paid' && invoice.balance_due > 0 && (
+            <button
+              onClick={() => void recordPayment()}
+              disabled={paying}
+              className="btn-primary h-9 px-3 text-[12px] disabled:opacity-50"
+            >
+              {paying ? 'Recording…' : 'Record payment'}
+            </button>
+          )}
+          {invoice.status === 'paid' && (
+            <span className="text-[11px] text-success font-medium flex items-center gap-1">
+              <span className="material-icons text-[14px]">check_circle</span>
+              Paid
+            </span>
+          )}
+        </div>
       </div>
 
       {error && error !== 'not_linked' && (

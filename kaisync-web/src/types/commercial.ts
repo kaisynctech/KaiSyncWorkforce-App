@@ -167,6 +167,89 @@ export interface GoodsReceivedLine {
   condition_notes: string | null
 }
 
+// ─── Project Milestones ───────────────────────────────────────────────────────
+export type MilestoneStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled'
+
+export interface ProjectMilestone {
+  id: string
+  company_id: string
+  deal_id: string
+  sort_order: number
+  name: string
+  description: string | null
+  due_date: string | null
+  completion_date: string | null
+  invoice_amount: number
+  invoice_percentage: number
+  triggers_invoice: boolean
+  invoice_id: string | null
+  is_retention_release: boolean
+  status: MilestoneStatus
+  completed_by: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+// ─── Project Cost Entries ────────────────────────────────────────────────────
+export type CostType = 'estimated' | 'committed' | 'actual'
+export type CostCategory = 'labour' | 'materials' | 'subcontract' | 'equipment' | 'overhead' | 'other'
+export type CostSource = 'manual' | 'purchase_order' | 'supplier_invoice' | 'quote_estimate'
+
+export interface ProjectCostEntry {
+  id: string
+  company_id: string
+  deal_id: string
+  cost_type: CostType
+  category: CostCategory
+  source: CostSource
+  source_id: string | null
+  source_reference: string | null
+  description: string
+  quantity: number
+  unit_cost: number
+  total_cost: number
+  cost_date: string
+  notes: string | null
+  created_at: string
+}
+
+// ─── Project Financial Summary (view) ────────────────────────────────────────
+export interface ProjectFinancialSummary {
+  deal_id: string
+  company_id: string
+  title: string
+  status: string
+  contract_type: string
+  contract_value: number
+  budget_amount: number
+  estimated_cost: number
+  committed_cost: number
+  actual_cost: number
+  retention_percent: number
+  retention_amount_held: number
+  retention_released_at: string | null
+  total_invoiced: number
+  total_received: number
+  invoice_count: number
+  outstanding_balance: number
+  estimated_cost_entries: number
+  committed_cost_entries: number
+  actual_cost_entries: number
+  total_po_value: number
+  total_po_received: number
+  total_supplier_invoiced: number
+  total_supplier_paid: number
+  total_milestones: number
+  completed_milestones: number
+  invoiced_milestones: number
+  best_actual_cost: number
+  gross_profit: number
+  gross_margin_percent: number
+  estimated_budget_variance: number
+  actual_budget_variance: number
+}
+
 // ─── Three-Way Match ─────────────────────────────────────────────────────────
 export type MatchStatus = 'NO_ORDER' | 'OVER_INVOICED' | 'SHORT_DELIVERY' | 'MATCHED' | 'PARTIAL'
 

@@ -240,6 +240,13 @@ export default function PoBuilder({ poId }: { poId?: string }) {
     }
     if (linePayloads.length > 0) await supabase.from('purchase_order_lines').upsert(linePayloads, { onConflict: 'id' })
 
+    // Sync project costs when PO status commits spend (sent or approved) and deal is linked
+    if (dealId && (newStatus === 'sent' || newStatus === 'approved')) {
+      await (supabase.rpc as unknown as (name: string, args: Record<string, unknown>) => Promise<{ data: null }>)(
+        'sync_project_costs', { p_deal_id: dealId }
+      )
+    }
+
     setSaving(false)
     showToast(newStatus === 'sent' ? 'PO marked as sent.' : newStatus === 'approved' ? 'PO approved!' : 'PO saved.')
     if (isNew && currentId) router.replace(`/dashboard/supply/purchase-orders/${currentId}`)
@@ -251,6 +258,13 @@ export default function PoBuilder({ poId }: { poId?: string }) {
     const supabase = createClient()
     const now = new Date().toISOString()
     await supabase.from('purchase_orders').update({ approval_status: 'approved', status: 'approved', approved_by: employeeId, approved_at: now, updated_at: now }).eq('id', savedId.current)
+    // Sync project costs when PO is approved and linked to a deal
+    const syncDealId = dealId || po?.deal_id
+    if (syncDealId) {
+      await (supabase.rpc as unknown as (name: string, args: Record<string, unknown>) => Promise<{ data: null }>)(
+        'sync_project_costs', { p_deal_id: syncDealId }
+      )
+    }
     showToast('PO approved!')
     void load()
   }
