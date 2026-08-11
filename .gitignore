@@ -57,3 +57,4 @@ ARCH-*.md
 
 # Node
 **/node_modules/
+**/.fuse_hidden*
