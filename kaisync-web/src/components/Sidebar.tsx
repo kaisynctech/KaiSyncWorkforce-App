@@ -92,7 +92,11 @@ const NAV_SECTIONS: NavSection[] = [
     id: 'supply',
     label: 'Supply & Assets',
     items: [
-      { label: 'Suppliers', href: '/dashboard/suppliers', icon: 'storefront', flag: 'suppliers' },
+      { label: 'Suppliers', href: '/dashboard/supply/suppliers', icon: 'storefront', flag: 'suppliers' },
+      { label: 'RFQs', href: '/dashboard/supply/rfqs', icon: 'request_quote', flag: 'finance' },
+      { label: 'Purchase Orders', href: '/dashboard/supply/purchase-orders', icon: 'shopping_cart', flag: 'finance' },
+      { label: 'Goods Received', href: '/dashboard/supply/goods-received', icon: 'local_shipping', flag: 'finance' },
+      { label: 'Supplier Invoices', href: '/dashboard/finance/supplier-invoices', icon: 'receipt', flag: 'finance' },
       { label: 'Inventory', href: '/dashboard/inventory', icon: 'inventory_2', flag: 'inventory' },
       { label: 'Assets', href: '/dashboard/assets', icon: 'category', flag: 'assets' },
     ],
@@ -440,7 +444,7 @@ export default function Sidebar({ open, onToggle, company, employee, platformOnl
                     <div
                       className={cn(
                         'overflow-hidden transition-[max-height,opacity] duration-200 ease-out',
-                        expanded ? 'max-h-[520px] opacity-100' : 'max-h-0 opacity-0',
+                        expanded ? 'max-h-[640px] opacity-100' : 'max-h-0 opacity-0',
                       )}
                     >
                       {section.items.map(renderLink)}

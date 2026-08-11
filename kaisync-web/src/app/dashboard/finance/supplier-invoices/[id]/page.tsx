@@ -8,13 +8,23 @@ import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { fmtMoney } from '@/lib/finance-calc'
 import type { SupplierInvoice, SupplierInvoiceLine } from '@/lib/finance-types'
 
+interface LinkedPo { id: string; po_number: string | null; total_amount: number; status: string }
+interface UnlinkedPo { id: string; po_number: string | null; total_amount: number }
+
 export default function SupplierInvoiceDetailPage() {
   const params = useParams<{ id: string }>()
   const invoiceId = params.id
   const [invoice, setInvoice] = useState<SupplierInvoice | null>(null)
   const [lines, setLines] = useState<SupplierInvoiceLine[]>([])
+  const [linkedPo, setLinkedPo] = useState<LinkedPo | null>(null)
+  const [unlinkedPos, setUnlinkedPos] = useState<UnlinkedPo[]>([])
+  const [showLinkModal, setShowLinkModal] = useState(false)
+  const [linking, setLinking] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
+
+  function showToast(msg: string) { setToast(msg); setTimeout(() => setToast(null), 3000) }
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -43,10 +53,34 @@ export default function SupplierInvoiceDetailPage() {
       return
     }
     if (lineErr) setError(lineErr.message)
-    setInvoice(inv as SupplierInvoice)
+    const typedInv = inv as SupplierInvoice & { po_id?: string | null }
+    setInvoice(typedInv)
     setLines((lineRows ?? []) as SupplierInvoiceLine[])
+
+    // Load linked PO if present
+    if (typedInv.po_id) {
+      const { data: poData } = await supabase.from('purchase_orders').select('id, po_number, total_amount, status').eq('id', typedInv.po_id).maybeSingle()
+      setLinkedPo(poData as LinkedPo | null)
+    } else {
+      setLinkedPo(null)
+      // Load unlinked POs for same supplier
+      if (typedInv.supplier_id) {
+        const { data: poRows } = await supabase.from('purchase_orders').select('id, po_number, total_amount').eq('company_id', member.companyId).eq('supplier_id', typedInv.supplier_id).is('po_id', null)
+        setUnlinkedPos((poRows ?? []) as UnlinkedPo[])
+      }
+    }
     setLoading(false)
   }, [invoiceId])
+
+  async function linkToPo(poId: string) {
+    setLinking(true)
+    const supabase = createClient()
+    await supabase.from('supplier_invoices').update({ po_id: poId }).eq('id', invoiceId)
+    setShowLinkModal(false)
+    setLinking(false)
+    showToast('Invoice linked to PO.')
+    void load()
+  }
 
   useEffect(() => { void load() }, [load])
 
@@ -88,7 +122,37 @@ export default function SupplierInvoiceDetailPage() {
         <p className="px-4 py-2 text-[12px] text-error">{error}</p>
       )}
 
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-success text-white px-4 py-2 rounded-lg shadow-lg text-[13px] z-50 pointer-events-none">
+          {toast}
+        </div>
+      )}
+
       <div className="flex-1 overflow-auto p-4 space-y-4">
+        {/* Linked PO section */}
+        <div className="card p-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="material-icons text-[18px] text-text-secondary">shopping_cart</span>
+            {linkedPo ? (
+              <div>
+                <p className="text-[12px] text-text-secondary">Linked Purchase Order</p>
+                <Link href={`/dashboard/supply/purchase-orders/${linkedPo.id}`}
+                  className="text-[13px] font-semibold text-primary hover:underline">
+                  {linkedPo.po_number ?? 'Draft PO'} — {fmtMoney(linkedPo.total_amount)}
+                </Link>
+                <span className="ml-2 text-[11px] text-text-secondary capitalize">{linkedPo.status.replace(/_/g, ' ')}</span>
+              </div>
+            ) : (
+              <span className="text-[13px] text-text-secondary">No purchase order linked</span>
+            )}
+          </div>
+          {!linkedPo && (
+            <button onClick={() => setShowLinkModal(true)} className="btn-secondary h-8 px-3 text-[12px]">
+              Link to PO
+            </button>
+          )}
+        </div>
+
         {invoice.notes && (
           <p className="text-[13px] text-text-secondary">{invoice.notes}</p>
         )}
@@ -137,6 +201,33 @@ export default function SupplierInvoiceDetailPage() {
           <div className="flex justify-between"><span className="text-text-secondary">Balance due</span><span>{fmtMoney(invoice.balance_due)}</span></div>
         </div>
       </div>
+
+      {/* Link PO modal */}
+      {showLinkModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-surface rounded-xl shadow-2xl w-96 p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-[15px] font-semibold text-text-primary">Link to Purchase Order</h3>
+              <button onClick={() => setShowLinkModal(false)} className="text-text-secondary hover:text-text-primary">
+                <span className="material-icons text-[20px]">close</span>
+              </button>
+            </div>
+            {unlinkedPos.length === 0 ? (
+              <p className="text-[13px] text-text-secondary py-4 text-center">No unlinked purchase orders found for this supplier.</p>
+            ) : (
+              <div className="max-h-64 overflow-auto space-y-1">
+                {unlinkedPos.map(po => (
+                  <button key={po.id} onClick={() => linkToPo(po.id)} disabled={linking}
+                    className="w-full text-left px-3 py-2 rounded-lg hover:bg-surface-elevated text-[13px] disabled:opacity-50">
+                    <span className="font-medium">{po.po_number ?? 'Draft PO'}</span>
+                    <span className="ml-2 text-text-secondary">{fmtMoney(po.total_amount)}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
