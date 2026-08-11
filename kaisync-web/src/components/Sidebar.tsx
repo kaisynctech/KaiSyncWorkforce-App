@@ -114,6 +114,7 @@ const NAV_SECTIONS: NavSection[] = [
     label: 'Insights',
     items: [
       { label: 'Reports', href: '/dashboard/reports', icon: 'bar_chart', flag: 'reports' },
+      { label: 'Project Profitability', href: '/dashboard/reports/project-profitability', icon: 'trending_up', flag: 'reports' },
     ],
   },
   {

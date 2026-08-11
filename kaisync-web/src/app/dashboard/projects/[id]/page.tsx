@@ -10,6 +10,8 @@ import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { Toggle } from '@/components/Toggle'
 import { ProjectPaymentsTab } from '@/components/ProjectPaymentsTab'
 import { ProjectActivityTab } from '@/components/ProjectActivityTab'
+import { ProjectMilestonesTab } from '@/components/ProjectMilestonesTab'
+import { ProjectFinancialsTab } from '@/components/ProjectFinancialsTab'
 import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
 import {
   allocateProjectCode,
@@ -20,9 +22,10 @@ import {
 import { logProjectEvent } from '@/lib/project-events'
 import type { Project, Client, Employee, Job, ProjectDocument, ProjectQuotationLine } from '@/types/database'
 
-const PROJECT_TABS = ['details', 'docs', 'quotation', 'pipeline', 'payments', 'activity']
+const PROJECT_TABS = ['details', 'docs', 'quotation', 'pipeline', 'milestones', 'financials', 'payments', 'activity']
 const TAB_LABELS: Record<string, string> = {
   details: 'Details', docs: 'Docs', quotation: 'Quotation', pipeline: 'Pipeline',
+  milestones: 'Milestones', financials: 'Financials',
   payments: 'Payments', activity: 'Activity',
 }
 const STATUS_OPTIONS = ['draft', 'sent', 'negotiation', 'in_progress', 'won', 'lost']
@@ -814,6 +817,23 @@ export default function ProjectDetailPage() {
               </p>
             )}
           </div>
+        )}
+
+        {/* ── MILESTONES ── */}
+        {!isNew && tab === 'milestones' && companyId && (
+          <ProjectMilestonesTab
+            projectId={projectId}
+            companyId={companyId}
+            canEdit={canEdit}
+          />
+        )}
+
+        {/* ── FINANCIALS ── */}
+        {!isNew && tab === 'financials' && companyId && (
+          <ProjectFinancialsTab
+            projectId={projectId}
+            companyId={companyId}
+          />
         )}
 
         {/* ── PAYMENTS ── */}
