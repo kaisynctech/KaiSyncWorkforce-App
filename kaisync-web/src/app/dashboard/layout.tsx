@@ -43,7 +43,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         if (emp) {
           const access = (emp as Employee).access_level
-          // Pure employees must pick a company (MAUI company picker) when no ctx
+          // Pure employees must pick a company  when no ctx
           if (!ctx && access === 'employee') {
             router.replace(AUTH_ROUTES.companyPicker)
             setLoading(false)
@@ -56,7 +56,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           return
         }
 
-        // JWT but no employee row — platform owners may continue (MAUI parity)
+        // JWT but no employee row — platform owners may continue 
         const admin = await isPlatformAdmin(supabase)
         if (admin) {
           setEmployee(null)
@@ -110,7 +110,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     init()
   }, [router, pathname])
 
-  // Match MAUI: only field employees use employee shell; managers+ use company dashboard
+  // only field employees use employee shell; managers+ use company dashboard
   const showEmployeeShell = employee != null && !usesCompanyDashboard(employee.access_level)
 
   if (loading) {

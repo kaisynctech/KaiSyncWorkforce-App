@@ -6,7 +6,7 @@ import {
 } from '@/lib/leave-settings'
 
 describe('getCompanyAnnualDays', () => {
-  it('prefers MAUI leave_settings keys', () => {
+  it('prefers legacy leave_settings keys', () => {
     expect(
       getCompanyAnnualDays('Annual Leave', { annual_leave_days: 21 })
     ).toBe(21)

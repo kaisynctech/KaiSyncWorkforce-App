@@ -21,7 +21,7 @@ import { fmtMoney } from '@/lib/finance-calc'
 import type { Client, ClientDocument, ClientNote, Site, Project, ProjectDocument } from '@/types/database'
 import type { FinanceInvoice } from '@/lib/finance-types'
 
-const CLIENT_TABS = ['info', 'projects', 'jobs', 'invoices', 'documents', 'notes', 'activity'] as const
+const CLIENT_TABS = ['info', 'projects', 'jobs', 'invoices', 'documents', 'notes', 'activity', 'commercial'] as const
 type ClientTab = typeof CLIENT_TABS[number]
 
 const TAB_LABELS: Record<ClientTab, string> = {
@@ -32,6 +32,7 @@ const TAB_LABELS: Record<ClientTab, string> = {
   documents: 'Documents',
   notes: 'Notes',
   activity: 'Activity',
+  commercial: 'Commercial',
 }
 
 const DOC_TYPES = [
@@ -151,6 +152,12 @@ function ClientDetailInner() {
   const [addingSite, setAddingSite] = useState(false)
   const [siteName, setSiteName] = useState('')
   const [siteAddress, setSiteAddress] = useState('')
+  const [commercialData, setCommercialData] = useState<{
+    quotes: Array<{ id: string; quote_number: string | null; title: string; status: string; total_amount: number; created_at: string }>
+    invoices: Array<{ id: string; invoice_number: string | null; status: string; total_amount: number; balance_due: number; issue_date: string }>
+    ledger: Array<{ id: string; entry_type: string; reference_number: string | null; description: string | null; debit: number; credit: number; entry_date: string }>
+  } | null>(null)
+  const [commercialLoading, setCommercialLoading] = useState(false)
 
   // Form state
   const [name, setName] = useState('')
@@ -184,6 +191,34 @@ function ClientDetailInner() {
   }, [tab, focusId, projects, loading])
 
   useEffect(() => { void load() }, [clientId])
+
+  async function loadCommercial(clientId: string, companyId: string) {
+    const supabase = createClient()
+    const [{ data: quotes }, { data: invoices }, { data: ledger }] = await Promise.all([
+      supabase.from('commercial_quotes')
+        .select('id, quote_number, title, status, total_amount, created_at')
+        .eq('client_id', clientId).eq('company_id', companyId)
+        .order('created_at', { ascending: false }).limit(10),
+      supabase.from('finance_invoices')
+        .select('id, invoice_number, status, total_amount, balance_due, issue_date')
+        .eq('client_id', clientId).eq('company_id', companyId)
+        .order('created_at', { ascending: false }).limit(10),
+      supabase.from('customer_ledger_entries')
+        .select('id, entry_type, reference_number, description, debit, credit, entry_date')
+        .eq('client_id', clientId).eq('company_id', companyId)
+        .order('entry_date', { ascending: false }).limit(20),
+    ])
+    return { quotes: quotes ?? [], invoices: invoices ?? [], ledger: ledger ?? [] }
+  }
+
+  useEffect(() => {
+    if (tab !== 'commercial' || !client || !client.company_id) return
+    setCommercialLoading(true)
+    loadCommercial(client.id, client.company_id).then(data => {
+      setCommercialData(data)
+      setCommercialLoading(false)
+    })
+  }, [tab, client?.id, client?.company_id])
 
   async function loadJobs(
     supabase: ReturnType<typeof createClient>,
@@ -1443,6 +1478,172 @@ function ClientDetailInner() {
 
         {showRelatedTabs && tab === 'activity' && client && (
           <ClientActivityTab companyId={client.company_id} clientId={clientId} />
+        )}
+
+        {showRelatedTabs && tab === 'commercial' && (
+          <div className="space-y-6 p-4">
+            {/* Commercial Profile card */}
+            <div className="bg-surface rounded-xl border border-divider p-4 space-y-3">
+              <h3 className="text-[14px] font-semibold text-text-primary">Commercial Profile</h3>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="space-y-1">
+                  <span className="text-[12px] text-text-secondary">Payment Terms (days)</span>
+                  <input type="number" value={(client as any).payment_terms_days ?? 30}
+                    onChange={e => setClient(prev => prev ? { ...prev, payment_terms_days: Number(e.target.value) } as any : prev)}
+                    className="w-full h-9 px-3 border border-border rounded-md text-[13px] bg-background" />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-[12px] text-text-secondary">Credit Limit (R)</span>
+                  <input type="number" value={(client as any).credit_limit ?? 0}
+                    onChange={e => setClient(prev => prev ? { ...prev, credit_limit: Number(e.target.value) } as any : prev)}
+                    className="w-full h-9 px-3 border border-border rounded-md text-[13px] bg-background" />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-[12px] text-text-secondary">VAT Number</span>
+                  <input type="text" value={(client as any).vat_number ?? ''}
+                    onChange={e => setClient(prev => prev ? { ...prev, vat_number: e.target.value } as any : prev)}
+                    className="w-full h-9 px-3 border border-border rounded-md text-[13px] bg-background" />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-[12px] text-text-secondary">Billing Address</span>
+                  <input type="text" value={(client as any).billing_address ?? ''}
+                    onChange={e => setClient(prev => prev ? { ...prev, billing_address: e.target.value } as any : prev)}
+                    className="w-full h-9 px-3 border border-border rounded-md text-[13px] bg-background" />
+                </label>
+              </div>
+              <label className="flex items-center gap-2 text-[13px]">
+                <input type="checkbox" checked={(client as any).tax_exempt ?? false}
+                  onChange={e => setClient(prev => prev ? { ...prev, tax_exempt: e.target.checked } as any : prev)} />
+                Tax Exempt
+              </label>
+              <button
+                onClick={async () => {
+                  if (!client) return
+                  const supabase = createClient()
+                  await supabase.from('clients').update({
+                    payment_terms_days: (client as any).payment_terms_days,
+                    credit_limit: (client as any).credit_limit,
+                    vat_number: (client as any).vat_number,
+                    billing_address: (client as any).billing_address,
+                    tax_exempt: (client as any).tax_exempt,
+                  }).eq('id', client.id)
+                }}
+                className="btn-primary h-9 px-4 text-[13px]"
+              >
+                Save Commercial Profile
+              </button>
+            </div>
+
+            {commercialLoading && <p className="text-[13px] text-text-secondary">Loading…</p>}
+
+            {commercialData && (
+              <>
+                {/* Quote History */}
+                <div className="bg-surface rounded-xl border border-divider overflow-hidden">
+                  <div className="px-4 py-3 border-b border-divider flex items-center justify-between">
+                    <h3 className="text-[14px] font-semibold text-text-primary">Quote History</h3>
+                    <a href={`/dashboard/money/quotes?client=${client?.id}`} className="text-[12px] text-primary">View all →</a>
+                  </div>
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-surface-elevated border-b border-divider">
+                        <th className="data-th">Quote #</th>
+                        <th className="data-th">Title</th>
+                        <th className="data-th">Status</th>
+                        <th className="data-th text-right">Amount</th>
+                        <th className="data-th">Date</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {commercialData.quotes.length === 0 ? (
+                        <tr><td colSpan={5} className="data-td text-center text-text-secondary">No quotes</td></tr>
+                      ) : commercialData.quotes.map(q => (
+                        <tr key={q.id} className="border-b border-divider hover:bg-background cursor-pointer"
+                          onClick={() => router.push(`/dashboard/money/quotes/${q.id}`)}>
+                          <td className="data-td font-medium">{q.quote_number ?? '—'}</td>
+                          <td className="data-td">{q.title}</td>
+                          <td className="data-td capitalize">{q.status.replace(/_/g, ' ')}</td>
+                          <td className="data-td text-right">{fmtMoney(q.total_amount)}</td>
+                          <td className="data-td text-text-secondary">{q.created_at.split('T')[0]}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Invoice History */}
+                <div className="bg-surface rounded-xl border border-divider overflow-hidden">
+                  <div className="px-4 py-3 border-b border-divider flex items-center justify-between">
+                    <h3 className="text-[14px] font-semibold text-text-primary">Invoice History</h3>
+                    <a href={`/dashboard/money/invoices`} className="text-[12px] text-primary">View all →</a>
+                  </div>
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-surface-elevated border-b border-divider">
+                        <th className="data-th">Invoice #</th>
+                        <th className="data-th">Status</th>
+                        <th className="data-th text-right">Total</th>
+                        <th className="data-th text-right">Balance</th>
+                        <th className="data-th">Issued</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {commercialData.invoices.length === 0 ? (
+                        <tr><td colSpan={5} className="data-td text-center text-text-secondary">No invoices</td></tr>
+                      ) : commercialData.invoices.map(inv => (
+                        <tr key={inv.id} className="border-b border-divider hover:bg-background cursor-pointer"
+                          onClick={() => router.push(`/dashboard/money/invoices/${inv.id}`)}>
+                          <td className="data-td font-medium">{inv.invoice_number ?? '—'}</td>
+                          <td className="data-td capitalize">{inv.status.replace(/_/g, ' ')}</td>
+                          <td className="data-td text-right">{fmtMoney(inv.total_amount)}</td>
+                          <td className="data-td text-right">{fmtMoney(inv.balance_due)}</td>
+                          <td className="data-td text-text-secondary">{inv.issue_date}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Customer Ledger */}
+                <div className="bg-surface rounded-xl border border-divider overflow-hidden">
+                  <div className="px-4 py-3 border-b border-divider flex items-center justify-between">
+                    <h3 className="text-[14px] font-semibold text-text-primary">Customer Ledger</h3>
+                    <span className="text-[13px] font-medium text-text-primary">
+                      Outstanding: {fmtMoney(
+                        commercialData.ledger.reduce((s, e) => s + e.debit - e.credit, 0)
+                      )}
+                    </span>
+                  </div>
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-surface-elevated border-b border-divider">
+                        <th className="data-th">Date</th>
+                        <th className="data-th">Type</th>
+                        <th className="data-th">Reference</th>
+                        <th className="data-th">Description</th>
+                        <th className="data-th text-right">Debit</th>
+                        <th className="data-th text-right">Credit</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {commercialData.ledger.length === 0 ? (
+                        <tr><td colSpan={6} className="data-td text-center text-text-secondary">No ledger entries</td></tr>
+                      ) : commercialData.ledger.map(e => (
+                        <tr key={e.id} className="border-b border-divider">
+                          <td className="data-td text-text-secondary">{e.entry_date}</td>
+                          <td className="data-td capitalize">{e.entry_type.replace(/_/g, ' ')}</td>
+                          <td className="data-td font-mono">{e.reference_number ?? '—'}</td>
+                          <td className="data-td text-text-secondary">{e.description ?? '—'}</td>
+                          <td className="data-td text-right">{e.debit > 0 ? fmtMoney(e.debit) : '—'}</td>
+                          <td className="data-td text-right text-green-600">{e.credit > 0 ? fmtMoney(e.credit) : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </div>
         )}
       </div>
     </div>

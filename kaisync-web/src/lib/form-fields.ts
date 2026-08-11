@@ -1,4 +1,4 @@
-/** Normalize workflow form field JSON from MAUI (FieldType/IsRequired) and web shapes. */
+/** Normalize workflow form field JSON (FieldType/IsRequired) and web shapes. */
 
 export type FormFieldType =
   | 'text'

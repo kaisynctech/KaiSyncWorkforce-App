@@ -1,4 +1,4 @@
-/** PA helpers — status normalization, snooze, recurrence spawn (MAUI MyPaHelper). */
+/** PA helpers — status normalization, snooze, recurrence spawn . */
 
 export type PaStatus = 'todo' | 'in_progress' | 'done' | 'snoozed' | 'cancelled'
 
@@ -41,7 +41,7 @@ export function nextSnoozeUntil(option: string): string {
   }
 }
 
-/** Advance due_at for recurrence after complete (MAUI SpawnNextRecurrence). */
+/** Advance due_at for recurrence after complete . */
 export function spawnNextDueAt(
   dueAt: string | null | undefined,
   pattern: string | null | undefined,
@@ -76,7 +76,7 @@ export function parsePaSettingsRpc(data: unknown): PaSettings {
   }
 }
 
-/** ICS calendar entry for Export (MAUI MyPaHelper.BuildIcsCalendar). */
+/** ICS calendar entry for Export . */
 export type PaIcsEntry = {
   id: string
   title: string

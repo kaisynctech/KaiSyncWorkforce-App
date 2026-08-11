@@ -1,5 +1,5 @@
 /**
- * Contractor quote helpers — filters, labels, client-side totals (MAUI parity).
+ * Contractor quote helpers — filters, labels, client-side totals .
  */
 
 import type {
@@ -69,7 +69,7 @@ export function lineSubtotal(row: QuoteLineDraft): number {
   return Math.max(0, qty * price - disc)
 }
 
-/** Mirrors MAUI Create* totals / _cq_compute_totals order. */
+/** Implements equivalent logic* totals / _cq_compute_totals order. */
 export function computeQuoteTotals(input: {
   lines: QuoteLineDraft[]
   discount: number

@@ -29,7 +29,7 @@ export function formatEmployeeDocumentType(raw: string): string {
 
 export const EMPLOYEE_DOCUMENT_ACCEPT = '.pdf,.jpg,.jpeg,.png,.doc,.docx'
 
-/** MAUI path: employee_documents/{companyId}/{employeeId}/{guid}{ext} */
+/** Storage path: employee_documents/{companyId}/{employeeId}/{guid}{ext} */
 export function employeeDocumentStoragePath(
   companyId: string,
   employeeId: string,
@@ -38,7 +38,7 @@ export function employeeDocumentStoragePath(
   return `employee_documents/${companyId}/${employeeId}/${crypto.randomUUID()}.${ext}`
 }
 
-/** MAUI path: leave_attachments/{employeeId}/{guid}{ext} */
+/** Storage path: leave_attachments/{employeeId}/{guid}{ext} */
 export function leaveAttachmentStoragePath(employeeId: string, ext: string): string {
   return `leave_attachments/${employeeId}/${crypto.randomUUID()}.${ext}`
 }

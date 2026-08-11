@@ -1,4 +1,4 @@
-/** Mirrors MAUI EmployeeThreadChatViewModel + MessageThreadDisplay heuristics. */
+/** Implements + MessageThreadDisplay heuristics. */
 
 export type MessageThreadLike = {
   id: string
@@ -16,7 +16,7 @@ export function isCompanyFeed(thread: MessageThreadLike): boolean {
   return (thread.type_raw ?? '').toLowerCase() === 'company_feed'
 }
 
-/** MAUI Teams filter: Job: subject OR >2 participants (and not feed). */
+/** Teams filter: Job: subject OR >2 participants (and not feed). */
 export function isTeamsThread(thread: MessageThreadLike): boolean {
   if (isCompanyFeed(thread)) return false
   const subject = thread.subject ?? ''

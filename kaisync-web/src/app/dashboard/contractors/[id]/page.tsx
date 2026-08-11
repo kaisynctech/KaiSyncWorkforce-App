@@ -745,7 +745,7 @@ function ContractorDetailInner() {
     }
   }
 
-  // Compliance calculations — pack checklist when assigned (parity with portal/MAUI)
+  // Compliance calculations — pack checklist when assigned
   const portalDocs = useMemo<ContractorDocument[]>(
     () => complianceDocs.map(d => ({
       id: d.id,

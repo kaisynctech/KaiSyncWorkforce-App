@@ -79,7 +79,7 @@ export function parsePayslipsRpcJson(data: unknown): PayslipPdfInput[] {
   return rows as PayslipPdfInput[]
 }
 
-/** Client-side payslip PDF — mirrors MAUI ExportPayslipPdfAsync layout. */
+/** Client-side payslip PDF — implements layout. */
 export function downloadPayslipPdf(
   payment: PayslipPdfInput,
   employeeName: string,

@@ -21,7 +21,7 @@ interface NavItem {
   icon: string
   /** undefined = always visible when section is shown */
   flag?: keyof HrNavFlags
-  /** Owner-only (MAUI Activity Log) */
+  /** Owner-only  */
   ownerOnly?: boolean
 }
 
@@ -82,6 +82,10 @@ const NAV_SECTIONS: NavSection[] = [
     label: 'Money',
     items: [
       { label: 'Finance', href: '/dashboard/finance', icon: 'account_balance', flag: 'finance' },
+      { label: 'Quotes', href: '/dashboard/money/quotes', icon: 'request_quote', flag: 'finance' },
+      { label: 'Price Catalogue', href: '/dashboard/money/catalogue', icon: 'sell', flag: 'finance' },
+      { label: 'Invoices', href: '/dashboard/money/invoices', icon: 'receipt_long', flag: 'finance' },
+      { label: 'Credit Notes', href: '/dashboard/money/credit-notes', icon: 'undo', flag: 'finance' },
     ],
   },
   {
@@ -181,7 +185,7 @@ interface SidebarProps {
   onToggle: () => void
   company: Company | null
   employee: Employee | null
-  /** JWT platform admin with no employee row (MAUI Platform Console parity) */
+  /** JWT platform admin with no employee row  */
   platformOnly?: boolean
 }
 

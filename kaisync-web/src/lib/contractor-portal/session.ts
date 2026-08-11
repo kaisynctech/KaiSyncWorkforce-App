@@ -1,5 +1,5 @@
 /**
- * Contractor portal session — mirrors MAUI ContractorPortalSessionStore.
+ * Contractor portal session — implements equivalent logic.
  * Holds both codes (ops RPCs) and UUIDs (profile/banking/compliance/quotes).
  */
 

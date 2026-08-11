@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { CompanyModuleKeys, isModuleEnabled, type EnabledModules } from '@/lib/company-modules'
 import { isFeatureEnabled, loadSaasFeatures, type SaasFeatureMap } from '@/lib/saas-features'
 
-/** MAUI: ShowFinanceNav = module.finance SaaS + payroll tenant module. */
+/** Finance nav: requires SaaS finance feature + payroll tenant module. */
 export async function canAccessFinance(
   supabase: SupabaseClient,
   companyId: string,

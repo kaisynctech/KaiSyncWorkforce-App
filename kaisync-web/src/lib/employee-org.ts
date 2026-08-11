@@ -2,7 +2,7 @@
  * Canonical org fields for employees (web source of truth):
  *   branch_id, manager_id, department
  *
- * Legacy dual-column mirrors kept in sync for MAUI / payroll readers:
+ * Legacy dual-column mirrors kept in sync for payroll readers:
  *   branch (text), manager_user_id (auth uid), cost_center
  */
 
@@ -17,7 +17,7 @@ export type OrgWriteFields = {
   manager_user_id: string | null
 }
 
-/** Resolve manager's auth user id for MAUI EmployeeScopeService parity. */
+/** Resolve manager's auth user id for scope checks. */
 export async function resolveManagerUserId(
   supabase: SupabaseClient,
   managerEmployeeId: string | null | undefined

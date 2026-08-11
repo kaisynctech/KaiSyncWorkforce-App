@@ -1,4 +1,4 @@
-/** Mirrors MAUI EntityCodeHelper project codes: P{company}#### */
+/** Implements project codes: P{company}#### */
 
 function projectPrefix(companyCode: string): string {
   const normalized = companyCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '')

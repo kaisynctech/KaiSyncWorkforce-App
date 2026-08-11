@@ -1,5 +1,5 @@
 /**
- * Contractor portal compliance scoring — mirrors MAUI RebuildComplianceView /
+ * Contractor portal compliance scoring — implements /
  * BuildPortalChecklist.
  */
 

@@ -1,5 +1,5 @@
 /**
- * Template-aware payroll sessions — reuses MAUI-parity punch-session metrics
+ * Template-aware payroll sessions — reuses punch-session metrics
  * so late/early/OT match attendance UI and KaiFlow PunchSession.Build.
  */
 
@@ -45,7 +45,7 @@ export function buildTemplateAwareSessions(
     timeZone,
   })
 
-  // Closed sessions only for payroll (MAUI filters !IsOpen)
+  // Closed sessions only for payroll 
   return rows
     .filter(s => !s.isOpen && !s.isAbsentDay && !s.isLeaveDay)
     .map(s => ({

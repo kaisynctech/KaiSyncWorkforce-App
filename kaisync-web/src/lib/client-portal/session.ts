@@ -1,5 +1,5 @@
 /**
- * Client portal session — mirrors MAUI ClientPortalSessionStore.
+ * Client portal session — implements equivalent logic.
  * Code-auth only (no Supabase JWT). Codes passed to every RPC.
  */
 
@@ -52,7 +52,7 @@ export function clearClientPortalSession(): void {
   localStorage.removeItem(CLIENT_PORTAL_SESSION_KEY)
 }
 
-/** Sign-out: clear session and suppress one auto-restore (MAUI ClearForSignOut). */
+/** Sign-out: clear session and suppress one auto-restore . */
 export function signOutClientPortal(): void {
   if (!canUseStorage()) return
   clearClientPortalSession()

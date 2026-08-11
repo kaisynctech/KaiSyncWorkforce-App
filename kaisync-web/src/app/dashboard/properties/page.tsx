@@ -10,7 +10,6 @@ export default function PropertiesPage() {
   const [sites, setSites] = useState<Site[]>([])
   const [loading, setLoading] = useState(true)
   const [companyId, setCompanyId] = useState<string | null>(null)
-  const [expiringCount, setExpiringCount] = useState(0)
   const [showCreate, setShowCreate] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -25,16 +24,9 @@ export default function PropertiesPage() {
     if (!member) { setError('not_linked'); setLoading(false); return }
     setCompanyId(member.companyId)
 
-    const [{ data: sData }, { data: cData }] = await Promise.all([
-      supabase.from('sites').select('*').eq('company_id', member.companyId).order('name'),
-      supabase.from('site_compliance')
-        .select('id')
-        .eq('company_id', member.companyId)
-        .lte('expiry_date', new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]),
-    ])
+    const { data: sData } = await supabase.from('sites').select('*').eq('company_id', member.companyId).order('name')
 
     setSites((sData ?? []) as Site[])
-    setExpiringCount((cData ?? []).length)
     setLoading(false)
   }, [])
 
@@ -107,17 +99,6 @@ export default function PropertiesPage() {
           +
         </button>
       </div>
-
-      {/* Expiring compliance banner */}
-      {expiringCount > 0 && (
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-error shrink-0"
-          style={{ backgroundColor: '#FEE2E2' }}>
-          <span className="text-[16px]" style={{ color: 'var(--color-error)' }}>⚠</span>
-          <p className="text-sm" style={{ color: 'var(--color-error)' }}>
-            <strong>{expiringCount}</strong> compliance item{expiringCount !== 1 ? 's' : ''} expiring soon or overdue
-          </p>
-        </div>
-      )}
 
       {/* Site cards */}
       <div className="flex-1 overflow-y-auto p-4 space-y-2">

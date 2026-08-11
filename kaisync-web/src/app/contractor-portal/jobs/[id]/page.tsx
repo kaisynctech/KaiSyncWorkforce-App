@@ -132,7 +132,7 @@ export default function ContractorJobDetailPage() {
 
   async function onSignIn() {
     if (!session || siteBusy) return
-    // MAUI DisplayPromptAsync — cancel aborts
+    // DisplayPromptAsync — cancel aborts
     const name = window.prompt('Who is on site? (optional)', session.contractor_name || '')
     if (name === null) return
 

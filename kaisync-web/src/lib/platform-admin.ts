@@ -1,5 +1,5 @@
 /**
- * Platform operator gate — mirrors MAUI IsPlatformAdminAsync / platform_is_admin().
+ * Platform operator gate — implements / platform_is_admin().
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'

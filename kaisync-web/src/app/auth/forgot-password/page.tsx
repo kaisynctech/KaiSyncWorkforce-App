@@ -40,10 +40,10 @@ function ForgotPasswordForm() {
       if (resetErr) throw resetErr
       setSent(true)
     } catch (err: unknown) {
-      // Match MAUI: still show success-style message for privacy; surface real errors if thrown
+      // still show success-style message for privacy; surface real errors if thrown
       setSent(true)
       if (err instanceof Error && err.message) {
-        // Prefer generic success UX like MAUI DisplayAlert
+        // Prefer generic success UX
       }
     } finally {
       setLoading(false)
