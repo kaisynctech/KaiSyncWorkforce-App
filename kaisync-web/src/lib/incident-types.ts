@@ -1,4 +1,4 @@
-/** Mirrors MAUI IncidentReport / IncidentCategories / IncidentStatuses. */
+/** Implements / IncidentCategories / IncidentStatuses. */
 
 export const INCIDENT_SEVERITIES = ['low', 'medium', 'high', 'critical'] as const
 export type IncidentSeverity = (typeof INCIDENT_SEVERITIES)[number]
@@ -32,7 +32,7 @@ export const STATUS_STYLES: Record<string, string> = {
   closed: 'bg-surface-elevated text-text-secondary',
 }
 
-/** MAUI IsOpen — open or investigating. */
+/** IsOpen — open or investigating. */
 export function isIncidentOpen(status: string | null | undefined, isClosed?: boolean | null): boolean {
   if (isClosed === true) return false
   const s = (status ?? '').toLowerCase()

@@ -65,7 +65,6 @@ export default function SettingsPage() {
   const [companyId,   setCompanyId]   = useState<string | null>(null)
   const [myEmpId,     setMyEmpId]     = useState<string | null>(null)
   const [companyName, setCompanyName] = useState('')
-  const [industry,    setIndustry]    = useState('')
 
   // ── Branch state ─────────────────────────────────────────────────────────
   const [branches,         setBranches]         = useState<BranchRow[]>([])
@@ -146,11 +145,9 @@ export default function SettingsPage() {
     const co = (empData as { companies: Company }).companies
     setCompany(co)
     setCompanyName(co.name)
-    setIndustry(co.industry ?? '')
     setEnabledModules((co as Company).enabled_modules ?? {})
 
-    const [secRes, auditRes, branchRes, allEmpRes] = await Promise.all([
-      supabase.from('security_settings').select('*').eq('company_id', member.companyId).maybeSingle(),
+    const [auditRes, branchRes, allEmpRes] = await Promise.all([
       supabase.from('audit_events').select('*').eq('company_id', member.companyId)
         .order('created_at', { ascending: false }).limit(20),
       supabase.from('branches').select('id, company_id, name, is_active')
@@ -169,7 +166,6 @@ export default function SettingsPage() {
       if (coRow?.enabled_modules) setEnabledModules(coRow.enabled_modules as EnabledModules)
     }
 
-    setSecurity(secRes.data as SecuritySettings | null)
     setAuditEvents((auditRes.data ?? []) as AuditEvent[])
     setBranches((branchRes.data ?? []) as BranchRow[])
 
@@ -212,7 +208,7 @@ export default function SettingsPage() {
     if (!company || !companyName.trim()) return
     setSaving('company')
     const supabase = createClient()
-    await supabase.from('companies').update({ name: companyName.trim(), industry: industry || null })
+    await supabase.from('companies').update({ name: companyName.trim() })
       .eq('id', company.id)
     await load()
     setSaving(null)
@@ -482,16 +478,6 @@ export default function SettingsPage() {
                 className="input"
               />
             </Field>
-            <Field label="Industry">
-              <input
-                type="text"
-                value={industry}
-                onChange={e => setIndustry(e.target.value)}
-                disabled={!isOwner}
-                placeholder="e.g. Healthcare"
-                className="input"
-              />
-            </Field>
             <Field label="Company Code">
               <div className="flex items-center gap-2 h-10 px-3 rounded-md border border-border bg-surface-elevated text-[13px] text-text-secondary">
                 <span className="font-mono">{company?.code ?? company?.company_code ?? 'Not set'}</span>
@@ -690,7 +676,10 @@ export default function SettingsPage() {
 
           <Section title="Active Sessions" icon="devices">
             <p className="text-[13px] text-text-secondary">
-              Session management is available in the MAUI HR app under Settings → Active Sessions.
+              View and revoke active employee portal sessions in{' '}
+              <Link href="/dashboard/active-sessions" className="text-primary underline">
+                Active Sessions
+              </Link>.
             </p>
           </Section>
         </>
@@ -859,7 +848,7 @@ export default function SettingsPage() {
                 <p className="text-[13px] font-medium text-text-primary">SAGE Payroll</p>
                 <p className="text-[12px] text-text-secondary">Export payroll data to SAGE</p>
               </div>
-              <p className="text-[12px] text-text-disabled italic">Configure in MAUI admin app</p>
+              <p className="text-[12px] text-text-disabled italic">Coming soon</p>
             </div>
             <div className="flex flex-col gap-3 py-2">
               <div className="flex items-center justify-between">
@@ -959,7 +948,7 @@ export default function SettingsPage() {
               <RowInfo label="Overtime threshold" value="40 hours/week" />
               <RowInfo label="Allow self punch-in" value="Enabled" />
               <p className="text-[12px] text-text-secondary pt-1">
-                Attendance settings can be configured in the MAUI admin app.
+                Additional attendance configuration coming soon.
               </p>
             </div>
           </Section>
@@ -970,7 +959,7 @@ export default function SettingsPage() {
               <RowInfo label="Sick leave days" value="30 days" />
               <RowInfo label="Family responsibility" value="3 days" />
               <p className="text-[12px] text-text-secondary pt-1">
-                Leave policies can be configured in the MAUI admin app.
+                Additional leave policy configuration coming soon.
               </p>
             </div>
           </Section>
@@ -987,15 +976,14 @@ export default function SettingsPage() {
 
           <Section title="Notifications" icon="notifications">
             <p className="text-[13px] text-text-secondary">
-              Email notification preferences are managed per-user in the MAUI app.
+              Email notification preferences are managed per-user. In-app notifications are available from the bell icon in the sidebar.
             </p>
           </Section>
 
           <Section title="Backup & Export" icon="backup">
             <div className="flex flex-col gap-3">
               <p className="text-[13px] text-text-secondary">
-                Point-in-time recovery is enabled on your Supabase database. Full data exports can be
-                triggered from the MAUI admin app.
+                Your data is backed up daily. Full data export is coming soon.
               </p>
               <button className="self-start flex items-center gap-2 h-9 px-4 rounded-md bg-surface border border-border text-[13px] text-text-secondary font-medium hover:border-primary hover:text-primary transition-colors">
                 <span className="material-icons text-[16px]">download</span>

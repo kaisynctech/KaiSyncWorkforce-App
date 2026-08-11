@@ -6,7 +6,7 @@ import {
 } from '@/lib/employee-document-types'
 
 /**
- * Upload leave attachment. MAUI swallows upload failure → null URL.
+ * Upload leave attachment. Upload failure is non-fatal → null URL.
  * Returns storage path or null on failure.
  */
 export async function uploadLeaveAttachment(params: {

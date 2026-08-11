@@ -1,5 +1,5 @@
 /**
- * Mirrors JobOwnershipHelper + JobAssignmentHelper from MAUI.
+ * Mirrors JobOwnershipHelper + JobAssignmentHelper
  */
 
 export type JobOwnershipFields = {
@@ -40,7 +40,7 @@ export function normalizeStatus(raw: string | null | undefined): string {
   return s
 }
 
-/** MAUI Job.IsOpen — scheduled or in progress. */
+/** IsOpen — scheduled or in progress. */
 export function isOpenJob(job: JobOwnershipFields): boolean {
   const s = normalizeStatus(job.status)
   return s === 'scheduled' || s === 'in_progress' || s === 'inProgress'
@@ -78,7 +78,7 @@ export function sortJobsByCreatedDesc<T extends JobOwnershipFields>(jobs: T[]): 
   })
 }
 
-/** Ensure creator/assignee are included in assigned_employee_ids (MAUI JobAssignmentHelper). */
+/** Ensure creator/assignee are included in assigned_employee_ids . */
 export function buildAssignedEmployeeIds(
   creatorId: string,
   selectedCoworkerIds: string[],

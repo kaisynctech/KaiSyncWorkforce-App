@@ -216,7 +216,7 @@ export function isModuleEnabled(
   return defaultVal
 }
 
-/** Incidents module with legacy paperless fallback (MAUI IsIncidentsEnabled). */
+/** Incidents module with legacy paperless fallback . */
 export function isIncidentsEnabled(enabledModules: EnabledModules): boolean {
   if (isModuleEnabled(enabledModules, CompanyModuleKeys.Incidents)) return true
   return isModuleEnabled(enabledModules, CompanyModuleKeys.Paperless, false)
@@ -325,7 +325,7 @@ export function resolveHrNavFlags(enabledModules: EnabledModules, financeEntitle
     timeTemplates: scheduling || employees,
     teamPunch: attendance,
     residents: properties,
-    // MAUI: SaaS module.finance + payroll tenant module
+    // SaaS module.finance + payroll tenant module
     finance: financeEntitled && payroll,
   }
 }

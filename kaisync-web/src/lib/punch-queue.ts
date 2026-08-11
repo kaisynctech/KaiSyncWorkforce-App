@@ -39,7 +39,7 @@ export function clearQueue(): void {
   localStorage.removeItem(QUEUE_KEY)
 }
 
-/** Queue on offline OR transport/network-style RPC failures (MAUI OfflineQueueService). */
+/** Queue on offline OR transport/network-style RPC failures . */
 export function shouldQueuePunchFailure(errorMessage: string | null | undefined): boolean {
   if (typeof navigator !== 'undefined' && !navigator.onLine) return true
   const msg = (errorMessage ?? '').toLowerCase()

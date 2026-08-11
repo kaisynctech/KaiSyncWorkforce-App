@@ -67,5 +67,5 @@ export function calcLeaveTotalDays(start: string, end: string): number {
   )
 }
 
-/** MAUI leave attachment accept list */
+/** Leave attachment accept list */
 export const LEAVE_ATTACHMENT_ACCEPT = '.pdf,.jpg,.jpeg,.png,.doc,.docx'

@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { prepareMediaUpload, consumeMediaUpload } from '@/lib/job-media'
 
-/** MAUI path: incident_reports/{company}/{employee}/{guid}{ext} */
+/** Storage path: incident_reports/{company}/{employee}/{guid}{ext} */
 export function incidentPhotoStoragePath(
   companyId: string,
   employeeId: string,
@@ -13,7 +13,7 @@ export function incidentPhotoStoragePath(
 
 /**
  * Extract storage object path from a relative path or absolute public URL.
- * Handles MAUI public URLs and legacy web `incident-photos/` paths.
+ * Handles legacy web `incident-photos/` paths.
  */
 export function incidentStorageObjectPath(stored: string): string | null {
   const raw = stored.trim()

@@ -32,7 +32,7 @@ export function formatPayrollActionError(message: string): string {
 }
 
 export type ApproveOptions = {
-  /** When set, STEP_UP_REQUIRED triggers password re-auth + hr_confirm_step_up (MAUI parity). */
+  /** When set, STEP_UP_REQUIRED triggers password re-auth + hr_confirm_step_up . */
   promptPassword?: () => Promise<string | null>
 }
 
@@ -69,7 +69,7 @@ export async function rejectPaymentRun(
   return { ok: true, data: undefined }
 }
 
-/** MAUI SharePayslipWithEmployeeAsync — no release RPC; update column. */
+/** no release RPC; update column. */
 export async function releasePayslipToEmployee(
   supabase: SupabaseClient,
   companyId: string,

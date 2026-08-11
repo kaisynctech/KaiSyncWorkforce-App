@@ -82,7 +82,7 @@ function EmailOtpForm() {
       }
 
       if (employee.company_id) {
-        // Single known company — MAUI tries company then picker
+        // Single known company company then picker
         const { data: companies } = await supabase
           .from('employees')
           .select('company_id')

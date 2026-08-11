@@ -3,7 +3,7 @@
  * via get_company_settings / upsert_company_settings.
  * There is no leave_types table.
  *
- * MAUI keys (ProductionModels): annual_leave_days, sick_leave_days, …
+ * Legacy keys: annual_leave_days, sick_leave_days, …
  * Canonical leave_requests.leave_type values are Title Case (LEAVE_TYPES).
  */
 
@@ -12,7 +12,7 @@ import { getAnnualDays, LEAVE_TYPES } from '@/lib/leave-policy'
 
 export type LeaveSettingsMap = Record<string, unknown>
 
-/** Map Title Case leave type → possible leave_settings jsonb keys (MAUI + aliases). */
+/** Map Title Case leave type → possible leave_settings jsonb keys . */
 const SETTINGS_KEYS_BY_TYPE: Record<string, string[]> = {
   'Annual Leave': ['annual_leave_days', 'annual_leave', 'Annual Leave'],
   'Sick Leave': ['sick_leave_days', 'sick_leave', 'Sick Leave'],

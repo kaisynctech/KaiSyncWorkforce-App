@@ -1,4 +1,4 @@
-/** Canonical employee classification values (aligned with MAUI / payroll). */
+/** Canonical employee classification values (aligned with payroll). */
 
 export const EMPLOYMENT_TYPES = [
   { value: 'permanent', label: 'Permanent' },

@@ -3,7 +3,7 @@
 import type { FocusEvent, ReactNode } from 'react'
 import { PwaInstallButton } from '@/components/PwaInstallButton'
 
-/** Shared dark auth chrome matching MAUI BackgroundDark auth screens. */
+/** Shared dark auth chrome matching the web auth shell. */
 export function AuthShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen w-full flex">

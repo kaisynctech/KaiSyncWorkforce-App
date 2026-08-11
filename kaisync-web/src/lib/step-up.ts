@@ -1,5 +1,5 @@
 /**
- * MAUI StepUpVerificationService parity for KaiSync web.
+ * Step-up verification for KaiSync web.
  * On STEP_UP_REQUIRED: re-auth with password → hr_confirm_step_up → retry.
  */
 
@@ -9,7 +9,7 @@ export type StepUpResult<T> =
   | { ok: true; data: T }
   | { ok: false; message: string }
 
-/** In-memory window (slightly under DB 15 minutes), same idea as MAUI. */
+/** In-memory window (slightly under DB 15 minutes). */
 let stepUpValidUntilMs = 0
 
 export function isStepUpRequiredMessage(message: string): boolean {

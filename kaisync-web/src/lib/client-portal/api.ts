@@ -300,7 +300,7 @@ export async function registerDocument(
   return typeof data === 'string' ? data.replace(/"/g, '') : str(data)
 }
 
-/** Upload file to workforce-media then register (MAUI ClientPortalUploadDocumentAsync). */
+/** Upload file to workforce-media then register . */
 export async function uploadDocument(params: {
   companyCode: string
   clientCode: string

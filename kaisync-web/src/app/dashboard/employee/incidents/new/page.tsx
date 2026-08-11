@@ -264,7 +264,7 @@ export default function NewIncidentPage() {
     const files = photoRef.current?.files
     const fileList = files ? Array.from(files) : []
 
-    // Offline enqueue (MAUI PendingIncident)
+    // Offline enqueue 
     if (typeof navigator !== 'undefined' && !navigator.onLine) {
       const photos = []
       for (const f of fileList) photos.push(await fileToQueuedPhoto(f))

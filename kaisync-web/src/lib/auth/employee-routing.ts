@@ -1,6 +1,6 @@
 /**
  * Mirrors KaiFlow.Timesheets.Services.EmployeeAccountRouting
- * and Employee.UsesCompanyDashboard from MAUI.
+ * and Employee.UsesCompanyDashboard
  */
 
 import { isCompanyDashboardAccess } from '@/lib/employee-taxonomy'
@@ -30,7 +30,7 @@ export function routeAfterCompanySelected(accessLevel: string | null | undefined
     : AUTH_ROUTES.employeeDashboard
 }
 
-/** After email/OTP sign-in: mandatory password or company picker (MAUI NavigateAfterAuthAsync). */
+/** After email/OTP sign-in: mandatory password or company picker . */
 export function routeAfterEmailSignIn(loginPasswordReady: boolean): string {
   if (!loginPasswordReady) return AUTH_ROUTES.mandatoryPassword
   return AUTH_ROUTES.companyPicker

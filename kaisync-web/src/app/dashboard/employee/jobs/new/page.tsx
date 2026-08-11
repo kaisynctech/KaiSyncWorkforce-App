@@ -103,7 +103,7 @@ export default function NewJobPage() {
 
     const scheduled = new Date(startDT)
     const scheduledEnd = new Date(scheduled.getTime() + 8 * 3600000)
-    // MAUI: creator + assignee always included in assigned_employee_ids
+    // creator + assignee always included in assigned_employee_ids
     const assignedIds = buildAssignedEmployeeIds(empId, Array.from(selectedTeam))
 
     const supabase = createClient()

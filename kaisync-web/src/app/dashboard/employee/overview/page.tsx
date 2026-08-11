@@ -647,7 +647,7 @@ export default function EmployeeOverviewPage() {
     }
     if (!modules.attendance) return
 
-    // Block clock-IN when on leave / absent (MAUI parity)
+    // Block clock-IN when on leave / absent 
     if (!isClockedIn && isOnLeave) {
       window.alert('You are on approved leave today and cannot clock in.')
       return
@@ -771,7 +771,7 @@ export default function EmployeeOverviewPage() {
       return
     }
 
-    // Branch geofence hard-block on clock-IN (MAUI)
+    // Branch geofence hard-block on clock-IN
     if (!isClockedIn) {
       const branchResult = validateBranchClockIn({
         enforce: enforceBranchSignInRadius(dispatchSettingsRef.current),
@@ -790,7 +790,7 @@ export default function EmployeeOverviewPage() {
       }
     }
 
-    // Job-site geofence: soft warning only — do NOT hard-block (MAUI job On Site is separate)
+    // Job-site geofence: soft warning only — do NOT hard-block 
     // Display handled in modal UI below.
 
     const supabase = createClient()
@@ -1210,7 +1210,7 @@ export default function EmployeeOverviewPage() {
           )}
         </div>
 
-        {/* Quick links — MAUI More / Home discoverability */}
+        {/* Quick links / Home discoverability */}
         {showWorkspace && (
           <div className="bg-surface border border-divider rounded-xl overflow-hidden">
             <div className="px-4 py-3 border-b border-divider">
@@ -1277,7 +1277,7 @@ export default function EmployeeOverviewPage() {
           </div>
         )}
 
-        {/* My Teams — MAUI overview section */}
+        {/* My Teams section */}
         {showWorkspace && (
           <div className="bg-surface border border-divider rounded-xl overflow-hidden">
             <div className="px-4 py-3 border-b border-divider">

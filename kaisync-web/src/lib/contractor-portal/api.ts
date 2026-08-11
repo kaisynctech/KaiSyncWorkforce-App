@@ -205,7 +205,7 @@ export async function getVisitHistory(
   })).filter(v => v.sign_in_at)
 }
 
-/** Pair visits into display sessions (MAUI JobSiteSession.Build). */
+/** Pair visits into display sessions . */
 export function buildVisitSessions(visits: JobSiteVisit[]): JobSiteSessionRow[] {
   return [...visits]
     .sort((a, b) => b.sign_in_at.localeCompare(a.sign_in_at))
@@ -546,7 +546,7 @@ export async function appendJobPhoto(
   })
 }
 
-/** Upload job photo then append URL (MAUI AddPhotoAsync). */
+/** Upload job photo then append URL . */
 export async function uploadJobPhoto(params: {
   companyCode: string
   contractorCode: string
@@ -687,7 +687,7 @@ export async function insertDocument(params: {
   return typeof data === 'string' ? data.replace(/"/g, '') : str(data)
 }
 
-/** Upload to workforce-media then insert via portal RPC (MAUI ContractorPortalUploadDocumentAsync). */
+/** Upload to workforce-media then insert via portal RPC . */
 export async function uploadComplianceDocument(params: {
   contractorId: string
   companyId: string
@@ -846,7 +846,7 @@ export async function saveQuoteDraft(params: {
     p_other_charges: params.otherCharges || 0,
     p_terms: params.terms?.trim() ?? '',
     p_contractor_notes: params.contractorNotes?.trim() ?? '',
-    // Must be a real array — not a JSON string (MAUI bugfix)
+    // Must be a real array — not a JSON string 
     p_items: params.items.map(i => ({
       description: i.description.trim(),
       quantity: Number(i.quantity) || 0,

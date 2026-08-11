@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-/** MAUI paths: job_photos/{company}/{job}/{before|after}/{guid}.ext */
+/** Storage paths: job_photos/{company}/{job}/{before|after}/{guid}.ext */
 export function jobPhotoStoragePath(
   companyId: string,
   jobId: string,
@@ -10,7 +10,7 @@ export function jobPhotoStoragePath(
   return `job_photos/${companyId}/${jobId}/${phase}/${crypto.randomUUID()}.${ext}`
 }
 
-/** MAUI paths: job_documents/{company}/{job}/{guid}.ext */
+/** Storage paths: job_documents/{company}/{job}/{guid}.ext */
 export function jobDocumentStoragePath(companyId: string, jobId: string, ext: string): string {
   return `job_documents/${companyId}/${jobId}/${crypto.randomUUID()}.${ext}`
 }

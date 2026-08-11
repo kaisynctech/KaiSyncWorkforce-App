@@ -192,7 +192,7 @@ export type JwtEmployeeRow = {
   is_active: boolean
 }
 
-/** First employee row for the JWT user (MAUI GetCurrentEmployeeAsync). */
+/** First employee row for the JWT user . */
 export async function getCurrentJwtEmployee(
   supabase: SupabaseClient,
 ): Promise<JwtEmployeeRow | null> {

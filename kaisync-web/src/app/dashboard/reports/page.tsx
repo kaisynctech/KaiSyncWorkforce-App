@@ -154,7 +154,7 @@ function useTabData(preset: Preset, activeTab: TabKey, companyId: string | null)
       if (rpcData && Object.keys(rpcData).length > 0) {
         setData(rpcData)
       } else if (isPhase2Tab(activeTab)) {
-        // MAUI builds these client-side; use until Phase 2 RPCs are deployed
+        // builds these client-side; use until Phase 2 RPCs are deployed
         const built = await buildPhase2Snapshot(supabase, activeTab, companyId, start, end)
         setData(built)
       } else {
@@ -559,7 +559,7 @@ function empName(employees: unknown): string {
   return `${emp.name ?? ''} ${emp.surname ?? ''}`.trim()
 }
 
-// Exports tab — client CSV (MAUI ExportAsync parity)
+// Exports tab — client CSV 
 function ExportsTab({ companyId, preset }: { companyId: string | null; preset: Preset }) {
   const [busy, setBusy] = useState<string | null>(null)
 

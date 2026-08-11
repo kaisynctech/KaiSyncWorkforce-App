@@ -10,7 +10,7 @@ export interface Employee {
   access_level: AccessLevel
   is_active: boolean
   department: string | null
-  /** Dual-write mirror of department for payroll/MAUI readers */
+  /** Dual-write mirror of department for payroll readers */
   cost_center?: string | null
   /** @deprecated not a live column — use position */
   job_title?: string | null
@@ -42,7 +42,7 @@ export interface Employee {
   pay_basis: string | null
   /** Canonical reports-to: employees.id */
   manager_id: string | null
-  /** Legacy MAUI scope: manager's auth.users id */
+  /** Legacy scope: manager's auth.users id */
   manager_user_id?: string | null
   /** Canonical branch FK → branches.id */
   branch_id: string | null
@@ -837,4 +837,128 @@ export interface JobContractorDocument {
   type_icon: string
   storage_path: string
   created_display: string
+}
+
+export type QuoteCatalogueItem = {
+  id: string
+  company_id: string
+  code: string | null
+  name: string
+  description: string | null
+  unit: string
+  item_type: 'material' | 'labour' | 'equipment' | 'subcontractor' | 'other'
+  category: string | null
+  cost_price: number
+  markup_percent: number
+  sell_price: number
+  vat_rate: number
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type CommercialQuote = {
+  id: string
+  company_id: string
+  quote_number: string | null
+  version: number
+  client_id: string | null
+  deal_id: string | null
+  job_id: string | null
+  salesperson_id: string | null
+  title: string
+  description: string | null
+  status: 'draft' | 'internal_review' | 'sent' | 'viewed' | 'accepted' | 'declined' | 'expired'
+  currency: string
+  subtotal: number
+  discount_amount: number
+  vat_amount: number
+  total_amount: number
+  cost_total: number
+  gross_profit: number
+  gross_margin_percent: number
+  valid_until: string | null
+  payment_terms_days: number
+  deposit_required: number
+  scope_notes: string | null
+  exclusions: string | null
+  assumptions: string | null
+  terms_and_conditions: string | null
+  internal_notes: string | null
+  sent_at: string | null
+  viewed_at: string | null
+  accepted_at: string | null
+  declined_at: string | null
+  declined_reason: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+  // joined
+  clients?: { name: string } | null
+  client_deals?: { title: string } | null
+}
+
+export type CommercialQuoteLine = {
+  id: string
+  company_id: string
+  quote_id: string
+  sort_order: number
+  section_heading: string | null
+  item_type: 'material' | 'labour' | 'equipment' | 'subcontractor' | 'other' | 'heading'
+  catalogue_item_id: string | null
+  description: string
+  unit: string
+  quantity: number
+  cost_price: number
+  markup_percent: number
+  unit_sell_price: number
+  subtotal_cost: number
+  subtotal_sell: number
+  vat_rate: number
+  vat_amount: number
+  line_total: number
+  is_optional: boolean
+  is_excluded: boolean
+}
+
+export type CreditNote = {
+  id: string
+  company_id: string
+  credit_note_number: string | null
+  invoice_id: string | null
+  client_id: string | null
+  deal_id: string | null
+  status: 'draft' | 'pending_approval' | 'approved' | 'applied' | 'voided'
+  reason_code: string
+  reason_notes: string | null
+  currency: string
+  subtotal: number
+  vat_amount: number
+  total_amount: number
+  applied_amount: number
+  refund_amount: number
+  issue_date: string
+  approved_by: string | null
+  approved_at: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+  // joined
+  finance_invoices?: { invoice_number: string | null } | null
+  clients?: { name: string } | null
+}
+
+export type CustomerLedgerEntry = {
+  id: string
+  company_id: string
+  client_id: string
+  entry_type: 'invoice' | 'payment' | 'credit_note' | 'credit_applied' | 'refund' | 'adjustment'
+  source_table: string | null
+  source_id: string | null
+  reference_number: string | null
+  description: string | null
+  debit: number
+  credit: number
+  entry_date: string
+  created_at: string
 }

@@ -45,7 +45,7 @@ export function getDispatchNumber(settings: DispatchSettings, key: string, defau
   return Number.isFinite(parsed) ? parsed : defaultValue
 }
 
-/** MAUI Company.NormalizeBranchRadius */
+/** Normalize branch geofence radius */
 export function normalizeBranchRadius(raw: number): number {
   if (raw <= 350) return 200
   if (raw <= 750) return 500

@@ -55,7 +55,7 @@ function fmtLeaveType(raw: string): string {
   return raw.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
-/** MAUI: approved/declined unread only when decided within 7 days. Pending is read. */
+/** approved/declined unread only when decided within 7 days. Pending is read. */
 export function leaveToNotificationItem(l: {
   id: string
   leave_type: string
@@ -90,7 +90,7 @@ export function leaveToNotificationItem(l: {
   }
 }
 
-/** MAUI: open incidents unread; closed = read. */
+/** open incidents unread; closed = read. */
 export function incidentToNotificationItem(i: {
   id: string
   title: string | null
@@ -128,7 +128,7 @@ export function mapAppNotification(n: AppNotificationRow): UnifiedNotificationIt
   }
 }
 
-/** MAUI dashboard badge: unread app_notifications only. */
+/** Dashboard badge: unread app_notifications only. */
 export function countUnreadAppNotifications(items: UnifiedNotificationItem[]): number {
   return items.filter(i => i.source === 'app' && !i.is_read).length
 }

@@ -22,7 +22,7 @@ export type EmployeeCreateInput = {
   workerType: string
   accessLevel: string
   managerId?: string | null
-  /** Legacy MAUI scope column — set from manager.user_id when managerId is chosen */
+  /** Legacy scope column — set from manager.user_id when managerId is chosen */
   managerUserId?: string | null
   employmentDate?: string | null
   monthlySalary?: number | null
@@ -70,7 +70,7 @@ export function buildEmployeeCreatePayload(input: EmployeeCreateInput): Record<s
     id_number: emptyToNull(input.idNumber),
     position: emptyToNull(input.position),
     // Canonical: department / branch_id / manager_id
-    // Dual-write: cost_center / branch text / manager_user_id (MAUI + payroll readers)
+    // Dual-write: cost_center / branch text / manager_user_id 
     department: emptyToNull(input.department),
     cost_center: emptyToNull(input.department),
     branch_id: emptyToNull(input.branchId),

@@ -1,248 +1,170 @@
-# Client onboarding pack
+# Client Onboarding Pack
 
-What **you (KaiFlow operator)** prepare before go-live, and what **you send to each customer** so they can download the app and start using KaiFlow.
+What **you (KaiFlow operator)** do before go-live, and what **you send to each client** so their team can start using KaiFlow.
 
 ---
 
-## Part 1 — Your checklist (before emailing the client)
+## Part 1 — Your checklist (before contacting the client)
 
-Complete these steps first. Do not send the client pack until download links work.
+Complete these steps first. Do not send the client email until you have confirmed the platform is live and the tenant is active.
 
-### 1. Publish or distribute the app
+### 1. Confirm the platform is accessible
 
-The production app is **KaiFlow Timesheets** (`com.kaisynctech.kaiflow.timesheets`, v1.0.0).
+Open **[https://www.kaisyncworkforce.com](https://www.kaisyncworkforce.com)** in a browser and verify the sign-in screen loads. No installation is required — KaiFlow is a web application that works in any modern browser on any device.
 
-Choose one distribution path:
+### 2. Provision the tenant
 
-| Platform | Option |
-|----------|--------|
-| **Windows** | MSIX/MSI installer, Microsoft Store, or direct download link |
-| **Android** | Google Play or signed APK sideload |
-| **iOS** | App Store or TestFlight for pilots |
-| **macOS** | Mac App Store or direct build (Mac Catalyst) |
+Either let the client self-register, or create them yourself:
 
-#### Direct distribution (no Play Store / App Store)
+**Self-registration:** Client opens `kaisyncworkforce.com` → clicks **Register** → completes company details + email verification.
 
-If you are **not** on public stores yet, this is the realistic split:
+**You create them:** Platform Console → Companies → New company → confirm subscription is active → note the **company code** (e.g. `ACME01`).
 
-| Platform | Works without stores? | How |
-|----------|----------------------|-----|
-| **Windows** | ✅ Yes — straightforward | Zip or MSIX download from your website / Supabase Storage / Google Drive |
-| **Android** | ✅ Yes — straightforward | Signed **APK**; user enables “Install unknown apps” once |
-| **iPhone / iPad** | ⚠️ Limited | Apple does **not** allow simple APK-style sideloading for normal users. Best pilot path: **TestFlight** (not public App Store, but needs Apple Developer $99/yr). Without that, iOS field staff are blocked until App Store or TestFlight. |
+After registration capture:
 
-**Recommended pilot mix (no public stores):**
-
-1. **HR / office** → Windows installer (primary)
-2. **Field Android** → signed APK link
-3. **Field iPhone** → TestFlight invite link **or** ask them to use Android/Windows for the pilot phase
-
-Build (example — Windows):
-
-```powershell
-cd KaiFlow.Timesheets.Maui
-dotnet publish KaiFlow.Timesheets.Maui.csproj -f net10.0-windows10.0.19041.0 -c Release
-```
-
-Android release APK (after you create a release keystore — keep the keystore safe; you need the same one for updates):
-
-```powershell
-dotnet publish KaiFlow.Timesheets.Maui.csproj -f net10.0-android -c Release
-```
-
-iOS (Mac required + Apple Developer account for TestFlight or Ad Hoc):
-
-```powershell
-dotnet publish KaiFlow.Timesheets.Maui.csproj -f net10.0-ios -c Release
-```
-
-Upload installers to a stable HTTPS URL (your website, Supabase Storage public bucket, or a dedicated `/download` page).
-
-**Important:** Create a **release keystore** for Android before your first client APK. If you lose it, users cannot update in place — they must uninstall and reinstall.
-
-### 2. Register download URLs in the database
-
-So the in-app update screen can point users to the right place:
-
-```sql
-UPDATE public.app_versions
-SET
-  download_url_windows = 'https://YOUR-LINK/KaiFlow-Windows-1.0.0.zip',
-  download_url_android = 'https://YOUR-LINK/KaiFlow-1.0.0.apk',
-  download_url_ios     = 'https://testflight.apple.com/join/YOUR_CODE',  -- TestFlight, not App Store
-  download_url         = 'https://kaiflow.app/download'
-WHERE version = '1.0.0';
-```
-
-### 3. Provision the tenant
-
-Either:
-
-- **Self-service:** Client registers in-app (HR Register flow), or
-- **You create them:** Platform Console → Companies → ensure subscription is active → note their **company code**
-
-After registration, capture and save:
-
-| Item | Where to find it |
-|------|------------------|
+| Item | Where |
+|------|-------|
 | Company name | Platform Console → Companies |
-| **Company code** | Same (e.g. `ACME01`) — employees need this to log in |
-| Owner email | Their HR sign-in email |
+| **Company code** | Same — employees and workers need this to log in |
+| Owner email | Their HR sign-in address |
 | Plan | KaiFlow Standard — R2,500/mo, 25 employees included |
 
-Run **Refresh billing** in Platform Console once employees are added.
+### 3. Confirm subscription is active
 
-### 4. Confirm subscription is active
+Platform Console → Companies → the company row should show **active**. Run **Refresh billing** after employees are added.
 
-Platform Console → Companies → company should show **active**. Suspended companies may hit entitlement limits.
+### 4. Enable modules for the tenant
 
-### 5. Optional: complete onboarding with them
-
-In-app **Setup wizard** (`TenantOnboardingPage`) — available from HR dashboard banner. Walk through: company profile, first employees, modules, first punch.
+In the HR dashboard → **Settings** → enable the modules this client needs (Attendance, Payroll, Jobs, Leave, Finance, etc.). Unused modules stay hidden from their sidebar.
 
 ---
 
-## Part 2 — Email / document to send your client
+## Part 2 — Email to send the client
 
-Copy the block below. Replace placeholders in `{curly braces}`.
-
----
-
-**Subject:** Welcome to KaiFlow — download & getting started
+Copy the block below. Replace `{placeholders}`.
 
 ---
 
-Hi {Client contact name},
-
-Welcome to **KaiFlow**, your workforce management platform. This email has everything you need to install the app and get your team set up.
-
-### What KaiFlow includes
-
-- Attendance & time tracking  
-- Jobs, projects & scheduling  
-- Payroll & payslips  
-- Leave management  
-- Incidents, inventory, suppliers & contractors  
-- Property management  
-- Messaging & My PA  
-- Reports & analytics  
-- Finance (where included in your plan)  
-- Client & contractor portals (optional)
+**Subject:** Welcome to KaiFlow — getting started
 
 ---
 
-### Step 1 — Download the app
+Hi {Contact name},
 
-Install **KaiFlow Timesheets** on the devices your team will use:
+Welcome to **KaiFlow**, your workforce management platform. Everything runs in your web browser — no software to install.
 
-| Device | Download |
-|--------|----------|
-| **Windows (HR / office)** | {Windows download link} — download ZIP, extract, run `KaiFlow.Timesheets.Maui.exe` |
-| **Android (field staff)** | {APK download link} — see install steps below |
-| **iPhone / iPad** | {TestFlight link} — install TestFlight from App Store first, then open our invite link |
+### Access the platform
 
-**Minimum:** Windows 10/11; Android 8+; iOS 15+ (iPhone/iPad).
-
-#### Windows install notes
-
-1. Download the ZIP from the link above.  
-2. Extract to a folder (e.g. `C:\KaiFlow`).  
-3. Run **KaiFlow Timesheets**.  
-4. If Windows SmartScreen appears, choose **More info → Run anyway** (we will provide a signed installer in a future update).
-
-#### Android install notes (APK — not Google Play)
-
-1. Open the APK link on the phone.  
-2. If prompted, allow your browser or **Files** app to **install unknown apps** (one-time).  
-3. Tap **Install**.  
-4. Open **KaiFlow Timesheets** from the home screen.
-
-#### iPhone / iPad (TestFlight — not public App Store)
-
-1. Install **TestFlight** from the App Store (Apple’s beta app — free).  
-2. Open the TestFlight invite link we sent you.  
-3. Tap **Accept** → **Install** KaiFlow Timesheets.  
-4. Updates will arrive through TestFlight until the public App Store release.
-
-If a link does not work, reply to this email and we will send an alternative.
+Open **[https://www.kaisyncworkforce.com](https://www.kaisyncworkforce.com)** on any device. Works on Chrome, Edge, Safari, and Firefox. On a phone or tablet, use your browser's **Add to Home Screen** option for a full-screen app experience.
 
 ---
 
-### Step 2 — HR / manager setup (you)
+### What's included in your plan
 
-1. Open the app → choose **HR / Management sign in**.  
-2. **New company:** tap **Register** and complete email verification + company details.  
-   **Existing company:** sign in with the email and password you registered.  
-3. After sign-in you land on the **HR Dashboard**.  
-4. Complete the **Setup wizard** if prompted (company details, first employees, modules).  
-5. Go to **Settings** to enable the modules you need (Attendance, Payroll, Jobs, etc.).
+- Attendance & time tracking (clock in/out with GPS)
+- Jobs & projects management
+- Scheduling & shift templates
+- Leave management & approvals
+- Payroll, payslips & SARS tax tables
+- Finance (invoices, approvals, supplier invoices)
+- Incidents & compliance
+- Inventory & suppliers
+- Contractors & contractor portal
+- Property management
+- Messaging & My PA (personal assistant tasks)
+- Reports & analytics
+- Client portal (optional — for your own clients)
+- Xero integration (sync contacts + push payroll journals)
+
+---
+
+### Step 1 — HR / manager sign-in
+
+1. Go to [https://www.kaisyncworkforce.com](https://www.kaisyncworkforce.com)
+2. Choose **HR / Management**
+3. **New company:** click **Register** and follow the email verification steps
+   **Returning:** enter your email and password
+4. You land on the **HR Dashboard**
+5. Go to **Settings** → enable the modules your team will use
 
 Your company details:
 
 | | |
 |---|---|
 | **Company name** | {Company name} |
-| **Company code** | `{Company code}` ← share this with employees |
-| **Support contact** | kaisynctech@gmail.com |
+| **Company code** | `{Company code}` — share this with your employees |
+| **Support** | kaisynctech@gmail.com |
 
 ---
 
-### Step 3 — Add your employees
+### Step 2 — Add your employees
 
-1. HR Dashboard → **Employees** → **Create employee** (or **Import** for bulk).  
-2. Each employee receives a **login code** (employee code).  
-3. Share with each person:
-   - **Company code:** `{Company code}`  
-   - **Their personal login code** (from their employee profile)
+HR Dashboard → **Employees** → **New Employee** (or **Import** for bulk upload via spreadsheet).
 
-Your plan includes **{25} employees** in the base subscription. Additional users are billed at **R99/month** each.
+Each employee gets a personal **login code**. Share two things with each person:
+- **Company code:** `{Company code}`
+- **Their login code** (visible in their employee profile)
 
----
-
-### Step 4 — Field staff login (employees)
-
-Employees do **not** use your HR password.
-
-1. Open the app → **Employee login**.  
-2. Enter **company code** + **login code** (provided by HR).  
-3. They can clock in/out, view jobs, leave, payslips, and messages from their dashboard.
+Your plan includes **25 employees**. Additional employees are billed at **R99/month** each.
 
 ---
 
-### Step 5 — First day checklist
+### Step 3 — Employee login
+
+Employees do not use your HR password. Their login is:
+
+1. Go to [https://www.kaisyncworkforce.com](https://www.kaisyncworkforce.com)
+2. Choose **Employee login**
+3. Enter the **company code** and their **personal login code**
+4. They land on their employee dashboard — clock in/out, view jobs, leave, payslips, messaging, and more
+
+Employees can bookmark the page or add it to their phone's home screen for quick access.
+
+---
+
+### Step 4 — First day checklist
 
 | Task | Who |
 |------|-----|
-| Install app on HR/manager PC | {Client contact} |
-| Register or sign in | Company owner / HR admin |
-| Add 2–3 test employees | HR admin |
-| Test clock-in / clock-out | Employee + HR verify in Attendance |
-| Enable modules in Settings | HR admin |
-| Submit test feedback (Settings → Send Feedback) | Optional — confirms support channel |
+| Sign in to HR dashboard | You |
+| Enable modules in Settings | You |
+| Add 2–3 test employees | You |
+| Share company code + login codes | You → employees |
+| Test clock-in / clock-out | Employee — you verify in Attendance |
+| Submit test feedback | Optional (Settings → Send Feedback) |
 
 ---
 
 ### Optional portals
 
-If you use external **clients** or **contractors**:
+**Client portal** — give your own clients visibility into their projects and invoices:
+- Client goes to `kaisyncworkforce.com` → **Client Portal**
+- Enters your **company code** + their **client code** (you create this under HR → Clients)
 
-- **Client portal:** login screen → Client portal → company code + client code (created under Clients in HR).  
-- **Contractor portal:** login screen → Contractor portal → company code + contractor code.
+**Contractor portal** — your field contractors log jobs, submit quotes, and upload documents:
+- Contractor goes to `kaisyncworkforce.com` → **Contractor Portal**
+- Enters your **company code** + their **contractor code** (you create this under HR → Contractors)
 
-We can configure these on a setup call if needed.
-
----
-
-### Support & feedback
-
-- **Email:** kaisynctech@gmail.com  
-- **In-app:** Settings → **Send Feedback** (bugs, suggestions, feature requests)
-
-We typically respond within 1 business day.
+We can set these up on a call if needed.
 
 ---
 
-### Billing (KaiFlow Standard)
+### Xero integration (if applicable)
+
+Connect your Xero account from **Settings → Integrations → Connect Xero**. Once connected you can push contacts and sync approved payroll journals directly to Xero as Draft Manual Journals.
+
+---
+
+### Support
+
+- **Email:** kaisynctech@gmail.com
+- **In-platform:** Settings → **Send Feedback**
+
+We respond within 1 business day.
+
+---
+
+### Billing
 
 | | |
 |---|---|
@@ -250,41 +172,45 @@ We typically respond within 1 business day.
 | Included | Up to 25 active employees |
 | Additional employees | R99 / month each |
 
-Invoicing and payment details will be confirmed separately. Plan changes and upgrades are handled through KaiFlow support.
+Payment details confirmed separately. Plan changes handled through KaiFlow support.
 
 ---
 
-Welcome aboard,  
-**KaiSync Tech / KaiFlow**  
+Welcome aboard,
+**KaiSync Tech / KaiFlow**
 kaisynctech@gmail.com
 
 ---
 
-## Part 3 — Quick reference card (attach or second page)
+## Part 3 — Quick reference card
 
-Print or PDF this one-pager for the client’s office.
+Print or PDF this for the client's office.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  KAIFLOW — QUICK START                                      │
 ├─────────────────────────────────────────────────────────────┤
-│  App name:     KaiFlow Timesheets                           │
-│  HR login:     Email + password (register if new)           │
-│  Employee login: Company code + personal login code         │
+│  Platform:     https://www.kaisyncworkforce.com             │
+│  Browser:      Chrome / Edge / Safari / Firefox             │
+│                                                             │
+│  HR login:     HR / Management → email + password           │
+│  Employee:     Employee login → company code + login code   │
 │                                                             │
 │  Company code: ___________________                          │
 │  Support:      kaisynctech@gmail.com                        │
 │                                                             │
 │  HR first steps:                                            │
 │    1. Sign in → HR Dashboard                                │
-│    2. Employees → Add staff                                 │
-│    3. Settings → Enable modules                             │
-│    4. Attendance → Verify punches                           │
+│    2. Settings → enable modules                             │
+│    3. Employees → add staff + share login codes             │
+│    4. Attendance → verify punches                           │
 │                                                             │
 │  Employee first steps:                                      │
-│    1. Employee login                                        │
-│    2. Enter company code + login code                       │
-│    3. Clock in from dashboard                               │
+│    1. Go to kaisyncworkforce.com                            │
+│    2. Employee login → company code + login code            │
+│    3. Clock in from your dashboard                          │
+│                                                             │
+│  Mobile tip: Add to Home Screen for full-screen access      │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -294,10 +220,10 @@ Print or PDF this one-pager for the client’s office.
 
 | Do not send | Why |
 |-------------|-----|
-| Platform Console access | Internal KaiFlow staff only |
-| Supabase credentials / anon key | Built into app; not for end users |
-| `platform_admins` setup SQL | Operator-only |
-| Other tenants’ company codes | Privacy / security |
+| Platform Console access | Internal KaiFlow operator only |
+| Supabase credentials or anon key | Backend infrastructure — not for clients |
+| Other tenants' company codes | Privacy and security |
+| Your HR password | Each user has their own credentials |
 
 ---
 
@@ -305,10 +231,26 @@ Print or PDF this one-pager for the client’s office.
 
 | Task | Where |
 |------|-------|
-| Monitor errors | Platform Console → Overview (error count) |
-| Check health | Platform Console → Health |
-| Refresh billing monthly | Platform Console → Refresh billing |
+| Monitor errors | Platform Console → Overview |
+| Refresh billing | Platform Console → Companies → Refresh billing |
 | Review feedback | Platform Console → Feedback |
-| Export report | Platform Console → Reports |
+| Suspend / unsuspend tenant | Platform Console → Companies |
 
-See also: [06-platform-admin-smoke-test.md](./06-platform-admin-smoke-test.md)
+---
+
+## Part 6 — Device & browser notes
+
+KaiFlow works on any device with a modern browser. No installation is required.
+
+| Device | Recommended browser | Notes |
+|--------|--------------------|-|
+| Windows PC / laptop | Chrome or Edge | Full HR dashboard experience |
+| Mac | Chrome or Safari | Full HR dashboard experience |
+| Android phone/tablet | Chrome | Add to Home Screen for app feel |
+| iPhone / iPad | Safari | Add to Home Screen for full-screen mode |
+
+**Add to Home Screen (mobile):**
+- **iPhone/iPad (Safari):** tap the Share icon → Add to Home Screen
+- **Android (Chrome):** tap the three-dot menu → Add to Home Screen
+
+The platform is fully responsive — employees can clock in, view jobs, and manage leave from any phone.

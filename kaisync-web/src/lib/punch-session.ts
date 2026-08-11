@@ -1,5 +1,5 @@
 /**
- * Client-side punch session builder — mirrors MAUI PunchSession.Build.
+ * Client-side punch session builder — implements equivalent logic.
  * Pairs clock-in/out, computes regular/OT hours, late/early flags.
  * Wall-clock comparisons use company IANA timezone (not server/browser local).
  */
@@ -199,7 +199,7 @@ function makeSession(
   }
 }
 
-/** Pair punches into sessions (MAUI PunchSession.Build). */
+/** Pair punches into sessions . */
 export function buildPunchSessions(
   punches: PunchLike[],
   opts: PunchSessionOptions,

@@ -1,4 +1,4 @@
-/** Quotation display helpers — MAUI ProjectQuotationDisplay. */
+/** Quotation display helpers */
 
 import type { QuotationLine } from './types'
 

@@ -3,7 +3,7 @@
  * Ports KaiFlow.Timesheets.Maui/Services/EmployeeScopeService.cs
  *
  * Canonical report line: employees.manager_id → employees.id
- * Legacy fallback: employees.manager_user_id → viewer's auth user_id (MAUI)
+ * Legacy fallback: employees.manager_user_id → viewer's auth user_id
  * Plus work-team leadership / membership expansion.
  */
 
@@ -42,7 +42,7 @@ export function getScopedEmployeeIds(
       ids.add(e.id)
       continue
     }
-    // MAUI parity: reports linked via manager's auth uid
+    // : reports linked via manager's auth uid
     if (viewer.user_id && e.manager_user_id && e.manager_user_id === viewer.user_id) {
       ids.add(e.id)
     }

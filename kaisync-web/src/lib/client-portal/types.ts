@@ -1,4 +1,4 @@
-/** Client portal DTOs — mirror MAUI portal models / ParseClientPortalDeal. */
+/** Client portal DTOs */
 
 export type ClientPortalLogin = {
   client_id: string

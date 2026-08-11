@@ -1,6 +1,6 @@
 /**
  * Browser geolocation + reverse geocode for contractor site visits.
- * Mirrors MAUI CaptureLocationAsync (nulls on failure — GPS is best-effort).
+ * Implements (nulls on failure — GPS is best-effort).
  */
 
 export type CapturedLocation = {

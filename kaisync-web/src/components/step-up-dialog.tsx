@@ -10,7 +10,7 @@ type Props = {
   onVerify: (password: string) => void
 }
 
-/** Password re-entry modal for payroll (and other) step-up gates — MAUI parity. */
+/** Password re-entry modal for payroll (and other) step-up gates */
 export function StepUpDialog({ open, busy, error, onCancel, onVerify }: Props) {
   const [password, setPassword] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)

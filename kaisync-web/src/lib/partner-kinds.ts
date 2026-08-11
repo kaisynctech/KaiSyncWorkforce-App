@@ -1,4 +1,4 @@
-/** Mirrors MAUI PartnerKinds + EntityCodeHelper for contractors. */
+/** Implements + EntityCodeHelper for contractors. */
 
 export const PARTNER_KIND = {
   contractor: 'contractor',

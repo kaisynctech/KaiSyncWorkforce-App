@@ -209,7 +209,7 @@ export function sumPunchHours(
 
 /**
  * Legacy day-bucket hours helper (no template). Prefer `buildTemplateAwareSessions`
- * in `sessions-from-punches.ts` for late/early + MAUI-parity OT.
+ * in `sessions-from-punches.ts` for late/early + OT calculation.
  */
 export function buildSessionsFromPunches(
   punches: PunchLike[],

@@ -1,5 +1,5 @@
 /**
- * Mirrors MAUI FeatureAccessService — plan + company feature overrides.
+ * Implements — plan + company feature overrides.
  * Anti-lockout: if subscription cannot be loaded, features are permitted.
  */
 
@@ -110,7 +110,7 @@ export function isFeatureEnabled(features: SaasFeatureMap, featureCode: string):
     return Boolean(features['module.finance'])
   }
 
-  // Unlisted feature on an active plan → allow (MAUI ResolveFromPlanFeatures default true)
+  // Unlisted feature on an active plan → allow 
   if (features.__active) return true
   return false
 }

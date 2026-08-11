@@ -1,4 +1,4 @@
-/** Mirrors MAUI EntityCodeHelper client codes: C{company}#### */
+/** Implements client codes: C{company}#### */
 
 function clientPrefix(companyCode: string): string {
   const normalized = companyCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '')

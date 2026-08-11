@@ -1,5 +1,5 @@
 /**
- * Phase 2 report snapshots — client-side aggregation mirroring MAUI
+ * Phase 2 report snapshots — client-side aggregation mirroring web parity
  * DomainAnalyticsService / FinancialAnalyticsService / TelemetryAnalyticsService.
  * Used when hr_get_*_snapshot RPCs return {} (pre-migration) or as primary for exports.
  */
@@ -465,7 +465,7 @@ async function buildTelemetry(
   }
 }
 
-/** Raw table rows for CSV exports (MAUI ExportAsync parity). */
+/** Raw table rows for CSV exports . */
 export async function fetchIncidentsExportRows(
   supabase: SupabaseClient,
   companyId: string,
