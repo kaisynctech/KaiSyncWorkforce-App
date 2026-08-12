@@ -48,6 +48,9 @@ export default function OverviewPage() {
   const [absentToday, setAbsentToday] = useState<{ id: string; name: string; reason: string }[]>([])
   const [markAbsentLoading, setMarkAbsentLoading] = useState<string | null>(null)
 
+  const [canViewCommercial, setCanViewCommercial] = useState(false)
+  const [commercialKpi, setCommercialKpi] = useState({ openQuotes: 0, outstanding: 0, overdue: 0 })
+
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [now, setNow] = useState(() => new Date())
@@ -226,6 +229,42 @@ export default function OverviewPage() {
       }
     }))
 
+    // Commercial KPIs — gated by permission
+    const cid = member.companyId
+    const { data: canViewQuotes } = await supabase.rpc('user_has_permission', {
+      p_company_id: cid,
+      p_key: 'quotes.view',
+    })
+
+    if (canViewQuotes) {
+      const [openQuotesRes, invDataRes, overdueRes] = await Promise.all([
+        supabase.from('commercial_quotes')
+          .select('*', { count: 'exact', head: true })
+          .eq('company_id', cid)
+          .in('status', ['draft', 'sent']),
+        supabase.from('finance_invoices')
+          .select('balance_due')
+          .eq('company_id', cid)
+          .in('status', ['sent', 'partial'])
+          .gt('balance_due', 0),
+        supabase.from('finance_invoices')
+          .select('*', { count: 'exact', head: true })
+          .eq('company_id', cid)
+          .in('status', ['sent', 'partial'])
+          .gt('balance_due', 0)
+          .lt('due_date', new Date().toISOString().split('T')[0]),
+      ])
+      const outstanding = (invDataRes.data ?? []).reduce(
+        (s, i) => s + Number(i.balance_due), 0,
+      )
+      setCommercialKpi({
+        openQuotes:  openQuotesRes.count  ?? 0,
+        outstanding: outstanding,
+        overdue:     overdueRes.count ?? 0,
+      })
+      setCanViewCommercial(true)
+    }
+
     setLoading(false)
   }, [])
 
@@ -337,7 +376,7 @@ export default function OverviewPage() {
           </button>
         </div>
 
-        {/* ── 6 KPI tiles ── */}
+        {/* ── KPI tiles ── */}
         <div className="grid grid-cols-3 gap-3">
           <KpiTile icon="people" label="Employees" value={kpi.headcount} href="/dashboard/employees" iconBg="#1e3a5f" iconColor="#60a5fa" />
           <KpiTile icon="timer" label="Clocked In" value={kpi.clockedIn} href="/dashboard/attendance" iconBg="#052e16" iconColor="#22c55e" />
@@ -345,6 +384,13 @@ export default function OverviewPage() {
           <KpiTile icon="event_available" label="Pending Leave" value={kpi.pendingLeave} href="/dashboard/leave" iconBg="#2e1a05" iconColor="#fbbf24" />
           <KpiTile icon="warning" label="Open Incidents" value={kpi.openIncidents} href="/dashboard/incidents" iconBg="#3b0a0a" iconColor="#f87171" />
           <KpiTile icon="payments" label="Pending Pay" value={kpi.pendingPay} href="/dashboard/payroll" iconBg="#1a1f05" iconColor="#a3e635" />
+          {canViewCommercial && (
+            <>
+              <KpiTile icon="request_quote" label="Open Quotes" value={commercialKpi.openQuotes} href="/dashboard/money/quotes" iconBg="#1e1b4b" iconColor="#a78bfa" />
+              <KpiTile icon="receipt_long" label="Outstanding" value={fmtShort(commercialKpi.outstanding)} href="/dashboard/money/invoices" iconBg="#1c1917" iconColor="#fbbf24" />
+              <KpiTile icon="warning_amber" label="Overdue" value={commercialKpi.overdue} href="/dashboard/money/invoices" iconBg="#3b0a0a" iconColor="#f87171" />
+            </>
+          )}
         </div>
 
         {/* ── Today's Attendance ── */}
@@ -464,6 +510,20 @@ export default function OverviewPage() {
               style={{ backgroundColor: '#374151' }}>
               + New Job
             </button>
+            {canViewCommercial && (
+              <>
+                <button onClick={() => router.push('/dashboard/money/quotes/new')}
+                  className="h-10 px-5 rounded-xl text-[13px] font-semibold text-white"
+                  style={{ backgroundColor: '#374151' }}>
+                  + New Quote
+                </button>
+                <button onClick={() => router.push('/dashboard/money/invoices/new')}
+                  className="h-10 px-5 rounded-xl text-[13px] font-semibold text-white"
+                  style={{ backgroundColor: '#374151' }}>
+                  + New Invoice
+                </button>
+              </>
+            )}
           </div>
         </div>
 
@@ -472,8 +532,14 @@ export default function OverviewPage() {
   )
 }
 
+function fmtShort(n: number): string {
+  if (n >= 1_000_000) return `R ${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000)     return `R ${Math.round(n / 1_000)}k`
+  return `R ${Math.round(n)}`
+}
+
 function KpiTile({ icon, label, value, href, iconBg, iconColor }: {
-  icon: string; label: string; value: number; href: string; iconBg: string; iconColor: string
+  icon: string; label: string; value: number | string; href: string; iconBg: string; iconColor: string
 }) {
   return (
     <Link href={href}
