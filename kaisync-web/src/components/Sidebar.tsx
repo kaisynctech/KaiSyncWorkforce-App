@@ -372,17 +372,38 @@ export default function Sidebar({ company, employee, platformOnly = false }: Sid
           </span>
         </div>
 
-        {/* Overview button */}
+        {/* ── Left text tabs: Overview, My PA, Messages ── */}
         <NavTopBtn
           href="/dashboard/overview"
           icon="home"
           label="Overview"
           active={!activeSection && isItemActive(pathname, '/dashboard/overview')}
         />
+        {!platformOnly && (
+          <>
+            {itemVisible({ label: 'My PA', href: '/dashboard/pa', icon: 'task_alt', flag: 'myPa' }, flags, isOwner) && (
+              <NavTopBtn
+                href="/dashboard/pa"
+                icon="task_alt"
+                label="My PA"
+                active={isItemActive(pathname, '/dashboard/pa')}
+              />
+            )}
+            {itemVisible({ label: 'Messages', href: '/dashboard/messages', icon: 'chat', flag: 'messaging' }, flags, isOwner) && (
+              <NavTopBtn
+                href="/dashboard/messages"
+                icon="chat"
+                label="Messages"
+                active={isItemActive(pathname, '/dashboard/messages')}
+              />
+            )}
+          </>
+        )}
 
-        <div className="w-px bg-divider mx-1 self-stretch" />
+        {/* Divider between left tabs and module tabs */}
+        <div className="w-px bg-divider mx-2 self-stretch shrink-0" />
 
-        {/* Module tabs — hidden if platformOnly */}
+        {/* ── Module tabs ── */}
         {!platformOnly && sections.map(section => (
           <NavTopBtn
             key={section.id}
@@ -392,8 +413,6 @@ export default function Sidebar({ company, employee, platformOnly = false }: Sid
             active={activeSection?.id === section.id}
           />
         ))}
-
-        {/* Platform Console tab */}
         {showPlatform && (
           <NavTopBtn
             href="/dashboard/platform"
@@ -405,23 +424,23 @@ export default function Sidebar({ company, employee, platformOnly = false }: Sid
 
         <div className="flex-1" />
 
-        {/* Global icon buttons — Messages + Notifications only */}
+        {/* ── Right icon buttons: Notifications, Settings ── */}
         {!platformOnly && (
           <>
-            {itemVisible({ label: 'Messages', href: '/dashboard/messages', icon: 'chat', flag: 'messaging' }, flags, isOwner) && (
-              <NavIconBtn
-                href="/dashboard/messages"
-                icon="chat"
-                label="Messages"
-                active={isItemActive(pathname, '/dashboard/messages')}
-              />
-            )}
             <NavIconBtn
               href="/dashboard/notifications"
               icon="notifications"
               label="Notifications"
               active={isItemActive(pathname, '/dashboard/notifications')}
             />
+            {itemVisible({ label: 'Settings', href: '/dashboard/settings', icon: 'settings', flag: 'settings' }, flags, isOwner) && (
+              <NavIconBtn
+                href="/dashboard/settings"
+                icon="settings"
+                label="Settings"
+                active={isItemActive(pathname, '/dashboard/settings')}
+              />
+            )}
           </>
         )}
 
