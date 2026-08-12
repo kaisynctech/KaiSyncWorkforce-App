@@ -460,15 +460,6 @@ export default function Sidebar({ company, employee, platformOnly = false }: Sid
                 <p className="text-[12px] font-medium text-text-primary truncate">{displayName}</p>
                 <p className="text-[11px] text-text-secondary">{roleLabel}</p>
               </div>
-              {!platformOnly && itemVisible({ label: 'My PA', href: '/dashboard/pa', icon: 'task_alt', flag: 'myPa' }, flags, isOwner) && (
-                <Link
-                  href="/dashboard/pa"
-                  className="flex items-center gap-2 px-3 py-2 text-[12px] text-text-secondary hover:text-text-primary hover:bg-surface-elevated"
-                >
-                  <span className="material-icons text-[16px]">task_alt</span>
-                  My PA
-                </Link>
-              )}
               <Link
                 href="/dashboard/profile"
                 className="flex items-center gap-2 px-3 py-2 text-[12px] text-text-secondary hover:text-text-primary hover:bg-surface-elevated"
