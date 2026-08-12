@@ -1,10 +1,13 @@
 'use client'
 
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { fmtMoney } from '@/lib/finance-calc'
 import type { CommercialQuote, CommercialQuoteLine, QuoteCatalogueItem } from '@/types/database'
+import type { PriceSuggestion } from '@/types/commercial'
+import { BoqImportModal } from '@/components/BoqImportModal'
+import { QuoteAssistPanel } from '@/components/QuoteAssistPanel'
 
 type ClientRow = { id: string; name: string; email?: string | null }
 type EmpRow    = { id: string; name: string; surname: string }
@@ -81,6 +84,12 @@ export function QuoteBuilder({ quoteId, companyId }: { quoteId: string | null; c
   const [invDue,    setInvDue]    = useState('')
   const [catQ,      setCatQ]      = useState('')
   const [catT,      setCatT]      = useState('')
+  // ── AI features ──────────────────────────────────────────────────────────
+  const [showBoqModal,      setShowBoqModal]      = useState(false)
+  const [showAssistPanel,   setShowAssistPanel]   = useState(false)
+  const [priceSuggestions,  setPriceSuggestions]  = useState<PriceSuggestion[]>([])
+  const [priceTargetIdx,    setPriceTargetIdx]    = useState<number | null>(null)
+  const priceDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const load = useCallback(async () => {
     const sb = createClient()
@@ -130,6 +139,34 @@ export function QuoteBuilder({ quoteId, companyId }: { quoteId: string | null; c
     setShowCat(false)
   }
   const pq = (p: Partial<CommercialQuote>) => setQuote(q => q ? { ...q, ...p } : q)
+
+  function schedulePriceLookup(description: string, idx: number) {
+    if (priceDebounceRef.current) clearTimeout(priceDebounceRef.current)
+    if (description.length < 3) { setPriceSuggestions([]); setPriceTargetIdx(null); return }
+    priceDebounceRef.current = setTimeout(async () => {
+      const { data } = await (createClient().rpc as unknown as (name: string, args: Record<string, unknown>) => Promise<{ data: PriceSuggestion[] }>)(
+        'get_price_suggestions',
+        { p_company_id: companyId, p_description: description, p_limit: 4 }
+      )
+      setPriceSuggestions(data ?? [])
+      setPriceTargetIdx(idx)
+    }, 400)
+  }
+
+  function applyPriceSuggestion(lineIdx: number, s: PriceSuggestion) {
+    upd(lineIdx, {
+      catalogue_item_id: s.catalogue_item_id,
+      cost_price:        Number(s.cost_price),
+      markup_percent:    Number(s.markup_percent),
+      unit:              s.unit,
+    })
+    // Increment usage count fire-and-forget
+    void (createClient().rpc as unknown as (name: string, args: Record<string, unknown>) => Promise<unknown>)(
+      'increment_catalogue_usage', { p_item_id: s.catalogue_item_id }
+    )
+    setPriceSuggestions([])
+    setPriceTargetIdx(null)
+  }
 
   async function save() {
     if (!quote) return
@@ -185,6 +222,14 @@ export function QuoteBuilder({ quoteId, companyId }: { quoteId: string | null; c
     if (!quote?.id) return
     await createClient().from('commercial_quotes').update({ status: 'accepted', accepted_at: new Date().toISOString() }).eq('id', quote.id)
     pq({ status: 'accepted' }); setShowMore(false); setShowAcc(true)
+    // Fire automation rules (fire-and-forget; errors are swallowed to avoid blocking UX)
+    try {
+      await fetch('/api/automations/quote-accepted', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quote_id: quote.id }),
+      })
+    } catch { /* automation failure must not interrupt the quote flow */ }
   }
   async function createProject() {
     if (!quote?.id) return
@@ -327,8 +372,41 @@ export function QuoteBuilder({ quoteId, companyId }: { quoteId: string | null; c
                                 {ITEM_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                               </select>
                             </td>
-                            <td className="data-td" style={{ minWidth: 160 }}>
-                              <input value={l.description} onChange={e => upd(i, { description: e.target.value })} className="w-full bg-transparent border-0 outline-none text-text-primary" placeholder="Description…" />
+                            <td className="data-td relative" style={{ minWidth: 180 }}>
+                              <input
+                                value={l.description}
+                                onChange={e => {
+                                  upd(i, { description: e.target.value })
+                                  schedulePriceLookup(e.target.value, i)
+                                }}
+                                onFocus={() => { if (l.description.length >= 3) schedulePriceLookup(l.description, i) }}
+                                onBlur={() => { setTimeout(() => { setPriceSuggestions([]); setPriceTargetIdx(null) }, 200) }}
+                                className="w-full bg-transparent border-0 outline-none text-text-primary"
+                                placeholder="Description…"
+                              />
+                              {priceTargetIdx === i && priceSuggestions.length > 0 && (
+                                <div className="absolute left-0 top-full z-50 mt-1 w-72 bg-surface-card border border-divider rounded-xl shadow-xl py-2">
+                                  <p className="px-3 pb-1 text-[10px] font-semibold text-text-disabled uppercase tracking-wide">
+                                    💡 Price suggestions
+                                  </p>
+                                  {priceSuggestions.map(s => (
+                                    <button
+                                      key={s.catalogue_item_id}
+                                      onMouseDown={e => { e.preventDefault(); applyPriceSuggestion(i, s) }}
+                                      className="w-full flex items-center justify-between px-3 py-2 hover:bg-surface-elevated text-left"
+                                    >
+                                      <div className="min-w-0">
+                                        <p className="text-[12px] text-text-primary truncate">{s.name}</p>
+                                        <p className="text-[11px] text-text-disabled">used {s.usage_count}×</p>
+                                      </div>
+                                      <div className="text-right shrink-0 ml-3">
+                                        <p className="text-[12px] font-semibold text-text-primary">{fmtMoney(Number(s.sell_price))}/{s.unit}</p>
+                                        <span className="text-[10px] text-primary font-medium">Use</span>
+                                      </div>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
                             </td>
                             <td className="data-td"><input value={l.unit} onChange={e => upd(i, { unit: e.target.value })} className="w-12 bg-transparent border-0 outline-none text-text-secondary text-center" /></td>
                             <td className="data-td text-right"><input type="number" value={l.quantity} onChange={e => upd(i, { quantity: +e.target.value })} className="w-14 bg-transparent border-0 outline-none text-right text-text-primary" /></td>
@@ -345,10 +423,16 @@ export function QuoteBuilder({ quoteId, companyId }: { quoteId: string | null; c
                     {lines.length === 0 && <tr><td colSpan={11} className="data-td text-center text-text-disabled py-8">No line items yet — add one below</td></tr>}
                   </tbody>
                 </table>
-                <div className="flex gap-2 p-3 border-t border-divider">
+                <div className="flex gap-2 p-3 border-t border-divider flex-wrap">
                   <button onClick={addLine} className="btn-outlined h-8 px-3 text-sm">+ Add Line</button>
                   <button onClick={addHdr}  className="btn-outlined h-8 px-3 text-sm">+ Add Heading</button>
                   <button onClick={() => setShowCat(true)} className="btn-outlined h-8 px-3 text-sm">📦 From Catalogue</button>
+                  {quote?.id && (
+                    <>
+                      <button onClick={() => setShowBoqModal(true)} className="btn-outlined h-8 px-3 text-sm">📄 Import BOQ</button>
+                      <button onClick={() => setShowAssistPanel(true)} className="btn-outlined h-8 px-3 text-sm">✨ AI Assist</button>
+                    </>
+                  )}
                 </div>
               </div>
             )}
@@ -464,6 +548,28 @@ export function QuoteBuilder({ quoteId, companyId }: { quoteId: string | null; c
             </div>
           </div>
         </Modal>
+      )}
+
+      {/* BOQ Import Modal */}
+      {showBoqModal && quote?.id && (
+        <BoqImportModal
+          quoteId={quote.id}
+          companyId={companyId}
+          existingLineCount={lines.length}
+          onImport={() => { void load(); setShowBoqModal(false) }}
+          onClose={() => setShowBoqModal(false)}
+        />
+      )}
+
+      {/* AI Assist Panel */}
+      {showAssistPanel && quote?.id && (
+        <QuoteAssistPanel
+          quoteId={quote.id}
+          companyId={companyId}
+          existingLineCount={lines.length}
+          onAddLines={() => { void load(); setShowAssistPanel(false) }}
+          onClose={() => setShowAssistPanel(false)}
+        />
       )}
 
       {/* Invoice Modal */}

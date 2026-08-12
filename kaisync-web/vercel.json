@@ -1,0 +1,16 @@
+{
+  "crons": [
+    {
+      "path": "/api/automations/invoice-overdue",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/automations/milestone-due",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/automations/quote-expiring",
+      "schedule": "0 8 * * *"
+    }
+  ]
+}

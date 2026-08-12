@@ -14,6 +14,7 @@ import {
 } from '@/lib/company-modules'
 import type { Company, Employee, SecuritySettings, AuditEvent } from '@/types/database'
 import { formatZar, loadCompanyBillingSummary, type BillingSummary } from '@/lib/billing'
+import type { CommercialAutomationRule, AutomationRuleExecution } from '@/types/commercial'
 
 // ─── Local types ──────────────────────────────────────────────────────────────
 
@@ -34,6 +35,7 @@ type SettingsTab =
   | 'security'
   | 'organisation'
   | 'integrations'
+  | 'automations'
   | 'advanced'
 
 const SETTINGS_TABS: { key: SettingsTab; label: string; hrOnly?: boolean }[] = [
@@ -43,6 +45,7 @@ const SETTINGS_TABS: { key: SettingsTab; label: string; hrOnly?: boolean }[] = [
   { key: 'security', label: 'Security' },
   { key: 'organisation', label: 'Organisation', hrOnly: true },
   { key: 'integrations', label: 'Integrations' },
+  { key: 'automations', label: 'Automations' },
   { key: 'advanced', label: 'Advanced' },
 ]
 
@@ -97,9 +100,27 @@ export default function SettingsPage() {
   const [billingError, setBillingError] = useState<string | null>(null)
   const [billingLoading, setBillingLoading] = useState(false)
 
+  // ── Automations ──────────────────────────────────────────────────────────
+  const [automations,      setAutomations]      = useState<CommercialAutomationRule[]>([])
+  const [executions,       setExecutions]       = useState<AutomationRuleExecution[]>([])
+  const [autoLoading,      setAutoLoading]      = useState(false)
+  const [autoToggleBusy,   setAutoToggleBusy]   = useState<string | null>(null)
+  // ── AI usage ─────────────────────────────────────────────────────────────
+  const [aiUsage,          setAiUsage]          = useState<{
+    feature: string; model: string; input_tokens: number; output_tokens: number
+    estimated_cost_usd_cents: number; created_at: string; success: boolean
+  }[]>([])
+
   const [tab, setTab] = useState<SettingsTab>('general')
 
   useEffect(() => { load() }, [])
+  // Load automation data when switching to the tab (works whether companyId arrives first or after)
+  useEffect(() => {
+    if (tab === 'automations' && companyId && automations.length === 0 && !autoLoading) {
+      void loadAutomations()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, companyId])
   useEffect(() => {
     if (typeof window === 'undefined') return
     const p = new URLSearchParams(window.location.search)
@@ -122,6 +143,53 @@ export default function SettingsPage() {
     const url = new URL(window.location.href)
     url.searchParams.set('tab', next)
     window.history.replaceState({}, '', url.toString())
+    if (next === 'automations' && automations.length === 0) {
+      void loadAutomations()
+    }
+  }
+
+  async function loadAutomations() {
+    if (!companyId) return
+    setAutoLoading(true)
+    const supabase = createClient()
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+    const [rulesRes, execRes, aiRes] = await Promise.all([
+      supabase
+        .from('commercial_automation_rules')
+        .select('*')
+        .eq('company_id', companyId)
+        .order('trigger_type')
+        .order('action_type'),
+      supabase
+        .from('automation_rule_executions')
+        .select('*')
+        .eq('company_id', companyId)
+        .order('executed_at', { ascending: false })
+        .limit(30),
+      supabase
+        .from('ai_usage_log')
+        .select('feature, model, input_tokens, output_tokens, estimated_cost_usd_cents, created_at, success')
+        .eq('company_id', companyId)
+        .gte('created_at', thirtyDaysAgo)
+        .order('created_at', { ascending: false })
+        .limit(10),
+    ])
+    setAutomations((rulesRes.data ?? []) as CommercialAutomationRule[])
+    setExecutions((execRes.data ?? []) as AutomationRuleExecution[])
+    setAiUsage((aiRes.data ?? []) as typeof aiUsage)
+    setAutoLoading(false)
+  }
+
+  async function toggleAutomation(rule: CommercialAutomationRule) {
+    if (autoToggleBusy) return
+    setAutoToggleBusy(rule.id)
+    const supabase = createClient()
+    await supabase
+      .from('commercial_automation_rules')
+      .update({ is_active: !rule.is_active, updated_at: new Date().toISOString() })
+      .eq('id', rule.id)
+    setAutomations(prev => prev.map(r => r.id === rule.id ? { ...r, is_active: !r.is_active } : r))
+    setAutoToggleBusy(null)
   }
 
   // ── Load ──────────────────────────────────────────────────────────────────
@@ -938,6 +1006,117 @@ export default function SettingsPage() {
               )}
             </div>
           </div>
+        </Section>
+      )}
+
+      {activeTab === 'automations' && (
+        <Section title="Automation Rules" icon="bolt">
+          {autoLoading ? (
+            <p className="text-[13px] text-text-secondary py-4">Loading…</p>
+          ) : automations.length === 0 ? (
+            <p className="text-[13px] text-text-secondary py-4">No automation rules found. Rules are seeded when your company is set up.</p>
+          ) : (
+            <div className="flex flex-col">
+              {automations.map(rule => (
+                <div key={rule.id} className="py-3 border-b border-divider last:border-0">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[13px] font-medium text-text-primary">{rule.name}</p>
+                      {rule.description && (
+                        <p className="text-[12px] text-text-secondary mt-0.5">{rule.description}</p>
+                      )}
+                      <div className="flex items-center gap-3 mt-1">
+                        <span className="text-[11px] text-text-disabled">
+                          Runs: {rule.run_count}
+                          {rule.last_run_at ? ` · Last: ${new Date(rule.last_run_at).toLocaleDateString()}` : ''}
+                        </span>
+                        <span className="text-[11px] px-1.5 py-0.5 rounded bg-surface-elevated text-text-secondary font-mono">
+                          {rule.trigger_type} → {rule.action_type}
+                        </span>
+                      </div>
+                    </div>
+                    <Toggle
+                      label=""
+                      checked={rule.is_active}
+                      onChange={() => void toggleAutomation(rule)}
+                      disabled={autoToggleBusy === rule.id}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Section>
+      )}
+
+      {activeTab === 'automations' && executions.length > 0 && (
+        <Section title="Execution Log" icon="history">
+          <div className="flex flex-col">
+            {executions.map(ex => (
+              <div key={ex.id} className="flex items-start gap-3 py-2.5 border-b border-divider last:border-0">
+                <span className={`material-icons text-[16px] mt-0.5 ${
+                  ex.status === 'success' ? 'text-success' :
+                  ex.status === 'failed'  ? 'text-error'   : 'text-text-disabled'
+                }`}>
+                  {ex.status === 'success' ? 'check_circle' : ex.status === 'failed' ? 'error' : 'skip_next'}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[12px] font-medium text-text-primary">
+                    {ex.trigger_type} → {ex.action_type}
+                  </p>
+                  <p className="text-[11px] text-text-secondary truncate">
+                    {ex.trigger_entity_type}: {ex.trigger_entity_id}
+                    {ex.error_message ? ` · ${ex.error_message}` : ''}
+                  </p>
+                </div>
+                <p className="text-[11px] text-text-disabled shrink-0">
+                  {new Date(ex.executed_at).toLocaleString()}
+                </p>
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+
+      {activeTab === 'automations' && (
+        <Section title="AI Usage — Last 30 Days" icon="auto_awesome">
+          {aiUsage.length === 0 ? (
+            <p className="text-[13px] text-text-secondary">No AI calls recorded yet. Use Import BOQ or AI Assist in a quote to see usage here.</p>
+          ) : (() => {
+            const boqCalls    = aiUsage.filter(u => u.feature === 'boq_extraction').length
+            const assistCalls = aiUsage.filter(u => u.feature === 'quote_assistant').length
+            const totalCents  = aiUsage.reduce((s, u) => s + (Number(u.estimated_cost_usd_cents) || 0), 0)
+            return (
+              <div className="flex flex-col gap-4">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[
+                    { label: 'Total calls',        value: String(aiUsage.length) },
+                    { label: 'BOQ extractions',    value: String(boqCalls) },
+                    { label: 'Quote assists',      value: String(assistCalls) },
+                    { label: 'Est. cost (USD)',    value: `~$${(totalCents / 100).toFixed(4)}` },
+                  ].map(kpi => (
+                    <div key={kpi.label} className="bg-surface-elevated rounded-lg p-3 text-center">
+                      <p className="text-[18px] font-semibold text-text-primary">{kpi.value}</p>
+                      <p className="text-[11px] text-text-secondary mt-0.5">{kpi.label}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex flex-col">
+                  {aiUsage.map((u, i) => (
+                    <div key={i} className="flex items-center gap-3 py-2 border-b border-divider last:border-0 text-[12px]">
+                      <span className={`material-icons text-[14px] ${u.success ? 'text-success' : 'text-error'}`}>
+                        {u.success ? 'check_circle' : 'error'}
+                      </span>
+                      <span className="text-text-secondary w-24 shrink-0 capitalize">{u.feature.replace('_', ' ')}</span>
+                      <span className="text-text-disabled text-[11px] font-mono truncate flex-1">{u.model}</span>
+                      <span className="text-text-secondary shrink-0">{u.input_tokens + u.output_tokens} tok</span>
+                      <span className="text-text-disabled shrink-0">{new Date(u.created_at).toLocaleDateString()}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })()}
         </Section>
       )}
 
