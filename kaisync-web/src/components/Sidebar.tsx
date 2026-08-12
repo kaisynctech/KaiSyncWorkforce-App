@@ -82,10 +82,10 @@ const NAV_SECTIONS: NavSection[] = [
     label: 'Money',
     items: [
       { label: 'Finance', href: '/dashboard/finance', icon: 'account_balance', flag: 'finance' },
-      { label: 'Quotes', href: '/dashboard/money/quotes', icon: 'request_quote', flag: 'finance' },
-      { label: 'Price Catalogue', href: '/dashboard/money/catalogue', icon: 'sell', flag: 'finance' },
-      { label: 'Invoices', href: '/dashboard/money/invoices', icon: 'receipt_long', flag: 'finance' },
-      { label: 'Credit Notes', href: '/dashboard/money/credit-notes', icon: 'undo', flag: 'finance' },
+      { label: 'Quotes', href: '/dashboard/money/quotes', icon: 'request_quote', flag: 'commercial' },
+      { label: 'Price Catalogue', href: '/dashboard/money/catalogue', icon: 'sell', flag: 'commercial' },
+      { label: 'Invoices', href: '/dashboard/money/invoices', icon: 'receipt_long', flag: 'commercial' },
+      { label: 'Credit Notes', href: '/dashboard/money/credit-notes', icon: 'undo', flag: 'commercial' },
     ],
   },
   {
@@ -93,10 +93,10 @@ const NAV_SECTIONS: NavSection[] = [
     label: 'Supply & Assets',
     items: [
       { label: 'Suppliers', href: '/dashboard/supply/suppliers', icon: 'storefront', flag: 'suppliers' },
-      { label: 'RFQs', href: '/dashboard/supply/rfqs', icon: 'request_quote', flag: 'finance' },
-      { label: 'Purchase Orders', href: '/dashboard/supply/purchase-orders', icon: 'shopping_cart', flag: 'finance' },
-      { label: 'Goods Received', href: '/dashboard/supply/goods-received', icon: 'local_shipping', flag: 'finance' },
-      { label: 'Supplier Invoices', href: '/dashboard/finance/supplier-invoices', icon: 'receipt', flag: 'finance' },
+      { label: 'RFQs', href: '/dashboard/supply/rfqs', icon: 'request_quote', flag: 'commercial' },
+      { label: 'Purchase Orders', href: '/dashboard/supply/purchase-orders', icon: 'shopping_cart', flag: 'commercial' },
+      { label: 'Goods Received', href: '/dashboard/supply/goods-received', icon: 'local_shipping', flag: 'commercial' },
+      { label: 'Supplier Invoices', href: '/dashboard/finance/supplier-invoices', icon: 'receipt', flag: 'commercial' },
       { label: 'Inventory', href: '/dashboard/inventory', icon: 'inventory_2', flag: 'inventory' },
       { label: 'Assets', href: '/dashboard/assets', icon: 'category', flag: 'assets' },
     ],
@@ -153,6 +153,7 @@ const ALL_HR_FLAGS: HrNavFlags = {
   teamPunch: true,
   residents: true,
   finance: true,
+  commercial: true,
 }
 
 function itemVisible(item: NavItem, flags: HrNavFlags, isOwner: boolean): boolean {

@@ -289,6 +289,7 @@ export type HrNavFlags = {
   teamPunch: boolean
   residents: boolean
   finance: boolean
+  commercial: boolean
 }
 
 export function resolveHrNavFlags(enabledModules: EnabledModules, financeEntitled = false): HrNavFlags {
@@ -327,6 +328,8 @@ export function resolveHrNavFlags(enabledModules: EnabledModules, financeEntitle
     residents: properties,
     // SaaS module.finance + payroll tenant module
     finance: financeEntitled && payroll,
+    // Commercial engine — always visible; individual pages gate by quotes.view / invoices.view
+    commercial: true,
   }
 }
 
