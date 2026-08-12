@@ -1,383 +1,552 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import Link from 'next/link'
+import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
-import {
-  inventoryNeedsReorder,
-  inventoryStockValue,
-  suggestedReorderQty,
-} from '@/lib/supply-assets'
-import { createDraftSupplierReorderInvoices } from '@/lib/finance-api'
-import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
-import {
-  DEFAULT_PAGE_SIZE,
-  PAGE_SIZE_OPTIONS,
-  escapeIlike,
-  pageRange,
-  totalPages,
-} from '@/lib/list-pagination'
-import { Toggle } from '@/components/Toggle'
-import type { InventoryItem } from '@/types/database'
+import { getUnitLabel } from '@/lib/units'
+import ItemFormDrawer from '@/components/inventory/ItemFormDrawer'
+import type { CatalogueCondition, CatalogueItem, ItemType } from '@/types/inventory'
 
-const fmtR = (n: number) =>
-  `R ${(n ?? 0).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+// ─── Types ─────────────────────────────────────────────────────────────────────
 
-type InventoryRow = InventoryItem & {
-  supplier_partner?: { id: string; name: string } | null
+type Tab = 'all' | 'parts' | 'services' | 'materials' | 'labour' | 'brands' | 'conditions'
+
+const TABS: { key: Tab; label: string; type?: ItemType }[] = [
+  { key: 'all',       label: 'All' },
+  { key: 'parts',     label: 'Parts',     type: 'part' },
+  { key: 'services',  label: 'Services',  type: 'service' },
+  { key: 'materials', label: 'Materials', type: 'material' },
+  { key: 'labour',    label: 'Labour',    type: 'labour' },
+  { key: 'brands',    label: 'Brands' },
+  { key: 'conditions',label: 'Conditions' },
+]
+
+type DrawerMode = 'create' | 'edit' | 'duplicate'
+
+// ─── Helpers ───────────────────────────────────────────────────────────────────
+
+function fmtMoney(n: number | null | undefined) {
+  if (n == null) return '—'
+  return `R ${n.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+function fmtQty(n: number | null | undefined) {
+  if (n == null) return '—'
+  return n % 1 === 0 ? String(n) : n.toFixed(3)
+}
+function fmtPct(n: number | null | undefined) {
+  if (n == null) return '—'
+  return `${n.toFixed(1)}%`
 }
 
-function supplierName(item: InventoryRow): string {
-  return item.supplier_partner?.name?.trim()
-    || (typeof item.supplier === 'string' ? item.supplier.trim() : '')
-    || '—'
-}
+// ─── Component ─────────────────────────────────────────────────────────────────
 
 export default function InventoryPage() {
-  const router = useRouter()
-  const [items, setItems] = useState<InventoryRow[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [search, setSearch] = useState('')
-  const [searchDebounced, setSearchDebounced] = useState('')
-  const [lowStockOnly, setLowStockOnly] = useState(false)
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
-  const [total, setTotal] = useState(0)
-  const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [busyReorder, setBusyReorder] = useState(false)
-  const [reorderMsg, setReorderMsg] = useState<string | null>(null)
-  const [perms, setPerms] = useState<PermissionSet | null>(null)
-  const [companyId, setCompanyId] = useState<string | null>(null)
-  const [employeeId, setEmployeeId] = useState<string | null>(null)
-  const [actorName, setActorName] = useState<string | null>(null)
-  const [lowBannerCount, setLowBannerCount] = useState(0)
+  const [companyId, setCompanyId]   = useState<string | null>(null)
+  const [items, setItems]           = useState<CatalogueItem[]>([])
+  const [conditions, setConditions] = useState<CatalogueCondition[]>([])
+  const [loading, setLoading]       = useState(true)
+  const [tab, setTab]               = useState<Tab>('all')
 
-  const canEdit = can(perms, PERM.inventoryEdit)
+  // ── Filters ────────────────────────────────────────────────────────────────
+  const [search,      setSearch]      = useState('')
+  const [stockFilter, setStockFilter] = useState<'all' | 'low'>('all')
+  const [showInactive,setShowInactive]= useState(false)
 
-  useEffect(() => {
-    const t = setTimeout(() => setSearchDebounced(search.trim()), 300)
-    return () => clearTimeout(t)
-  }, [search])
+  // ── Drawer ─────────────────────────────────────────────────────────────────
+  const [drawerOpen, setDrawerOpen]   = useState(false)
+  const [drawerMode, setDrawerMode]   = useState<DrawerMode>('create')
+  const [drawerItem, setDrawerItem]   = useState<CatalogueItem | undefined>(undefined)
 
-  useEffect(() => { setPage(1) }, [searchDebounced, lowStockOnly, pageSize])
+  // ── Conditions tab ─────────────────────────────────────────────────────────
+  const [newCondName, setNewCondName] = useState('')
+  const [condSaving,  setCondSaving]  = useState(false)
 
+  // ── Load ───────────────────────────────────────────────────────────────────
   const load = useCallback(async () => {
-    setLoading(true)
-    setError(null)
     const supabase = createClient()
     const member = await resolveCurrentMember(supabase)
-    if (!member) { setError('not_linked'); setLoading(false); return }
+    if (!member?.companyId) return
     setCompanyId(member.companyId)
-    setEmployeeId(member.employeeId)
 
-    const [meRes, lowCountRes] = await Promise.all([
-      supabase.from('employees').select('name, surname, access_level').eq('id', member.employeeId).maybeSingle(),
+    const [itemsRes, condRes] = await Promise.all([
       supabase
-        .from('inventory_items')
-        .select('id, quantity_on_hand, reorder_level')
+        .from('quote_catalogue_items')
+        .select(`
+          *,
+          condition:catalogue_conditions(id, name, is_standard, sort_order, is_active, company_id),
+          aliases:catalogue_item_aliases(*),
+          suppliers:catalogue_item_suppliers(
+            *,
+            supplier:contractors(id, name)
+          )
+        `)
         .eq('company_id', member.companyId)
-        .eq('is_active', true),
+        .order('name'),
+      supabase
+        .from('catalogue_conditions')
+        .select('*')
+        .or(`company_id.is.null,company_id.eq.${member.companyId}`)
+        .eq('is_active', true)
+        .order('sort_order'),
     ])
-    const permSet = await loadPermissions(supabase, member.companyId, meRes.data?.access_level)
-    setPerms(permSet)
-    if (meRes.data) setActorName(`${meRes.data.name ?? ''} ${meRes.data.surname ?? ''}`.trim() || null)
-    const lowAll = ((lowCountRes.data ?? []) as { quantity_on_hand: number; reorder_level: number }[])
-      .filter(i => inventoryNeedsReorder(i.quantity_on_hand, i.reorder_level))
-    setLowBannerCount(lowAll.length)
 
-    const { from, to } = pageRange(page, pageSize)
-    let query = supabase
-      .from('inventory_items')
-      .select('*, supplier_partner:contractors!supplier_contractor_id(id, name)', { count: 'exact' })
-      .eq('company_id', member.companyId)
-      .order('name')
-
-    if (searchDebounced) {
-      const q = escapeIlike(searchDebounced)
-      query = query.or(`name.ilike.%${q}%,sku.ilike.%${q}%`)
-    }
-
-    // Low-stock: fetch a wider window then filter (column-to-column compare not in PostgREST)
-    if (lowStockOnly) {
-      const { data, error: qErr } = await query.limit(500)
-      if (qErr) {
-        setError(qErr.message)
-        setItems([])
-        setTotal(0)
-      } else {
-        const filtered = ((data ?? []) as InventoryRow[])
-          .filter(i => inventoryNeedsReorder(i.quantity_on_hand, i.reorder_level))
-        setTotal(filtered.length)
-        setItems(filtered.slice(from, from + pageSize))
-      }
-    } else {
-      const { data, error: qErr, count } = await query.range(from, to)
-      if (qErr) {
-        setError(qErr.message)
-        setItems([])
-        setTotal(0)
-      } else {
-        setItems((data ?? []) as InventoryRow[])
-        setTotal(count ?? 0)
-      }
-    }
-
-    setSelected(new Set())
+    const rawItems = (itemsRes.data ?? []) as CatalogueItem[]
+    // compute qty_available
+    setItems(rawItems.map(i => ({
+      ...i,
+      qty_available: Math.max((i.qty_on_hand ?? 0) - (i.qty_reserved ?? 0), 0),
+    })))
+    setConditions((condRes.data ?? []) as CatalogueCondition[])
     setLoading(false)
-  }, [page, pageSize, searchDebounced, lowStockOnly])
+  }, [])
 
   useEffect(() => { void load() }, [load])
 
-  const pages = totalPages(total, pageSize)
-  const selectableOnPage = useMemo(
-    () => items.filter(i =>
-      inventoryNeedsReorder(i.quantity_on_hand, i.reorder_level) && !!i.supplier_contractor_id,
-    ),
-    [items],
-  )
-
-  function toggleSelect(id: string, e: React.MouseEvent) {
-    e.stopPropagation()
-    setSelected(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
-  function selectAllLowOnPage() {
-    setSelected(new Set(selectableOnPage.map(i => i.id)))
-  }
-
-  async function createReorderDrafts() {
-    if (!companyId || !canEdit) return
-    const chosen = items.filter(i => selected.has(i.id) && i.supplier_contractor_id)
-    if (chosen.length === 0) {
-      setReorderMsg('Select low-stock items that have a preferred supplier.')
-      return
-    }
-    setBusyReorder(true)
-    setReorderMsg(null)
-    setError(null)
-    try {
-      const supabase = createClient()
-      const lines = chosen.map(i => ({
-        inventoryItemId: i.id,
-        description: [i.name, i.sku].filter(Boolean).join(' · '),
-        quantity: suggestedReorderQty(i.quantity_on_hand, i.reorder_level),
-        unitCost: Number(i.unit_cost ?? 0),
-        supplierId: i.supplier_contractor_id as string,
-      })).filter(l => l.quantity > 0)
-
-      const { invoiceIds, skippedNoSupplier } = await createDraftSupplierReorderInvoices(supabase, {
-        companyId,
-        actorId: employeeId,
-        actorName,
-        lines,
-      })
-
-      setReorderMsg(
-        `Created ${invoiceIds.length} draft invoice${invoiceIds.length === 1 ? '' : 's'}`
-        + (skippedNoSupplier ? ` · ${skippedNoSupplier} skipped (no supplier)` : ''),
-      )
-      setSelected(new Set())
-      if (invoiceIds.length === 1) {
-        router.push(`/dashboard/finance/supplier-invoices/${invoiceIds[0]}`)
+  // ── Filtered items ─────────────────────────────────────────────────────────
+  const filteredItems = useMemo(() => {
+    const typeFilter = TABS.find(t => t.key === tab)?.type
+    return items.filter(item => {
+      if (!showInactive && !item.is_active) return false
+      if (typeFilter && item.item_type !== typeFilter) return false
+      if (stockFilter === 'low' && !(item.is_stockable && (item.qty_on_hand ?? 0) <= (item.reorder_point ?? Infinity))) return false
+      if (search) {
+        const q = search.toLowerCase()
+        const hit = [item.name, item.sku, item.code, item.brand, item.description]
+          .filter(Boolean).some(f => f!.toLowerCase().includes(q))
+        if (!hit) return false
       }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to create draft invoices')
-    } finally {
-      setBusyReorder(false)
+      return true
+    })
+  }, [items, tab, search, stockFilter, showInactive])
+
+  // Counts per tab
+  const counts = useMemo(() => {
+    const base = showInactive ? items : items.filter(i => i.is_active)
+    return {
+      all:       base.length,
+      parts:     base.filter(i => i.item_type === 'part').length,
+      services:  base.filter(i => i.item_type === 'service').length,
+      materials: base.filter(i => i.item_type === 'material').length,
+      labour:    base.filter(i => i.item_type === 'labour').length,
     }
+  }, [items, showInactive])
+
+  // ── Brands tab data ────────────────────────────────────────────────────────
+  const brands = useMemo(() => {
+    const map = new Map<string, number>()
+    items.filter(i => i.is_active || showInactive).forEach(i => {
+      if (i.brand) map.set(i.brand, (map.get(i.brand) ?? 0) + 1)
+    })
+    return Array.from(map.entries())
+      .map(([brand, count]) => ({ brand, count }))
+      .sort((a, b) => a.brand.localeCompare(b.brand))
+  }, [items, showInactive])
+
+  // ── Conditions tab data ────────────────────────────────────────────────────
+  const conditionCounts = useMemo(() => {
+    const map = new Map<string, number>()
+    items.forEach(i => { if (i.condition_id) map.set(i.condition_id, (map.get(i.condition_id) ?? 0) + 1) })
+    return map
+  }, [items])
+
+  // ── Drawer actions ─────────────────────────────────────────────────────────
+  function openCreate() { setDrawerMode('create'); setDrawerItem(undefined); setDrawerOpen(true) }
+  function openEdit(item: CatalogueItem) { setDrawerMode('edit'); setDrawerItem(item); setDrawerOpen(true) }
+  function openDuplicate(item: CatalogueItem) { setDrawerMode('duplicate'); setDrawerItem(item); setDrawerOpen(true) }
+
+  async function deactivateItem(item: CatalogueItem) {
+    if (!confirm(`Deactivate "${item.name}"?`)) return
+    const supabase = createClient()
+    await supabase.from('quote_catalogue_items').update({ is_active: false }).eq('id', item.id)
+    void load()
   }
 
-  if (error === 'not_linked') return (
-    <div className="flex items-center justify-center h-full">
-      <div className="text-center space-y-2">
-        <span className="material-icons text-[48px] text-text-disabled">person_off</span>
-        <p className="text-[14px] font-semibold text-text-primary">Account not linked</p>
+  // ── Add custom condition ───────────────────────────────────────────────────
+  async function addCondition() {
+    if (!newCondName.trim() || !companyId) return
+    const dupe = conditions.some(
+      c => c.company_id === companyId && c.name.toLowerCase() === newCondName.trim().toLowerCase()
+    )
+    if (dupe) { alert('Condition already exists'); return }
+    setCondSaving(true)
+    const supabase = createClient()
+    await supabase.from('catalogue_conditions').insert({ company_id: companyId, name: newCondName.trim() })
+    setNewCondName('')
+    setCondSaving(false)
+    void load()
+  }
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64 text-text-secondary text-[14px] gap-2">
+        <span className="material-icons animate-spin text-primary text-[20px]">refresh</span>
+        Loading…
       </div>
-    </div>
-  )
+    )
+  }
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-divider shrink-0 bg-surface gap-3">
-        <div className="flex items-center gap-2 flex-1 max-w-sm bg-surface border border-border rounded-lg px-2">
-          <span className="material-icons text-text-secondary text-[16px]">search</span>
-          <input
-            placeholder="Search name or SKU…"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="flex-1 bg-transparent text-text-primary text-[13px] h-[38px] outline-none placeholder:text-text-disabled"
-          />
+    <div className="p-6 max-w-7xl mx-auto">
+
+      {/* ── Page header ── */}
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-[20px] font-semibold text-text-primary">Inventory &amp; Services</h1>
+          <p className="text-[13px] text-text-secondary mt-0.5">Parts, services, materials and labour in one catalogue</p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <button onClick={() => void load()} className="bg-surface-dark rounded-md h-9 w-9 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors">
-            <span className="material-icons text-[18px]">refresh</span>
-          </button>
-          {canEdit && (
-            <button onClick={() => router.push('/dashboard/inventory/new')} className="btn-primary h-9 px-3 text-[13px]">
-              + Add Item
+        <button
+          onClick={openCreate}
+          className="flex items-center gap-2 h-9 px-4 rounded-lg bg-primary text-white text-[13px] font-medium hover:bg-primary/90 transition-colors"
+        >
+          <span className="material-icons text-[16px]">add</span>
+          Add Item
+        </button>
+      </div>
+
+      {/* ── Tabs ── */}
+      <div className="flex items-center gap-0 border-b border-divider mb-4 overflow-x-auto">
+        {TABS.map(t => {
+          const count = t.type ? counts[t.key as keyof typeof counts] : undefined
+          return (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={cn(
+                'flex items-center gap-1.5 px-4 py-2.5 text-[13px] border-b-2 whitespace-nowrap transition-colors',
+                tab === t.key
+                  ? 'border-primary text-primary font-medium'
+                  : 'border-transparent text-text-secondary hover:text-text-primary',
+              )}
+            >
+              {t.label}
+              {count !== undefined && (
+                <span className={cn(
+                  'text-[10px] px-1.5 py-0.5 rounded-full',
+                  tab === t.key ? 'bg-primary/10 text-primary' : 'bg-surface-elevated text-text-secondary',
+                )}>
+                  {count}
+                </span>
+              )}
             </button>
+          )
+        })}
+      </div>
+
+      {/* ── Filters (item tabs only) ── */}
+      {tab !== 'brands' && tab !== 'conditions' && (
+        <div className="flex flex-wrap items-center gap-3 mb-4">
+          <div className="relative flex-1 min-w-[200px] max-w-xs">
+            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 material-icons text-[16px] text-text-secondary">search</span>
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search name, SKU, brand…"
+              className="h-8 w-full rounded-md border border-divider bg-surface pl-8 pr-3 text-[12px] text-text-primary focus:outline-none focus:border-primary"
+            />
+          </div>
+
+          <select
+            value={stockFilter}
+            onChange={e => setStockFilter(e.target.value as typeof stockFilter)}
+            className="h-8 rounded-md border border-divider bg-surface px-2.5 text-[12px] text-text-primary"
+          >
+            <option value="all">All stock levels</option>
+            <option value="low">Low / reorder needed</option>
+          </select>
+
+          <label className="flex items-center gap-2 text-[12px] text-text-secondary cursor-pointer select-none">
+            <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} className="rounded" />
+            Show inactive
+          </label>
+        </div>
+      )}
+
+      {/* ══ Brands tab ══ */}
+      {tab === 'brands' && (
+        <div className="bg-surface border border-divider rounded-xl overflow-hidden">
+          {brands.length === 0 ? (
+            <EmptyState icon="label_off" title="No brands yet" sub="Brands are set when creating parts or materials." />
+          ) : (
+            <table className="w-full text-[12px]">
+              <thead>
+                <tr className="border-b border-divider text-text-secondary text-left">
+                  <th className="px-4 py-2.5 font-medium">Brand</th>
+                  <th className="px-4 py-2.5 font-medium text-right">Items</th>
+                  <th className="px-4 py-2.5 font-medium" />
+                </tr>
+              </thead>
+              <tbody>
+                {brands.map(b => (
+                  <tr key={b.brand} className="border-b border-divider last:border-0 hover:bg-surface-elevated">
+                    <td className="px-4 py-2.5 font-medium text-text-primary">{b.brand}</td>
+                    <td className="px-4 py-2.5 text-right text-text-secondary">{b.count}</td>
+                    <td className="px-4 py-2.5 text-right">
+                      <button
+                        onClick={() => { setTab('all'); setSearch(b.brand) }}
+                        className="text-primary text-[11px] hover:underline"
+                      >
+                        Filter items →
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           )}
         </div>
-      </div>
+      )}
 
-      <div className="flex items-center justify-between px-4 py-2 border-b border-divider shrink-0 bg-surface-dark gap-3 flex-wrap">
-        <p className="text-text-secondary text-sm">
-          {total === 0 ? '0 items' : `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}`}
-        </p>
-        <div className="flex items-center gap-3 flex-wrap">
-          <label className="flex items-center gap-1 text-[12px] text-text-secondary">
-            Page size
-            <select
-              value={pageSize}
-              onChange={e => setPageSize(Number(e.target.value))}
-              className="dark-entry h-8 text-[12px] py-0"
-            >
-              {PAGE_SIZE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
-          </label>
-          <div className="flex items-center gap-2">
-            <span className="text-text-secondary text-sm">Low stock only</span>
-            <Toggle checked={lowStockOnly} onChange={setLowStockOnly} />
+      {/* ══ Conditions tab ══ */}
+      {tab === 'conditions' && (
+        <div className="space-y-4">
+          <div className="bg-surface border border-divider rounded-xl overflow-hidden">
+            {conditions.length === 0 ? (
+              <EmptyState icon="new_label" title="No conditions" sub="Standard conditions will appear here." />
+            ) : (
+              <table className="w-full text-[12px]">
+                <thead>
+                  <tr className="border-b border-divider text-text-secondary text-left">
+                    <th className="px-4 py-2.5 font-medium">Name</th>
+                    <th className="px-4 py-2.5 font-medium">Type</th>
+                    <th className="px-4 py-2.5 font-medium text-right">Items using</th>
+                    <th className="px-4 py-2.5 font-medium" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {conditions.map(c => {
+                    const usedCount = conditionCounts.get(c.id) ?? 0
+                    const canDelete = !c.is_standard && usedCount === 0
+                    return (
+                      <tr key={c.id} className="border-b border-divider last:border-0 hover:bg-surface-elevated">
+                        <td className="px-4 py-2.5 font-medium text-text-primary">{c.name}</td>
+                        <td className="px-4 py-2.5">
+                          {c.is_standard ? (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">Standard</span>
+                          ) : (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-surface-elevated text-text-secondary">Custom</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5 text-right text-text-secondary">{usedCount}</td>
+                        <td className="px-4 py-2.5 text-right">
+                          {canDelete && (
+                            <button
+                              onClick={async () => {
+                                if (!confirm('Delete this condition?')) return
+                                const supabase = createClient()
+                                await supabase.from('catalogue_conditions').delete().eq('id', c.id)
+                                void load()
+                              }}
+                              className="text-red-500 hover:text-red-700 text-[11px]"
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* Add custom condition */}
+          <div className="bg-surface border border-divider rounded-xl p-4">
+            <p className="text-[12px] font-medium text-text-primary mb-3">Add custom condition</p>
+            <div className="flex gap-2">
+              <input
+                value={newCondName}
+                onChange={e => setNewCondName(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && void addCondition()}
+                placeholder="e.g. Ex-demo, Returned"
+                className="flex-1 h-8 rounded-md border border-divider bg-surface px-2.5 text-[12px] text-text-primary focus:outline-none focus:border-primary"
+              />
+              <button
+                onClick={() => void addCondition()}
+                disabled={!newCondName.trim() || condSaving}
+                className="h-8 px-4 rounded-md bg-primary text-white text-[12px] font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
+              >
+                {condSaving ? '…' : 'Add'}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-
-      {error && error !== 'not_linked' && (
-        <p className="mx-4 mt-2 text-[12px] text-error">{error}</p>
-      )}
-      {reorderMsg && (
-        <p className="mx-4 mt-2 text-[12px] text-green-700 bg-green-50 px-3 py-2 rounded">{reorderMsg}</p>
       )}
 
-      {lowBannerCount > 0 && (
-        <div className="mx-4 mt-2 mb-1 px-3 py-2 rounded-lg border border-[#F87171] bg-[#FEF2F2] flex items-center justify-between gap-2 shrink-0 flex-wrap">
-          <div className="flex items-center gap-2">
-            <span className="material-icons text-[16px]" style={{ color: '#F87171' }}>warning</span>
-            <p className="text-[12px] font-medium" style={{ color: '#B91C1C' }}>
-              {lowBannerCount} item{lowBannerCount !== 1 ? 's' : ''} below reorder level
-            </p>
-          </div>
-          {canEdit && (
-            <div className="flex items-center gap-2">
-              <button type="button" onClick={selectAllLowOnPage} className="text-[12px] text-primary hover:underline">
-                Select low on page ({selectableOnPage.length})
-              </button>
-              <button
-                type="button"
-                disabled={selected.size === 0 || busyReorder}
-                onClick={() => void createReorderDrafts()}
-                className="btn-primary h-8 px-3 text-[12px] disabled:opacity-50"
-              >
-                {busyReorder ? 'Creating…' : `Draft reorder (${selected.size})`}
-              </button>
+      {/* ══ Item table ══ */}
+      {tab !== 'brands' && tab !== 'conditions' && (
+        <div className="bg-surface border border-divider rounded-xl overflow-hidden">
+          {filteredItems.length === 0 ? (
+            <EmptyState
+              icon="inventory_2"
+              title={search ? 'No items match' : 'No items yet'}
+              sub={search ? 'Try a different search term.' : 'Click "Add Item" to create your first catalogue entry.'}
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-[12px]">
+                <thead>
+                  <tr className="border-b border-divider text-text-secondary text-left">
+                    <th className="px-4 py-2.5 font-medium">Name</th>
+                    <th className="px-4 py-2.5 font-medium">SKU</th>
+                    {tab !== 'services' && tab !== 'labour' && (
+                      <th className="px-4 py-2.5 font-medium">Brand</th>
+                    )}
+                    {(tab === 'parts' || tab === 'all') && (
+                      <th className="px-4 py-2.5 font-medium">Condition</th>
+                    )}
+                    <th className="px-4 py-2.5 font-medium">Unit</th>
+                    <th className="px-4 py-2.5 font-medium text-right">Cost</th>
+                    <th className="px-4 py-2.5 font-medium text-right">Sell</th>
+                    <th className="px-4 py-2.5 font-medium text-right">Margin</th>
+                    {tab !== 'services' && tab !== 'labour' && (
+                      <th className="px-4 py-2.5 font-medium text-right">On Hand</th>
+                    )}
+                    <th className="px-4 py-2.5 font-medium text-right">Suppliers</th>
+                    <th className="px-4 py-2.5 font-medium" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredItems.map(item => {
+                    const isLowStock = item.is_stockable && item.reorder_point != null &&
+                      (item.qty_on_hand ?? 0) <= item.reorder_point
+                    const margin = item.sell_price > 0
+                      ? ((item.sell_price - item.cost_price) / item.sell_price) * 100
+                      : 0
+                    return (
+                      <tr key={item.id} className={cn(
+                        'border-b border-divider last:border-0 hover:bg-surface-elevated group',
+                        !item.is_active && 'opacity-50',
+                      )}>
+                        <td className="px-4 py-2.5">
+                          <div className="font-medium text-text-primary flex items-center gap-1.5">
+                            <TypeBadge type={item.item_type} />
+                            {item.name}
+                          </div>
+                          {item.description && (
+                            <div className="text-text-secondary truncate max-w-[200px] mt-0.5">{item.description}</div>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5 text-text-secondary font-mono">
+                          {item.sku ?? item.code ?? '—'}
+                        </td>
+                        {tab !== 'services' && tab !== 'labour' && (
+                          <td className="px-4 py-2.5 text-text-secondary">{item.brand ?? '—'}</td>
+                        )}
+                        {(tab === 'parts' || tab === 'all') && (
+                          <td className="px-4 py-2.5 text-text-secondary">
+                            {item.condition?.name ?? '—'}
+                          </td>
+                        )}
+                        <td className="px-4 py-2.5 text-text-secondary">
+                          {getUnitLabel(item.unit_of_measure ?? item.unit ?? 'each')}
+                        </td>
+                        <td className="px-4 py-2.5 text-right text-text-secondary">{fmtMoney(item.cost_price)}</td>
+                        <td className="px-4 py-2.5 text-right font-medium text-text-primary">{fmtMoney(item.sell_price)}</td>
+                        <td className="px-4 py-2.5 text-right text-text-secondary">{fmtPct(margin)}</td>
+                        {tab !== 'services' && tab !== 'labour' && (
+                          <td className="px-4 py-2.5 text-right">
+                            {item.is_stockable ? (
+                              <span className={cn('flex items-center justify-end gap-1', isLowStock ? 'text-red-500' : 'text-text-secondary')}>
+                                {isLowStock && <span className="material-icons text-[14px]">warning</span>}
+                                {fmtQty(item.qty_on_hand)}
+                              </span>
+                            ) : (
+                              <span className="text-text-secondary">—</span>
+                            )}
+                          </td>
+                        )}
+                        <td className="px-4 py-2.5 text-right">
+                          {(item.suppliers?.length ?? 0) > 0 ? (
+                            <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary/10 text-primary text-[10px] font-semibold">
+                              {item.suppliers!.length}
+                            </span>
+                          ) : (
+                            <span className="text-text-secondary">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5 text-right">
+                          <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={() => openEdit(item)}
+                              title="Edit"
+                              className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-surface-elevated text-text-secondary hover:text-text-primary transition-colors"
+                            >
+                              <span className="material-icons text-[15px]">edit</span>
+                            </button>
+                            <button
+                              onClick={() => openDuplicate(item)}
+                              title="Duplicate"
+                              className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-surface-elevated text-text-secondary hover:text-text-primary transition-colors"
+                            >
+                              <span className="material-icons text-[15px]">content_copy</span>
+                            </button>
+                            {item.is_active && (
+                              <button
+                                onClick={() => void deactivateItem(item)}
+                                title="Deactivate"
+                                className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-red-50 text-text-secondary hover:text-red-500 transition-colors"
+                              >
+                                <span className="material-icons text-[15px]">remove_circle_outline</span>
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto">
-        <div className="overflow-x-auto">
-          <table style={{ minWidth: 1080 }} className="w-full">
-            <thead>
-              <tr className="bg-surface-elevated border-b border-divider">
-                {canEdit && <th style={{ width: 40 }} className="data-th" />}
-                <th style={{ width: 160 }} className="data-th">Item</th>
-                <th style={{ width: 80 }}  className="data-th">SKU</th>
-                <th style={{ width: 140 }} className="data-th">Supplier</th>
-                <th style={{ width: 90 }}  className="data-th text-right">On hand</th>
-                <th style={{ width: 90 }}  className="data-th">Unit</th>
-                <th style={{ width: 100 }} className="data-th text-right">Unit cost</th>
-                <th style={{ width: 100 }} className="data-th text-right">Stock value</th>
-                <th style={{ width: 70 }}  className="data-th text-center">Alert</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan={9} className="text-center py-10 text-text-secondary text-[13px]">Loading…</td></tr>
-              ) : items.length === 0 ? (
-                <tr><td colSpan={9} className="text-center py-10 text-text-secondary text-[13px]">No inventory items found.</td></tr>
-              ) : (
-                items.map(item => {
-                  const low = inventoryNeedsReorder(item.quantity_on_hand, item.reorder_level)
-                  const value = inventoryStockValue(item.quantity_on_hand, item.unit_cost)
-                  const canSelect = low && !!item.supplier_contractor_id
-                  return (
-                    <tr
-                      key={item.id}
-                      onClick={() => router.push(`/dashboard/inventory/${item.id}`)}
-                      className="border-b border-divider cursor-pointer hover:opacity-90 transition-opacity"
-                      style={{ backgroundColor: low ? '#FEF2F2' : 'var(--color-surface-card)' }}
-                    >
-                      {canEdit && (
-                        <td className="data-td" onClick={e => canSelect && toggleSelect(item.id, e)}>
-                          <input
-                            type="checkbox"
-                            disabled={!canSelect}
-                            checked={selected.has(item.id)}
-                            onChange={() => {}}
-                            className="accent-primary"
-                            title={canSelect ? 'Select for reorder' : 'Needs preferred supplier + low stock'}
-                          />
-                        </td>
-                      )}
-                      <td className="data-td text-text-primary text-sm font-medium">{item.name}</td>
-                      <td className="data-td text-text-secondary text-sm">{item.sku ?? '—'}</td>
-                      <td className="data-td text-sm">
-                        {supplierName(item)}
-                        {low && !item.supplier_contractor_id && (
-                          <Link
-                            href={`/dashboard/inventory/${item.id}`}
-                            onClick={e => e.stopPropagation()}
-                            className="block text-[11px] text-primary"
-                          >
-                            Set supplier
-                          </Link>
-                        )}
-                      </td>
-                      <td className="data-td text-sm text-right">{item.quantity_on_hand}</td>
-                      <td className="data-td text-text-secondary text-sm">{item.unit_of_measure ?? '—'}</td>
-                      <td className="data-td text-sm text-right">{fmtR(item.unit_cost)}</td>
-                      <td className="data-td text-sm text-right">{fmtR(value)}</td>
-                      <td className="data-td text-center">
-                        {low
-                          ? <span className="text-sm font-medium" style={{ color: '#F87171' }}>Low</span>
-                          : <span className="text-sm" style={{ color: '#9CA3AF' }}>OK</span>
-                        }
-                      </td>
-                    </tr>
-                  )
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      {/* ── Item form drawer ── */}
+      {companyId && (
+        <ItemFormDrawer
+          open={drawerOpen}
+          onClose={() => setDrawerOpen(false)}
+          mode={drawerMode}
+          item={drawerItem}
+          companyId={companyId}
+          conditions={conditions}
+          onSaved={() => { setDrawerOpen(false); void load() }}
+        />
+      )}
 
-      <div className="flex items-center justify-between px-4 py-2 border-t border-divider shrink-0">
-        <button
-          disabled={page <= 1}
-          onClick={() => setPage(p => Math.max(1, p - 1))}
-          className="btn-outlined h-8 px-3 text-[12px] disabled:opacity-40"
-        >
-          Previous
-        </button>
-        <span className="text-[12px] text-text-secondary">Page {page} of {pages}</span>
-        <button
-          disabled={page >= pages}
-          onClick={() => setPage(p => p + 1)}
-          className="btn-outlined h-8 px-3 text-[12px] disabled:opacity-40"
-        >
-          Next
-        </button>
-      </div>
+    </div>
+  )
+}
+
+// ─── Sub-components ─────────────────────────────────────────────────────────────
+
+const TYPE_COLOURS: Record<string, string> = {
+  part:     'bg-blue-50 text-blue-600',
+  service:  'bg-purple-50 text-purple-600',
+  material: 'bg-green-50 text-green-600',
+  labour:   'bg-amber-50 text-amber-600',
+}
+const TYPE_ICONS: Record<string, string> = {
+  part: 'build', service: 'miscellaneous_services', material: 'layers', labour: 'person_pin_circle',
+}
+
+function TypeBadge({ type }: { type: string }) {
+  return (
+    <span className={cn('inline-flex items-center justify-center w-4 h-4 rounded-sm', TYPE_COLOURS[type] ?? 'bg-surface-elevated text-text-secondary')}>
+      <span className="material-icons text-[11px]">{TYPE_ICONS[type] ?? 'help_outline'}</span>
+    </span>
+  )
+}
+
+function EmptyState({ icon, title, sub }: { icon: string; title: string; sub: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 text-center">
+      <span className="material-icons text-[40px] text-divider mb-3">{icon}</span>
+      <p className="text-[14px] font-medium text-text-primary">{title}</p>
+      <p className="text-[12px] text-text-secondary mt-1">{sub}</p>
     </div>
   )
 }
