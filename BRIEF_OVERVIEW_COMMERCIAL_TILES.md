@@ -11,70 +11,107 @@ No migration needed. Additive UI change only.
 
 ---
 
-## 1. ADD COMMERCIAL KPI DATA TO `load()`
+## 1. STATE
 
-After resolving `companyId`, check permission and fetch commercial KPIs:
+Add at the top of the component:
 
-```typescript
-// Inside load(), after companyId is resolved:
-const { data: canViewQuotes } = await supabase.rpc('user_has_permission', {
-  p_company_id: cid,
-  p_key: 'quotes.view'
-})
-
-if (canViewQuotes) {
-  // Open quotes: draft + sent
-  const { count: openQuotes } = await supabase
-    .from('commercial_quotes')
-    .select('*', { count: 'exact', head: true })
-    .eq('company_id', cid)
-    .in('status', ['draft', 'sent'])
-
-  // Outstanding invoices total
-  const { data: invData } = await supabase
-    .from('finance_invoices')
-    .select('balance_due')
-    .eq('company_id', cid)
-    .in('status', ['sent', 'partial'])
-    .gt('balance_due', 0)
-
-  const outstanding = invData?.reduce((s, i) => s + Number(i.balance_due), 0) ?? 0
-
-  // Overdue count
-  const { count: overdueCount } = await supabase
-    .from('finance_invoices')
-    .select('*', { count: 'exact', head: true })
-    .eq('company_id', cid)
-    .in('status', ['sent', 'partial'])
-    .gt('balance_due', 0)
-    .lt('due_date', new Date().toISOString().split('T')[0])
-
-  setCommercialKpi({
-    openQuotes:   openQuotes ?? 0,
-    outstanding:  outstanding,
-    overdue:      overdueCount ?? 0,
-  })
-  setCanViewCommercial(true)
-}
-```
-
-Add state at the top of the component:
 ```typescript
 const [canViewCommercial, setCanViewCommercial] = useState(false)
+const [canViewProcurement, setCanViewProcurement] = useState(false)
 const [commercialKpi, setCommercialKpi] = useState({
-  openQuotes: 0,
-  outstanding: 0,
-  overdue: 0,
+  openQuotes:    0,
+  outstanding:   0,
+  overdue:       0,
+  openRfqs:      0,
+  openPos:       0,
 })
 ```
 
 ---
 
-## 2. ADD COMMERCIAL TILES TO THE KPI GRID
+## 2. FETCH IN `load()`
 
-The existing grid is `<div className="grid grid-cols-3 gap-3">` containing 6 `<KpiTile>` components.
+After resolving `companyId` (`cid`), add:
 
-Add 3 more tiles **after** the existing 6, conditionally:
+```typescript
+// ── COMMERCIAL PERMISSIONS ────────────────────────────────────────
+const { data: canViewQuotes } = await supabase.rpc('user_has_permission', {
+  p_company_id: cid,
+  p_key: 'quotes.view'
+})
+const { data: canViewRfq } = await supabase.rpc('user_has_permission', {
+  p_company_id: cid,
+  p_key: 'rfq.view'
+})
+const { data: canViewPo } = await supabase.rpc('user_has_permission', {
+  p_company_id: cid,
+  p_key: 'purchase_orders.view'
+})
+
+if (canViewQuotes || canViewRfq || canViewPo) {
+  const kpi = { openQuotes: 0, outstanding: 0, overdue: 0, openRfqs: 0, openPos: 0 }
+
+  if (canViewQuotes) {
+    // Open quotes: draft + sent
+    const { count: openQuotes } = await supabase
+      .from('commercial_quotes')
+      .select('*', { count: 'exact', head: true })
+      .eq('company_id', cid)
+      .in('status', ['draft', 'sent'])
+    kpi.openQuotes = openQuotes ?? 0
+
+    // Outstanding invoice total
+    const { data: invData } = await supabase
+      .from('finance_invoices')
+      .select('balance_due')
+      .eq('company_id', cid)
+      .in('status', ['sent', 'partial'])
+      .gt('balance_due', 0)
+    kpi.outstanding = invData?.reduce((s, i) => s + Number(i.balance_due), 0) ?? 0
+
+    // Overdue count
+    const { count: overdueCount } = await supabase
+      .from('finance_invoices')
+      .select('*', { count: 'exact', head: true })
+      .eq('company_id', cid)
+      .in('status', ['sent', 'partial'])
+      .gt('balance_due', 0)
+      .lt('due_date', new Date().toISOString().split('T')[0])
+    kpi.overdue = overdueCount ?? 0
+
+    setCanViewCommercial(true)
+  }
+
+  if (canViewRfq) {
+    const { count: openRfqs } = await supabase
+      .from('rfqs')
+      .select('*', { count: 'exact', head: true })
+      .eq('company_id', cid)
+      .in('status', ['draft', 'sent'])
+    kpi.openRfqs = openRfqs ?? 0
+  }
+
+  if (canViewPo) {
+    const { count: openPos } = await supabase
+      .from('purchase_orders')
+      .select('*', { count: 'exact', head: true })
+      .eq('company_id', cid)
+      .in('status', ['draft', 'approved', 'sent', 'partially_received'])
+    kpi.openPos = openPos ?? 0
+    setCanViewProcurement(true)
+  }
+
+  setCommercialKpi(kpi)
+}
+```
+
+---
+
+## 3. KPI TILE GRID — ADD 5 COMMERCIAL TILES
+
+The existing grid is `<div className="grid grid-cols-3 gap-3">` with 6 `<KpiTile>` components.
+
+Add after the existing 6, conditionally:
 
 ```tsx
 {canViewCommercial && (
@@ -90,7 +127,7 @@ Add 3 more tiles **after** the existing 6, conditionally:
     <KpiTile
       icon="receipt_long"
       label="Outstanding"
-      value={`R ${Math.round(commercialKpi.outstanding / 1000)}k`}
+      value={fmtShort(commercialKpi.outstanding)}
       href="/dashboard/money/invoices"
       iconBg="#1c1917"
       iconColor="#fbbf24"
@@ -105,9 +142,39 @@ Add 3 more tiles **after** the existing 6, conditionally:
     />
   </>
 )}
+{canViewRfq && (
+  <KpiTile
+    icon="compare_arrows"
+    label="Open RFQs"
+    value={commercialKpi.openRfqs}
+    href="/dashboard/supply/rfqs"
+    iconBg="#0c1a2e"
+    iconColor="#60a5fa"
+  />
+)}
+{canViewProcurement && (
+  <KpiTile
+    icon="shopping_cart"
+    label="Open POs"
+    value={commercialKpi.openPos}
+    href="/dashboard/supply/purchase-orders"
+    iconBg="#0f1f0f"
+    iconColor="#4ade80"
+  />
+)}
 ```
 
-**Note:** `KpiTile` currently expects `value: number` — update its prop type to `value: number | string` to support the formatted currency string:
+**Note:** The `canViewRfq` boolean needs to be promoted to component state, same as `canViewProcurement`:
+```typescript
+const [canViewRfq, setCanViewRfq] = useState(false)
+// set it in load() alongside setCanViewProcurement(true)
+```
+
+---
+
+## 4. UPDATE `KpiTile` VALUE PROP
+
+`KpiTile` currently expects `value: number`. Change to `value: number | string`.
 
 ```typescript
 function KpiTile({ icon, label, value, href, iconBg, iconColor }: {
@@ -117,49 +184,9 @@ function KpiTile({ icon, label, value, href, iconBg, iconColor }: {
 
 ---
 
-## 3. ADD QUICK-ACTION BUTTONS
+## 5. `fmtShort` HELPER
 
-The existing quick-action buttons are near line 457–466:
-```tsx
-<button onClick={() => router.push('/dashboard/employees/new')}>
-  + New Employee
-</button>
-<button onClick={() => router.push('/dashboard/jobs/new')}>
-  + New Job
-</button>
-```
-
-Add two more buttons **after** these, conditionally:
-
-```tsx
-{canViewCommercial && (
-  <>
-    <button
-      onClick={() => router.push('/dashboard/money/quotes/new')}
-      style={{ /* match existing button style */ }}
-    >
-      + New Quote
-    </button>
-    <button
-      onClick={() => router.push('/dashboard/money/invoices/new')}
-      style={{ /* match existing button style */ }}
-    >
-      + New Invoice
-    </button>
-  </>
-)}
-```
-
-Match the exact inline styles of the existing "New Employee" / "New Job" buttons.
-
----
-
-## 4. OUTSTANDING VALUE FORMATTING
-
-For the "Outstanding" tile, format based on size:
-- < R1,000 → "R {amount}"
-- ≥ R1,000 → "R {n}k"  
-- ≥ R1,000,000 → "R {n}M"
+Add near the top of the file (outside the component):
 
 ```typescript
 function fmtShort(n: number): string {
@@ -167,16 +194,58 @@ function fmtShort(n: number): string {
   if (n >= 1_000)     return `R ${Math.round(n / 1_000)}k`
   return `R ${Math.round(n)}`
 }
-// Use: value={fmtShort(commercialKpi.outstanding)}
 ```
+
+---
+
+## 6. QUICK-ACTION BUTTONS
+
+The existing quick-action buttons area (look for "New Employee" / "New Job" buttons) — add after them, conditionally:
+
+```tsx
+{canViewCommercial && (
+  <>
+    <button onClick={() => router.push('/dashboard/money/quotes/new')}
+      style={{ /* match existing button style exactly */ }}>
+      + New Quote
+    </button>
+    <button onClick={() => router.push('/dashboard/money/invoices/new')}
+      style={{ /* match existing button style exactly */ }}>
+      + New Invoice
+    </button>
+  </>
+)}
+{canViewRfq && (
+  <button onClick={() => router.push('/dashboard/supply/rfqs/new')}
+    style={{ /* match existing button style exactly */ }}>
+    + New RFQ
+  </button>
+)}
+{canViewProcurement && (
+  <button onClick={() => router.push('/dashboard/supply/purchase-orders/new')}
+    style={{ /* match existing button style exactly */ }}>
+    + New PO
+  </button>
+)}
+```
+
+Match the exact inline styles / className of the existing "New Employee" / "New Job" buttons — copy them, do not guess.
+
+---
+
+## WHAT DOES NOT CHANGE
+
+- Existing 6 KPI tiles untouched
+- Existing employee/job quick-action buttons untouched
+- No DB changes, no migration
 
 ---
 
 ## DELIVERABLES
 
-- [ ] `canViewCommercial` state + permission check in `load()`
-- [ ] 3 commercial KpiTiles added to grid (conditional on permission)
+- [ ] 5 new states: `canViewCommercial`, `canViewRfq`, `canViewProcurement`, `commercialKpi`, `fmtShort` helper
+- [ ] `load()` fetches 5 KPIs behind permission checks
+- [ ] 5 commercial KpiTiles added (Quotes, Outstanding, Overdue, RFQs, POs)
 - [ ] `KpiTile` `value` prop updated to `number | string`
-- [ ] "New Quote" + "New Invoice" quick-action buttons (conditional)
-- [ ] `fmtShort` helper for currency display
+- [ ] 4 quick-action buttons added (New Quote, New Invoice, New RFQ, New PO)
 - [ ] `tsc --noEmit` — 0 errors
