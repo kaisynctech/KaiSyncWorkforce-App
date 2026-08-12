@@ -15,109 +15,94 @@ import { isPlatformAdmin } from '@/lib/platform-admin'
 import { PwaInstallButton } from '@/components/PwaInstallButton'
 import type { Company, Employee } from '@/types/database'
 
+// ─── Types ───────────────────────────────────────────────────────────────────
+
 interface NavItem {
   label: string
   href: string
   icon: string
   /** undefined = always visible when section is shown */
   flag?: keyof HrNavFlags
-  /** Owner-only  */
+  /** Owner-only */
   ownerOnly?: boolean
+  /** Optional sub-section label within a module panel */
+  group?: string
 }
 
 interface NavSection {
   id: string
   label: string
+  /** Material Icon name for the top nav tab */
+  icon: string
   items: NavItem[]
 }
 
-const NAV_STORAGE_KEY = 'kf_hr_nav_sections_v1'
+// ─── Nav data ─────────────────────────────────────────────────────────────────
 
-/** Always visible at top (not inside a collapsible group). */
-const PINNED_TOP: NavItem[] = [
-  { label: 'Overview', href: '/dashboard/overview', icon: 'home' },
-  { label: 'My PA', href: '/dashboard/pa', icon: 'task_alt', flag: 'myPa' },
-  { label: 'Messages', href: '/dashboard/messages', icon: 'chat', flag: 'messaging' },
-  { label: 'Notifications', href: '/dashboard/notifications', icon: 'notifications' },
-]
-
-/** Always visible above the account footer. */
-const PINNED_BOTTOM: NavItem[] = [
-  { label: 'Settings', href: '/dashboard/settings', icon: 'settings', flag: 'settings' },
-]
-
-/**
- * Recommended IA — same routes/flags as before, only presentation grouping.
- * Module gating still applied per-item via HrNavFlags.
- */
 const NAV_SECTIONS: NavSection[] = [
   {
     id: 'workforce',
     label: 'Workforce',
+    icon: 'people',
     items: [
-      { label: 'Employees', href: '/dashboard/employees', icon: 'people', flag: 'employees' },
-      { label: 'Work Teams', href: '/dashboard/work-teams', icon: 'groups', flag: 'workTeams' },
-      { label: 'Leave', href: '/dashboard/leave', icon: 'event_available', flag: 'leave' },
-      { label: 'Attendance', href: '/dashboard/attendance', icon: 'schedule', flag: 'attendance' },
-      { label: 'Team Punch', href: '/dashboard/team-punch', icon: 'punch_clock', flag: 'teamPunch' },
-      { label: 'Time Templates', href: '/dashboard/time-templates', icon: 'access_time', flag: 'timeTemplates' },
-      { label: 'Scheduling', href: '/dashboard/scheduling', icon: 'calendar_month', flag: 'scheduling' },
-      { label: 'Payroll', href: '/dashboard/payroll', icon: 'payments', flag: 'payroll' },
+      { label: 'Employees',      href: '/dashboard/employees',      icon: 'people',          flag: 'employees' },
+      { label: 'Work Teams',     href: '/dashboard/work-teams',     icon: 'groups',          flag: 'workTeams' },
+      { label: 'Leave',          href: '/dashboard/leave',          icon: 'event_available', flag: 'leave' },
+      { label: 'Attendance',     href: '/dashboard/attendance',     icon: 'schedule',        flag: 'attendance' },
+      { label: 'Team Punch',     href: '/dashboard/team-punch',     icon: 'punch_clock',     flag: 'teamPunch' },
+      { label: 'Time Templates', href: '/dashboard/time-templates', icon: 'access_time',     flag: 'timeTemplates' },
+      { label: 'Scheduling',     href: '/dashboard/scheduling',     icon: 'calendar_month',  flag: 'scheduling' },
+      { label: 'Payroll',        href: '/dashboard/payroll',        icon: 'payments',        flag: 'payroll' },
     ],
   },
   {
     id: 'operations',
     label: 'Operations',
+    icon: 'work',
     items: [
-      { label: 'Clients', href: '/dashboard/clients', icon: 'business', flag: 'clients' },
-      { label: 'Projects', href: '/dashboard/projects', icon: 'folder', flag: 'projects' },
-      { label: 'Jobs', href: '/dashboard/jobs', icon: 'work', flag: 'jobs' },
-      { label: 'Contractors', href: '/dashboard/contractors', icon: 'engineering', flag: 'contractors' },
-      { label: 'Incidents', href: '/dashboard/incidents', icon: 'warning', flag: 'incidents' },
-      { label: 'Compliance Packs', href: '/dashboard/compliance-packs', icon: 'verified', flag: 'compliancePacks' },
-      { label: 'Inventory', href: '/dashboard/inventory', icon: 'inventory_2', flag: 'inventory' },
-      { label: 'Assets', href: '/dashboard/assets', icon: 'category', flag: 'assets' },
+      { label: 'Clients',          href: '/dashboard/clients',           icon: 'business',    flag: 'clients' },
+      { label: 'Projects',         href: '/dashboard/projects',          icon: 'folder',      flag: 'projects' },
+      { label: 'Jobs',             href: '/dashboard/jobs',              icon: 'work',        flag: 'jobs' },
+      { label: 'Contractors',      href: '/dashboard/contractors',       icon: 'engineering', flag: 'contractors' },
+      { label: 'Incidents',        href: '/dashboard/incidents',         icon: 'warning',     flag: 'incidents' },
+      { label: 'Compliance Packs', href: '/dashboard/compliance-packs', icon: 'verified',    flag: 'compliancePacks' },
+      { label: 'Inventory',        href: '/dashboard/inventory',         icon: 'inventory_2', flag: 'inventory' },
+      { label: 'Assets',           href: '/dashboard/assets',            icon: 'category',    flag: 'assets' },
     ],
   },
   {
     id: 'money',
     label: 'Money',
+    icon: 'account_balance_wallet',
     items: [
-      { label: 'Finance',           href: '/dashboard/finance',                      icon: 'account_balance', flag: 'finance' },
-      { label: 'Quotes',            href: '/dashboard/money/quotes',                 icon: 'request_quote',   flag: 'commercial' },
-      { label: 'Invoices',          href: '/dashboard/money/invoices',               icon: 'receipt_long',    flag: 'commercial' },
-      { label: 'Credit Notes',      href: '/dashboard/money/credit-notes',           icon: 'undo',            flag: 'commercial' },
-      { label: 'Price Catalogue',   href: '/dashboard/money/catalogue',              icon: 'sell',            flag: 'commercial' },
-      { label: 'RFQs',              href: '/dashboard/supply/rfqs',                  icon: 'compare_arrows',  flag: 'commercial' },
-      { label: 'Purchase Orders',   href: '/dashboard/supply/purchase-orders',       icon: 'shopping_cart',   flag: 'commercial' },
-      { label: 'Goods Received',    href: '/dashboard/supply/goods-received',        icon: 'local_shipping',  flag: 'commercial' },
-      { label: 'Supplier Invoices', href: '/dashboard/finance/supplier-invoices',    icon: 'receipt',         flag: 'commercial' },
-      { label: 'Suppliers',         href: '/dashboard/supply/suppliers',             icon: 'storefront',      flag: 'commercial' },
+      { label: 'Finance',           href: '/dashboard/finance',                   icon: 'account_balance', flag: 'finance',    group: 'Finance' },
+      { label: 'Quotes',            href: '/dashboard/money/quotes',              icon: 'request_quote',   flag: 'commercial', group: 'Client' },
+      { label: 'Invoices',          href: '/dashboard/money/invoices',            icon: 'receipt_long',    flag: 'commercial', group: 'Client' },
+      { label: 'Credit Notes',      href: '/dashboard/money/credit-notes',        icon: 'undo',            flag: 'commercial', group: 'Client' },
+      { label: 'Price Catalogue',   href: '/dashboard/money/catalogue',           icon: 'sell',            flag: 'commercial', group: 'Client' },
+      { label: 'RFQs',              href: '/dashboard/supply/rfqs',               icon: 'compare_arrows',  flag: 'commercial', group: 'Procurement' },
+      { label: 'Purchase Orders',   href: '/dashboard/supply/purchase-orders',    icon: 'shopping_cart',   flag: 'commercial', group: 'Procurement' },
+      { label: 'Goods Received',    href: '/dashboard/supply/goods-received',     icon: 'local_shipping',  flag: 'commercial', group: 'Procurement' },
+      { label: 'Supplier Invoices', href: '/dashboard/finance/supplier-invoices', icon: 'receipt',         flag: 'commercial', group: 'Procurement' },
+      { label: 'Suppliers',         href: '/dashboard/supply/suppliers',          icon: 'storefront',      flag: 'commercial', group: 'Procurement' },
     ],
   },
   {
     id: 'properties',
     label: 'Properties',
+    icon: 'home_work',
     items: [
       { label: 'Properties', href: '/dashboard/properties', icon: 'home_work', flag: 'properties' },
-      { label: 'Residents', href: '/dashboard/residents', icon: 'apartment', flag: 'residents' },
+      { label: 'Residents',  href: '/dashboard/residents',  icon: 'apartment', flag: 'residents' },
     ],
   },
   {
     id: 'insights',
     label: 'Insights',
+    icon: 'bar_chart',
     items: [
-      { label: 'Reports', href: '/dashboard/reports', icon: 'bar_chart', flag: 'reports' },
+      { label: 'Reports',               href: '/dashboard/reports',                       icon: 'bar_chart',   flag: 'reports' },
       { label: 'Project Profitability', href: '/dashboard/reports/project-profitability', icon: 'trending_up', flag: 'reports' },
-    ],
-  },
-  {
-    id: 'admin',
-    label: 'Admin',
-    items: [
-      { label: 'My Profile', href: '/dashboard/profile', icon: 'person' },
-      { label: 'Active Sessions', href: '/dashboard/active-sessions', icon: 'manage_accounts', flag: 'settings' },
-      { label: 'Activity Log', href: '/dashboard/activity-log', icon: 'history', ownerOnly: true },
     ],
   },
 ]
@@ -150,6 +135,8 @@ const ALL_HR_FLAGS: HrNavFlags = {
   commercial: true,
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
 function itemVisible(item: NavItem, flags: HrNavFlags, isOwner: boolean): boolean {
   if (item.ownerOnly) return isOwner
   if (!item.flag) return true
@@ -160,41 +147,142 @@ function isItemActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`)
 }
 
-function readStoredOpen(): Record<string, boolean> | null {
-  if (typeof window === 'undefined') return null
-  try {
-    const raw = localStorage.getItem(NAV_STORAGE_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as unknown
-    if (!parsed || typeof parsed !== 'object') return null
-    return parsed as Record<string, boolean>
-  } catch {
-    return null
-  }
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function NavTopBtn({ href, icon, label, active }: { href: string; icon: string; label: string; active: boolean }) {
+  return (
+    <Link
+      href={href}
+      className={cn(
+        'flex items-center gap-1.5 px-3 text-[12px] border-b-2 transition-colors self-stretch whitespace-nowrap',
+        active
+          ? 'border-primary text-primary bg-primary/10 font-medium'
+          : 'border-transparent text-text-secondary hover:text-text-primary hover:bg-surface-elevated',
+      )}
+    >
+      <span className="material-icons text-[15px]">{icon}</span>
+      {label}
+    </Link>
+  )
 }
 
-function writeStoredOpen(state: Record<string, boolean>) {
-  if (typeof window === 'undefined') return
-  try {
-    localStorage.setItem(NAV_STORAGE_KEY, JSON.stringify(state))
-  } catch { /* ignore quota */ }
+function NavIconBtn({
+  href,
+  icon,
+  label,
+  active,
+}: {
+  href: string
+  icon: string
+  label: string
+  active: boolean
+}) {
+  return (
+    <Link
+      href={href}
+      title={label}
+      aria-label={label}
+      className={cn(
+        'flex items-center justify-center w-8 h-8 my-auto rounded-md transition-colors',
+        active
+          ? 'bg-primary/10 text-primary'
+          : 'text-text-secondary hover:text-text-primary hover:bg-surface-elevated',
+      )}
+    >
+      <span className="material-icons text-[18px]">{icon}</span>
+    </Link>
+  )
 }
+
+function PanelItems({
+  items,
+  flags,
+  isOwner,
+  pathname,
+  collapsed,
+}: {
+  items: NavItem[]
+  flags: HrNavFlags
+  isOwner: boolean
+  pathname: string
+  collapsed: boolean
+}) {
+  const visible = items.filter(item => itemVisible(item, flags, isOwner))
+  if (visible.length === 0) return null
+
+  // Group items by their `group` property
+  const groups: { label: string | null; items: NavItem[] }[] = []
+  for (const item of visible) {
+    const g = item.group ?? null
+    const last = groups[groups.length - 1]
+    if (last && last.label === g) {
+      last.items.push(item)
+    } else {
+      groups.push({ label: g, items: [item] })
+    }
+  }
+
+  return (
+    <>
+      {groups.map((group, gi) => (
+        <div key={gi}>
+          {group.label && !collapsed && (
+            <p className="text-[9px] font-semibold uppercase tracking-widest text-text-secondary px-3 pt-3 pb-1">
+              {group.label}
+            </p>
+          )}
+          {group.items.map(item => {
+            const active = isItemActive(pathname, item.href)
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                title={collapsed ? item.label : undefined}
+                className={cn(
+                  'flex items-center gap-2 mx-1 mb-0.5 rounded-md transition-colors',
+                  collapsed ? 'justify-center px-0 py-2' : 'px-2 py-1.5',
+                  active
+                    ? 'bg-primary/10 text-primary font-medium border-l-2 border-primary rounded-l-none'
+                    : 'text-text-secondary hover:text-text-primary hover:bg-surface-elevated',
+                )}
+              >
+                <span
+                  className={cn(
+                    'material-icons shrink-0',
+                    collapsed ? 'text-[18px]' : 'text-[16px]',
+                  )}
+                >
+                  {item.icon}
+                </span>
+                {!collapsed && (
+                  <span className="text-[12px] truncate">{item.label}</span>
+                )}
+              </Link>
+            )
+          })}
+        </div>
+      ))}
+    </>
+  )
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
 
 interface SidebarProps {
   open: boolean
   onToggle: () => void
   company: Company | null
   employee: Employee | null
-  /** JWT platform admin with no employee row  */
+  /** JWT platform admin with no employee row */
   platformOnly?: boolean
 }
 
-export default function Sidebar({ open, onToggle, company, employee, platformOnly = false }: SidebarProps) {
+export default function Sidebar({ company, employee, platformOnly = false }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
   const [flags, setFlags] = useState<HrNavFlags>(ALL_HR_FLAGS)
   const [showPlatform, setShowPlatform] = useState(platformOnly)
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({})
+  const [panelCollapsed, setPanelCollapsed] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -222,25 +310,8 @@ export default function Sidebar({ open, onToggle, company, employee, platformOnl
 
   const isOwner = (employee?.access_level ?? '').toLowerCase() === 'owner'
 
-  const pinnedTop = useMemo(() => {
-    if (platformOnly) return [] as NavItem[]
-    const list = PINNED_TOP.filter(item => itemVisible(item, flags, isOwner))
-    if (showPlatform) {
-      return [
-        { label: 'Platform Console', href: '/dashboard/platform', icon: 'admin_panel_settings' },
-        ...list,
-      ]
-    }
-    return list
-  }, [flags, isOwner, platformOnly, showPlatform])
-
-  const pinnedBottom = useMemo(() => {
-    if (platformOnly) return [] as NavItem[]
-    return PINNED_BOTTOM.filter(item => itemVisible(item, flags, isOwner))
-  }, [flags, isOwner, platformOnly])
-
   const sections = useMemo(() => {
-    if (platformOnly) return [] as { id: string; label: string; items: NavItem[] }[]
+    if (platformOnly) return [] as NavSection[]
     return NAV_SECTIONS
       .map(section => ({
         ...section,
@@ -249,44 +320,20 @@ export default function Sidebar({ open, onToggle, company, employee, platformOnl
       .filter(section => section.items.length > 0)
   }, [flags, isOwner, platformOnly])
 
-  const platformOnlyItems = useMemo(() => {
-    if (!platformOnly) return [] as NavItem[]
-    return [{ label: 'Platform Console', href: '/dashboard/platform', icon: 'admin_panel_settings' }]
-  }, [platformOnly])
+  // Which section is currently active (drives which top tab is highlighted and panel content)
+  const activeSection = useMemo(() => {
+    return sections.find(section =>
+      section.items.some(item => isItemActive(pathname, item.href))
+    ) ?? null
+  }, [pathname, sections])
 
-  // Initialise / sync open state: restore storage, always force-open section for active route
+  // Sync CSS variable so main content can adjust left padding
+  const panelWidth = activeSection
+    ? (panelCollapsed ? 44 : 176)
+    : 0
   useEffect(() => {
-    if (platformOnly) return
-    const stored = readStoredOpen() ?? {}
-    const next: Record<string, boolean> = { ...stored }
-    let changed = false
-    for (const section of sections) {
-      if (next[section.id] === undefined) {
-        next[section.id] = false
-        changed = true
-      }
-      const hasActive = section.items.some(item => isItemActive(pathname, item.href))
-      if (hasActive && !next[section.id]) {
-        next[section.id] = true
-        changed = true
-      }
-    }
-    setOpenSections(prev => {
-      const same =
-        sections.every(s => Boolean(prev[s.id]) === Boolean(next[s.id]))
-        && Object.keys(prev).length === Object.keys(next).length
-      return same ? prev : next
-    })
-    if (changed) writeStoredOpen(next)
-  }, [pathname, sections, platformOnly])
-
-  function toggleSection(id: string) {
-    setOpenSections(prev => {
-      const next = { ...prev, [id]: !prev[id] }
-      writeStoredOpen(next)
-      return next
-    })
-  }
+    document.documentElement.style.setProperty('--sidebar-panel-w', `${panelWidth}px`)
+  }, [panelWidth])
 
   async function handleSignOut() {
     const supabase = createClient()
@@ -310,189 +357,189 @@ export default function Sidebar({ open, onToggle, company, employee, platformOnl
       ? 'Platform Admin'
       : ''
 
-  function renderLink(item: NavItem) {
-    const active = isItemActive(pathname, item.href)
-    return (
-      <Link
-        key={item.href}
-        href={item.href}
-        title={!open ? item.label : undefined}
-        className={cn(
-          'flex items-center gap-3 mx-2 mb-0.5 rounded-lg px-3 h-10 transition-colors group',
-          active
-            ? 'bg-primary/20 text-sidebar-active'
-            : 'text-white/60 hover:text-white hover:bg-white/10',
-        )}
-      >
-        <span
-          className={cn(
-            'material-icons shrink-0 transition-colors text-[20px]',
-            active ? 'text-sidebar-active' : 'text-white/50 group-hover:text-white',
-          )}
-        >
-          {item.icon}
-        </span>
-        {open && (
-          <span className="text-[13px] font-medium truncate">{item.label}</span>
-        )}
-      </Link>
-    )
-  }
-
-  // Icon-only rail: scrollable destinations only — Settings stays in sticky bottom pin
-  const flatRailItems = useMemo(() => {
-    if (platformOnly) return platformOnlyItems
-    return [
-      ...pinnedTop,
-      ...sections.flatMap(s => s.items),
-    ]
-  }, [platformOnly, platformOnlyItems, pinnedTop, sections])
-
   return (
     <>
-      {open && (
-        <div
-          className="fixed inset-0 bg-black/40 z-20 lg:hidden"
-          onClick={onToggle}
-        />
-      )}
+      {/* ── TOP NAV BAR ─────────────────────────────────────────────── */}
+      <header className="flex items-stretch h-[42px] shrink-0 bg-surface border-b border-divider z-30">
 
-      <aside
-        className={cn(
-          'fixed lg:relative inset-y-0 left-0 z-30 flex flex-col bg-sidebar-bg transition-all duration-200 shrink-0',
-          open ? 'w-60' : 'w-[64px]',
+        {/* Logo + company name */}
+        <div className="flex items-center gap-2 px-3 border-r border-divider shrink-0">
+          <div className="w-6 h-6 rounded-md bg-primary flex items-center justify-center">
+            <span className="material-icons text-white text-[14px]">bolt</span>
+          </div>
+          <span className="text-[12px] font-semibold text-text-primary truncate max-w-[120px]">
+            {company?.name ?? (platformOnly ? 'KaiSync Platform' : 'KaiSync')}
+          </span>
+        </div>
+
+        {/* Overview button */}
+        <NavTopBtn
+          href="/dashboard/overview"
+          icon="home"
+          label="Overview"
+          active={!activeSection && isItemActive(pathname, '/dashboard/overview')}
+        />
+
+        <div className="w-px bg-divider mx-1 self-stretch" />
+
+        {/* Module tabs — hidden if platformOnly */}
+        {!platformOnly && sections.map(section => (
+          <NavTopBtn
+            key={section.id}
+            href={section.items[0]?.href ?? '#'}
+            icon={section.icon}
+            label={section.label}
+            active={activeSection?.id === section.id}
+          />
+        ))}
+
+        {/* Platform Console tab */}
+        {showPlatform && (
+          <NavTopBtn
+            href="/dashboard/platform"
+            icon="admin_panel_settings"
+            label="Platform"
+            active={isItemActive(pathname, '/dashboard/platform')}
+          />
         )}
-      >
-        <div
+
+        <div className="flex-1" />
+
+        {/* Global icon buttons */}
+        {!platformOnly && (
+          <>
+            {itemVisible({ label: 'My PA', href: '/dashboard/pa', icon: 'task_alt', flag: 'myPa' }, flags, isOwner) && (
+              <NavIconBtn
+                href="/dashboard/pa"
+                icon="task_alt"
+                label="My PA"
+                active={isItemActive(pathname, '/dashboard/pa')}
+              />
+            )}
+            {itemVisible({ label: 'Messages', href: '/dashboard/messages', icon: 'chat', flag: 'messaging' }, flags, isOwner) && (
+              <NavIconBtn
+                href="/dashboard/messages"
+                icon="chat"
+                label="Messages"
+                active={isItemActive(pathname, '/dashboard/messages')}
+              />
+            )}
+            <NavIconBtn
+              href="/dashboard/notifications"
+              icon="notifications"
+              label="Notifications"
+              active={isItemActive(pathname, '/dashboard/notifications')}
+            />
+            <div className="w-px bg-divider mx-1 self-stretch" />
+            {itemVisible({ label: 'Settings', href: '/dashboard/settings', icon: 'settings', flag: 'settings' }, flags, isOwner) && (
+              <NavIconBtn
+                href="/dashboard/settings"
+                icon="settings"
+                label="Settings"
+                active={isItemActive(pathname, '/dashboard/settings')}
+              />
+            )}
+            <PwaInstallButton
+              className="flex items-center justify-center w-8 h-8 my-auto rounded-md text-text-secondary hover:text-text-primary hover:bg-surface-elevated transition-colors"
+            />
+          </>
+        )}
+
+        {/* Avatar + dropdown */}
+        <div className="flex items-center px-3 border-l border-divider ml-1">
+          <div className="relative group">
+            <button
+              className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-white text-[11px] font-semibold"
+              title={displayName}
+              aria-label="Account menu"
+            >
+              {getInitials(displayName)}
+            </button>
+            {/* Dropdown — visible on hover / focus-within */}
+            <div className="absolute right-0 top-full mt-1 w-48 bg-surface border border-divider rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible group-focus-within:opacity-100 group-focus-within:visible transition-all z-50">
+              <div className="px-3 py-2 border-b border-divider">
+                <p className="text-[12px] font-medium text-text-primary truncate">{displayName}</p>
+                <p className="text-[11px] text-text-secondary">{roleLabel}</p>
+              </div>
+              <Link
+                href="/dashboard/profile"
+                className="flex items-center gap-2 px-3 py-2 text-[12px] text-text-secondary hover:text-text-primary hover:bg-surface-elevated"
+              >
+                <span className="material-icons text-[16px]">person</span>
+                My Profile
+              </Link>
+              <Link
+                href="/dashboard/active-sessions"
+                className="flex items-center gap-2 px-3 py-2 text-[12px] text-text-secondary hover:text-text-primary hover:bg-surface-elevated"
+              >
+                <span className="material-icons text-[16px]">manage_accounts</span>
+                Active Sessions
+              </Link>
+              {isOwner && (
+                <Link
+                  href="/dashboard/activity-log"
+                  className="flex items-center gap-2 px-3 py-2 text-[12px] text-text-secondary hover:text-text-primary hover:bg-surface-elevated"
+                >
+                  <span className="material-icons text-[16px]">history</span>
+                  Activity Log
+                </Link>
+              )}
+              <div className="border-t border-divider mt-1">
+                <button
+                  onClick={handleSignOut}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-[12px] text-text-secondary hover:text-text-primary hover:bg-surface-elevated"
+                >
+                  <span className="material-icons text-[16px]">logout</span>
+                  Sign out
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* ── LEFT PANEL ──────────────────────────────────────────────── */}
+      {activeSection && !platformOnly && (
+        <aside
           className={cn(
-            'flex items-center h-16 border-b border-white/10 shrink-0',
-            open ? 'gap-3 px-4' : 'justify-center px-1',
+            'fixed top-[42px] left-0 bottom-0 flex flex-col shrink-0 bg-surface border-r border-divider overflow-hidden transition-all duration-200 z-20',
+            panelCollapsed ? 'w-11' : 'w-44',
           )}
         >
-          {open ? (
-            <>
-              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0">
-                <span className="material-icons text-white text-[18px]">bolt</span>
-              </div>
-              <div className="flex-1 overflow-hidden min-w-0">
-                <p className="text-white text-[13px] font-semibold truncate">
-                  {company?.name ?? (platformOnly ? 'KaiSync Platform' : 'KaiSync')}
-                </p>
-                <p className="text-white/50 text-[11px] truncate">
-                  {platformOnly ? 'Operator Console' : 'Workforce'}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={onToggle}
-                className="text-white/50 hover:text-white transition-colors shrink-0"
-                aria-label="Collapse sidebar"
-                title="Collapse sidebar"
-              >
-                <span className="material-icons text-[20px]">chevron_left</span>
-              </button>
-            </>
-          ) : (
+          {/* Panel header — module name + collapse toggle */}
+          <div className="flex items-center justify-between px-2 pt-2 pb-1 shrink-0">
+            {!panelCollapsed && (
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-text-secondary px-1">
+                {activeSection.label}
+              </span>
+            )}
             <button
               type="button"
-              onClick={onToggle}
-              className="w-10 h-10 rounded-lg bg-primary/90 hover:bg-primary flex items-center justify-center text-white transition-colors"
-              aria-label="Expand sidebar"
-              title="Expand sidebar"
+              onClick={() => setPanelCollapsed(v => !v)}
+              className={cn(
+                'w-7 h-7 rounded-md flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-surface-elevated transition-colors',
+                panelCollapsed && 'mx-auto',
+              )}
+              title={panelCollapsed ? 'Expand panel' : 'Collapse panel'}
             >
-              <span className="material-icons text-[22px]">chevron_right</span>
-            </button>
-          )}
-        </div>
-
-        <nav className="flex-1 py-3 overflow-y-auto overflow-x-hidden">
-          {platformOnly ? (
-            platformOnlyItems.map(renderLink)
-          ) : !open ? (
-            flatRailItems.map(renderLink)
-          ) : (
-            <>
-              {pinnedTop.map(renderLink)}
-
-              {sections.map(section => {
-                const expanded = Boolean(openSections[section.id])
-                const sectionActive = section.items.some(item => isItemActive(pathname, item.href))
-                return (
-                  <div key={section.id} className="mt-2">
-                    <button
-                      type="button"
-                      onClick={() => toggleSection(section.id)}
-                      aria-expanded={expanded}
-                      className={cn(
-                        'flex w-[calc(100%-16px)] items-center gap-2 mx-2 mb-0.5 rounded-lg px-3 h-8 transition-colors',
-                        sectionActive
-                          ? 'text-white/80'
-                          : 'text-white/40 hover:text-white/70 hover:bg-white/5',
-                      )}
-                    >
-                      <span className="text-[10px] font-semibold uppercase tracking-[0.08em] flex-1 text-left truncate">
-                        {section.label}
-                      </span>
-                      <span className="material-icons text-[16px] shrink-0 opacity-70">
-                        {expanded ? 'expand_more' : 'chevron_right'}
-                      </span>
-                    </button>
-                    <div
-                      className={cn(
-                        'overflow-hidden transition-[max-height,opacity] duration-200 ease-out',
-                        expanded ? 'max-h-[640px] opacity-100' : 'max-h-0 opacity-0',
-                      )}
-                    >
-                      {section.items.map(renderLink)}
-                    </div>
-                  </div>
-                )
-              })}
-            </>
-          )}
-        </nav>
-
-        {!platformOnly && pinnedBottom.length > 0 && (
-          <div className={cn('border-t border-white/10 py-2', !open && 'px-0')}>
-            {pinnedBottom.map(renderLink)}
-          </div>
-        )}
-
-        <div className={cn('px-2 pb-1', !open && 'flex justify-center')}>
-          <PwaInstallButton
-            className={cn(
-              'flex items-center gap-2 rounded-lg px-3 h-9 text-[12px] font-medium transition-colors',
-              'text-white/55 hover:text-white hover:bg-white/10',
-              !open && 'px-2',
-            )}
-          />
-        </div>
-
-        <div className="border-t border-white/10 p-3">
-          <div className={cn('flex items-center gap-3', !open && 'justify-center')}>
-            <div className="w-8 h-8 rounded-full bg-primary-dark flex items-center justify-center shrink-0">
-              <span className="text-white text-[12px] font-semibold">
-                {getInitials(displayName)}
+              <span className="material-icons text-[16px]">
+                {panelCollapsed ? 'chevron_right' : 'chevron_left'}
               </span>
-            </div>
-            {open && (
-              <div className="flex-1 overflow-hidden">
-                <p className="text-white text-[12px] font-medium truncate">{displayName}</p>
-                <p className="text-white/50 text-[11px]">{roleLabel}</p>
-              </div>
-            )}
-            {open && (
-              <button
-                onClick={handleSignOut}
-                className="text-white/50 hover:text-white transition-colors"
-                title="Sign out"
-              >
-                <span className="material-icons text-[18px]">logout</span>
-              </button>
-            )}
+            </button>
           </div>
-        </div>
-      </aside>
+
+          {/* Panel items — grouped by item.group when present */}
+          <nav className="flex-1 overflow-y-auto py-1">
+            <PanelItems
+              items={activeSection.items}
+              flags={flags}
+              isOwner={isOwner}
+              pathname={pathname}
+              collapsed={panelCollapsed}
+            />
+          </nav>
+        </aside>
+      )}
     </>
   )
 }

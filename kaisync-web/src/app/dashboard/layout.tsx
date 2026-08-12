@@ -43,7 +43,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         if (emp) {
           const access = (emp as Employee).access_level
-          // Pure employees must pick a company  when no ctx
+          // Pure employees must pick a company when no ctx
           if (!ctx && access === 'employee') {
             router.replace(AUTH_ROUTES.companyPicker)
             setLoading(false)
@@ -56,7 +56,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           return
         }
 
-        // JWT but no employee row — platform owners may continue 
+        // JWT but no employee row — platform owners may continue
         const admin = await isPlatformAdmin(supabase)
         if (admin) {
           setEmployee(null)
@@ -124,59 +124,41 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     )
   }
 
-  return (
-    <div className="flex h-screen overflow-hidden">
-      {showEmployeeShell ? (
+  // ── Employee shell (field workers) — old left-sidebar layout unchanged ──
+  if (showEmployeeShell) {
+    return (
+      <div className="flex h-screen overflow-hidden">
         <EmployeeSidebar
           open={sidebarOpen}
           onToggle={() => setSidebarOpen(v => !v)}
           company={company}
           employee={employee}
         />
-      ) : (
-        <Sidebar
-          open={sidebarOpen}
-          onToggle={() => setSidebarOpen(v => !v)}
-          company={company}
-          employee={employee}
-          platformOnly={platformOnly}
-        />
-      )}
+        <div className="flex flex-col flex-1 overflow-hidden bg-background">
+          <main className="flex-1 overflow-y-auto">
+            {children}
+          </main>
+        </div>
+      </div>
+    )
+  }
 
-      <div className="flex flex-col flex-1 overflow-hidden bg-background">
-        <header className="flex items-center h-14 px-5 bg-surface border-b border-divider shrink-0">
-          <button
-            type="button"
-            onClick={() => setSidebarOpen(v => !v)}
-            className={`mr-3 text-text-secondary hover:text-text-primary transition-colors ${
-              sidebarOpen ? 'lg:hidden' : ''
-            }`}
-            aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
-            title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}
-          >
-            <span className="material-icons">{sidebarOpen ? 'menu_open' : 'menu'}</span>
-          </button>
-          <div className="flex-1" />
-          <div className="flex items-center gap-3">
-            <div className="text-right hidden sm:block">
-              <p className="text-[13px] font-medium text-text-primary leading-none">
-                {employee ? `${employee.name} ${employee.surname}` : platformOnly ? 'Platform Operator' : ''}
-              </p>
-              <p className="text-[11px] text-text-secondary capitalize mt-0.5">
-                {employee?.access_level ?? (platformOnly ? 'platform admin' : '')}
-              </p>
-            </div>
-            <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
-              <span className="text-white text-[12px] font-semibold">
-                {employee
-                  ? `${employee.name?.[0] ?? ''}${employee.surname?.[0] ?? ''}`
-                  : platformOnly ? 'P' : '?'}
-              </span>
-            </div>
-          </div>
-        </header>
-
-        <main className="flex-1 overflow-y-auto">
+  // ── Manager / admin shell — top nav + collapsible left panel ──
+  return (
+    <div className="flex flex-col h-screen overflow-hidden">
+      <Sidebar
+        open={sidebarOpen}
+        onToggle={() => setSidebarOpen(v => !v)}
+        company={company}
+        employee={employee}
+        platformOnly={platformOnly}
+      />
+      <div className="flex flex-1 overflow-hidden">
+        {/* paddingLeft tracks --sidebar-panel-w set by Sidebar (fixed left panel width) */}
+        <main
+          className="flex-1 overflow-y-auto bg-background transition-[padding] duration-200"
+          style={{ paddingLeft: 'var(--sidebar-panel-w, 0px)' }}
+        >
           {children}
         </main>
       </div>
