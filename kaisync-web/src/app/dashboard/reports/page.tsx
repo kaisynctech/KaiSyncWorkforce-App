@@ -18,7 +18,8 @@ import {
 
 type Preset = '7d' | '30d' | 'month' | 'year'
 type TabKey = 'executive' | 'financial' | 'payroll' | 'workforce' | 'operational' |
-  'incidents' | 'inventory' | 'contractors' | 'clients' | 'property' | 'telemetry' | 'exports'
+  'incidents' | 'inventory' | 'contractors' | 'clients' | 'property' | 'telemetry' | 'exports' |
+  'commercial'
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'executive',   label: 'Executive' },
@@ -33,6 +34,7 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'property',    label: 'Property' },
   { key: 'telemetry',   label: 'Telemetry' },
   { key: 'exports',     label: 'Exports' },
+  { key: 'commercial',  label: '✦ Commercial' },
 ]
 
 // RPC names — all use signature (p_company_id uuid, p_from date, p_to date) → jsonb
@@ -711,6 +713,101 @@ function ExportsTab({ companyId, preset }: { companyId: string | null; preset: P
   )
 }
 
+// ─── Commercial Summary Panel ─────────────────────────────────────────────────
+// Minimal entry point tab — full intelligence lives at /dashboard/reports/commercial
+
+function CommercialSummaryPanel({ companyId }: { companyId: string | null }) {
+  const [netCash,  setNetCash]  = useState<number | null>(null)
+  const [winRate,  setWinRate]  = useState<number | null>(null)
+  const [pipeline, setPipeline] = useState<number | null>(null)
+  const [overdue,  setOverdue]  = useState<number | null>(null)
+  const [loading,  setLoading]  = useState(false)
+
+  useEffect(() => {
+    if (!companyId) return
+    setLoading(true)
+    const supabase = createClient()
+    Promise.all([
+      supabase.from('cash_flow_forecast')
+        .select('net_cash_flow')
+        .eq('company_id', companyId),
+      supabase.from('quote_win_loss_summary')
+        .select('win_rate_percent,pipeline_value')
+        .eq('company_id', companyId)
+        .maybeSingle(),
+      supabase.from('client_payment_intelligence')
+        .select('overdue_amount')
+        .eq('company_id', companyId),
+    ]).then(([cf, wl, ci]) => {
+      const net = (cf.data ?? []).reduce((s: number, r: Record<string, unknown>) => s + (Number(r.net_cash_flow) ?? 0), 0)
+      setNetCash(net)
+      setWinRate((wl.data as { win_rate_percent?: number } | null)?.win_rate_percent ?? null)
+      setPipeline((wl.data as { pipeline_value?: number } | null)?.pipeline_value ?? null)
+      const ov = (ci.data ?? []).reduce((s: number, r: Record<string, unknown>) => s + (Number(r.overdue_amount) ?? 0), 0)
+      setOverdue(ov)
+      setLoading(false)
+    }).catch(() => setLoading(false))
+  }, [companyId])
+
+  const fmtR = (n: number | null) =>
+    n == null ? '—' : `R ${n.toLocaleString('en-ZA', { maximumFractionDigits: 0 })}`
+
+  const kpis = [
+    { title: '12-Week Net Cash', value: fmtR(netCash),  icon: 'account_balance_wallet' },
+    { title: 'Quote Win Rate',   value: winRate != null ? `${winRate.toFixed(1)}%` : '—', icon: 'request_quote' },
+    { title: 'Quote Pipeline',   value: fmtR(pipeline), icon: 'trending_up' },
+    { title: 'Overdue Invoices', value: fmtR(overdue),  icon: 'warning_amber' },
+  ]
+
+  return (
+    <div className="space-y-5">
+      {/* Intro card */}
+      <div
+        className="rounded-2xl p-4 border flex items-start gap-3"
+        style={{ background: 'linear-gradient(135deg,rgba(59,130,246,0.08),rgba(99,102,241,0.06))', borderColor: 'rgba(59,130,246,0.25)' }}
+      >
+        <span className="material-icons text-[28px] shrink-0 mt-0.5" style={{ color: '#3B82F6' }}>
+          insights
+        </span>
+        <div>
+          <p className="text-[15px] font-semibold text-text-primary">Commercial Intelligence</p>
+          <p className="text-[12px] text-text-secondary mt-0.5 leading-snug">
+            Cash flow forecasts, client payment analytics, quote win/loss stats, and project cost
+            variance — all in one place.
+          </p>
+        </div>
+      </div>
+
+      {/* Quick KPIs */}
+      {loading ? (
+        <p className="text-center text-text-secondary text-[13px] py-4">Loading…</p>
+      ) : (
+        <div className="grid grid-cols-2 gap-2.5">
+          {kpis.map(k => (
+            <div key={k.title} className="bg-surface-card border border-divider rounded-xl p-3 flex items-start gap-2">
+              <span className="material-icons text-[18px] text-text-disabled mt-0.5">{k.icon}</span>
+              <div>
+                <p className="text-[10px] text-text-secondary uppercase tracking-wide">{k.title}</p>
+                <p className="text-[15px] font-bold text-text-primary">{k.value}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* CTA */}
+      <a
+        href="/dashboard/reports/commercial"
+        className="btn-primary w-full h-11 flex items-center justify-center gap-2 text-[13px] rounded-xl no-underline"
+        style={{ textDecoration: 'none' }}
+      >
+        <span className="material-icons text-[16px]">open_in_new</span>
+        Open Full Commercial Intelligence
+      </a>
+    </div>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ReportsPage() {
@@ -731,18 +828,19 @@ export default function ReportsPage() {
   const { data, loading, refresh } = useTabData(preset, activeTab, companyId)
 
   const TAB_CONTENT: Record<TabKey, React.ReactNode> = {
-    executive:   <ExecTab        data={data} />,
-    financial:   <FinancialTab   data={data} />,
-    payroll:     <PayrollTab     data={data} />,
-    workforce:   <WorkforceTab   data={data} />,
-    operational: <OperationalTab data={data} />,
-    incidents:   <IncidentsTab   data={data} />,
-    inventory:   <InventoryTab   data={data} />,
-    contractors: <ContractorsTab data={data} />,
-    clients:     <ClientsTab     data={data} />,
-    property:    <PropertyTab    data={data} />,
-    telemetry:   <TelemetryTab   data={data} />,
-    exports:     <ExportsTab     companyId={companyId} preset={preset} />,
+    executive:   <ExecTab               data={data} />,
+    financial:   <FinancialTab          data={data} />,
+    payroll:     <PayrollTab            data={data} />,
+    workforce:   <WorkforceTab          data={data} />,
+    operational: <OperationalTab        data={data} />,
+    incidents:   <IncidentsTab          data={data} />,
+    inventory:   <InventoryTab          data={data} />,
+    contractors: <ContractorsTab        data={data} />,
+    clients:     <ClientsTab            data={data} />,
+    property:    <PropertyTab           data={data} />,
+    telemetry:   <TelemetryTab          data={data} />,
+    exports:     <ExportsTab            companyId={companyId} preset={preset} />,
+    commercial:  <CommercialSummaryPanel companyId={companyId} />,
   }
 
   return (

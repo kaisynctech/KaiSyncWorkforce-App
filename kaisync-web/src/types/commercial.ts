@@ -250,6 +250,170 @@ export interface ProjectFinancialSummary {
   actual_budget_variance: number
 }
 
+// ─── AI Features ─────────────────────────────────────────────────────────────
+
+export interface BoqExtractedLine {
+  description: string
+  quantity: number
+  unit: string
+  unit_price: number | null
+  item_type: 'material' | 'labour' | 'subcontract' | 'equipment' | 'other'
+  section?: string
+  notes?: string
+}
+
+export interface QuoteAssistSuggestion {
+  description: string
+  quantity: number
+  unit: string
+  item_type: 'material' | 'labour' | 'subcontract' | 'equipment' | 'other'
+  catalogue_item_id: string | null
+  catalogue_match_name: string | null
+  suggested_cost_price: number
+  suggested_sell_price: number
+  markup_percent: number
+  confidence: 'high' | 'medium' | 'low'
+  reasoning: string
+}
+
+export interface PriceSuggestion {
+  catalogue_item_id: string
+  name: string
+  unit: string
+  item_type: string
+  cost_price: number
+  sell_price: number
+  markup_percent: number
+  similarity_score: number
+  usage_count: number
+}
+
+// ─── Automation ───────────────────────────────────────────────────────────────
+export type AutomationTriggerType =
+  | 'quote_accepted'
+  | 'invoice_overdue'
+  | 'milestone_due'
+  | 'po_approved'
+  | 'quote_expiring'
+
+export type AutomationActionType =
+  | 'create_project'
+  | 'create_rfq'
+  | 'send_notification'
+  | 'create_milestone_invoice'
+
+export interface CommercialAutomationRule {
+  id: string
+  company_id: string
+  name: string
+  description: string | null
+  trigger_type: AutomationTriggerType
+  trigger_config: Record<string, unknown>
+  action_type: AutomationActionType
+  action_config: Record<string, unknown>
+  is_active: boolean
+  is_system: boolean
+  run_count: number
+  last_run_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface AutomationRuleExecution {
+  id: string
+  company_id: string
+  rule_id: string | null
+  trigger_type: string
+  trigger_entity_id: string
+  trigger_entity_type: string
+  action_type: string
+  status: 'success' | 'failed' | 'skipped'
+  result: Record<string, unknown>
+  error_message: string | null
+  executed_at: string
+}
+
+// ─── Intelligence (Phase 6) ──────────────────────────────────────────────────
+export interface CashFlowWeek {
+  company_id: string
+  week_offset: number
+  week_start: string
+  week_end: string
+  week_label: string
+  projected_inflow: number
+  projected_outflow: number
+  net_cash_flow: number
+  invoice_inflow: number
+  milestone_inflow: number
+  po_outflow: number
+  supplier_invoice_outflow: number
+}
+
+export interface ClientPaymentIntelligence {
+  company_id: string
+  client_id: string
+  client_name: string
+  total_invoices: number
+  paid_invoices: number
+  outstanding_invoices: number
+  overdue_invoices: number
+  total_invoiced: number
+  total_paid: number
+  total_outstanding: number
+  overdue_amount: number
+  avg_days_to_pay: number | null
+  avg_days_vs_due: number | null
+  on_time_rate_percent: number | null
+  reliability_score: number | null
+  payment_risk: 'high' | 'medium' | 'low'
+}
+
+export interface QuoteWinLossSummary {
+  company_id: string
+  total_quotes: number
+  total_sent_or_decided: number
+  currently_open: number
+  total_won: number
+  total_lost: number
+  win_rate_percent: number | null
+  avg_quote_value: number | null
+  avg_won_value: number | null
+  avg_lost_value: number | null
+  total_won_value: number
+  pipeline_value: number
+  avg_days_to_decision: number | null
+  avg_won_margin_percent: number | null
+}
+
+export interface ProjectCostVariance {
+  deal_id: string
+  company_id: string
+  title: string
+  status: string
+  contract_value: number
+  estimated_cost: number
+  committed_cost: number
+  actual_cost: number
+  cost_overrun_percent: number | null
+  commitment_rate_percent: number | null
+  projected_margin_percent: number | null
+  cost_risk: 'high' | 'medium' | 'low'
+  total_invoiced: number
+  progress_percent: number | null
+  site_start_date: string | null
+  expected_completion_date: string | null
+}
+
+export interface BusinessDigest {
+  health_score: number
+  cash_flow_summary: string
+  client_risk_summary: string
+  quote_performance_summary: string
+  cost_performance_summary: string
+  top_actions: string[]
+  generated_at: string
+}
+
 // ─── Three-Way Match ─────────────────────────────────────────────────────────
 export type MatchStatus = 'NO_ORDER' | 'OVER_INVOICED' | 'SHORT_DELIVERY' | 'MATCHED' | 'PARTIAL'
 
