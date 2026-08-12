@@ -405,17 +405,9 @@ export default function Sidebar({ company, employee, platformOnly = false }: Sid
 
         <div className="flex-1" />
 
-        {/* Global icon buttons */}
+        {/* Global icon buttons — Messages + Notifications only */}
         {!platformOnly && (
           <>
-            {itemVisible({ label: 'My PA', href: '/dashboard/pa', icon: 'task_alt', flag: 'myPa' }, flags, isOwner) && (
-              <NavIconBtn
-                href="/dashboard/pa"
-                icon="task_alt"
-                label="My PA"
-                active={isItemActive(pathname, '/dashboard/pa')}
-              />
-            )}
             {itemVisible({ label: 'Messages', href: '/dashboard/messages', icon: 'chat', flag: 'messaging' }, flags, isOwner) && (
               <NavIconBtn
                 href="/dashboard/messages"
@@ -429,18 +421,6 @@ export default function Sidebar({ company, employee, platformOnly = false }: Sid
               icon="notifications"
               label="Notifications"
               active={isItemActive(pathname, '/dashboard/notifications')}
-            />
-            <div className="w-px bg-divider mx-1 self-stretch" />
-            {itemVisible({ label: 'Settings', href: '/dashboard/settings', icon: 'settings', flag: 'settings' }, flags, isOwner) && (
-              <NavIconBtn
-                href="/dashboard/settings"
-                icon="settings"
-                label="Settings"
-                active={isItemActive(pathname, '/dashboard/settings')}
-              />
-            )}
-            <PwaInstallButton
-              className="flex items-center justify-center w-8 h-8 my-auto rounded-md text-text-secondary hover:text-text-primary hover:bg-surface-elevated transition-colors"
             />
           </>
         )}
@@ -461,6 +441,15 @@ export default function Sidebar({ company, employee, platformOnly = false }: Sid
                 <p className="text-[12px] font-medium text-text-primary truncate">{displayName}</p>
                 <p className="text-[11px] text-text-secondary">{roleLabel}</p>
               </div>
+              {!platformOnly && itemVisible({ label: 'My PA', href: '/dashboard/pa', icon: 'task_alt', flag: 'myPa' }, flags, isOwner) && (
+                <Link
+                  href="/dashboard/pa"
+                  className="flex items-center gap-2 px-3 py-2 text-[12px] text-text-secondary hover:text-text-primary hover:bg-surface-elevated"
+                >
+                  <span className="material-icons text-[16px]">task_alt</span>
+                  My PA
+                </Link>
+              )}
               <Link
                 href="/dashboard/profile"
                 className="flex items-center gap-2 px-3 py-2 text-[12px] text-text-secondary hover:text-text-primary hover:bg-surface-elevated"
@@ -484,15 +473,27 @@ export default function Sidebar({ company, employee, platformOnly = false }: Sid
                   Activity Log
                 </Link>
               )}
-              <div className="border-t border-divider mt-1">
-                <button
-                  onClick={handleSignOut}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-[12px] text-text-secondary hover:text-text-primary hover:bg-surface-elevated"
+              <div className="border-t border-divider" />
+              {!platformOnly && itemVisible({ label: 'Settings', href: '/dashboard/settings', icon: 'settings', flag: 'settings' }, flags, isOwner) && (
+                <Link
+                  href="/dashboard/settings"
+                  className="flex items-center gap-2 px-3 py-2 text-[12px] text-text-secondary hover:text-text-primary hover:bg-surface-elevated"
                 >
-                  <span className="material-icons text-[16px]">logout</span>
-                  Sign out
-                </button>
-              </div>
+                  <span className="material-icons text-[16px]">settings</span>
+                  Settings
+                </Link>
+              )}
+              <PwaInstallButton
+                className="flex w-full items-center gap-2 px-3 py-2 text-[12px] text-text-secondary hover:text-text-primary hover:bg-surface-elevated"
+              />
+              <div className="border-t border-divider" />
+              <button
+                onClick={handleSignOut}
+                className="flex w-full items-center gap-2 px-3 py-2 text-[12px] text-text-secondary hover:text-text-primary hover:bg-surface-elevated"
+              >
+                <span className="material-icons text-[16px]">logout</span>
+                Sign out
+              </button>
             </div>
           </div>
         </div>
