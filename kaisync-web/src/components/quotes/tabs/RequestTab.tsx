@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { UNITS_OF_MEASURE } from '@/lib/units'
+import CatalogueSearchModal, { type CatalogueSearchResult } from '@/components/quotes/CatalogueSearchModal'
 import type { ItemType } from '@/types/inventory'
 import type { RequestLine } from '@/types/quotes'
 
@@ -59,6 +60,9 @@ export default function RequestTab({ companyId, lines, onChange, onProcess, proc
 
   // Per-line catalogue status (set when check ran during entry)
   const [lineStatus, setLineStatus] = useState<Record<string, CatalogueStatus>>({})
+
+  // Catalogue search modal
+  const [showCatalogueSearch, setShowCatalogueSearch] = useState(false)
 
   // Validation shake state
   const [errorField, setErrorField] = useState<string | null>(null)
@@ -168,6 +172,26 @@ export default function RequestTab({ companyId, lines, onChange, onProcess, proc
     if (e.key === 'Enter') { e.preventDefault(); addLine() }
   }
 
+  // ── Catalogue-select handler ──────────────────────────────────────────────────
+  function handleCatalogueSelect(result: CatalogueSearchResult) {
+    const line: RequestLine = {
+      tempId:            crypto.randomUUID(),
+      catalogue_item_id: result.id,
+      variant_id:        result.variant_id,
+      item_name:         result.name,
+      item_sku:          result.sku,
+      item_type:         result.item_type,
+      qty:               1,
+      unit_of_measure:   result.unit_of_measure,
+      service_delivery:  null,
+      notes:             null,
+      cost_price:        0,
+      unit_sell_price:   0,
+    }
+    onChange([...lines, line])
+    // Modal stays open — user can keep picking more items
+  }
+
   // ── Line mutations ────────────────────────────────────────────────────────────
   function updateLine(tempId: string, patch: Partial<RequestLine>) {
     onChange(lines.map(l => l.tempId === tempId ? { ...l, ...patch } : l))
@@ -224,14 +248,15 @@ export default function RequestTab({ companyId, lines, onChange, onProcess, proc
                 <th className="px-3 py-2.5 font-medium">Name / description</th>
                 <th className="px-3 py-2.5 font-medium text-right w-20">Qty</th>
                 <th className="px-3 py-2.5 font-medium w-24">Unit</th>
-                <th className="px-3 py-2.5 font-medium w-28">Catalogue</th>
+                <th className="px-3 py-2.5 font-medium w-24">Catalogue</th>
+                <th className="px-3 py-2.5 font-medium w-24">Source</th>
                 <th className="px-3 py-2.5 w-8" />
               </tr>
             </thead>
             <tbody>
               {lines.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-10 text-center text-text-secondary">
+                  <td colSpan={9} className="px-4 py-10 text-center text-text-secondary">
                     <p className="text-[13px] font-medium mb-1">Add items below</p>
                     <p className="text-[12px]">
                       Enter part numbers, services, materials, or labour that your customer is requesting
@@ -302,6 +327,18 @@ export default function RequestTab({ companyId, lines, onChange, onProcess, proc
                         )}
                         {ls === 'not_found' && (
                           <span className="text-[11px] text-text-secondary">not found</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        {line.catalogue_item_id ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
+                            <span className="material-icons text-[11px]">inventory_2</span>
+                            catalogue
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-surface-elevated text-text-secondary font-medium">
+                            manual
+                          </span>
                         )}
                       </td>
                       <td className="px-3 py-2 text-center">
@@ -416,7 +453,7 @@ export default function RequestTab({ companyId, lines, onChange, onProcess, proc
             ))}
           </select>
 
-          {/* Add button */}
+          {/* Add line button */}
           <button
             type="button"
             onClick={addLine}
@@ -424,6 +461,17 @@ export default function RequestTab({ companyId, lines, onChange, onProcess, proc
           >
             <span className="material-icons text-[15px]">add</span>
             Add line
+          </button>
+
+          {/* From catalogue button */}
+          <button
+            type="button"
+            onClick={() => setShowCatalogueSearch(true)}
+            title="Search your inventory"
+            className="h-8 px-3 shrink-0 rounded-md border border-divider text-[12px] text-text-secondary font-medium hover:bg-surface-elevated hover:border-primary/30 hover:text-primary transition-colors flex items-center gap-1"
+          >
+            <span className="material-icons text-[15px]">search</span>
+            From catalogue
           </button>
         </div>
       </div>
@@ -440,6 +488,15 @@ export default function RequestTab({ companyId, lines, onChange, onProcess, proc
           {!processing && <span className="material-icons text-[16px]">arrow_forward</span>}
         </button>
       </div>
+
+      {/* ── Catalogue search modal ── */}
+      {showCatalogueSearch && (
+        <CatalogueSearchModal
+          companyId={companyId}
+          onSelect={handleCatalogueSelect}
+          onClose={() => setShowCatalogueSearch(false)}
+        />
+      )}
 
     </div>
   )
