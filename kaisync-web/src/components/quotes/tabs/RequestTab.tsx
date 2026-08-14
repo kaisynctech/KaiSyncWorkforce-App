@@ -1,22 +1,36 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
-import { getUnitLabel } from '@/lib/units'
-import ServiceDeliveryToggle from '@/components/quotes/ServiceDeliveryToggle'
-import VariantPickerModal from '@/components/quotes/VariantPickerModal'
-import type { CatalogueItem } from '@/types/inventory'
-import type { RequestLine, ServiceDelivery } from '@/types/quotes'
+import { UNITS_OF_MEASURE } from '@/lib/units'
+import type { ItemType } from '@/types/inventory'
+import type { RequestLine } from '@/types/quotes'
 
-// ─── Types ─────────────────────────────────────────────────────────────────────
+// ─── Constants ─────────────────────────────────────────────────────────────────
 
 const TYPE_COLOURS: Record<string, string> = {
-  part: 'bg-blue-50 text-blue-600',
-  service: 'bg-purple-50 text-purple-600',
+  part:     'bg-blue-50 text-blue-600',
+  service:  'bg-purple-50 text-purple-600',
   material: 'bg-green-50 text-green-600',
-  labour: 'bg-amber-50 text-amber-600',
+  labour:   'bg-amber-50 text-amber-600',
 }
+
+const TYPE_LABELS: Record<string, string> = {
+  part: 'Part', service: 'Service', material: 'Material', labour: 'Labour',
+}
+
+// Unit select — grouped from UNITS_OF_MEASURE
+const UNIT_GROUPS = (() => {
+  const map = new Map<string, { value: string; label: string }[]>()
+  for (const u of UNITS_OF_MEASURE) {
+    if (!map.has(u.group)) map.set(u.group, [])
+    map.get(u.group)!.push({ value: u.value, label: u.label })
+  }
+  return Array.from(map.entries())
+})()
+
+type CatalogueStatus = 'found' | 'not_found' | null
 
 // ─── Props ──────────────────────────────────────────────────────────────────────
 
@@ -33,103 +47,150 @@ interface Props {
 export default function RequestTab({ companyId, lines, onChange, onProcess, processing }: Props) {
   const supabase = createClient()
 
-  // Search state
-  const [query,       setQuery]       = useState('')
-  const [results,     setResults]     = useState<CatalogueItem[]>([])
-  const [showResults, setShowResults] = useState(false)
-  const searchDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // ── Entry row state ──────────────────────────────────────────────────────────
+  const [newType,    setNewType]    = useState<ItemType>('part')
+  const [newCode,    setNewCode]    = useState('')
+  const [newName,    setNewName]    = useState('')
+  const [newQty,     setNewQty]     = useState('1')
+  const [newUnit,    setNewUnit]    = useState('each')
 
-  // Variant picker
-  const [variantBase, setVariantBase] = useState<CatalogueItem | null>(null)
+  // Catalogue check (entry row only)
+  const [catalogueStatus, setCatalogueStatus] = useState<CatalogueStatus>(null)
 
-  // Search catalogue
-  useEffect(() => {
-    if (!query.trim()) { setResults([]); return }
-    if (searchDebounce.current) clearTimeout(searchDebounce.current)
-    searchDebounce.current = setTimeout(async () => {
+  // Per-line catalogue status (set when check ran during entry)
+  const [lineStatus, setLineStatus] = useState<Record<string, CatalogueStatus>>({})
+
+  // Validation shake state
+  const [errorField, setErrorField] = useState<string | null>(null)
+
+  // Refs for focus management
+  const codeInputRef = useRef<HTMLInputElement | null>(null)
+  const nameInputRef = useRef<HTMLInputElement | null>(null)
+  const qtyInputRef  = useRef<HTMLInputElement | null>(null)
+
+  // Debounce ref for catalogue check
+  const checkTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // ── Type change handler ──────────────────────────────────────────────────────
+  function handleTypeChange(type: string) {
+    setNewType(type as ItemType)
+    setNewCode('')
+    setCatalogueStatus(null)
+    if (type === 'service')       setNewUnit('job')
+    else if (type === 'labour')   setNewUnit('hour')
+    else                          setNewUnit('each')
+    setTimeout(() => {
+      if (type === 'part' || type === 'material') codeInputRef.current?.focus()
+      else                                        nameInputRef.current?.focus()
+    }, 0)
+  }
+
+  // ── Catalogue check (debounced, non-blocking) ────────────────────────────────
+  function triggerCatalogueCheck(code: string) {
+    if (checkTimer.current) clearTimeout(checkTimer.current)
+    if (!code || code.length < 2) { setCatalogueStatus(null); return }
+    if (newType !== 'part' && newType !== 'material') return
+
+    checkTimer.current = setTimeout(async () => {
       const { data } = await supabase
         .from('quote_catalogue_items')
-        .select('*, condition:catalogue_conditions(id,name)')
+        .select('id, name')
         .eq('company_id', companyId)
+        .or(`sku.ilike.${code}%,code.ilike.${code}%,name.ilike.${code}%`)
         .eq('is_active', true)
-        .or(`name.ilike.%${query}%,sku.ilike.%${query}%,code.ilike.%${query}%`)
-        .order('usage_count', { ascending: false })
-        .limit(8)
-      setResults((data ?? []) as CatalogueItem[])
-      setShowResults(true)
-    }, 250)
-  }, [query]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  function addFromCatalogue(item: CatalogueItem) {
-    // If item has variants, open picker first
-    if (item.variant_group_id) {
-      setVariantBase(item)
-      setShowResults(false)
-      setQuery('')
-      return
-    }
-    addLine(item)
+        .limit(1)
+      if (data && data.length > 0) {
+        setCatalogueStatus('found')
+        if (!newName && data[0].name) setNewName(data[0].name)
+      } else {
+        setCatalogueStatus('not_found')
+      }
+    }, 400)
   }
 
-  function addLine(item: CatalogueItem) {
-    const isService = item.item_type === 'service' || item.item_type === 'labour'
-    const newLine: RequestLine = {
-      tempId: crypto.randomUUID(),
-      catalogue_item_id: item.id,
-      variant_id: null,
-      item_name: item.name,
-      item_sku: item.sku ?? item.code ?? null,
-      item_type: item.item_type as RequestLine['item_type'],
-      qty: 1,
-      unit_of_measure: item.unit_of_measure ?? item.unit ?? 'each',
-      service_delivery: isService ? 'self' : null,
-      notes: null,
-      cost_price: item.cost_price ?? 0,
-      unit_sell_price: item.sell_price ?? 0,
-    }
-    onChange([...lines, newLine])
-    setQuery('')
-    setResults([])
+  // ── Validation shake ─────────────────────────────────────────────────────────
+  function focusWithShake(ref: React.RefObject<HTMLInputElement | null>, fieldId: string) {
+    ref.current?.focus()
+    setErrorField(fieldId)
+    setTimeout(() => setErrorField(null), 600)
   }
 
-  function addFreeText() {
-    if (!query.trim()) return
-    const newLine: RequestLine = {
-      tempId: crypto.randomUUID(),
+  // ── Add line ─────────────────────────────────────────────────────────────────
+  function addLine() {
+    const code = newCode.trim()
+    const name = newName.trim()
+
+    if (newType === 'part' || newType === 'material') {
+      if (!code && !name) { focusWithShake(codeInputRef, 'code'); return }
+    } else {
+      if (!name) { focusWithShake(nameInputRef, 'name'); return }
+    }
+
+    const qty = parseFloat(newQty)
+    if (!qty || qty <= 0) { focusWithShake(qtyInputRef, 'qty'); return }
+
+    const tempId = crypto.randomUUID()
+    const line: RequestLine = {
+      tempId,
       catalogue_item_id: null,
-      variant_id: null,
-      item_name: query.trim(),
-      item_sku: null,
-      item_type: null,
-      qty: 1,
-      unit_of_measure: 'each',
-      service_delivery: null,
-      notes: null,
-      cost_price: 0,
-      unit_sell_price: 0,
+      variant_id:        null,
+      item_name:         name || code,
+      item_sku:          code || null,
+      item_type:         newType,
+      qty,
+      unit_of_measure:   newUnit,
+      service_delivery:  null,
+      notes:             null,
+      cost_price:        0,
+      unit_sell_price:   0,
     }
-    onChange([...lines, newLine])
-    setQuery('')
-    setResults([])
+
+    // Carry catalogue status to the line
+    if (catalogueStatus !== null) {
+      setLineStatus(prev => ({ ...prev, [tempId]: catalogueStatus }))
+    }
+
+    onChange([...lines, line])
+
+    // Reset entry row — keep type for rapid same-type entry
+    setNewCode('')
+    setNewName('')
+    setNewQty('1')
+    setCatalogueStatus(null)
+
+    setTimeout(() => {
+      if (newType === 'part' || newType === 'material') codeInputRef.current?.focus()
+      else                                              nameInputRef.current?.focus()
+    }, 0)
   }
 
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Enter') { e.preventDefault(); addLine() }
+  }
+
+  // ── Line mutations ────────────────────────────────────────────────────────────
   function updateLine(tempId: string, patch: Partial<RequestLine>) {
     onChange(lines.map(l => l.tempId === tempId ? { ...l, ...patch } : l))
   }
 
   function removeLine(tempId: string) {
     onChange(lines.filter(l => l.tempId !== tempId))
+    setLineStatus(prev => { const next = { ...prev }; delete next[tempId]; return next })
   }
 
   function comingSoon() {
     alert('Coming soon — document upload and AI extraction in Phase 2.')
   }
 
+  const hasCode = newType === 'part' || newType === 'material'
+
+  // ─── Render ─────────────────────────────────────────────────────────────────
+
   return (
     <div className="flex flex-col h-full">
 
-      {/* Action bar */}
-      <div className="flex items-center gap-2 mb-4">
+      {/* ── Action bar ── */}
+      <div className="flex items-center gap-2 mb-4 shrink-0">
         <button
           type="button"
           onClick={comingSoon}
@@ -146,149 +207,229 @@ export default function RequestTab({ companyId, lines, onChange, onProcess, proc
           <span className="material-icons text-[15px]">image</span>
           Upload image
         </button>
-        <span className="text-[11px] text-text-secondary ml-1 italic">AI extraction — Phase 2</span>
+        <span className="text-[11px] text-text-secondary italic px-1.5 py-0.5 rounded-full bg-surface-elevated">
+          AI extraction — Phase 2
+        </span>
       </div>
 
-      {/* Drop zone — only shown when no lines yet */}
-      {lines.length === 0 && (
-        <div className="border-2 border-dashed border-divider rounded-xl flex flex-col items-center justify-center py-10 mb-4 text-text-secondary">
-          <span className="material-icons text-[36px] mb-2">description</span>
-          <p className="text-[13px] font-medium">Drop a customer PO, image or PDF here</p>
-          <p className="text-[12px] mt-1">Items will be extracted automatically (Phase 2)</p>
-        </div>
-      )}
-
-      {/* Lines table */}
-      {lines.length > 0 && (
-        <div className="border border-divider rounded-xl overflow-hidden mb-4">
+      {/* ── Lines table (always rendered) ── */}
+      <div className="flex-1 min-h-0 border border-divider rounded-t-xl overflow-hidden flex flex-col">
+        <div className="overflow-y-auto flex-1">
           <table className="w-full text-[12px]">
-            <thead>
+            <thead className="sticky top-0 z-10">
               <tr className="border-b border-divider bg-surface-elevated text-text-secondary text-left">
-                <th className="px-3 py-2 w-8 font-medium">#</th>
-                <th className="px-3 py-2 font-medium">Code</th>
-                <th className="px-3 py-2 font-medium">Name</th>
-                <th className="px-3 py-2 font-medium w-20">Qty</th>
-                <th className="px-3 py-2 font-medium w-16">Unit</th>
-                <th className="px-3 py-2 font-medium w-20">Type</th>
-                <th className="px-3 py-2 font-medium">Delivery</th>
-                <th className="px-3 py-2 w-8" />
+                <th className="px-3 py-2.5 font-medium w-8">#</th>
+                <th className="px-3 py-2.5 font-medium w-20">Type</th>
+                <th className="px-3 py-2.5 font-medium w-28">Code</th>
+                <th className="px-3 py-2.5 font-medium">Name / description</th>
+                <th className="px-3 py-2.5 font-medium text-right w-20">Qty</th>
+                <th className="px-3 py-2.5 font-medium w-24">Unit</th>
+                <th className="px-3 py-2.5 font-medium w-28">Catalogue</th>
+                <th className="px-3 py-2.5 w-8" />
               </tr>
             </thead>
             <tbody>
-              {lines.map((line, idx) => (
-                <tr key={line.tempId} className="border-b border-divider last:border-0">
-                  <td className="px-3 py-2 text-text-secondary text-center">{idx + 1}</td>
-                  <td className="px-3 py-2 text-text-secondary font-mono">
-                    {line.item_sku ?? '—'}
-                  </td>
-                  <td className="px-3 py-2">
-                    <input
-                      value={line.item_name}
-                      onChange={e => updateLine(line.tempId, { item_name: e.target.value })}
-                      className="w-full h-7 rounded border border-transparent bg-transparent px-1 text-[12px] text-text-primary focus:border-divider focus:bg-surface focus:outline-none transition-colors"
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <input
-                      type="number"
-                      min="0.001"
-                      step="1"
-                      value={line.qty}
-                      onChange={e => updateLine(line.tempId, { qty: parseFloat(e.target.value) || 1 })}
-                      className="w-full h-7 rounded border border-transparent bg-transparent px-1 text-[12px] text-text-primary focus:border-divider focus:bg-surface focus:outline-none text-right transition-colors"
-                    />
-                  </td>
-                  <td className="px-3 py-2 text-text-secondary">
-                    {getUnitLabel(line.unit_of_measure)}
-                  </td>
-                  <td className="px-3 py-2">
-                    {line.item_type ? (
-                      <span className={cn('text-[10px] px-1.5 py-0.5 rounded-full font-medium', TYPE_COLOURS[line.item_type] ?? 'bg-gray-100 text-gray-600')}>
-                        {line.item_type.charAt(0).toUpperCase() + line.item_type.slice(1)}
-                      </span>
-                    ) : (
-                      <span className="text-text-secondary">—</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2">
-                    {(line.item_type === 'service' || line.item_type === 'labour') && (
-                      <ServiceDeliveryToggle
-                        value={line.service_delivery ?? 'self'}
-                        onChange={v => updateLine(line.tempId, { service_delivery: v as ServiceDelivery })}
-                      />
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-center">
-                    <button
-                      type="button"
-                      onClick={() => removeLine(line.tempId)}
-                      className="text-text-secondary hover:text-red-500 transition-colors"
-                    >
-                      <span className="material-icons text-[16px]">close</span>
-                    </button>
+              {lines.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-4 py-10 text-center text-text-secondary">
+                    <p className="text-[13px] font-medium mb-1">Add items below</p>
+                    <p className="text-[12px]">
+                      Enter part numbers, services, materials, or labour that your customer is requesting
+                    </p>
                   </td>
                 </tr>
-              ))}
+              ) : (
+                lines.map((line, idx) => {
+                  const showCode = line.item_type === 'part' || line.item_type === 'material'
+                  const ls = lineStatus[line.tempId]
+                  return (
+                    <tr key={line.tempId} className="border-b border-divider last:border-0 hover:bg-surface-elevated group">
+                      <td className="px-3 py-2 text-text-secondary text-center">{idx + 1}</td>
+                      <td className="px-3 py-2">
+                        {line.item_type ? (
+                          <span className={cn('text-[10px] px-1.5 py-0.5 rounded-full font-medium', TYPE_COLOURS[line.item_type])}>
+                            {TYPE_LABELS[line.item_type]}
+                          </span>
+                        ) : (
+                          <span className="text-text-secondary">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-text-secondary font-mono">
+                        {showCode && line.item_sku ? (
+                          <span>{line.item_sku}</span>
+                        ) : (
+                          <span className="text-text-secondary">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-1.5">
+                        <input
+                          value={line.item_name}
+                          onChange={e => updateLine(line.tempId, { item_name: e.target.value })}
+                          className="w-full h-7 rounded border border-transparent bg-transparent px-1 text-[12px] text-text-primary focus:border-divider focus:bg-surface focus:outline-none transition-colors"
+                        />
+                      </td>
+                      <td className="px-3 py-1.5">
+                        <input
+                          type="number"
+                          min="0.001"
+                          step="any"
+                          value={line.qty}
+                          onChange={e => updateLine(line.tempId, { qty: parseFloat(e.target.value) || 1 })}
+                          className="w-full h-7 rounded border border-transparent bg-transparent px-1 text-[12px] text-text-primary focus:border-divider focus:bg-surface focus:outline-none text-right transition-colors"
+                        />
+                      </td>
+                      <td className="px-3 py-1.5">
+                        <select
+                          value={line.unit_of_measure}
+                          onChange={e => updateLine(line.tempId, { unit_of_measure: e.target.value })}
+                          className="h-7 w-full rounded border border-transparent bg-transparent px-1 text-[12px] text-text-primary focus:border-divider focus:bg-surface focus:outline-none transition-colors"
+                        >
+                          {UNIT_GROUPS.map(([group, units]) => (
+                            <optgroup key={group} label={group}>
+                              {units.map(u => (
+                                <option key={u.value} value={u.value}>{u.label}</option>
+                              ))}
+                            </optgroup>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-3 py-2">
+                        {ls === 'found' && (
+                          <span className="text-[11px] text-green-600 font-medium flex items-center gap-1">
+                            <span className="material-icons text-[13px]">check_circle</span>
+                            in catalogue
+                          </span>
+                        )}
+                        {ls === 'not_found' && (
+                          <span className="text-[11px] text-text-secondary">not found</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        <button
+                          type="button"
+                          onClick={() => removeLine(line.tempId)}
+                          className="text-text-secondary hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                        >
+                          <span className="material-icons text-[16px]">close</span>
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })
+              )}
             </tbody>
           </table>
         </div>
-      )}
 
-      {/* Search / add line */}
-      <div className="relative mb-4">
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1">
-            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 material-icons text-[15px] text-text-secondary">search</span>
-            <input
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              onFocus={() => query && setShowResults(true)}
-              onBlur={() => setTimeout(() => setShowResults(false), 150)}
-              placeholder="Search part number, name, or SKU to add a line…"
-              className="h-9 w-full rounded-lg border border-divider bg-surface pl-8 pr-3 text-[13px] text-text-primary focus:outline-none focus:border-primary transition-colors"
-            />
-          </div>
-          {query.trim() && (
-            <button
-              type="button"
-              onMouseDown={addFreeText}
-              className="h-9 px-3 rounded-lg border border-divider text-[12px] text-text-secondary hover:bg-surface-elevated transition-colors whitespace-nowrap"
-            >
-              Add as free-text
-            </button>
+        {/* ── Entry row (fixed at bottom of table area) ── */}
+        <div className="flex gap-2 items-center px-3 py-2.5 border-t border-divider bg-surface flex-wrap shrink-0">
+
+          {/* Type selector */}
+          <select
+            value={newType}
+            onChange={e => handleTypeChange(e.target.value)}
+            className="h-8 w-28 shrink-0 rounded-md border border-divider bg-surface px-2 text-[12px] text-text-primary focus:outline-none focus:border-primary transition-colors"
+          >
+            <option value="part">Part</option>
+            <option value="service">Service</option>
+            <option value="material">Material</option>
+            <option value="labour">Labour</option>
+          </select>
+
+          {/* Code field — part + material only */}
+          {hasCode && (
+            <div className="relative w-44 shrink-0">
+              <input
+                ref={codeInputRef}
+                type="text"
+                placeholder="Part number / SKU"
+                value={newCode}
+                onChange={e => { setNewCode(e.target.value); triggerCatalogueCheck(e.target.value) }}
+                onKeyDown={handleKeyDown}
+                className={cn(
+                  'h-8 w-full rounded-md border bg-surface pl-2.5 pr-20 text-[12px] text-text-primary focus:outline-none focus:border-primary transition-colors',
+                  errorField === 'code' ? 'border-red-400 bg-red-50' : 'border-divider',
+                )}
+              />
+              {catalogueStatus === 'found' && (
+                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-green-600 font-medium whitespace-nowrap">
+                  ✓ in catalogue
+                </span>
+              )}
+              {catalogueStatus === 'not_found' && newCode.length > 2 && (
+                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-text-secondary whitespace-nowrap">
+                  not found
+                </span>
+              )}
+            </div>
           )}
-        </div>
 
-        {/* Search dropdown */}
-        {showResults && results.length > 0 && (
-          <div className="absolute top-full left-0 right-0 mt-1 bg-surface border border-divider rounded-lg shadow-lg z-10 max-h-60 overflow-y-auto">
-            {results.map(item => (
-              <button
-                key={item.id}
-                type="button"
-                onMouseDown={() => addFromCatalogue(item)}
-                className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-surface-elevated text-left border-b border-divider last:border-0"
-              >
-                <div>
-                  <span className="text-[13px] font-medium text-text-primary">{item.name}</span>
-                  {item.sku && <span className="ml-2 text-[11px] text-text-secondary font-mono">{item.sku}</span>}
-                </div>
-                <div className="flex items-center gap-2 ml-4 shrink-0">
-                  {item.variant_group_id && (
-                    <span className="text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full">variants</span>
-                  )}
-                  <span className={cn('text-[10px] px-1.5 py-0.5 rounded-full', TYPE_COLOURS[item.item_type] ?? 'bg-gray-100 text-gray-600')}>
-                    {item.item_type}
-                  </span>
-                </div>
-              </button>
+          {/* Description — always shown */}
+          <input
+            ref={nameInputRef}
+            type="text"
+            placeholder={
+              hasCode
+                ? 'Name / description (optional)'
+                : newType === 'service'
+                ? 'Service description *'
+                : 'Labour description *'
+            }
+            value={newName}
+            onChange={e => setNewName(e.target.value)}
+            onKeyDown={handleKeyDown}
+            className={cn(
+              'h-8 flex-1 min-w-[160px] rounded-md border bg-surface px-2.5 text-[12px] text-text-primary focus:outline-none focus:border-primary transition-colors',
+              errorField === 'name' ? 'border-red-400 bg-red-50' : 'border-divider',
+            )}
+          />
+
+          {/* Qty */}
+          <input
+            ref={qtyInputRef}
+            type="number"
+            placeholder="Qty"
+            min={0.001}
+            step="any"
+            value={newQty}
+            onChange={e => setNewQty(e.target.value)}
+            onKeyDown={handleKeyDown}
+            className={cn(
+              'h-8 w-16 shrink-0 rounded-md border bg-surface px-2 text-[12px] text-text-primary text-right focus:outline-none focus:border-primary transition-colors',
+              errorField === 'qty' ? 'border-red-400 bg-red-50' : 'border-divider',
+            )}
+          />
+
+          {/* Unit */}
+          <select
+            value={newUnit}
+            onChange={e => setNewUnit(e.target.value)}
+            onKeyDown={handleKeyDown}
+            className="h-8 w-28 shrink-0 rounded-md border border-divider bg-surface px-2 text-[12px] text-text-primary focus:outline-none focus:border-primary transition-colors"
+          >
+            {UNIT_GROUPS.map(([group, units]) => (
+              <optgroup key={group} label={group}>
+                {units.map(u => (
+                  <option key={u.value} value={u.value}>{u.label}</option>
+                ))}
+              </optgroup>
             ))}
-          </div>
-        )}
+          </select>
+
+          {/* Add button */}
+          <button
+            type="button"
+            onClick={addLine}
+            className="h-8 px-3 shrink-0 rounded-md bg-primary text-white text-[12px] font-medium hover:bg-primary/90 transition-colors flex items-center gap-1"
+          >
+            <span className="material-icons text-[15px]">add</span>
+            Add line
+          </button>
+        </div>
       </div>
 
-      {/* Footer */}
-      <div className="flex items-center justify-end mt-auto pt-2 border-t border-divider">
+      {/* ── Footer — Process items ── */}
+      <div className="flex items-center justify-end pt-3 shrink-0">
         <button
           type="button"
           onClick={() => void onProcess()}
@@ -300,15 +441,6 @@ export default function RequestTab({ companyId, lines, onChange, onProcess, proc
         </button>
       </div>
 
-      {/* Variant picker modal */}
-      {variantBase && (
-        <VariantPickerModal
-          baseItem={variantBase}
-          companyId={companyId}
-          onSelect={item => { addLine(item); setVariantBase(null) }}
-          onClose={() => setVariantBase(null)}
-        />
-      )}
     </div>
   )
 }
