@@ -4,7 +4,9 @@ import { useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { UNITS_OF_MEASURE } from '@/lib/units'
-import type { CatalogueCondition, CatalogueItem, CatalogueItemAlias, CatalogueItemSupplier, AliasType, ItemType } from '@/types/inventory'
+import { getAdjustmentConfig, fmtQtyChange } from '@/lib/stock'
+import StockAdjustmentModal from '@/components/inventory/StockAdjustmentModal'
+import type { CatalogueCondition, CatalogueItem, CatalogueItemAlias, CatalogueItemSupplier, AliasType, ItemType, StockAdjustment } from '@/types/inventory'
 
 // ─── Local draft types ─────────────────────────────────────────────────────────
 
@@ -85,6 +87,7 @@ interface ItemFormDrawerProps {
   mode: 'create' | 'edit' | 'duplicate'
   item?: CatalogueItem
   companyId: string
+  employeeId: string
   conditions: CatalogueCondition[]
   onSaved: () => void
 }
@@ -92,7 +95,7 @@ interface ItemFormDrawerProps {
 // ─── Component ─────────────────────────────────────────────────────────────────
 
 export default function ItemFormDrawer({
-  open, onClose, mode, item, companyId, conditions, onSaved,
+  open, onClose, mode, item, companyId, employeeId, conditions, onSaved,
 }: ItemFormDrawerProps) {
   const supabase = createClient()
 
@@ -136,6 +139,10 @@ export default function ItemFormDrawer({
 
   // ── Contractors for supplier dropdown ─────────────────────────────────────
   const [contractors, setContractors] = useState<Contractor[]>([])
+
+  // ── Stock adjustment history ───────────────────────────────────────────────
+  const [adjustments,    setAdjustments]    = useState<StockAdjustment[]>([])
+  const [showAdjustModal, setShowAdjustModal] = useState(false)
 
   // ── Save state ────────────────────────────────────────────────────────────
   const [saving, setSaving] = useState(false)
@@ -201,6 +208,21 @@ export default function ItemFormDrawer({
       .order('name')
       .then(({ data }) => setContractors(data ?? []))
   }, [open, companyId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Load stock adjustment history (edit mode, stockable items only) ────────
+  useEffect(() => {
+    if (!open || mode !== 'edit' || !item?.id || !item.is_stockable) {
+      setAdjustments([])
+      return
+    }
+    supabase
+      .from('stock_adjustment_history')
+      .select('*')
+      .eq('catalogue_item_id', item.id)
+      .order('created_at', { ascending: false })
+      .limit(20)
+      .then(({ data }) => setAdjustments((data ?? []) as StockAdjustment[]))
+  }, [open, mode, item?.id, item?.is_stockable]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Brand autocomplete ────────────────────────────────────────────────────
   function onBrandChange(val: string) {
@@ -367,7 +389,7 @@ export default function ItemFormDrawer({
 
   if (!open) return null
 
-  return (
+  return (<>
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-6">
       <div className="bg-background rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
 
@@ -564,6 +586,77 @@ export default function ItemFormDrawer({
                 </section>
               )}
 
+              {/* Stock history — edit mode + stockable only */}
+              {mode === 'edit' && item?.id && isStockable && (
+                <section>
+                  <div className="flex items-center justify-between border-b border-divider pb-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-widest text-text-secondary">
+                      Stock history
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setShowAdjustModal(true)}
+                      className="flex items-center gap-1 text-[12px] text-primary hover:underline"
+                    >
+                      <span className="material-icons text-[15px]">tune</span>
+                      Adjust stock
+                    </button>
+                  </div>
+
+                  {adjustments.length === 0 ? (
+                    <p className="text-[12px] text-text-secondary mt-3 italic">No stock movements yet.</p>
+                  ) : (
+                    <div className="mt-3 border border-divider rounded-lg overflow-hidden">
+                      <table className="w-full text-[12px]">
+                        <thead>
+                          <tr className="border-b border-divider bg-surface-elevated text-text-secondary text-left">
+                            <th className="px-3 py-2 font-medium">Date</th>
+                            <th className="px-3 py-2 font-medium">Type</th>
+                            <th className="px-3 py-2 font-medium text-right">Change</th>
+                            <th className="px-3 py-2 font-medium text-right">Balance</th>
+                            <th className="px-3 py-2 font-medium">By</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {adjustments.map(adj => {
+                            const cfg = getAdjustmentConfig(adj.adjustment_type)
+                            const isPos = adj.qty_change > 0
+                            return (
+                              <tr key={adj.id} className="border-b border-divider last:border-0">
+                                <td className="px-3 py-2 text-text-secondary whitespace-nowrap">
+                                  {new Date(adj.created_at).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                </td>
+                                <td className="px-3 py-2">
+                                  <span className={cn('flex items-center gap-1', cfg.colour)}>
+                                    <span className="material-icons text-[14px]">{cfg.icon}</span>
+                                    {cfg.label}
+                                  </span>
+                                </td>
+                                <td className={cn('px-3 py-2 text-right font-medium tabular-nums', isPos ? 'text-green-600' : 'text-red-500')}>
+                                  {fmtQtyChange(adj.qty_change)}
+                                </td>
+                                <td className="px-3 py-2 text-right text-text-secondary tabular-nums">
+                                  {adj.qty_after}
+                                </td>
+                                <td className="px-3 py-2 text-text-secondary truncate max-w-[100px]">
+                                  {adj.adjusted_by_name ?? '—'}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {adjustments.length === 20 && (
+                    <p className="text-[11px] text-text-secondary mt-2 text-center">
+                      Showing last 20 movements
+                    </p>
+                  )}
+                </section>
+              )}
+
               {/* Suppliers section */}
               <section>
                 <SectionHeading>Suppliers</SectionHeading>
@@ -737,6 +830,29 @@ export default function ItemFormDrawer({
 
       </div>
     </div>
+
+    {/* Stock adjustment modal — opened from history panel */}
+    {showAdjustModal && item && (
+      <StockAdjustmentModal
+        item={{ ...item, qty_on_hand: parseFloat(qtyOnHand) || item.qty_on_hand }}
+        companyId={companyId}
+        employeeId={employeeId}
+        onClose={() => setShowAdjustModal(false)}
+        onSaved={(newQty) => {
+          setQtyOnHand(String(newQty))
+          setShowAdjustModal(false)
+          // Refresh history
+          supabase
+            .from('stock_adjustment_history')
+            .select('*')
+            .eq('catalogue_item_id', item.id)
+            .order('created_at', { ascending: false })
+            .limit(20)
+            .then(({ data }) => setAdjustments((data ?? []) as StockAdjustment[]))
+        }}
+      />
+    )}
+  </>
   )
 }
 

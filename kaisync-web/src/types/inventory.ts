@@ -85,3 +85,40 @@ export interface CatalogueItemSupplier {
   last_price_updated_at: string | null
   created_at: string
 }
+
+// ─── Stock Adjustments ────────────────────────────────────────────────────────
+
+export type AdjustmentType =
+  | 'received'
+  | 'returned_by_customer'
+  | 'count_correction'
+  | 'damaged'
+  | 'internal_use'
+  | 'transferred_in'
+  | 'transferred_out'
+  | 'sold'
+  | 'other'
+
+export interface StockAdjustment {
+  id: string
+  company_id: string
+  catalogue_item_id: string
+  adjusted_by: string | null
+  adjusted_by_name?: string       // from view
+  adjustment_type: AdjustmentType
+  qty_change: number              // signed: positive = added, negative = removed
+  qty_before: number
+  qty_after: number
+  reference_type: string | null
+  reference_id: string | null
+  notes: string | null
+  created_at: string
+}
+
+// Returned by record_stock_adjustment RPC
+export interface AdjustmentResult {
+  adjustment_id: string
+  qty_before: number
+  qty_after: number
+  qty_change: number
+}
