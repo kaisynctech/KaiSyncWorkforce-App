@@ -247,16 +247,13 @@ export default function RequestTab({ companyId, lines, onChange, onProcess, proc
                 <th className="px-3 py-2.5 font-medium w-28">Code</th>
                 <th className="px-3 py-2.5 font-medium">Name / description</th>
                 <th className="px-3 py-2.5 font-medium text-right w-20">Qty</th>
-                <th className="px-3 py-2.5 font-medium w-24">Unit</th>
-                <th className="px-3 py-2.5 font-medium w-24">Catalogue</th>
-                <th className="px-3 py-2.5 font-medium w-24">Source</th>
                 <th className="px-3 py-2.5 w-8" />
               </tr>
             </thead>
             <tbody>
               {lines.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-10 text-center text-text-secondary">
+                  <td colSpan={6} className="px-4 py-10 text-center text-text-secondary">
                     <p className="text-[13px] font-medium mb-1">Add items below</p>
                     <p className="text-[12px]">
                       Enter part numbers, services, materials, or labour that your customer is requesting
@@ -266,7 +263,6 @@ export default function RequestTab({ companyId, lines, onChange, onProcess, proc
               ) : (
                 lines.map((line, idx) => {
                   const showCode = line.item_type === 'part' || line.item_type === 'material'
-                  const ls = lineStatus[line.tempId]
                   return (
                     <tr key={line.tempId} className="border-b border-divider last:border-0 hover:bg-surface-elevated group">
                       <td className="px-3 py-2 text-text-secondary text-center">{idx + 1}</td>
@@ -302,44 +298,6 @@ export default function RequestTab({ companyId, lines, onChange, onProcess, proc
                           onChange={e => updateLine(line.tempId, { qty: parseFloat(e.target.value) || 1 })}
                           className="w-full h-7 rounded border border-transparent bg-transparent px-1 text-[12px] text-text-primary focus:border-divider focus:bg-surface focus:outline-none text-right transition-colors"
                         />
-                      </td>
-                      <td className="px-3 py-1.5">
-                        <select
-                          value={line.unit_of_measure}
-                          onChange={e => updateLine(line.tempId, { unit_of_measure: e.target.value })}
-                          className="h-7 w-full rounded border border-transparent bg-transparent px-1 text-[12px] text-text-primary focus:border-divider focus:bg-surface focus:outline-none transition-colors"
-                        >
-                          {UNIT_GROUPS.map(([group, units]) => (
-                            <optgroup key={group} label={group}>
-                              {units.map(u => (
-                                <option key={u.value} value={u.value}>{u.label}</option>
-                              ))}
-                            </optgroup>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="px-3 py-2">
-                        {ls === 'found' && (
-                          <span className="text-[11px] text-green-600 font-medium flex items-center gap-1">
-                            <span className="material-icons text-[13px]">check_circle</span>
-                            in catalogue
-                          </span>
-                        )}
-                        {ls === 'not_found' && (
-                          <span className="text-[11px] text-text-secondary">not found</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2">
-                        {line.catalogue_item_id ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
-                            <span className="material-icons text-[11px]">inventory_2</span>
-                            catalogue
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-surface-elevated text-text-secondary font-medium">
-                            manual
-                          </span>
-                        )}
                       </td>
                       <td className="px-3 py-2 text-center">
                         <button
