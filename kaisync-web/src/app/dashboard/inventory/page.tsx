@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { getUnitLabel } from '@/lib/units'
 import ItemFormDrawer from '@/components/inventory/ItemFormDrawer'
+import StockAdjustmentModal from '@/components/inventory/StockAdjustmentModal'
 import type { CatalogueCondition, CatalogueItem, ItemType } from '@/types/inventory'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -42,7 +43,8 @@ function fmtPct(n: number | null | undefined) {
 // ─── Component ─────────────────────────────────────────────────────────────────
 
 export default function InventoryPage() {
-  const [companyId, setCompanyId]   = useState<string | null>(null)
+  const [companyId,  setCompanyId]  = useState<string | null>(null)
+  const [employeeId, setEmployeeId] = useState<string | null>(null)
   const [items, setItems]           = useState<CatalogueItem[]>([])
   const [conditions, setConditions] = useState<CatalogueCondition[]>([])
   const [loading, setLoading]       = useState(true)
@@ -58,6 +60,10 @@ export default function InventoryPage() {
   const [drawerMode, setDrawerMode]   = useState<DrawerMode>('create')
   const [drawerItem, setDrawerItem]   = useState<CatalogueItem | undefined>(undefined)
 
+  // ── Adjust stock modal ─────────────────────────────────────────────────────
+  const [adjustingItem,   setAdjustingItem]   = useState<CatalogueItem | null>(null)
+  const [showAdjustModal, setShowAdjustModal] = useState(false)
+
   // ── Conditions tab ─────────────────────────────────────────────────────────
   const [newCondName, setNewCondName] = useState('')
   const [condSaving,  setCondSaving]  = useState(false)
@@ -68,6 +74,7 @@ export default function InventoryPage() {
     const member = await resolveCurrentMember(supabase)
     if (!member?.companyId) return
     setCompanyId(member.companyId)
+    setEmployeeId(member.employeeId)
 
     const [itemsRes, condRes] = await Promise.all([
       supabase
@@ -483,6 +490,15 @@ export default function InventoryPage() {
                             >
                               <span className="material-icons text-[15px]">content_copy</span>
                             </button>
+                            {item.is_stockable && (
+                              <button
+                                onClick={() => { setAdjustingItem(item); setShowAdjustModal(true) }}
+                                title="Adjust stock"
+                                className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-surface-elevated text-text-secondary hover:text-primary transition-colors"
+                              >
+                                <span className="material-icons text-[15px]">tune</span>
+                              </button>
+                            )}
                             {item.is_active && (
                               <button
                                 onClick={() => void deactivateItem(item)}
@@ -505,15 +521,33 @@ export default function InventoryPage() {
       )}
 
       {/* ── Item form drawer ── */}
-      {companyId && (
+      {companyId && employeeId && (
         <ItemFormDrawer
           open={drawerOpen}
           onClose={() => setDrawerOpen(false)}
           mode={drawerMode}
           item={drawerItem}
           companyId={companyId}
+          employeeId={employeeId}
           conditions={conditions}
           onSaved={() => { setDrawerOpen(false); void load() }}
+        />
+      )}
+
+      {/* ── Adjust stock modal (row quick-action) ── */}
+      {showAdjustModal && adjustingItem && companyId && employeeId && (
+        <StockAdjustmentModal
+          item={adjustingItem}
+          companyId={companyId}
+          employeeId={employeeId}
+          onClose={() => { setShowAdjustModal(false); setAdjustingItem(null) }}
+          onSaved={(newQty) => {
+            setItems(prev => prev.map(i =>
+              i.id === adjustingItem.id ? { ...i, qty_on_hand: newQty } : i
+            ))
+            setShowAdjustModal(false)
+            setAdjustingItem(null)
+          }}
         />
       )}
 
