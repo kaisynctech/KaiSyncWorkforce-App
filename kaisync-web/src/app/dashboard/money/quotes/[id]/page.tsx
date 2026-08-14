@@ -1,44 +1,10 @@
-'use client'
+import QuoteBuilder from '@/components/quotes/QuoteBuilder'
 
-import { useEffect, useState } from 'react'
-import { useParams } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
-import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
-import { QuoteBuilder } from '../_builder'
+interface Props {
+  params: Promise<{ id: string }>
+}
 
-export default function QuotePage() {
-  const { id } = useParams<{ id: string }>()
-  const [companyId, setCompanyId] = useState<string | null>(null)
-  const [error,     setError]     = useState(false)
-
-  useEffect(() => {
-    async function resolve() {
-      const supabase = createClient()
-      const member = await resolveCurrentMember(supabase)
-      if (member) {
-        setCompanyId(member.companyId)
-      } else {
-        setError(true)
-      }
-    }
-    resolve()
-  }, [])
-
-  if (error) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <p className="text-text-secondary text-sm">Unable to resolve company. Please sign in again.</p>
-      </div>
-    )
-  }
-
-  if (!companyId) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <p className="text-text-secondary text-sm">Loading…</p>
-      </div>
-    )
-  }
-
-  return <QuoteBuilder quoteId={id} companyId={companyId} />
+export default async function EditQuotePage({ params }: Props) {
+  const { id } = await params
+  return <QuoteBuilder quoteId={id} />
 }

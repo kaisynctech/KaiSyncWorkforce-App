@@ -77,6 +77,7 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: 'Finance',           href: '/dashboard/finance',                   icon: 'account_balance', flag: 'finance',    group: 'Finance' },
       { label: 'Quotes',            href: '/dashboard/money/quotes',              icon: 'request_quote',   flag: 'commercial', group: 'Client' },
+      { label: 'New quote',         href: '/dashboard/money/quotes/new',          icon: 'add_circle',      flag: 'commercial', group: 'Client' },
       { label: 'Invoices',          href: '/dashboard/money/invoices',            icon: 'receipt_long',    flag: 'commercial', group: 'Client' },
       { label: 'Credit Notes',      href: '/dashboard/money/credit-notes',        icon: 'undo',            flag: 'commercial', group: 'Client' },
       { label: 'Inventory & Services', href: '/dashboard/inventory',               icon: 'inventory_2',     flag: 'commercial', group: 'Client' },
