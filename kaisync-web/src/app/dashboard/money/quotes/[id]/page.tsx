@@ -1,4 +1,4 @@
-import QuoteBuilder from '@/components/quotes/QuoteBuilder'
+import SimpleQuoteBuilder from '@/components/quotes/SimpleQuoteBuilder'
 
 interface Props {
   params: Promise<{ id: string }>
@@ -6,5 +6,5 @@ interface Props {
 
 export default async function EditQuotePage({ params }: Props) {
   const { id } = await params
-  return <QuoteBuilder quoteId={id} />
+  return <SimpleQuoteBuilder quoteId={id} />
 }
