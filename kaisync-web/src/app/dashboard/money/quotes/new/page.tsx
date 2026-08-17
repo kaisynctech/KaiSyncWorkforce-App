@@ -1,5 +1,5 @@
-import QuoteBuilder from '@/components/quotes/QuoteBuilder'
+import SimpleQuoteBuilder from '@/components/quotes/SimpleQuoteBuilder'
 
 export default function NewQuotePage() {
-  return <QuoteBuilder quoteId={null} />
+  return <SimpleQuoteBuilder quoteId={null} />
 }
