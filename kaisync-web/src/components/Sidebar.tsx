@@ -157,8 +157,8 @@ function NavTopBtn({ href, icon, label, active }: { href: string; icon: string; 
       className={cn(
         'flex items-center gap-1.5 px-3 text-[12px] border-b-2 transition-colors self-stretch whitespace-nowrap',
         active
-          ? 'border-primary text-primary bg-primary/10 font-medium'
-          : 'border-transparent text-text-secondary hover:text-text-primary hover:bg-surface-elevated',
+          ? 'border-[#3B5CF6] text-white font-medium bg-[#3B5CF6]/15'
+          : 'border-transparent text-white/45 hover:text-white/85 hover:bg-white/7',
       )}
     >
       <span className="material-icons text-[15px]">{icon}</span>
@@ -186,8 +186,8 @@ function NavIconBtn({
       className={cn(
         'flex items-center justify-center w-8 h-8 my-auto rounded-md transition-colors',
         active
-          ? 'bg-primary/10 text-primary'
-          : 'text-text-secondary hover:text-text-primary hover:bg-surface-elevated',
+          ? 'bg-[#3B5CF6]/18 text-[#3B5CF6]'
+          : 'text-white/50 hover:text-white/90 hover:bg-white/8',
       )}
     >
       <span className="material-icons text-[18px]">{icon}</span>
@@ -361,14 +361,14 @@ export default function Sidebar({ company, employee, platformOnly = false }: Sid
   return (
     <>
       {/* ── TOP NAV BAR ─────────────────────────────────────────────── */}
-      <header className="flex items-stretch h-[42px] shrink-0 bg-surface border-b border-divider z-30">
+      <header className="flex items-stretch h-[42px] shrink-0 bg-[#0C111D] border-b border-white/8 z-30">
 
         {/* Logo + company name */}
-        <div className="flex items-center gap-2 px-3 border-r border-divider shrink-0">
-          <div className="w-6 h-6 rounded-md bg-primary flex items-center justify-center">
+        <div className="flex items-center gap-2 px-3 border-r border-white/10 shrink-0">
+          <div className="w-6 h-6 rounded-md bg-[#3B5CF6] flex items-center justify-center">
             <span className="material-icons text-white text-[14px]">bolt</span>
           </div>
-          <span className="text-[12px] font-semibold text-text-primary truncate max-w-[120px]">
+          <span className="text-[12px] font-semibold text-white truncate max-w-[120px]">
             {company?.name ?? (platformOnly ? 'KaiSync Platform' : 'KaiSync')}
           </span>
         </div>
@@ -402,7 +402,7 @@ export default function Sidebar({ company, employee, platformOnly = false }: Sid
         )}
 
         {/* Divider between left tabs and module tabs */}
-        <div className="w-px bg-divider mx-2 self-stretch shrink-0" />
+        <div className="w-px bg-white/10 mx-2 self-stretch shrink-0" />
 
         {/* ── Module tabs ── */}
         {!platformOnly && sections.map(section => (
@@ -446,10 +446,10 @@ export default function Sidebar({ company, employee, platformOnly = false }: Sid
         )}
 
         {/* Avatar + dropdown */}
-        <div className="flex items-center px-3 border-l border-divider ml-1">
+        <div className="flex items-center px-3 border-l border-white/10 ml-1">
           <div className="relative group">
             <button
-              className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-white text-[11px] font-semibold"
+              className="w-7 h-7 rounded-full bg-[#3B5CF6] flex items-center justify-center text-white text-[11px] font-semibold"
               title={displayName}
               aria-label="Account menu"
             >
