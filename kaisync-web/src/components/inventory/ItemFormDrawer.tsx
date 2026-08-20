@@ -3,59 +3,53 @@
 import { useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
+import { isSupplierKind } from '@/lib/partner-kinds'
 import { UNITS_OF_MEASURE } from '@/lib/units'
-import { getAdjustmentConfig, fmtQtyChange } from '@/lib/stock'
-import StockAdjustmentModal from '@/components/inventory/StockAdjustmentModal'
-import type { CatalogueCondition, CatalogueItem, CatalogueItemAlias, CatalogueItemSupplier, AliasType, ItemType, StockAdjustment } from '@/types/inventory'
+import type {
+  AliasType,
+  CatalogueCondition,
+  CatalogueItem,
+  CatalogueItemAlias,
+  CatalogueItemSupplier,
+  ItemType,
+} from '@/types/inventory'
 
-// ─── Local draft types ─────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-interface AliasDraft {
-  id?: string
+export type DrawerMode = 'create' | 'edit' | 'duplicate'
+
+interface Props {
+  open:        boolean
+  onClose:     () => void
+  mode:        DrawerMode
+  item?:       CatalogueItem
+  companyId:   string
+  employeeId:  string
+  conditions:  CatalogueCondition[]
+  onSaved:     () => void
+}
+
+interface SupplierOption { id: string; name: string }
+
+interface AliasRow extends Partial<CatalogueItemAlias> {
+  _tempId: string
   alias_type: AliasType
   alias_value: string
   notes: string
-  _delete?: boolean
 }
 
-interface SupplierDraft {
-  id?: string
-  supplier_id: string
-  supplier_name: string
-  supplier_sku: string
-  unit_cost: string
-  lead_time_days: string
-  is_preferred: boolean
-  notes: string
-  _delete?: boolean
+interface SupplierRow {
+  id?:            string
+  _tempId:        string
+  supplier_id:    string
+  supplier_sku:   string
+  unit_cost:      string   // kept as string for input binding
+  lead_time_days: string   // kept as string for input binding
+  is_preferred:   boolean
+  notes:          string
 }
 
-interface Contractor {
-  id: string
-  name: string
-}
-
-// ─── Tabs ──────────────────────────────────────────────────────────────────────
-
-const FORM_TABS = [
-  { id: 'details',      label: 'Details' },
-  { id: 'pricing',      label: 'Pricing' },
-  { id: 'stock',        label: 'Stock & Suppliers' },
-  { id: 'alternatives', label: 'Alternative numbers' },
-] as const
-
-type FormTab = typeof FORM_TABS[number]['id']
-
-// ─── Constants ─────────────────────────────────────────────────────────────────
-
-const ALIAS_TYPE_LABELS: Record<AliasType, string> = {
-  part_number:        'Part number',
-  oem_number:         'OEM number',
-  manufacturer_code:  'Manufacturer code',
-  barcode:            'Barcode',
-  name:               'Alternative name',
-  superseded_number:  'Superseded number',
-}
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 const ITEM_TYPES: { value: ItemType; label: string; icon: string }[] = [
   { value: 'part',     label: 'Part',     icon: 'build' },
@@ -64,840 +58,843 @@ const ITEM_TYPES: { value: ItemType; label: string; icon: string }[] = [
   { value: 'labour',   label: 'Labour',   icon: 'person_pin_circle' },
 ]
 
-// ─── Helpers ───────────────────────────────────────────────────────────────────
+const ALIAS_TYPES: { value: AliasType; label: string }[] = [
+  { value: 'part_number',        label: 'Part number' },
+  { value: 'oem_number',         label: 'OEM number' },
+  { value: 'manufacturer_code',  label: 'Manufacturer code' },
+  { value: 'barcode',            label: 'Barcode' },
+  { value: 'name',               label: 'Alternative name' },
+  { value: 'superseded_number',  label: 'Superseded number' },
+]
 
-function calcMarkup(cost: number, sell: number): number {
-  return cost > 0 ? ((sell - cost) / cost) * 100 : 0
+function uid() { return crypto.randomUUID() }
+
+// ─── Unit select (grouped) ────────────────────────────────────────────────────
+
+function UnitSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const groups = Array.from(new Set(UNITS_OF_MEASURE.map(u => u.group)))
+  // preserve unknown unit
+  const known = UNITS_OF_MEASURE.some(u => u.value === value)
+  return (
+    <select
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      className="h-9 rounded-lg border border-divider bg-surface px-2 text-[12px] text-text-primary focus:outline-none focus:border-primary"
+    >
+      {!known && <option value={value}>{value}</option>}
+      {groups.map(g => (
+        <optgroup key={g} label={g}>
+          {UNITS_OF_MEASURE.filter(u => u.group === g).map(u => (
+            <option key={u.value} value={u.value}>{u.label}</option>
+          ))}
+        </optgroup>
+      ))}
+    </select>
+  )
 }
-function calcMargin(cost: number, sell: number): number {
-  return sell > 0 ? ((sell - cost) / sell) * 100 : 0
-}
-function calcSellFromMarkup(cost: number, markupPct: number): number {
-  return cost * (1 + markupPct / 100)
-}
 
-function stockable(type: ItemType) { return type === 'part' || type === 'material' }
-function hasBrand(type: ItemType)  { return type === 'part' || type === 'material' }
-
-// ─── Props ──────────────────────────────────────────────────────────────────────
-
-interface ItemFormDrawerProps {
-  open: boolean
-  onClose: () => void
-  mode: 'create' | 'edit' | 'duplicate'
-  item?: CatalogueItem
-  companyId: string
-  employeeId: string
-  conditions: CatalogueCondition[]
-  onSaved: () => void
-}
-
-// ─── Component ─────────────────────────────────────────────────────────────────
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export default function ItemFormDrawer({
   open, onClose, mode, item, companyId, employeeId, conditions, onSaved,
-}: ItemFormDrawerProps) {
+}: Props) {
   const supabase = createClient()
 
-  // ── Tab state ─────────────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<FormTab>('details')
-  const [tabError, setTabError]   = useState<Partial<Record<FormTab, boolean>>>({})
+  // ── Classification ─────────────────────────────────────────────────────────
+  const [itemType,     setItemType]     = useState<ItemType>('part')
+  const [name,         setName]         = useState('')
+  const [sku,          setSku]          = useState('')
+  const [description,  setDescription]  = useState('')
 
-  // ── Core form fields ──────────────────────────────────────────────────────
-  const [itemType,      setItemType]      = useState<ItemType>('part')
-  const [name,          setName]          = useState('')
-  const [sku,           setSku]           = useState('')
-  const [description,   setDescription]   = useState('')
-  const [brand,         setBrand]         = useState('')
-  const [conditionId,   setConditionId]   = useState('')
-  const [unitOfMeasure, setUnitOfMeasure] = useState('each')
-  const [costPrice,     setCostPrice]     = useState('0.00')
-  const [sellPrice,     setSellPrice]     = useState('0.00')
-  const [markupPct,     setMarkupPct]     = useState('0.00')
-  const [isStockable,   setIsStockable]   = useState(false)
-  const [qtyOnHand,     setQtyOnHand]     = useState('0')
-  const [reorderPoint,  setReorderPoint]  = useState('')
-  const [reorderQty,    setReorderQty]    = useState('')
-  const [binLocation,   setBinLocation]   = useState('')
-  const [internalNotes, setInternalNotes] = useState('')
-
-  // ── Derived display field ─────────────────────────────────────────────────
-  const marginDisplay = (() => {
-    const c = parseFloat(costPrice) || 0
-    const s = parseFloat(sellPrice) || 0
-    return calcMargin(c, s).toFixed(1)
-  })()
-
-  // ── Alternatives (aliases) & suppliers ───────────────────────────────────
-  const [aliases,   setAliases]   = useState<AliasDraft[]>([])
-  const [suppliers, setSuppliers] = useState<SupplierDraft[]>([])
-
-  // ── Brand autocomplete ────────────────────────────────────────────────────
+  // ── Part-specific ──────────────────────────────────────────────────────────
+  const [brand,            setBrand]            = useState('')
   const [brandSuggestions, setBrandSuggestions] = useState<string[]>([])
   const [showBrandDrop,    setShowBrandDrop]    = useState(false)
-  const brandDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [conditionId,      setConditionId]      = useState<string>('')
+  const [variantGroupId,   setVariantGroupId]   = useState('')
+  const [showVariant,      setShowVariant]      = useState(false)
 
-  // ── Contractors for supplier dropdown ─────────────────────────────────────
-  const [contractors, setContractors] = useState<Contractor[]>([])
+  // ── Pricing ────────────────────────────────────────────────────────────────
+  const [unitOfMeasure, setUnitOfMeasure] = useState('each')
+  const [costStr,       setCostStr]       = useState('')
+  const [sellStr,       setSellStr]       = useState('')
+  const [markupStr,     setMarkupStr]     = useState('')
 
-  // ── Stock adjustment history ───────────────────────────────────────────────
-  const [adjustments,    setAdjustments]    = useState<StockAdjustment[]>([])
-  const [showAdjustModal, setShowAdjustModal] = useState(false)
+  // ── Stock ──────────────────────────────────────────────────────────────────
+  const [isStockable,    setIsStockable]    = useState(false)
+  const [qtyOnHandStr,   setQtyOnHandStr]   = useState('0')
+  const [reorderPointStr,setReorderPointStr]= useState('')
+  const [reorderQtyStr,  setReorderQtyStr]  = useState('')
+  const [binLocation,    setBinLocation]    = useState('')
 
-  // ── Save state ────────────────────────────────────────────────────────────
+  // ── Aliases ────────────────────────────────────────────────────────────────
+  const [showAliases, setShowAliases] = useState(false)
+  const [aliases,     setAliases]     = useState<AliasRow[]>([])
+
+  // ── Suppliers ──────────────────────────────────────────────────────────────
+  const [showSuppliers,   setShowSuppliers]   = useState(false)
+  const [suppliers,       setSuppliers]       = useState<SupplierRow[]>([])
+  const [supplierOptions, setSupplierOptions] = useState<SupplierOption[]>([])
+
+  // ── Notes ──────────────────────────────────────────────────────────────────
+  const [internalNotes, setInternalNotes] = useState('')
+
+  // ── UI state ───────────────────────────────────────────────────────────────
   const [saving, setSaving] = useState(false)
   const [error,  setError]  = useState<string | null>(null)
 
-  // ── Populate form when opening ────────────────────────────────────────────
+  // ── Brand debounce ─────────────────────────────────────────────────────────
+  const brandTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // ── Margin (read-only) ────────────────────────────────────────────────────
+  const cost   = parseFloat(costStr)  || 0
+  const sell   = parseFloat(sellStr)  || 0
+  const margin = sell > 0 ? ((sell - cost) / sell) * 100 : 0
+
+  // ── Populate form when item changes ────────────────────────────────────────
   useEffect(() => {
     if (!open) return
-    setError(null)
-    setTabError({})
-    setActiveTab('details')
+    void loadSupplierOptions()
 
-    if (item && (mode === 'edit' || mode === 'duplicate')) {
-      setItemType((item.item_type as ItemType) ?? 'part')
-      setName(mode === 'duplicate' ? `${item.name} (copy)` : item.name)
-      setSku(item.sku ?? '')
-      setDescription(item.description ?? '')
-      setBrand(item.brand ?? '')
-      setConditionId(item.condition_id ?? '')
-      setUnitOfMeasure(item.unit_of_measure ?? item.unit ?? 'each')
-      setCostPrice(String(item.cost_price ?? '0.00'))
-      setSellPrice(String(item.sell_price ?? '0.00'))
-      setMarkupPct(String(item.markup_percent ?? '0.00'))
-      setIsStockable(item.is_stockable ?? false)
-      setQtyOnHand(mode === 'duplicate' ? '0' : String(item.qty_on_hand ?? 0))
-      setReorderPoint(item.reorder_point != null ? String(item.reorder_point) : '')
-      setReorderQty(item.reorder_qty   != null ? String(item.reorder_qty)   : '')
-      setBinLocation(item.bin_location ?? '')
-      setInternalNotes(item.internal_notes ?? '')
-      setAliases(
-        (item.aliases ?? []).map(a => ({
-          id: mode === 'duplicate' ? undefined : a.id,
-          alias_type: a.alias_type, alias_value: a.alias_value, notes: a.notes ?? '',
-        }))
-      )
-      setSuppliers(
-        (item.suppliers ?? []).map(s => ({
-          id: mode === 'duplicate' ? undefined : s.id,
-          supplier_id: s.supplier_id, supplier_name: s.supplier?.name ?? '',
-          supplier_sku: s.supplier_sku ?? '',
-          unit_cost: s.unit_cost != null ? String(s.unit_cost) : '',
-          lead_time_days: s.lead_time_days != null ? String(s.lead_time_days) : '',
-          is_preferred: s.is_preferred, notes: s.notes ?? '',
-        }))
-      )
-    } else {
+    if (mode === 'create' || !item) {
+      // Reset to blank
       setItemType('part'); setName(''); setSku(''); setDescription('')
-      setBrand(''); setConditionId(''); setUnitOfMeasure('each')
-      setCostPrice('0.00'); setSellPrice('0.00'); setMarkupPct('0.00')
-      setIsStockable(false); setQtyOnHand('0'); setReorderPoint(''); setReorderQty('')
-      setBinLocation(''); setInternalNotes(''); setAliases([]); setSuppliers([])
+      setBrand(''); setConditionId(''); setVariantGroupId(''); setShowVariant(false)
+      setUnitOfMeasure('each'); setCostStr(''); setSellStr(''); setMarkupStr('')
+      setIsStockable(false); setQtyOnHandStr('0'); setReorderPointStr('')
+      setReorderQtyStr(''); setBinLocation(''); setInternalNotes('')
+      setAliases([]); setSuppliers([])
+      setShowAliases(false); setShowSuppliers(false)
+      setError(null)
+      return
     }
-  }, [open, item, mode])
 
-  // ── Load contractors once on open ─────────────────────────────────────────
-  useEffect(() => {
-    if (!open || contractors.length > 0) return
-    supabase
+    // edit or duplicate
+    setItemType(item.item_type)
+    setName(mode === 'duplicate' ? `${item.name} (copy)` : item.name)
+    setSku(item.sku ?? '')
+    setDescription(item.description ?? '')
+    setBrand(item.brand ?? '')
+    setConditionId(item.condition_id ?? '')
+    setVariantGroupId(item.variant_group_id ?? '')
+    setShowVariant(!!item.variant_group_id)
+    setUnitOfMeasure(item.unit_of_measure ?? item.unit ?? 'each')
+    setCostStr(item.cost_price != null ? String(item.cost_price) : '')
+    setSellStr(item.sell_price != null ? String(item.sell_price) : '')
+    const mk = item.markup_percent ?? item.markup
+    setMarkupStr(mk != null ? String(mk) : '')
+    setIsStockable(item.is_stockable ?? false)
+    setQtyOnHandStr(mode === 'duplicate' ? '0' : String(item.qty_on_hand ?? 0))
+    setReorderPointStr(item.reorder_point != null ? String(item.reorder_point) : '')
+    setReorderQtyStr(item.reorder_qty != null ? String(item.reorder_qty) : '')
+    setBinLocation(item.bin_location ?? '')
+    setInternalNotes(item.internal_notes ?? '')
+    setAliases((item.aliases ?? []).map(a => ({
+      ...a,
+      _tempId: uid(),
+      alias_type: a.alias_type,
+      alias_value: a.alias_value,
+      notes: a.notes ?? '',
+    })))
+    setSuppliers((item.suppliers ?? []).map(s => ({
+      ...s,
+      _tempId: uid(),
+      supplier_id: s.supplier_id,
+      supplier_sku: s.supplier_sku ?? '',
+      unit_cost: s.unit_cost != null ? String(s.unit_cost) : '',
+      lead_time_days: s.lead_time_days != null ? String(s.lead_time_days) : '',
+      is_preferred: s.is_preferred,
+      notes: s.notes ?? '',
+    })))
+    setShowAliases((item.aliases?.length ?? 0) > 0)
+    setShowSuppliers((item.suppliers?.length ?? 0) > 0)
+    setError(null)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, mode, item])
+
+  // ── Markup ↔ Sell auto-calc ────────────────────────────────────────────────
+  function handleCostChange(v: string) {
+    setCostStr(v)
+    const c = parseFloat(v) || 0
+    const mk = parseFloat(markupStr)
+    if (Number.isFinite(mk)) {
+      setSellStr(String(+(c * (1 + mk / 100)).toFixed(2)))
+    }
+  }
+  function handleSellChange(v: string) {
+    setSellStr(v)
+    const c = parseFloat(costStr) || 0
+    const s = parseFloat(v) || 0
+    if (c > 0) setMarkupStr(String(+((s - c) / c * 100).toFixed(2)))
+  }
+  function handleMarkupChange(v: string) {
+    setMarkupStr(v)
+    const c = parseFloat(costStr) || 0
+    const mk = parseFloat(v) || 0
+    setSellStr(String(+(c * (1 + mk / 100)).toFixed(2)))
+  }
+
+  // ── Brand autocomplete ─────────────────────────────────────────────────────
+  async function loadBrandSuggestions(query: string) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await (supabase.rpc as any)('get_brand_suggestions', {
+      p_company_id: companyId,
+      p_query: query,
+      p_limit: 10,
+    })
+    setBrandSuggestions(((data ?? []) as { brand: string }[]).map(r => r.brand))
+    setShowBrandDrop(true)
+  }
+
+  function scheduleBrandSearch(q: string) {
+    if (brandTimer.current) clearTimeout(brandTimer.current)
+    brandTimer.current = setTimeout(() => void loadBrandSuggestions(q), 300)
+  }
+
+  // ── Supplier options ───────────────────────────────────────────────────────
+  async function loadSupplierOptions() {
+    const { data } = await supabase
       .from('contractors')
-      .select('id, name')
+      .select('id, name, partner_kind')
       .eq('company_id', companyId)
       .eq('is_active', true)
       .order('name')
-      .then(({ data }) => setContractors(data ?? []))
-  }, [open, companyId]) // eslint-disable-line react-hooks/exhaustive-deps
+    setSupplierOptions(
+      ((data ?? []) as { id: string; name: string; partner_kind?: string | null }[])
+        .filter(c => isSupplierKind(c.partner_kind))
+        .map(c => ({ id: c.id, name: c.name }))
+    )
+  }
 
-  // ── Load stock adjustment history (edit mode, stockable items only) ────────
-  useEffect(() => {
-    if (!open || mode !== 'edit' || !item?.id || !item.is_stockable) {
-      setAdjustments([])
-      return
+  // ── Save ───────────────────────────────────────────────────────────────────
+  async function handleSave() {
+    if (!name.trim()) { setError('Item name is required.'); return }
+    setSaving(true); setError(null)
+
+    // Normalize brand
+    let normalizedBrand: string | null = null
+    if (brand.trim()) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: nb } = await (supabase.rpc as any)('normalize_brand', { p_brand: brand.trim() })
+      normalizedBrand = (nb as string | null) ?? brand.trim()
     }
-    supabase
-      .from('stock_adjustment_history')
-      .select('*')
-      .eq('catalogue_item_id', item.id)
-      .order('created_at', { ascending: false })
-      .limit(20)
-      .then(({ data }) => setAdjustments((data ?? []) as StockAdjustment[]))
-  }, [open, mode, item?.id, item?.is_stockable]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Brand autocomplete ────────────────────────────────────────────────────
-  function onBrandChange(val: string) {
-    setBrand(val)
-    if (brandDebounce.current) clearTimeout(brandDebounce.current)
-    brandDebounce.current = setTimeout(async () => {
-      const { data } = await supabase.rpc('get_brand_suggestions', {
-        p_company_id: companyId, p_query: val, p_limit: 10,
-      })
-      setBrandSuggestions((data ?? []).map((r: { brand: string }) => r.brand))
-      setShowBrandDrop(true)
-    }, 300)
+    const payload = {
+      company_id:      companyId,
+      name:            name.trim(),
+      description:     description.trim() || null,
+      item_type:       itemType,
+      sku:             sku.trim() || null,
+      brand:           normalizedBrand,
+      condition_id:    conditionId || null,
+      variant_group_id: variantGroupId.trim() || null,
+      unit_of_measure: unitOfMeasure,
+      cost_price:      parseFloat(costStr)  || 0,
+      sell_price:      parseFloat(sellStr)  || 0,
+      markup_percent:  parseFloat(markupStr) || 0,
+      is_stockable:    isStockable,
+      qty_on_hand:     parseFloat(qtyOnHandStr) || 0,
+      reorder_point:   reorderPointStr ? parseFloat(reorderPointStr) : null,
+      reorder_qty:     reorderQtyStr   ? parseFloat(reorderQtyStr)   : null,
+      bin_location:    binLocation.trim() || null,
+      internal_notes:  internalNotes.trim() || null,
+      is_active:       true,
+    }
+
+    let savedId: string
+
+    if (mode === 'edit' && item) {
+      const { error: e } = await supabase
+        .from('quote_catalogue_items')
+        .update(payload)
+        .eq('id', item.id)
+      if (e) { setError(e.message); setSaving(false); return }
+      savedId = item.id
+    } else {
+      // create or duplicate
+      const insertPayload = { ...payload, created_by: employeeId }
+      const { data: d, error: e } = await supabase
+        .from('quote_catalogue_items')
+        .insert(insertPayload)
+        .select('id')
+        .maybeSingle()
+      if (e || !d) { setError(e?.message ?? 'Insert failed'); setSaving(false); return }
+      savedId = (d as { id: string }).id
+    }
+
+    // Aliases: delete existing, insert new
+    if (mode === 'edit' && item) {
+      await supabase.from('catalogue_item_aliases').delete().eq('catalogue_item_id', item.id)
+    }
+    const aliasInserts = aliases
+      .filter(a => a.alias_value.trim())
+      .map(a => ({
+        company_id:        companyId,
+        catalogue_item_id: savedId,
+        alias_type:        a.alias_type,
+        alias_value:       a.alias_value.trim(),
+        notes:             a.notes.trim() || null,
+      }))
+    if (aliasInserts.length > 0) {
+      await supabase.from('catalogue_item_aliases').insert(aliasInserts)
+    }
+
+    // Suppliers: delete existing, insert new
+    if (mode === 'edit' && item) {
+      await supabase.from('catalogue_item_suppliers').delete().eq('catalogue_item_id', item.id)
+    }
+    const supplierInserts = suppliers
+      .filter(s => s.supplier_id)
+      .map(s => ({
+        company_id:        companyId,
+        catalogue_item_id: savedId,
+        supplier_id:       s.supplier_id,
+        supplier_sku:      s.supplier_sku.trim() || null,
+        unit_cost:         s.unit_cost ? parseFloat(s.unit_cost) : null,
+        lead_time_days:    s.lead_time_days ? parseInt(s.lead_time_days) : null,
+        is_preferred:      s.is_preferred,
+        notes:             s.notes.trim() || null,
+      }))
+    if (supplierInserts.length > 0) {
+      await supabase.from('catalogue_item_suppliers').insert(supplierInserts)
+    }
+
+    setSaving(false)
+    onSaved()
   }
 
-  // ── Pricing auto-calc ─────────────────────────────────────────────────────
-  function onCostChange(val: string) {
-    setCostPrice(val)
-    const c = parseFloat(val) || 0
-    const s = parseFloat(sellPrice) || 0
-    setMarkupPct(calcMarkup(c, s).toFixed(2))
-  }
-  function onSellChange(val: string) {
-    setSellPrice(val)
-    const c = parseFloat(costPrice) || 0
-    const s = parseFloat(val) || 0
-    setMarkupPct(calcMarkup(c, s).toFixed(2))
-  }
-  function onMarkupChange(val: string) {
-    setMarkupPct(val)
-    const c = parseFloat(costPrice) || 0
-    const m = parseFloat(val) || 0
-    setSellPrice(calcSellFromMarkup(c, m).toFixed(2))
-  }
-
-  // ── Alternatives (aliases) ────────────────────────────────────────────────
-  function addAlternative() {
-    setAliases(prev => [...prev, { alias_type: 'part_number', alias_value: '', notes: '' }])
-  }
-  function updateAlias(i: number, patch: Partial<AliasDraft>) {
-    setAliases(prev => prev.map((a, idx) => idx === i ? { ...a, ...patch } : a))
-  }
-  function removeAlias(i: number) {
-    setAliases(prev => prev.map((a, idx) => idx === i ? { ...a, _delete: true } : a))
-  }
-
-  // ── Suppliers ─────────────────────────────────────────────────────────────
-  function addSupplier() {
-    setSuppliers(prev => [...prev, {
-      supplier_id: '', supplier_name: '', supplier_sku: '', unit_cost: '',
-      lead_time_days: '', is_preferred: false, notes: '',
+  // ── Alias helpers ──────────────────────────────────────────────────────────
+  function addAlias() {
+    setAliases(prev => [...prev, {
+      _tempId: uid(), alias_type: 'part_number', alias_value: '', notes: '',
     }])
   }
-  function updateSupplier(i: number, patch: Partial<SupplierDraft>) {
-    setSuppliers(prev => prev.map((s, idx) => idx !== i ? s : { ...s, ...patch }))
+  function updateAlias(_tempId: string, patch: Partial<AliasRow>) {
+    setAliases(prev => prev.map(a => a._tempId === _tempId ? { ...a, ...patch } : a))
   }
-  function setPreferred(i: number) {
-    setSuppliers(prev => prev.map((s, idx) => ({ ...s, is_preferred: idx === i })))
-  }
-  function removeSupplier(i: number) {
-    setSuppliers(prev => prev.map((s, idx) => idx === i ? { ...s, _delete: true } : s))
+  function removeAlias(_tempId: string) {
+    setAliases(prev => prev.filter(a => a._tempId !== _tempId))
   }
 
-  // ── Save ──────────────────────────────────────────────────────────────────
-  async function handleSave() {
-    // Validate
-    const errors: Partial<Record<FormTab, boolean>> = {}
-    if (!name.trim()) errors.details = true
-    if (Object.keys(errors).length > 0) {
-      setTabError(errors)
-      // Switch to first erroring tab
-      const firstError = FORM_TABS.find(t => errors[t.id])
-      if (firstError) setActiveTab(firstError.id)
-      setError('Please fill in required fields.')
-      return
-    }
-
-    setSaving(true); setError(null); setTabError({})
-    try {
-      let normalizedBrand: string | null = null
-      if (brand.trim()) {
-        const { data: nb } = await supabase.rpc('normalize_brand', { p_brand: brand.trim() })
-        normalizedBrand = nb as string ?? brand.trim()
+  // ── Supplier helpers ───────────────────────────────────────────────────────
+  function addSupplierRow() {
+    setSuppliers(prev => [...prev, {
+      _tempId: uid(), supplier_id: '', supplier_sku: '', unit_cost: '',
+      lead_time_days: '', is_preferred: prev.length === 0, notes: '',
+    }])
+  }
+  function updateSupplier(_tempId: string, patch: Partial<SupplierRow>) {
+    setSuppliers(prev => prev.map(s => {
+      if (s._tempId !== _tempId) return s
+      const merged = { ...s, ...patch }
+      // if setting preferred, unset others
+      if (patch.is_preferred) {
+        return merged
       }
-
-      const payload = {
-        company_id:     companyId,
-        name:           name.trim(),
-        description:    description.trim() || null,
-        item_type:      itemType,
-        sku:            sku.trim() || null,
-        brand:          normalizedBrand,
-        condition_id:   conditionId || null,
-        unit_of_measure: unitOfMeasure,
-        cost_price:     parseFloat(costPrice) || 0,
-        sell_price:     parseFloat(sellPrice) || 0,
-        markup_percent: parseFloat(markupPct) || 0,
-        is_stockable:   isStockable,
-        qty_on_hand:    parseFloat(qtyOnHand) || 0,
-        reorder_point:  reorderPoint ? parseFloat(reorderPoint) : null,
-        reorder_qty:    reorderQty   ? parseFloat(reorderQty)   : null,
-        bin_location:   binLocation.trim() || null,
-        internal_notes: internalNotes.trim() || null,
-        is_active:      true,
-      }
-
-      let itemId: string
-      if (mode === 'edit' && item) {
-        const { error: updateErr } = await supabase
-          .from('quote_catalogue_items').update(payload).eq('id', item.id)
-        if (updateErr) throw updateErr
-        itemId = item.id
-      } else {
-        const { data: inserted, error: insertErr } = await supabase
-          .from('quote_catalogue_items').insert(payload).select('id').single()
-        if (insertErr) throw insertErr
-        itemId = inserted.id as string
-      }
-
-      // Sync alternatives (aliases)
-      const toDeleteAliases = aliases.filter(a => a._delete && a.id).map(a => a.id!)
-      if (toDeleteAliases.length > 0)
-        await supabase.from('catalogue_item_aliases').delete().in('id', toDeleteAliases)
-      for (const a of aliases.filter(a => !a._delete && a.alias_value.trim())) {
-        if (a.id) {
-          await supabase.from('catalogue_item_aliases')
-            .update({ alias_type: a.alias_type, alias_value: a.alias_value.trim(), notes: a.notes || null })
-            .eq('id', a.id)
-        } else {
-          await supabase.from('catalogue_item_aliases').insert({
-            company_id: companyId, catalogue_item_id: itemId,
-            alias_type: a.alias_type, alias_value: a.alias_value.trim(), notes: a.notes || null,
-          })
-        }
-      }
-
-      // Sync suppliers
-      const toDeleteSuppliers = suppliers.filter(s => s._delete && s.id).map(s => s.id!)
-      if (toDeleteSuppliers.length > 0)
-        await supabase.from('catalogue_item_suppliers').delete().in('id', toDeleteSuppliers)
-      for (const s of suppliers.filter(s => !s._delete && s.supplier_id)) {
-        const sp = {
-          company_id: companyId, catalogue_item_id: itemId, supplier_id: s.supplier_id,
-          supplier_sku: s.supplier_sku.trim() || null,
-          unit_cost: s.unit_cost ? parseFloat(s.unit_cost) : null,
-          lead_time_days: s.lead_time_days ? parseInt(s.lead_time_days) : null,
-          is_preferred: s.is_preferred, notes: s.notes.trim() || null,
-        }
-        if (s.id) await supabase.from('catalogue_item_suppliers').update(sp).eq('id', s.id)
-        else await supabase.from('catalogue_item_suppliers').insert(sp)
-      }
-
-      onSaved()
-      onClose()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Save failed')
-    } finally {
-      setSaving(false)
+      return merged
+    }))
+    // unset preferred on others when one is set preferred
+    if (patch.is_preferred) {
+      setSuppliers(prev => prev.map(s =>
+        s._tempId === _tempId ? s : { ...s, is_preferred: false }
+      ))
     }
   }
+  function removeSupplier(_tempId: string) {
+    setSuppliers(prev => {
+      const next = prev.filter(s => s._tempId !== _tempId)
+      // if we removed the preferred, make the first one preferred
+      if (next.length > 0 && !next.some(s => s.is_preferred)) {
+        next[0] = { ...next[0], is_preferred: true }
+      }
+      return next
+    })
+  }
 
-  // ── Derived ───────────────────────────────────────────────────────────────
-  const activeAliases   = aliases.filter(a => !a._delete)
-  const activeSuppliers = suppliers.filter(s => !s._delete)
+  const showPartFields = itemType === 'part' || itemType === 'material'
+  const showStockFields = showPartFields
 
+  // ── Render ─────────────────────────────────────────────────────────────────
   if (!open) return null
 
-  return (<>
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-6">
-      <div className="bg-background rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+  return (
+    <>
+      {/* Overlay */}
+      <div
+        className="fixed inset-0 bg-black/40 z-40"
+        onClick={onClose}
+      />
 
-        {/* ── Header ── */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-divider shrink-0">
-          <h2 className="text-[16px] font-semibold text-text-primary">
-            {mode === 'edit' ? 'Edit Item' : mode === 'duplicate' ? 'Duplicate Item' : 'Add Item'}
+      {/* Drawer */}
+      <div className="fixed inset-y-0 right-0 z-50 w-full max-w-[520px] bg-surface shadow-2xl flex flex-col">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-divider shrink-0">
+          <h2 className="text-[15px] font-semibold text-text-primary">
+            {mode === 'create' ? 'Add item' : mode === 'duplicate' ? 'Duplicate item' : 'Edit item'}
           </h2>
-          <button onClick={onClose} className="text-text-secondary hover:text-text-primary transition-colors">
-            <span className="material-icons">close</span>
+          <button type="button" onClick={onClose} className="text-text-secondary hover:text-text-primary">
+            <span className="material-icons text-[20px]">close</span>
           </button>
         </div>
 
-        {/* ── Tab bar ── */}
-        <div className="flex border-b border-divider px-6 shrink-0">
-          {FORM_TABS.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={cn(
-                'flex items-center gap-1.5 px-4 py-3 text-[13px] border-b-2 transition-colors -mb-px whitespace-nowrap',
-                activeTab === tab.id
-                  ? 'border-primary text-primary font-medium'
-                  : 'border-transparent text-text-secondary hover:text-text-primary',
-              )}
-            >
-              {tab.label}
-              {tabError[tab.id] && (
-                <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
-              )}
-            </button>
-          ))}
-        </div>
+        {/* Body */}
+        <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-6">
 
-        {/* ── Tab content ── */}
-        <div className="flex-1 overflow-y-auto px-6 py-5">
+          {/* ── Section 1: Classification ── */}
+          <section className="space-y-3">
+            <p className="text-[11px] font-semibold text-text-secondary tracking-wide uppercase">Classification</p>
 
-          {/* ══ Details ══ */}
-          {activeTab === 'details' && (
-            <div className="space-y-5 max-w-2xl">
-              {/* Type */}
-              <div>
-                <Label>Type</Label>
-                <div className="grid grid-cols-4 gap-2 mt-1.5">
-                  {ITEM_TYPES.map(t => (
-                    <button
-                      key={t.value}
-                      type="button"
-                      onClick={() => setItemType(t.value)}
-                      className={cn(
-                        'flex flex-col items-center gap-1.5 rounded-lg py-3 border text-[12px] font-medium transition-colors',
-                        itemType === t.value
-                          ? 'border-primary bg-primary/10 text-primary'
-                          : 'border-divider text-text-secondary hover:border-primary/50 hover:text-text-primary',
-                      )}
-                    >
-                      <span className="material-icons text-[20px]">{t.icon}</span>
-                      {t.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <Field label="Name *" error={tabError.details && !name.trim()}>
-                <input
-                  value={name}
-                  onChange={e => { setName(e.target.value); if (tabError.details) setTabError(p => ({ ...p, details: false })) }}
-                  placeholder="e.g. Oil filter, Labour – Installation"
-                  className={cn(inputCls, tabError.details && !name.trim() ? 'border-red-400' : '')}
-                />
-              </Field>
-
-              <Field label="SKU / Code">
-                <input value={sku} onChange={e => setSku(e.target.value)} placeholder="Optional internal code" className={inputCls} />
-              </Field>
-
-              <Field label="Description">
-                <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} placeholder="Optional" className={inputCls + ' resize-none h-auto py-2'} />
-              </Field>
-
-              {hasBrand(itemType) && (
-                <Field label="Brand">
-                  <div className="relative">
-                    <input
-                      value={brand}
-                      onChange={e => onBrandChange(e.target.value)}
-                      onFocus={() => onBrandChange(brand)}
-                      onBlur={() => setTimeout(() => setShowBrandDrop(false), 150)}
-                      placeholder="e.g. Bosch, Toyota OEM"
-                      className={inputCls}
-                    />
-                    {showBrandDrop && brandSuggestions.length > 0 && (
-                      <div className="absolute top-full left-0 right-0 mt-1 bg-surface border border-divider rounded-lg shadow-lg z-10 max-h-40 overflow-y-auto">
-                        {brandSuggestions.map(b => (
-                          <button key={b} type="button"
-                            onMouseDown={() => { setBrand(b); setShowBrandDrop(false) }}
-                            className="flex w-full items-center px-3 py-2 text-[12px] text-text-secondary hover:bg-surface-elevated hover:text-text-primary text-left">
-                            {b}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </Field>
-              )}
-
-              {itemType === 'part' && (
-                <Field label="Condition">
-                  <select value={conditionId} onChange={e => setConditionId(e.target.value)} className={inputCls}>
-                    <option value="">— None —</option>
-                    {conditions.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                </Field>
-              )}
-
-              <Field label="Unit of measure">
-                <select value={unitOfMeasure} onChange={e => setUnitOfMeasure(e.target.value)} className={inputCls}>
-                  {Object.entries(
-                    UNITS_OF_MEASURE.reduce<Record<string, typeof UNITS_OF_MEASURE>>((acc, u) => {
-                      ;(acc[u.group] ??= []).push(u)
-                      return acc
-                    }, {})
-                  ).map(([group, units]) => (
-                    <optgroup key={group} label={group}>
-                      {units.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}
-                    </optgroup>
-                  ))}
-                </select>
-              </Field>
-            </div>
-          )}
-
-          {/* ══ Pricing ══ */}
-          {activeTab === 'pricing' && (
-            <div className="max-w-lg">
-              <div className="grid grid-cols-2 gap-4">
-                <Field label="Cost price">
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary text-[13px]">R</span>
-                    <input type="number" min="0" step="0.01" value={costPrice} onChange={e => onCostChange(e.target.value)} className={inputCls + ' pl-7'} />
-                  </div>
-                </Field>
-                <Field label="Sell price">
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary text-[13px]">R</span>
-                    <input type="number" min="0" step="0.01" value={sellPrice} onChange={e => onSellChange(e.target.value)} className={inputCls + ' pl-7'} />
-                  </div>
-                </Field>
-                <Field label="Markup %">
-                  <div className="relative">
-                    <input type="number" min="0" step="0.01" value={markupPct} onChange={e => onMarkupChange(e.target.value)} className={inputCls + ' pr-7'} />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary text-[13px]">%</span>
-                  </div>
-                </Field>
-                <Field label="Gross margin %">
-                  <div className={cn(inputCls, 'bg-surface-elevated text-text-secondary flex items-center justify-between')}>
-                    <span>{marginDisplay}%</span>
-                    <span className="material-icons text-[14px] text-divider">lock</span>
-                  </div>
-                </Field>
-              </div>
-            </div>
-          )}
-
-          {/* ══ Stock & Suppliers ══ */}
-          {activeTab === 'stock' && (
-            <div className="space-y-6 max-w-2xl">
-
-              {/* Stock section — parts and materials only */}
-              {stockable(itemType) && (
-                <section>
-                  <SectionHeading>Stock</SectionHeading>
-                  <label className="flex items-center gap-3 cursor-pointer select-none mt-3">
-                    <ToggleSwitch on={isStockable} onToggle={() => setIsStockable(v => !v)} />
-                    <span className="text-[13px] text-text-primary">Track stock</span>
-                  </label>
-
-                  {isStockable && (
-                    <div className="mt-4 grid grid-cols-2 gap-4">
-                      <Field label="Qty on hand">
-                        <input type="number" min="0" step="0.001" value={qtyOnHand} onChange={e => setQtyOnHand(e.target.value)} className={inputCls} />
-                      </Field>
-                      <Field label="Reorder point">
-                        <input type="number" min="0" step="0.001" value={reorderPoint} onChange={e => setReorderPoint(e.target.value)} placeholder="—" className={inputCls} />
-                      </Field>
-                      <Field label="Reorder qty">
-                        <input type="number" min="0" step="0.001" value={reorderQty} onChange={e => setReorderQty(e.target.value)} placeholder="—" className={inputCls} />
-                      </Field>
-                      <Field label="Bin / Location">
-                        <input value={binLocation} onChange={e => setBinLocation(e.target.value)} placeholder="e.g. A-12-3" className={inputCls} />
-                      </Field>
-                    </div>
+            {/* Type selector */}
+            <div className="grid grid-cols-4 gap-2">
+              {ITEM_TYPES.map(t => (
+                <button
+                  key={t.value}
+                  type="button"
+                  onClick={() => setItemType(t.value)}
+                  className={cn(
+                    'flex flex-col items-center gap-1 py-2.5 rounded-lg border text-[11px] font-medium transition-colors',
+                    itemType === t.value
+                      ? 'border-primary bg-primary/8 text-primary'
+                      : 'border-divider text-text-secondary hover:border-primary/40 hover:text-text-primary',
                   )}
-                </section>
-              )}
-
-              {/* Stock history — edit mode + stockable only */}
-              {mode === 'edit' && item?.id && isStockable && (
-                <section>
-                  <div className="flex items-center justify-between border-b border-divider pb-2">
-                    <p className="text-[10px] font-semibold uppercase tracking-widest text-text-secondary">
-                      Stock history
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => setShowAdjustModal(true)}
-                      className="flex items-center gap-1 text-[12px] text-primary hover:underline"
-                    >
-                      <span className="material-icons text-[15px]">tune</span>
-                      Adjust stock
-                    </button>
-                  </div>
-
-                  {adjustments.length === 0 ? (
-                    <p className="text-[12px] text-text-secondary mt-3 italic">No stock movements yet.</p>
-                  ) : (
-                    <div className="mt-3 border border-divider rounded-lg overflow-hidden">
-                      <table className="w-full text-[12px]">
-                        <thead>
-                          <tr className="border-b border-divider bg-surface-elevated text-text-secondary text-left">
-                            <th className="px-3 py-2 font-medium">Date</th>
-                            <th className="px-3 py-2 font-medium">Type</th>
-                            <th className="px-3 py-2 font-medium text-right">Change</th>
-                            <th className="px-3 py-2 font-medium text-right">Balance</th>
-                            <th className="px-3 py-2 font-medium">By</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {adjustments.map(adj => {
-                            const cfg = getAdjustmentConfig(adj.adjustment_type)
-                            const isPos = adj.qty_change > 0
-                            return (
-                              <tr key={adj.id} className="border-b border-divider last:border-0">
-                                <td className="px-3 py-2 text-text-secondary whitespace-nowrap">
-                                  {new Date(adj.created_at).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })}
-                                </td>
-                                <td className="px-3 py-2">
-                                  <span className={cn('flex items-center gap-1', cfg.colour)}>
-                                    <span className="material-icons text-[14px]">{cfg.icon}</span>
-                                    {cfg.label}
-                                  </span>
-                                </td>
-                                <td className={cn('px-3 py-2 text-right font-medium tabular-nums', isPos ? 'text-green-600' : 'text-red-500')}>
-                                  {fmtQtyChange(adj.qty_change)}
-                                </td>
-                                <td className="px-3 py-2 text-right text-text-secondary tabular-nums">
-                                  {adj.qty_after}
-                                </td>
-                                <td className="px-3 py-2 text-text-secondary truncate max-w-[100px]">
-                                  {adj.adjusted_by_name ?? '—'}
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-
-                  {adjustments.length === 20 && (
-                    <p className="text-[11px] text-text-secondary mt-2 text-center">
-                      Showing last 20 movements
-                    </p>
-                  )}
-                </section>
-              )}
-
-              {/* Suppliers section */}
-              <section>
-                <SectionHeading>Suppliers</SectionHeading>
-                <div className="mt-3 space-y-3">
-                  {activeSuppliers.map((s, i) => {
-                    const realIdx = suppliers.indexOf(s)
-                    return (
-                      <div key={i} className="border border-divider rounded-lg p-4 space-y-3">
-                        <div className="flex items-center gap-2">
-                          <select
-                            value={s.supplier_id}
-                            onChange={e => {
-                              const c = contractors.find(c => c.id === e.target.value)
-                              updateSupplier(realIdx, { supplier_id: e.target.value, supplier_name: c?.name ?? '' })
-                            }}
-                            className={cn(inputCls, 'flex-1')}
-                          >
-                            <option value="">— Select supplier —</option>
-                            {contractors.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                          </select>
-                          <button
-                            type="button"
-                            onClick={() => setPreferred(realIdx)}
-                            title={s.is_preferred ? 'Preferred supplier' : 'Set as preferred'}
-                            className={cn('transition-colors shrink-0', s.is_preferred ? 'text-amber-400' : 'text-text-secondary hover:text-amber-400')}
-                          >
-                            <span className="material-icons text-[22px]">{s.is_preferred ? 'star' : 'star_outline'}</span>
-                          </button>
-                          <button type="button" onClick={() => removeSupplier(realIdx)} className="text-text-secondary hover:text-red-500 shrink-0">
-                            <span className="material-icons text-[20px]">close</span>
-                          </button>
-                        </div>
-                        <div className="grid grid-cols-3 gap-3">
-                          <Field label="Their SKU">
-                            <input value={s.supplier_sku} onChange={e => updateSupplier(realIdx, { supplier_sku: e.target.value })} placeholder="—" className={inputCls} />
-                          </Field>
-                          <Field label="Unit cost">
-                            <div className="relative">
-                              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-secondary text-[12px]">R</span>
-                              <input type="number" min="0" step="0.01" value={s.unit_cost} onChange={e => updateSupplier(realIdx, { unit_cost: e.target.value })} className={cn(inputCls, 'pl-6')} />
-                            </div>
-                          </Field>
-                          <Field label="Lead (days)">
-                            <input type="number" min="0" value={s.lead_time_days} onChange={e => updateSupplier(realIdx, { lead_time_days: e.target.value })} placeholder="—" className={inputCls} />
-                          </Field>
-                        </div>
-                      </div>
-                    )
-                  })}
-                  <button type="button" onClick={addSupplier}
-                    className="text-[13px] text-primary hover:underline flex items-center gap-1">
-                    <span className="material-icons text-[16px]">add</span>
-                    Add supplier
-                  </button>
-                </div>
-              </section>
-
-              {/* Notes */}
-              <section>
-                <SectionHeading>Notes</SectionHeading>
-                <div className="mt-3">
-                  <textarea
-                    value={internalNotes}
-                    onChange={e => setInternalNotes(e.target.value)}
-                    rows={4}
-                    placeholder="Not visible on quotes or invoices"
-                    className={inputCls + ' resize-none h-auto py-2'}
-                  />
-                  <p className="text-[11px] text-text-secondary mt-1">Not visible on quotes or invoices</p>
-                </div>
-              </section>
+                >
+                  <span className="material-icons text-[18px]">{t.icon}</span>
+                  {t.label}
+                </button>
+              ))}
             </div>
-          )}
 
-          {/* ══ Alternative numbers ══ */}
-          {activeTab === 'alternatives' && (
-            <div className="max-w-2xl">
-              <p className="text-[13px] text-text-secondary mb-4">
-                Store alternative part numbers, OEM codes, barcodes or superseded numbers for easier lookup.
+            {/* Name */}
+            <div>
+              <label className="block text-[11px] text-text-secondary mb-1">Name *</label>
+              <input
+                autoFocus
+                type="text"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                placeholder="e.g. Brake Pad Set — Toyota Hilux"
+                className="w-full h-9 rounded-lg border border-divider bg-surface px-3 text-[13px] text-text-primary focus:outline-none focus:border-primary"
+              />
+            </div>
+
+            {/* SKU */}
+            <div>
+              <label className="block text-[11px] text-text-secondary mb-1">SKU / Code (optional)</label>
+              <input
+                type="text"
+                value={sku}
+                onChange={e => setSku(e.target.value)}
+                placeholder="e.g. BP-TOY-001"
+                className="w-full h-9 rounded-lg border border-divider bg-surface px-3 text-[13px] text-text-primary focus:outline-none focus:border-primary"
+              />
+            </div>
+
+            {/* Description */}
+            <div>
+              <label className="block text-[11px] text-text-secondary mb-1">Description (optional)</label>
+              <textarea
+                value={description}
+                onChange={e => setDescription(e.target.value)}
+                rows={2}
+                placeholder="Short description shown on quotes…"
+                className="w-full rounded-lg border border-divider bg-surface px-3 py-2 text-[13px] text-text-primary focus:outline-none focus:border-primary resize-none"
+              />
+            </div>
+          </section>
+
+          {/* ── Section 2: Part-specific ── */}
+          {showPartFields && (
+            <section className="space-y-3">
+              <p className="text-[11px] font-semibold text-text-secondary tracking-wide uppercase">
+                {itemType === 'part' ? 'Part details' : 'Material details'}
               </p>
 
-              {activeAliases.length > 0 && (
-                <div className="border border-divider rounded-lg overflow-hidden mb-3">
-                  <table className="w-full text-[12px]">
-                    <thead>
-                      <tr className="border-b border-divider bg-surface-elevated text-text-secondary text-left">
-                        <th className="px-3 py-2 font-medium">Type</th>
-                        <th className="px-3 py-2 font-medium">Value</th>
-                        <th className="px-3 py-2 font-medium">Notes</th>
-                        <th className="px-3 py-2 w-8" />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {activeAliases.map((a, i) => {
-                        const realIdx = aliases.indexOf(a)
-                        return (
-                          <tr key={i} className="border-b border-divider last:border-0">
-                            <td className="px-3 py-2">
-                              <select
-                                value={a.alias_type}
-                                onChange={e => updateAlias(realIdx, { alias_type: e.target.value as AliasType })}
-                                className="h-8 rounded-md border border-divider bg-surface px-2 text-[12px] text-text-primary focus:outline-none focus:border-primary w-full"
-                              >
-                                {(Object.entries(ALIAS_TYPE_LABELS) as [AliasType, string][]).map(([v, l]) => (
-                                  <option key={v} value={v}>{l}</option>
-                                ))}
-                              </select>
-                            </td>
-                            <td className="px-3 py-2">
-                              <input
-                                value={a.alias_value}
-                                onChange={e => updateAlias(realIdx, { alias_value: e.target.value })}
-                                placeholder="Value"
-                                className="h-8 w-full rounded-md border border-divider bg-surface px-2 text-[12px] text-text-primary focus:outline-none focus:border-primary"
-                              />
-                            </td>
-                            <td className="px-3 py-2">
-                              <input
-                                value={a.notes}
-                                onChange={e => updateAlias(realIdx, { notes: e.target.value })}
-                                placeholder="—"
-                                className="h-8 w-full rounded-md border border-divider bg-surface px-2 text-[12px] text-text-primary focus:outline-none focus:border-primary"
-                              />
-                            </td>
-                            <td className="px-3 py-2 text-center">
-                              <button type="button" onClick={() => removeAlias(realIdx)} className="text-text-secondary hover:text-red-500">
-                                <span className="material-icons text-[18px]">close</span>
-                              </button>
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              {/* Brand autocomplete */}
+              <div className="relative">
+                <label className="block text-[11px] text-text-secondary mb-1">Brand (optional)</label>
+                <input
+                  type="text"
+                  value={brand}
+                  onFocus={() => void loadBrandSuggestions(brand)}
+                  onChange={e => { setBrand(e.target.value); scheduleBrandSearch(e.target.value) }}
+                  onBlur={() => setTimeout(() => setShowBrandDrop(false), 150)}
+                  placeholder="e.g. Brembo, Bosch, NGK"
+                  className="w-full h-9 rounded-lg border border-divider bg-surface px-3 text-[13px] text-text-primary focus:outline-none focus:border-primary"
+                />
+                {showBrandDrop && brandSuggestions.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-surface border border-divider rounded-lg shadow-lg overflow-hidden">
+                    {brandSuggestions.map(b => (
+                      <button
+                        key={b}
+                        type="button"
+                        onMouseDown={() => { setBrand(b); setShowBrandDrop(false) }}
+                        className="w-full text-left px-3 py-2 text-[13px] text-text-primary hover:bg-surface-elevated transition-colors"
+                      >
+                        {b}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
 
-              <button type="button" onClick={() => { addAlternative(); }}
-                className="text-[13px] text-primary hover:underline flex items-center gap-1">
-                <span className="material-icons text-[16px]">add</span>
-                Add alternative number
-              </button>
-            </div>
+              {/* Condition */}
+              <div>
+                <label className="block text-[11px] text-text-secondary mb-1">Condition (optional)</label>
+                <select
+                  value={conditionId}
+                  onChange={e => setConditionId(e.target.value)}
+                  className="w-full h-9 rounded-lg border border-divider bg-surface px-2 text-[13px] text-text-primary focus:outline-none focus:border-primary"
+                >
+                  <option value="">— None —</option>
+                  {conditions.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Variant group (advanced, collapsed) */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowVariant(v => !v)}
+                  className="flex items-center gap-1 text-[11px] text-text-secondary hover:text-text-primary"
+                >
+                  <span className="material-icons text-[14px]">{showVariant ? 'expand_less' : 'expand_more'}</span>
+                  Variant group (advanced)
+                </button>
+                {showVariant && (
+                  <div className="mt-2">
+                    <input
+                      type="text"
+                      value={variantGroupId}
+                      onChange={e => setVariantGroupId(e.target.value)}
+                      placeholder="Shared UUID to link related variants"
+                      className="w-full h-9 rounded-lg border border-divider bg-surface px-3 text-[12px] text-text-primary focus:outline-none focus:border-primary font-mono"
+                    />
+                    <p className="text-[11px] text-text-secondary mt-1">Leave blank unless this item is one variant of a group.</p>
+                  </div>
+                )}
+              </div>
+            </section>
           )}
 
-        </div>{/* end tab content */}
+          {/* ── Section 3: Pricing ── */}
+          <section className="space-y-3">
+            <p className="text-[11px] font-semibold text-text-secondary tracking-wide uppercase">Pricing</p>
 
-        {/* ── Footer ── */}
-        {error && (
-          <div className="mx-6 mb-1 px-3 py-2 rounded-lg bg-red-50 text-red-600 text-[12px] border border-red-200 shrink-0">
-            {error}
-          </div>
-        )}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-divider shrink-0">
-          <button
-            onClick={onClose}
-            type="button"
-            className="h-9 px-5 rounded-lg border border-divider text-[13px] text-text-secondary hover:bg-surface-elevated transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={() => void handleSave()}
-            type="button"
-            disabled={saving}
-            className="h-9 px-6 rounded-lg bg-primary text-white text-[13px] font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
-          >
-            {saving ? 'Saving…' : mode === 'edit' ? 'Save changes' : 'Add item'}
-          </button>
+            <div>
+              <label className="block text-[11px] text-text-secondary mb-1">Unit of measure</label>
+              <UnitSelect value={unitOfMeasure} onChange={setUnitOfMeasure} />
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="block text-[11px] text-text-secondary mb-1">Cost price (R)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={costStr}
+                  onChange={e => handleCostChange(e.target.value)}
+                  className="w-full h-9 rounded-lg border border-divider bg-surface px-3 text-[13px] text-text-primary focus:outline-none focus:border-primary"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] text-text-secondary mb-1">Sell price (R)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={sellStr}
+                  onChange={e => handleSellChange(e.target.value)}
+                  className="w-full h-9 rounded-lg border border-divider bg-surface px-3 text-[13px] text-text-primary focus:outline-none focus:border-primary"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] text-text-secondary mb-1">Markup %</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={markupStr}
+                  onChange={e => handleMarkupChange(e.target.value)}
+                  className="w-full h-9 rounded-lg border border-divider bg-surface px-3 text-[13px] text-text-primary focus:outline-none focus:border-primary"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 text-[12px] text-text-secondary">
+              <span className="material-icons text-[14px]">info_outline</span>
+              Gross margin: <span className="font-medium text-text-primary">{margin.toFixed(1)}%</span>
+            </div>
+          </section>
+
+          {/* ── Section 4: Stock ── */}
+          {showStockFields && (
+            <section className="space-y-3">
+              <p className="text-[11px] font-semibold text-text-secondary tracking-wide uppercase">Stock</p>
+
+              <label className="flex items-center gap-3 cursor-pointer">
+                <div
+                  role="switch"
+                  aria-checked={isStockable}
+                  onClick={() => setIsStockable(v => !v)}
+                  className={cn(
+                    'w-10 h-6 rounded-full transition-colors cursor-pointer flex-shrink-0',
+                    isStockable ? 'bg-primary' : 'bg-divider',
+                  )}
+                >
+                  <div className={cn(
+                    'w-5 h-5 rounded-full bg-white shadow mt-0.5 transition-transform',
+                    isStockable ? 'translate-x-4.5' : 'translate-x-0.5',
+                  )} />
+                </div>
+                <span className="text-[13px] text-text-primary">Track stock for this item</span>
+              </label>
+
+              {isStockable && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] text-text-secondary mb-1">
+                      {mode === 'create' || mode === 'duplicate' ? 'Opening qty on hand' : 'Qty on hand'}
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={qtyOnHandStr}
+                      onChange={e => setQtyOnHandStr(e.target.value)}
+                      readOnly={mode === 'edit'}
+                      className={cn(
+                        'w-full h-9 rounded-lg border border-divider bg-surface px-3 text-[13px] text-text-primary focus:outline-none focus:border-primary',
+                        mode === 'edit' && 'opacity-60 cursor-default',
+                      )}
+                    />
+                    {mode === 'edit' && (
+                      <p className="text-[11px] text-text-secondary mt-1">Use the Adjust icon on the table row to change stock.</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-text-secondary mb-1">Reorder point</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={reorderPointStr}
+                      onChange={e => setReorderPointStr(e.target.value)}
+                      className="w-full h-9 rounded-lg border border-divider bg-surface px-3 text-[13px] text-text-primary focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-text-secondary mb-1">Reorder qty</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={reorderQtyStr}
+                      onChange={e => setReorderQtyStr(e.target.value)}
+                      className="w-full h-9 rounded-lg border border-divider bg-surface px-3 text-[13px] text-text-primary focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-text-secondary mb-1">Bin location</label>
+                    <input
+                      type="text"
+                      value={binLocation}
+                      onChange={e => setBinLocation(e.target.value)}
+                      placeholder="e.g. A3-S2"
+                      className="w-full h-9 rounded-lg border border-divider bg-surface px-3 text-[13px] text-text-primary focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* ── Section 5: Aliases ── */}
+          <section>
+            <button
+              type="button"
+              onClick={() => setShowAliases(v => !v)}
+              className="flex items-center gap-1.5 text-[12px] font-medium text-text-secondary hover:text-text-primary w-full"
+            >
+              <span className="material-icons text-[16px]">{showAliases ? 'expand_less' : 'expand_more'}</span>
+              Alternative numbers &amp; names
+              {aliases.length > 0 && (
+                <span className="ml-1 text-[10px] bg-surface-elevated px-1.5 py-0.5 rounded-full">{aliases.length}</span>
+              )}
+            </button>
+
+            {showAliases && (
+              <div className="mt-3 space-y-2">
+                {aliases.map(a => (
+                  <div key={a._tempId} className="grid grid-cols-[120px_1fr_1fr_auto] gap-2 items-center">
+                    <select
+                      value={a.alias_type}
+                      onChange={e => updateAlias(a._tempId, { alias_type: e.target.value as AliasType })}
+                      className="h-8 rounded-md border border-divider bg-surface px-1.5 text-[11px] text-text-primary focus:outline-none focus:border-primary"
+                    >
+                      {ALIAS_TYPES.map(t => (
+                        <option key={t.value} value={t.value}>{t.label}</option>
+                      ))}
+                    </select>
+                    <input
+                      type="text"
+                      value={a.alias_value}
+                      onChange={e => updateAlias(a._tempId, { alias_value: e.target.value })}
+                      placeholder="Value"
+                      className="h-8 rounded-md border border-divider bg-surface px-2 text-[12px] text-text-primary focus:outline-none focus:border-primary"
+                    />
+                    <input
+                      type="text"
+                      value={a.notes}
+                      onChange={e => updateAlias(a._tempId, { notes: e.target.value })}
+                      placeholder="Notes (opt)"
+                      className="h-8 rounded-md border border-divider bg-surface px-2 text-[12px] text-text-primary focus:outline-none focus:border-primary"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeAlias(a._tempId)}
+                      className="text-text-secondary hover:text-red-500 transition-colors"
+                    >
+                      <span className="material-icons text-[16px]">close</span>
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={addAlias}
+                  className="text-[12px] text-primary hover:underline mt-1"
+                >
+                  + Add alias
+                </button>
+              </div>
+            )}
+          </section>
+
+          {/* ── Section 6: Suppliers ── */}
+          <section>
+            <button
+              type="button"
+              onClick={() => setShowSuppliers(v => !v)}
+              className="flex items-center gap-1.5 text-[12px] font-medium text-text-secondary hover:text-text-primary w-full"
+            >
+              <span className="material-icons text-[16px]">{showSuppliers ? 'expand_less' : 'expand_more'}</span>
+              Suppliers
+              {suppliers.length > 0 && (
+                <span className="ml-1 text-[10px] bg-surface-elevated px-1.5 py-0.5 rounded-full">{suppliers.length}</span>
+              )}
+            </button>
+
+            {showSuppliers && (
+              <div className="mt-3 space-y-2">
+                {suppliers.map(s => (
+                  <div key={s._tempId} className="p-3 rounded-lg border border-divider space-y-2">
+                    <div className="grid grid-cols-[1fr_auto_auto] gap-2 items-center">
+                      <select
+                        value={s.supplier_id}
+                        onChange={e => updateSupplier(s._tempId, { supplier_id: e.target.value })}
+                        className="h-8 rounded-md border border-divider bg-surface px-2 text-[12px] text-text-primary focus:outline-none focus:border-primary"
+                      >
+                        <option value="">Select supplier…</option>
+                        {supplierOptions.map(o => (
+                          <option key={o.id} value={o.id}>{o.name}</option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        title={s.is_preferred ? 'Preferred supplier' : 'Set as preferred'}
+                        onClick={() => updateSupplier(s._tempId, { is_preferred: true })}
+                        className={cn(
+                          'text-[18px] transition-colors',
+                          s.is_preferred ? 'text-amber-400' : 'text-divider hover:text-amber-300',
+                        )}
+                      >
+                        ★
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeSupplier(s._tempId)}
+                        className="text-text-secondary hover:text-red-500 transition-colors"
+                      >
+                        <span className="material-icons text-[16px]">close</span>
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <input
+                        type="text"
+                        value={s.supplier_sku}
+                        onChange={e => updateSupplier(s._tempId, { supplier_sku: e.target.value })}
+                        placeholder="Their SKU"
+                        className="h-8 rounded-md border border-divider bg-surface px-2 text-[12px] text-text-primary focus:outline-none focus:border-primary"
+                      />
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={s.unit_cost}
+                        onChange={e => updateSupplier(s._tempId, { unit_cost: e.target.value })}
+                        placeholder="Unit cost (R)"
+                        className="h-8 rounded-md border border-divider bg-surface px-2 text-[12px] text-text-primary focus:outline-none focus:border-primary"
+                      />
+                      <input
+                        type="number"
+                        min="0"
+                        value={s.lead_time_days}
+                        onChange={e => updateSupplier(s._tempId, { lead_time_days: e.target.value })}
+                        placeholder="Lead days"
+                        className="h-8 rounded-md border border-divider bg-surface px-2 text-[12px] text-text-primary focus:outline-none focus:border-primary"
+                      />
+                    </div>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={addSupplierRow}
+                  className="text-[12px] text-primary hover:underline"
+                >
+                  + Add supplier
+                </button>
+              </div>
+            )}
+          </section>
+
+          {/* ── Section 7: Notes ── */}
+          <section className="space-y-2">
+            <label className="block text-[11px] text-text-secondary">Internal notes (not shown on quotes)</label>
+            <textarea
+              value={internalNotes}
+              onChange={e => setInternalNotes(e.target.value)}
+              rows={2}
+              placeholder="Notes for your team only…"
+              className="w-full rounded-lg border border-divider bg-surface px-3 py-2 text-[13px] text-text-primary focus:outline-none focus:border-primary resize-none"
+            />
+          </section>
+
         </div>
 
+        {/* Footer */}
+        <div className="px-5 py-4 border-t border-divider shrink-0 space-y-2">
+          {error && <p className="text-[12px] text-red-500">{error}</p>}
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 h-9 rounded-lg border border-divider text-[13px] text-text-secondary hover:text-text-primary transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleSave()}
+              disabled={saving}
+              className="flex-1 h-9 rounded-lg bg-primary text-white text-[13px] font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
+            >
+              {saving ? 'Saving…' : mode === 'create' ? 'Add item' : mode === 'duplicate' ? 'Duplicate' : 'Save changes'}
+            </button>
+          </div>
+        </div>
       </div>
-    </div>
-
-    {/* Stock adjustment modal — opened from history panel */}
-    {showAdjustModal && item && (
-      <StockAdjustmentModal
-        item={{ ...item, qty_on_hand: parseFloat(qtyOnHand) || item.qty_on_hand }}
-        companyId={companyId}
-        employeeId={employeeId}
-        onClose={() => setShowAdjustModal(false)}
-        onSaved={(newQty) => {
-          setQtyOnHand(String(newQty))
-          setShowAdjustModal(false)
-          // Refresh history
-          supabase
-            .from('stock_adjustment_history')
-            .select('*')
-            .eq('catalogue_item_id', item.id)
-            .order('created_at', { ascending: false })
-            .limit(20)
-            .then(({ data }) => setAdjustments((data ?? []) as StockAdjustment[]))
-        }}
-      />
-    )}
-  </>
+    </>
   )
 }
-
-// ─── Sub-components ────────────────────────────────────────────────────────────
-
-function Field({
-  label, children, error,
-}: {
-  label: string; children: React.ReactNode; error?: boolean
-}) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <label className={cn('text-[12px] font-medium', error ? 'text-red-500' : 'text-text-secondary')}>
-        {label}
-      </label>
-      {children}
-    </div>
-  )
-}
-
-function Label({ children }: { children: React.ReactNode }) {
-  return <p className="text-[12px] font-medium text-text-secondary">{children}</p>
-}
-
-function SectionHeading({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="text-[10px] font-semibold uppercase tracking-widest text-text-secondary border-b border-divider pb-2">
-      {children}
-    </p>
-  )
-}
-
-function ToggleSwitch({ on, onToggle }: { on: boolean; onToggle: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      className={cn('w-9 h-5 rounded-full transition-colors relative shrink-0', on ? 'bg-primary' : 'bg-divider')}
-    >
-      <span className={cn(
-        'absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform',
-        on ? 'left-[18px]' : 'left-0.5',
-      )} />
-    </button>
-  )
-}
-
-const inputCls = 'h-9 w-full rounded-md border border-divider bg-surface px-3 text-[13px] text-text-primary focus:outline-none focus:border-primary transition-colors'
