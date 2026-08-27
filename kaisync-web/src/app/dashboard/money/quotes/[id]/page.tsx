@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import SimpleQuoteBuilder from '@/components/quotes/SimpleQuoteBuilder'
 
 interface Props {
@@ -6,5 +7,9 @@ interface Props {
 
 export default async function EditQuotePage({ params }: Props) {
   const { id } = await params
-  return <SimpleQuoteBuilder quoteId={id} />
+  return (
+    <Suspense fallback={<p className="text-center text-[13px] text-text-secondary py-10">Loading…</p>}>
+      <SimpleQuoteBuilder quoteId={id} />
+    </Suspense>
+  )
 }

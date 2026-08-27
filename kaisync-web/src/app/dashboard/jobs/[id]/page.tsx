@@ -74,6 +74,8 @@ export default function JobDetailPage() {
   const [laborEntries,   setLaborEntries]   = useState<LaborEntry[]>([])
   const [inventory,      setInventory]      = useState<JobInventoryItem[]>([])
   const [photos,         setPhotos]         = useState<JobPhoto[]>([])
+  const [moneyQuotes,    setMoneyQuotes]    = useState<Array<{ id: string; quote_number: string | null; title: string; status: string; total_amount: number | null }>>([])
+  const [moneyInvoices,  setMoneyInvoices]  = useState<Array<{ id: string; invoice_number: string | null; status: string; total_amount: number; balance_due: number }>>([])
   const [statusUpdate,   setStatusUpdate]   = useState<string>('open')
   const [error,          setError]          = useState<string | null>(null)
   const [saving,         setSaving]         = useState(false)
@@ -125,7 +127,7 @@ export default function JobDetailPage() {
     setCompanyId(member.companyId)
     setMyEmployeeId(member.employeeId)
 
-    const [jobRes, empRes, jcRes, leRes, invRes, clientRes, dealRes, contractorRes, invItemsRes, meRes] =
+    const [jobRes, empRes, jcRes, leRes, invRes, clientRes, dealRes, contractorRes, invItemsRes, meRes, quoteRes, invMoneyRes] =
       await Promise.all([
         supabase.from('jobs').select('*, clients(*), sites(*), client_deals:deal_id(id, title, project_code)').eq('id', jobId).single(),
         supabase.from('employees').select('id, name, surname').eq('company_id', member.companyId).eq('is_active', true).order('name'),
@@ -137,9 +139,13 @@ export default function JobDetailPage() {
         supabase.from('contractors').select('id, name, contractor_code, partner_kind').eq('company_id', member.companyId).eq('is_active', true).order('name'),
         supabase.from('inventory_items').select('id, name, unit_cost, quantity_on_hand').eq('company_id', member.companyId).order('name'),
         supabase.from('employees').select('access_level').eq('id', member.employeeId).maybeSingle(),
+        supabase.from('commercial_quotes').select('id, quote_number, title, status, total_amount').eq('company_id', member.companyId).eq('job_id', jobId).order('created_at', { ascending: false }),
+        supabase.from('finance_invoices').select('id, invoice_number, status, total_amount, balance_due').eq('company_id', member.companyId).eq('job_id', jobId).order('created_at', { ascending: false }),
       ])
 
     setPerms(await loadPermissions(supabase, member.companyId, meRes.data?.access_level))
+    setMoneyQuotes((quoteRes.data ?? []) as typeof moneyQuotes)
+    setMoneyInvoices((invMoneyRes.data ?? []) as typeof moneyInvoices)
 
     if (jobRes.data) {
       const row = jobRes.data as JobDetail & {
@@ -810,6 +816,95 @@ export default function JobDetailPage() {
           >
             Save team & contractor
           </button>
+        </div>
+      </div>
+
+      {/* ── Money (quotes & invoices) ── */}
+      <div className="bg-surface rounded-xl p-4 border border-divider space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[11px] font-semibold text-text-secondary tracking-wider uppercase">Money</p>
+          <div className="flex gap-2">
+            <Link
+              href={`/dashboard/money/quotes/new?job_id=${jobId}${job.client_id ? `&client_id=${job.client_id}` : ''}${job.deal_id ? `&deal_id=${job.deal_id}` : ''}`}
+              className="h-8 px-3 text-[12px] rounded-lg border border-border text-text-secondary hover:text-text-primary hover:border-primary transition-colors flex items-center"
+            >
+              + Quote
+            </Link>
+            <Link
+              href={`/dashboard/money/invoices/new?job_id=${jobId}${job.client_id ? `&client_id=${job.client_id}` : ''}`}
+              className="h-8 px-3 text-[12px] rounded-lg border border-border text-text-secondary hover:text-text-primary hover:border-primary transition-colors flex items-center"
+            >
+              + Invoice
+            </Link>
+          </div>
+        </div>
+
+        <div>
+          <p className="text-[12px] font-medium text-text-primary mb-1.5">Quotes</p>
+          {moneyQuotes.length === 0 ? (
+            <p className="text-[12px] text-text-secondary">No Money quotes linked to this job.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full" style={{ minWidth: 420 }}>
+                <thead>
+                  <tr className="border-b border-divider">
+                    <th className="data-th text-left">#</th>
+                    <th className="data-th text-left">Title</th>
+                    <th className="data-th text-left">Status</th>
+                    <th className="data-th text-right">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {moneyQuotes.map(q => (
+                    <tr
+                      key={q.id}
+                      className="border-b border-divider last:border-0 cursor-pointer hover:bg-surface-elevated"
+                      onClick={() => router.push(`/dashboard/money/quotes/${q.id}`)}
+                    >
+                      <td className="data-td text-[13px] text-primary">{q.quote_number ?? 'Draft'}</td>
+                      <td className="data-td text-[13px]">{q.title || '—'}</td>
+                      <td className="data-td text-[12px] capitalize">{q.status.replace(/_/g, ' ')}</td>
+                      <td className="data-td text-[13px] text-right">R{Number(q.total_amount ?? 0).toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <div>
+          <p className="text-[12px] font-medium text-text-primary mb-1.5">Invoices</p>
+          {moneyInvoices.length === 0 ? (
+            <p className="text-[12px] text-text-secondary">No client invoices linked to this job.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full" style={{ minWidth: 420 }}>
+                <thead>
+                  <tr className="border-b border-divider">
+                    <th className="data-th text-left">#</th>
+                    <th className="data-th text-left">Status</th>
+                    <th className="data-th text-right">Total</th>
+                    <th className="data-th text-right">Balance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {moneyInvoices.map(inv => (
+                    <tr
+                      key={inv.id}
+                      className="border-b border-divider last:border-0 cursor-pointer hover:bg-surface-elevated"
+                      onClick={() => router.push(`/dashboard/money/invoices/${inv.id}`)}
+                    >
+                      <td className="data-td text-[13px] text-primary">{inv.invoice_number ?? 'Draft'}</td>
+                      <td className="data-td text-[12px] capitalize">{inv.status.replace(/_/g, ' ')}</td>
+                      <td className="data-td text-[13px] text-right">R{Number(inv.total_amount).toFixed(2)}</td>
+                      <td className="data-td text-[13px] text-right">R{Number(inv.balance_due).toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
 

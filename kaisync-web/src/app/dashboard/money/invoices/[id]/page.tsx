@@ -17,7 +17,9 @@ type Invoice = FinanceInvoice & {
   void_reason?: string | null
   client_id?: string | null
   deal_id?: string | null
+  job_id?: string | null
   client_deals?: { title: string } | null
+  jobs?: { title: string; job_code: string | null } | null
 }
 
 type Transaction = {
@@ -143,7 +145,7 @@ function MoneyInvoiceDetailInner() {
 
     const [{ data: invoice }, { data: lineRows }, { data: transactions }, { data: company }] = await Promise.all([
       supabase.from('finance_invoices')
-        .select('*, clients(name, email), client_deals(title)')
+        .select('*, clients(name, email), client_deals(title), jobs(title, job_code)')
         .eq('id', id)
         .maybeSingle(),
       supabase.from('finance_invoice_lines')
@@ -445,6 +447,9 @@ function MoneyInvoiceDetailInner() {
 
   const clientName = (inv.clients as { name: string } | null)?.name ?? '—'
   const projectTitle = (inv.client_deals as { title: string } | null)?.title
+  const jobLabel = inv.jobs
+    ? (inv.jobs.job_code ? `${inv.jobs.job_code} · ${inv.jobs.title}` : inv.jobs.title)
+    : null
   const canPay = (inv.balance_due ?? 0) > 0 && !['voided', 'cancelled'].includes(inv.status)
   const canMarkSent = inv.status === 'draft'
   const canVoid = !['voided', 'paid', 'cancelled'].includes(inv.status)
@@ -473,12 +478,22 @@ function MoneyInvoiceDetailInner() {
           <p className="text-[13px] text-text-secondary">
             <span className="font-medium text-text-primary">{clientName}</span>
             {projectTitle && <> · {projectTitle}</>}
+            {jobLabel && <> · {jobLabel}</>}
           </p>
           <div className="flex flex-wrap gap-x-4 gap-y-0.5 pt-1 text-[12px] text-text-secondary">
             <span>Issued: <span className="font-medium text-text-primary">{inv.issue_date ?? '—'}</span></span>
             {inv.due_date && <span>Due: <span className="font-medium text-text-primary">{inv.due_date}</span></span>}
             {inv.paid_date && <span>Paid: <span className="font-medium text-green-600">{inv.paid_date}</span></span>}
           </div>
+          {inv.job_id && (
+            <button
+              type="button"
+              onClick={() => router.push(`/dashboard/jobs/${inv.job_id}`)}
+              className="mt-2 text-[12px] text-primary hover:underline"
+            >
+              Open linked job
+            </button>
+          )}
         </div>
 
         {/* Line items */}
@@ -689,6 +704,15 @@ function MoneyInvoiceDetailInner() {
                   className="h-10 px-4 rounded-lg border border-divider text-left text-[13px] font-medium text-text-primary hover:bg-surface-elevated transition-colors"
                 >
                   Open linked project
+                </button>
+              )}
+              {inv.job_id && (
+                <button
+                  type="button"
+                  onClick={() => router.push(`/dashboard/jobs/${inv.job_id}`)}
+                  className="h-10 px-4 rounded-lg border border-divider text-left text-[13px] font-medium text-text-primary hover:bg-surface-elevated transition-colors"
+                >
+                  Open linked job
                 </button>
               )}
               <button
