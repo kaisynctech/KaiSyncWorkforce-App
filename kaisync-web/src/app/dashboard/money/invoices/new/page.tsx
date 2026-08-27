@@ -1,12 +1,14 @@
 'use client'
 
 import { Suspense, useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { calculateVatExclusive, roundFinancial } from '@/lib/finance-calc'
 
 type ClientOpt = { id: string; name: string }
+type JobOpt = { id: string; title: string; job_code: string | null }
 
 export default function NewMoneyInvoicePage() {
   return (
@@ -20,7 +22,9 @@ function NewMoneyInvoiceInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [clients, setClients] = useState<ClientOpt[]>([])
+  const [jobs, setJobs] = useState<JobOpt[]>([])
   const [clientId, setClientId] = useState(() => searchParams.get('clientId') ?? searchParams.get('client_id') ?? '')
+  const [jobId, setJobId] = useState(() => searchParams.get('job_id') ?? '')
   const [issueDate, setIssueDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [dueDate, setDueDate] = useState('')
   const [description, setDescription] = useState('Professional services')
@@ -32,6 +36,8 @@ function NewMoneyInvoiceInner() {
   useEffect(() => {
     const fromQuery = searchParams.get('clientId') ?? searchParams.get('client_id')
     if (fromQuery) setClientId(fromQuery)
+    const fromJob = searchParams.get('job_id')
+    if (fromJob) setJobId(fromJob)
   }, [searchParams])
 
   useEffect(() => {
@@ -39,12 +45,21 @@ function NewMoneyInvoiceInner() {
       const supabase = createClient()
       const member = await resolveCurrentMember(supabase)
       if (!member) return
-      const { data } = await supabase
-        .from('clients')
-        .select('id, name')
-        .eq('company_id', member.companyId)
-        .order('name')
-      setClients((data ?? []) as ClientOpt[])
+      const [{ data: clientRows }, { data: jobRows }] = await Promise.all([
+        supabase
+          .from('clients')
+          .select('id, name')
+          .eq('company_id', member.companyId)
+          .order('name'),
+        supabase
+          .from('jobs')
+          .select('id, title, job_code')
+          .eq('company_id', member.companyId)
+          .order('created_at', { ascending: false })
+          .limit(200),
+      ])
+      setClients((clientRows ?? []) as ClientOpt[])
+      setJobs((jobRows ?? []) as JobOpt[])
     })()
   }, [])
 
@@ -72,6 +87,7 @@ function NewMoneyInvoiceInner() {
       .insert({
         company_id: member.companyId,
         client_id: clientId || null,
+        job_id: jobId || null,
         invoice_number: invoiceNumber,
         status: send ? 'sent' : 'draft',
         sent_at: send ? now : null,
@@ -127,6 +143,21 @@ function NewMoneyInvoiceInner() {
           {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
       </label>
+      <label className="block text-[12px] text-text-secondary">Job (optional)
+        <select value={jobId} onChange={e => setJobId(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background">
+          <option value="">— None —</option>
+          {jobs.map(j => (
+            <option key={j.id} value={j.id}>
+              {j.job_code ? `${j.job_code} · ${j.title}` : j.title}
+            </option>
+          ))}
+        </select>
+      </label>
+      {jobId && (
+        <Link href={`/dashboard/jobs/${jobId}`} className="text-[12px] text-primary hover:underline">
+          Open job
+        </Link>
+      )}
       <div className="grid grid-cols-2 gap-3">
         <label className="block text-[12px] text-text-secondary">Issue date
           <input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />

@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
@@ -67,6 +68,10 @@ interface Props {
 export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   const supabase = createClient()
   const router   = useRouter()
+  const searchParams = useSearchParams()
+  const preJobId = searchParams.get('job_id')
+  const preDealId = searchParams.get('deal_id')
+  const preClientId = searchParams.get('client_id') || searchParams.get('clientId')
 
   // ── Auth ──────────────────────────────────────────────────────────────────
   const [companyId,  setCompanyId]  = useState<string | null>(null)
@@ -267,6 +272,24 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         }))
         setLines(mapped)
         linesRef.current = mapped
+      }
+    } else if (preJobId || preDealId || preClientId) {
+      // Prefill from deep-link (e.g. Jobs → New quote)
+      if (preClientId) {
+        setClientId(preClientId)
+        clientIdRef.current = preClientId
+        const match = (cData ?? []).find((c: ClientRow) => c.id === preClientId)
+        if (match) setClientSearch(match.name)
+      }
+      if (preDealId) {
+        setDealId(preDealId)
+        dealIdRef.current = preDealId
+        setLinkOpen(true)
+      }
+      if (preJobId) {
+        setJobId(preJobId)
+        jobIdRef.current = preJobId
+        setLinkOpen(true)
       }
     }
 
@@ -678,6 +701,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         client_id: clientIdRef.current,
         deal_id: dealIdRef.current,
         project_id: dealIdRef.current,
+        job_id: jobIdRef.current,
         quote_id: qid,
         invoice_number: null,
         status: 'draft',
@@ -1083,6 +1107,14 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
                     </option>
                   ))}
                 </select>
+                {jobId && (
+                  <Link
+                    href={`/dashboard/jobs/${jobId}`}
+                    className="inline-block mt-1.5 text-[12px] text-primary hover:underline"
+                  >
+                    Open job
+                  </Link>
+                )}
               </div>
             </div>
           )}

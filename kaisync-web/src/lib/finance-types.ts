@@ -3,6 +3,9 @@ export type FinanceInvoice = {
   company_id: string
   client_id: string | null
   project_id: string | null
+  deal_id?: string | null
+  job_id?: string | null
+  quote_id?: string | null
   invoice_number: string | null
   status: string
   currency: string
