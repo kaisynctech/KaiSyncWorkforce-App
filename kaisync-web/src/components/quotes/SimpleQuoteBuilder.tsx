@@ -8,7 +8,7 @@ import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { createProject } from '@/lib/projects'
 import { createJob } from '@/lib/jobs'
 import { createSupplyRfqFromQuote } from '@/lib/supply-rfq'
-import { downloadQuotePdf, openQuoteMailto, quotePdfBase64 } from '@/lib/quote-pdf'
+import { downloadQuotePdf, openQuoteMailto } from '@/lib/quote-pdf'
 import SimpleQuoteLineRow from './SimpleQuoteLineRow'
 import RateCardPicker, { type RateCardSelection } from './RateCardPicker'
 
@@ -107,7 +107,6 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   const [saveState,       setSaveState]       = useState<SaveState>('idle')
   const [showSendModal,   setShowSendModal]   = useState(false)
   const [sendBusy,        setSendBusy]        = useState(false)
-  const [sendError,       setSendError]       = useState<string | null>(null)
   const [showAcceptModal, setShowAcceptModal] = useState(false)
   const [showWhatsNext,   setShowWhatsNext]   = useState(false)
   const [automationDealId, setAutomationDealId] = useState<string | null>(null)
@@ -531,66 +530,9 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
     downloadQuotePdf(buildPdfInput())
   }
 
-  async function handleSendEmail() {
-    setSendError(null)
+  /** Mailto + PDF download for now; Resend Edge Function kept for later. */
+  async function handleSendWithMailto() {
     setSendBusy(true)
-    const id = await doSave()
-    if (!id) {
-      setSendError('Could not save quote before sending.')
-      setSendBusy(false)
-      return
-    }
-    const pdf = buildPdfInput()
-    const to = (pdf.client_email ?? '').trim()
-    if (!to) {
-      setSendError('Client has no email. Add one, or use Download PDF / mailto.')
-      setSendBusy(false)
-      return
-    }
-    try {
-      const { data, error } = await supabase.functions.invoke('send_quote_email', {
-        body: {
-          quote_id: id,
-          recipient_email: to,
-          pdf_base64: quotePdfBase64(pdf),
-          filename: `Quote_${(pdf.quote_number || 'draft').replace(/[^\w.-]+/g, '_')}.pdf`,
-          subject: `Quote ${pdf.quote_number ?? ''} – ${pdf.title}`.trim(),
-        },
-      })
-      const payload = (data ?? {}) as {
-        ok?: boolean
-        error?: string
-        message?: string
-      }
-      if (error || payload.error) {
-        const msg = payload.message || payload.error || error?.message || 'Send failed'
-        if (payload.error === 'email_not_configured' || msg.includes('email_not_configured')) {
-          downloadQuotePdf(pdf)
-          openQuoteMailto({
-            to,
-            quoteNumber: pdf.quote_number,
-            title: pdf.title,
-            companyName: companyName,
-          })
-          await doSave('sent')
-          setShowSendModal(false)
-          setSendBusy(false)
-          return
-        }
-        setSendError(msg)
-        setSendBusy(false)
-        return
-      }
-      setStatus('sent')
-      statusRef.current = 'sent'
-      setShowSendModal(false)
-    } catch (err) {
-      setSendError(err instanceof Error ? err.message : 'Send failed')
-    }
-    setSendBusy(false)
-  }
-
-  async function handleMailtoFallback() {
     await doSave()
     const pdf = buildPdfInput()
     downloadQuotePdf(pdf)
@@ -602,6 +544,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
     })
     await doSave('sent')
     setShowSendModal(false)
+    setSendBusy(false)
   }
 
   async function handleMarkAccepted() {
@@ -1247,27 +1190,22 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
           <div className="relative bg-surface rounded-xl shadow-2xl w-full max-w-md mx-4 p-6">
             <h3 className="text-[15px] font-semibold text-text-primary mb-2">Send quote</h3>
             <p className="text-[13px] text-text-secondary mb-4">
-              Email the PDF to{' '}
+              Download the PDF, open an email to{' '}
               <span className="font-medium text-text-primary">
                 {clients.find(c => c.id === clientId)?.email?.trim() || clientName || 'the client'}
               </span>
-              . Delivery is logged when Resend is configured.
+              , then mark the quote as sent.
               {dealId ? ' Linked project clients will see this quote in the portal once sent.' : ''}
             </p>
-            {sendError && (
-              <p className="text-[12px] text-red-600 mb-3 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
-                {sendError}
-              </p>
-            )}
             <div className="flex flex-col gap-2 mb-5">
               <button
                 type="button"
                 disabled={sendBusy}
-                onClick={() => void handleSendEmail()}
+                onClick={() => void handleSendWithMailto()}
                 className="h-10 px-4 rounded-lg bg-primary text-white text-left text-[13px] font-medium hover:bg-primary/90 transition-colors flex items-center gap-2 disabled:opacity-50"
               >
                 <span className="material-icons text-[18px]">send</span>
-                {sendBusy ? 'Sending…' : 'Email PDF & mark sent'}
+                {sendBusy ? 'Preparing…' : 'Download PDF, email & mark sent'}
               </button>
               <button
                 type="button"
@@ -1277,14 +1215,6 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
               >
                 <span className="material-icons text-[18px]">picture_as_pdf</span>
                 Download PDF only
-              </button>
-              <button
-                type="button"
-                disabled={sendBusy}
-                onClick={() => void handleMailtoFallback()}
-                className="h-10 px-4 rounded-lg border border-divider text-left text-[13px] font-medium text-text-secondary hover:bg-surface-elevated transition-colors disabled:opacity-50"
-              >
-                Download + open mailto
               </button>
               <button
                 type="button"
@@ -1299,7 +1229,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
               <button
                 type="button"
                 disabled={sendBusy}
-                onClick={() => { setShowSendModal(false); setSendError(null) }}
+                onClick={() => setShowSendModal(false)}
                 className="h-9 px-4 rounded-lg border border-divider text-[13px] text-text-secondary hover:bg-surface-elevated transition-colors disabled:opacity-50"
               >
                 Cancel
