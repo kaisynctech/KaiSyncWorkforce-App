@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
-import { calculateVatExclusive, fmtMoney } from '@/lib/finance-calc'
+import { calculateVatExclusive, fmtMoney, roundFinancial } from '@/lib/finance-calc'
 import { isSupplierKind } from '@/lib/partner-kinds'
 import type { SupplierInvoice } from '@/lib/finance-types'
 
@@ -78,21 +78,104 @@ export default function SupplierInvoicesPage() {
   }, [searchParams, prefillApplied])
 
   async function create() {
-    if (!companyId || !supplierId || !(Number(amount) > 0)) return
+    if (!companyId || !supplierId) return
+    if (!(Number(amount) > 0) && !grnId && !poId) return
     setBusy(true)
     const supabase = createClient()
-    const calc = calculateVatExclusive(Number(amount), 0.15)
+    const vatRate = 0.15
     const noteParts = [
       grnNumber ? `From GRN ${grnNumber}` : (grnId ? `From GRN ${grnId}` : null),
       poId ? `PO linked` : null,
     ].filter(Boolean)
+
+    type SourceLine = {
+      description: string
+      quantity: number
+      unit_price: number
+      inventory_item_id: string | null
+    }
+    let sourceLines: SourceLine[] = []
+
+    if (grnId) {
+      const { data: grnLines } = await supabase
+        .from('goods_received_lines')
+        .select('description, quantity_received, unit_cost, inventory_item_id')
+        .eq('grn_id', grnId)
+        .order('created_at')
+      sourceLines = ((grnLines ?? []) as {
+        description: string
+        quantity_received: number
+        unit_cost: number
+        inventory_item_id: string | null
+      }[])
+        .filter(l => l.description?.trim() && Number(l.quantity_received) > 0)
+        .map(l => ({
+          description: l.description.trim(),
+          quantity: Number(l.quantity_received) || 0,
+          unit_price: Number(l.unit_cost) || 0,
+          inventory_item_id: l.inventory_item_id,
+        }))
+    } else if (poId) {
+      const { data: poLines } = await supabase
+        .from('purchase_order_lines')
+        .select('description, quantity_ordered, unit_price, inventory_item_id')
+        .eq('po_id', poId)
+        .order('sort_order')
+      sourceLines = ((poLines ?? []) as {
+        description: string
+        quantity_ordered: number
+        unit_price: number
+        inventory_item_id: string | null
+      }[])
+        .filter(l => l.description?.trim())
+        .map(l => ({
+          description: l.description.trim(),
+          quantity: Number(l.quantity_ordered) || 0,
+          unit_price: Number(l.unit_price) || 0,
+          inventory_item_id: l.inventory_item_id,
+        }))
+    }
+
+    let headerSubtotal = Number(amount)
+    let linePayloads: Array<Record<string, unknown>> = []
+
+    if (sourceLines.length > 0) {
+      linePayloads = sourceLines.map((l, idx) => {
+        const lineSub = roundFinancial(l.quantity * l.unit_price)
+        const lineCalc = calculateVatExclusive(lineSub, vatRate)
+        return {
+          company_id: companyId,
+          line_no: idx + 1,
+          inventory_item_id: l.inventory_item_id,
+          description: l.description,
+          quantity: l.quantity,
+          unit_price: l.unit_price,
+          subtotal: lineCalc.subtotal,
+          vat_rate: vatRate,
+          vat_amount: lineCalc.vatAmount,
+          total_amount: lineCalc.totalAmount,
+          is_vat_inclusive: false,
+          tax_type: 'standard',
+        }
+      })
+      headerSubtotal = roundFinancial(
+        linePayloads.reduce((s, l) => s + Number(l.subtotal), 0),
+      )
+    }
+
+    if (!(headerSubtotal > 0)) {
+      setBusy(false)
+      return
+    }
+
+    const calc = calculateVatExclusive(headerSubtotal, vatRate)
     const { data: inserted, error } = await supabase.from('supplier_invoices').insert({
       company_id: companyId,
       supplier_id: supplierId,
       po_id: poId || null,
       invoice_number: number.trim() || null,
       subtotal: calc.subtotal,
-      vat_rate: 0.15,
+      vat_rate: vatRate,
       vat_amount: calc.vatAmount,
       total_amount: calc.totalAmount,
       amount_paid: 0,
@@ -105,11 +188,23 @@ export default function SupplierInvoicesPage() {
       approval_status: 'pending',
       created_by: employeeId,
     }).select('id').single()
+
+    if (error || !inserted) {
+      setBusy(false)
+      return
+    }
+
+    const invoiceId = (inserted as { id: string }).id
+    if (linePayloads.length > 0) {
+      await supabase.from('supplier_invoice_lines').insert(
+        linePayloads.map(l => ({ ...l, invoice_id: invoiceId })),
+      )
+    }
+
     setBusy(false)
-    if (error || !inserted) return
     setShowAdd(false)
     setNumber(''); setAmount(''); setDueDate(''); setSupplierId(''); setPoId(''); setGrnId(''); setGrnNumber('')
-    router.push(`/dashboard/finance/supplier-invoices/${(inserted as { id: string }).id}`)
+    router.push(`/dashboard/finance/supplier-invoices/${invoiceId}`)
   }
 
   return (
@@ -164,6 +259,7 @@ export default function SupplierInvoicesPage() {
               <p className="text-[12px] text-text-secondary bg-surface-elevated rounded-lg px-3 py-2">
                 {grnNumber ? `From GRN ${grnNumber}` : 'From goods received'}
                 {poId ? ' · PO will be linked' : ''}
+                {' · '}Line items will be copied automatically
               </p>
             )}
             <select value={supplierId} onChange={e => setSupplierId(e.target.value)} className="w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background">

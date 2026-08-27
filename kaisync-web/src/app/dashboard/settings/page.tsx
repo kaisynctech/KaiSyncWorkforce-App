@@ -925,6 +925,16 @@ export default function SettingsPage() {
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between py-2 border-b border-divider">
               <div>
+                <p className="text-[13px] font-medium text-text-primary">Outbound email (Resend)</p>
+                <p className="text-[12px] text-text-secondary">
+                  Quotes and RFQs use mailto today. Set project secrets <span className="font-mono text-[11px]">RESEND_API_KEY</span> and{' '}
+                  <span className="font-mono text-[11px]">NOTIFY_FROM_EMAIL</span>, then we can switch Money Quotes to server send.
+                </p>
+              </div>
+              <p className="text-[12px] text-text-disabled italic shrink-0">Mailto · ready later</p>
+            </div>
+            <div className="flex items-center justify-between py-2 border-b border-divider">
+              <div>
                 <p className="text-[13px] font-medium text-text-primary">SAGE Payroll</p>
                 <p className="text-[12px] text-text-secondary">Export payroll data to SAGE</p>
               </div>

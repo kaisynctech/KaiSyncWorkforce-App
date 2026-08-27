@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import { openRfqMailto } from '@/lib/rfq-mailto'
 import type { Rfq, RfqLine, RfqRecipient } from '@/types/commercial'
 
 interface Supplier {
@@ -261,15 +262,42 @@ export default function RfqBuilder({ rfqId }: RfqBuilderProps) {
   }
 
   async function sendRfq() {
-    if (!savedRfqId.current) { await save('sent'); return }
-    // Update status + recipients
+    if (!savedRfqId.current) {
+      await save('sent')
+      return
+    }
     const supabase = createClient()
     const now = new Date().toISOString()
     await supabase.from('rfqs').update({ status: 'sent', updated_at: now }).eq('id', savedRfqId.current)
     if (recipients.length > 0) {
-      await supabase.from('rfq_recipients').update({ status: 'sent', sent_at: now }).eq('rfq_id', savedRfqId.current!).eq('status', 'pending')
+      await supabase
+        .from('rfq_recipients')
+        .update({ status: 'sent', sent_at: now })
+        .eq('rfq_id', savedRfqId.current!)
+        .eq('status', 'pending')
     }
-    showToast('RFQ sent! (Email integration coming soon)')
+
+    const { opened, missingEmail } = openRfqMailto({
+      recipients: recipients.map(r => ({
+        email: (r.supplier as { email?: string | null } | null)?.email ?? null,
+        name: (r.supplier as { name?: string | null } | null)?.name ?? null,
+      })),
+      rfqNumber: rfq?.rfq_number ?? null,
+      title: title.trim() || rfq?.title || 'RFQ',
+      lines: lines.map(l => ({
+        description: l.description,
+        quantity: l.quantity,
+        unit: l.unit,
+      })),
+    })
+
+    if (!opened) {
+      showToast('RFQ marked as sent.')
+    } else if (missingEmail > 0) {
+      showToast(`RFQ marked as sent. Opened email (${missingEmail} supplier${missingEmail === 1 ? '' : 's'} missing email).`)
+    } else {
+      showToast('RFQ marked as sent. Email opened — review and send.')
+    }
     void load()
   }
 
