@@ -30,6 +30,7 @@ export default function GrnForm({ grnId }: { grnId?: string }) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const prePoId = searchParams.get('po_id')
+  const openWhatsNext = searchParams.get('whats_next') === '1'
 
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [employeeId, setEmployeeId] = useState<string | null>(null)
@@ -47,8 +48,9 @@ export default function GrnForm({ grnId }: { grnId?: string }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
-  const [showWhatsNext, setShowWhatsNext] = useState(false)
+  const [showWhatsNext, setShowWhatsNext] = useState(openWhatsNext)
   const [supplierId, setSupplierId] = useState<string | null>(null)
+  const [grnNumber, setGrnNumber] = useState<string | null>(null)
 
   const savedId = useRef<string | null>(isNew ? null : (grnId ?? null))
 
@@ -117,6 +119,7 @@ export default function GrnForm({ grnId }: { grnId?: string }) {
           setPoId(g.po_id ?? '')
           setReceivedDate(g.received_date)
           setNotes(g.notes ?? '')
+          setGrnNumber(g.grn_number)
           if (g.po_id) await loadPoLines(g.po_id)
         }
       }
@@ -146,6 +149,10 @@ export default function GrnForm({ grnId }: { grnId?: string }) {
 
   useEffect(() => { void load() }, [load])
 
+  useEffect(() => {
+    if (openWhatsNext) setShowWhatsNext(true)
+  }, [openWhatsNext])
+
   function updateLine(key: string, field: string, value: string) {
     setLines(ls => ls.map(l => l.key === key ? { ...l, [field]: value } : l))
   }
@@ -161,6 +168,7 @@ export default function GrnForm({ grnId }: { grnId?: string }) {
     const supabase = createClient()
 
     let currentId = savedId.current
+    let savedGrnNumber = grnNumber
     if (!currentId) {
       const { data: numData } = await (supabase.rpc as unknown as (name: string, args: Record<string, unknown>) => Promise<{ data: string | null }>)('generate_grn_number', { p_company_id: companyId })
       const { data: inserted, error: insErr } = await supabase.from('goods_received_notes').insert({
@@ -174,10 +182,20 @@ export default function GrnForm({ grnId }: { grnId?: string }) {
         notes: notes.trim() || null,
         status: 'draft',
         created_by: employeeId,
-      }).select('id').single()
+      }).select('id, grn_number').single()
       if (insErr || !inserted) { setError(insErr?.message ?? 'Failed to create GRN'); setSaving(false); return }
-      currentId = (inserted as { id: string }).id
+      currentId = (inserted as { id: string; grn_number: string | null }).id
+      savedGrnNumber = (inserted as { id: string; grn_number: string | null }).grn_number
       savedId.current = currentId
+      setGrnNumber(savedGrnNumber)
+      setGrn({
+        id: currentId,
+        grn_number: savedGrnNumber,
+        status: 'received',
+        po_id: poId || null,
+        received_date: receivedDate,
+        notes: notes.trim() || null,
+      })
     } else {
       await supabase.from('goods_received_notes').update({
         po_id: poId || null,
@@ -246,8 +264,12 @@ export default function GrnForm({ grnId }: { grnId?: string }) {
     setSaving(false)
     showToast('GRN saved!')
     setShowWhatsNext(true)
-    if (isNew && currentId) router.replace(`/dashboard/supply/goods-received/${currentId}`)
-    else void load()
+    // Persist URL to detail with whats_next so the modal survives remount after first save
+    if (isNew && currentId) {
+      router.replace(`/dashboard/supply/goods-received/${currentId}?whats_next=1`)
+    } else {
+      void load()
+    }
   }
 
   function openCreateSupplierInvoice() {
@@ -257,7 +279,8 @@ export default function GrnForm({ grnId }: { grnId?: string }) {
     if (poId) params.set('po_id', poId)
     if (sid) params.set('supplier_id', sid)
     if (id) params.set('grn_id', id)
-    if (grn?.grn_number) params.set('grn_number', grn.grn_number)
+    const numberLabel = grnNumber ?? grn?.grn_number
+    if (numberLabel) params.set('grn_number', numberLabel)
     const amount = lines.reduce((s, l) => {
       return s + roundFinancial((Number(l.quantity_received) || 0) * (Number(l.unit_cost) || 0))
     }, 0)

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
@@ -11,6 +11,14 @@ import type { SupplierInvoice } from '@/lib/finance-types'
 type SupplierOpt = { id: string; name: string }
 
 export default function SupplierInvoicesPage() {
+  return (
+    <Suspense fallback={<p className="p-6 text-[13px] text-text-secondary">Loading…</p>}>
+      <SupplierInvoicesPageInner />
+    </Suspense>
+  )
+}
+
+function SupplierInvoicesPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [rows, setRows] = useState<SupplierInvoice[]>([])

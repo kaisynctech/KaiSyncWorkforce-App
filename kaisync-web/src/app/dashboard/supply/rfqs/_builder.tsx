@@ -264,17 +264,17 @@ export default function RfqBuilder({ rfqId }: RfqBuilderProps) {
   async function sendRfq() {
     if (!savedRfqId.current) {
       await save('sent')
-      return
-    }
-    const supabase = createClient()
-    const now = new Date().toISOString()
-    await supabase.from('rfqs').update({ status: 'sent', updated_at: now }).eq('id', savedRfqId.current)
-    if (recipients.length > 0) {
-      await supabase
-        .from('rfq_recipients')
-        .update({ status: 'sent', sent_at: now })
-        .eq('rfq_id', savedRfqId.current!)
-        .eq('status', 'pending')
+    } else {
+      const supabase = createClient()
+      const now = new Date().toISOString()
+      await supabase.from('rfqs').update({ status: 'sent', updated_at: now }).eq('id', savedRfqId.current)
+      if (recipients.length > 0) {
+        await supabase
+          .from('rfq_recipients')
+          .update({ status: 'sent', sent_at: now })
+          .eq('rfq_id', savedRfqId.current!)
+          .eq('status', 'pending')
+      }
     }
 
     const { opened, missingEmail } = openRfqMailto({
@@ -298,7 +298,7 @@ export default function RfqBuilder({ rfqId }: RfqBuilderProps) {
     } else {
       showToast('RFQ marked as sent. Email opened — review and send.')
     }
-    void load()
+    if (savedRfqId.current) void load()
   }
 
   async function addRecipient(supplier: Supplier) {
