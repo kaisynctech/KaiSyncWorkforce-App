@@ -66,8 +66,26 @@ export default function SupplierInvoiceDetailPage() {
       setLinkedPo(null)
       // Load unlinked POs for same supplier
       if (typedInv.supplier_id) {
-        const { data: poRows } = await supabase.from('purchase_orders').select('id, po_number, total_amount').eq('company_id', member.companyId).eq('supplier_id', typedInv.supplier_id).is('po_id', null)
-        setUnlinkedPos((poRows ?? []) as UnlinkedPo[])
+        const { data: linkedInvoicePos } = await supabase
+          .from('supplier_invoices')
+          .select('po_id')
+          .eq('company_id', member.companyId)
+          .not('po_id', 'is', null)
+        const taken = new Set(
+          ((linkedInvoicePos ?? []) as { po_id: string | null }[])
+            .map(r => r.po_id)
+            .filter((id): id is string => Boolean(id)),
+        )
+        const { data: poRows } = await supabase
+          .from('purchase_orders')
+          .select('id, po_number, total_amount')
+          .eq('company_id', member.companyId)
+          .eq('supplier_id', typedInv.supplier_id)
+          .in('status', ['approved', 'sent', 'partially_received', 'received'])
+          .order('created_at', { ascending: false })
+        setUnlinkedPos(
+          ((poRows ?? []) as UnlinkedPo[]).filter(p => !taken.has(p.id)),
+        )
       }
     }
     setLoading(false)

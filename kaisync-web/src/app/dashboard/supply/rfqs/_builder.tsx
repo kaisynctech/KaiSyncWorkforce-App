@@ -135,6 +135,22 @@ export default function RfqBuilder({ rfqId }: RfqBuilderProps) {
           if (match.deal_id) setDealId(match.deal_id)
           setTitle(prev => prev.trim() || `RFQ — ${match.quote_number ?? ''} ${match.title}`.trim())
         }
+        const { data: qLines } = await supabase
+          .from('commercial_quote_lines')
+          .select('description, quantity, unit')
+          .eq('quote_id', preloadQuoteId)
+          .order('sort_order')
+        if (qLines && qLines.length > 0) {
+          setLines(
+            qLines.map((l: { description: string; quantity: number | null; unit: string | null }) => ({
+              key: nextKey(),
+              description: l.description,
+              unit: l.unit ?? 'each',
+              quantity: String(l.quantity ?? 1),
+              specifications: '',
+            })),
+          )
+        }
       }
     }
     setLoading(false)

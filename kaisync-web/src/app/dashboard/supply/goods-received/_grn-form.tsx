@@ -47,21 +47,26 @@ export default function GrnForm({ grnId }: { grnId?: string }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  const [showWhatsNext, setShowWhatsNext] = useState(false)
+  const [supplierId, setSupplierId] = useState<string | null>(null)
 
   const savedId = useRef<string | null>(isNew ? null : (grnId ?? null))
 
   function showToast(msg: string) { setToast(msg); setTimeout(() => setToast(null), 3000) }
 
   async function loadPoLines(selectedPoId: string) {
-    if (!selectedPoId) { setLines([]); setSupplierName(''); return }
+    if (!selectedPoId) { setLines([]); setSupplierName(''); setSupplierId(null); return }
     const supabase = createClient()
     const [{ data: poData }, { data: supplierData }, { data: poLines }] = await Promise.all([
       supabase.from('purchase_orders').select('id, po_number, supplier_id').eq('id', selectedPoId).maybeSingle(),
       supabase.from('purchase_orders').select('supplier:contractors!purchase_orders_supplier_id_fkey(name)').eq('id', selectedPoId).maybeSingle(),
       supabase.from('purchase_order_lines').select('*').eq('po_id', selectedPoId).order('sort_order'),
     ])
-    void poData // used for supplier_id reference
-    const suppName = (supplierData as { supplier?: { name: string }[] } | null)?.supplier?.[0]?.name ?? ''
+    const typedPo = poData as Po | null
+    setSupplierId(typedPo?.supplier_id ?? null)
+    const suppRaw = supplierData as { supplier?: { name: string } | { name: string }[] | null } | null
+    const supp = suppRaw?.supplier
+    const suppName = Array.isArray(supp) ? (supp[0]?.name ?? '') : (supp?.name ?? '')
     setSupplierName(suppName)
     setLines((poLines ?? []).map((l: {
       id: string;
@@ -112,6 +117,7 @@ export default function GrnForm({ grnId }: { grnId?: string }) {
           setPoId(g.po_id ?? '')
           setReceivedDate(g.received_date)
           setNotes(g.notes ?? '')
+          if (g.po_id) await loadPoLines(g.po_id)
         }
       }
       setLines((lineData ?? []).map((l: {
@@ -239,8 +245,25 @@ export default function GrnForm({ grnId }: { grnId?: string }) {
 
     setSaving(false)
     showToast('GRN saved!')
+    setShowWhatsNext(true)
     if (isNew && currentId) router.replace(`/dashboard/supply/goods-received/${currentId}`)
     else void load()
+  }
+
+  function openCreateSupplierInvoice() {
+    const id = savedId.current ?? grn?.id
+    const sid = supplierId ?? pos.find(p => p.id === poId)?.supplier_id ?? ''
+    const params = new URLSearchParams()
+    if (poId) params.set('po_id', poId)
+    if (sid) params.set('supplier_id', sid)
+    if (id) params.set('grn_id', id)
+    if (grn?.grn_number) params.set('grn_number', grn.grn_number)
+    const amount = lines.reduce((s, l) => {
+      return s + roundFinancial((Number(l.quantity_received) || 0) * (Number(l.unit_cost) || 0))
+    }, 0)
+    if (amount > 0) params.set('amount', String(amount))
+    setShowWhatsNext(false)
+    router.push(`/dashboard/finance/supplier-invoices?${params.toString()}`)
   }
 
   if (loading) return <p className="p-6 text-[13px] text-text-secondary">Loading…</p>
@@ -370,6 +393,46 @@ export default function GrnForm({ grnId }: { grnId?: string }) {
           </div>
         </div>
       </div>
+
+      {showWhatsNext && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="relative bg-surface rounded-xl shadow-2xl w-full max-w-md mx-4 p-6">
+            <h3 className="text-[15px] font-semibold text-text-primary mb-1">What&apos;s next?</h3>
+            <p className="text-[13px] text-text-secondary mb-5">
+              Goods received. Capture the supplier invoice against this PO when you have it.
+            </p>
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={openCreateSupplierInvoice}
+                className="h-10 px-4 rounded-lg bg-primary text-white text-left text-[13px] font-medium hover:bg-primary/90 transition-colors flex items-center gap-2"
+              >
+                <span className="material-icons text-[18px]">receipt_long</span>
+                Create supplier invoice
+              </button>
+              {poId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowWhatsNext(false)
+                    router.push(`/dashboard/supply/purchase-orders/${poId}`)
+                  }}
+                  className="h-10 px-4 rounded-lg border border-divider text-left text-[13px] font-medium text-text-primary hover:bg-surface-elevated transition-colors"
+                >
+                  Back to purchase order
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowWhatsNext(false)}
+                className="h-10 px-4 rounded-lg text-[13px] text-text-secondary hover:bg-surface-elevated transition-colors"
+              >
+                Not now
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
