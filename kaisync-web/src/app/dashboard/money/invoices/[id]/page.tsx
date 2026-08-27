@@ -1,10 +1,11 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { Suspense, useCallback, useEffect, useState } from 'react'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { fmtMoney } from '@/lib/finance-calc'
+import { downloadInvoicePdf, openInvoiceMailto } from '@/lib/invoice-pdf'
 import type { FinanceInvoice, FinanceInvoiceLine } from '@/lib/finance-types'
 
 // ─── Extended types ────────────────────────────────────────────────────────────
@@ -89,19 +90,33 @@ const selectCls = 'h-9 px-3 border border-border rounded-md text-[13px] bg-backg
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function MoneyInvoiceDetailPage() {
+  return (
+    <Suspense fallback={<p className="p-6 text-[13px] text-text-secondary">Loading…</p>}>
+      <MoneyInvoiceDetailInner />
+    </Suspense>
+  )
+}
+
+function MoneyInvoiceDetailInner() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const openWhatsNext = searchParams.get('whats_next') === '1'
 
   const [inv, setInv]       = useState<Invoice | null>(null)
   const [lines, setLines]   = useState<FinanceInvoiceLine[]>([])
   const [txRows, setTxRows] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
   const [companyId, setCompanyId] = useState<string | null>(null)
+  const [companyName, setCompanyName] = useState('KaiSync')
+  const [clientEmail, setClientEmail] = useState<string | null>(null)
 
   // Modal states
   const [showPay, setShowPay]   = useState(false)
   const [showVoid, setShowVoid] = useState(false)
   const [showCN, setShowCN]     = useState(false)
+  const [showWhatsNext, setShowWhatsNext] = useState(openWhatsNext)
+  const [whatsNextMode, setWhatsNextMode] = useState<'draft' | 'sent' | 'paid'>('draft')
   const [busy, setBusy]         = useState(false)
   const [err, setErr]           = useState<string | null>(null)
 
@@ -126,9 +141,9 @@ export default function MoneyInvoiceDetailPage() {
     if (!member) { setLoading(false); return }
     setCompanyId(member.companyId)
 
-    const [{ data: invoice }, { data: lineRows }, { data: transactions }] = await Promise.all([
+    const [{ data: invoice }, { data: lineRows }, { data: transactions }, { data: company }] = await Promise.all([
       supabase.from('finance_invoices')
-        .select('*, clients(name), client_deals(title)')
+        .select('*, clients(name, email), client_deals(title)')
         .eq('id', id)
         .maybeSingle(),
       supabase.from('finance_invoice_lines')
@@ -140,11 +155,14 @@ export default function MoneyInvoiceDetailPage() {
         .eq('source_table', 'finance_invoices')
         .eq('source_id', id)
         .order('transaction_date', { ascending: false }),
+      supabase.from('companies').select('name').eq('id', member.companyId).maybeSingle(),
     ])
 
     setInv(invoice as Invoice | null)
     setLines((lineRows ?? []) as FinanceInvoiceLine[])
     setTxRows((transactions ?? []) as Transaction[])
+    setCompanyName((company as { name?: string } | null)?.name ?? 'KaiSync')
+    setClientEmail((invoice as { clients?: { email?: string | null } | null } | null)?.clients?.email ?? null)
 
     if (invoice) {
       const bal = (invoice as Invoice).balance_due ?? 0
@@ -155,6 +173,59 @@ export default function MoneyInvoiceDetailPage() {
   }, [id])
 
   useEffect(() => { void load() }, [load])
+
+  useEffect(() => {
+    if (openWhatsNext) {
+      setWhatsNextMode('draft')
+      setShowWhatsNext(true)
+    }
+  }, [openWhatsNext])
+
+  function buildPdfInput() {
+    if (!inv) return null
+    return {
+      invoice_number: inv.invoice_number,
+      status: inv.status,
+      issue_date: inv.issue_date,
+      due_date: inv.due_date,
+      notes: inv.notes,
+      client_name: (inv.clients as { name?: string } | null)?.name ?? null,
+      client_email: clientEmail,
+      company_name: companyName,
+      lines: lines.map(l => ({
+        description: l.description,
+        qty: l.quantity,
+        unit_price: l.unit_price,
+        vat_amount: l.vat_amount,
+        total: l.total_amount,
+      })),
+      subtotal: inv.subtotal,
+      vat: inv.vat_amount,
+      total: inv.total_amount,
+      amount_paid: inv.amount_paid,
+      balance_due: inv.balance_due,
+    }
+  }
+
+  async function markInvoiceSent(): Promise<boolean> {
+    if (!inv || !companyId) return false
+    const supabase = createClient()
+    const now = new Date().toISOString()
+    let invoiceNumber = inv.invoice_number
+    if (!invoiceNumber) {
+      const { data: num } = await (supabase.rpc as unknown as (
+        name: string,
+        args: Record<string, unknown>,
+      ) => Promise<{ data: string | null }>)('generate_invoice_number', { p_company_id: companyId })
+      invoiceNumber = num ?? null
+    }
+    const { error } = await supabase.from('finance_invoices').update({
+      status: 'sent',
+      sent_at: now,
+      invoice_number: invoiceNumber,
+    }).eq('id', inv.id)
+    return !error
+  }
 
   // ── Record Payment ────────────────────────────────────────────────────────────
   async function handleRecordPayment() {
@@ -211,6 +282,8 @@ export default function MoneyInvoiceDetailPage() {
 
       setShowPay(false)
       await load()
+      setWhatsNextMode('paid')
+      setShowWhatsNext(true)
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Failed to record payment')
     }
@@ -221,10 +294,43 @@ export default function MoneyInvoiceDetailPage() {
   async function handleMarkSent() {
     if (!inv) return
     setBusy(true)
-    const supabase = createClient()
-    await supabase.from('finance_invoices').update({ status: 'sent' }).eq('id', inv.id)
+    setErr(null)
+    const ok = await markInvoiceSent()
+    if (!ok) setErr('Failed to mark invoice as sent')
     await load()
+    setWhatsNextMode('sent')
+    setShowWhatsNext(true)
     setBusy(false)
+  }
+
+  async function handleSendWithMailto() {
+    if (!inv) return
+    setBusy(true)
+    setErr(null)
+    const ok = await markInvoiceSent()
+    if (!ok) {
+      setErr('Failed to mark invoice as sent')
+      setBusy(false)
+      return
+    }
+    await load()
+    const pdf = buildPdfInput()
+    if (pdf) {
+      downloadInvoicePdf(pdf)
+      openInvoiceMailto({
+        to: clientEmail,
+        invoiceNumber: pdf.invoice_number,
+        companyName,
+      })
+    }
+    setWhatsNextMode('sent')
+    setShowWhatsNext(true)
+    setBusy(false)
+  }
+
+  function handleDownloadPdf() {
+    const pdf = buildPdfInput()
+    if (pdf) downloadInvoicePdf(pdf)
   }
 
   // ── Void Invoice ──────────────────────────────────────────────────────────────
@@ -307,7 +413,8 @@ export default function MoneyInvoiceDetailPage() {
       }
 
       setShowCN(false)
-      router.push('/dashboard/money/credit-notes')
+      if (cn) router.push(`/dashboard/money/credit-notes/${cn.id}?whats_next=1`)
+      else router.push('/dashboard/money/credit-notes')
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Failed to issue credit note')
     }
@@ -471,14 +578,30 @@ export default function MoneyInvoiceDetailPage() {
         {/* Action buttons */}
         <div className="flex flex-wrap gap-2">
           {canMarkSent && (
-            <button
-              onClick={handleMarkSent}
-              disabled={busy}
-              className="btn-primary h-9 px-4 text-[13px] flex items-center gap-1.5 disabled:opacity-50"
-            >
-              <span className="material-icons text-[16px]">send</span>Mark Sent
-            </button>
+            <>
+              <button
+                onClick={() => void handleSendWithMailto()}
+                disabled={busy}
+                className="btn-primary h-9 px-4 text-[13px] flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <span className="material-icons text-[16px]">send</span>
+                {busy ? 'Sending…' : 'Send (PDF + email)'}
+              </button>
+              <button
+                onClick={() => void handleMarkSent()}
+                disabled={busy}
+                className="btn-outlined h-9 px-4 text-[13px] flex items-center gap-1.5 disabled:opacity-50"
+              >
+                Mark Sent
+              </button>
+            </>
           )}
+          <button
+            onClick={handleDownloadPdf}
+            className="btn-outlined h-9 px-4 text-[13px] flex items-center gap-1.5"
+          >
+            <span className="material-icons text-[16px]">picture_as_pdf</span>PDF
+          </button>
           {canPay && (
             <button
               onClick={() => { setErr(null); setShowPay(true) }}
@@ -504,7 +627,81 @@ export default function MoneyInvoiceDetailPage() {
             </button>
           )}
         </div>
+
+        {err && !showPay && !showVoid && !showCN && (
+          <p className="text-[12px] text-red-600">{err}</p>
+        )}
       </div>
+
+      {/* What's next? */}
+      {showWhatsNext && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="relative bg-surface rounded-xl shadow-2xl w-full max-w-md mx-4 p-6">
+            <h3 className="text-[15px] font-semibold text-text-primary mb-1">What&apos;s next?</h3>
+            <p className="text-[13px] text-text-secondary mb-5">
+              {whatsNextMode === 'draft' && 'Invoice saved as draft. Send it to the client, or continue later.'}
+              {whatsNextMode === 'sent' && 'Invoice marked as sent. Record a payment when funds arrive.'}
+              {whatsNextMode === 'paid' && 'Payment recorded. Issue a credit note if needed, or continue.'}
+            </p>
+            <div className="flex flex-col gap-2">
+              {whatsNextMode === 'draft' && (
+                <>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => { setShowWhatsNext(false); void handleSendWithMailto() }}
+                    className="h-10 px-4 rounded-lg bg-primary text-white text-left text-[13px] font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
+                  >
+                    Send (PDF + email)
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => { setShowWhatsNext(false); void handleMarkSent() }}
+                    className="h-10 px-4 rounded-lg border border-divider text-left text-[13px] font-medium text-text-primary hover:bg-surface-elevated transition-colors disabled:opacity-50"
+                  >
+                    Mark sent only
+                  </button>
+                </>
+              )}
+              {(whatsNextMode === 'sent' || whatsNextMode === 'paid') && canPay && (
+                <button
+                  type="button"
+                  onClick={() => { setShowWhatsNext(false); setShowPay(true) }}
+                  className="h-10 px-4 rounded-lg bg-primary text-white text-left text-[13px] font-medium hover:bg-primary/90 transition-colors"
+                >
+                  Record payment
+                </button>
+              )}
+              {(whatsNextMode === 'sent' || whatsNextMode === 'paid') && canCreditNote && (
+                <button
+                  type="button"
+                  onClick={() => { setShowWhatsNext(false); setShowCN(true) }}
+                  className="h-10 px-4 rounded-lg border border-divider text-left text-[13px] font-medium text-text-primary hover:bg-surface-elevated transition-colors"
+                >
+                  Issue credit note
+                </button>
+              )}
+              {inv.deal_id && (
+                <button
+                  type="button"
+                  onClick={() => router.push(`/dashboard/projects/${inv.deal_id}`)}
+                  className="h-10 px-4 rounded-lg border border-divider text-left text-[13px] font-medium text-text-primary hover:bg-surface-elevated transition-colors"
+                >
+                  Open linked project
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowWhatsNext(false)}
+                className="h-10 px-4 rounded-lg text-[13px] text-text-secondary hover:bg-surface-elevated transition-colors"
+              >
+                Not now
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Record Payment Modal ─────────────────────────────────────────────────── */}
       {showPay && (
