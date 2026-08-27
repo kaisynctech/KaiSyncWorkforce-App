@@ -5,6 +5,9 @@ import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import { createProject } from '@/lib/projects'
+import { createJob } from '@/lib/jobs'
+import { createSupplyRfqFromQuote } from '@/lib/supply-rfq'
 import SimpleQuoteLineRow from './SimpleQuoteLineRow'
 import RateCardPicker, { type RateCardSelection } from './RateCardPicker'
 
@@ -23,6 +26,7 @@ export interface SimpleQuoteLine {
 }
 
 type ClientRow = { id: string; name: string; email?: string | null }
+type LinkOpt = { id: string; title: string; label?: string | null }
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -76,6 +80,8 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   const [clientId,    setClientId]    = useState<string | null>(null)
   const [validUntil,  setValidUntil]  = useState(todayPlus(14))
   const [notes,       setNotes]       = useState('')
+  const [dealId,      setDealId]      = useState<string | null>(null)
+  const [jobId,       setJobId]       = useState<string | null>(null)
 
   // ── Lines ─────────────────────────────────────────────────────────────────
   const [lines, setLines] = useState<SimpleQuoteLine[]>([blankLine()])
@@ -89,10 +95,20 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   const [newClientEmail, setNewClientEmail] = useState('')
   const [creatingClient, setCreatingClient] = useState(false)
 
+  // ── Optional project / job link ───────────────────────────────────────────
+  const [projects,   setProjects]   = useState<LinkOpt[]>([])
+  const [jobs,       setJobs]       = useState<LinkOpt[]>([])
+  const [linkOpen,   setLinkOpen]   = useState(false)
+
   // ── UI ────────────────────────────────────────────────────────────────────
-  const [showRatePicker, setShowRatePicker] = useState(false)
-  const [saveState,      setSaveState]      = useState<SaveState>('idle')
-  const [showSendModal,  setShowSendModal]  = useState(false)
+  const [showRatePicker,  setShowRatePicker]  = useState(false)
+  const [saveState,       setSaveState]       = useState<SaveState>('idle')
+  const [showSendModal,   setShowSendModal]   = useState(false)
+  const [showAcceptModal, setShowAcceptModal] = useState(false)
+  const [showWhatsNext,   setShowWhatsNext]   = useState(false)
+  const [actionBusy,      setActionBusy]      = useState(false)
+  const [actionError,     setActionError]     = useState<string | null>(null)
+  const [rfqBusy,         setRfqBusy]         = useState(false)
 
   // ── Mutable refs (for use inside async callbacks without stale closures) ──
   const isLoaded       = useRef(false)
@@ -107,6 +123,8 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   const validUntilRef = useRef(todayPlus(14))
   const notesRef      = useRef('')
   const statusRef     = useRef('draft')
+  const dealIdRef     = useRef<string | null>(null)
+  const jobIdRef      = useRef<string | null>(null)
   const linesRef      = useRef<SimpleQuoteLine[]>([blankLine()])
   const quoteNumberRef = useRef<string | null>(null)
 
@@ -119,6 +137,8 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   validUntilRef.current  = validUntil
   notesRef.current       = notes
   statusRef.current      = status
+  dealIdRef.current      = dealId
+  jobIdRef.current       = jobId
   linesRef.current       = lines
   quoteNumberRef.current = quoteNumber
 
@@ -141,15 +161,43 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   }, [authReady, companyId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadData(cid: string) {
-    // Load clients list
-    const { data: cData } = await supabase
-      .from('clients')
-      .select('id, name, email')
-      .eq('company_id', cid)
-      .eq('is_active', true)
-      .order('name')
-      .limit(200)
+    // Load clients, projects, jobs in parallel
+    const [{ data: cData }, { data: pData }, { data: jData }] = await Promise.all([
+      supabase
+        .from('clients')
+        .select('id, name, email')
+        .eq('company_id', cid)
+        .eq('is_active', true)
+        .order('name')
+        .limit(200),
+      supabase
+        .from('client_deals')
+        .select('id, title, project_code')
+        .eq('company_id', cid)
+        .order('created_at', { ascending: false })
+        .limit(200),
+      supabase
+        .from('jobs')
+        .select('id, title, job_code')
+        .eq('company_id', cid)
+        .order('created_at', { ascending: false })
+        .limit(200),
+    ])
     setClients((cData ?? []) as ClientRow[])
+    setProjects(
+      ((pData ?? []) as { id: string; title: string; project_code: string | null }[]).map(p => ({
+        id: p.id,
+        title: p.title,
+        label: p.project_code,
+      })),
+    )
+    setJobs(
+      ((jData ?? []) as { id: string; title: string; job_code: string | null }[]).map(j => ({
+        id: j.id,
+        title: j.title,
+        label: j.job_code,
+      })),
+    )
 
     // Load existing quote
     const qid = quoteIdRef.current
@@ -180,6 +228,11 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         setValidUntil(vu);         validUntilRef.current = vu
         const n = (q.scope_notes as string | null) ?? ''
         setNotes(n);               notesRef.current = n
+        const did = (q.deal_id as string | null) ?? null
+        setDealId(did);            dealIdRef.current = did
+        const jid = (q.job_id as string | null) ?? null
+        setJobId(jid);             jobIdRef.current = jid
+        if (did || jid) setLinkOpen(true)
 
         // Pre-fill client search input from loaded clients
         const match = (cData ?? []).find((c: ClientRow) => c.id === cid2)
@@ -207,10 +260,10 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   }
 
   // ── Save ──────────────────────────────────────────────────────────────────
-  async function doSave(overrideStatus?: string) {
+  async function doSave(overrideStatus?: string): Promise<string | null> {
     const cid = companyIdRef.current
     const eid = employeeIdRef.current
-    if (!cid || !eid) return
+    if (!cid || !eid) return null
 
     setSaveState('saving')
     try {
@@ -228,20 +281,38 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
       }
 
       const newStatus = overrideStatus ?? statusRef.current
+      const ls = linesRef.current
+      const lineSubtotal = ls.reduce((s, l) => s + l.total, 0)
+      const lineVat = lineSubtotal * 0.15
+      const lineTotal = lineSubtotal + lineVat
 
       // Upsert quote header
       const payload: Record<string, unknown> = {
         company_id:   cid,
         quote_number: qNum,
         client_id:    clientIdRef.current,
+        deal_id:      dealIdRef.current,
+        job_id:       jobIdRef.current,
         title:        titleRef.current.trim() || 'Untitled Quote',
         status:       newStatus,
         valid_until:  validUntilRef.current,
         scope_notes:  notesRef.current.trim() || null,
+        subtotal:     lineSubtotal,
+        vat_amount:   lineVat,
+        total_amount: lineTotal,
         updated_at:   new Date().toISOString(),
       }
       if (!qid) payload.created_by = eid
       if (qid)  payload.id = qid
+      if (overrideStatus === 'sent') {
+        payload.sent_at = new Date().toISOString()
+      }
+      if (overrideStatus === 'accepted') {
+        payload.accepted_at = new Date().toISOString()
+      }
+      if (overrideStatus === 'declined') {
+        payload.declined_at = new Date().toISOString()
+      }
 
       const { data: saved, error: saveErr } = await supabase
         .from('commercial_quotes')
@@ -266,7 +337,6 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
       }
 
       // Save lines: delete all + re-insert
-      const ls = linesRef.current
       await supabase.from('commercial_quote_lines').delete().eq('quote_id', savedId)
       if (ls.length > 0) {
         await supabase.from('commercial_quote_lines').insert(
@@ -296,10 +366,12 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
       setSaveState('saved')
       if (savedFadeTimer.current) clearTimeout(savedFadeTimer.current)
       savedFadeTimer.current = setTimeout(() => setSaveState('idle'), 2000)
+      return savedId
 
     } catch (err) {
       console.error('Quote save failed', err)
       setSaveState('error')
+      return null
     }
   }
 
@@ -323,6 +395,12 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   }
   function updateNotes(v: string) {
     setNotes(v); notesRef.current = v; scheduleAutoSave()
+  }
+  function updateDeal(v: string | null) {
+    setDealId(v); dealIdRef.current = v; scheduleAutoSave()
+  }
+  function updateJob(v: string | null) {
+    setJobId(v); jobIdRef.current = v; scheduleAutoSave()
   }
 
   // ── Line operations ────────────────────────────────────────────────────────
@@ -408,6 +486,197 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   async function handleMarkAsSent() {
     await doSave('sent')
     setShowSendModal(false)
+  }
+
+  async function handleMarkAccepted() {
+    setActionError(null)
+    const id = await doSave('accepted')
+    setShowAcceptModal(false)
+    if (!id) {
+      setActionError('Could not mark quote as accepted. Try saving again.')
+      return
+    }
+    try {
+      await fetch('/api/automations/quote-accepted', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quote_id: id }),
+      })
+    } catch {
+      /* automation failure must not interrupt the quote flow */
+    }
+    setShowWhatsNext(true)
+  }
+
+  async function handleCreateProjectFromQuote() {
+    const cid = companyIdRef.current
+    const qid = quoteIdRef.current
+    if (!cid || !qid) return
+    setActionBusy(true)
+    setActionError(null)
+    const result = await createProject(supabase, {
+      companyId: cid,
+      title: titleRef.current.trim() || quoteNumberRef.current || 'Project from quote',
+      clientId: clientIdRef.current,
+      status: 'in_progress',
+      assignCode: true,
+      notes: notesRef.current.trim() || null,
+    })
+    if (!result.ok) {
+      setActionError(result.message)
+      setActionBusy(false)
+      return
+    }
+    setDealId(result.data.id)
+    dealIdRef.current = result.data.id
+    await supabase
+      .from('commercial_quotes')
+      .update({ deal_id: result.data.id })
+      .eq('id', qid)
+      .eq('company_id', cid)
+    setActionBusy(false)
+    setShowWhatsNext(false)
+    router.push(`/dashboard/projects/${result.data.id}`)
+  }
+
+  async function handleCreateJobFromQuote() {
+    const cid = companyIdRef.current
+    const eid = employeeIdRef.current
+    const qid = quoteIdRef.current
+    if (!cid || !qid) return
+    setActionBusy(true)
+    setActionError(null)
+    const result = await createJob(supabase, {
+      companyId: cid,
+      title: titleRef.current.trim() || quoteNumberRef.current || 'Job from quote',
+      clientId: clientIdRef.current,
+      dealId: dealIdRef.current,
+      createdByEmployeeId: eid,
+      assignCode: true,
+      status: 'open',
+    })
+    if (!result.ok) {
+      setActionError(result.message)
+      setActionBusy(false)
+      return
+    }
+    setJobId(result.data.id)
+    jobIdRef.current = result.data.id
+    await supabase
+      .from('commercial_quotes')
+      .update({ job_id: result.data.id })
+      .eq('id', qid)
+      .eq('company_id', cid)
+    setActionBusy(false)
+    setShowWhatsNext(false)
+    router.push(`/dashboard/jobs/${result.data.id}`)
+  }
+
+  async function handleCreateInvoiceFromQuote() {
+    const cid = companyIdRef.current
+    const eid = employeeIdRef.current
+    const qid = quoteIdRef.current
+    if (!cid || !qid) return
+    setActionBusy(true)
+    setActionError(null)
+
+    const ls = linesRef.current.filter(l => l.description.trim() || l.total > 0)
+    const lineSubtotal = ls.reduce((s, l) => s + l.total, 0)
+    const lineVat = lineSubtotal * 0.15
+    const lineTotal = lineSubtotal + lineVat
+    const issue = new Date().toISOString().slice(0, 10)
+
+    const { data: inv, error: invErr } = await supabase
+      .from('finance_invoices')
+      .insert({
+        company_id: cid,
+        client_id: clientIdRef.current,
+        deal_id: dealIdRef.current,
+        project_id: dealIdRef.current,
+        quote_id: qid,
+        invoice_number: null,
+        status: 'draft',
+        currency: 'ZAR',
+        subtotal: lineSubtotal,
+        vat_rate: 0.15,
+        vat_amount: lineVat,
+        total_amount: lineTotal,
+        amount_paid: 0,
+        balance_due: lineTotal,
+        is_vat_inclusive: false,
+        tax_type: 'standard',
+        issue_date: issue,
+        due_date: null,
+        created_by: eid,
+        invoice_type: 'standard',
+      })
+      .select('id')
+      .maybeSingle()
+
+    if (invErr || !inv) {
+      setActionError(invErr?.message ?? 'Failed to create invoice')
+      setActionBusy(false)
+      return
+    }
+
+    const invId = (inv as { id: string }).id
+    if (ls.length > 0) {
+      const { error: lineErr } = await supabase.from('finance_invoice_lines').insert(
+        ls.map((l, i) => {
+          const sub = l.total
+          const vatAmt = sub * 0.15
+          return {
+            company_id: cid,
+            invoice_id: invId,
+            line_no: i + 1,
+            description: l.description.trim() || `Line ${i + 1}`,
+            quantity: l.qty,
+            unit_price: l.unit_price,
+            subtotal: sub,
+            vat_rate: 0.15,
+            vat_amount: vatAmt,
+            total_amount: sub + vatAmt,
+            is_vat_inclusive: false,
+            tax_type: 'standard',
+          }
+        }),
+      )
+      if (lineErr) {
+        setActionError(lineErr.message)
+        setActionBusy(false)
+        return
+      }
+    }
+
+    setActionBusy(false)
+    setShowWhatsNext(false)
+    router.push(`/dashboard/money/invoices/${invId}`)
+  }
+
+  async function handleCreateRfqFromQuote() {
+    const cid = companyIdRef.current
+    const eid = employeeIdRef.current
+    setRfqBusy(true)
+    setActionError(null)
+    const savedId = await doSave()
+    if (!savedId || !cid) {
+      setActionError('Save the quote before creating an RFQ.')
+      setRfqBusy(false)
+      return
+    }
+    const result = await createSupplyRfqFromQuote(supabase, {
+      companyId: cid,
+      quoteId: savedId,
+      employeeId: eid,
+      dealId: dealIdRef.current,
+      reuseExisting: true,
+    })
+    setRfqBusy(false)
+    if (!result.ok) {
+      setActionError(result.message)
+      return
+    }
+    router.push(`/dashboard/supply/rfqs/${result.data.id}`)
   }
 
   // ── Computed totals ────────────────────────────────────────────────────────
@@ -508,15 +777,51 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
             </button>
             <button
               type="button"
-              onClick={() => setShowSendModal(true)}
-              disabled={saveState === 'saving'}
-              className="h-9 px-5 rounded-lg bg-primary text-white text-[13px] font-medium hover:bg-primary/90 transition-colors flex items-center gap-1.5 disabled:opacity-50"
+              onClick={() => void handleCreateRfqFromQuote()}
+              disabled={saveState === 'saving' || rfqBusy}
+              className="h-9 px-4 rounded-lg border border-divider text-[13px] text-text-secondary font-medium hover:bg-surface-elevated transition-colors disabled:opacity-50"
+              title="Create a Supply RFQ from this quote’s lines"
             >
-              Mark as sent
-              <span className="material-icons text-[15px]">send</span>
+              {rfqBusy ? 'Opening RFQ…' : 'Create RFQ'}
             </button>
+            {status !== 'accepted' && status !== 'declined' && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowSendModal(true)}
+                  disabled={saveState === 'saving'}
+                  className="h-9 px-4 rounded-lg border border-divider text-[13px] text-text-secondary font-medium hover:bg-surface-elevated transition-colors disabled:opacity-50"
+                >
+                  Mark as sent
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowAcceptModal(true)}
+                  disabled={saveState === 'saving'}
+                  className="h-9 px-5 rounded-lg bg-primary text-white text-[13px] font-medium hover:bg-primary/90 transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  Mark accepted
+                  <span className="material-icons text-[15px]">check</span>
+                </button>
+              </>
+            )}
+            {status === 'accepted' && (
+              <button
+                type="button"
+                onClick={() => { setActionError(null); setShowWhatsNext(true) }}
+                className="h-9 px-5 rounded-lg bg-primary text-white text-[13px] font-medium hover:bg-primary/90 transition-colors"
+              >
+                What&apos;s next?
+              </button>
+            )}
           </div>
         </div>
+
+        {actionError && !showWhatsNext && !showAcceptModal && (
+          <p className="text-[12px] text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+            {actionError}
+          </p>
+        )}
 
         {/* ── Quote meta ── */}
         <div className="rounded-xl border border-divider bg-surface p-5 grid grid-cols-1 sm:grid-cols-4 gap-4">
@@ -631,6 +936,63 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
               className="w-full h-9 rounded-lg border border-divider bg-surface px-3 text-[13px] text-text-primary focus:outline-none focus:border-primary transition-colors"
             />
           </div>
+        </div>
+
+        {/* ── Optional project / job link ── */}
+        <div className="rounded-xl border border-divider bg-surface overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setLinkOpen(v => !v)}
+            className="w-full flex items-center justify-between px-5 py-3 text-left hover:bg-surface-elevated transition-colors"
+          >
+            <div>
+              <p className="text-[13px] font-medium text-text-primary">Link to project or job</p>
+              <p className="text-[11px] text-text-secondary mt-0.5">
+                Optional — leave blank for a plain inventory or services sale
+              </p>
+            </div>
+            <span className="material-icons text-text-secondary text-[20px]">
+              {linkOpen ? 'expand_less' : 'expand_more'}
+            </span>
+          </button>
+          {linkOpen && (
+            <div className="px-5 pb-5 grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-divider pt-4">
+              <div>
+                <label className="block text-[11px] text-text-secondary uppercase tracking-wide mb-1.5">
+                  Project
+                </label>
+                <select
+                  value={dealId ?? ''}
+                  onChange={e => updateDeal(e.target.value || null)}
+                  className="w-full h-9 rounded-lg border border-divider bg-surface px-3 text-[13px] text-text-primary focus:outline-none focus:border-primary transition-colors"
+                >
+                  <option value="">— None —</option>
+                  {projects.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.label ? `${p.label} · ${p.title}` : p.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[11px] text-text-secondary uppercase tracking-wide mb-1.5">
+                  Job
+                </label>
+                <select
+                  value={jobId ?? ''}
+                  onChange={e => updateJob(e.target.value || null)}
+                  className="w-full h-9 rounded-lg border border-divider bg-surface px-3 text-[13px] text-text-primary focus:outline-none focus:border-primary transition-colors"
+                >
+                  <option value="">— None —</option>
+                  {jobs.map(j => (
+                    <option key={j.id} value={j.id}>
+                      {j.label ? `${j.label} · ${j.title}` : j.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ── Lines ── */}
@@ -777,6 +1139,94 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
                 className="h-9 px-5 rounded-lg bg-primary text-white text-[13px] font-medium hover:bg-primary/90 transition-colors"
               >
                 Mark as sent
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Mark accepted confirmation ── */}
+      {showAcceptModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="relative bg-surface rounded-xl shadow-2xl w-full max-w-sm mx-4 p-6">
+            <h3 className="text-[15px] font-semibold text-text-primary mb-2">Mark as accepted?</h3>
+            <p className="text-[13px] text-text-secondary mb-6">
+              The client has accepted this quote
+              {clientName ? ` (${clientName})` : ''}. You can create a project, job, or invoice next.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                type="button"
+                onClick={() => setShowAcceptModal(false)}
+                className="h-9 px-4 rounded-lg border border-divider text-[13px] text-text-secondary hover:bg-surface-elevated transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleMarkAccepted()}
+                className="h-9 px-5 rounded-lg bg-primary text-white text-[13px] font-medium hover:bg-primary/90 transition-colors"
+              >
+                Mark accepted
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── What's next? ── */}
+      {showWhatsNext && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="relative bg-surface rounded-xl shadow-2xl w-full max-w-md mx-4 p-6">
+            <h3 className="text-[15px] font-semibold text-text-primary mb-1">What&apos;s next?</h3>
+            <p className="text-[13px] text-text-secondary mb-5">
+              Quote accepted. Create follow-up work now, or skip and do it later.
+            </p>
+            {actionError && (
+              <p className="text-[12px] text-red-600 mb-3 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                {actionError}
+              </p>
+            )}
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                disabled={actionBusy}
+                onClick={() => void handleCreateProjectFromQuote()}
+                className="h-10 px-4 rounded-lg border border-divider text-left text-[13px] font-medium text-text-primary hover:bg-surface-elevated transition-colors disabled:opacity-50"
+              >
+                Create Project
+              </button>
+              <button
+                type="button"
+                disabled={actionBusy}
+                onClick={() => void handleCreateJobFromQuote()}
+                className="h-10 px-4 rounded-lg border border-divider text-left text-[13px] font-medium text-text-primary hover:bg-surface-elevated transition-colors disabled:opacity-50"
+              >
+                Create Job
+              </button>
+              <button
+                type="button"
+                disabled={actionBusy}
+                onClick={() => void handleCreateInvoiceFromQuote()}
+                className="h-10 px-4 rounded-lg border border-divider text-left text-[13px] font-medium text-text-primary hover:bg-surface-elevated transition-colors disabled:opacity-50"
+              >
+                Create Invoice
+              </button>
+              <button
+                type="button"
+                disabled={actionBusy || rfqBusy}
+                onClick={() => void handleCreateRfqFromQuote()}
+                className="h-10 px-4 rounded-lg border border-divider text-left text-[13px] font-medium text-text-primary hover:bg-surface-elevated transition-colors disabled:opacity-50"
+              >
+                Create RFQ
+              </button>
+              <button
+                type="button"
+                disabled={actionBusy}
+                onClick={() => { setShowWhatsNext(false); setActionError(null) }}
+                className="h-10 px-4 rounded-lg text-[13px] text-text-secondary hover:bg-surface-elevated transition-colors disabled:opacity-50"
+              >
+                Not now
               </button>
             </div>
           </div>

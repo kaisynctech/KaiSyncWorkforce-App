@@ -16,9 +16,14 @@ import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permission
 import {
   allocateProjectCode,
   createProject,
-  sendProjectQuotation,
   updateProject,
 } from '@/lib/projects'
+import {
+  ensureMoneyQuoteForProject,
+  findMoneyQuoteForProject,
+  sendProjectQuotationViaMoneyQuote,
+  type MoneyQuoteLink,
+} from '@/lib/project-money-quote'
 import { logProjectEvent } from '@/lib/project-events'
 import type { Project, Client, Employee, Job, ProjectDocument, ProjectQuotationLine } from '@/types/database'
 
@@ -66,8 +71,11 @@ export default function ProjectDetailPage() {
   const [docType, setDocType] = useState('contract')
   const [error, setError] = useState<string | null>(null)
   const [companyId, setCompanyId] = useState<string | null>(null)
+  const [employeeId, setEmployeeId] = useState<string | null>(null)
   const [perms, setPerms] = useState<PermissionSet | null>(null)
   const [sendBusy, setSendBusy] = useState(false)
+  const [moneyQuote, setMoneyQuote] = useState<MoneyQuoteLink | null>(null)
+  const [moneyQuoteBusy, setMoneyQuoteBusy] = useState(false)
 
   const canCreate = can(perms, PERM.projectsCreate)
   const canEdit = can(perms, PERM.projectsEdit)
@@ -110,6 +118,7 @@ export default function ProjectDetailPage() {
     const member = await resolveCurrentMember(supabase)
     if (!member) { setError('not_linked'); setLoading(false); return }
     setCompanyId(member.companyId)
+    setEmployeeId(member.employeeId)
 
     const { data: me } = await supabase
       .from('employees')
@@ -145,6 +154,10 @@ export default function ProjectDetailPage() {
     if (!pRes.data) { router.push('/dashboard/projects'); return }
 
     const p = pRes.data as Project
+    setMoneyQuote(await findMoneyQuoteForProject(supabase, {
+      companyId: member.companyId,
+      projectId,
+    }))
     setProject(p)
     setTitle(p.title ?? '')
     setCode(p.project_code ?? '')
@@ -237,19 +250,47 @@ export default function ProjectDetailPage() {
   }
 
   async function handleSendQuotation() {
-    if (!companyId || !canEdit || lines.length === 0) return
+    if (!companyId || !employeeId || !canEdit || lines.length === 0) return
     setSendBusy(true)
     setError(null)
     const supabase = createClient()
-    const result = await sendProjectQuotation(supabase, {
+    const result = await sendProjectQuotationViaMoneyQuote(supabase, {
       companyId,
       projectId,
+      employeeId,
+      clientId: clientId || null,
+      title: title.trim() || project?.title || 'Project quotation',
+      scopeNotes: quotationNotes.trim() || null,
+      validUntil: useQuotationValidUntil ? (quotationValidUntil || null) : null,
       previousStatus: project?.status ?? null,
     })
     setSendBusy(false)
     if (!result.ok) { setError(result.message); return }
     setStatus('sent')
     setProject(prev => prev ? { ...prev, status: 'sent' } : prev)
+    const linked = await findMoneyQuoteForProject(supabase, { companyId, projectId })
+    setMoneyQuote(linked)
+  }
+
+  async function handleOpenOrCreateMoneyQuote() {
+    if (!companyId || !employeeId || !canEdit) return
+    setMoneyQuoteBusy(true)
+    setError(null)
+    const supabase = createClient()
+    const result = await ensureMoneyQuoteForProject(supabase, {
+      companyId,
+      projectId,
+      employeeId,
+      clientId: clientId || null,
+      title: title.trim() || project?.title || 'Project quotation',
+      scopeNotes: quotationNotes.trim() || null,
+      validUntil: useQuotationValidUntil ? (quotationValidUntil || null) : null,
+      syncLinesFromProject: true,
+    })
+    setMoneyQuoteBusy(false)
+    if (!result.ok) { setError(result.message); return }
+    setMoneyQuote(result.data)
+    router.push(`/dashboard/money/quotes/${result.data.id}`)
   }
 
   async function syncOfferAmount(nextLines: ProjectQuotationLine[]) {
@@ -671,8 +712,46 @@ export default function ProjectDetailPage() {
                 <span className="data-th border-r border-divider py-3">Status</span>
                 <span />
                 <span className="data-td text-text-secondary text-[12px]">
-                  {project?.status === 'sent' ? 'Sent to client' : 'Not sent'}
+                  {project?.status === 'sent' || moneyQuote?.status === 'sent'
+                    ? 'Sent to client'
+                    : 'Not sent'}
                 </span>
+              </div>
+              <div className="grid grid-cols-[132px_1px_1fr]">
+                <span className="data-th border-r border-divider py-3">Money quote</span>
+                <span />
+                <div className="data-td flex items-center gap-3 flex-wrap py-2">
+                  {moneyQuote ? (
+                    <>
+                      <span className="text-[12px] text-text-primary font-medium">
+                        {moneyQuote.quote_number ?? 'Quote'} · {moneyQuote.status.replace('_', ' ')}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => router.push(`/dashboard/money/quotes/${moneyQuote.id}`)}
+                        className="text-[12px] text-primary hover:underline"
+                      >
+                        Open
+                      </button>
+                    </>
+                  ) : (
+                    <span className="text-[12px] text-text-secondary">Not linked yet</span>
+                  )}
+                  {canEdit && (
+                    <button
+                      type="button"
+                      disabled={moneyQuoteBusy || lines.length === 0}
+                      onClick={() => void handleOpenOrCreateMoneyQuote()}
+                      className="text-[12px] font-medium text-primary hover:underline disabled:opacity-40"
+                    >
+                      {moneyQuoteBusy
+                        ? 'Working…'
+                        : moneyQuote
+                          ? 'Sync & open Money quote'
+                          : 'Create Money quote'}
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="grid grid-cols-[132px_1px_1fr]">
                 <span className="data-th border-r border-divider py-3">Intro / terms</span>
@@ -773,13 +852,20 @@ export default function ProjectDetailPage() {
 
             {canEdit && (
               <button
-                onClick={handleSendQuotation}
-                disabled={lines.length === 0 || sendBusy || status === 'sent'}
+                onClick={() => void handleSendQuotation()}
+                disabled={lines.length === 0 || sendBusy || status === 'sent' || moneyQuote?.status === 'sent'}
                 className="btn-primary h-11 w-full text-[14px] font-semibold disabled:opacity-40"
               >
-                {sendBusy ? 'Sending…' : status === 'sent' ? 'Quotation sent' : 'Send quotation'}
+                {sendBusy
+                  ? 'Sending…'
+                  : status === 'sent' || moneyQuote?.status === 'sent'
+                    ? 'Quotation sent'
+                    : 'Send quotation'}
               </button>
             )}
+            <p className="text-[11px] text-text-secondary text-center">
+              Send creates or updates the linked Money quote, marks it sent, and updates this project.
+            </p>
           </div>
         )}
 
