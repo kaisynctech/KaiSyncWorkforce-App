@@ -89,8 +89,8 @@ if (db.status === 0 && db.stdout.includes('has_quote_sends')) {
   console.log('SKIP db  (supabase db query unavailable)')
 }
 
-console.log('\nResend: RESEND_API_KEY not in project secrets — mailto remains primary for quotes/RFQs.')
-console.log('When ready: set RESEND_API_KEY (+ NOTIFY_FROM_EMAIL) on Supabase, then re-enable Edge send in SimpleQuoteBuilder.')
+console.log('\nResend: UI tries send_quote_email first; mailto fallback if RESEND_API_KEY missing.')
+console.log('When ready: npx supabase secrets set RESEND_API_KEY=re_… NOTIFY_FROM_EMAIL="KaiSync <you@domain>" --project-ref vcivtjwreybaxgtdhtou')
 
 console.log(failed === 0 ? '\nSmoke path wiring: PASS' : `\nSmoke path wiring: FAIL (${failed})`)
 process.exit(failed === 0 ? 0 : 1)

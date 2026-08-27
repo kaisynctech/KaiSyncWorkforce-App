@@ -3,6 +3,7 @@
 // Sends a Money quote PDF to the client via Resend and logs commercial_quote_sends.
 // Env: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY,
 //      RESEND_API_KEY, NOTIFY_FROM_EMAIL (optional)
+// Body { check: true } → { configured, from } without sending.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
@@ -22,6 +23,7 @@ function json(body: unknown, status = 200) {
 }
 
 type Body = {
+  check?: boolean;
   quote_id?: string;
   recipient_email?: string;
   subject?: string;
@@ -43,15 +45,24 @@ Deno.serve(async (req: Request) => {
     const resendKey = Deno.env.get("RESEND_API_KEY") ?? "";
     const from = Deno.env.get("NOTIFY_FROM_EMAIL") ?? "KaiFlow <no-reply@kaiflow.app>";
 
-    if (!resendKey) {
-      return json({ error: "email_not_configured", message: "RESEND_API_KEY is not set on the project." }, 503);
-    }
-
     const userClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
     });
     const { data: { user }, error: userError } = await userClient.auth.getUser();
     if (userError || !user) return json({ error: "Invalid session" }, 401);
+
+    const body = (await req.json().catch(() => ({}))) as Body;
+
+    if (body.check === true) {
+      return json({
+        configured: Boolean(resendKey),
+        from: resendKey ? from : null,
+      });
+    }
+
+    if (!resendKey) {
+      return json({ error: "email_not_configured", message: "RESEND_API_KEY is not set on the project." }, 503);
+    }
 
     const admin = createClient(supabaseUrl, serviceKey, {
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
@@ -67,7 +78,6 @@ Deno.serve(async (req: Request) => {
 
     if (!emp?.company_id) return json({ error: "No company linked" }, 403);
 
-    const body = (await req.json().catch(() => ({}))) as Body;
     const quoteId = body.quote_id;
     if (!quoteId) return json({ error: "quote_id required" }, 400);
     if (!body.pdf_base64?.trim()) return json({ error: "pdf_base64 required" }, 400);

@@ -14,6 +14,7 @@ import {
 } from '@/lib/company-modules'
 import type { Company, Employee, SecuritySettings, AuditEvent } from '@/types/database'
 import { formatZar, loadCompanyBillingSummary, type BillingSummary } from '@/lib/billing'
+import { checkQuoteEmailConfigured } from '@/lib/send-quote-email'
 import type { CommercialAutomationRule, AutomationRuleExecution } from '@/types/commercial'
 
 // ─── Local types ──────────────────────────────────────────────────────────────
@@ -106,6 +107,9 @@ export default function SettingsPage() {
   const [xeroMsg,            setXeroMsg]            = useState<string | null>(null)
   const [payrollPeriodStart, setPayrollPeriodStart] = useState('')
   const [payrollPeriodEnd,   setPayrollPeriodEnd]   = useState('')
+  const [resendConfigured,   setResendConfigured]   = useState<boolean | null>(null)
+  const [resendFrom,         setResendFrom]         = useState<string | null>(null)
+  const [resendCheckBusy,    setResendCheckBusy]    = useState(false)
 
   // ── Billing ─────────────────────────────────────────────────────────────
   const [billing, setBilling] = useState<BillingSummary | null>(null)
@@ -923,15 +927,49 @@ export default function SettingsPage() {
       {activeTab === 'integrations' && (
         <Section title="Integrations" icon="hub">
           <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between py-2 border-b border-divider">
-              <div>
+            <div className="flex items-center justify-between py-2 border-b border-divider gap-3">
+              <div className="min-w-0">
                 <p className="text-[13px] font-medium text-text-primary">Outbound email (Resend)</p>
                 <p className="text-[12px] text-text-secondary">
-                  Quotes and RFQs use mailto today. Set project secrets <span className="font-mono text-[11px]">RESEND_API_KEY</span> and{' '}
-                  <span className="font-mono text-[11px]">NOTIFY_FROM_EMAIL</span>, then we can switch Money Quotes to server send.
+                  Money Quotes try server send first. Without{' '}
+                  <span className="font-mono text-[11px]">RESEND_API_KEY</span>
+                  {resendFrom ? <> (from {resendFrom})</> : null}
+                  , send falls back to mailto + PDF. Optional{' '}
+                  <span className="font-mono text-[11px]">NOTIFY_FROM_EMAIL</span>.
                 </p>
               </div>
-              <p className="text-[12px] text-text-disabled italic shrink-0">Mailto · ready later</p>
+              <div className="flex items-center gap-2 shrink-0">
+                <p className={`text-[12px] italic ${
+                  resendConfigured === true
+                    ? 'text-success'
+                    : resendConfigured === false
+                      ? 'text-text-disabled'
+                      : 'text-text-disabled'
+                }`}>
+                  {resendConfigured === true
+                    ? 'Resend ready'
+                    : resendConfigured === false
+                      ? 'Mailto fallback'
+                      : 'Status unknown'}
+                </p>
+                <button
+                  type="button"
+                  disabled={resendCheckBusy}
+                  onClick={() => {
+                    void (async () => {
+                      setResendCheckBusy(true)
+                      const supabase = createClient()
+                      const status = await checkQuoteEmailConfigured(supabase)
+                      setResendConfigured(status.configured)
+                      setResendFrom(status.from ?? null)
+                      setResendCheckBusy(false)
+                    })()
+                  }}
+                  className="h-8 px-3 rounded-md border border-border text-[12px] font-medium text-text-primary hover:bg-surface-elevated disabled:opacity-50"
+                >
+                  {resendCheckBusy ? '…' : 'Check'}
+                </button>
+              </div>
             </div>
             <div className="flex items-center justify-between py-2 border-b border-divider">
               <div>

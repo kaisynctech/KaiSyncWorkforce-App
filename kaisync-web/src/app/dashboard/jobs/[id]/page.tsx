@@ -831,7 +831,7 @@ export default function JobDetailPage() {
               + Quote
             </Link>
             <Link
-              href={`/dashboard/money/invoices/new?job_id=${jobId}${job.client_id ? `&client_id=${job.client_id}` : ''}`}
+              href={`/dashboard/money/invoices/new?job_id=${jobId}${job.client_id ? `&client_id=${job.client_id}` : ''}${job.deal_id ? `&deal_id=${job.deal_id}&project_id=${job.deal_id}` : ''}`}
               className="h-8 px-3 text-[12px] rounded-lg border border-border text-text-secondary hover:text-text-primary hover:border-primary transition-colors flex items-center"
             >
               + Invoice
@@ -840,7 +840,12 @@ export default function JobDetailPage() {
         </div>
 
         <div>
-          <p className="text-[12px] font-medium text-text-primary mb-1.5">Quotes</p>
+          <div className="flex items-center justify-between mb-1.5">
+            <p className="text-[12px] font-medium text-text-primary">Quotes</p>
+            <Link href={`/dashboard/money/quotes?job_id=${jobId}`} className="text-[11px] text-primary hover:underline">
+              View all →
+            </Link>
+          </div>
           {moneyQuotes.length === 0 ? (
             <p className="text-[12px] text-text-secondary">No Money quotes linked to this job.</p>
           ) : (
@@ -874,7 +879,12 @@ export default function JobDetailPage() {
         </div>
 
         <div>
-          <p className="text-[12px] font-medium text-text-primary mb-1.5">Invoices</p>
+          <div className="flex items-center justify-between mb-1.5">
+            <p className="text-[12px] font-medium text-text-primary">Invoices</p>
+            <Link href={`/dashboard/money/invoices?job_id=${jobId}`} className="text-[11px] text-primary hover:underline">
+              View all →
+            </Link>
+          </div>
           {moneyInvoices.length === 0 ? (
             <p className="text-[12px] text-text-secondary">No client invoices linked to this job.</p>
           ) : (

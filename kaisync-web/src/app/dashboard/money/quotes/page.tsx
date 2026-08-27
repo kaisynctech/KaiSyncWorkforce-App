@@ -1,7 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { fmtMoney } from '@/lib/finance-calc'
@@ -90,7 +90,20 @@ function incomingBadgeClass(status: string): string {
 }
 
 export default function QuotesPage() {
+  return (
+    <Suspense fallback={<p className="text-center text-[13px] text-text-secondary py-10">Loading…</p>}>
+      <QuotesPageInner />
+    </Suspense>
+  )
+}
+
+function QuotesPageInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const clientFilter = searchParams.get('client') ?? searchParams.get('client_id')
+  const jobFilter = searchParams.get('job_id')
+  const dealFilter = searchParams.get('deal_id') ?? searchParams.get('project_id')
+
   const [tab, setTab] = useState<HubTab>('sales')
   const [bucket, setBucket] = useState<BucketFilter>('all')
   const [search, setSearch] = useState('')
@@ -100,6 +113,7 @@ export default function QuotesPage() {
   const [incoming, setIncoming] = useState<IncomingRow[]>([])
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE)
+  const [filterLabels, setFilterLabels] = useState<{ client?: string; job?: string; deal?: string }>({})
 
   useEffect(() => {
     const t = setTimeout(() => setSearchD(search.trim()), 300)
@@ -126,13 +140,19 @@ export default function QuotesPage() {
       return
     }
 
+    let salesQ = supabase
+      .from('commercial_quotes')
+      .select('id, quote_number, title, status, total_amount, valid_until, created_at, clients(name)')
+      .eq('company_id', member.companyId)
+      .order('created_at', { ascending: false })
+      .limit(300)
+
+    if (clientFilter) salesQ = salesQ.eq('client_id', clientFilter)
+    if (jobFilter) salesQ = salesQ.eq('job_id', jobFilter)
+    if (dealFilter) salesQ = salesQ.eq('deal_id', dealFilter)
+
     const [salesRes, incomingRes] = await Promise.all([
-      supabase
-        .from('commercial_quotes')
-        .select('id, quote_number, title, status, total_amount, valid_until, created_at, clients(name)')
-        .eq('company_id', member.companyId)
-        .order('created_at', { ascending: false })
-        .limit(300),
+      salesQ,
       supabase
         .from('contractor_quotes')
         .select(
@@ -146,8 +166,23 @@ export default function QuotesPage() {
 
     setSales((salesRes.data ?? []) as unknown as SalesRow[])
     setIncoming((incomingRes.data ?? []) as unknown as IncomingRow[])
+
+    const labels: { client?: string; job?: string; deal?: string } = {}
+    if (clientFilter) {
+      const { data: c } = await supabase.from('clients').select('name').eq('id', clientFilter).maybeSingle()
+      if (c?.name) labels.client = c.name
+    }
+    if (jobFilter) {
+      const { data: j } = await supabase.from('jobs').select('title, job_code').eq('id', jobFilter).maybeSingle()
+      if (j) labels.job = j.job_code ? `${j.job_code} · ${j.title}` : j.title
+    }
+    if (dealFilter) {
+      const { data: d } = await supabase.from('client_deals').select('title, project_code').eq('id', dealFilter).maybeSingle()
+      if (d) labels.deal = d.project_code ? `${d.project_code} · ${d.title}` : d.title
+    }
+    setFilterLabels(labels)
     setLoading(false)
-  }, [])
+  }, [clientFilter, jobFilter, dealFilter])
 
   useEffect(() => {
     void load()
@@ -255,6 +290,12 @@ export default function QuotesPage() {
     a.download = tab === 'sales' ? 'sales-quotes.csv' : 'incoming-quotes.csv'
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  const hasScopeFilter = !!(clientFilter || jobFilter || dealFilter)
+
+  function clearScopeFilters() {
+    router.replace('/dashboard/money/quotes')
   }
 
   return (
@@ -369,6 +410,32 @@ export default function QuotesPage() {
             </button>
           ))}
         </div>
+        {hasScopeFilter && tab === 'sales' && (
+          <div className="flex flex-wrap gap-1.5 items-center w-full">
+            {filterLabels.client && (
+              <span className="h-8 px-2.5 rounded-md bg-surface-elevated border border-divider text-[12px] text-text-primary flex items-center">
+                Client: {filterLabels.client}
+              </span>
+            )}
+            {filterLabels.job && (
+              <span className="h-8 px-2.5 rounded-md bg-surface-elevated border border-divider text-[12px] text-text-primary flex items-center">
+                Job: {filterLabels.job}
+              </span>
+            )}
+            {filterLabels.deal && (
+              <span className="h-8 px-2.5 rounded-md bg-surface-elevated border border-divider text-[12px] text-text-primary flex items-center">
+                Project: {filterLabels.deal}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={clearScopeFilters}
+              className="h-8 px-2.5 text-[12px] text-primary hover:underline"
+            >
+              Clear filters
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="flex-1 overflow-auto">

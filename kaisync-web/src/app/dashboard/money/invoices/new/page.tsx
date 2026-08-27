@@ -25,6 +25,7 @@ function NewMoneyInvoiceInner() {
   const [jobs, setJobs] = useState<JobOpt[]>([])
   const [clientId, setClientId] = useState(() => searchParams.get('clientId') ?? searchParams.get('client_id') ?? '')
   const [jobId, setJobId] = useState(() => searchParams.get('job_id') ?? '')
+  const [dealId, setDealId] = useState(() => searchParams.get('deal_id') ?? searchParams.get('project_id') ?? '')
   const [issueDate, setIssueDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [dueDate, setDueDate] = useState('')
   const [description, setDescription] = useState('Professional services')
@@ -38,6 +39,8 @@ function NewMoneyInvoiceInner() {
     if (fromQuery) setClientId(fromQuery)
     const fromJob = searchParams.get('job_id')
     if (fromJob) setJobId(fromJob)
+    const fromDeal = searchParams.get('deal_id') ?? searchParams.get('project_id')
+    if (fromDeal) setDealId(fromDeal)
   }, [searchParams])
 
   useEffect(() => {
@@ -88,6 +91,8 @@ function NewMoneyInvoiceInner() {
         company_id: member.companyId,
         client_id: clientId || null,
         job_id: jobId || null,
+        deal_id: dealId || null,
+        project_id: dealId || null,
         invoice_number: invoiceNumber,
         status: send ? 'sent' : 'draft',
         sent_at: send ? now : null,
