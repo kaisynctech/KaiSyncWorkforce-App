@@ -42,6 +42,7 @@ export type SupplierInvoice = {
   id: string
   company_id: string
   supplier_id: string | null
+  po_id?: string | null
   invoice_number: string | null
   subtotal: number
   vat_rate: number

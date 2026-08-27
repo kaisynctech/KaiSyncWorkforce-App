@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { calculateVatExclusive, fmtMoney } from '@/lib/finance-calc'
@@ -12,17 +12,22 @@ type SupplierOpt = { id: string; name: string }
 
 export default function SupplierInvoicesPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [rows, setRows] = useState<SupplierInvoice[]>([])
   const [suppliers, setSuppliers] = useState<SupplierOpt[]>([])
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
   const [supplierId, setSupplierId] = useState('')
+  const [poId, setPoId] = useState('')
+  const [grnId, setGrnId] = useState('')
+  const [grnNumber, setGrnNumber] = useState('')
   const [number, setNumber] = useState('')
   const [amount, setAmount] = useState('')
   const [dueDate, setDueDate] = useState('')
   const [busy, setBusy] = useState(false)
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [employeeId, setEmployeeId] = useState<string | null>(null)
+  const [prefillApplied, setPrefillApplied] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -55,14 +60,36 @@ export default function SupplierInvoicesPage() {
 
   useEffect(() => { void load() }, [load])
 
+  useEffect(() => {
+    if (prefillApplied) return
+    const qPo = searchParams.get('po_id')
+    const qSupplier = searchParams.get('supplier_id')
+    const qGrn = searchParams.get('grn_id')
+    const qGrnNumber = searchParams.get('grn_number')
+    const qAmount = searchParams.get('amount')
+    if (!qPo && !qSupplier && !qGrn) return
+    if (qPo) setPoId(qPo)
+    if (qSupplier) setSupplierId(qSupplier)
+    if (qGrn) setGrnId(qGrn)
+    if (qGrnNumber) setGrnNumber(qGrnNumber)
+    if (qAmount && Number(qAmount) > 0) setAmount(qAmount)
+    setShowAdd(true)
+    setPrefillApplied(true)
+  }, [searchParams, prefillApplied])
+
   async function create() {
     if (!companyId || !supplierId || !(Number(amount) > 0)) return
     setBusy(true)
     const supabase = createClient()
     const calc = calculateVatExclusive(Number(amount), 0.15)
-    await supabase.from('supplier_invoices').insert({
+    const noteParts = [
+      grnNumber ? `From GRN ${grnNumber}` : (grnId ? `From GRN ${grnId}` : null),
+      poId ? `PO linked` : null,
+    ].filter(Boolean)
+    const { data: inserted, error } = await supabase.from('supplier_invoices').insert({
       company_id: companyId,
       supplier_id: supplierId,
+      po_id: poId || null,
       invoice_number: number.trim() || null,
       subtotal: calc.subtotal,
       vat_rate: 0.15,
@@ -73,14 +100,16 @@ export default function SupplierInvoicesPage() {
       is_vat_inclusive: false,
       tax_type: 'standard',
       due_date: dueDate || null,
+      notes: noteParts.length ? noteParts.join(' · ') : null,
       status: 'received',
       approval_status: 'pending',
       created_by: employeeId,
-    })
-    setShowAdd(false)
-    setNumber(''); setAmount(''); setDueDate(''); setSupplierId('')
+    }).select('id').single()
     setBusy(false)
-    await load()
+    if (error || !inserted) return
+    setShowAdd(false)
+    setNumber(''); setAmount(''); setDueDate(''); setSupplierId(''); setPoId(''); setGrnId(''); setGrnNumber('')
+    router.push(`/dashboard/finance/supplier-invoices/${(inserted as { id: string }).id}`)
   }
 
   return (
@@ -131,6 +160,12 @@ export default function SupplierInvoicesPage() {
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-surface rounded-xl shadow-lg w-full max-w-sm p-5 space-y-3">
             <h3 className="font-semibold text-text-primary">New supplier invoice</h3>
+            {(poId || grnNumber) && (
+              <p className="text-[12px] text-text-secondary bg-surface-elevated rounded-lg px-3 py-2">
+                {grnNumber ? `From GRN ${grnNumber}` : 'From goods received'}
+                {poId ? ' · PO will be linked' : ''}
+              </p>
+            )}
             <select value={supplierId} onChange={e => setSupplierId(e.target.value)} className="w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background">
               <option value="">Select supplier…</option>
               {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -140,7 +175,7 @@ export default function SupplierInvoicesPage() {
             <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className="w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
             <div className="flex gap-2 justify-end">
               <button onClick={() => setShowAdd(false)} className="btn-outlined h-9 px-4 text-[13px]">Cancel</button>
-              <button onClick={create} disabled={busy || !supplierId} className="btn-primary h-9 px-4 text-[13px] disabled:opacity-50">{busy ? '…' : 'Save'}</button>
+              <button onClick={() => void create()} disabled={busy || !supplierId} className="btn-primary h-9 px-4 text-[13px] disabled:opacity-50">{busy ? '…' : 'Save'}</button>
             </div>
           </div>
         </div>

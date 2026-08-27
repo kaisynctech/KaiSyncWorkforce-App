@@ -165,6 +165,12 @@ export function downloadQuotePdf(input: QuotePdfInput): void {
   doc.save(`Quote_${safe}.pdf`)
 }
 
+/** Raw base64 (no data: prefix) for Resend attachments. */
+export function quotePdfBase64(input: QuotePdfInput): string {
+  const doc = buildQuotePdf(input)
+  return doc.output('datauristring').replace(/^data:application\/pdf;base64,/, '')
+}
+
 export function openQuoteMailto(opts: {
   to: string | null | undefined
   quoteNumber: string | null
