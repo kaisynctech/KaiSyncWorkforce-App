@@ -119,7 +119,7 @@ export default function RateCardPicker({ companyId, onSelect, onClose }: Props) 
 
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-divider shrink-0">
-          <h2 className="text-[15px] font-semibold text-text-primary">Add from rate card</h2>
+          <h2 className="text-[15px] font-semibold text-text-primary">Add from catalogue</h2>
           <button
             type="button"
             onClick={onClose}

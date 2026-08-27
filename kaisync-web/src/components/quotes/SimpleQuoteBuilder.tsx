@@ -8,6 +8,7 @@ import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { createProject } from '@/lib/projects'
 import { createJob } from '@/lib/jobs'
 import { createSupplyRfqFromQuote } from '@/lib/supply-rfq'
+import { downloadQuotePdf, openQuoteMailto } from '@/lib/quote-pdf'
 import SimpleQuoteLineRow from './SimpleQuoteLineRow'
 import RateCardPicker, { type RateCardSelection } from './RateCardPicker'
 
@@ -69,6 +70,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
 
   // ── Auth ──────────────────────────────────────────────────────────────────
   const [companyId,  setCompanyId]  = useState<string | null>(null)
+  const [companyName, setCompanyName] = useState('KaiSync')
   const [employeeId, setEmployeeId] = useState<string | null>(null)
   const [authReady,  setAuthReady]  = useState(false)
 
@@ -144,12 +146,20 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
 
   // ── Resolve auth on mount ──────────────────────────────────────────────────
   useEffect(() => {
-    resolveCurrentMember(supabase).then(m => {
+    resolveCurrentMember(supabase).then(async m => {
       if (!m) return
       setCompanyId(m.companyId)
       setEmployeeId(m.employeeId)
       companyIdRef.current  = m.companyId
       employeeIdRef.current = m.employeeId
+      const { data: company } = await supabase
+        .from('companies')
+        .select('name')
+        .eq('id', m.companyId)
+        .maybeSingle()
+      if (company && (company as { name?: string }).name) {
+        setCompanyName((company as { name: string }).name)
+      }
       setAuthReady(true)
     })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -488,6 +498,48 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
     setShowSendModal(false)
   }
 
+  function buildPdfInput() {
+    const client = clients.find(c => c.id === clientIdRef.current)
+    return {
+      quote_number: quoteNumberRef.current,
+      title: titleRef.current.trim() || 'Untitled quote',
+      status: statusRef.current,
+      valid_until: validUntilRef.current,
+      notes: notesRef.current.trim() || null,
+      client_name: client?.name ?? null,
+      client_email: client?.email ?? null,
+      company_name: companyName,
+      lines: linesRef.current.map(l => ({
+        description: l.description,
+        qty: l.qty,
+        unit: l.unit,
+        unit_price: l.unit_price,
+        total: l.total,
+      })),
+      subtotal: linesRef.current.reduce((s, l) => s + l.total, 0),
+      vat: linesRef.current.reduce((s, l) => s + l.total, 0) * 0.15,
+      total: linesRef.current.reduce((s, l) => s + l.total, 0) * 1.15,
+    }
+  }
+
+  function handleDownloadPdf() {
+    downloadQuotePdf(buildPdfInput())
+  }
+
+  async function handleSendWithPdf() {
+    await doSave()
+    const pdf = buildPdfInput()
+    downloadQuotePdf(pdf)
+    openQuoteMailto({
+      to: pdf.client_email,
+      quoteNumber: pdf.quote_number,
+      title: pdf.title,
+      companyName: companyName,
+    })
+    await doSave('sent')
+    setShowSendModal(false)
+  }
+
   async function handleMarkAccepted() {
     setActionError(null)
     const id = await doSave('accepted')
@@ -777,6 +829,14 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
             </button>
             <button
               type="button"
+              onClick={handleDownloadPdf}
+              className="h-9 px-4 rounded-lg border border-divider text-[13px] text-text-secondary font-medium hover:bg-surface-elevated transition-colors flex items-center gap-1"
+            >
+              <span className="material-icons text-[15px]">picture_as_pdf</span>
+              PDF
+            </button>
+            <button
+              type="button"
               onClick={() => void handleCreateRfqFromQuote()}
               disabled={saveState === 'saving' || rfqBusy}
               className="h-9 px-4 rounded-lg border border-divider text-[13px] text-text-secondary font-medium hover:bg-surface-elevated transition-colors disabled:opacity-50"
@@ -792,7 +852,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
                   disabled={saveState === 'saving'}
                   className="h-9 px-4 rounded-lg border border-divider text-[13px] text-text-secondary font-medium hover:bg-surface-elevated transition-colors disabled:opacity-50"
                 >
-                  Mark as sent
+                  Send quote
                 </button>
                 <button
                   type="button"
@@ -1041,7 +1101,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
               className="flex items-center gap-1.5 h-8 px-3 rounded-lg border border-divider text-[12px] text-text-secondary hover:bg-surface-elevated hover:border-primary/30 hover:text-primary transition-colors"
             >
               <span className="material-icons text-[15px]">grid_view</span>
-              From rate card
+              From catalogue
             </button>
           </div>
         </div>
@@ -1080,29 +1140,6 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
           />
         </div>
 
-        {/* ── Upload — Phase 2 ── */}
-        <div className="flex items-center gap-3 flex-wrap">
-          <button
-            type="button"
-            onClick={() => alert('Document upload coming in Phase 2.')}
-            className="flex items-center gap-1.5 h-8 px-3 rounded-lg border border-divider text-[12px] text-text-secondary hover:bg-surface-elevated transition-colors"
-          >
-            <span className="material-icons text-[15px]">upload_file</span>
-            Upload PO / PDF
-          </button>
-          <button
-            type="button"
-            onClick={() => alert('Image upload coming in Phase 2.')}
-            className="flex items-center gap-1.5 h-8 px-3 rounded-lg border border-divider text-[12px] text-text-secondary hover:bg-surface-elevated transition-colors"
-          >
-            <span className="material-icons text-[15px]">image</span>
-            Upload image
-          </button>
-          <span className="text-[11px] text-text-secondary italic px-1.5 py-0.5 rounded-full bg-surface-elevated">
-            AI extraction — Phase 2
-          </span>
-        </div>
-
       </div>
 
       {/* ── Rate card picker ── */}
@@ -1114,31 +1151,51 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         />
       )}
 
-      {/* ── Mark as sent confirmation ── */}
+      {/* ── Send quote ── */}
       {showSendModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="relative bg-surface rounded-xl shadow-2xl w-full max-w-sm mx-4 p-6">
-            <h3 className="text-[15px] font-semibold text-text-primary mb-2">Mark as sent?</h3>
-            <p className="text-[13px] text-text-secondary mb-6">
-              This will set the quote status to{' '}
-              <span className="font-medium text-text-primary">Sent</span>
-              {clientName ? ` for ${clientName}` : ''}.
-              {' '}Email delivery is coming in Phase 2.
+          <div className="relative bg-surface rounded-xl shadow-2xl w-full max-w-md mx-4 p-6">
+            <h3 className="text-[15px] font-semibold text-text-primary mb-2">Send quote</h3>
+            <p className="text-[13px] text-text-secondary mb-4">
+              Download the PDF, open an email to{' '}
+              <span className="font-medium text-text-primary">
+                {clients.find(c => c.id === clientId)?.email?.trim() || clientName || 'the client'}
+              </span>
+              , then mark the quote as sent.
+              {dealId ? ' Linked project clients will see this quote in the portal once sent.' : ''}
             </p>
-            <div className="flex gap-3 justify-end">
+            <div className="flex flex-col gap-2 mb-5">
+              <button
+                type="button"
+                onClick={handleDownloadPdf}
+                className="h-10 px-4 rounded-lg border border-divider text-left text-[13px] font-medium text-text-primary hover:bg-surface-elevated transition-colors flex items-center gap-2"
+              >
+                <span className="material-icons text-[18px]">picture_as_pdf</span>
+                Download PDF only
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSendWithPdf()}
+                className="h-10 px-4 rounded-lg bg-primary text-white text-left text-[13px] font-medium hover:bg-primary/90 transition-colors flex items-center gap-2"
+              >
+                <span className="material-icons text-[18px]">send</span>
+                Download PDF, email &amp; mark sent
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleMarkAsSent()}
+                className="h-10 px-4 rounded-lg border border-divider text-left text-[13px] font-medium text-text-secondary hover:bg-surface-elevated transition-colors"
+              >
+                Mark as sent only
+              </button>
+            </div>
+            <div className="flex justify-end">
               <button
                 type="button"
                 onClick={() => setShowSendModal(false)}
                 className="h-9 px-4 rounded-lg border border-divider text-[13px] text-text-secondary hover:bg-surface-elevated transition-colors"
               >
                 Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleMarkAsSent()}
-                className="h-9 px-5 rounded-lg bg-primary text-white text-[13px] font-medium hover:bg-primary/90 transition-colors"
-              >
-                Mark as sent
               </button>
             </div>
           </div>

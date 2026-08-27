@@ -9,6 +9,12 @@ import { KpiTile } from '@/components/ui/KpiTile'
 import { quoteStatusLabel } from '@/lib/contractor-portal/quotes'
 import type { CommercialQuote } from '@/types/database'
 import { cn } from '@/lib/utils'
+import {
+  DEFAULT_PAGE_SIZE,
+  PAGE_SIZE_OPTIONS,
+  pageRange,
+  totalPages,
+} from '@/lib/list-pagination'
 
 type HubTab = 'sales' | 'incoming'
 
@@ -92,6 +98,8 @@ export default function QuotesPage() {
   const [loading, setLoading] = useState(true)
   const [sales, setSales] = useState<SalesRow[]>([])
   const [incoming, setIncoming] = useState<IncomingRow[]>([])
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE)
 
   useEffect(() => {
     const t = setTimeout(() => setSearchD(search.trim()), 300)
@@ -99,10 +107,15 @@ export default function QuotesPage() {
   }, [search])
 
   useEffect(() => {
-    setBucket('all')
+    setBucket(tab === 'incoming' ? 'outstanding' : 'all')
     setSearch('')
     setSearchD('')
+    setPage(1)
   }, [tab])
+
+  useEffect(() => {
+    setPage(1)
+  }, [bucket, searchD, pageSize])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -195,11 +208,53 @@ export default function QuotesPage() {
   }, [incoming, bucket, searchD])
 
   const kpis = tab === 'sales' ? salesKpis : incomingKpis
+  const filtered = tab === 'sales' ? filteredSales : filteredIncoming
+  const pages = totalPages(filtered.length, pageSize)
+  const safePage = Math.min(page, pages)
+  const { from, to } = pageRange(safePage, pageSize)
+  const pagedSales = filteredSales.slice(from, to + 1)
+  const pagedIncoming = filteredIncoming.slice(from, to + 1)
 
   function openIncoming(row: IncomingRow) {
     router.push(
       `/dashboard/contractors/${row.contractor_id}?tab=Quotes&focusType=quote_pending&focus=${row.id}`,
     )
+  }
+
+  function exportCsv() {
+    const rows =
+      tab === 'sales'
+        ? filteredSales.map(q => [
+            q.quote_number ?? '',
+            q.clients?.name ?? '',
+            q.title ?? '',
+            String(q.total_amount ?? 0),
+            q.status,
+            q.created_at?.slice(0, 10) ?? '',
+            q.valid_until ?? '',
+          ])
+        : filteredIncoming.map(q => [
+            q.quote_number ?? '',
+            q.contractors?.name ?? '',
+            q.title ?? '',
+            String(q.total_amount ?? 0),
+            q.status,
+            (q.submitted_at ?? q.created_at)?.slice(0, 10) ?? '',
+          ])
+    const header =
+      tab === 'sales'
+        ? ['Number', 'Client', 'Title', 'Value', 'Status', 'Created', 'Valid Until']
+        : ['Number', 'Contractor', 'Title', 'Value', 'Status', 'Submitted']
+    const csv = [header, ...rows]
+      .map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))
+      .join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = tab === 'sales' ? 'sales-quotes.csv' : 'incoming-quotes.csv'
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   return (
@@ -211,15 +266,25 @@ export default function QuotesPage() {
             Sales quotes you send · Incoming contractor quotes to review
           </p>
         </div>
-        {tab === 'sales' && (
+        <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => router.push('/dashboard/money/quotes/new')}
-            className="btn-primary h-9 px-4 text-sm"
+            onClick={exportCsv}
+            disabled={filtered.length === 0}
+            className="btn-outlined h-9 px-3 text-sm disabled:opacity-40"
           >
-            + New Quote
+            Export
           </button>
-        )}
+          {tab === 'sales' && (
+            <button
+              type="button"
+              onClick={() => router.push('/dashboard/money/quotes/new')}
+              className="btn-primary h-9 px-4 text-sm"
+            >
+              + New Quote
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex gap-1 px-4 pt-3 border-b border-divider bg-surface shrink-0">
@@ -328,7 +393,7 @@ export default function QuotesPage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredSales.map(q => (
+                {pagedSales.map(q => (
                   <tr
                     key={q.id}
                     onClick={() => router.push(`/dashboard/money/quotes/${q.id}`)}
@@ -371,7 +436,7 @@ export default function QuotesPage() {
             </p>
           </div>
         ) : (
-          <table className="w-full" style={{ minWidth: 900 }}>
+          <table className="w-full" style={{ minWidth: 960 }}>
             <thead className="sticky top-0 z-10">
               <tr className="bg-surface-elevated border-b border-divider">
                 <th className="data-th text-left">#</th>
@@ -380,10 +445,11 @@ export default function QuotesPage() {
                 <th className="data-th text-right">Value</th>
                 <th className="data-th text-left">Status</th>
                 <th className="data-th text-left">Submitted</th>
+                <th className="data-th text-right">Action</th>
               </tr>
             </thead>
             <tbody>
-              {filteredIncoming.map(q => (
+              {pagedIncoming.map(q => (
                 <tr
                   key={q.id}
                   onClick={() => openIncoming(q)}
@@ -409,12 +475,64 @@ export default function QuotesPage() {
                   <td className="data-td text-sm text-text-secondary whitespace-nowrap">
                     {fmt(q.submitted_at ?? q.created_at)}
                   </td>
+                  <td className="data-td text-right">
+                    <button
+                      type="button"
+                      onClick={e => {
+                        e.stopPropagation()
+                        openIncoming(q)
+                      }}
+                      className="text-[12px] font-medium text-primary hover:underline"
+                    >
+                      {INCOMING_OUTSTANDING.has(q.status) ? 'Review' : 'Open'}
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
       </div>
+
+      {!loading && filtered.length > 0 && (
+        <div className="flex items-center justify-between gap-3 px-4 py-2 border-t border-divider bg-surface shrink-0 flex-wrap">
+          <p className="text-[12px] text-text-secondary">
+            Showing {from + 1}–{Math.min(to + 1, filtered.length)} of {filtered.length}
+          </p>
+          <div className="flex items-center gap-2">
+            <select
+              value={pageSize}
+              onChange={e => setPageSize(Number(e.target.value))}
+              className="form-input h-8 text-[12px] w-24"
+            >
+              {PAGE_SIZE_OPTIONS.map(n => (
+                <option key={n} value={n}>
+                  {n} / page
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              disabled={safePage <= 1}
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              className="h-8 px-3 rounded-lg border border-divider text-[12px] disabled:opacity-40"
+            >
+              Prev
+            </button>
+            <span className="text-[12px] text-text-secondary">
+              {safePage} / {pages}
+            </span>
+            <button
+              type="button"
+              disabled={safePage >= pages}
+              onClick={() => setPage(p => Math.min(pages, p + 1))}
+              className="h-8 px-3 rounded-lg border border-divider text-[12px] disabled:opacity-40"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
