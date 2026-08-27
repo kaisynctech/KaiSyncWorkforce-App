@@ -56,6 +56,7 @@ export default function PoBuilder({ poId }: { poId?: string }) {
   const [rejectReason, setRejectReason] = useState('')
   const [showRejectModal, setShowRejectModal] = useState(false)
   const [showLinkInvModal, setShowLinkInvModal] = useState(false)
+  const [showWhatsNext, setShowWhatsNext] = useState(false)
 
   // Fields
   const [supplierId, setSupplierId] = useState(preSupplier ?? '')
@@ -316,6 +317,9 @@ export default function PoBuilder({ poId }: { poId?: string }) {
 
     setSaving(false)
     showToast(newStatus === 'sent' ? 'PO marked as sent.' : newStatus === 'approved' ? 'PO approved!' : 'PO saved.')
+    if (newStatus === 'sent' || newStatus === 'approved') {
+      setShowWhatsNext(true)
+    }
     if (isNew && currentId) router.replace(`/dashboard/supply/purchase-orders/${currentId}`)
     else void load()
   }
@@ -333,7 +337,15 @@ export default function PoBuilder({ poId }: { poId?: string }) {
       )
     }
     showToast('PO approved!')
+    setShowWhatsNext(true)
     void load()
+  }
+
+  function openReceiveGoods() {
+    const id = savedId.current ?? po?.id
+    if (!id) return
+    setShowWhatsNext(false)
+    router.push(`/dashboard/supply/goods-received/new?po_id=${id}`)
   }
 
   async function reject() {
@@ -690,11 +702,62 @@ export default function PoBuilder({ poId }: { poId?: string }) {
         </div>
       )}
 
+      {/* What's next? — guided PO → GRN */}
+      {showWhatsNext && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="relative bg-surface rounded-xl shadow-2xl w-full max-w-md mx-4 p-6">
+            <h3 className="text-[15px] font-semibold text-text-primary mb-1">What&apos;s next?</h3>
+            <p className="text-[13px] text-text-secondary mb-5">
+              Receive goods against this PO, or continue later from Goods Received.
+            </p>
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={openReceiveGoods}
+                className="h-10 px-4 rounded-lg bg-primary text-white text-left text-[13px] font-medium hover:bg-primary/90 transition-colors flex items-center gap-2"
+              >
+                <span className="material-icons text-[18px]">local_shipping</span>
+                Receive goods
+              </button>
+              {grns.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowWhatsNext(false)
+                    router.push(`/dashboard/supply/goods-received/${grns[0].id}`)
+                  }}
+                  className="h-10 px-4 rounded-lg border border-divider text-left text-[13px] font-medium text-text-primary hover:bg-surface-elevated transition-colors"
+                >
+                  Open latest GRN ({grns[0].grn_number ?? 'GRN'})
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowWhatsNext(false)
+                  setShowLinkInvModal(true)
+                }}
+                className="h-10 px-4 rounded-lg border border-divider text-left text-[13px] font-medium text-text-primary hover:bg-surface-elevated transition-colors"
+              >
+                Link supplier invoice
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowWhatsNext(false)}
+                className="h-10 px-4 rounded-lg text-[13px] text-text-secondary hover:bg-surface-elevated transition-colors"
+              >
+                Not now
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Link invoice modal */}
-      {showLinkInvModal && po && (
+      {showLinkInvModal && companyId && (
         <LinkInvoiceModal
-          companyId={po.company_id}
-          supplierId={po.supplier_id}
+          companyId={companyId}
+          supplierId={supplierId || po?.supplier_id || null}
           onLink={linkInvoice}
           onClose={() => setShowLinkInvModal(false)}
         />

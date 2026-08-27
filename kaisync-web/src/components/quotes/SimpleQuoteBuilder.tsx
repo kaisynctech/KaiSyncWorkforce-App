@@ -108,6 +108,9 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   const [showSendModal,   setShowSendModal]   = useState(false)
   const [showAcceptModal, setShowAcceptModal] = useState(false)
   const [showWhatsNext,   setShowWhatsNext]   = useState(false)
+  const [automationDealId, setAutomationDealId] = useState<string | null>(null)
+  const [automationRfqId,  setAutomationRfqId]  = useState<string | null>(null)
+  const [automationNote,   setAutomationNote]   = useState<string | null>(null)
   const [actionBusy,      setActionBusy]      = useState(false)
   const [actionError,     setActionError]     = useState<string | null>(null)
   const [rfqBusy,         setRfqBusy]         = useState(false)
@@ -542,6 +545,9 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
 
   async function handleMarkAccepted() {
     setActionError(null)
+    setAutomationDealId(null)
+    setAutomationRfqId(null)
+    setAutomationNote(null)
     const id = await doSave('accepted')
     setShowAcceptModal(false)
     if (!id) {
@@ -549,11 +555,34 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
       return
     }
     try {
-      await fetch('/api/automations/quote-accepted', {
+      const res = await fetch('/api/automations/quote-accepted', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ quote_id: id }),
       })
+      if (res.ok) {
+        const body = await res.json() as {
+          skipped?: boolean
+          results?: Array<Record<string, unknown>>
+        }
+        if (!body.skipped && Array.isArray(body.results)) {
+          let dealFromAuto: string | null = null
+          let rfqFromAuto: string | null = null
+          for (const r of body.results) {
+            if (typeof r.deal_id === 'string') dealFromAuto = r.deal_id
+            if (typeof r.rfq_id === 'string') rfqFromAuto = r.rfq_id
+          }
+          if (dealFromAuto) {
+            setAutomationDealId(dealFromAuto)
+            setDealId(dealFromAuto)
+            dealIdRef.current = dealFromAuto
+          }
+          if (rfqFromAuto) setAutomationRfqId(rfqFromAuto)
+          if (dealFromAuto || rfqFromAuto) {
+            setAutomationNote('Automation created follow-up records for this quote.')
+          }
+        }
+      }
     } catch {
       /* automation failure must not interrupt the quote flow */
     }
@@ -1239,20 +1268,43 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
             <p className="text-[13px] text-text-secondary mb-5">
               Quote accepted. Create follow-up work now, or skip and do it later.
             </p>
+            {automationNote && (
+              <p className="text-[12px] text-text-primary mb-3 bg-surface-elevated border border-divider rounded-lg px-3 py-2">
+                {automationNote}
+                {' '}
+                <a href="/dashboard/settings?tab=automations" className="text-primary underline underline-offset-2">
+                  Manage automations
+                </a>
+              </p>
+            )}
             {actionError && (
               <p className="text-[12px] text-red-600 mb-3 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
                 {actionError}
               </p>
             )}
             <div className="flex flex-col gap-2">
-              <button
-                type="button"
-                disabled={actionBusy}
-                onClick={() => void handleCreateProjectFromQuote()}
-                className="h-10 px-4 rounded-lg border border-divider text-left text-[13px] font-medium text-text-primary hover:bg-surface-elevated transition-colors disabled:opacity-50"
-              >
-                Create Project
-              </button>
+              {automationDealId ? (
+                <button
+                  type="button"
+                  disabled={actionBusy}
+                  onClick={() => {
+                    setShowWhatsNext(false)
+                    router.push(`/dashboard/projects/${automationDealId}`)
+                  }}
+                  className="h-10 px-4 rounded-lg border border-divider text-left text-[13px] font-medium text-text-primary hover:bg-surface-elevated transition-colors disabled:opacity-50"
+                >
+                  Open project (from automation)
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={actionBusy}
+                  onClick={() => void handleCreateProjectFromQuote()}
+                  className="h-10 px-4 rounded-lg border border-divider text-left text-[13px] font-medium text-text-primary hover:bg-surface-elevated transition-colors disabled:opacity-50"
+                >
+                  Create Project
+                </button>
+              )}
               <button
                 type="button"
                 disabled={actionBusy}
@@ -1269,14 +1321,28 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
               >
                 Create Invoice
               </button>
-              <button
-                type="button"
-                disabled={actionBusy || rfqBusy}
-                onClick={() => void handleCreateRfqFromQuote()}
-                className="h-10 px-4 rounded-lg border border-divider text-left text-[13px] font-medium text-text-primary hover:bg-surface-elevated transition-colors disabled:opacity-50"
-              >
-                Create RFQ
-              </button>
+              {automationRfqId ? (
+                <button
+                  type="button"
+                  disabled={actionBusy}
+                  onClick={() => {
+                    setShowWhatsNext(false)
+                    router.push(`/dashboard/supply/rfqs/${automationRfqId}`)
+                  }}
+                  className="h-10 px-4 rounded-lg border border-divider text-left text-[13px] font-medium text-text-primary hover:bg-surface-elevated transition-colors disabled:opacity-50"
+                >
+                  Open RFQ (from automation)
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={actionBusy || rfqBusy}
+                  onClick={() => void handleCreateRfqFromQuote()}
+                  className="h-10 px-4 rounded-lg border border-divider text-left text-[13px] font-medium text-text-primary hover:bg-surface-elevated transition-colors disabled:opacity-50"
+                >
+                  Create RFQ
+                </button>
+              )}
               <button
                 type="button"
                 disabled={actionBusy}
