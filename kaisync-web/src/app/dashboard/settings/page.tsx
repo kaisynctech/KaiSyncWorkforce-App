@@ -55,6 +55,18 @@ function parseSettingsTab(raw: string | null): SettingsTab | null {
   return SETTINGS_TABS.some(t => t.key === key) ? key : null
 }
 
+function automationRuleHint(rule: CommercialAutomationRule): string {
+  const key = `${rule.trigger_type}:${rule.action_type}`
+  const hints: Record<string, string> = {
+    'quote_accepted:create_project': 'When a Money quote is accepted, create a linked project (client deal).',
+    'quote_accepted:create_rfq': 'When a Money quote is accepted, draft a Supply RFQ from quote lines.',
+    'invoice_overdue:notify': 'When an invoice is overdue, send a notification.',
+    'milestone_due:notify': 'When a milestone is due soon, send a notification.',
+    'quote_expiring:remind': 'When a quote is about to expire, send a reminder.',
+  }
+  return hints[key] ?? `${rule.trigger_type.replace(/_/g, ' ')} → ${rule.action_type.replace(/_/g, ' ')}`
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
@@ -1011,6 +1023,18 @@ export default function SettingsPage() {
 
       {activeTab === 'automations' && (
         <Section title="Automation Rules" icon="bolt">
+          <p className="text-[13px] text-text-secondary mb-4">
+            Rules run in the background when their trigger fires. Money Quotes also offer the same follow-ups manually after accept
+            (project, invoice, RFQ). Keep rules off unless you want drafts created automatically.
+          </p>
+          <div className="flex flex-wrap gap-3 mb-4 text-[12px]">
+            <Link href="/dashboard/money/quotes" className="text-primary underline underline-offset-2">
+              Open Quotes
+            </Link>
+            <Link href="/dashboard/supply/rfqs" className="text-primary underline underline-offset-2">
+              Open RFQs
+            </Link>
+          </div>
           {autoLoading ? (
             <p className="text-[13px] text-text-secondary py-4">Loading…</p>
           ) : automations.length === 0 ? (
@@ -1022,9 +1046,9 @@ export default function SettingsPage() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <p className="text-[13px] font-medium text-text-primary">{rule.name}</p>
-                      {rule.description && (
-                        <p className="text-[12px] text-text-secondary mt-0.5">{rule.description}</p>
-                      )}
+                      <p className="text-[12px] text-text-secondary mt-0.5">
+                        {rule.description || automationRuleHint(rule)}
+                      </p>
                       <div className="flex items-center gap-3 mt-1">
                         <span className="text-[11px] text-text-disabled">
                           Runs: {rule.run_count}

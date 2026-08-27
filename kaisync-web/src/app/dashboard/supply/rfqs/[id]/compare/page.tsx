@@ -58,7 +58,7 @@ export default function RfqComparePage() {
     setRfq(rfqData as Rfq | null)
 
     const { data: cmpData, error: cmpErr } = await (supabase.rpc as unknown as (name: string, args: Record<string, unknown>) => Promise<{ data: Comparison | null; error: { message: string } | null }>)
-      ('get_rfq_comparison', { p_rfq_id: rfqId })
+      ('get_supply_rfq_comparison', { p_rfq_id: rfqId })
 
     if (cmpErr) { setError(cmpErr.message); setLoading(false); return }
     setComparison(cmpData)
