@@ -31,6 +31,8 @@ interface RfqRow {
   created_at: string
   deal?: { title: string } | null
   deal_id?: string | null
+  quote?: { quote_number: string | null; title: string } | null
+  quote_id?: string | null
 }
 
 export default function RfqListPage() {
@@ -49,7 +51,7 @@ export default function RfqListPage() {
 
     const { data, error: err } = await supabase
       .from('rfqs')
-      .select('*, deal:client_deals(title)')
+      .select('*, deal:client_deals(title), quote:commercial_quotes(quote_number, title)')
       .eq('company_id', member.companyId)
       .order('created_at', { ascending: false })
 
@@ -94,15 +96,29 @@ export default function RfqListPage() {
         ) : filtered.length === 0 ? (
           <div className="text-center py-16">
             <span className="material-icons text-[48px] text-text-secondary opacity-30">request_quote</span>
-            <p className="text-[13px] text-text-secondary mt-3">No RFQs yet. Create your first request for quotation.</p>
+            <p className="text-[13px] text-text-secondary mt-3">
+              {statusFilter === 'all'
+                ? 'No RFQs yet. Create one from Supply or from a sales quote.'
+                : 'No RFQs match this filter.'}
+            </p>
+            {statusFilter === 'all' && (
+              <button
+                type="button"
+                onClick={() => router.push('/dashboard/supply/rfqs/new')}
+                className="btn-primary h-9 px-4 text-[13px] mt-4"
+              >
+                New RFQ
+              </button>
+            )}
           </div>
         ) : (
-          <table className="w-full" style={{ minWidth: 640 }}>
+          <table className="w-full" style={{ minWidth: 720 }}>
             <thead>
               <tr className="bg-surface-elevated border-b border-divider">
                 <th className="data-th text-left">Number</th>
                 <th className="data-th text-left">Title</th>
                 <th className="data-th text-left">Project</th>
+                <th className="data-th text-left">Quote</th>
                 <th className="data-th text-left">Status</th>
                 <th className="data-th text-left">Deadline</th>
                 <th className="data-th text-left">Created</th>
@@ -116,6 +132,11 @@ export default function RfqListPage() {
                   <td className="data-td text-[13px] font-medium text-text-primary">{rfq.title}</td>
                   <td className="data-td text-[13px] text-text-secondary">
                     {(rfq.deal as { title?: string } | null)?.title ?? '—'}
+                  </td>
+                  <td className="data-td text-[12px] text-text-secondary">
+                    {rfq.quote
+                      ? `${rfq.quote.quote_number ?? 'Quote'}`
+                      : '—'}
                   </td>
                   <td className="data-td">
                     <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${STATUS_COLOURS[rfq.status]}`}>

@@ -32,8 +32,10 @@ export default function RfqBuilder({ rfqId }: RfqBuilderProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const preloadSupplierId = searchParams.get('supplier_id')
+  const preloadQuoteId = searchParams.get('quote_id')
 
   const [companyId, setCompanyId] = useState<string | null>(null)
+  const [employeeId, setEmployeeId] = useState<string | null>(null)
   const [rfq, setRfq] = useState<Rfq | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -44,6 +46,7 @@ export default function RfqBuilder({ rfqId }: RfqBuilderProps) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [dealId, setDealId] = useState('')
+  const [quoteId, setQuoteId] = useState(preloadQuoteId ?? '')
   const [requiredByDate, setRequiredByDate] = useState('')
   const [responseDeadline, setResponseDeadline] = useState('')
   const [deliveryAddress, setDeliveryAddress] = useState('')
@@ -57,9 +60,11 @@ export default function RfqBuilder({ rfqId }: RfqBuilderProps) {
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [supplierSearch, setSupplierSearch] = useState('')
   const [showSupplierPicker, setShowSupplierPicker] = useState(false)
+  const pendingSupplierId = useRef<string | null>(preloadSupplierId)
 
-  // Deals (for dropdown)
+  // Deals / quotes (for dropdowns)
   const [deals, setDeals] = useState<{ id: string; title: string }[]>([])
+  const [quotes, setQuotes] = useState<{ id: string; label: string; deal_id: string | null }[]>([])
 
   const savedRfqId = useRef<string | undefined>(rfqId)
 
@@ -74,13 +79,27 @@ export default function RfqBuilder({ rfqId }: RfqBuilderProps) {
     const member = await resolveCurrentMember(supabase)
     if (!member) { setLoading(false); return }
     setCompanyId(member.companyId)
+    setEmployeeId(member.employeeId)
 
-    const [{ data: suppData }, { data: dealData }] = await Promise.all([
+    const [{ data: suppData }, { data: dealData }, { data: quoteData }] = await Promise.all([
       supabase.from('contractors').select('id, name, email').eq('company_id', member.companyId).eq('partner_kind', 'supplier').eq('is_active', true).order('name'),
       supabase.from('client_deals').select('id, title').eq('company_id', member.companyId).order('title'),
+      supabase
+        .from('commercial_quotes')
+        .select('id, quote_number, title, deal_id')
+        .eq('company_id', member.companyId)
+        .order('created_at', { ascending: false })
+        .limit(200),
     ])
     setSuppliers((suppData ?? []) as Supplier[])
     setDeals((dealData ?? []) as { id: string; title: string }[])
+    setQuotes(
+      ((quoteData ?? []) as { id: string; quote_number: string | null; title: string; deal_id: string | null }[]).map(q => ({
+        id: q.id,
+        deal_id: q.deal_id,
+        label: `${q.quote_number ?? 'Quote'} · ${q.title || 'Untitled'}`,
+      })),
+    )
 
     if (rfqId) {
       const [{ data: rfqData }, { data: lineData }, { data: recipData }] = await Promise.all([
@@ -94,6 +113,7 @@ export default function RfqBuilder({ rfqId }: RfqBuilderProps) {
         setTitle(r.title)
         setDescription(r.description ?? '')
         setDealId(r.deal_id ?? '')
+        setQuoteId(r.quote_id ?? '')
         setRequiredByDate(r.required_by_date ?? '')
         setResponseDeadline(r.response_deadline ?? '')
         setDeliveryAddress(r.delivery_address ?? '')
@@ -107,12 +127,18 @@ export default function RfqBuilder({ rfqId }: RfqBuilderProps) {
       setRecipients((recipData ?? []) as RfqRecipient[])
     } else {
       setLines([{ key: nextKey(), description: '', unit: 'each', quantity: '1', specifications: '' }])
-      if (preloadSupplierId) {
-        // Pre-add the supplier as a recipient once RFQ is saved
+      if (preloadQuoteId) {
+        const match = ((quoteData ?? []) as { id: string; quote_number: string | null; title: string; deal_id: string | null }[])
+          .find(q => q.id === preloadQuoteId)
+        if (match) {
+          setQuoteId(match.id)
+          if (match.deal_id) setDealId(match.deal_id)
+          setTitle(prev => prev.trim() || `RFQ — ${match.quote_number ?? ''} ${match.title}`.trim())
+        }
       }
     }
     setLoading(false)
-  }, [rfqId, preloadSupplierId])
+  }, [rfqId, preloadQuoteId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { void load() }, [load])
 
@@ -141,6 +167,7 @@ export default function RfqBuilder({ rfqId }: RfqBuilderProps) {
       title: title.trim(),
       description: description.trim() || null,
       deal_id: dealId || null,
+      quote_id: quoteId || null,
       required_by_date: requiredByDate || null,
       response_deadline: responseDeadline || null,
       delivery_address: deliveryAddress.trim() || null,
@@ -157,14 +184,14 @@ export default function RfqBuilder({ rfqId }: RfqBuilderProps) {
       const { data: newRfq, error: insErr } = await supabase.from('rfqs').insert({
         ...rfqPayload,
         rfq_number: numData ?? null,
-        created_by: null,
+        created_by: employeeId,
       }).select('id').single()
       if (insErr || !newRfq) { setError(insErr?.message ?? 'Failed to create RFQ'); setSaving(false); return }
       currentRfqId = (newRfq as { id: string }).id
       savedRfqId.current = currentRfqId
     }
 
-    // Upsert lines
+    // Upsert lines — delete removed rows by id list (safe for empty keep-set)
     const validLines = lines.filter(l => l.description.trim())
     const linePayloads = validLines.map((l, i) => ({
       ...(l.id ? { id: l.id } : {}),
@@ -177,13 +204,34 @@ export default function RfqBuilder({ rfqId }: RfqBuilderProps) {
       specifications: l.specifications.trim() || null,
     }))
 
-    // Delete removed lines
-    const existingIds = validLines.filter(l => l.id).map(l => l.id!)
-    if (savedRfqId.current) {
-      await supabase.from('rfq_lines').delete().eq('rfq_id', currentRfqId!).not('id', 'in', `(${existingIds.length > 0 ? existingIds.join(',') : '00000000-0000-0000-0000-000000000000'})`)
+    const { data: existingRows } = await supabase
+      .from('rfq_lines')
+      .select('id')
+      .eq('rfq_id', currentRfqId!)
+    const keepIds = new Set(validLines.filter(l => l.id).map(l => l.id!))
+    const toDelete = ((existingRows ?? []) as { id: string }[])
+      .map(r => r.id)
+      .filter(id => !keepIds.has(id))
+    if (toDelete.length > 0) {
+      await supabase.from('rfq_lines').delete().in('id', toDelete)
     }
     if (linePayloads.length > 0) {
       await supabase.from('rfq_lines').upsert(linePayloads, { onConflict: 'id' })
+    }
+
+    // Preload supplier from query once the RFQ exists
+    if (pendingSupplierId.current && currentRfqId) {
+      const sid = pendingSupplierId.current
+      pendingSupplierId.current = null
+      const already = recipients.some(r => r.supplier_id === sid)
+      if (!already) {
+        await supabase.from('rfq_recipients').insert({
+          company_id: companyId,
+          rfq_id: currentRfqId,
+          supplier_id: sid,
+          status: 'pending',
+        })
+      }
     }
 
     setSaving(false)
@@ -309,6 +357,23 @@ export default function RfqBuilder({ rfqId }: RfqBuilderProps) {
                 onChange={e => setDealId(e.target.value)}>
                 <option value="">— None —</option>
                 {deals.map(d => <option key={d.id} value={d.id}>{d.title}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-[12px] text-text-secondary mb-1">Link to Sales Quote</label>
+              <select
+                className="input h-9 text-[13px] w-full"
+                value={quoteId}
+                disabled={isReadonly}
+                onChange={e => {
+                  const next = e.target.value
+                  setQuoteId(next)
+                  const match = quotes.find(q => q.id === next)
+                  if (match?.deal_id && !dealId) setDealId(match.deal_id)
+                }}
+              >
+                <option value="">— None —</option>
+                {quotes.map(q => <option key={q.id} value={q.id}>{q.label}</option>)}
               </select>
             </div>
             <div>

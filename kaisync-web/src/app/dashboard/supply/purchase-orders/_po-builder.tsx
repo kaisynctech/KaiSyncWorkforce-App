@@ -19,6 +19,9 @@ interface DraftLine {
   quantity_ordered: string
   unit_price: string
   vat_rate: string
+  rfq_line_id?: string | null
+  rfq_response_line_id?: string | null
+  quote_line_id?: string | null
 }
 
 interface GrnSummary { id: string; grn_number: string | null; received_date: string; status: string }
@@ -57,6 +60,7 @@ export default function PoBuilder({ poId }: { poId?: string }) {
   // Fields
   const [supplierId, setSupplierId] = useState(preSupplier ?? '')
   const [dealId, setDealId] = useState('')
+  const [quoteId, setQuoteId] = useState('')
   const [rfqId, setRfqId] = useState(preRfqId ?? '')
   const [deliveryAddress, setDeliveryAddress] = useState('')
   const [requiredDate, setRequiredDate] = useState('')
@@ -105,6 +109,7 @@ export default function PoBuilder({ poId }: { poId?: string }) {
         setPo(p)
         setSupplierId(p.supplier_id ?? '')
         setDealId(p.deal_id ?? '')
+        setQuoteId(p.quote_id ?? '')
         setRfqId(p.rfq_id ?? '')
         setDeliveryAddress(p.delivery_address ?? '')
         setRequiredDate(p.required_delivery_date ?? '')
@@ -118,37 +123,85 @@ export default function PoBuilder({ poId }: { poId?: string }) {
         quantity_ordered: String(l.quantity_ordered),
         unit_price: String(l.unit_price),
         vat_rate: String((l.vat_rate ?? 0.15) * 100),
+        rfq_line_id: l.rfq_line_id ?? null,
+        rfq_response_line_id: l.rfq_response_line_id ?? null,
+        quote_line_id: l.quote_line_id ?? null,
       })))
       setGrns((grnData ?? []) as GrnSummary[])
       setMatchLines((matchData ?? []) as ThreeWayMatchLine[])
       setSupplierInvs((invData ?? []) as SupplierInvRow[])
     } else {
       // Pre-populate from RFQ recipient if provided
-      if (preRfqId && preRecipientId) {
-        const { data: respLines } = await supabase
-          .from('rfq_response_lines')
-          .select('*, rfq_line:rfq_lines(description, unit, quantity)')
-          .eq('recipient_id', preRecipientId)
-        setLines((respLines ?? []).map((rl: {
-          id: string;
-          rfq_line_id: string;
-          unit_price: number;
-          vat_rate: number;
-          rfq_line?: { description: string; unit: string; quantity: number } | null;
-        }) => ({
-          key: nk(),
-          description: rl.rfq_line?.description ?? '',
-          unit: rl.rfq_line?.unit ?? 'each',
-          quantity_ordered: String(rl.rfq_line?.quantity ?? 1),
-          unit_price: String(rl.unit_price),
-          vat_rate: String((rl.vat_rate ?? 0.15) * 100),
-        })))
+      if (preRfqId) {
+        setRfqId(preRfqId)
+        const { data: rfqRow } = await supabase
+          .from('rfqs')
+          .select('id, deal_id, quote_id, delivery_address, required_by_date')
+          .eq('id', preRfqId)
+          .maybeSingle()
+        if (rfqRow) {
+          const r = rfqRow as {
+            deal_id: string | null
+            quote_id: string | null
+            delivery_address: string | null
+            required_by_date: string | null
+          }
+          if (r.deal_id) setDealId(r.deal_id)
+          if (r.quote_id) setQuoteId(r.quote_id)
+          if (r.delivery_address) setDeliveryAddress(r.delivery_address)
+          if (r.required_by_date) setRequiredDate(r.required_by_date)
+        }
+
+        if (preRecipientId) {
+          const [{ data: recip }, { data: respLines }] = await Promise.all([
+            supabase
+              .from('rfq_recipients')
+              .select('id, supplier_id')
+              .eq('id', preRecipientId)
+              .maybeSingle(),
+            supabase
+              .from('rfq_response_lines')
+              .select('*, rfq_line:rfq_lines(id, description, unit, quantity, quote_line_id)')
+              .eq('recipient_id', preRecipientId),
+          ])
+          const supplierFromRecip = (recip as { supplier_id?: string } | null)?.supplier_id
+          if (supplierFromRecip) setSupplierId(supplierFromRecip)
+          else if (preSupplier) setSupplierId(preSupplier)
+
+          setLines((respLines ?? []).map((rl: {
+            id: string
+            rfq_line_id: string
+            unit_price: number
+            vat_rate: number
+            rfq_line?: {
+              id: string
+              description: string
+              unit: string
+              quantity: number
+              quote_line_id: string | null
+            } | null
+          }) => ({
+            key: nk(),
+            description: rl.rfq_line?.description ?? '',
+            unit: rl.rfq_line?.unit ?? 'each',
+            quantity_ordered: String(rl.rfq_line?.quantity ?? 1),
+            unit_price: String(rl.unit_price),
+            vat_rate: String((rl.vat_rate ?? 0.15) * 100),
+            rfq_line_id: rl.rfq_line_id ?? rl.rfq_line?.id ?? null,
+            rfq_response_line_id: rl.id,
+            quote_line_id: rl.rfq_line?.quote_line_id ?? null,
+          })))
+        } else {
+          setLines([{ key: nk(), description: '', unit: 'each', quantity_ordered: '1', unit_price: '0', vat_rate: '15' }])
+          if (preSupplier) setSupplierId(preSupplier)
+        }
       } else {
         setLines([{ key: nk(), description: '', unit: 'each', quantity_ordered: '1', unit_price: '0', vat_rate: '15' }])
+        if (preSupplier) setSupplierId(preSupplier)
       }
     }
     setLoading(false)
-  }, [isNew, preRfqId, preRecipientId])
+  }, [isNew, preRfqId, preRecipientId, preSupplier])
 
   useEffect(() => { void load() }, [load])
 
@@ -178,6 +231,7 @@ export default function PoBuilder({ poId }: { poId?: string }) {
       company_id: companyId,
       supplier_id: supplierId || null,
       deal_id: dealId || null,
+      quote_id: quoteId || null,
       rfq_id: rfqId || null,
       delivery_address: deliveryAddress.trim() || null,
       required_delivery_date: requiredDate || null,
@@ -231,12 +285,25 @@ export default function PoBuilder({ poId }: { poId?: string }) {
         vat_rate: vr,
         vat_amount: vat,
         line_total: roundFinancial(sub + vat),
+        rfq_line_id: l.rfq_line_id || null,
+        rfq_response_line_id: l.rfq_response_line_id || null,
+        quote_line_id: l.quote_line_id || null,
       }
     })
 
     const existingIds = validLines.filter(l => l.id).map(l => l.id!)
     if (currentId) {
-      await supabase.from('purchase_order_lines').delete().eq('po_id', currentId).not('id', 'in', `(${existingIds.length > 0 ? existingIds.join(',') : '00000000-0000-0000-0000-000000000000'})`)
+      const { data: existingRows } = await supabase
+        .from('purchase_order_lines')
+        .select('id')
+        .eq('po_id', currentId)
+      const keep = new Set(existingIds)
+      const toDelete = ((existingRows ?? []) as { id: string }[])
+        .map(r => r.id)
+        .filter(id => !keep.has(id))
+      if (toDelete.length > 0) {
+        await supabase.from('purchase_order_lines').delete().in('id', toDelete)
+      }
     }
     if (linePayloads.length > 0) await supabase.from('purchase_order_lines').upsert(linePayloads, { onConflict: 'id' })
 
@@ -404,6 +471,20 @@ export default function PoBuilder({ poId }: { poId?: string }) {
                   {rfqs.map(r => <option key={r.id} value={r.id}>{r.rfq_number ?? r.title}</option>)}
                 </select>
               </div>
+              {quoteId ? (
+                <div>
+                  <label className="block text-[12px] text-text-secondary mb-1">Linked Sales Quote</label>
+                  <div className="h-9 flex items-center px-3 rounded border border-divider bg-surface-elevated text-[13px]">
+                    <button
+                      type="button"
+                      className="text-primary hover:underline"
+                      onClick={() => router.push(`/dashboard/money/quotes/${quoteId}`)}
+                    >
+                      Open quote
+                    </button>
+                  </div>
+                </div>
+              ) : null}
               <div>
                 <label className="block text-[12px] text-text-secondary mb-1">Required Delivery Date</label>
                 <input type="date" className="input h-9 text-[13px] w-full" value={requiredDate} disabled={!!isReadonly}
