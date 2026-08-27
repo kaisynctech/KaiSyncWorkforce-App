@@ -76,6 +76,20 @@ export default function ProjectDetailPage() {
   const [sendBusy, setSendBusy] = useState(false)
   const [moneyQuote, setMoneyQuote] = useState<MoneyQuoteLink | null>(null)
   const [moneyQuoteBusy, setMoneyQuoteBusy] = useState(false)
+  const [moneyInvoices, setMoneyInvoices] = useState<Array<{
+    id: string
+    invoice_number: string | null
+    status: string
+    total_amount: number
+    balance_due: number
+  }>>([])
+  const [moneyQuotes, setMoneyQuotes] = useState<Array<{
+    id: string
+    quote_number: string | null
+    title: string
+    status: string
+    total_amount: number | null
+  }>>([])
 
   const canCreate = can(perms, PERM.projectsCreate)
   const canEdit = can(perms, PERM.projectsEdit)
@@ -158,6 +172,22 @@ export default function ProjectDetailPage() {
       companyId: member.companyId,
       projectId,
     }))
+    const [invRes, quoteListRes] = await Promise.all([
+      supabase
+        .from('finance_invoices')
+        .select('id, invoice_number, status, total_amount, balance_due')
+        .eq('company_id', member.companyId)
+        .or(`deal_id.eq.${projectId},project_id.eq.${projectId}`)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('commercial_quotes')
+        .select('id, quote_number, title, status, total_amount')
+        .eq('company_id', member.companyId)
+        .eq('deal_id', projectId)
+        .order('created_at', { ascending: false }),
+    ])
+    setMoneyInvoices((invRes.data ?? []) as typeof moneyInvoices)
+    setMoneyQuotes((quoteListRes.data ?? []) as typeof moneyQuotes)
     setProject(p)
     setTitle(p.title ?? '')
     setCode(p.project_code ?? '')
@@ -916,10 +946,110 @@ export default function ProjectDetailPage() {
 
         {/* ── FINANCIALS ── */}
         {!isNew && tab === 'financials' && companyId && (
-          <ProjectFinancialsTab
-            projectId={projectId}
-            companyId={companyId}
-          />
+          <div className="space-y-4">
+            <div className="card p-4 space-y-3">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <p className="section-label mb-0">MONEY</p>
+                <div className="flex gap-2">
+                  <Link
+                    href={`/dashboard/money/quotes/new?deal_id=${projectId}${clientId ? `&client_id=${clientId}` : ''}`}
+                    className="h-8 px-3 text-[12px] rounded-lg border border-border text-text-secondary hover:text-text-primary hover:border-primary transition-colors flex items-center"
+                  >
+                    + Quote
+                  </Link>
+                  <Link
+                    href={`/dashboard/money/invoices/new?deal_id=${projectId}&project_id=${projectId}${clientId ? `&client_id=${clientId}` : ''}`}
+                    className="h-8 px-3 text-[12px] rounded-lg border border-border text-text-secondary hover:text-text-primary hover:border-primary transition-colors flex items-center"
+                  >
+                    + Invoice
+                  </Link>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="text-[12px] font-medium text-text-primary">Quotes</p>
+                  <Link href={`/dashboard/money/quotes?deal_id=${projectId}`} className="text-[11px] text-primary hover:underline">
+                    View all →
+                  </Link>
+                </div>
+                {moneyQuotes.length === 0 ? (
+                  <p className="text-[12px] text-text-secondary">No Money quotes linked to this project.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full" style={{ minWidth: 420 }}>
+                      <thead>
+                        <tr className="border-b border-divider">
+                          <th className="data-th text-left">#</th>
+                          <th className="data-th text-left">Title</th>
+                          <th className="data-th text-left">Status</th>
+                          <th className="data-th text-right">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {moneyQuotes.map(q => (
+                          <tr
+                            key={q.id}
+                            className="border-b border-divider last:border-0 cursor-pointer hover:bg-surface-elevated"
+                            onClick={() => router.push(`/dashboard/money/quotes/${q.id}`)}
+                          >
+                            <td className="data-td text-[13px] text-primary">{q.quote_number ?? 'Draft'}</td>
+                            <td className="data-td text-[13px]">{q.title || '—'}</td>
+                            <td className="data-td text-[12px] capitalize">{q.status.replace(/_/g, ' ')}</td>
+                            <td className="data-td text-[13px] text-right">{fmtCurrency(Number(q.total_amount ?? 0))}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="text-[12px] font-medium text-text-primary">Invoices</p>
+                  <Link href={`/dashboard/money/invoices?deal_id=${projectId}`} className="text-[11px] text-primary hover:underline">
+                    View all →
+                  </Link>
+                </div>
+                {moneyInvoices.length === 0 ? (
+                  <p className="text-[12px] text-text-secondary">No client invoices linked to this project.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full" style={{ minWidth: 420 }}>
+                      <thead>
+                        <tr className="border-b border-divider">
+                          <th className="data-th text-left">#</th>
+                          <th className="data-th text-left">Status</th>
+                          <th className="data-th text-right">Total</th>
+                          <th className="data-th text-right">Balance</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {moneyInvoices.map(inv => (
+                          <tr
+                            key={inv.id}
+                            className="border-b border-divider last:border-0 cursor-pointer hover:bg-surface-elevated"
+                            onClick={() => router.push(`/dashboard/money/invoices/${inv.id}`)}
+                          >
+                            <td className="data-td text-[13px] text-primary">{inv.invoice_number ?? 'Draft'}</td>
+                            <td className="data-td text-[12px] capitalize">{inv.status.replace(/_/g, ' ')}</td>
+                            <td className="data-td text-[13px] text-right">{fmtCurrency(Number(inv.total_amount))}</td>
+                            <td className="data-td text-[13px] text-right">{fmtCurrency(Number(inv.balance_due))}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <ProjectFinancialsTab
+              projectId={projectId}
+              companyId={companyId}
+            />
+          </div>
         )}
 
         {/* ── PAYMENTS ── */}

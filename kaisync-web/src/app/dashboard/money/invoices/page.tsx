@@ -1,8 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { fmtMoney } from '@/lib/finance-calc'
@@ -36,31 +36,68 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default function MoneyInvoicesPage() {
+  return (
+    <Suspense fallback={<p className="text-center text-[13px] text-text-secondary py-10">Loading…</p>}>
+      <MoneyInvoicesInner />
+    </Suspense>
+  )
+}
+
+function MoneyInvoicesInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const clientFilter = searchParams.get('client') ?? searchParams.get('client_id')
+  const jobFilter = searchParams.get('job_id')
+  const dealFilter = searchParams.get('deal_id') ?? searchParams.get('project_id')
+
   const [rows, setRows]       = useState<InvoiceRow[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch]   = useState('')
   const [status, setStatus]   = useState('all')
+  const [filterLabels, setFilterLabels] = useState<{ client?: string; job?: string; deal?: string }>({})
 
   const load = useCallback(async () => {
     setLoading(true)
     const supabase = createClient()
     const member = await resolveCurrentMember(supabase)
     if (!member) { setLoading(false); return }
-    const { data } = await supabase
+
+    let q = supabase
       .from('finance_invoices')
       .select(`
         id, invoice_number, status,
         total_amount, amount_paid, balance_due,
         issue_date, due_date, paid_date,
+        client_id, job_id, deal_id, project_id,
         clients(name),
         client_deals(title)
       `)
       .eq('company_id', member.companyId)
       .order('created_at', { ascending: false })
+
+    if (clientFilter) q = q.eq('client_id', clientFilter)
+    if (jobFilter) q = q.eq('job_id', jobFilter)
+    if (dealFilter) q = q.or(`deal_id.eq.${dealFilter},project_id.eq.${dealFilter}`)
+
+    const { data } = await q
     setRows((data ?? []) as unknown as InvoiceRow[])
+
+    const labels: { client?: string; job?: string; deal?: string } = {}
+    if (clientFilter) {
+      const { data: c } = await supabase.from('clients').select('name').eq('id', clientFilter).maybeSingle()
+      if (c?.name) labels.client = c.name
+    }
+    if (jobFilter) {
+      const { data: j } = await supabase.from('jobs').select('title, job_code').eq('id', jobFilter).maybeSingle()
+      if (j) labels.job = j.job_code ? `${j.job_code} · ${j.title}` : j.title
+    }
+    if (dealFilter) {
+      const { data: d } = await supabase.from('client_deals').select('title, project_code').eq('id', dealFilter).maybeSingle()
+      if (d) labels.deal = d.project_code ? `${d.project_code} · ${d.title}` : d.title
+    }
+    setFilterLabels(labels)
     setLoading(false)
-  }, [])
+  }, [clientFilter, jobFilter, dealFilter])
 
   useEffect(() => { void load() }, [load])
 
@@ -77,9 +114,14 @@ export default function MoneyInvoicesPage() {
     return true
   })
 
+  const hasScopeFilter = !!(clientFilter || jobFilter || dealFilter)
+
+  function clearScopeFilters() {
+    router.replace('/dashboard/money/invoices')
+  }
+
   return (
     <div className="h-full flex flex-col">
-      {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-divider shrink-0 bg-surface">
         <h1 className="text-[18px] font-semibold text-text-primary">Invoices</h1>
         <Link href="/dashboard/money/invoices/new" className="btn-primary h-9 px-3 text-[13px] flex items-center gap-1">
@@ -87,8 +129,7 @@ export default function MoneyInvoicesPage() {
         </Link>
       </div>
 
-      {/* Filters */}
-      <div className="flex gap-2 px-4 py-2 border-b border-divider shrink-0 flex-wrap bg-surface">
+      <div className="flex gap-2 px-4 py-2 border-b border-divider shrink-0 flex-wrap bg-surface items-center">
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
@@ -105,9 +146,34 @@ export default function MoneyInvoicesPage() {
             <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>
           ))}
         </select>
+        {hasScopeFilter && (
+          <div className="flex flex-wrap gap-1.5 items-center">
+            {filterLabels.client && (
+              <span className="h-8 px-2.5 rounded-md bg-surface-elevated border border-divider text-[12px] text-text-primary flex items-center">
+                Client: {filterLabels.client}
+              </span>
+            )}
+            {filterLabels.job && (
+              <span className="h-8 px-2.5 rounded-md bg-surface-elevated border border-divider text-[12px] text-text-primary flex items-center">
+                Job: {filterLabels.job}
+              </span>
+            )}
+            {filterLabels.deal && (
+              <span className="h-8 px-2.5 rounded-md bg-surface-elevated border border-divider text-[12px] text-text-primary flex items-center">
+                Project: {filterLabels.deal}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={clearScopeFilters}
+              className="h-8 px-2.5 text-[12px] text-primary hover:underline"
+            >
+              Clear filters
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Table */}
       <div className="flex-1 overflow-auto">
         {loading ? (
           <p className="text-center text-[13px] text-text-secondary py-10">Loading…</p>

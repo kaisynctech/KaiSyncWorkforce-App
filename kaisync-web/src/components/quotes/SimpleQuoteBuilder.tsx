@@ -9,7 +9,8 @@ import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { createProject } from '@/lib/projects'
 import { createJob } from '@/lib/jobs'
 import { createSupplyRfqFromQuote } from '@/lib/supply-rfq'
-import { downloadQuotePdf, openQuoteMailto } from '@/lib/quote-pdf'
+import { downloadQuotePdf, openQuoteMailto, quotePdfBase64 } from '@/lib/quote-pdf'
+import { sendQuoteEmailViaResend } from '@/lib/send-quote-email'
 import SimpleQuoteLineRow from './SimpleQuoteLineRow'
 import RateCardPicker, { type RateCardSelection } from './RateCardPicker'
 
@@ -553,11 +554,37 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
     downloadQuotePdf(buildPdfInput())
   }
 
-  /** Mailto + PDF download for now; Resend Edge Function kept for later. */
+  /** Prefer Resend Edge send when configured; otherwise mailto + PDF download. */
   async function handleSendWithMailto() {
     setSendBusy(true)
-    await doSave()
+    setActionError(null)
+    const qid = await doSave()
+    if (!qid) {
+      setSendBusy(false)
+      return
+    }
     const pdf = buildPdfInput()
+    const resend = await sendQuoteEmailViaResend(supabase, {
+      quoteId: qid,
+      pdfBase64: quotePdfBase64(pdf),
+      recipientEmail: pdf.client_email,
+      filename: `Quote_${(pdf.quote_number || 'draft').replace(/[^\w.-]+/g, '_')}.pdf`,
+      subject: `Quote ${pdf.quote_number ?? ''} – ${pdf.title || 'Quotation'}`.trim(),
+    })
+
+    if (resend.ok) {
+      setStatus('sent')
+      statusRef.current = 'sent'
+      setShowSendModal(false)
+      setSendBusy(false)
+      setShowWhatsNext(true)
+      return
+    }
+
+    if (resend.reason === 'send_failed') {
+      setActionError(resend.message ?? 'Email send failed. You can still use mailto.')
+    }
+
     downloadQuotePdf(pdf)
     openQuoteMailto({
       to: pdf.client_email,

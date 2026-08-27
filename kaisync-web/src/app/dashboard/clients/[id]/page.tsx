@@ -1575,7 +1575,7 @@ function ClientDetailInner() {
                 <div className="bg-surface rounded-xl border border-divider overflow-hidden">
                   <div className="px-4 py-3 border-b border-divider flex items-center justify-between">
                     <h3 className="text-[14px] font-semibold text-text-primary">Invoice History</h3>
-                    <a href={`/dashboard/money/invoices`} className="text-[12px] text-primary">View all →</a>
+                    <a href={`/dashboard/money/invoices?client=${client?.id}`} className="text-[12px] text-primary">View all →</a>
                   </div>
                   <table className="w-full">
                     <thead>
