@@ -231,7 +231,7 @@ export default function SupplierInvoiceDetailPage() {
             {lines.length === 0 ? (
               <tr>
                 <td colSpan={5} className="data-td text-center text-text-secondary py-8">
-                  No line items (header-only invoice).
+                  No line items yet. Create from a GRN or PO to copy lines automatically.
                 </td>
               </tr>
             ) : lines.map(line => (
