@@ -735,7 +735,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
 
     setActionBusy(false)
     setShowWhatsNext(false)
-    router.push(`/dashboard/money/invoices/${invId}`)
+    router.push(`/dashboard/money/invoices/${invId}?whats_next=1`)
   }
 
   async function handleCreateRfqFromQuote() {

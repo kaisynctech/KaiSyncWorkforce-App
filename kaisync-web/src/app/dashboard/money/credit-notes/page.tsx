@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { fmtMoney } from '@/lib/finance-calc'
@@ -34,6 +35,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default function CreditNotesPage() {
+  const router = useRouter()
   const [rows, setRows]       = useState<CreditNoteRow[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -80,7 +82,11 @@ export default function CreditNotesPage() {
             </thead>
             <tbody>
               {rows.map(r => (
-                <tr key={r.id} className="border-b border-divider hover:bg-surface-elevated transition-colors">
+                <tr
+                  key={r.id}
+                  className="border-b border-divider hover:bg-surface-elevated transition-colors cursor-pointer"
+                  onClick={() => router.push(`/dashboard/money/credit-notes/${r.id}`)}
+                >
                   <td className="data-td text-[13px] font-medium text-text-primary">
                     {r.credit_note_number || <span className="text-text-disabled italic">draft</span>}
                   </td>
