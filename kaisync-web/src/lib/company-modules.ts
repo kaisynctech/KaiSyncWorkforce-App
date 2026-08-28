@@ -22,6 +22,7 @@ export const CompanyModuleKeys = {
   Leave: 'leave',
   Messaging: 'messaging',
   Settings: 'settings',
+  Farms: 'farms',
   LegacyProperties: 'properties',
 } as const
 
@@ -29,6 +30,7 @@ export type CompanyModuleKey = (typeof CompanyModuleKeys)[keyof typeof CompanyMo
 
 const DEFAULT_IF_MISSING: Record<string, boolean> = {
   [CompanyModuleKeys.Paperless]: false,
+  [CompanyModuleKeys.Farms]: false,
 }
 
 export type EnabledModules = Record<string, boolean> | null | undefined
@@ -52,6 +54,7 @@ export const COMPANY_MODULE_SPECS: ModuleSpec[] = [
   { key: CompanyModuleKeys.Payroll, title: 'Payments', description: 'Salary, hourly rates, payment approvals.', defaultIfMissing: true },
   { key: CompanyModuleKeys.Incidents, title: 'Incidents', description: 'Incident reporting, tracking, and resolution.', defaultIfMissing: true },
   { key: CompanyModuleKeys.Paperless, title: 'Paperless Forms', description: 'Custom forms and digital signatures.', defaultIfMissing: false },
+  { key: CompanyModuleKeys.Farms, title: 'Farms', description: 'Farm register, land units, and livestock tracking.', defaultIfMissing: false },
   { key: CompanyModuleKeys.Employees, title: 'Employees', description: 'Employee records, assignments, and access controls.', defaultIfMissing: true },
   { key: CompanyModuleKeys.Contractors, title: 'Contractors', description: 'External service providers with their own scorecard.', defaultIfMissing: true },
   { key: CompanyModuleKeys.PropertyManagement, title: 'Property Management', description: 'Sites, units, residents, and per-unit reporting.', defaultIfMissing: true },
@@ -128,6 +131,13 @@ export const MAIN_MODULE_SPECS: MainModuleSpec[] = [
     leadKey: CompanyModuleKeys.PropertyManagement,
     keys: [CompanyModuleKeys.PropertyManagement],
     defaultIfMissing: true,
+  },
+  {
+    id: 'farms',
+    title: 'Farms',
+    leadKey: CompanyModuleKeys.Farms,
+    keys: [CompanyModuleKeys.Farms],
+    defaultIfMissing: false,
   },
   {
     id: 'incidents',
@@ -277,6 +287,7 @@ export type HrNavFlags = {
   suppliers: boolean
   assets: boolean
   properties: boolean
+  farms: boolean
   incidents: boolean
   reports: boolean
   scheduling: boolean
@@ -315,6 +326,7 @@ export function resolveHrNavFlags(enabledModules: EnabledModules, financeEntitle
     suppliers: isModuleEnabled(enabledModules, CompanyModuleKeys.Suppliers),
     assets: isModuleEnabled(enabledModules, CompanyModuleKeys.AssetCompliance),
     properties,
+    farms: isModuleEnabled(enabledModules, CompanyModuleKeys.Farms, false),
     incidents: isIncidentsEnabled(enabledModules),
     reports: isModuleEnabled(enabledModules, CompanyModuleKeys.Reports),
     scheduling,

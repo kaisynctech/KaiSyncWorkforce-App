@@ -98,6 +98,15 @@ const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
+    id: 'farms',
+    label: 'Farms',
+    icon: 'agriculture',
+    items: [
+      { label: 'Farms',     href: '/dashboard/farms',           icon: 'agriculture', flag: 'farms' },
+      { label: 'Livestock', href: '/dashboard/farms/livestock', icon: 'pets',        flag: 'farms' },
+    ],
+  },
+  {
     id: 'insights',
     label: 'Insights',
     icon: 'bar_chart',
@@ -121,6 +130,7 @@ const ALL_HR_FLAGS: HrNavFlags = {
   suppliers: true,
   assets: true,
   properties: true,
+  farms: true,
   incidents: true,
   reports: true,
   scheduling: true,
