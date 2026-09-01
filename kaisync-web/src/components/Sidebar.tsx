@@ -12,6 +12,7 @@ import {
 import { resolveFinanceNavFlag } from '@/lib/finance-gate'
 import { loadCompanyWorkspace } from '@/lib/employee-workspace'
 import { isPlatformAdmin } from '@/lib/platform-admin'
+import { MODULES_UPDATED_EVENT, type ModulesUpdatedDetail } from '@/lib/module-events'
 import { PwaInstallButton } from '@/components/PwaInstallButton'
 import type { Company, Employee } from '@/types/database'
 
@@ -117,33 +118,9 @@ const NAV_SECTIONS: NavSection[] = [
   },
 ]
 
-const ALL_HR_FLAGS: HrNavFlags = {
-  employees: true,
-  leave: true,
-  attendance: true,
-  jobs: true,
-  projects: true,
-  payroll: true,
-  contractors: true,
-  clients: true,
-  inventory: true,
-  suppliers: true,
-  assets: true,
-  properties: true,
-  farms: true,
-  incidents: true,
-  reports: true,
-  scheduling: true,
-  myPa: true,
-  workTeams: true,
-  messaging: true,
-  settings: true,
-  compliancePacks: true,
-  timeTemplates: true,
-  teamPunch: true,
-  residents: true,
-  finance: true,
-  commercial: true,
+/** Initial flags from company modules — never flash opt-in modules (farms) as on. */
+function flagsFromCompany(company: Company | null | undefined, finance = false): HrNavFlags {
+  return resolveHrNavFlags(company?.enabled_modules ?? {}, finance)
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -291,7 +268,7 @@ interface SidebarProps {
 export default function Sidebar({ company, employee, platformOnly = false }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
-  const [flags, setFlags] = useState<HrNavFlags>(ALL_HR_FLAGS)
+  const [flags, setFlags] = useState<HrNavFlags>(() => flagsFromCompany(company))
   const [showPlatform, setShowPlatform] = useState(platformOnly)
   const [panelCollapsed, setPanelCollapsed] = useState(false)
 
@@ -306,18 +283,32 @@ export default function Sidebar({ company, employee, platformOnly = false }: Sid
       const admin = await isPlatformAdmin(supabase)
       if (!cancelled) setShowPlatform(admin)
 
-      if (!company?.id) return
+      if (!company?.id) {
+        if (!cancelled) setFlags(flagsFromCompany(null))
+        return
+      }
       const workspace = await loadCompanyWorkspace(supabase, company.id)
-      const { finance } = await resolveFinanceNavFlag(
-        supabase,
-        company.id,
-        workspace?.enabled_modules,
-      )
-      if (!cancelled) setFlags(resolveHrNavFlags(workspace?.enabled_modules, finance))
+      const modules = workspace?.enabled_modules ?? company.enabled_modules ?? {}
+      const { finance } = await resolveFinanceNavFlag(supabase, company.id, modules)
+      if (!cancelled) setFlags(resolveHrNavFlags(modules, finance))
     }
     void load()
     return () => { cancelled = true }
   }, [company?.id, platformOnly])
+
+  useEffect(() => {
+    function onModulesUpdated(ev: Event) {
+      const detail = (ev as CustomEvent<ModulesUpdatedDetail>).detail
+      if (!detail || detail.companyId !== company?.id) return
+      void (async () => {
+        const supabase = createClient()
+        const { finance } = await resolveFinanceNavFlag(supabase, detail.companyId, detail.enabledModules)
+        setFlags(resolveHrNavFlags(detail.enabledModules, finance))
+      })()
+    }
+    window.addEventListener(MODULES_UPDATED_EVENT, onModulesUpdated)
+    return () => window.removeEventListener(MODULES_UPDATED_EVENT, onModulesUpdated)
+  }, [company?.id])
 
   const isOwner = (employee?.access_level ?? '').toLowerCase() === 'owner'
 
