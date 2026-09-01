@@ -9,20 +9,30 @@ import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permission
 import { recordLivestockEvent } from '@/lib/farms'
 import { KpiTile } from '@/components/ui/KpiTile'
 import {
+  CROP_TYPE_OPTIONS,
   EVENT_TYPE_LABELS,
+  FARM_QTY_UNITS,
   LAND_UNIT_TYPES,
+  PRODUCT_TYPE_OPTIONS,
+  PRODUCTION_UNITS,
   SPECIES_OPTIONS,
+  type CropType,
   type Farm,
   type FarmAnimal,
   type FarmLandUnit,
   type FarmLandUnitType,
   type FarmLivestockEvent,
   type FarmLivestockGroup,
+  type FarmPlanting,
+  type FarmProductionLot,
+  type FarmQtyUnit,
   type LivestockEventType,
   type LivestockSpecies,
+  type ProductionProductType,
+  type ProductionUnit,
 } from '@/types/farms'
 
-type Tab = 'overview' | 'land' | 'livestock' | 'animals' | 'events'
+type Tab = 'overview' | 'land' | 'livestock' | 'animals' | 'events' | 'plantings' | 'production'
 
 export default function FarmDetailPage() {
   return (
@@ -38,7 +48,7 @@ function FarmDetailInner() {
   const searchParams = useSearchParams()
   const initialTab = (searchParams.get('tab') as Tab | null)
   const [tab, setTab] = useState<Tab>(
-    initialTab && ['overview', 'land', 'livestock', 'animals', 'events'].includes(initialTab)
+    initialTab && ['overview', 'land', 'livestock', 'animals', 'events', 'plantings', 'production'].includes(initialTab)
       ? initialTab
       : 'overview',
   )
@@ -47,6 +57,8 @@ function FarmDetailInner() {
   const [groups, setGroups] = useState<FarmLivestockGroup[]>([])
   const [animals, setAnimals] = useState<FarmAnimal[]>([])
   const [events, setEvents] = useState<FarmLivestockEvent[]>([])
+  const [plantings, setPlantings] = useState<FarmPlanting[]>([])
+  const [lots, setLots] = useState<FarmProductionLot[]>([])
   const [loading, setLoading] = useState(true)
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [employeeId, setEmployeeId] = useState<string | null>(null)
@@ -92,6 +104,25 @@ function FarmDetailInner() {
   const [aGroup, setAGroup] = useState('')
   const [aSex, setASex] = useState('')
 
+  // Planting form
+  const [showPlanting, setShowPlanting] = useState(false)
+  const [pName, setPName] = useState('')
+  const [pCrop, setPCrop] = useState<CropType>('vegetable')
+  const [pVariety, setPVariety] = useState('')
+  const [pLand, setPLand] = useState('')
+  const [pArea, setPArea] = useState('')
+  const [pCount, setPCount] = useState('')
+  const [pPlanted, setPPlanted] = useState(() => new Date().toISOString().slice(0, 10))
+  const [pUnit, setPUnit] = useState<FarmQtyUnit>('kg')
+
+  // Production lot form
+  const [showLot, setShowLot] = useState(false)
+  const [lName, setLName] = useState('')
+  const [lProduct, setLProduct] = useState<ProductionProductType>('eggs')
+  const [lUnit, setLUnit] = useState<ProductionUnit>('dozen')
+  const [lGroup, setLGroup] = useState('')
+  const [lLand, setLLand] = useState('')
+
   const canEdit = can(perms, PERM.farmsEdit)
 
   const load = useCallback(async () => {
@@ -108,7 +139,7 @@ function FarmDetailInner() {
       .maybeSingle()
     setPerms(await loadPermissions(supabase, member.companyId, me?.access_level))
 
-    const [fRes, lRes, gRes, aRes, eRes] = await Promise.all([
+    const [fRes, lRes, gRes, aRes, eRes, pRes, lotRes] = await Promise.all([
       supabase.from('farms').select('*').eq('id', id).eq('company_id', member.companyId).maybeSingle(),
       supabase.from('farm_land_units').select('*').eq('farm_id', id).eq('company_id', member.companyId).order('name'),
       supabase.from('farm_livestock_groups').select('*, farm_land_units(name)').eq('farm_id', id).eq('company_id', member.companyId).order('name'),
@@ -120,6 +151,18 @@ function FarmDetailInner() {
         .eq('company_id', member.companyId)
         .order('event_date', { ascending: false })
         .limit(100),
+      supabase
+        .from('farm_plantings')
+        .select('*, farm_land_units(name)')
+        .eq('farm_id', id)
+        .eq('company_id', member.companyId)
+        .order('name'),
+      supabase
+        .from('farm_production_lots')
+        .select('*, farm_land_units(name), farm_livestock_groups(name)')
+        .eq('farm_id', id)
+        .eq('company_id', member.companyId)
+        .order('name'),
     ])
 
     if (!fRes.data) {
@@ -137,6 +180,8 @@ function FarmDetailInner() {
     setGroups((gRes.data ?? []) as FarmLivestockGroup[])
     setAnimals((aRes.data ?? []) as FarmAnimal[])
     setEvents((eRes.data ?? []) as FarmLivestockEvent[])
+    setPlantings((pRes.data ?? []) as FarmPlanting[])
+    setLots((lotRes.data ?? []) as FarmProductionLot[])
     setLoading(false)
   }, [id, router])
 
@@ -264,6 +309,59 @@ function FarmDetailInner() {
     await load()
   }
 
+  async function addPlanting() {
+    if (!companyId || !canEdit || !pName.trim()) return
+    setBusy(true)
+    const supabase = createClient()
+    const { data: created, error: e } = await supabase.from('farm_plantings').insert({
+      company_id: companyId,
+      farm_id: id,
+      name: pName.trim(),
+      crop_type: pCrop,
+      variety: pVariety.trim() || null,
+      land_unit_id: pLand || null,
+      area_ha: pArea ? Number(pArea) : null,
+      plant_count: pCount ? Math.max(0, Math.floor(Number(pCount))) : null,
+      planted_at: pPlanted || null,
+      harvest_unit: pUnit,
+      status: pPlanted ? 'active' : 'planned',
+      created_by: employeeId,
+    }).select('id').single()
+    setBusy(false)
+    if (e || !created) { setError(e?.message ?? 'Failed to create planting'); return }
+    setShowPlanting(false)
+    setPName('')
+    setPVariety('')
+    setPLand('')
+    setPArea('')
+    setPCount('')
+    router.push(`/dashboard/farms/${id}/plantings/${created.id}`)
+  }
+
+  async function addLot() {
+    if (!companyId || !canEdit || !lName.trim()) return
+    setBusy(true)
+    const supabase = createClient()
+    const { data: created, error: e } = await supabase.from('farm_production_lots').insert({
+      company_id: companyId,
+      farm_id: id,
+      name: lName.trim(),
+      product_type: lProduct,
+      unit: lUnit,
+      group_id: lGroup || null,
+      land_unit_id: lLand || null,
+      status: 'open',
+      created_by: employeeId,
+    }).select('id').single()
+    setBusy(false)
+    if (e || !created) { setError(e?.message ?? 'Failed to create production lot'); return }
+    setShowLot(false)
+    setLName('')
+    setLGroup('')
+    setLLand('')
+    router.push(`/dashboard/farms/${id}/production/${created.id}`)
+  }
+
   async function submitEvent() {
     if (!companyId || !canEdit || !eGroup) return
     setBusy(true)
@@ -299,6 +397,8 @@ function FarmDetailInner() {
     { id: 'livestock', label: 'Livestock' },
     { id: 'animals', label: 'Animals' },
     { id: 'events', label: 'Events' },
+    { id: 'plantings', label: 'Plantings' },
+    { id: 'production', label: 'Production' },
   ]
 
   return (
@@ -535,6 +635,86 @@ function FarmDetailInner() {
             )}
           </div>
         )}
+
+        {tab === 'plantings' && (
+          <div className="space-y-3">
+            {canEdit && (
+              <button type="button" onClick={() => setShowPlanting(true)} className="btn-outlined h-9 px-3 text-[13px]">+ Planting</button>
+            )}
+            <p className="text-[12px] text-text-secondary">Crops and orchards — open a planting for harvest and activity.</p>
+            {plantings.length === 0 ? (
+              <p className="text-[13px] text-text-secondary">No plantings yet.</p>
+            ) : (
+              <table className="w-full" style={{ minWidth: 600 }}>
+                <thead>
+                  <tr className="border-b border-divider">
+                    <th className="data-th text-left">Name</th>
+                    <th className="data-th text-left">Crop</th>
+                    <th className="data-th text-left">Land</th>
+                    <th className="data-th text-right">Harvested</th>
+                    <th className="data-th text-left">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {plantings.map(p => (
+                    <tr
+                      key={p.id}
+                      className="border-b border-divider hover:bg-surface-elevated cursor-pointer"
+                      onClick={() => router.push(`/dashboard/farms/${id}/plantings/${p.id}`)}
+                    >
+                      <td className="data-td text-[13px] font-medium text-primary">{p.name}</td>
+                      <td className="data-td text-[13px] capitalize">{p.crop_type}{p.variety ? ` · ${p.variety}` : ''}</td>
+                      <td className="data-td text-[13px] text-text-secondary">{p.farm_land_units?.name ?? '—'}</td>
+                      <td className="data-td text-[13px] text-right">{Number(p.total_harvested)} {p.harvest_unit}</td>
+                      <td className="data-td text-[12px] capitalize">{p.status}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+
+        {tab === 'production' && (
+          <div className="space-y-3">
+            {canEdit && (
+              <button type="button" onClick={() => setShowLot(true)} className="btn-outlined h-9 px-3 text-[13px]">+ Production lot</button>
+            )}
+            <p className="text-[12px] text-text-secondary">Eggs, milk, honey — open a lot to collect, loss, or sale.</p>
+            {lots.length === 0 ? (
+              <p className="text-[13px] text-text-secondary">No production lots yet.</p>
+            ) : (
+              <table className="w-full" style={{ minWidth: 600 }}>
+                <thead>
+                  <tr className="border-b border-divider">
+                    <th className="data-th text-left">Name</th>
+                    <th className="data-th text-left">Product</th>
+                    <th className="data-th text-left">Source</th>
+                    <th className="data-th text-right">Qty</th>
+                    <th className="data-th text-left">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lots.map(lot => (
+                    <tr
+                      key={lot.id}
+                      className="border-b border-divider hover:bg-surface-elevated cursor-pointer"
+                      onClick={() => router.push(`/dashboard/farms/${id}/production/${lot.id}`)}
+                    >
+                      <td className="data-td text-[13px] font-medium text-primary">{lot.name}</td>
+                      <td className="data-td text-[13px] capitalize">{lot.product_type}</td>
+                      <td className="data-td text-[13px] text-text-secondary">
+                        {lot.farm_livestock_groups?.name ?? lot.farm_land_units?.name ?? '—'}
+                      </td>
+                      <td className="data-td text-[13px] text-right">{Number(lot.quantity_total)} {lot.unit}</td>
+                      <td className="data-td text-[12px] capitalize">{lot.status}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Modals */}
@@ -662,6 +842,90 @@ function FarmDetailInner() {
           <div className="flex justify-end gap-2">
             <button type="button" onClick={() => setShowAnimal(false)} className="btn-outlined h-9 px-3 text-[13px]">Cancel</button>
             <button type="button" disabled={busy} onClick={() => void addAnimal()} className="btn-primary h-9 px-3 text-[13px] disabled:opacity-50">Add</button>
+          </div>
+        </Modal>
+      )}
+
+      {showPlanting && (
+        <Modal title="New planting" onClose={() => setShowPlanting(false)}>
+          <label className="block text-[12px] text-text-secondary">Name
+            <input value={pName} onChange={e => setPName(e.target.value)} placeholder="e.g. Tunnel tomatoes Q3" className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+          </label>
+          <label className="block text-[12px] text-text-secondary">Crop type
+            <select value={pCrop} onChange={e => setPCrop(e.target.value as CropType)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background">
+              {CROP_TYPE_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+          </label>
+          <label className="block text-[12px] text-text-secondary">Variety (optional)
+            <input value={pVariety} onChange={e => setPVariety(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+          </label>
+          <label className="block text-[12px] text-text-secondary">Land unit
+            <select value={pLand} onChange={e => setPLand(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background">
+              <option value="">— None —</option>
+              {landUnits.filter(u => u.is_active).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block text-[12px] text-text-secondary">Area (ha)
+              <input type="number" step="0.01" value={pArea} onChange={e => setPArea(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+            </label>
+            <label className="block text-[12px] text-text-secondary">Plant count
+              <input type="number" min={0} value={pCount} onChange={e => setPCount(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+            </label>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block text-[12px] text-text-secondary">Planted date
+              <input type="date" value={pPlanted} onChange={e => setPPlanted(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+            </label>
+            <label className="block text-[12px] text-text-secondary">Harvest unit
+              <select value={pUnit} onChange={e => setPUnit(e.target.value as FarmQtyUnit)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background">
+                {FARM_QTY_UNITS.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}
+              </select>
+            </label>
+          </div>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setShowPlanting(false)} className="btn-outlined h-9 px-3 text-[13px]">Cancel</button>
+            <button type="button" disabled={busy || !pName.trim()} onClick={() => void addPlanting()} className="btn-primary h-9 px-3 text-[13px] disabled:opacity-50">Create</button>
+          </div>
+        </Modal>
+      )}
+
+      {showLot && (
+        <Modal title="New production lot" onClose={() => setShowLot(false)}>
+          <label className="block text-[12px] text-text-secondary">Name
+            <input value={lName} onChange={e => setLName(e.target.value)} placeholder="e.g. Week 36 eggs" className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+          </label>
+          <label className="block text-[12px] text-text-secondary">Product
+            <select value={lProduct} onChange={e => {
+              const v = e.target.value as ProductionProductType
+              setLProduct(v)
+              if (v === 'eggs') setLUnit('dozen')
+              else if (v === 'milk') setLUnit('litre')
+              else if (v === 'honey') setLUnit('kg')
+            }} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background">
+              {PRODUCT_TYPE_OPTIONS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+            </select>
+          </label>
+          <label className="block text-[12px] text-text-secondary">Unit
+            <select value={lUnit} onChange={e => setLUnit(e.target.value as ProductionUnit)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background">
+              {PRODUCTION_UNITS.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}
+            </select>
+          </label>
+          <label className="block text-[12px] text-text-secondary">Livestock group (optional)
+            <select value={lGroup} onChange={e => setLGroup(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background">
+              <option value="">— None —</option>
+              {groups.filter(g => g.status === 'active').map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+            </select>
+          </label>
+          <label className="block text-[12px] text-text-secondary">Land unit (optional)
+            <select value={lLand} onChange={e => setLLand(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background">
+              <option value="">— None —</option>
+              {landUnits.filter(u => u.is_active).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>
+          </label>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setShowLot(false)} className="btn-outlined h-9 px-3 text-[13px]">Cancel</button>
+            <button type="button" disabled={busy || !lName.trim()} onClick={() => void addLot()} className="btn-primary h-9 px-3 text-[13px] disabled:opacity-50">Create</button>
           </div>
         </Modal>
       )}
