@@ -4,13 +4,20 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import { useDashboardCompany } from '@/components/DashboardCompanyContext'
 import {
   hrModuleDeniedMessage,
   hrPermissionDeniedMessage,
-  resolveHrModuleAccess,
   type HrModuleFlag,
 } from '@/lib/hr-module-gate'
-import type { PermissionKey } from '@/lib/permissions'
+import { MODULES_UPDATED_EVENT, type ModulesUpdatedDetail } from '@/lib/module-events'
+import {
+  resolveHrNavFlags,
+  type EnabledModules,
+} from '@/lib/company-modules'
+import { can, loadPermissions, type PermissionKey } from '@/lib/permissions'
+import { loadCompanyWorkspace } from '@/lib/employee-workspace'
+import { resolveFinanceNavFlag } from '@/lib/finance-gate'
 
 export function HrModuleGate({
   flag,
@@ -23,41 +30,84 @@ export function HrModuleGate({
   children: React.ReactNode
 }) {
   const router = useRouter()
+  const { company, employee } = useDashboardCompany()
   const [allowed, setAllowed] = useState<boolean | null>(null)
-  const [denyReason, setDenyReason] = useState<'module' | 'permission'>('module')
+  const [denyReason, setDenyReason] = useState<'module' | 'permission' | 'auth'>('module')
+  const [modulesOverride, setModulesOverride] = useState<EnabledModules | null>(null)
 
   useEffect(() => {
+    function onModulesUpdated(ev: Event) {
+      const detail = (ev as CustomEvent<ModulesUpdatedDetail>).detail
+      if (!detail) return
+      if (company?.id && detail.companyId !== company.id) return
+      setModulesOverride(detail.enabledModules)
+    }
+    window.addEventListener(MODULES_UPDATED_EVENT, onModulesUpdated)
+    return () => window.removeEventListener(MODULES_UPDATED_EVENT, onModulesUpdated)
+  }, [company?.id])
+
+  useEffect(() => {
+    let cancelled = false
+
     void (async () => {
       const supabase = createClient()
       const member = await resolveCurrentMember(supabase)
-      if (!member) {
-        setAllowed(false)
-        setDenyReason('module')
+
+      // Layout company is source of truth for multi-company users (nav + gate must match)
+      const companyId = company?.id ?? member?.companyId
+      if (!companyId) {
+        if (!cancelled) {
+          setDenyReason('auth')
+          setAllowed(false)
+        }
         return
       }
-      const { data: me } = await supabase
-        .from('employees')
-        .select('access_level')
-        .eq('id', member.employeeId)
-        .maybeSingle()
-      const moduleOnly = await resolveHrModuleAccess(supabase, member.companyId, flag)
-      if (!moduleOnly.allowed) {
-        setDenyReason('module')
-        setAllowed(false)
+
+      const workspace = await loadCompanyWorkspace(supabase, companyId)
+      const enabled: EnabledModules = {
+        ...(workspace?.enabled_modules ?? {}),
+        ...(company?.enabled_modules ?? {}),
+        ...(modulesOverride ?? {}),
+      }
+
+      const { finance } = await resolveFinanceNavFlag(supabase, companyId, enabled)
+      const flags = resolveHrNavFlags(enabled, finance)
+      const moduleAllowed = Boolean(flags[flag])
+
+      if (!moduleAllowed) {
+        if (!cancelled) {
+          setDenyReason('module')
+          setAllowed(false)
+        }
         return
       }
+
       if (permissionKey) {
-        const withPerm = await resolveHrModuleAccess(supabase, member.companyId, flag, {
-          permissionKey,
-          accessLevel: me?.access_level,
-        })
-        setDenyReason(withPerm.allowed ? 'module' : 'permission')
-        setAllowed(withPerm.allowed)
+        const perms = await loadPermissions(
+          supabase,
+          companyId,
+          employee?.access_level ?? null,
+        )
+        const ok = can(perms, permissionKey)
+        if (!cancelled) {
+          setDenyReason(ok ? 'module' : 'permission')
+          setAllowed(ok)
+        }
         return
       }
-      setAllowed(true)
+
+      if (!cancelled) setAllowed(true)
     })()
-  }, [flag, permissionKey])
+
+    return () => { cancelled = true }
+  }, [
+    flag,
+    permissionKey,
+    company?.id,
+    company?.enabled_modules,
+    employee?.access_level,
+    modulesOverride,
+  ])
 
   if (allowed === null) {
     return (
@@ -73,12 +123,18 @@ export function HrModuleGate({
         <div className="text-center space-y-3 max-w-md">
           <span className="material-icons text-[48px] text-text-disabled">lock</span>
           <p className="text-[16px] font-semibold text-text-primary">
-            {denyReason === 'permission' ? 'Access denied' : 'Module unavailable'}
+            {denyReason === 'permission'
+              ? 'Access denied'
+              : denyReason === 'auth'
+                ? 'Sign-in required'
+                : 'Module unavailable'}
           </p>
           <p className="text-[13px] text-text-secondary">
             {denyReason === 'permission'
               ? hrPermissionDeniedMessage(flag)
-              : hrModuleDeniedMessage(flag)}
+              : denyReason === 'auth'
+                ? 'Could not resolve your company session. Refresh the page or sign in again.'
+                : hrModuleDeniedMessage(flag)}
           </p>
           <button
             onClick={() => router.push('/dashboard/overview')}

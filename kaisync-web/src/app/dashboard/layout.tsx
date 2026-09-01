@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import Sidebar from '@/components/Sidebar'
 import EmployeeSidebar from '@/components/EmployeeSidebar'
+import { DashboardCompanyProvider } from '@/components/DashboardCompanyContext'
 import { getCodeSession, getEmpContext, clearCodeSession } from '@/lib/auth/code-session'
 import { AUTH_ROUTES, usesCompanyDashboard } from '@/lib/auth/employee-routing'
 import { refreshCodeSession } from '@/lib/auth/session'
@@ -127,41 +128,45 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // ── Employee shell (field workers) — old left-sidebar layout unchanged ──
   if (showEmployeeShell) {
     return (
-      <div className="flex h-screen overflow-hidden">
-        <EmployeeSidebar
-          open={sidebarOpen}
-          onToggle={() => setSidebarOpen(v => !v)}
-          company={company}
-          employee={employee}
-        />
-        <div className="flex flex-col flex-1 overflow-hidden bg-background">
-          <main className="flex-1 overflow-y-auto">
-            {children}
-          </main>
+      <DashboardCompanyProvider company={company} employee={employee}>
+        <div className="flex h-screen overflow-hidden">
+          <EmployeeSidebar
+            open={sidebarOpen}
+            onToggle={() => setSidebarOpen(v => !v)}
+            company={company}
+            employee={employee}
+          />
+          <div className="flex flex-col flex-1 overflow-hidden bg-background">
+            <main className="flex-1 overflow-y-auto">
+              {children}
+            </main>
+          </div>
         </div>
-      </div>
+      </DashboardCompanyProvider>
     )
   }
 
   // ── Manager / admin shell — top nav + collapsible left panel ──
   return (
-    <div className="flex flex-col h-screen overflow-hidden">
-      <Sidebar
-        open={sidebarOpen}
-        onToggle={() => setSidebarOpen(v => !v)}
-        company={company}
-        employee={employee}
-        platformOnly={platformOnly}
-      />
-      <div className="flex flex-1 overflow-hidden">
-        {/* paddingLeft tracks --sidebar-panel-w set by Sidebar (fixed left panel width) */}
-        <main
-          className="flex-1 overflow-y-auto bg-background transition-[padding] duration-200"
-          style={{ paddingLeft: 'var(--sidebar-panel-w, 0px)' }}
-        >
-          {children}
-        </main>
+    <DashboardCompanyProvider company={company} employee={employee}>
+      <div className="flex flex-col h-screen overflow-hidden">
+        <Sidebar
+          open={sidebarOpen}
+          onToggle={() => setSidebarOpen(v => !v)}
+          company={company}
+          employee={employee}
+          platformOnly={platformOnly}
+        />
+        <div className="flex flex-1 overflow-hidden">
+          {/* paddingLeft tracks --sidebar-panel-w set by Sidebar (fixed left panel width) */}
+          <main
+            className="flex-1 overflow-y-auto bg-background transition-[padding] duration-200"
+            style={{ paddingLeft: 'var(--sidebar-panel-w, 0px)' }}
+          >
+            {children}
+          </main>
+        </div>
       </div>
-    </div>
+    </DashboardCompanyProvider>
   )
 }
