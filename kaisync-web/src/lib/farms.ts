@@ -1,9 +1,14 @@
 /**
- * Farms livestock helpers — apply headcount deltas when recording events.
+ * Farms helpers — livestock headcount, planting harvest totals, production lot qty.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { LivestockEventType } from '@/types/farms'
+import type {
+  FarmQtyUnit,
+  LivestockEventType,
+  PlantingEventType,
+  ProductionEventType,
+} from '@/types/farms'
 
 export type RecordLivestockEventInput = {
   companyId: string
@@ -32,7 +37,7 @@ function headcountDelta(eventType: LivestockEventType, quantity: number): number
     case 'sale':
       return -quantity
     case 'count_adjust':
-      return quantity // caller passes signed intent via quantity + notes; we treat as absolute add
+      return quantity
     case 'move':
       return 0
     default:
@@ -59,8 +64,6 @@ export async function recordLivestockEvent(
   const current = Number(group.headcount ?? 0)
   let delta = headcountDelta(input.eventType, qty)
 
-  // count_adjust: quantity is the new absolute headcount when notes start with "set:"
-  // Default count_adjust treats quantity as the delta to apply (can be passed as positive only from UI).
   if (input.eventType === 'count_adjust') {
     delta = qty - current
   }
@@ -117,4 +120,151 @@ export async function recordLivestockEvent(
   }
 
   return { ok: true, newHeadcount: next }
+}
+
+export type RecordPlantingEventInput = {
+  companyId: string
+  farmId: string
+  plantingId: string
+  employeeId: string | null
+  eventType: PlantingEventType
+  quantity: number
+  unit?: FarmQtyUnit
+  eventDate?: string
+  notes?: string | null
+}
+
+export type RecordPlantingEventResult =
+  | { ok: true; totalHarvested: number }
+  | { ok: false; message: string }
+
+export async function recordPlantingEvent(
+  supabase: SupabaseClient,
+  input: RecordPlantingEventInput,
+): Promise<RecordPlantingEventResult> {
+  const qty = Math.max(0.001, Number(input.quantity) || 0)
+  const { data: planting, error: pErr } = await supabase
+    .from('farm_plantings')
+    .select('id, total_harvested, harvest_unit, status')
+    .eq('id', input.plantingId)
+    .eq('company_id', input.companyId)
+    .maybeSingle()
+
+  if (pErr || !planting) {
+    return { ok: false, message: pErr?.message ?? 'Planting not found' }
+  }
+
+  const unit = input.unit ?? (planting.harvest_unit as FarmQtyUnit) ?? 'kg'
+  const eventDate = input.eventDate ?? new Date().toISOString().slice(0, 10)
+  const { error: eErr } = await supabase.from('farm_planting_events').insert({
+    company_id: input.companyId,
+    farm_id: input.farmId,
+    planting_id: input.plantingId,
+    event_type: input.eventType,
+    event_date: eventDate,
+    quantity: qty,
+    unit,
+    notes: input.notes?.trim() || null,
+    recorded_by: input.employeeId,
+  })
+
+  if (eErr) {
+    return { ok: false, message: eErr.message }
+  }
+
+  let totalHarvested = Number(planting.total_harvested ?? 0)
+  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
+
+  if (input.eventType === 'harvest') {
+    totalHarvested += qty
+    patch.total_harvested = totalHarvested
+    patch.harvest_unit = unit
+  } else if (input.eventType === 'loss' && totalHarvested > 0) {
+    totalHarvested = Math.max(0, totalHarvested - qty)
+    patch.total_harvested = totalHarvested
+  } else if (input.eventType === 'plant' && planting.status === 'planned') {
+    patch.status = 'active'
+  }
+
+  const { error: uErr } = await supabase
+    .from('farm_plantings')
+    .update(patch)
+    .eq('id', input.plantingId)
+    .eq('company_id', input.companyId)
+
+  if (uErr) {
+    return { ok: false, message: uErr.message }
+  }
+
+  return { ok: true, totalHarvested }
+}
+
+export type RecordProductionEventInput = {
+  companyId: string
+  farmId: string
+  lotId: string
+  employeeId: string | null
+  eventType: ProductionEventType
+  quantity: number
+  eventDate?: string
+  notes?: string | null
+}
+
+export type RecordProductionEventResult =
+  | { ok: true; quantityTotal: number }
+  | { ok: false; message: string }
+
+export async function recordProductionEvent(
+  supabase: SupabaseClient,
+  input: RecordProductionEventInput,
+): Promise<RecordProductionEventResult> {
+  const qty = Math.max(0.001, Number(input.quantity) || 0)
+  const { data: lot, error: lErr } = await supabase
+    .from('farm_production_lots')
+    .select('id, quantity_total, status')
+    .eq('id', input.lotId)
+    .eq('company_id', input.companyId)
+    .maybeSingle()
+
+  if (lErr || !lot) {
+    return { ok: false, message: lErr?.message ?? 'Production lot not found' }
+  }
+
+  const current = Number(lot.quantity_total ?? 0)
+  let next = current
+  if (input.eventType === 'collect') next = current + qty
+  else if (input.eventType === 'loss' || input.eventType === 'sale') next = current - qty
+  else if (input.eventType === 'adjust') next = qty
+
+  if (next < 0) {
+    return { ok: false, message: `Cannot reduce quantity below 0 (current ${current}).` }
+  }
+
+  const eventDate = input.eventDate ?? new Date().toISOString().slice(0, 10)
+  const { error: eErr } = await supabase.from('farm_production_events').insert({
+    company_id: input.companyId,
+    farm_id: input.farmId,
+    lot_id: input.lotId,
+    event_type: input.eventType,
+    event_date: eventDate,
+    quantity: qty,
+    notes: input.notes?.trim() || null,
+    recorded_by: input.employeeId,
+  })
+
+  if (eErr) {
+    return { ok: false, message: eErr.message }
+  }
+
+  const { error: uErr } = await supabase
+    .from('farm_production_lots')
+    .update({ quantity_total: next, updated_at: new Date().toISOString() })
+    .eq('id', input.lotId)
+    .eq('company_id', input.companyId)
+
+  if (uErr) {
+    return { ok: false, message: uErr.message }
+  }
+
+  return { ok: true, quantityTotal: next }
 }
