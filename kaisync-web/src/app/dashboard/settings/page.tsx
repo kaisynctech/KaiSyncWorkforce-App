@@ -12,6 +12,7 @@ import {
   mainModuleUpdates,
   type EnabledModules,
 } from '@/lib/company-modules'
+import { notifyModulesUpdated } from '@/lib/module-events'
 import type { Company, Employee, SecuritySettings, AuditEvent } from '@/types/database'
 import { formatZar, loadCompanyBillingSummary, type BillingSummary } from '@/lib/billing'
 import { checkQuoteEmailConfigured } from '@/lib/send-quote-email'
@@ -311,17 +312,19 @@ export default function SettingsPage() {
     setModulesMsg(null)
     const supabase = createClient()
     const payload = buildEnabledModulesMap(enabledModules, {})
-    const { error: e } = await supabase
-      .from('companies')
-      .update({ enabled_modules: payload })
-      .eq('id', company.id)
+    const { data, error: e } = await supabase.rpc('set_company_enabled_modules', {
+      p_company_id: company.id,
+      p_modules: payload,
+    })
     if (e) {
       setModulesMsg(e.message || 'Failed to save modules')
       setModulesBusy(false)
       return
     }
-    setEnabledModules(payload)
-    setModulesMsg('Modules saved. Sidebar updates on next navigation refresh.')
+    const saved = (data as EnabledModules) ?? payload
+    setEnabledModules(saved)
+    notifyModulesUpdated(company.id, saved)
+    setModulesMsg('Modules saved.')
     setModulesBusy(false)
   }
 
