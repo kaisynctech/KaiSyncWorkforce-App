@@ -113,7 +113,13 @@ function FarmDetailInner() {
       supabase.from('farm_land_units').select('*').eq('farm_id', id).eq('company_id', member.companyId).order('name'),
       supabase.from('farm_livestock_groups').select('*, farm_land_units(name)').eq('farm_id', id).eq('company_id', member.companyId).order('name'),
       supabase.from('farm_animals').select('*').eq('farm_id', id).eq('company_id', member.companyId).order('tag_number'),
-      supabase.from('farm_livestock_events').select('*').eq('farm_id', id).eq('company_id', member.companyId).order('event_date', { ascending: false }).limit(100),
+      supabase
+        .from('farm_livestock_events')
+        .select('*, farm_livestock_groups(name), farm_animals(tag_number, name)')
+        .eq('farm_id', id)
+        .eq('company_id', member.companyId)
+        .order('event_date', { ascending: false })
+        .limit(100),
     ])
 
     if (!fRes.data) {
@@ -231,7 +237,7 @@ function FarmDetailInner() {
     setGBreed('')
     setGCount('0')
     setGLand('')
-    await load()
+    router.push(`/dashboard/farms/${id}/groups/${created.id}`)
   }
 
   async function addAnimal() {
@@ -402,12 +408,10 @@ function FarmDetailInner() {
           <div className="space-y-3">
             <div className="flex gap-2 flex-wrap">
               {canEdit && (
-                <>
-                  <button type="button" onClick={() => setShowGroup(true)} className="btn-outlined h-9 px-3 text-[13px]">+ Group / flock</button>
-                  <button type="button" onClick={() => setShowEvent(true)} className="btn-primary h-9 px-3 text-[13px]">Record event</button>
-                </>
+                <button type="button" onClick={() => setShowGroup(true)} className="btn-outlined h-9 px-3 text-[13px]">+ Group / flock</button>
               )}
             </div>
+            <p className="text-[12px] text-text-secondary">Open a group to view headcount, events, and record activity.</p>
             {groups.length === 0 ? (
               <p className="text-[13px] text-text-secondary">No livestock groups yet.</p>
             ) : (
@@ -423,8 +427,12 @@ function FarmDetailInner() {
                 </thead>
                 <tbody>
                   {groups.map(g => (
-                    <tr key={g.id} className="border-b border-divider">
-                      <td className="data-td text-[13px] font-medium">{g.name}</td>
+                    <tr
+                      key={g.id}
+                      className="border-b border-divider hover:bg-surface-elevated cursor-pointer"
+                      onClick={() => router.push(`/dashboard/farms/${id}/groups/${g.id}`)}
+                    >
+                      <td className="data-td text-[13px] font-medium text-primary">{g.name}</td>
                       <td className="data-td text-[13px] capitalize">{g.species}{g.breed ? ` · ${g.breed}` : ''}</td>
                       <td className="data-td text-[13px] text-text-secondary">{g.farm_land_units?.name ?? '—'}</td>
                       <td className="data-td text-[13px] text-right font-medium">{g.headcount}</td>
@@ -480,24 +488,48 @@ function FarmDetailInner() {
             {events.length === 0 ? (
               <p className="text-[13px] text-text-secondary">No events recorded.</p>
             ) : (
-              <table className="w-full" style={{ minWidth: 560 }}>
+              <table className="w-full" style={{ minWidth: 720 }}>
                 <thead>
                   <tr className="border-b border-divider">
                     <th className="data-th text-left">Date</th>
+                    <th className="data-th text-left">Group</th>
+                    <th className="data-th text-left">Animal</th>
                     <th className="data-th text-left">Type</th>
                     <th className="data-th text-right">Qty</th>
                     <th className="data-th text-left">Notes</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {events.map(ev => (
-                    <tr key={ev.id} className="border-b border-divider">
-                      <td className="data-td text-[13px]">{ev.event_date}</td>
-                      <td className="data-td text-[13px]">{EVENT_TYPE_LABELS[ev.event_type]}</td>
-                      <td className="data-td text-[13px] text-right">{ev.quantity}</td>
-                      <td className="data-td text-[13px] text-text-secondary">{ev.notes ?? '—'}</td>
-                    </tr>
-                  ))}
+                  {events.map(ev => {
+                    const animal = ev.farm_animals
+                    const animalLabel = animal
+                      ? (animal.tag_number && animal.name
+                        ? `${animal.tag_number} · ${animal.name}`
+                        : (animal.tag_number ?? animal.name ?? '—'))
+                      : '—'
+                    return (
+                      <tr key={ev.id} className="border-b border-divider">
+                        <td className="data-td text-[13px]">{ev.event_date}</td>
+                        <td className="data-td text-[13px]">
+                          {ev.group_id && ev.farm_livestock_groups?.name ? (
+                            <button
+                              type="button"
+                              className="text-primary hover:underline text-left"
+                              onClick={() => router.push(`/dashboard/farms/${id}/groups/${ev.group_id}`)}
+                            >
+                              {ev.farm_livestock_groups.name}
+                            </button>
+                          ) : (
+                            <span className="text-text-secondary">—</span>
+                          )}
+                        </td>
+                        <td className="data-td text-[13px] text-text-secondary">{animalLabel}</td>
+                        <td className="data-td text-[13px]">{EVENT_TYPE_LABELS[ev.event_type]}</td>
+                        <td className="data-td text-[13px] text-right">{ev.quantity}</td>
+                        <td className="data-td text-[13px] text-text-secondary">{ev.notes ?? '—'}</td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             )}

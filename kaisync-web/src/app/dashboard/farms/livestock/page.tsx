@@ -111,7 +111,7 @@ export default function LivestockHubPage() {
                 <tr
                   key={g.id}
                   className="border-b border-divider hover:bg-surface-elevated cursor-pointer"
-                  onClick={() => router.push(`/dashboard/farms/${g.farm_id}?tab=livestock`)}
+                  onClick={() => router.push(`/dashboard/farms/${g.farm_id}/groups/${g.id}`)}
                 >
                   <td className="data-td text-[13px] font-medium text-primary">{g.name}</td>
                   <td className="data-td text-[13px] text-text-secondary">

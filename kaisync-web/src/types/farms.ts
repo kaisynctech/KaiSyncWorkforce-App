@@ -87,6 +87,8 @@ export type FarmLivestockEvent = {
   notes: string | null
   recorded_by: string | null
   created_at: string
+  farm_livestock_groups?: { name: string } | null
+  farm_animals?: { tag_number: string | null; name: string | null } | null
 }
 
 export const SPECIES_OPTIONS: { value: LivestockSpecies; label: string }[] = [
