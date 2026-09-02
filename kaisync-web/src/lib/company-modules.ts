@@ -54,7 +54,7 @@ export const COMPANY_MODULE_SPECS: ModuleSpec[] = [
   { key: CompanyModuleKeys.Payroll, title: 'Payments', description: 'Salary, hourly rates, payment approvals.', defaultIfMissing: true },
   { key: CompanyModuleKeys.Incidents, title: 'Incidents', description: 'Incident reporting, tracking, and resolution.', defaultIfMissing: true },
   { key: CompanyModuleKeys.Paperless, title: 'Paperless Forms', description: 'Custom forms and digital signatures.', defaultIfMissing: false },
-  { key: CompanyModuleKeys.Farms, title: 'Farms', description: 'Farm register, land units, livestock, plantings, and production lots.', defaultIfMissing: false },
+  { key: CompanyModuleKeys.Farms, title: 'Farms', description: 'Farm register, livestock, plantings, production, diary, health, and feed logs.', defaultIfMissing: false },
   { key: CompanyModuleKeys.Employees, title: 'Employees', description: 'Employee records, assignments, and access controls.', defaultIfMissing: true },
   { key: CompanyModuleKeys.Contractors, title: 'Contractors', description: 'External service providers with their own scorecard.', defaultIfMissing: true },
   { key: CompanyModuleKeys.PropertyManagement, title: 'Property Management', description: 'Sites, units, residents, and per-unit reporting.', defaultIfMissing: true },

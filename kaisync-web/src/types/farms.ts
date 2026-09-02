@@ -244,3 +244,109 @@ export const PRODUCTION_EVENT_LABELS: Record<ProductionEventType, string> = {
   sale: 'Sale',
   adjust: 'Adjust (set total)',
 }
+
+export type FarmHealthEventType =
+  | 'illness'
+  | 'injury'
+  | 'treatment'
+  | 'vaccine'
+  | 'vet_visit'
+  | 'observation'
+  | 'quarantine'
+  | 'recovery'
+
+export type FarmInputUsageType = 'feed' | 'medication' | 'vaccine' | 'fertilizer' | 'chemical' | 'other'
+
+export type FarmInputUnit = 'kg' | 'tonne' | 'bag' | 'litre' | 'ml' | 'dose' | 'each' | 'other'
+
+export type FarmDiaryEntry = {
+  id: string
+  company_id: string
+  farm_id: string
+  land_unit_id: string | null
+  group_id: string | null
+  planting_id: string | null
+  animal_id: string | null
+  entry_date: string
+  title: string | null
+  body: string
+  recorded_by: string | null
+  created_at: string
+  updated_at: string
+  farm_livestock_groups?: { name: string } | null
+  farm_land_units?: { name: string } | null
+}
+
+export type FarmHealthEvent = {
+  id: string
+  company_id: string
+  farm_id: string
+  group_id: string | null
+  animal_id: string | null
+  event_type: FarmHealthEventType
+  event_date: string
+  product_label: string | null
+  inventory_item_id: string | null
+  dosage: string | null
+  withdrawal_until: string | null
+  notes: string | null
+  recorded_by: string | null
+  created_at: string
+  farm_livestock_groups?: { name: string } | null
+  farm_animals?: { tag_number: string | null; name: string | null } | null
+}
+
+export type FarmInputUsage = {
+  id: string
+  company_id: string
+  farm_id: string
+  usage_type: FarmInputUsageType
+  usage_date: string
+  quantity: number
+  unit: FarmInputUnit
+  product_label: string | null
+  inventory_item_id: string | null
+  deducted_from_stock: boolean
+  group_id: string | null
+  animal_id: string | null
+  planting_id: string | null
+  land_unit_id: string | null
+  withdrawal_until: string | null
+  notes: string | null
+  recorded_by: string | null
+  created_at: string
+  farm_livestock_groups?: { name: string } | null
+  farm_plantings?: { name: string } | null
+  inventory_items?: { name: string; unit_of_measure: string | null } | null
+}
+
+export const HEALTH_EVENT_LABELS: Record<FarmHealthEventType, string> = {
+  illness: 'Illness',
+  injury: 'Injury',
+  treatment: 'Treatment',
+  vaccine: 'Vaccine',
+  vet_visit: 'Vet visit',
+  observation: 'Observation',
+  quarantine: 'Quarantine',
+  recovery: 'Recovery',
+}
+
+export const INPUT_USAGE_LABELS: Record<FarmInputUsageType, string> = {
+  feed: 'Feed',
+  medication: 'Medication',
+  vaccine: 'Vaccine',
+  fertilizer: 'Fertilizer',
+  chemical: 'Chemical',
+  other: 'Other',
+}
+
+export const INPUT_UNITS: { value: FarmInputUnit; label: string }[] = [
+  { value: 'kg', label: 'kg' },
+  { value: 'tonne', label: 'tonne' },
+  { value: 'bag', label: 'bag' },
+  { value: 'litre', label: 'litre' },
+  { value: 'ml', label: 'ml' },
+  { value: 'dose', label: 'dose' },
+  { value: 'each', label: 'each' },
+  { value: 'other', label: 'other' },
+]

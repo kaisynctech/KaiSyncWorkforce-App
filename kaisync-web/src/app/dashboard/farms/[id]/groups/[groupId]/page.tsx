@@ -6,12 +6,16 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
-import { recordLivestockEvent } from '@/lib/farms'
+import { recordLivestockEvent, recordInputUsage } from '@/lib/farms'
 import { KpiTile } from '@/components/ui/KpiTile'
 import {
   EVENT_TYPE_LABELS,
+  HEALTH_EVENT_LABELS,
+  INPUT_UNITS,
   type Farm,
   type FarmAnimal,
+  type FarmHealthEventType,
+  type FarmInputUnit,
   type FarmLandUnit,
   type FarmLivestockEvent,
   type FarmLivestockGroup,
@@ -46,6 +50,19 @@ export default function LivestockGroupDetailPage() {
   const [aTag, setATag] = useState('')
   const [aName, setAName] = useState('')
   const [aSex, setASex] = useState('')
+
+  const [showFeed, setShowFeed] = useState(false)
+  const [fQty, setFQty] = useState('1')
+  const [fUnit, setFUnit] = useState<FarmInputUnit>('kg')
+  const [fProduct, setFProduct] = useState('')
+  const [fNotes, setFNotes] = useState('')
+
+  const [showHealth, setShowHealth] = useState(false)
+  const [hType, setHType] = useState<FarmHealthEventType>('treatment')
+  const [hProduct, setHProduct] = useState('')
+  const [hDosage, setHDosage] = useState('')
+  const [hWithdraw, setHWithdraw] = useState('')
+  const [hNotes, setHNotes] = useState('')
 
   const canEdit = can(perms, PERM.farmsEdit)
 
@@ -173,6 +190,56 @@ export default function LivestockGroupDetailPage() {
     await load()
   }
 
+  async function saveFeed() {
+    if (!companyId || !canEdit || !group) return
+    setBusy(true)
+    setError(null)
+    const supabase = createClient()
+    const result = await recordInputUsage(supabase, {
+      companyId,
+      farmId,
+      employeeId,
+      usageType: 'feed',
+      quantity: Number(fQty) || 1,
+      unit: fUnit,
+      productLabel: fProduct,
+      groupId: group.id,
+      notes: fNotes,
+    })
+    setBusy(false)
+    if (!result.ok) { setError(result.message); return }
+    setShowFeed(false)
+    setFQty('1')
+    setFProduct('')
+    setFNotes('')
+  }
+
+  async function saveHealth() {
+    if (!companyId || !canEdit || !group) return
+    setBusy(true)
+    setError(null)
+    const supabase = createClient()
+    const { error: e } = await supabase.from('farm_health_events').insert({
+      company_id: companyId,
+      farm_id: farmId,
+      group_id: group.id,
+      event_type: hType,
+      event_date: new Date().toISOString().slice(0, 10),
+      product_label: hProduct.trim() || null,
+      dosage: hDosage.trim() || null,
+      withdrawal_until: hWithdraw || null,
+      notes: hNotes.trim() || null,
+      recorded_by: employeeId,
+    })
+    setBusy(false)
+    if (e) { setError(e.message); return }
+    setShowHealth(false)
+    setHProduct('')
+    setHDosage('')
+    setHWithdraw('')
+    setHNotes('')
+  }
+
   if (loading) {
     return <p className="text-center text-[13px] text-text-secondary py-10">Loading…</p>
   }
@@ -229,9 +296,18 @@ export default function LivestockGroupDetailPage() {
               <button type="button" onClick={() => setShowEvent(true)} className="btn-primary h-9 px-3 text-[13px]">
                 Record event
               </button>
+              <button type="button" onClick={() => setShowFeed(true)} className="btn-outlined h-9 px-3 text-[13px]">
+                Log feed
+              </button>
+              <button type="button" onClick={() => setShowHealth(true)} className="btn-outlined h-9 px-3 text-[13px]">
+                Health
+              </button>
               <button type="button" onClick={() => setShowAnimal(true)} className="btn-outlined h-9 px-3 text-[13px]">
                 + Tagged animal
               </button>
+              <Link href={`/dashboard/farms/${farmId}?tab=diary`} className="btn-outlined h-9 px-3 text-[13px] inline-flex items-center">
+                Diary
+              </Link>
             </>
           )}
         </div>
@@ -365,6 +441,61 @@ export default function LivestockGroupDetailPage() {
           <div className="flex justify-end gap-2">
             <button type="button" onClick={() => setShowAnimal(false)} className="btn-outlined h-9 px-3 text-[13px]">Cancel</button>
             <button type="button" disabled={busy} onClick={() => void addAnimal()} className="btn-primary h-9 px-3 text-[13px] disabled:opacity-50">Add</button>
+          </div>
+        </Modal>
+      )}
+
+      {showFeed && (
+        <Modal title={`Log feed · ${group.name}`} onClose={() => setShowFeed(false)}>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block text-[12px] text-text-secondary">Quantity
+              <input type="number" min={0.001} step="any" value={fQty} onChange={e => setFQty(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+            </label>
+            <label className="block text-[12px] text-text-secondary">Unit
+              <select value={fUnit} onChange={e => setFUnit(e.target.value as FarmInputUnit)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background">
+                {INPUT_UNITS.map(u => <option key={u.value} value={u.value}>{u.label}</option>)}
+              </select>
+            </label>
+          </div>
+          <label className="block text-[12px] text-text-secondary">Product
+            <input value={fProduct} onChange={e => setFProduct(e.target.value)} placeholder="e.g. Broiler starter" className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+          </label>
+          <label className="block text-[12px] text-text-secondary">Notes
+            <input value={fNotes} onChange={e => setFNotes(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+          </label>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setShowFeed(false)} className="btn-outlined h-9 px-3 text-[13px]">Cancel</button>
+            <button type="button" disabled={busy} onClick={() => void saveFeed()} className="btn-primary h-9 px-3 text-[13px] disabled:opacity-50">Save</button>
+          </div>
+        </Modal>
+      )}
+
+      {showHealth && (
+        <Modal title={`Health · ${group.name}`} onClose={() => setShowHealth(false)}>
+          <label className="block text-[12px] text-text-secondary">Type
+            <select value={hType} onChange={e => setHType(e.target.value as FarmHealthEventType)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background">
+              {(Object.keys(HEALTH_EVENT_LABELS) as FarmHealthEventType[]).map(k => (
+                <option key={k} value={k}>{HEALTH_EVENT_LABELS[k]}</option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-[12px] text-text-secondary">Product / medicine
+            <input value={hProduct} onChange={e => setHProduct(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block text-[12px] text-text-secondary">Dosage
+              <input value={hDosage} onChange={e => setHDosage(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+            </label>
+            <label className="block text-[12px] text-text-secondary">Withdraw until
+              <input type="date" value={hWithdraw} onChange={e => setHWithdraw(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+            </label>
+          </div>
+          <label className="block text-[12px] text-text-secondary">Notes
+            <input value={hNotes} onChange={e => setHNotes(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+          </label>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setShowHealth(false)} className="btn-outlined h-9 px-3 text-[13px]">Cancel</button>
+            <button type="button" disabled={busy} onClick={() => void saveHealth()} className="btn-primary h-9 px-3 text-[13px] disabled:opacity-50">Save</button>
           </div>
         </Modal>
       )}

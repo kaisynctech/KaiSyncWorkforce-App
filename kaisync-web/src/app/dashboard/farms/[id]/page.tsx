@@ -8,6 +8,7 @@ import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
 import { recordLivestockEvent } from '@/lib/farms'
 import { KpiTile } from '@/components/ui/KpiTile'
+import { FarmWave3aPanels, type InventoryOption } from '@/components/farms/FarmWave3aPanels'
 import {
   CROP_TYPE_OPTIONS,
   EVENT_TYPE_LABELS,
@@ -19,6 +20,9 @@ import {
   type CropType,
   type Farm,
   type FarmAnimal,
+  type FarmDiaryEntry,
+  type FarmHealthEvent,
+  type FarmInputUsage,
   type FarmLandUnit,
   type FarmLandUnitType,
   type FarmLivestockEvent,
@@ -32,7 +36,7 @@ import {
   type ProductionUnit,
 } from '@/types/farms'
 
-type Tab = 'overview' | 'land' | 'livestock' | 'animals' | 'events' | 'plantings' | 'production'
+type Tab = 'overview' | 'land' | 'livestock' | 'animals' | 'events' | 'plantings' | 'production' | 'diary' | 'health' | 'inputs'
 
 export default function FarmDetailPage() {
   return (
@@ -48,7 +52,7 @@ function FarmDetailInner() {
   const searchParams = useSearchParams()
   const initialTab = (searchParams.get('tab') as Tab | null)
   const [tab, setTab] = useState<Tab>(
-    initialTab && ['overview', 'land', 'livestock', 'animals', 'events', 'plantings', 'production'].includes(initialTab)
+    initialTab && ['overview', 'land', 'livestock', 'animals', 'events', 'plantings', 'production', 'diary', 'health', 'inputs'].includes(initialTab)
       ? initialTab
       : 'overview',
   )
@@ -59,6 +63,10 @@ function FarmDetailInner() {
   const [events, setEvents] = useState<FarmLivestockEvent[]>([])
   const [plantings, setPlantings] = useState<FarmPlanting[]>([])
   const [lots, setLots] = useState<FarmProductionLot[]>([])
+  const [diary, setDiary] = useState<FarmDiaryEntry[]>([])
+  const [health, setHealth] = useState<FarmHealthEvent[]>([])
+  const [inputs, setInputs] = useState<FarmInputUsage[]>([])
+  const [inventoryItems, setInventoryItems] = useState<InventoryOption[]>([])
   const [loading, setLoading] = useState(true)
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [employeeId, setEmployeeId] = useState<string | null>(null)
@@ -139,7 +147,7 @@ function FarmDetailInner() {
       .maybeSingle()
     setPerms(await loadPermissions(supabase, member.companyId, me?.access_level))
 
-    const [fRes, lRes, gRes, aRes, eRes, pRes, lotRes] = await Promise.all([
+    const [fRes, lRes, gRes, aRes, eRes, pRes, lotRes, dRes, hRes, iRes, invRes] = await Promise.all([
       supabase.from('farms').select('*').eq('id', id).eq('company_id', member.companyId).maybeSingle(),
       supabase.from('farm_land_units').select('*').eq('farm_id', id).eq('company_id', member.companyId).order('name'),
       supabase.from('farm_livestock_groups').select('*, farm_land_units(name)').eq('farm_id', id).eq('company_id', member.companyId).order('name'),
@@ -163,6 +171,34 @@ function FarmDetailInner() {
         .eq('farm_id', id)
         .eq('company_id', member.companyId)
         .order('name'),
+      supabase
+        .from('farm_diary_entries')
+        .select('*, farm_livestock_groups(name), farm_land_units(name)')
+        .eq('farm_id', id)
+        .eq('company_id', member.companyId)
+        .order('entry_date', { ascending: false })
+        .limit(100),
+      supabase
+        .from('farm_health_events')
+        .select('*, farm_livestock_groups(name), farm_animals(tag_number, name)')
+        .eq('farm_id', id)
+        .eq('company_id', member.companyId)
+        .order('event_date', { ascending: false })
+        .limit(100),
+      supabase
+        .from('farm_input_usages')
+        .select('*, farm_livestock_groups(name), farm_plantings(name), inventory_items(name, unit_of_measure)')
+        .eq('farm_id', id)
+        .eq('company_id', member.companyId)
+        .order('usage_date', { ascending: false })
+        .limit(100),
+      supabase
+        .from('inventory_items')
+        .select('id, name, unit_of_measure, quantity_on_hand')
+        .eq('company_id', member.companyId)
+        .eq('is_active', true)
+        .order('name')
+        .limit(200),
     ])
 
     if (!fRes.data) {
@@ -182,6 +218,10 @@ function FarmDetailInner() {
     setEvents((eRes.data ?? []) as FarmLivestockEvent[])
     setPlantings((pRes.data ?? []) as FarmPlanting[])
     setLots((lotRes.data ?? []) as FarmProductionLot[])
+    setDiary((dRes.data ?? []) as FarmDiaryEntry[])
+    setHealth((hRes.data ?? []) as FarmHealthEvent[])
+    setInputs((iRes.data ?? []) as FarmInputUsage[])
+    setInventoryItems((invRes.data ?? []) as InventoryOption[])
     setLoading(false)
   }, [id, router])
 
@@ -399,6 +439,9 @@ function FarmDetailInner() {
     { id: 'events', label: 'Events' },
     { id: 'plantings', label: 'Plantings' },
     { id: 'production', label: 'Production' },
+    { id: 'diary', label: 'Diary' },
+    { id: 'health', label: 'Health' },
+    { id: 'inputs', label: 'Feed / inputs' },
   ]
 
   return (
@@ -443,7 +486,16 @@ function FarmDetailInner() {
         </div>
 
         {tab === 'overview' && (
-          <div className="bg-surface border border-divider rounded-xl p-4 space-y-3">
+          <div className="space-y-4">
+            {canEdit && (
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={() => setTab('diary')} className="btn-outlined h-9 px-3 text-[13px]">+ Diary</button>
+                <button type="button" onClick={() => setTab('health')} className="btn-outlined h-9 px-3 text-[13px]">+ Health</button>
+                <button type="button" onClick={() => setTab('inputs')} className="btn-outlined h-9 px-3 text-[13px]">+ Feed / input</button>
+                <button type="button" onClick={() => setTab('events')} className="btn-outlined h-9 px-3 text-[13px]">Record livestock event</button>
+              </div>
+            )}
+            <div className="bg-surface border border-divider rounded-xl p-4 space-y-3">
             <label className="block text-[12px] text-text-secondary">Name
               <input value={name} onChange={e => setName(e.target.value)} disabled={!canEdit} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background disabled:opacity-60" />
             </label>
@@ -469,6 +521,7 @@ function FarmDetailInner() {
                 {busy ? 'Saving…' : 'Save'}
               </button>
             )}
+            </div>
           </div>
         )}
 
@@ -714,6 +767,26 @@ function FarmDetailInner() {
               </table>
             )}
           </div>
+        )}
+
+        {(tab === 'diary' || tab === 'health' || tab === 'inputs') && companyId && (
+          <FarmWave3aPanels
+            tab={tab}
+            farmId={id}
+            companyId={companyId}
+            employeeId={employeeId}
+            canEdit={canEdit}
+            diary={diary}
+            health={health}
+            inputs={inputs}
+            groups={groups}
+            animals={animals}
+            landUnits={landUnits}
+            plantings={plantings}
+            inventoryItems={inventoryItems}
+            onChanged={load}
+            onError={setError}
+          />
         )}
       </div>
 
