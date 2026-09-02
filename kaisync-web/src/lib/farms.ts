@@ -4,6 +4,8 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type {
+  FarmInputUnit,
+  FarmInputUsageType,
   FarmQtyUnit,
   LivestockEventType,
   PlantingEventType,
@@ -267,4 +269,77 @@ export async function recordProductionEvent(
   }
 
   return { ok: true, quantityTotal: next }
+}
+
+export type RecordInputUsageInput = {
+  companyId: string
+  farmId: string
+  employeeId: string | null
+  usageType: FarmInputUsageType
+  quantity: number
+  unit: FarmInputUnit
+  usageDate?: string
+  productLabel?: string | null
+  inventoryItemId?: string | null
+  deductFromStock?: boolean
+  groupId?: string | null
+  animalId?: string | null
+  plantingId?: string | null
+  landUnitId?: string | null
+  withdrawalUntil?: string | null
+  notes?: string | null
+}
+
+export type RecordInputUsageResult =
+  | { ok: true }
+  | { ok: false; message: string }
+
+/** Log feed/med/input usage; optionally deduct inventory via hr_inventory_stock_movement (adjust). */
+export async function recordInputUsage(
+  supabase: SupabaseClient,
+  input: RecordInputUsageInput,
+): Promise<RecordInputUsageResult> {
+  const qty = Math.max(0.001, Number(input.quantity) || 0)
+  let deducted = false
+
+  if (input.deductFromStock && input.inventoryItemId) {
+    const { error: stockErr } = await supabase.rpc('hr_inventory_stock_movement', {
+      p_company_id: input.companyId,
+      p_item_id: input.inventoryItemId,
+      p_type: 'adjust',
+      p_quantity: -qty,
+      p_actor_employee_id: input.employeeId,
+      p_job_id: null,
+      p_note: `Farm input: ${input.usageType}${input.productLabel ? ` · ${input.productLabel}` : ''}`,
+      p_unit_cost: null,
+    })
+    if (stockErr) {
+      return { ok: false, message: stockErr.message }
+    }
+    deducted = true
+  }
+
+  const { error } = await supabase.from('farm_input_usages').insert({
+    company_id: input.companyId,
+    farm_id: input.farmId,
+    usage_type: input.usageType,
+    usage_date: input.usageDate ?? new Date().toISOString().slice(0, 10),
+    quantity: qty,
+    unit: input.unit,
+    product_label: input.productLabel?.trim() || null,
+    inventory_item_id: input.inventoryItemId || null,
+    deducted_from_stock: deducted,
+    group_id: input.groupId || null,
+    animal_id: input.animalId || null,
+    planting_id: input.plantingId || null,
+    land_unit_id: input.landUnitId || null,
+    withdrawal_until: input.withdrawalUntil || null,
+    notes: input.notes?.trim() || null,
+    recorded_by: input.employeeId,
+  })
+
+  if (error) {
+    return { ok: false, message: error.message }
+  }
+  return { ok: true }
 }
