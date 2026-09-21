@@ -24,6 +24,16 @@ import type {
 type Tab = 'overview' | 'units' | 'residents' | 'leases' | 'compliance'
 type ClientOption = { id: string; name: string }
 type EmployeeOption = { id: string; name: string; surname: string }
+type RentInvoiceRow = {
+  id: string
+  lease_id: string | null
+  invoice_number: string | null
+  status: string
+  total_amount: number
+  balance_due: number
+  due_date: string | null
+  invoice_type: string | null
+}
 
 const PROPERTY_KINDS: PropertyKind[] = ['residential', 'commercial', 'mixed', 'other']
 const LEASE_STATUSES: LeaseStatus[] = ['draft', 'active', 'ended', 'cancelled']
@@ -72,6 +82,7 @@ function PropertyDetailInner() {
   const [residents, setResidents] = useState<Resident[]>([])
   const [leases, setLeases] = useState<PropertyLease[]>([])
   const [leaseDocs, setLeaseDocs] = useState<PropertyLeaseDocument[]>([])
+  const [rentInvoices, setRentInvoices] = useState<RentInvoiceRow[]>([])
   const [compliance, setCompliance] = useState<SiteComplianceEntry[]>([])
   const [clients, setClients] = useState<ClientOption[]>([])
   const [employees, setEmployees] = useState<EmployeeOption[]>([])
@@ -154,7 +165,7 @@ function PropertyDetailInner() {
       .maybeSingle()
     setPerms(await loadPermissions(supabase, member.companyId, me?.access_level))
 
-    const [sRes, uRes, rRes, lRes, cRes, clRes, eRes] = await Promise.all([
+    const [sRes, uRes, rRes, lRes, cRes, clRes, eRes, invRes] = await Promise.all([
       supabase
         .from('sites')
         .select('*, clients(id, name), managed_by:employees!sites_managed_by_employee_id_fkey(id, name, surname)')
@@ -167,6 +178,13 @@ function PropertyDetailInner() {
       supabase.from('compliance_entries').select('*').eq('site_id', id).eq('company_id', member.companyId).order('expiry_date', { ascending: true, nullsFirst: false }),
       supabase.from('clients').select('id, name').eq('company_id', member.companyId).order('name').limit(500),
       supabase.from('employees').select('id, name, surname').eq('company_id', member.companyId).eq('is_active', true).order('name').limit(500),
+      supabase
+        .from('finance_invoices')
+        .select('id, lease_id, invoice_number, status, total_amount, balance_due, due_date, invoice_type')
+        .eq('company_id', member.companyId)
+        .eq('site_id', id)
+        .order('due_date', { ascending: false, nullsFirst: false })
+        .limit(100),
     ])
 
     if (!sRes.data) {
@@ -192,6 +210,7 @@ function PropertyDetailInner() {
     setCompliance((cRes.data ?? []) as SiteComplianceEntry[])
     setClients((clRes.data ?? []) as ClientOption[])
     setEmployees((eRes.data ?? []) as EmployeeOption[])
+    setRentInvoices((invRes.data ?? []) as RentInvoiceRow[])
 
     if (leaseRows.length > 0) {
       const leaseIds = leaseRows.map(l => l.id)
@@ -215,6 +234,14 @@ function PropertyDetailInner() {
     const occupied = units.filter(u => u.is_occupied).length
     const currentResidents = residents.filter(r => !r.move_out_date).length
     const activeLeases = leases.filter(l => l.status === 'active').length
+    const today = new Date().toISOString().slice(0, 10)
+    const arrears = rentInvoices.filter(inv =>
+      Number(inv.balance_due) > 0
+      && inv.status !== 'voided'
+      && inv.status !== 'cancelled'
+      && (inv.status === 'overdue' || (inv.due_date != null && inv.due_date < today)),
+    )
+    const arrearsTotal = arrears.reduce((s, inv) => s + Number(inv.balance_due || 0), 0)
     const expiring = compliance.filter(c => {
       const st = complianceStatus(c.expiry_date)
       return st === 'expired' || st === 'expiring'
@@ -224,9 +251,11 @@ function PropertyDetailInner() {
       vacant: units.length - occupied,
       residents: currentResidents,
       activeLeases,
+      arrearsCount: arrears.length,
+      arrearsTotal,
       complianceAlerts: expiring,
     }
-  }, [units, residents, leases, compliance])
+  }, [units, residents, leases, rentInvoices, compliance])
 
   const unitLabel = (unitId: string | null | undefined) => {
     if (!unitId) return '—'
@@ -247,6 +276,16 @@ function PropertyDetailInner() {
   }
 
   const docsForLease = (leaseId: string) => leaseDocs.filter(d => d.lease_id === leaseId)
+  const invoicesForLease = (leaseId: string) => rentInvoices.filter(i => i.lease_id === leaseId)
+
+  function rentInvoiceHref(lease: PropertyLease) {
+    const params = new URLSearchParams({
+      lease_id: lease.id,
+      site_id: id,
+    })
+    if (lease.tenant_client_id) params.set('client_id', lease.tenant_client_id)
+    return `/dashboard/money/invoices/new?${params.toString()}`
+  }
 
   async function saveSite() {
     if (!companyId || !canEdit || !name.trim()) return
@@ -542,13 +581,19 @@ function PropertyDetailInner() {
           </p>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           <KpiTile value={kpis.units} label="Units" bg="#1E293B" valueFg="#FCD34D" labelFg="#64748B" />
           <KpiTile value={kpis.vacant} label="Vacant" bg="#3F1D1D" valueFg="#F87171" labelFg="#FCA5A5" />
           <KpiTile value={kpis.residents} label="Current residents" bg="#0F2918" valueFg="#22C55E" labelFg="#4ADE80" />
           <KpiTile value={kpis.activeLeases} label="Active leases" bg="#1E293B" valueFg="#60A5FA" labelFg="#64748B" />
+          <KpiTile value={kpis.arrearsCount} label="Arrears invoices" bg="#3F1D1D" valueFg="#F87171" labelFg="#FCA5A5" />
           <KpiTile value={kpis.complianceAlerts} label="Compliance alerts" bg="#1E293B" valueFg="#94A3B8" labelFg="#64748B" />
         </div>
+        {kpis.arrearsTotal > 0 && (
+          <p className="text-[13px] text-error">
+            Rent arrears outstanding: {fmtMoney(kpis.arrearsTotal)}
+          </p>
+        )}
 
         {error && <p className="text-[13px] text-error">{error}</p>}
 
@@ -708,7 +753,7 @@ function PropertyDetailInner() {
               <button type="button" onClick={openCreateLease} className="btn-outlined h-9 px-3 text-[13px]">+ Lease</button>
             )}
             <p className="text-[12px] text-text-secondary">
-              Lease agreements for units. Attach signed leases and ID copies under each row.
+              Lease agreements for units. Invoice rent into Money, attach signed leases/IDs, and track arrears.
             </p>
             {leases.length === 0 ? (
               <p className="text-[13px] text-text-secondary">No leases yet.</p>
@@ -716,6 +761,7 @@ function PropertyDetailInner() {
               <div className="space-y-4">
                 {leases.map(lease => {
                   const docs = docsForLease(lease.id)
+                  const invs = invoicesForLease(lease.id)
                   return (
                     <div key={lease.id} className="border border-divider rounded-xl overflow-hidden">
                       <table className="w-full" style={{ minWidth: 640 }}>
@@ -730,6 +776,9 @@ function PropertyDetailInner() {
                               {canEdit && (
                                 <>
                                   <button type="button" onClick={() => openEditLease(lease)} className="text-[12px] text-primary hover:underline mr-3">Edit</button>
+                                  <Link href={rentInvoiceHref(lease)} className="text-[12px] text-primary hover:underline mr-3">
+                                    Invoice rent
+                                  </Link>
                                   <button
                                     type="button"
                                     onClick={() => { setDocLeaseId(lease.id); setDocType('lease') }}
@@ -743,8 +792,28 @@ function PropertyDetailInner() {
                           </tr>
                         </tbody>
                       </table>
+                      {!lease.tenant_client_id && canEdit && (
+                        <p className="px-3 py-1.5 text-[11px] text-amber-700 bg-amber-50 dark:bg-amber-950/30 dark:text-amber-300">
+                          No tenant client on this lease — set one (or pick a client on the invoice form) before billing.
+                        </p>
+                      )}
+                      {invs.length > 0 && (
+                        <ul className="px-3 py-2 space-y-1 bg-background border-t border-divider">
+                          {invs.map(inv => (
+                            <li key={inv.id} className="flex items-center justify-between gap-2 text-[12px]">
+                              <Link href={`/dashboard/money/invoices/${inv.id}`} className="text-primary hover:underline truncate">
+                                {inv.invoice_number ?? 'Draft'} · {inv.status}
+                                {inv.due_date ? ` · due ${fmtDate(inv.due_date)}` : ''}
+                              </Link>
+                              <span className={Number(inv.balance_due) > 0 ? 'text-error' : 'text-text-secondary'}>
+                                bal {fmtMoney(Number(inv.balance_due), 'ZAR')}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                       {docs.length > 0 && (
-                        <ul className="px-3 py-2 space-y-1 bg-background">
+                        <ul className="px-3 py-2 space-y-1 bg-background border-t border-divider">
                           {docs.map(d => (
                             <li key={d.id} className="flex items-center justify-between gap-2 text-[12px]">
                               <span className="text-text-secondary capitalize">{d.document_type}</span>
@@ -762,6 +831,38 @@ function PropertyDetailInner() {
                     </div>
                   )
                 })}
+              </div>
+            )}
+
+            {rentInvoices.length > 0 && (
+              <div className="pt-2">
+                <h3 className="text-[14px] font-semibold text-text-primary mb-2">All rent invoices</h3>
+                <table className="w-full" style={{ minWidth: 560 }}>
+                  <thead>
+                    <tr className="border-b border-divider">
+                      <th className="data-th text-left">Invoice</th>
+                      <th className="data-th text-left">Due</th>
+                      <th className="data-th text-left">Status</th>
+                      <th className="data-th text-right">Balance</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rentInvoices.map(inv => (
+                      <tr
+                        key={inv.id}
+                        className="border-b border-divider hover:bg-surface-elevated cursor-pointer"
+                        onClick={() => router.push(`/dashboard/money/invoices/${inv.id}`)}
+                      >
+                        <td className="data-td text-[13px] text-primary">{inv.invoice_number ?? 'Draft'}</td>
+                        <td className="data-td text-[12px]">{fmtDate(inv.due_date)}</td>
+                        <td className="data-td text-[12px] capitalize">{inv.status}</td>
+                        <td className={`data-td text-[13px] text-right ${Number(inv.balance_due) > 0 ? 'text-error' : ''}`}>
+                          {fmtMoney(Number(inv.balance_due))}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>

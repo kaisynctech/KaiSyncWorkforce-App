@@ -5,6 +5,8 @@ export type FinanceInvoice = {
   project_id: string | null
   deal_id?: string | null
   job_id?: string | null
+  lease_id?: string | null
+  site_id?: string | null
   quote_id?: string | null
   invoice_number: string | null
   status: string
@@ -22,6 +24,7 @@ export type FinanceInvoice = {
   paid_date: string | null
   notes: string | null
   created_at: string
+  invoice_type?: string | null
   clients?: { name: string } | null
 }
 

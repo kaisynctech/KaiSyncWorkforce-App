@@ -26,6 +26,8 @@ function NewMoneyInvoiceInner() {
   const [clientId, setClientId] = useState(() => searchParams.get('clientId') ?? searchParams.get('client_id') ?? '')
   const [jobId, setJobId] = useState(() => searchParams.get('job_id') ?? '')
   const [dealId, setDealId] = useState(() => searchParams.get('deal_id') ?? searchParams.get('project_id') ?? '')
+  const [leaseId, setLeaseId] = useState(() => searchParams.get('lease_id') ?? '')
+  const [siteId, setSiteId] = useState(() => searchParams.get('site_id') ?? '')
   const [issueDate, setIssueDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [dueDate, setDueDate] = useState('')
   const [description, setDescription] = useState('Professional services')
@@ -33,6 +35,7 @@ function NewMoneyInvoiceInner() {
   const [vatRate, setVatRate] = useState('15')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [leaseHint, setLeaseHint] = useState<string | null>(null)
 
   useEffect(() => {
     const fromQuery = searchParams.get('clientId') ?? searchParams.get('client_id')
@@ -41,6 +44,10 @@ function NewMoneyInvoiceInner() {
     if (fromJob) setJobId(fromJob)
     const fromDeal = searchParams.get('deal_id') ?? searchParams.get('project_id')
     if (fromDeal) setDealId(fromDeal)
+    const fromLease = searchParams.get('lease_id')
+    if (fromLease) setLeaseId(fromLease)
+    const fromSite = searchParams.get('site_id')
+    if (fromSite) setSiteId(fromSite)
   }, [searchParams])
 
   useEffect(() => {
@@ -63,8 +70,42 @@ function NewMoneyInvoiceInner() {
       ])
       setClients((clientRows ?? []) as ClientOpt[])
       setJobs((jobRows ?? []) as JobOpt[])
+
+      const lid = searchParams.get('lease_id')
+      if (!lid) return
+      const { data: lease } = await supabase
+        .from('property_leases')
+        .select('id, site_id, unit_id, tenant_client_id, tenant_name, rent_amount, currency, payment_frequency, start_date, end_date, units(unit_number), sites(name)')
+        .eq('id', lid)
+        .eq('company_id', member.companyId)
+        .maybeSingle()
+      if (!lease) return
+      setLeaseId(lease.id)
+      setSiteId(lease.site_id)
+      if (lease.tenant_client_id) setClientId(lease.tenant_client_id)
+      if (lease.rent_amount != null) setAmount(String(lease.rent_amount))
+      setVatRate('0')
+      const unitNo = (lease as { units?: { unit_number?: string } | null }).units?.unit_number
+      const siteName = (lease as { sites?: { name?: string } | null }).sites?.name
+      const period = new Intl.DateTimeFormat('en-ZA', { month: 'long', year: 'numeric' }).format(new Date())
+      const desc = [
+        'Rent',
+        siteName,
+        unitNo ? `Unit ${unitNo}` : null,
+        period,
+        lease.payment_frequency,
+      ].filter(Boolean).join(' · ')
+      setDescription(desc)
+      const endOfMonth = new Date()
+      endOfMonth.setMonth(endOfMonth.getMonth() + 1, 0)
+      setDueDate(endOfMonth.toISOString().slice(0, 10))
+      setLeaseHint(
+        lease.tenant_client_id
+          ? 'Prefill from lease (rent invoice).'
+          : 'Lease has no tenant client — select the billable client before saving.',
+      )
     })()
-  }, [])
+  }, [searchParams])
 
   async function save(send: boolean) {
     setBusy(true)
@@ -72,6 +113,12 @@ function NewMoneyInvoiceInner() {
     const supabase = createClient()
     const member = await resolveCurrentMember(supabase)
     if (!member) { setBusy(false); return }
+
+    if (leaseId && !clientId) {
+      setError('Rent invoices need a client (link tenant client on the lease, or select one here).')
+      setBusy(false)
+      return
+    }
 
     const rate = Number(vatRate) / 100
     const calc = calculateVatExclusive(Number(amount) || 0, rate)
@@ -85,6 +132,7 @@ function NewMoneyInvoiceInner() {
     }
 
     const now = new Date().toISOString()
+    const isRent = Boolean(leaseId)
     const { data: inv, error: e } = await supabase
       .from('finance_invoices')
       .insert({
@@ -93,6 +141,8 @@ function NewMoneyInvoiceInner() {
         job_id: jobId || null,
         deal_id: dealId || null,
         project_id: dealId || null,
+        lease_id: leaseId || null,
+        site_id: siteId || null,
         invoice_number: invoiceNumber,
         status: send ? 'sent' : 'draft',
         sent_at: send ? now : null,
@@ -108,7 +158,7 @@ function NewMoneyInvoiceInner() {
         issue_date: issueDate,
         due_date: dueDate || null,
         created_by: member.employeeId,
-        invoice_type: 'standard',
+        invoice_type: isRent ? 'rent' : 'standard',
       })
       .select('id')
       .single()
@@ -140,7 +190,10 @@ function NewMoneyInvoiceInner() {
 
   return (
     <div className="h-full overflow-y-auto p-4 max-w-lg mx-auto space-y-4">
-      <h1 className="text-[18px] font-semibold text-text-primary">New Invoice</h1>
+      <h1 className="text-[18px] font-semibold text-text-primary">
+        {leaseId ? 'New rent invoice' : 'New Invoice'}
+      </h1>
+      {leaseHint && <p className="text-[12px] text-text-secondary">{leaseHint}</p>}
       {error && <p className="text-[13px] text-error">{error}</p>}
       <label className="block text-[12px] text-text-secondary">Client
         <select value={clientId} onChange={e => setClientId(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background">
@@ -148,19 +201,26 @@ function NewMoneyInvoiceInner() {
           {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
       </label>
-      <label className="block text-[12px] text-text-secondary">Job (optional)
-        <select value={jobId} onChange={e => setJobId(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background">
-          <option value="">— None —</option>
-          {jobs.map(j => (
-            <option key={j.id} value={j.id}>
-              {j.job_code ? `${j.job_code} · ${j.title}` : j.title}
-            </option>
-          ))}
-        </select>
-      </label>
-      {jobId && (
+      {!leaseId && (
+        <label className="block text-[12px] text-text-secondary">Job (optional)
+          <select value={jobId} onChange={e => setJobId(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background">
+            <option value="">— None —</option>
+            {jobs.map(j => (
+              <option key={j.id} value={j.id}>
+                {j.job_code ? `${j.job_code} · ${j.title}` : j.title}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {jobId && !leaseId && (
         <Link href={`/dashboard/jobs/${jobId}`} className="text-[12px] text-primary hover:underline">
           Open job
+        </Link>
+      )}
+      {siteId && (
+        <Link href={`/dashboard/properties/${siteId}?tab=leases`} className="text-[12px] text-primary hover:underline block">
+          Back to property leases
         </Link>
       )}
       <div className="grid grid-cols-2 gap-3">
