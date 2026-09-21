@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { fmtMoney } from '@/lib/finance-calc'
+import { recordInvoicePayment } from '@/lib/finance-api'
 import { downloadInvoicePdf, openInvoiceMailto } from '@/lib/invoice-pdf'
 import type { FinanceInvoice, FinanceInvoiceLine } from '@/lib/finance-types'
 
@@ -110,6 +111,7 @@ function MoneyInvoiceDetailInner() {
   const [txRows, setTxRows] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
   const [companyId, setCompanyId] = useState<string | null>(null)
+  const [employeeId, setEmployeeId] = useState<string | null>(null)
   const [companyName, setCompanyName] = useState('KaiSync')
   const [clientEmail, setClientEmail] = useState<string | null>(null)
 
@@ -142,6 +144,7 @@ function MoneyInvoiceDetailInner() {
     const member = await resolveCurrentMember(supabase)
     if (!member) { setLoading(false); return }
     setCompanyId(member.companyId)
+    setEmployeeId(member.employeeId)
 
     const [{ data: invoice }, { data: lineRows }, { data: transactions }, { data: company }] = await Promise.all([
       supabase.from('finance_invoices')
@@ -238,50 +241,19 @@ function MoneyInvoiceDetailInner() {
     setErr(null)
     const supabase = createClient()
     try {
-      // 1. Insert transaction
-      const { error: txErr } = await supabase.from('finance_transactions').insert({
-        company_id: companyId,
-        transaction_type: 'payment',
-        direction: 'in',
-        source_table: 'finance_invoices',
-        source_id: inv.id,
+      await recordInvoicePayment(
+        supabase,
+        inv.id,
         amount,
-        total_amount: amount,
-        transaction_date: payDate,
-        payment_method: payMethod,
-        reference: payRef || null,
-        notes: payNotes || null,
-      })
-      if (txErr) throw txErr
-
-      // 2. Update invoice
-      const newAmountPaid = (inv.amount_paid ?? 0) + amount
-      const newBalance = (inv.total_amount ?? 0) - newAmountPaid
-      const newStatus = newBalance <= 0 ? 'paid' : 'partially_paid'
-      const { error: invErr } = await supabase.from('finance_invoices').update({
-        amount_paid: newAmountPaid,
-        balance_due: Math.max(0, newBalance),
-        status: newStatus,
-        paid_date: newBalance <= 0 ? new Date().toISOString().split('T')[0] : null,
-      }).eq('id', inv.id)
-      if (invErr) throw invErr
-
-      // 3. Ledger entry
-      if (inv.client_id) {
-        await supabase.from('customer_ledger_entries').insert({
-          company_id: companyId,
-          client_id: inv.client_id,
-          entry_type: 'payment',
-          source_table: 'finance_invoices',
-          source_id: inv.id,
-          reference_number: inv.invoice_number,
-          description: `Payment received — ${inv.invoice_number ?? inv.id}`,
-          debit: 0,
-          credit: amount,
-          entry_date: payDate,
-        })
-      }
-
+        payMethod || null,
+        employeeId,
+        null,
+        {
+          referenceNumber: payRef || inv.invoice_number,
+          notes: payNotes || null,
+          transactionDate: payDate || undefined,
+        },
+      )
       setShowPay(false)
       await load()
       setWhatsNextMode('paid')

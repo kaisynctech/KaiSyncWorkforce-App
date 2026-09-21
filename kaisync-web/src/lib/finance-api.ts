@@ -46,6 +46,8 @@ export async function addFinanceTransaction(
     referenceNumber?: string | null
     amount: number
     paymentMethod?: string | null
+    notes?: string | null
+    transactionDate?: string | null
     createdBy?: string | null
   },
 ) {
@@ -58,8 +60,9 @@ export async function addFinanceTransaction(
     reference_number: args.referenceNumber ?? null,
     amount: args.amount,
     total_amount: args.amount,
-    transaction_date: new Date().toISOString().slice(0, 10),
+    transaction_date: args.transactionDate ?? new Date().toISOString().slice(0, 10),
     payment_method: args.paymentMethod ?? null,
+    notes: args.notes ?? null,
     created_by: args.createdBy ?? null,
   })
 }
@@ -284,6 +287,11 @@ export async function recordInvoicePayment(
   method: string | null,
   actorId: string | null,
   actorName: string | null,
+  opts?: {
+    referenceNumber?: string | null
+    notes?: string | null
+    transactionDate?: string | null
+  },
 ) {
   const { data: inv } = await supabase.from('finance_invoices').select('*').eq('id', invoiceId).maybeSingle()
   if (!inv) throw new Error('Invoice not found')
@@ -295,11 +303,12 @@ export async function recordInvoicePayment(
       : state === 'partially_paid' ? 'partially_paid'
         : state === 'overdue' ? 'overdue'
           : inv.status
+  const payDate = opts?.transactionDate ?? new Date().toISOString().slice(0, 10)
   await supabase.from('finance_invoices').update({
     amount_paid: paid,
     balance_due: due,
     status,
-    paid_date: status === 'paid' ? new Date().toISOString().slice(0, 10) : inv.paid_date,
+    paid_date: status === 'paid' ? payDate : inv.paid_date,
   }).eq('id', invoiceId)
   await addFinanceTransaction(supabase, {
     companyId: inv.company_id,
@@ -307,11 +316,27 @@ export async function recordInvoicePayment(
     direction: 'incoming',
     sourceTable: 'finance_invoices',
     sourceId: invoiceId,
-    referenceNumber: inv.invoice_number,
+    referenceNumber: opts?.referenceNumber ?? inv.invoice_number,
     amount,
     paymentMethod: method,
+    notes: opts?.notes ?? null,
+    transactionDate: payDate,
     createdBy: actorId,
   })
+  if (inv.client_id) {
+    await supabase.from('customer_ledger_entries').insert({
+      company_id: inv.company_id,
+      client_id: inv.client_id,
+      entry_type: 'payment',
+      source_table: 'finance_invoices',
+      source_id: invoiceId,
+      reference_number: inv.invoice_number,
+      description: `Payment received — ${inv.invoice_number ?? invoiceId}`,
+      debit: 0,
+      credit: amount,
+      entry_date: payDate,
+    })
+  }
   await logFinanceAudit(supabase, {
     companyId: inv.company_id,
     entityType: 'finance_invoice',
