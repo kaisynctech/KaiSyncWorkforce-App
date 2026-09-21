@@ -216,11 +216,12 @@ export default function IdEntryPage() {
             <div className="flex-1 h-px" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }} />
           </div>
 
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {[
               { icon: 'work_outline', label: 'Job Portal', sub: 'Guest', href: '/jobs' },
               { icon: 'handshake', label: 'Client', sub: 'Portal', href: '/client-portal' },
               { icon: 'engineering', label: 'Contractor', sub: 'Portal', href: '/contractor-portal' },
+              { icon: 'home', label: 'Tenant', sub: 'Portal', href: '/tenant-portal' },
             ].map((p) => (
               <Link
                 key={p.label}

@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
 import { syncUnitOccupancy } from '@/lib/properties'
+import { nextResidentCode } from '@/lib/resident-portal-code'
 import { KpiTile } from '@/components/ui/KpiTile'
 import type {
   LeaseDocumentType,
@@ -121,6 +122,10 @@ function PropertyDetailInner() {
   const [rMoveIn, setRMoveIn] = useState('')
   const [rMoveOut, setRMoveOut] = useState('')
   const [rNotes, setRNotes] = useState('')
+  const [rPortalEnabled, setRPortalEnabled] = useState(false)
+  const [rPortalCode, setRPortalCode] = useState<string | null>(null)
+  const [companyCode, setCompanyCode] = useState('')
+  const [codeCopied, setCodeCopied] = useState(false)
 
   const [showLease, setShowLease] = useState(false)
   const [editLease, setEditLease] = useState<PropertyLease | null>(null)
@@ -158,6 +163,8 @@ function PropertyDetailInner() {
     if (!member) { setLoading(false); return }
     setCompanyId(member.companyId)
     setEmployeeId(member.employeeId)
+    const { data: company } = await supabase.from('companies').select('code').eq('id', member.companyId).maybeSingle()
+    setCompanyCode((company as { code?: string } | null)?.code ?? '')
     const { data: me } = await supabase
       .from('employees')
       .select('access_level')
@@ -359,6 +366,7 @@ function PropertyDetailInner() {
     setEditResident(null)
     setRName(''); setRSurname(''); setRPhone(''); setREmail('')
     setRUnit(''); setRMoveIn(new Date().toISOString().slice(0, 10)); setRMoveOut(''); setRNotes('')
+    setRPortalEnabled(false); setRPortalCode(null); setCodeCopied(false)
     setShowResident(true)
   }
 
@@ -369,7 +377,36 @@ function PropertyDetailInner() {
     setRUnit(r.unit_id ?? '')
     setRMoveIn(r.move_in_date ?? ''); setRMoveOut(r.move_out_date ?? '')
     setRNotes(r.notes ?? '')
+    setRPortalEnabled(!!r.portal_enabled)
+    setRPortalCode(r.resident_code ?? null)
+    setCodeCopied(false)
     setShowResident(true)
+  }
+
+  async function ensureResidentCode(residentId: string): Promise<string | null> {
+    if (!companyId) return null
+    const supabase = createClient()
+    const { data: existingRows } = await supabase
+      .from('residents')
+      .select('resident_code')
+      .eq('company_id', companyId)
+    const code = nextResidentCode(
+      companyCode,
+      (existingRows ?? []).map(r => (r as { resident_code: string | null }).resident_code),
+    )
+    const { error: e } = await supabase
+      .from('residents')
+      .update({ resident_code: code })
+      .eq('id', residentId)
+      .eq('company_id', companyId)
+      .is('resident_code', null)
+    if (e) {
+      setError(e.message)
+      return null
+    }
+    // If already had a code (race), re-read
+    const { data: row } = await supabase.from('residents').select('resident_code').eq('id', residentId).maybeSingle()
+    return (row as { resident_code?: string | null } | null)?.resident_code ?? code
   }
 
   async function saveResident() {
@@ -379,7 +416,7 @@ function PropertyDetailInner() {
     const supabase = createClient()
     const prevUnitId = editResident?.unit_id ?? null
     const nextUnitId = rUnit || null
-    const payload = {
+    const payload: Record<string, unknown> = {
       name: rName.trim(),
       surname: rSurname.trim(),
       phone: rPhone.trim() || null,
@@ -388,18 +425,26 @@ function PropertyDetailInner() {
       move_in_date: rMoveIn || null,
       move_out_date: rMoveOut || null,
       notes: rNotes.trim() || null,
+      portal_enabled: rPortalEnabled,
     }
 
+    let residentId = editResident?.id ?? null
     if (editResident) {
       const { error: e } = await supabase.from('residents').update(payload).eq('id', editResident.id).eq('company_id', companyId)
       if (e) { setBusy(false); setError(e.message); return }
     } else {
-      const { error: e } = await supabase.from('residents').insert({
+      const { data, error: e } = await supabase.from('residents').insert({
         company_id: companyId,
         site_id: id,
         ...payload,
-      })
-      if (e) { setBusy(false); setError(e.message); return }
+      }).select('id').single()
+      if (e || !data) { setBusy(false); setError(e?.message ?? 'Failed'); return }
+      residentId = data.id
+    }
+
+    if (rPortalEnabled && residentId) {
+      const code = rPortalCode || await ensureResidentCode(residentId)
+      if (code) setRPortalCode(code)
     }
 
     await syncUnitOccupancy(supabase, companyId, prevUnitId)
@@ -409,6 +454,18 @@ function PropertyDetailInner() {
     setBusy(false)
     setShowResident(false)
     await load()
+  }
+
+  async function copyTenantCredentials() {
+    if (!rPortalCode || !companyCode) return
+    const text = `Company Code: ${companyCode}\nTenant Code: ${rPortalCode}\nPortal: /tenant-portal`
+    try {
+      await navigator.clipboard.writeText(text)
+      setCodeCopied(true)
+      window.setTimeout(() => setCodeCopied(false), 2000)
+    } catch {
+      setError('Could not copy credentials.')
+    }
   }
 
   function openCreateLease() {
@@ -721,6 +778,7 @@ function PropertyDetailInner() {
                     <th className="data-th text-left">Name</th>
                     <th className="data-th text-left">Unit</th>
                     <th className="data-th text-left">Phone</th>
+                    <th className="data-th text-left">Portal</th>
                     <th className="data-th text-left">Move in</th>
                     <th className="data-th text-left">Move out</th>
                     <th className="data-th text-left" />
@@ -732,6 +790,7 @@ function PropertyDetailInner() {
                       <td className="data-td text-[13px] font-medium">{r.name} {r.surname}</td>
                       <td className="data-td text-[13px]">{unitLabel(r.unit_id)}</td>
                       <td className="data-td text-[13px] text-text-secondary">{r.phone ?? '—'}</td>
+                      <td className="data-td text-[12px]">{r.portal_enabled ? (r.resident_code ?? 'On') : '—'}</td>
                       <td className="data-td text-[12px]">{fmtDate(r.move_in_date)}</td>
                       <td className="data-td text-[12px]">{fmtDate(r.move_out_date)}</td>
                       <td className="data-td text-right">
@@ -960,6 +1019,27 @@ function PropertyDetailInner() {
           <label className="block text-[12px] text-text-secondary">Notes
             <input value={rNotes} onChange={e => setRNotes(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
           </label>
+          <label className="flex items-center gap-2 text-[13px] text-text-primary">
+            <input type="checkbox" checked={rPortalEnabled} onChange={e => setRPortalEnabled(e.target.checked)} />
+            Enable tenant portal
+          </label>
+          {rPortalEnabled && (
+            <div className="rounded-md border border-divider p-3 space-y-2 bg-background">
+              <p className="text-[12px] text-text-secondary">
+                Tenant signs in at /tenant-portal with company code + tenant code.
+              </p>
+              {rPortalCode ? (
+                <>
+                  <p className="text-[13px] font-medium text-text-primary">Code: {rPortalCode}</p>
+                  <button type="button" onClick={() => void copyTenantCredentials()} className="btn-outlined h-9 px-3 text-[12px]">
+                    {codeCopied ? 'Copied' : 'Copy login credentials'}
+                  </button>
+                </>
+              ) : (
+                <p className="text-[12px] text-text-secondary">Code will be assigned on save.</p>
+              )}
+            </div>
+          )}
           <div className="flex justify-end gap-2">
             <button type="button" onClick={() => setShowResident(false)} className="btn-outlined h-9 px-3 text-[13px]">Cancel</button>
             <button type="button" disabled={busy || !rName.trim() || !rSurname.trim()} onClick={() => void saveResident()} className="btn-primary h-9 px-3 text-[13px] disabled:opacity-50">Save</button>
