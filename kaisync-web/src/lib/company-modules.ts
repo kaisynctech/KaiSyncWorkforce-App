@@ -57,7 +57,7 @@ export const COMPANY_MODULE_SPECS: ModuleSpec[] = [
   { key: CompanyModuleKeys.Farms, title: 'Farms', description: 'Farm register, livestock, plantings, production, diary, health, and feed logs.', defaultIfMissing: false },
   { key: CompanyModuleKeys.Employees, title: 'Employees', description: 'Employee records, assignments, and access controls.', defaultIfMissing: true },
   { key: CompanyModuleKeys.Contractors, title: 'Contractors', description: 'External service providers with their own scorecard.', defaultIfMissing: true },
-  { key: CompanyModuleKeys.PropertyManagement, title: 'Property Management', description: 'Sites, units, residents, and per-unit reporting.', defaultIfMissing: true },
+  { key: CompanyModuleKeys.PropertyManagement, title: 'Property Management', description: 'Portfolio of properties, units, residents, compliance — toward leases and tenant portal.', defaultIfMissing: true },
   { key: CompanyModuleKeys.AssetCompliance, title: 'Asset Compliance', description: 'Inspection schedules and certificate expiry tracking.', defaultIfMissing: true },
   { key: CompanyModuleKeys.MyPa, title: 'My PA', description: 'Personal assistant tasks, reminders, and follow-ups.', defaultIfMissing: true },
   { key: CompanyModuleKeys.Leave, title: 'Leave', description: 'Employee leave applications, approvals, and payroll-ready export.', defaultIfMissing: true },
