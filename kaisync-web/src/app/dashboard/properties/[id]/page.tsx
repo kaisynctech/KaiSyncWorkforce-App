@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -8,14 +8,36 @@ import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
 import { syncUnitOccupancy } from '@/lib/properties'
 import { KpiTile } from '@/components/ui/KpiTile'
-import type { Resident, Site, SiteComplianceEntry, Unit } from '@/types/database'
+import type {
+  LeaseDocumentType,
+  LeasePaymentFrequency,
+  LeaseStatus,
+  PropertyKind,
+  PropertyLease,
+  PropertyLeaseDocument,
+  Resident,
+  Site,
+  SiteComplianceEntry,
+  Unit,
+} from '@/types/database'
 
-type Tab = 'overview' | 'units' | 'residents' | 'compliance'
+type Tab = 'overview' | 'units' | 'residents' | 'leases' | 'compliance'
 type ClientOption = { id: string; name: string }
+type EmployeeOption = { id: string; name: string; surname: string }
+
+const PROPERTY_KINDS: PropertyKind[] = ['residential', 'commercial', 'mixed', 'other']
+const LEASE_STATUSES: LeaseStatus[] = ['draft', 'active', 'ended', 'cancelled']
+const LEASE_FREQS: LeasePaymentFrequency[] = ['monthly', 'weekly', 'other']
+const DOC_TYPES: LeaseDocumentType[] = ['lease', 'id', 'addendum', 'other']
 
 const fmtDate = (d: string | null | undefined) => {
   if (!d) return '—'
   return new Intl.DateTimeFormat('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(d))
+}
+
+const fmtMoney = (n: number | null | undefined, currency = 'ZAR') => {
+  if (n == null || !Number.isFinite(n)) return '—'
+  return new Intl.NumberFormat('en-ZA', { style: 'currency', currency, maximumFractionDigits: 2 }).format(n)
 }
 
 function complianceStatus(expiry: string | null | undefined): string {
@@ -40,7 +62,7 @@ function PropertyDetailInner() {
   const searchParams = useSearchParams()
   const initialTab = (searchParams.get('tab') as Tab | null)
   const [tab, setTab] = useState<Tab>(
-    initialTab && ['overview', 'units', 'residents', 'compliance'].includes(initialTab)
+    initialTab && ['overview', 'units', 'residents', 'leases', 'compliance'].includes(initialTab)
       ? initialTab
       : 'overview',
   )
@@ -48,10 +70,14 @@ function PropertyDetailInner() {
   const [site, setSite] = useState<Site | null>(null)
   const [units, setUnits] = useState<Unit[]>([])
   const [residents, setResidents] = useState<Resident[]>([])
+  const [leases, setLeases] = useState<PropertyLease[]>([])
+  const [leaseDocs, setLeaseDocs] = useState<PropertyLeaseDocument[]>([])
   const [compliance, setCompliance] = useState<SiteComplianceEntry[]>([])
   const [clients, setClients] = useState<ClientOption[]>([])
+  const [employees, setEmployees] = useState<EmployeeOption[]>([])
   const [loading, setLoading] = useState(true)
   const [companyId, setCompanyId] = useState<string | null>(null)
+  const [employeeId, setEmployeeId] = useState<string | null>(null)
   const [perms, setPerms] = useState<PermissionSet | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -63,6 +89,8 @@ function PropertyDetailInner() {
   const [latitude, setLatitude] = useState('')
   const [longitude, setLongitude] = useState('')
   const [clientId, setClientId] = useState('')
+  const [managedById, setManagedById] = useState('')
+  const [propertyKind, setPropertyKind] = useState<PropertyKind>('residential')
   const [isActive, setIsActive] = useState(true)
 
   const [showUnit, setShowUnit] = useState(false)
@@ -83,6 +111,25 @@ function PropertyDetailInner() {
   const [rMoveOut, setRMoveOut] = useState('')
   const [rNotes, setRNotes] = useState('')
 
+  const [showLease, setShowLease] = useState(false)
+  const [editLease, setEditLease] = useState<PropertyLease | null>(null)
+  const [lUnit, setLUnit] = useState('')
+  const [lResident, setLResident] = useState('')
+  const [lTenantClient, setLTenantClient] = useState('')
+  const [lTenantName, setLTenantName] = useState('')
+  const [lStart, setLStart] = useState('')
+  const [lEnd, setLEnd] = useState('')
+  const [lRent, setLRent] = useState('')
+  const [lDeposit, setLDeposit] = useState('')
+  const [lFreq, setLFreq] = useState<LeasePaymentFrequency>('monthly')
+  const [lStatus, setLStatus] = useState<LeaseStatus>('draft')
+  const [lNotes, setLNotes] = useState('')
+
+  const [docLeaseId, setDocLeaseId] = useState<string | null>(null)
+  const [docType, setDocType] = useState<LeaseDocumentType>('lease')
+  const [docBusy, setDocBusy] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
+
   const [showCompliance, setShowCompliance] = useState(false)
   const [cType, setCType] = useState('')
   const [cNumber, setCNumber] = useState('')
@@ -99,6 +146,7 @@ function PropertyDetailInner() {
     const member = await resolveCurrentMember(supabase)
     if (!member) { setLoading(false); return }
     setCompanyId(member.companyId)
+    setEmployeeId(member.employeeId)
     const { data: me } = await supabase
       .from('employees')
       .select('access_level')
@@ -106,12 +154,19 @@ function PropertyDetailInner() {
       .maybeSingle()
     setPerms(await loadPermissions(supabase, member.companyId, me?.access_level))
 
-    const [sRes, uRes, rRes, cRes, clRes] = await Promise.all([
-      supabase.from('sites').select('*, clients(id, name)').eq('id', id).eq('company_id', member.companyId).maybeSingle(),
+    const [sRes, uRes, rRes, lRes, cRes, clRes, eRes] = await Promise.all([
+      supabase
+        .from('sites')
+        .select('*, clients(id, name), managed_by:employees!sites_managed_by_employee_id_fkey(id, name, surname)')
+        .eq('id', id)
+        .eq('company_id', member.companyId)
+        .maybeSingle(),
       supabase.from('units').select('*').eq('site_id', id).eq('company_id', member.companyId).order('unit_number'),
       supabase.from('residents').select('*').eq('site_id', id).eq('company_id', member.companyId).order('name'),
+      supabase.from('property_leases').select('*').eq('site_id', id).eq('company_id', member.companyId).order('start_date', { ascending: false }),
       supabase.from('compliance_entries').select('*').eq('site_id', id).eq('company_id', member.companyId).order('expiry_date', { ascending: true, nullsFirst: false }),
       supabase.from('clients').select('id, name').eq('company_id', member.companyId).order('name').limit(500),
+      supabase.from('employees').select('id, name, surname').eq('company_id', member.companyId).eq('is_active', true).order('name').limit(500),
     ])
 
     if (!sRes.data) {
@@ -127,11 +182,30 @@ function PropertyDetailInner() {
     setLatitude(s.latitude != null ? String(s.latitude) : '')
     setLongitude(s.longitude != null ? String(s.longitude) : '')
     setClientId(s.client_id ?? '')
+    setManagedById(s.managed_by_employee_id ?? '')
+    setPropertyKind((s.property_kind as PropertyKind) || 'residential')
     setIsActive(s.is_active !== false)
     setUnits((uRes.data ?? []) as Unit[])
     setResidents((rRes.data ?? []) as Resident[])
+    const leaseRows = (lRes.data ?? []) as PropertyLease[]
+    setLeases(leaseRows)
     setCompliance((cRes.data ?? []) as SiteComplianceEntry[])
     setClients((clRes.data ?? []) as ClientOption[])
+    setEmployees((eRes.data ?? []) as EmployeeOption[])
+
+    if (leaseRows.length > 0) {
+      const leaseIds = leaseRows.map(l => l.id)
+      const { data: docs } = await supabase
+        .from('property_lease_documents')
+        .select('*')
+        .eq('company_id', member.companyId)
+        .in('lease_id', leaseIds)
+        .order('created_at', { ascending: false })
+      setLeaseDocs((docs ?? []) as PropertyLeaseDocument[])
+    } else {
+      setLeaseDocs([])
+    }
+
     setLoading(false)
   }, [id, router])
 
@@ -140,6 +214,7 @@ function PropertyDetailInner() {
   const kpis = useMemo(() => {
     const occupied = units.filter(u => u.is_occupied).length
     const currentResidents = residents.filter(r => !r.move_out_date).length
+    const activeLeases = leases.filter(l => l.status === 'active').length
     const expiring = compliance.filter(c => {
       const st = complianceStatus(c.expiry_date)
       return st === 'expired' || st === 'expiring'
@@ -148,14 +223,30 @@ function PropertyDetailInner() {
       units: units.length,
       vacant: units.length - occupied,
       residents: currentResidents,
+      activeLeases,
       complianceAlerts: expiring,
     }
-  }, [units, residents, compliance])
+  }, [units, residents, leases, compliance])
 
   const unitLabel = (unitId: string | null | undefined) => {
     if (!unitId) return '—'
     return units.find(u => u.id === unitId)?.unit_number ?? '—'
   }
+
+  const residentLabel = (residentId: string | null | undefined) => {
+    if (!residentId) return null
+    const r = residents.find(x => x.id === residentId)
+    return r ? `${r.name} ${r.surname}` : null
+  }
+
+  const tenantDisplay = (lease: PropertyLease) => {
+    return residentLabel(lease.resident_id)
+      || clients.find(c => c.id === lease.tenant_client_id)?.name
+      || lease.tenant_name
+      || '—'
+  }
+
+  const docsForLease = (leaseId: string) => leaseDocs.filter(d => d.lease_id === leaseId)
 
   async function saveSite() {
     if (!companyId || !canEdit || !name.trim()) return
@@ -172,6 +263,8 @@ function PropertyDetailInner() {
       latitude: Number.isFinite(lat as number) ? lat : null,
       longitude: Number.isFinite(lng as number) ? lng : null,
       client_id: clientId || null,
+      managed_by_employee_id: managedById || null,
+      property_kind: propertyKind,
       is_active: isActive,
     }).eq('id', id).eq('company_id', companyId)
     setBusy(false)
@@ -272,11 +365,116 @@ function PropertyDetailInner() {
 
     await syncUnitOccupancy(supabase, companyId, prevUnitId)
     if (nextUnitId !== prevUnitId) await syncUnitOccupancy(supabase, companyId, nextUnitId)
-    // Also re-sync if move-out toggled on same unit
     if (nextUnitId) await syncUnitOccupancy(supabase, companyId, nextUnitId)
 
     setBusy(false)
     setShowResident(false)
+    await load()
+  }
+
+  function openCreateLease() {
+    setEditLease(null)
+    setLUnit(''); setLResident(''); setLTenantClient(''); setLTenantName('')
+    setLStart(new Date().toISOString().slice(0, 10)); setLEnd('')
+    setLRent(''); setLDeposit(''); setLFreq('monthly'); setLStatus('draft'); setLNotes('')
+    setShowLease(true)
+  }
+
+  function openEditLease(lease: PropertyLease) {
+    setEditLease(lease)
+    setLUnit(lease.unit_id ?? '')
+    setLResident(lease.resident_id ?? '')
+    setLTenantClient(lease.tenant_client_id ?? '')
+    setLTenantName(lease.tenant_name ?? '')
+    setLStart(lease.start_date ?? '')
+    setLEnd(lease.end_date ?? '')
+    setLRent(lease.rent_amount != null ? String(lease.rent_amount) : '')
+    setLDeposit(lease.deposit_amount != null ? String(lease.deposit_amount) : '')
+    setLFreq(lease.payment_frequency || 'monthly')
+    setLStatus(lease.status || 'draft')
+    setLNotes(lease.notes ?? '')
+    setShowLease(true)
+  }
+
+  async function saveLease() {
+    if (!companyId || !canEdit || !lStart) return
+    if (!lResident && !lTenantClient && !lTenantName.trim()) {
+      setError('Lease needs a resident, tenant client, or tenant name.')
+      return
+    }
+    setBusy(true)
+    setError(null)
+    const supabase = createClient()
+    const rent = lRent.trim() ? parseFloat(lRent) : null
+    const deposit = lDeposit.trim() ? parseFloat(lDeposit) : null
+    const payload = {
+      unit_id: lUnit || null,
+      resident_id: lResident || null,
+      tenant_client_id: lTenantClient || null,
+      tenant_name: lTenantName.trim() || null,
+      start_date: lStart,
+      end_date: lEnd || null,
+      rent_amount: Number.isFinite(rent as number) ? rent : null,
+      deposit_amount: Number.isFinite(deposit as number) ? deposit : null,
+      payment_frequency: lFreq,
+      status: lStatus,
+      notes: lNotes.trim() || null,
+      updated_at: new Date().toISOString(),
+    }
+
+    if (editLease) {
+      const { error: e } = await supabase.from('property_leases').update(payload).eq('id', editLease.id).eq('company_id', companyId)
+      setBusy(false)
+      if (e) { setError(e.message); return }
+    } else {
+      const { error: e } = await supabase.from('property_leases').insert({
+        company_id: companyId,
+        site_id: id,
+        currency: 'ZAR',
+        created_by: employeeId,
+        ...payload,
+      })
+      setBusy(false)
+      if (e) { setError(e.message); return }
+    }
+    setShowLease(false)
+    await load()
+  }
+
+  async function uploadLeaseDoc(file: File) {
+    if (!companyId || !employeeId || !canEdit || !docLeaseId) return
+    setDocBusy(true)
+    setError(null)
+    const supabase = createClient()
+    const ext = file.name.includes('.') ? `.${file.name.split('.').pop()!.toLowerCase()}` : ''
+    const path = `property_leases/${companyId}/${docLeaseId}/hr_${crypto.randomUUID()}${ext}`
+    const { error: upErr } = await supabase.storage
+      .from('workforce-media')
+      .upload(path, file, { upsert: true, contentType: file.type || undefined })
+    if (upErr) {
+      setError(upErr.message)
+      setDocBusy(false)
+      return
+    }
+    const { data: pub } = supabase.storage.from('workforce-media').getPublicUrl(path)
+    const { error: insErr } = await supabase.from('property_lease_documents').insert({
+      company_id: companyId,
+      lease_id: docLeaseId,
+      document_name: file.name,
+      document_type: docType,
+      storage_path: path,
+      file_url: pub.publicUrl,
+      file_size_bytes: file.size,
+      mime_type: file.type || null,
+      uploaded_by: employeeId,
+    })
+    setDocBusy(false)
+    if (insErr) {
+      setError(insErr.message)
+      return
+    }
+    setDocLeaseId(null)
+    if (fileRef.current) fileRef.current.value = ''
     await load()
   }
 
@@ -307,10 +505,17 @@ function PropertyDetailInner() {
   }
   if (!site) return null
 
+  const managerName = site.managed_by
+    ? `${site.managed_by.name} ${site.managed_by.surname}`
+    : employees.find(e => e.id === site.managed_by_employee_id)
+      ? `${employees.find(e => e.id === site.managed_by_employee_id)!.name} ${employees.find(e => e.id === site.managed_by_employee_id)!.surname}`
+      : null
+
   const tabs: { id: Tab; label: string }[] = [
     { id: 'overview', label: 'Overview' },
     { id: 'units', label: 'Units' },
     { id: 'residents', label: 'Residents' },
+    { id: 'leases', label: 'Leases' },
     { id: 'compliance', label: 'Compliance' },
   ]
 
@@ -331,14 +536,17 @@ function PropertyDetailInner() {
           <p className="text-[13px] text-text-secondary">
             {site.address ? `${site.address} · ` : ''}
             {site.is_active === false ? 'Inactive' : 'Active'}
-            {site.clients?.name ? ` · Client: ${site.clients.name}` : ''}
+            {site.property_kind ? ` · ${site.property_kind}` : ''}
+            {site.clients?.name ? ` · Owner: ${site.clients.name}` : ''}
+            {managerName ? ` · Manager: ${managerName}` : ''}
           </p>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
           <KpiTile value={kpis.units} label="Units" bg="#1E293B" valueFg="#FCD34D" labelFg="#64748B" />
           <KpiTile value={kpis.vacant} label="Vacant" bg="#3F1D1D" valueFg="#F87171" labelFg="#FCA5A5" />
           <KpiTile value={kpis.residents} label="Current residents" bg="#0F2918" valueFg="#22C55E" labelFg="#4ADE80" />
+          <KpiTile value={kpis.activeLeases} label="Active leases" bg="#1E293B" valueFg="#60A5FA" labelFg="#64748B" />
           <KpiTile value={kpis.complianceAlerts} label="Compliance alerts" bg="#1E293B" valueFg="#94A3B8" labelFg="#64748B" />
         </div>
 
@@ -367,15 +575,11 @@ function PropertyDetailInner() {
             <label className="block text-[12px] text-text-secondary">Address
               <input value={address} onChange={e => setAddress(e.target.value)} disabled={!canEdit} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background disabled:opacity-60" />
             </label>
-            <label className="block text-[12px] text-text-secondary">Linked client (owner / principal)
-              <select value={clientId} onChange={e => setClientId(e.target.value)} disabled={!canEdit} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background disabled:opacity-60">
-                <option value="">— None —</option>
-                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              <label className="block text-[12px] text-text-secondary">Geofence radius (m)
-                <input type="number" value={radius} onChange={e => setRadius(e.target.value)} disabled={!canEdit} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background disabled:opacity-60" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="block text-[12px] text-text-secondary">Property kind
+                <select value={propertyKind} onChange={e => setPropertyKind(e.target.value as PropertyKind)} disabled={!canEdit} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background disabled:opacity-60">
+                  {PROPERTY_KINDS.map(k => <option key={k} value={k}>{k}</option>)}
+                </select>
               </label>
               <label className="block text-[12px] text-text-secondary">Status
                 <select value={isActive ? '1' : '0'} onChange={e => setIsActive(e.target.value === '1')} disabled={!canEdit} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background disabled:opacity-60">
@@ -384,6 +588,21 @@ function PropertyDetailInner() {
                 </select>
               </label>
             </div>
+            <label className="block text-[12px] text-text-secondary">Owner / principal client
+              <select value={clientId} onChange={e => setClientId(e.target.value)} disabled={!canEdit} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background disabled:opacity-60">
+                <option value="">— None —</option>
+                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </label>
+            <label className="block text-[12px] text-text-secondary">Managed by (staff)
+              <select value={managedById} onChange={e => setManagedById(e.target.value)} disabled={!canEdit} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background disabled:opacity-60">
+                <option value="">— Unassigned —</option>
+                {employees.map(e => <option key={e.id} value={e.id}>{e.name} {e.surname}</option>)}
+              </select>
+            </label>
+            <label className="block text-[12px] text-text-secondary">Geofence radius (m)
+              <input type="number" value={radius} onChange={e => setRadius(e.target.value)} disabled={!canEdit} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background disabled:opacity-60" />
+            </label>
             <div className="grid grid-cols-2 gap-3">
               <label className="block text-[12px] text-text-secondary">Latitude
                 <input value={latitude} onChange={e => setLatitude(e.target.value)} disabled={!canEdit} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background disabled:opacity-60" />
@@ -483,6 +702,71 @@ function PropertyDetailInner() {
           </div>
         )}
 
+        {tab === 'leases' && (
+          <div className="space-y-3">
+            {canEdit && (
+              <button type="button" onClick={openCreateLease} className="btn-outlined h-9 px-3 text-[13px]">+ Lease</button>
+            )}
+            <p className="text-[12px] text-text-secondary">
+              Lease agreements for units. Attach signed leases and ID copies under each row.
+            </p>
+            {leases.length === 0 ? (
+              <p className="text-[13px] text-text-secondary">No leases yet.</p>
+            ) : (
+              <div className="space-y-4">
+                {leases.map(lease => {
+                  const docs = docsForLease(lease.id)
+                  return (
+                    <div key={lease.id} className="border border-divider rounded-xl overflow-hidden">
+                      <table className="w-full" style={{ minWidth: 640 }}>
+                        <tbody>
+                          <tr className="border-b border-divider bg-surface-elevated">
+                            <td className="data-td text-[13px] font-medium">{tenantDisplay(lease)}</td>
+                            <td className="data-td text-[13px]">{unitLabel(lease.unit_id)}</td>
+                            <td className="data-td text-[12px]">{fmtDate(lease.start_date)} – {fmtDate(lease.end_date)}</td>
+                            <td className="data-td text-[13px]">{fmtMoney(lease.rent_amount, lease.currency)}/{lease.payment_frequency}</td>
+                            <td className="data-td text-[12px] capitalize">{lease.status}</td>
+                            <td className="data-td text-right whitespace-nowrap">
+                              {canEdit && (
+                                <>
+                                  <button type="button" onClick={() => openEditLease(lease)} className="text-[12px] text-primary hover:underline mr-3">Edit</button>
+                                  <button
+                                    type="button"
+                                    onClick={() => { setDocLeaseId(lease.id); setDocType('lease') }}
+                                    className="text-[12px] text-primary hover:underline"
+                                  >
+                                    Upload
+                                  </button>
+                                </>
+                              )}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                      {docs.length > 0 && (
+                        <ul className="px-3 py-2 space-y-1 bg-background">
+                          {docs.map(d => (
+                            <li key={d.id} className="flex items-center justify-between gap-2 text-[12px]">
+                              <span className="text-text-secondary capitalize">{d.document_type}</span>
+                              {d.file_url ? (
+                                <a href={d.file_url} target="_blank" rel="noreferrer" className="text-primary hover:underline truncate">
+                                  {d.document_name}
+                                </a>
+                              ) : (
+                                <span className="truncate">{d.document_name}</span>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         {tab === 'compliance' && (
           <div className="space-y-3">
             {canEdit && (
@@ -578,6 +862,93 @@ function PropertyDetailInner() {
           <div className="flex justify-end gap-2">
             <button type="button" onClick={() => setShowResident(false)} className="btn-outlined h-9 px-3 text-[13px]">Cancel</button>
             <button type="button" disabled={busy || !rName.trim() || !rSurname.trim()} onClick={() => void saveResident()} className="btn-primary h-9 px-3 text-[13px] disabled:opacity-50">Save</button>
+          </div>
+        </Modal>
+      )}
+
+      {showLease && (
+        <Modal title={editLease ? 'Edit lease' : 'New lease'} onClose={() => setShowLease(false)}>
+          <label className="block text-[12px] text-text-secondary">Unit
+            <select value={lUnit} onChange={e => setLUnit(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background">
+              <option value="">— Whole property / unassigned —</option>
+              {units.map(u => <option key={u.id} value={u.id}>{u.unit_number}</option>)}
+            </select>
+          </label>
+          <label className="block text-[12px] text-text-secondary">Resident
+            <select value={lResident} onChange={e => setLResident(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background">
+              <option value="">— None —</option>
+              {residents.map(r => <option key={r.id} value={r.id}>{r.name} {r.surname}</option>)}
+            </select>
+          </label>
+          <label className="block text-[12px] text-text-secondary">Tenant client (commercial)
+            <select value={lTenantClient} onChange={e => setLTenantClient(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background">
+              <option value="">— None —</option>
+              {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </label>
+          <label className="block text-[12px] text-text-secondary">Tenant name (if not linked)
+            <input value={lTenantName} onChange={e => setLTenantName(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block text-[12px] text-text-secondary">Start *
+              <input type="date" value={lStart} onChange={e => setLStart(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+            </label>
+            <label className="block text-[12px] text-text-secondary">End
+              <input type="date" value={lEnd} onChange={e => setLEnd(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+            </label>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block text-[12px] text-text-secondary">Rent (ZAR)
+              <input type="number" step="0.01" value={lRent} onChange={e => setLRent(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+            </label>
+            <label className="block text-[12px] text-text-secondary">Deposit
+              <input type="number" step="0.01" value={lDeposit} onChange={e => setLDeposit(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+            </label>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block text-[12px] text-text-secondary">Frequency
+              <select value={lFreq} onChange={e => setLFreq(e.target.value as LeasePaymentFrequency)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background">
+                {LEASE_FREQS.map(f => <option key={f} value={f}>{f}</option>)}
+              </select>
+            </label>
+            <label className="block text-[12px] text-text-secondary">Status
+              <select value={lStatus} onChange={e => setLStatus(e.target.value as LeaseStatus)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background">
+                {LEASE_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </label>
+          </div>
+          <label className="block text-[12px] text-text-secondary">Notes
+            <input value={lNotes} onChange={e => setLNotes(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+          </label>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setShowLease(false)} className="btn-outlined h-9 px-3 text-[13px]">Cancel</button>
+            <button type="button" disabled={busy || !lStart} onClick={() => void saveLease()} className="btn-primary h-9 px-3 text-[13px] disabled:opacity-50">Save</button>
+          </div>
+        </Modal>
+      )}
+
+      {docLeaseId && (
+        <Modal title="Upload lease document" onClose={() => setDocLeaseId(null)}>
+          <label className="block text-[12px] text-text-secondary">Document type
+            <select value={docType} onChange={e => setDocType(e.target.value as LeaseDocumentType)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background">
+              {DOC_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </label>
+          <label className="block text-[12px] text-text-secondary">File
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx"
+              className="mt-1 w-full text-[13px]"
+              onChange={e => {
+                const f = e.target.files?.[0]
+                if (f) void uploadLeaseDoc(f)
+              }}
+            />
+          </label>
+          {docBusy && <p className="text-[12px] text-text-secondary">Uploading…</p>}
+          <div className="flex justify-end">
+            <button type="button" onClick={() => setDocLeaseId(null)} className="btn-outlined h-9 px-3 text-[13px]">Close</button>
           </div>
         </Modal>
       )}
