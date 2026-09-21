@@ -763,6 +763,9 @@ export interface Resident {
   move_in_date: string | null
   move_out_date?: string | null
   notes?: string | null
+  resident_code?: string | null
+  portal_enabled?: boolean
+  resident_code_rotated_at?: string | null
   /** Derived client-side */
   full_name?: string
   is_current_resident?: boolean

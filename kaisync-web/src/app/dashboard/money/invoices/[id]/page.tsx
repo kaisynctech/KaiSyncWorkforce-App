@@ -36,6 +36,17 @@ type Transaction = {
   created_at: string
 }
 
+type PaymentProof = {
+  id: string
+  status: string
+  file_url: string | null
+  storage_path: string
+  amount: number | null
+  reference: string | null
+  notes: string | null
+  submitted_at: string
+}
+
 // ─── Status badge ──────────────────────────────────────────────────────────────
 
 const STATUS_BADGE: Record<string, string> = {
@@ -109,6 +120,7 @@ function MoneyInvoiceDetailInner() {
   const [inv, setInv]       = useState<Invoice | null>(null)
   const [lines, setLines]   = useState<FinanceInvoiceLine[]>([])
   const [txRows, setTxRows] = useState<Transaction[]>([])
+  const [proofs, setProofs] = useState<PaymentProof[]>([])
   const [loading, setLoading] = useState(true)
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [employeeId, setEmployeeId] = useState<string | null>(null)
@@ -146,7 +158,7 @@ function MoneyInvoiceDetailInner() {
     setCompanyId(member.companyId)
     setEmployeeId(member.employeeId)
 
-    const [{ data: invoice }, { data: lineRows }, { data: transactions }, { data: company }] = await Promise.all([
+    const [{ data: invoice }, { data: lineRows }, { data: transactions }, { data: company }, { data: proofRows }] = await Promise.all([
       supabase.from('finance_invoices')
         .select('*, clients(name, email), client_deals(title), jobs(title, job_code)')
         .eq('id', id)
@@ -161,11 +173,17 @@ function MoneyInvoiceDetailInner() {
         .eq('source_id', id)
         .order('transaction_date', { ascending: false }),
       supabase.from('companies').select('name').eq('id', member.companyId).maybeSingle(),
+      supabase.from('finance_payment_proofs')
+        .select('id, status, file_url, storage_path, amount, reference, notes, submitted_at')
+        .eq('invoice_id', id)
+        .eq('company_id', member.companyId)
+        .order('submitted_at', { ascending: false }),
     ])
 
     setInv(invoice as Invoice | null)
     setLines((lineRows ?? []) as FinanceInvoiceLine[])
     setTxRows((transactions ?? []) as Transaction[])
+    setProofs((proofRows ?? []) as PaymentProof[])
     setCompanyName((company as { name?: string } | null)?.name ?? 'KaiSync')
     setClientEmail((invoice as { clients?: { email?: string | null } | null } | null)?.clients?.email ?? null)
 
@@ -230,6 +248,21 @@ function MoneyInvoiceDetailInner() {
       invoice_number: invoiceNumber,
     }).eq('id', inv.id)
     return !error
+  }
+
+  async function reviewProof(proofId: string, status: 'accepted' | 'rejected') {
+    if (!companyId || !employeeId) return
+    setBusy(true)
+    setErr(null)
+    const supabase = createClient()
+    const { error } = await supabase.from('finance_payment_proofs').update({
+      status,
+      reviewed_by: employeeId,
+      reviewed_at: new Date().toISOString(),
+    }).eq('id', proofId).eq('company_id', companyId)
+    setBusy(false)
+    if (error) { setErr(error.message); return }
+    await load()
   }
 
   // ── Record Payment ────────────────────────────────────────────────────────────
@@ -526,6 +559,47 @@ function MoneyInvoiceDetailInner() {
             </span>
           </div>
         </div>
+
+        {/* Tenant payment proofs */}
+        {proofs.length > 0 && (
+          <div className="bg-surface-card border border-divider rounded-xl overflow-hidden">
+            <p className="px-4 py-2.5 text-[12px] font-semibold text-text-secondary uppercase tracking-wide border-b border-divider">
+              Tenant payment proofs
+            </p>
+            <ul className="divide-y divide-divider">
+              {proofs.map(p => (
+                <li key={p.id} className="px-4 py-3 flex flex-wrap items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-[13px] text-text-primary capitalize">{p.status}</p>
+                    <p className="text-[12px] text-text-secondary">
+                      {p.submitted_at?.slice(0, 10)}
+                      {p.reference ? ` · ref ${p.reference}` : ''}
+                      {p.amount != null ? ` · ${fmtMoney(p.amount)}` : ''}
+                    </p>
+                    {p.file_url && (
+                      <a href={p.file_url} target="_blank" rel="noreferrer" className="text-[12px] text-primary hover:underline">
+                        View file
+                      </a>
+                    )}
+                  </div>
+                  {p.status === 'submitted' && (
+                    <div className="flex gap-2">
+                      <button type="button" disabled={busy} onClick={() => void reviewProof(p.id, 'accepted')} className="btn-outlined h-8 px-3 text-[12px] disabled:opacity-50">
+                        Accept
+                      </button>
+                      <button type="button" disabled={busy} onClick={() => void reviewProof(p.id, 'rejected')} className="btn-outlined h-8 px-3 text-[12px] disabled:opacity-50">
+                        Reject
+                      </button>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+            <p className="px-4 py-2 text-[11px] text-text-secondary border-t border-divider">
+              Accepting a proof does not mark the invoice paid — use Record Payment after verifying.
+            </p>
+          </div>
+        )}
 
         {/* Payment history */}
         {txRows.length > 0 && (

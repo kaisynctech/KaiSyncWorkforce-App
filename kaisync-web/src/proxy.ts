@@ -37,6 +37,7 @@ export async function proxy(request: NextRequest) {
   if (
     pathname.startsWith('/client-portal')
     || pathname.startsWith('/contractor-portal')
+    || pathname.startsWith('/tenant-portal')
   ) {
     return supabaseResponse
   }
