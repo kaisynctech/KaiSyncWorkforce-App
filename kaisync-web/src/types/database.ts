@@ -159,6 +159,8 @@ export interface Site {
   longitude?: number | null
   /** Active properties count toward billing seats. */
   is_active?: boolean
+  notes?: string | null
+  clients?: { id: string; name: string } | null
 }
 
 export interface Project {

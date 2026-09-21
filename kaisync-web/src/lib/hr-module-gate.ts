@@ -53,6 +53,8 @@ export function hrModuleDeniedMessage(flag: HrModuleFlag): string {
     jobs: 'Jobs',
     incidents: 'Incidents',
     farms: 'Farms',
+    properties: 'Properties',
+    residents: 'Residents',
     compliancePacks: 'Compliance Packs',
   }
   const name = labels[flag] ?? 'This module'
@@ -70,6 +72,8 @@ export function hrPermissionDeniedMessage(flag: HrModuleFlag): string {
     jobs: 'Jobs',
     incidents: 'Incidents',
     farms: 'Farms',
+    properties: 'Properties',
+    residents: 'Residents',
     compliancePacks: 'Compliance Packs',
   }
   const name = labels[flag] ?? 'This module'

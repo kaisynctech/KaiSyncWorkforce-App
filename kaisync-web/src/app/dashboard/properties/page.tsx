@@ -1,183 +1,262 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
-import { Toggle } from '@/components/Toggle'
+import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
+import { KpiTile } from '@/components/ui/KpiTile'
 import type { Site } from '@/types/database'
 
+type ClientOption = { id: string; name: string }
+
+type SiteRow = Site & {
+  units?: { count: number }[] | { count: number } | null
+  unit_count?: number
+  occupied_count?: number
+}
+
 export default function PropertiesPage() {
-  const [sites, setSites] = useState<Site[]>([])
+  const router = useRouter()
+  const [sites, setSites] = useState<SiteRow[]>([])
+  const [unitStats, setUnitStats] = useState<Record<string, { total: number; occupied: number }>>({})
+  const [clients, setClients] = useState<ClientOption[]>([])
   const [loading, setLoading] = useState(true)
   const [companyId, setCompanyId] = useState<string | null>(null)
+  const [perms, setPerms] = useState<PermissionSet | null>(null)
   const [showCreate, setShowCreate] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [search, setSearch] = useState('')
+  const [form, setForm] = useState({
+    name: '',
+    address: '',
+    radius_meters: '200',
+    latitude: '',
+    longitude: '',
+    client_id: '',
+    notes: '',
+  })
 
-  // Form state
-  const [form, setForm] = useState({ name: '', address: '', radius_meters: '50', latitude: '', longitude: '' })
+  const canEdit = can(perms, PERM.propertiesEdit)
 
   const load = useCallback(async () => {
     setLoading(true)
+    setError(null)
     const supabase = createClient()
     const member = await resolveCurrentMember(supabase)
     if (!member) { setError('not_linked'); setLoading(false); return }
     setCompanyId(member.companyId)
 
-    const { data: sData } = await supabase.from('sites').select('*').eq('company_id', member.companyId).order('name')
+    const { data: me } = await supabase
+      .from('employees')
+      .select('access_level')
+      .eq('id', member.employeeId)
+      .maybeSingle()
+    setPerms(await loadPermissions(supabase, member.companyId, me?.access_level))
 
-    setSites((sData ?? []) as Site[])
+    const [sRes, uRes, cRes] = await Promise.all([
+      supabase
+        .from('sites')
+        .select('*, clients(id, name)')
+        .eq('company_id', member.companyId)
+        .order('name'),
+      supabase
+        .from('units')
+        .select('id, site_id, is_occupied')
+        .eq('company_id', member.companyId),
+      supabase
+        .from('clients')
+        .select('id, name')
+        .eq('company_id', member.companyId)
+        .order('name')
+        .limit(500),
+    ])
+
+    if (sRes.error) setError(sRes.error.message)
+    setSites((sRes.data ?? []) as SiteRow[])
+
+    const stats: Record<string, { total: number; occupied: number }> = {}
+    for (const u of uRes.data ?? []) {
+      const sid = (u as { site_id: string }).site_id
+      if (!stats[sid]) stats[sid] = { total: 0, occupied: 0 }
+      stats[sid].total += 1
+      if ((u as { is_occupied?: boolean }).is_occupied) stats[sid].occupied += 1
+    }
+    setUnitStats(stats)
+    setClients((cRes.data ?? []) as ClientOption[])
     setLoading(false)
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { void load() }, [load])
 
   async function createSite() {
-    if (!form.name.trim()) return
+    if (!companyId || !canEdit || !form.name.trim()) return
     setBusy(true)
+    setError(null)
     const supabase = createClient()
     const lat = form.latitude ? parseFloat(form.latitude) : null
     const lng = form.longitude ? parseFloat(form.longitude) : null
-    const { data } = await supabase.from('sites').insert({
+    const { data, error: e } = await supabase.from('sites').insert({
       company_id: companyId,
       name: form.name.trim(),
       address: form.address.trim() || null,
-      radius_meters: parseInt(form.radius_meters) || 50,
-      latitude: lat,
-      longitude: lng,
+      radius_meters: parseFloat(form.radius_meters) || 200,
+      latitude: Number.isFinite(lat as number) ? lat : null,
+      longitude: Number.isFinite(lng as number) ? lng : null,
+      client_id: form.client_id || null,
+      notes: form.notes.trim() || null,
       is_active: true,
-    }).select().single()
-    if (data) setSites(prev => [...prev, data as Site].sort((a, b) => a.name.localeCompare(b.name)))
-    setForm({ name: '', address: '', radius_meters: '50', latitude: '', longitude: '' })
-    setShowCreate(false)
+    }).select('id').single()
     setBusy(false)
-  }
-
-  async function setSiteActive(siteId: string, isActive: boolean) {
-    const supabase = createClient()
-    const { error: e } = await supabase.from('sites').update({ is_active: isActive }).eq('id', siteId)
-    if (e) {
-      setError(e.message)
+    if (e || !data) {
+      setError(e?.message ?? 'Failed to create property')
       return
     }
-    setSites(prev => prev.map(s => (s.id === siteId ? { ...s, is_active: isActive } : s)))
+    setShowCreate(false)
+    setForm({ name: '', address: '', radius_meters: '200', latitude: '', longitude: '', client_id: '', notes: '' })
+    router.push(`/dashboard/properties/${data.id}`)
   }
 
-  const hasCoords = (site: Site) =>
-    site.latitude != null && site.longitude != null
-  const activeCount = sites.filter(s => s.is_active !== false).length
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return sites
+    return sites.filter(s =>
+      s.name.toLowerCase().includes(q)
+      || (s.address ?? '').toLowerCase().includes(q)
+      || (s.clients?.name ?? '').toLowerCase().includes(q),
+    )
+  }, [sites, search])
 
-  if (error === 'not_linked') return (
-    <div className="flex items-center justify-center h-full">
-      <div className="text-center space-y-2">
-        <span className="material-icons text-[48px] text-text-disabled">person_off</span>
-        <p className="text-[14px] font-semibold text-text-primary">Account not linked</p>
-        <p className="text-[13px] text-text-secondary">
-          Your account is not linked to an active employee record.<br/>
-          Please contact your administrator.
-        </p>
+  const kpis = useMemo(() => {
+    const active = sites.filter(s => s.is_active !== false).length
+    const inactive = sites.length - active
+    let units = 0
+    let vacant = 0
+    for (const sid of Object.keys(unitStats)) {
+      units += unitStats[sid].total
+      vacant += Math.max(0, unitStats[sid].total - unitStats[sid].occupied)
+    }
+    return { active, inactive, units, vacant }
+  }, [sites, unitStats])
+
+  if (error === 'not_linked') {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <p className="text-[13px] text-text-secondary">Account not linked to an employee.</p>
       </div>
-    </div>
-  )
+    )
+  }
 
   return (
-    <div className="h-full flex flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 bg-surface-dark shrink-0">
-        <div>
-          <h1 className="text-[20px] font-semibold text-text-primary">Properties &amp; Sites</h1>
-          {!loading && (
+    <div className="h-full overflow-y-auto">
+      <div className="max-w-5xl mx-auto p-4 space-y-4 pb-12">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div>
+            <h1 className="text-[20px] font-semibold text-text-primary">Properties</h1>
             <p className="text-[12px] text-text-secondary mt-0.5">
-              {activeCount} active · billable (20 included, then R49/property)
+              {kpis.active} active · billable (20 included, then R49/property)
             </p>
+          </div>
+          {canEdit && (
+            <button type="button" onClick={() => setShowCreate(true)} className="btn-primary h-9 px-3 text-[13px]">
+              + Property
+            </button>
           )}
         </div>
-        <button
-          className="w-10 h-10 rounded-full bg-primary text-white text-[20px] flex items-center justify-center hover:bg-primary-dark transition-colors"
-          onClick={() => setShowCreate(true)}
-        >
-          +
-        </button>
-      </div>
 
-      {/* Site cards */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-2">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <KpiTile value={kpis.active} label="Active" bg="#0F2918" valueFg="#22C55E" labelFg="#4ADE80" />
+          <KpiTile value={kpis.inactive} label="Inactive" bg="#1E293B" valueFg="#94A3B8" labelFg="#64748B" />
+          <KpiTile value={kpis.units} label="Units" bg="#1E293B" valueFg="#FCD34D" labelFg="#64748B" />
+          <KpiTile value={kpis.vacant} label="Vacant units" bg="#3F1D1D" valueFg="#F87171" labelFg="#FCA5A5" />
+        </div>
+
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search name, address, client…"
+          className="w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background"
+        />
+
+        {error && error !== 'not_linked' && <p className="text-[13px] text-error">{error}</p>}
+
         {loading ? (
-          <p className="text-text-secondary text-[13px] text-center py-8">Loading…</p>
-        ) : sites.length === 0 ? (
-          <div className="flex flex-col items-center gap-3 py-8">
-            <span className="text-[48px]">🏢</span>
-            <p className="text-text-secondary text-sm font-medium">No properties yet</p>
-            <p className="text-text-secondary text-sm text-center">
-              Add your first site to start tracking properties
-            </p>
+          <p className="text-center text-[13px] text-text-secondary py-8">Loading…</p>
+        ) : filtered.length === 0 ? (
+          <p className="text-center text-[13px] text-text-secondary py-8">No properties found.</p>
+        ) : (
+          <div className="overflow-x-auto border border-divider rounded-xl">
+            <table className="w-full" style={{ minWidth: 720 }}>
+              <thead>
+                <tr className="bg-surface-elevated border-b border-divider">
+                  <th className="data-th text-left">Name</th>
+                  <th className="data-th text-left">Address</th>
+                  <th className="data-th text-left">Client</th>
+                  <th className="data-th text-right">Units</th>
+                  <th className="data-th text-left">GPS</th>
+                  <th className="data-th text-left">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(site => {
+                  const st = unitStats[site.id] ?? { total: 0, occupied: 0 }
+                  const hasGps = site.latitude != null && site.longitude != null
+                  return (
+                    <tr
+                      key={site.id}
+                      className="border-b border-divider hover:bg-surface-elevated cursor-pointer"
+                      onClick={() => router.push(`/dashboard/properties/${site.id}`)}
+                    >
+                      <td className="data-td text-[13px] font-medium text-primary">{site.name}</td>
+                      <td className="data-td text-[13px] text-text-secondary truncate max-w-[200px]">{site.address ?? '—'}</td>
+                      <td className="data-td text-[13px] text-text-secondary">{site.clients?.name ?? '—'}</td>
+                      <td className="data-td text-[13px] text-right">{st.occupied}/{st.total}</td>
+                      <td className="data-td text-[12px]">{hasGps ? 'Yes' : '—'}</td>
+                      <td className="data-td text-[12px]">{site.is_active === false ? 'Inactive' : 'Active'}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
-        ) : sites.map(site => (
-          <div key={site.id} className={`card p-3 ${site.is_active === false ? 'opacity-60' : ''}`}>
-            <div className="grid gap-3 items-center" style={{ gridTemplateColumns: 'auto 1fr auto' }}>
-              {/* Icon */}
-              <div className="w-11 h-11 rounded-lg bg-primary flex items-center justify-center text-[18px] shrink-0">
-                🏢
-              </div>
-              {/* Info */}
-              <div className="min-w-0 flex flex-col gap-0.5">
-                <p className="text-sm text-text-primary">{site.name}</p>
-                {site.address && <p className="text-xs text-text-secondary truncate">{site.address}</p>}
-                <p className="text-[12px] text-text-secondary">
-                  Radius: <strong>{site.radius_meters ?? 50}m</strong>
-                  {' · '}
-                  {site.is_active === false ? 'Inactive' : 'Active'}
-                </p>
-              </div>
-              <div className="flex flex-col items-end gap-2 shrink-0">
-                <span
-                  className="text-[11px] font-bold px-2 py-1 rounded-xl"
-                  style={hasCoords(site)
-                    ? { backgroundColor: '#DCFCE7', color: '#166534' }
-                    : { backgroundColor: '#F3F4F6', color: '#6B7280' }
-                  }
-                >
-                  {hasCoords(site) ? 'GPS' : 'No GPS'}
-                </span>
-                <Toggle
-                  checked={site.is_active !== false}
-                  onChange={v => { void setSiteActive(site.id, v) }}
-                />
-              </div>
-            </div>
-          </div>
-        ))}
+        )}
       </div>
 
-      {/* Create site modal */}
       {showCreate && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-surface rounded-xl shadow-lg w-full max-w-sm p-5 space-y-3">
-            <h3 className="font-semibold text-text-primary">New Site</h3>
-            {[
-              ['name', 'Site name *', 'text'],
-              ['address', 'Address', 'text'],
-              ['radius_meters', 'Geofence radius (metres)', 'number'],
-              ['latitude', 'Latitude (optional)', 'number'],
-              ['longitude', 'Longitude (optional)', 'number'],
-            ].map(([field, label, type]) => (
-              <div key={field} className="flex flex-col gap-1">
-                <label className="text-xs text-text-secondary">{label}</label>
-                <input
-                  type={type}
-                  value={(form as Record<string, string>)[field]}
-                  onChange={e => setForm(prev => ({ ...prev, [field]: e.target.value }))}
-                  className="dark-entry w-full"
-                />
-              </div>
-            ))}
-            <div className="flex gap-2 justify-end">
-              <button onClick={() => setShowCreate(false)} className="btn-outlined h-9 px-4 text-[13px]">
-                Cancel
-              </button>
-              <button onClick={createSite} disabled={!form.name.trim() || busy}
-                className="btn-primary h-9 px-4 text-[13px] disabled:opacity-50">
-                {busy ? 'Saving…' : 'Add Site'}
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40">
+          <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md p-5 space-y-3 max-h-[90vh] overflow-y-auto">
+            <h2 className="text-[16px] font-semibold text-text-primary">New property</h2>
+            <label className="block text-[12px] text-text-secondary">Name *
+              <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+            </label>
+            <label className="block text-[12px] text-text-secondary">Address
+              <input value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+            </label>
+            <label className="block text-[12px] text-text-secondary">Linked client (owner / principal)
+              <select value={form.client_id} onChange={e => setForm(f => ({ ...f, client_id: e.target.value }))} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background">
+                <option value="">— None —</option>
+                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </label>
+            <label className="block text-[12px] text-text-secondary">Geofence radius (m)
+              <input type="number" value={form.radius_meters} onChange={e => setForm(f => ({ ...f, radius_meters: e.target.value }))} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block text-[12px] text-text-secondary">Latitude
+                <input value={form.latitude} onChange={e => setForm(f => ({ ...f, latitude: e.target.value }))} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+              </label>
+              <label className="block text-[12px] text-text-secondary">Longitude
+                <input value={form.longitude} onChange={e => setForm(f => ({ ...f, longitude: e.target.value }))} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+              </label>
+            </div>
+            <label className="block text-[12px] text-text-secondary">Notes
+              <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} className="mt-1 w-full px-3 py-2 border border-border rounded-md text-[13px] bg-background" />
+            </label>
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setShowCreate(false)} className="btn-outlined h-9 px-3 text-[13px]">Cancel</button>
+              <button type="button" disabled={busy || !form.name.trim()} onClick={() => void createSite()} className="btn-primary h-9 px-3 text-[13px] disabled:opacity-50">
+                {busy ? 'Saving…' : 'Create'}
               </button>
             </div>
           </div>
