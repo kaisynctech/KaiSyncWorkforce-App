@@ -840,6 +840,50 @@ export interface PropertyLeaseDocument {
   created_at: string
 }
 
+export type MeterType = 'electricity' | 'water' | 'gas' | 'other'
+export type InspectionType = 'move_in' | 'move_out' | 'routine' | 'general' | 'other'
+export type InspectionResult = 'pass' | 'fail' | 'needs_attention' | 'pending'
+
+export interface PropertyMeter {
+  id: string
+  company_id: string
+  site_id: string
+  unit_id: string | null
+  meter_type: MeterType
+  label: string
+  serial_number: string | null
+  unit_of_measure: string
+  is_active: boolean
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface PropertyMeterReading {
+  id: string
+  company_id: string
+  meter_id: string
+  reading_value: number
+  reading_date: string
+  recorded_by: string | null
+  notes: string | null
+  created_at: string
+}
+
+export interface PropertyInspection {
+  id: string
+  company_id: string
+  site_id: string
+  unit_id: string | null
+  inspection_type: InspectionType
+  inspection_date: string
+  result: InspectionResult
+  inspector_name: string | null
+  notes: string | null
+  created_by: string | null
+  created_at: string
+}
+
 export interface PayrollSettings {
   id: string
   company_id: string

@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
@@ -16,10 +17,14 @@ type SiteRow = Site & {
   occupied_count?: number
 }
 
+const KIND_FILTERS: Array<PropertyKind | 'all'> = ['all', 'residential', 'commercial', 'mixed', 'other']
+
 export default function PropertiesPage() {
   const router = useRouter()
   const [sites, setSites] = useState<SiteRow[]>([])
   const [unitStats, setUnitStats] = useState<Record<string, { total: number; occupied: number }>>({})
+  const [activeLeaseCount, setActiveLeaseCount] = useState(0)
+  const [arrearsCount, setArrearsCount] = useState(0)
   const [clients, setClients] = useState<ClientOption[]>([])
   const [loading, setLoading] = useState(true)
   const [companyId, setCompanyId] = useState<string | null>(null)
@@ -28,6 +33,7 @@ export default function PropertiesPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
+  const [kindFilter, setKindFilter] = useState<PropertyKind | 'all'>('all')
   const [form, setForm] = useState({
     name: '',
     address: '',
@@ -56,7 +62,8 @@ export default function PropertiesPage() {
       .maybeSingle()
     setPerms(await loadPermissions(supabase, member.companyId, me?.access_level))
 
-    const [sRes, uRes, cRes] = await Promise.all([
+    const today = new Date().toISOString().slice(0, 10)
+    const [sRes, uRes, cRes, lRes, invRes] = await Promise.all([
       supabase
         .from('sites')
         .select('*, clients(id, name)')
@@ -72,6 +79,18 @@ export default function PropertiesPage() {
         .eq('company_id', member.companyId)
         .order('name')
         .limit(500),
+      supabase
+        .from('property_leases')
+        .select('id')
+        .eq('company_id', member.companyId)
+        .eq('status', 'active'),
+      supabase
+        .from('finance_invoices')
+        .select('id, balance_due, status, due_date, invoice_type')
+        .eq('company_id', member.companyId)
+        .eq('invoice_type', 'rent')
+        .gt('balance_due', 0)
+        .not('status', 'in', '("draft","cancelled","voided","paid")'),
     ])
 
     if (sRes.error) setError(sRes.error.message)
@@ -86,6 +105,11 @@ export default function PropertiesPage() {
     }
     setUnitStats(stats)
     setClients((cRes.data ?? []) as ClientOption[])
+    setActiveLeaseCount((lRes.data ?? []).length)
+    setArrearsCount((invRes.data ?? []).filter(inv => {
+      const row = inv as { status: string; due_date: string | null }
+      return row.status === 'overdue' || (row.due_date != null && row.due_date < today)
+    }).length)
     setLoading(false)
   }, [])
 
@@ -122,13 +146,15 @@ export default function PropertiesPage() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    if (!q) return sites
-    return sites.filter(s =>
-      s.name.toLowerCase().includes(q)
-      || (s.address ?? '').toLowerCase().includes(q)
-      || (s.clients?.name ?? '').toLowerCase().includes(q),
-    )
-  }, [sites, search])
+    return sites.filter(s => {
+      if (kindFilter !== 'all' && (s.property_kind ?? 'residential') !== kindFilter) return false
+      if (!q) return true
+      return s.name.toLowerCase().includes(q)
+        || (s.address ?? '').toLowerCase().includes(q)
+        || (s.clients?.name ?? '').toLowerCase().includes(q)
+        || (s.property_kind ?? '').toLowerCase().includes(q)
+    })
+  }, [sites, search, kindFilter])
 
   const kpis = useMemo(() => {
     const active = sites.filter(s => s.is_active !== false).length
@@ -139,8 +165,8 @@ export default function PropertiesPage() {
       units += unitStats[sid].total
       vacant += Math.max(0, unitStats[sid].total - unitStats[sid].occupied)
     }
-    return { active, inactive, units, vacant }
-  }, [sites, unitStats])
+    return { active, inactive, units, vacant, activeLeaseCount, arrearsCount }
+  }, [sites, unitStats, activeLeaseCount, arrearsCount])
 
   if (error === 'not_linked') {
     return (
@@ -160,26 +186,46 @@ export default function PropertiesPage() {
               {kpis.active} active · billable (20 included, then R49/property)
             </p>
           </div>
-          {canEdit && (
-            <button type="button" onClick={() => setShowCreate(true)} className="btn-primary h-9 px-3 text-[13px]">
-              + Property
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {canEdit && (
+              <Link href="/dashboard/properties/import" className="btn-outlined h-9 px-3 text-[13px] inline-flex items-center">
+                Import
+              </Link>
+            )}
+            {canEdit && (
+              <button type="button" onClick={() => setShowCreate(true)} className="btn-primary h-9 px-3 text-[13px]">
+                + Property
+              </button>
+            )}
+          </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           <KpiTile value={kpis.active} label="Active" bg="#0F2918" valueFg="#22C55E" labelFg="#4ADE80" />
           <KpiTile value={kpis.inactive} label="Inactive" bg="#1E293B" valueFg="#94A3B8" labelFg="#64748B" />
           <KpiTile value={kpis.units} label="Units" bg="#1E293B" valueFg="#FCD34D" labelFg="#64748B" />
           <KpiTile value={kpis.vacant} label="Vacant units" bg="#3F1D1D" valueFg="#F87171" labelFg="#FCA5A5" />
+          <KpiTile value={kpis.activeLeaseCount} label="Active leases" bg="#1E293B" valueFg="#60A5FA" labelFg="#64748B" />
+          <KpiTile value={kpis.arrearsCount} label="Rent arrears" bg="#3F1D1D" valueFg="#F87171" labelFg="#FCA5A5" />
         </div>
 
-        <input
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Search name, address, client…"
-          className="w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background"
-        />
+        <div className="flex flex-wrap gap-2 items-center">
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search name, address, owner…"
+            className="flex-1 min-w-[200px] h-10 px-3 border border-border rounded-md text-[13px] bg-background"
+          />
+          <select
+            value={kindFilter}
+            onChange={e => setKindFilter(e.target.value as PropertyKind | 'all')}
+            className="h-10 px-3 border border-border rounded-md text-[13px] bg-background"
+          >
+            {KIND_FILTERS.map(k => (
+              <option key={k} value={k}>{k === 'all' ? 'All kinds' : k}</option>
+            ))}
+          </select>
+        </div>
 
         {error && error !== 'not_linked' && <p className="text-[13px] text-error">{error}</p>}
 

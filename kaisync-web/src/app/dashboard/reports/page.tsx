@@ -503,8 +503,12 @@ function PropertyTab({ data }: { data: RpcData | null }) {
   return (
     <div className="grid grid-cols-2 gap-2.5">
       <Kpi title="Total Sites"          value={fmtN(d.total_sites          as number)} />
+      <Kpi title="Active Sites"         value={fmtN(d.active_sites         as number)} />
       <Kpi title="Occupied Units"       value={fmtN(d.occupied_units       as number)} />
       <Kpi title="Vacant"               value={fmtN(d.vacant               as number)} />
+      <Kpi title="Active Leases"        value={fmtN(d.active_leases        as number)} />
+      <Kpi title="Rent Arrears #"       value={fmtN(d.arrears_invoices     as number)} />
+      <Kpi title="Rent Arrears Total"   value={fmtR(d.arrears_total        as number)} />
       <Kpi title="Expiring Compliance"  value={fmtN(d.expiring_compliance  as number)} />
     </div>
   )

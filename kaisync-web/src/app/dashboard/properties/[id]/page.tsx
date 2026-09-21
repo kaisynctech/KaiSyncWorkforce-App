@@ -9,20 +9,27 @@ import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permission
 import { syncUnitOccupancy } from '@/lib/properties'
 import { nextResidentCode } from '@/lib/resident-portal-code'
 import { KpiTile } from '@/components/ui/KpiTile'
+import { InspectionsPanel, MetersPanel } from '@/components/properties/MetersInspectionsPanels'
 import type {
+  InspectionResult,
+  InspectionType,
   LeaseDocumentType,
   LeasePaymentFrequency,
   LeaseStatus,
+  MeterType,
+  PropertyInspection,
   PropertyKind,
   PropertyLease,
   PropertyLeaseDocument,
+  PropertyMeter,
+  PropertyMeterReading,
   Resident,
   Site,
   SiteComplianceEntry,
   Unit,
 } from '@/types/database'
 
-type Tab = 'overview' | 'units' | 'residents' | 'leases' | 'compliance'
+type Tab = 'overview' | 'units' | 'residents' | 'leases' | 'meters' | 'inspections' | 'compliance'
 type ClientOption = { id: string; name: string }
 type EmployeeOption = { id: string; name: string; surname: string }
 type RentInvoiceRow = {
@@ -73,7 +80,7 @@ function PropertyDetailInner() {
   const searchParams = useSearchParams()
   const initialTab = (searchParams.get('tab') as Tab | null)
   const [tab, setTab] = useState<Tab>(
-    initialTab && ['overview', 'units', 'residents', 'leases', 'compliance'].includes(initialTab)
+    initialTab && ['overview', 'units', 'residents', 'leases', 'meters', 'inspections', 'compliance'].includes(initialTab)
       ? initialTab
       : 'overview',
   )
@@ -84,6 +91,9 @@ function PropertyDetailInner() {
   const [leases, setLeases] = useState<PropertyLease[]>([])
   const [leaseDocs, setLeaseDocs] = useState<PropertyLeaseDocument[]>([])
   const [rentInvoices, setRentInvoices] = useState<RentInvoiceRow[]>([])
+  const [meters, setMeters] = useState<PropertyMeter[]>([])
+  const [meterReadings, setMeterReadings] = useState<PropertyMeterReading[]>([])
+  const [inspections, setInspections] = useState<PropertyInspection[]>([])
   const [compliance, setCompliance] = useState<SiteComplianceEntry[]>([])
   const [clients, setClients] = useState<ClientOption[]>([])
   const [employees, setEmployees] = useState<EmployeeOption[]>([])
@@ -172,7 +182,7 @@ function PropertyDetailInner() {
       .maybeSingle()
     setPerms(await loadPermissions(supabase, member.companyId, me?.access_level))
 
-    const [sRes, uRes, rRes, lRes, cRes, clRes, eRes, invRes] = await Promise.all([
+    const [sRes, uRes, rRes, lRes, cRes, clRes, eRes, invRes, mRes, iRes] = await Promise.all([
       supabase
         .from('sites')
         .select('*, clients(id, name), managed_by:employees!sites_managed_by_employee_id_fkey(id, name, surname)')
@@ -192,6 +202,8 @@ function PropertyDetailInner() {
         .eq('site_id', id)
         .order('due_date', { ascending: false, nullsFirst: false })
         .limit(100),
+      supabase.from('property_meters').select('*').eq('site_id', id).eq('company_id', member.companyId).order('label'),
+      supabase.from('property_inspections').select('*').eq('site_id', id).eq('company_id', member.companyId).order('inspection_date', { ascending: false }),
     ])
 
     if (!sRes.data) {
@@ -218,6 +230,22 @@ function PropertyDetailInner() {
     setClients((clRes.data ?? []) as ClientOption[])
     setEmployees((eRes.data ?? []) as EmployeeOption[])
     setRentInvoices((invRes.data ?? []) as RentInvoiceRow[])
+    const meterRows = (mRes.data ?? []) as PropertyMeter[]
+    setMeters(meterRows)
+    setInspections((iRes.data ?? []) as PropertyInspection[])
+
+    if (meterRows.length > 0) {
+      const { data: readingRows } = await supabase
+        .from('property_meter_readings')
+        .select('*')
+        .eq('company_id', member.companyId)
+        .in('meter_id', meterRows.map(m => m.id))
+        .order('reading_date', { ascending: false })
+        .limit(200)
+      setMeterReadings((readingRows ?? []) as PropertyMeterReading[])
+    } else {
+      setMeterReadings([])
+    }
 
     if (leaseRows.length > 0) {
       const leaseIds = leaseRows.map(l => l.id)
@@ -596,6 +624,68 @@ function PropertyDetailInner() {
     await load()
   }
 
+  async function addMeter(input: {
+    label: string
+    meter_type: MeterType
+    unit_id: string | null
+    serial_number: string | null
+    unit_of_measure: string
+  }) {
+    if (!companyId || !canEdit) return
+    setBusy(true)
+    setError(null)
+    const supabase = createClient()
+    const { error: e } = await supabase.from('property_meters').insert({
+      company_id: companyId,
+      site_id: id,
+      ...input,
+    })
+    setBusy(false)
+    if (e) { setError(e.message); return }
+    await load()
+  }
+
+  async function addMeterReading(meterId: string, value: number, date: string, notes: string | null) {
+    if (!companyId || !canEdit || !Number.isFinite(value)) return
+    setBusy(true)
+    setError(null)
+    const supabase = createClient()
+    const { error: e } = await supabase.from('property_meter_readings').insert({
+      company_id: companyId,
+      meter_id: meterId,
+      reading_value: value,
+      reading_date: date,
+      notes,
+      recorded_by: employeeId,
+    })
+    setBusy(false)
+    if (e) { setError(e.message); return }
+    await load()
+  }
+
+  async function addInspection(input: {
+    inspection_type: InspectionType
+    inspection_date: string
+    result: InspectionResult
+    unit_id: string | null
+    inspector_name: string | null
+    notes: string | null
+  }) {
+    if (!companyId || !canEdit) return
+    setBusy(true)
+    setError(null)
+    const supabase = createClient()
+    const { error: e } = await supabase.from('property_inspections').insert({
+      company_id: companyId,
+      site_id: id,
+      created_by: employeeId,
+      ...input,
+    })
+    setBusy(false)
+    if (e) { setError(e.message); return }
+    await load()
+  }
+
   if (loading) {
     return <p className="text-center text-[13px] text-text-secondary py-10">Loading…</p>
   }
@@ -612,6 +702,8 @@ function PropertyDetailInner() {
     { id: 'units', label: 'Units' },
     { id: 'residents', label: 'Residents' },
     { id: 'leases', label: 'Leases' },
+    { id: 'meters', label: 'Meters' },
+    { id: 'inspections', label: 'Inspections' },
     { id: 'compliance', label: 'Compliance' },
   ]
 
@@ -925,6 +1017,28 @@ function PropertyDetailInner() {
               </div>
             )}
           </div>
+        )}
+
+        {tab === 'meters' && (
+          <MetersPanel
+            meters={meters}
+            readings={meterReadings}
+            units={units}
+            canEdit={canEdit}
+            busy={busy}
+            onAddMeter={addMeter}
+            onAddReading={addMeterReading}
+          />
+        )}
+
+        {tab === 'inspections' && (
+          <InspectionsPanel
+            inspections={inspections}
+            units={units}
+            canEdit={canEdit}
+            busy={busy}
+            onAdd={addInspection}
+          />
         )}
 
         {tab === 'compliance' && (
