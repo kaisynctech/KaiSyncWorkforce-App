@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
 import { KpiTile } from '@/components/ui/KpiTile'
-import type { Site } from '@/types/database'
+import type { PropertyKind, Site } from '@/types/database'
 
 type ClientOption = { id: string; name: string }
 
@@ -35,6 +35,7 @@ export default function PropertiesPage() {
     latitude: '',
     longitude: '',
     client_id: '',
+    property_kind: 'residential' as PropertyKind,
     notes: '',
   })
 
@@ -105,6 +106,7 @@ export default function PropertiesPage() {
       latitude: Number.isFinite(lat as number) ? lat : null,
       longitude: Number.isFinite(lng as number) ? lng : null,
       client_id: form.client_id || null,
+      property_kind: form.property_kind,
       notes: form.notes.trim() || null,
       is_active: true,
     }).select('id').single()
@@ -114,7 +116,7 @@ export default function PropertiesPage() {
       return
     }
     setShowCreate(false)
-    setForm({ name: '', address: '', radius_meters: '200', latitude: '', longitude: '', client_id: '', notes: '' })
+    setForm({ name: '', address: '', radius_meters: '200', latitude: '', longitude: '', client_id: '', property_kind: 'residential', notes: '' })
     router.push(`/dashboard/properties/${data.id}`)
   }
 
@@ -192,7 +194,8 @@ export default function PropertiesPage() {
                 <tr className="bg-surface-elevated border-b border-divider">
                   <th className="data-th text-left">Name</th>
                   <th className="data-th text-left">Address</th>
-                  <th className="data-th text-left">Client</th>
+                  <th className="data-th text-left">Kind</th>
+                  <th className="data-th text-left">Owner</th>
                   <th className="data-th text-right">Units</th>
                   <th className="data-th text-left">GPS</th>
                   <th className="data-th text-left">Status</th>
@@ -210,6 +213,7 @@ export default function PropertiesPage() {
                     >
                       <td className="data-td text-[13px] font-medium text-primary">{site.name}</td>
                       <td className="data-td text-[13px] text-text-secondary truncate max-w-[200px]">{site.address ?? '—'}</td>
+                      <td className="data-td text-[12px] capitalize text-text-secondary">{site.property_kind ?? 'residential'}</td>
                       <td className="data-td text-[13px] text-text-secondary">{site.clients?.name ?? '—'}</td>
                       <td className="data-td text-[13px] text-right">{st.occupied}/{st.total}</td>
                       <td className="data-td text-[12px]">{hasGps ? 'Yes' : '—'}</td>
@@ -233,7 +237,15 @@ export default function PropertiesPage() {
             <label className="block text-[12px] text-text-secondary">Address
               <input value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
             </label>
-            <label className="block text-[12px] text-text-secondary">Linked client (owner / principal)
+            <label className="block text-[12px] text-text-secondary">Property kind
+              <select value={form.property_kind} onChange={e => setForm(f => ({ ...f, property_kind: e.target.value as PropertyKind }))} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background">
+                <option value="residential">residential</option>
+                <option value="commercial">commercial</option>
+                <option value="mixed">mixed</option>
+                <option value="other">other</option>
+              </select>
+            </label>
+            <label className="block text-[12px] text-text-secondary">Owner / principal client
               <select value={form.client_id} onChange={e => setForm(f => ({ ...f, client_id: e.target.value }))} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background">
                 <option value="">— None —</option>
                 {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}

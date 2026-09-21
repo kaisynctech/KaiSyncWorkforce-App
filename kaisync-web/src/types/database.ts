@@ -147,6 +147,8 @@ export interface ClientNote {
 export type JobStatus = 'open' | 'scheduled' | 'in_progress' | 'completed' | 'cancelled'
 export type JobPriority = 'low' | 'medium' | 'high' | 'normal' | 'none'
 
+export type PropertyKind = 'residential' | 'commercial' | 'mixed' | 'other'
+
 export interface Site {
   id: string
   company_id: string
@@ -160,7 +162,10 @@ export interface Site {
   /** Active properties count toward billing seats. */
   is_active?: boolean
   notes?: string | null
+  property_kind?: PropertyKind
+  managed_by_employee_id?: string | null
   clients?: { id: string; name: string } | null
+  managed_by?: { id: string; name: string; surname: string } | null
 }
 
 export interface Project {
@@ -791,6 +796,45 @@ export interface SiteComplianceEntry {
   title?: string
   category?: string
   status?: string
+}
+
+export type LeaseStatus = 'draft' | 'active' | 'ended' | 'cancelled'
+export type LeasePaymentFrequency = 'monthly' | 'weekly' | 'other'
+export type LeaseDocumentType = 'lease' | 'id' | 'addendum' | 'other'
+
+export interface PropertyLease {
+  id: string
+  company_id: string
+  site_id: string
+  unit_id: string | null
+  resident_id: string | null
+  tenant_client_id: string | null
+  tenant_name: string | null
+  start_date: string
+  end_date: string | null
+  rent_amount: number | null
+  deposit_amount: number | null
+  currency: string
+  payment_frequency: LeasePaymentFrequency
+  status: LeaseStatus
+  notes: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface PropertyLeaseDocument {
+  id: string
+  company_id: string
+  lease_id: string
+  document_name: string
+  document_type: LeaseDocumentType
+  storage_path: string
+  file_url: string | null
+  file_size_bytes: number | null
+  mime_type: string | null
+  uploaded_by: string | null
+  created_at: string
 }
 
 export interface PayrollSettings {
