@@ -21,6 +21,7 @@ import { KpiTile } from '@/components/ui/KpiTile'
 import { InspectionsPanel, MetersPanel } from '@/components/properties/MetersInspectionsPanels'
 import { PropertyManagerField, type ManagerOption } from '@/components/properties/PropertyManagerField'
 import { GenerateRoomsModal } from '@/components/properties/GenerateRoomsModal'
+import { GenerateRentInvoicesModal } from '@/components/properties/GenerateRentInvoicesModal'
 import { PropertyMaintenancePanel } from '@/components/properties/PropertyMaintenancePanel'
 import { GuestHouseBoard } from '@/components/properties/GuestHouseBoard'
 import { ListPagination } from '@/components/properties/ListPagination'
@@ -202,6 +203,7 @@ function PropertyDetailInner() {
 
   const [showCompliance, setShowCompliance] = useState(false)
   const [showGenerateRooms, setShowGenerateRooms] = useState(false)
+  const [showGenerateRent, setShowGenerateRent] = useState(false)
   const [cType, setCType] = useState('')
   const [cNumber, setCNumber] = useState('')
   const [cIssued, setCIssued] = useState('')
@@ -701,6 +703,9 @@ function PropertyDetailInner() {
       return
     }
     await load()
+    if (!result.created) {
+      setError(`Already invoiced for this month — opening existing invoice.`)
+    }
     router.push(`/dashboard/money/invoices/${result.invoiceId}`)
   }
 
@@ -1181,7 +1186,16 @@ function PropertyDetailInner() {
         {tab === 'leases' && (
           <div className="space-y-3">
             {canEdit && (
-              <button type="button" onClick={openCreateLease} className="btn-outlined h-9 px-3 text-[13px]">+ Lease</button>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={openCreateLease} className="btn-outlined h-9 px-3 text-[13px]">+ Lease</button>
+                <button
+                  type="button"
+                  onClick={() => setShowGenerateRent(true)}
+                  className="btn-outlined h-9 px-3 text-[13px]"
+                >
+                  Generate rent invoices
+                </button>
+              </div>
             )}
             <p className="text-[12px] text-text-secondary">
               Lease agreements for units. Invoice rent into Money, attach signed leases/IDs, and track arrears.
@@ -1446,6 +1460,17 @@ function PropertyDetailInner() {
           siteId={id}
           propertyKind={propertyKind}
           onClose={() => setShowGenerateRooms(false)}
+          onDone={() => { void load() }}
+        />
+      )}
+
+      {showGenerateRent && companyId && employeeId && (
+        <GenerateRentInvoicesModal
+          companyId={companyId}
+          employeeId={employeeId}
+          siteId={id}
+          siteName={site?.name}
+          onClose={() => setShowGenerateRent(false)}
           onDone={() => { void load() }}
         />
       )}

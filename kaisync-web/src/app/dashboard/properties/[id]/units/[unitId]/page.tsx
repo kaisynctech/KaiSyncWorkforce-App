@@ -190,6 +190,9 @@ export default function UnitDetailPage() {
       return
     }
     await load()
+    if (!result.created) {
+      setError('Already invoiced for this month — opening existing invoice.')
+    }
     router.push(`/dashboard/money/invoices/${result.invoiceId}`)
   }
 
