@@ -811,6 +811,19 @@ export interface Resident {
 export type HousekeepingStatus = 'clean' | 'dirty' | 'inspected' | 'out_of_order'
 export type StayStatus = 'reserved' | 'checked_in' | 'checked_out' | 'cancelled' | 'no_show'
 export type StayDepositStatus = 'none' | 'due' | 'paid' | 'held' | 'refunded'
+export type StayBookingSource =
+  | 'manual'
+  | 'phone'
+  | 'walk_in'
+  | 'ical'
+  | 'booking_com'
+  | 'airbnb'
+  | 'expedia'
+  | 'channel_manager'
+  | 'other'
+export type StaySyncStatus = 'local' | 'pending' | 'synced' | 'error' | 'ignored'
+export type ChannelProvider = 'manual' | 'ical' | 'channex' | 'siteminder' | 'cloudbeds' | 'other'
+export type ChannelConnectionSyncStatus = 'idle' | 'pending' | 'syncing' | 'ok' | 'error'
 
 export interface Unit {
   id: string
@@ -853,10 +866,50 @@ export interface PropertyStay {
   deposit_status: StayDepositStatus
   currency: string
   notes: string | null
+  booking_source?: StayBookingSource
+  channel_connection_id?: string | null
+  external_booking_id?: string | null
+  external_status?: string | null
+  sync_status?: StaySyncStatus
+  last_synced_at?: string | null
+  external_payload?: Record<string, unknown> | null
   created_by: string | null
   created_at: string
   updated_at: string
   units?: { id: string; unit_number: string; unit_type?: string | null } | null
+}
+
+export interface PropertyChannelConnection {
+  id: string
+  company_id: string
+  site_id: string
+  provider: ChannelProvider
+  display_name: string
+  is_active: boolean
+  ical_import_url: string | null
+  ical_export_token: string | null
+  external_property_id: string | null
+  config: Record<string, unknown>
+  credentials_configured: boolean
+  sync_status: ChannelConnectionSyncStatus
+  last_sync_at: string | null
+  last_sync_error: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface PropertyUnitChannelMapping {
+  id: string
+  company_id: string
+  connection_id: string
+  unit_id: string
+  external_room_id: string
+  external_room_name: string | null
+  is_active: boolean
+  created_at: string
+  updated_at: string
+  units?: { id: string; unit_number: string } | null
 }
 
 export interface SiteComplianceEntry {

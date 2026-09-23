@@ -16,9 +16,12 @@ import {
   stayStatusLabel,
   STAY_DEPOSIT_STATUSES,
 } from '@/lib/property-stays'
+import { BOOKING_SOURCES, bookingSourceLabel } from '@/lib/property-channels'
+import { ChannelSyncPanel } from '@/components/properties/ChannelSyncPanel'
 import type {
   HousekeepingStatus,
   PropertyStay,
+  StayBookingSource,
   StayDepositStatus,
   Unit,
 } from '@/types/database'
@@ -84,6 +87,7 @@ export function GuestHouseBoard({
   const [depositStatus, setDepositStatus] = useState<StayDepositStatus>('none')
   const [notes, setNotes] = useState('')
   const [checkInNow, setCheckInNow] = useState(false)
+  const [bookingSource, setBookingSource] = useState<StayBookingSource>('manual')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -148,6 +152,7 @@ export function GuestHouseBoard({
     setDepositStatus('none')
     setNotes('')
     setCheckInNow(false)
+    setBookingSource('manual')
     setError(null)
     setShowBook(true)
   }
@@ -176,6 +181,7 @@ export function GuestHouseBoard({
       depositStatus,
       notes,
       checkInNow,
+      bookingSource,
     })
     setBusy(false)
     if (!result.ok) {
@@ -297,6 +303,9 @@ export function GuestHouseBoard({
                     </p>
                     <p className="text-text-secondary">
                       {fmtDate(stay.check_in_date)} → {fmtDate(stay.check_out_date)} · {stayStatusLabel(stay.status)}
+                      {stay.booking_source && stay.booking_source !== 'manual'
+                        ? ` · ${bookingSourceLabel(stay.booking_source)}`
+                        : ''}
                     </p>
                     <p className="text-text-disabled">
                       {stay.adults} adult{stay.adults === 1 ? '' : 's'}
@@ -364,6 +373,7 @@ export function GuestHouseBoard({
                   <th className="data-th text-left">Guest</th>
                   <th className="data-th text-left">Room</th>
                   <th className="data-th text-left">Dates</th>
+                  <th className="data-th text-left">Source</th>
                   <th className="data-th text-left">Status</th>
                   <th className="data-th text-right">Total</th>
                   <th className="data-th text-left" />
@@ -377,6 +387,7 @@ export function GuestHouseBoard({
                       <td className="data-td text-[13px] font-medium">{s.guest_name} {s.guest_surname}</td>
                       <td className="data-td text-[12px]">{room?.unit_number ?? '—'}</td>
                       <td className="data-td text-[12px]">{fmtDate(s.check_in_date)} → {fmtDate(s.check_out_date)}</td>
+                      <td className="data-td text-[11px] text-text-secondary">{bookingSourceLabel(s.booking_source)}</td>
                       <td className="data-td text-[12px]">{stayStatusLabel(s.status)}</td>
                       <td className="data-td text-[13px] text-right">{fmtMoney(s.total_amount)}</td>
                       <td className="data-td text-right whitespace-nowrap">
@@ -395,6 +406,14 @@ export function GuestHouseBoard({
           </div>
         </div>
       )}
+
+      <ChannelSyncPanel
+        companyId={companyId}
+        siteId={siteId}
+        employeeId={employeeId}
+        canEdit={canEdit}
+        units={units}
+      />
 
       {showBook && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40">
@@ -465,6 +484,17 @@ export function GuestHouseBoard({
             <label className="block text-[12px] text-text-secondary">Deposit status
               <select value={depositStatus} onChange={e => setDepositStatus(e.target.value as StayDepositStatus)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background">
                 {STAY_DEPOSIT_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+              </select>
+            </label>
+            <label className="block text-[12px] text-text-secondary">Source
+              <select
+                value={bookingSource}
+                onChange={e => setBookingSource(e.target.value as StayBookingSource)}
+                className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background"
+              >
+                {BOOKING_SOURCES.filter(s => !['ical', 'booking_com', 'airbnb', 'expedia', 'channel_manager'].includes(s.value)).map(s => (
+                  <option key={s.value} value={s.value}>{s.label}</option>
+                ))}
               </select>
             </label>
             <label className="block text-[12px] text-text-secondary">Notes
