@@ -1,5 +1,6 @@
 /**
  * Lease deposit / payer taxonomy and rent payment status helpers.
+ * Rent billing reuses finance_invoices (invoice_type = 'rent') — no parallel ledger.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -98,13 +99,53 @@ export function summarizeLeaseRentStatus(
   return { kind: 'open', label: 'Awaiting payment', balance, daysOverdue: 0 }
 }
 
-function periodLabel(d = new Date()): string {
-  return new Intl.DateTimeFormat('en-ZA', { month: 'long', year: 'numeric' }).format(d)
+export type BillingPeriod = {
+  /** First day of month YYYY-MM-DD */
+  start: string
+  /** Last day of month YYYY-MM-DD */
+  end: string
+  /** Display e.g. September 2026 */
+  label: string
+  /** Key e.g. 2026-09 */
+  key: string
 }
 
-function endOfMonthIso(d = new Date()): string {
-  const e = new Date(d.getFullYear(), d.getMonth() + 1, 0)
-  return e.toISOString().slice(0, 10)
+export function billingPeriodFor(d = new Date()): BillingPeriod {
+  const startDate = new Date(d.getFullYear(), d.getMonth(), 1)
+  const endDate = new Date(d.getFullYear(), d.getMonth() + 1, 0)
+  const y = startDate.getFullYear()
+  const m = String(startDate.getMonth() + 1).padStart(2, '0')
+  return {
+    start: `${y}-${m}-01`,
+    end: endDate.toISOString().slice(0, 10),
+    label: new Intl.DateTimeFormat('en-ZA', { month: 'long', year: 'numeric' }).format(startDate),
+    key: `${y}-${m}`,
+  }
+}
+
+/** Active non-void rent invoice for lease whose issue_date falls in the billing month. */
+export async function findRentInvoiceForPeriod(
+  supabase: SupabaseClient,
+  opts: { companyId: string; leaseId: string; period: BillingPeriod },
+): Promise<{ id: string } | null> {
+  const { data, error } = await supabase
+    .from('finance_invoices')
+    .select('id')
+    .eq('company_id', opts.companyId)
+    .eq('lease_id', opts.leaseId)
+    .eq('invoice_type', 'rent')
+    .gte('issue_date', opts.period.start)
+    .lte('issue_date', opts.period.end)
+    .not('status', 'in', '("cancelled","voided")')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) {
+    console.error('findRentInvoiceForPeriod', error.message)
+    return null
+  }
+  return data?.id ? { id: data.id } : null
 }
 
 export type CreateRentInvoiceInput = {
@@ -117,13 +158,18 @@ export type CreateRentInvoiceInput = {
   /** VAT percent, default 0 for residential rent */
   vatPercent?: number
   description?: string
+  /** Billing month (defaults to current calendar month) */
+  periodDate?: Date
+  /** When true (default), skip create if a rent invoice already exists for the period */
+  skipIfExists?: boolean
 }
 
 export type CreateRentInvoiceResult =
-  | { ok: true; invoiceId: string }
+  | { ok: true; invoiceId: string; created: true }
+  | { ok: true; invoiceId: string; created: false; reason: 'already_invoiced' }
   | { ok: false; message: string }
 
-/** One-click rent invoice for the current calendar month. */
+/** One-click rent invoice for a calendar month (idempotent per lease + month). */
 export async function createRentInvoiceForLease(
   supabase: SupabaseClient,
   input: CreateRentInvoiceInput,
@@ -133,8 +179,22 @@ export async function createRentInvoiceForLease(
     return { ok: false, message: 'Lease has no rent amount.' }
   }
 
-  const issueDate = new Date().toISOString().slice(0, 10)
-  const dueDate = endOfMonthIso()
+  const period = billingPeriodFor(input.periodDate ?? new Date())
+  const skipIfExists = input.skipIfExists !== false
+
+  if (skipIfExists) {
+    const existing = await findRentInvoiceForPeriod(supabase, {
+      companyId: input.companyId,
+      leaseId: input.lease.id,
+      period,
+    })
+    if (existing) {
+      return { ok: true, invoiceId: existing.id, created: false, reason: 'already_invoiced' }
+    }
+  }
+
+  const issueDate = period.start
+  const dueDate = period.end
   const vatPercent = input.vatPercent ?? 0
   const rate = vatPercent / 100
   const calc = calculateVatExclusive(rent, rate)
@@ -158,7 +218,7 @@ export async function createRentInvoiceForLease(
 
   const description =
     input.description
-    ?? `Rent — ${periodLabel()}${payerNote}`
+    ?? `Rent — ${period.label}${payerNote}`
 
   const now = new Date().toISOString()
   const { data: inv, error } = await supabase
@@ -214,5 +274,108 @@ export async function createRentInvoiceForLease(
     return { ok: false, message: lineErr.message }
   }
 
-  return { ok: true, invoiceId: inv.id }
+  return { ok: true, invoiceId: inv.id, created: true }
+}
+
+export type BulkRentInvoiceFailure = {
+  leaseId: string
+  tenant: string | null
+  message: string
+}
+
+export type BulkRentInvoiceResult = {
+  period: BillingPeriod
+  created: number
+  skipped: number
+  failed: BulkRentInvoiceFailure[]
+  invoiceIds: string[]
+}
+
+export type GenerateMonthlyRentInvoicesInput = {
+  companyId: string
+  employeeId: string
+  /** Limit to one property; omit for whole company */
+  siteId?: string | null
+  periodDate?: Date
+  send?: boolean
+  vatPercent?: number
+}
+
+/**
+ * Generate rent invoices for all eligible active monthly leases in a billing month.
+ * Skips leases already invoiced for the period. Weekly/other frequencies are skipped
+ * (invoice those from the lease/unit screen).
+ */
+export async function generateMonthlyRentInvoices(
+  supabase: SupabaseClient,
+  input: GenerateMonthlyRentInvoicesInput,
+): Promise<BulkRentInvoiceResult> {
+  const period = billingPeriodFor(input.periodDate ?? new Date())
+  const result: BulkRentInvoiceResult = {
+    period,
+    created: 0,
+    skipped: 0,
+    failed: [],
+    invoiceIds: [],
+  }
+
+  let q = supabase
+    .from('property_leases')
+    .select('*, sites(id, client_id)')
+    .eq('company_id', input.companyId)
+    .eq('status', 'active')
+    .gt('rent_amount', 0)
+    .lte('start_date', period.end)
+    .or(`end_date.is.null,end_date.gte.${period.start}`)
+    .order('tenant_name')
+
+  if (input.siteId) {
+    q = q.eq('site_id', input.siteId)
+  }
+
+  const { data: rows, error } = await q.limit(5000)
+  if (error) {
+    result.failed.push({ leaseId: '', tenant: null, message: error.message })
+    return result
+  }
+
+  type LeaseRow = PropertyLease & { sites?: { id: string; client_id: string | null } | null }
+
+  for (const raw of (rows ?? []) as LeaseRow[]) {
+    const lease = raw as PropertyLease
+    if (lease.payment_frequency !== 'monthly') {
+      result.skipped += 1
+      continue
+    }
+
+    const clientId = lease.tenant_client_id ?? raw.sites?.client_id ?? null
+    const created = await createRentInvoiceForLease(supabase, {
+      companyId: input.companyId,
+      employeeId: input.employeeId,
+      lease,
+      clientId,
+      send: input.send !== false,
+      vatPercent: input.vatPercent ?? 0,
+      periodDate: input.periodDate,
+      skipIfExists: true,
+    })
+
+    if (!created.ok) {
+      result.failed.push({
+        leaseId: lease.id,
+        tenant: lease.tenant_name,
+        message: created.message,
+      })
+      continue
+    }
+
+    if (created.created) {
+      result.created += 1
+      result.invoiceIds.push(created.invoiceId)
+    } else {
+      result.skipped += 1
+    }
+  }
+
+  return result
 }

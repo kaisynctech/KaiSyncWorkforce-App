@@ -9,6 +9,7 @@ import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permission
 import { KpiTile } from '@/components/ui/KpiTile'
 import { PropertyManagerField, type ManagerOption } from '@/components/properties/PropertyManagerField'
 import { ListPagination } from '@/components/properties/ListPagination'
+import { GenerateRentInvoicesModal } from '@/components/properties/GenerateRentInvoicesModal'
 import { PROPERTY_KINDS, propertyKindLabel } from '@/lib/properties'
 import { paginateSlice, PROPERTY_LIST_PAGE_SIZE, totalPages } from '@/lib/property-list'
 import type { PropertyKind, Site } from '@/types/database'
@@ -38,8 +39,10 @@ export default function PropertiesPage() {
   const [employees, setEmployees] = useState<ManagerOption[]>([])
   const [loading, setLoading] = useState(true)
   const [companyId, setCompanyId] = useState<string | null>(null)
+  const [employeeId, setEmployeeId] = useState<string | null>(null)
   const [perms, setPerms] = useState<PermissionSet | null>(null)
   const [showCreate, setShowCreate] = useState(false)
+  const [showGenerateRent, setShowGenerateRent] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
@@ -65,6 +68,7 @@ export default function PropertiesPage() {
     const member = await resolveCurrentMember(supabase)
     if (!member) { setError('not_linked'); setLoading(false); return }
     setCompanyId(member.companyId)
+    setEmployeeId(member.employeeId)
 
     const { data: me } = await supabase
       .from('employees')
@@ -222,6 +226,15 @@ export default function PropertiesPage() {
               Rent arrears
             </Link>
             {canEdit && (
+              <button
+                type="button"
+                onClick={() => setShowGenerateRent(true)}
+                className="btn-outlined h-9 px-3 text-[13px]"
+              >
+                Generate rent
+              </button>
+            )}
+            {canEdit && (
               <button type="button" onClick={() => setShowCreate(true)} className="btn-primary h-9 px-3 text-[13px]">
                 + Property
               </button>
@@ -366,6 +379,15 @@ export default function PropertiesPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {showGenerateRent && companyId && employeeId && (
+        <GenerateRentInvoicesModal
+          companyId={companyId}
+          employeeId={employeeId}
+          onClose={() => setShowGenerateRent(false)}
+          onDone={() => { void load() }}
+        />
       )}
     </div>
   )
