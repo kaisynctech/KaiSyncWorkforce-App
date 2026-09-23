@@ -80,6 +80,7 @@ export function GenerateRentInvoicesModal({
           Creates Money rent invoices for active <strong>monthly</strong> leases on {scopeLabel}
           for <strong>{period.label}</strong>. Already invoiced leases are skipped.
           Weekly / other frequencies stay on the unit or lease screen.
+          Bursary/sponsor leases need a bill-to client on the lease or they fail with a clear error.
         </p>
 
         <label className="block text-[12px] text-text-secondary">

@@ -10,7 +10,9 @@ import { unitTypeLabel } from '@/lib/properties'
 import {
   createRentInvoiceForLease,
   depositStatusLabel,
+  isFunderPayer,
   payerTypeLabel,
+  resolveRentBillToClientId,
   summarizeLeaseRentStatus,
 } from '@/lib/lease-billing'
 import { recordInvoicePayment } from '@/lib/finance-api'
@@ -173,6 +175,10 @@ export default function UnitDetailPage() {
 
   async function invoiceThisMonth() {
     if (!companyId || !employeeId || !activeLease || !canEdit) return
+    if (isFunderPayer(activeLease.payer_type) && !activeLease.payer_client_id) {
+      setError('Set a bill-to bursary/sponsor client on the lease before invoicing.')
+      return
+    }
     setInvoiceBusy(true)
     setError(null)
     const supabase = createClient()
@@ -180,7 +186,7 @@ export default function UnitDetailPage() {
       companyId,
       employeeId,
       lease: activeLease,
-      clientId: activeLease.tenant_client_id,
+      clientId: resolveRentBillToClientId(activeLease, site?.client_id ?? null),
       send: true,
       vatPercent: 0,
     })
@@ -373,6 +379,13 @@ export default function UnitDetailPage() {
               <p><span className="text-text-secondary">Payer: </span>
                 {payerTypeLabel(activeLease.payer_type)}
                 {activeLease.sponsor_name ? ` · ${activeLease.sponsor_name}` : ''}
+                {isFunderPayer(activeLease.payer_type) && (
+                  <div className="text-[10px] text-text-disabled mt-0.5">
+                    {activeLease.payer_client_id
+                      ? 'Rent bills the funder client in Money'
+                      : 'Bill-to client not set — edit lease before invoicing'}
+                  </div>
+                )}
               </p>
               <p><span className="text-text-secondary">Notice: </span>{activeLease.notice_days ?? 30} days</p>
               {rentStatus && (
