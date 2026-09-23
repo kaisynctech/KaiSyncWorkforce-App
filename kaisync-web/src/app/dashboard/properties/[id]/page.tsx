@@ -20,11 +20,13 @@ import {
 } from '@/lib/lease-billing'
 import { recordInvoicePayment } from '@/lib/finance-api'
 import { nextResidentCode } from '@/lib/resident-portal-code'
+import { summarizeLeaseNotice } from '@/lib/lease-lifecycle'
 import { KpiTile } from '@/components/ui/KpiTile'
 import { InspectionsPanel, MetersPanel } from '@/components/properties/MetersInspectionsPanels'
 import { PropertyManagerField, type ManagerOption } from '@/components/properties/PropertyManagerField'
 import { GenerateRoomsModal } from '@/components/properties/GenerateRoomsModal'
 import { GenerateRentInvoicesModal } from '@/components/properties/GenerateRentInvoicesModal'
+import { LeaseNoticeMoveOutModal } from '@/components/properties/LeaseNoticeMoveOutModal'
 import { PropertyMaintenancePanel } from '@/components/properties/PropertyMaintenancePanel'
 import { GuestHouseBoard } from '@/components/properties/GuestHouseBoard'
 import { ListPagination } from '@/components/properties/ListPagination'
@@ -209,6 +211,7 @@ function PropertyDetailInner() {
   const [showCompliance, setShowCompliance] = useState(false)
   const [showGenerateRooms, setShowGenerateRooms] = useState(false)
   const [showGenerateRent, setShowGenerateRent] = useState(false)
+  const [leaseLifecycle, setLeaseLifecycle] = useState<{ lease: PropertyLease; mode: 'notice' | 'moveout' } | null>(null)
   const [cType, setCType] = useState('')
   const [cNumber, setCNumber] = useState('')
   const [cIssued, setCIssued] = useState('')
@@ -340,6 +343,11 @@ function PropertyDetailInner() {
       && (inv.status === 'overdue' || (inv.due_date != null && inv.due_date < today)),
     )
     const arrearsTotal = arrears.reduce((s, inv) => s + Number(inv.balance_due || 0), 0)
+    const notices = leases.filter(l => {
+      if (l.status !== 'active') return false
+      const n = summarizeLeaseNotice(l)
+      return n.kind === 'notice_given' || n.kind === 'vacating_soon' || n.kind === 'overdue'
+    }).length
     const expiring = compliance.filter(c => {
       const st = complianceStatus(c.expiry_date)
       return st === 'expired' || st === 'expiring'
@@ -351,6 +359,7 @@ function PropertyDetailInner() {
       activeLeases,
       arrearsCount: arrears.length,
       arrearsTotal,
+      notices,
       complianceAlerts: expiring,
     }
   }, [units, residents, leases, rentInvoices, compliance])
@@ -950,11 +959,12 @@ function PropertyDetailInner() {
           </p>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3">
           <KpiTile value={kpis.units} label="Units" bg="#1E293B" valueFg="#FCD34D" labelFg="#64748B" />
           <KpiTile value={kpis.vacant} label="Vacant" bg="#3F1D1D" valueFg="#F87171" labelFg="#FCA5A5" />
           <KpiTile value={kpis.residents} label="Current residents" bg="#0F2918" valueFg="#22C55E" labelFg="#4ADE80" />
           <KpiTile value={kpis.activeLeases} label="Active leases" bg="#1E293B" valueFg="#60A5FA" labelFg="#64748B" />
+          <KpiTile value={kpis.notices} label="On notice / vacating" bg="#3F1D1D" valueFg="#FCD34D" labelFg="#FDE68A" />
           <KpiTile value={kpis.arrearsCount} label="Arrears invoices" bg="#3F1D1D" valueFg="#F87171" labelFg="#FCA5A5" />
           <KpiTile value={kpis.complianceAlerts} label="Compliance alerts" bg="#1E293B" valueFg="#94A3B8" labelFg="#64748B" />
         </div>
@@ -1245,8 +1255,10 @@ function PropertyDetailInner() {
                   const docs = docsForLease(lease.id)
                   const invs = invoicesForLease(lease.id)
                   const rentStatus = summarizeLeaseRentStatus(lease, invs)
+                  const noticeStatus = summarizeLeaseNotice(lease)
                   const proofs = paymentProofs.filter(p => p.lease_id === lease.id)
                   const pendingProofs = proofs.filter(p => p.status === 'submitted')
+                  const canLifecycle = canEdit && (lease.status === 'active' || lease.status === 'draft')
                   return (
                     <div key={lease.id} className="border border-divider rounded-xl overflow-hidden">
                       <table className="w-full" style={{ minWidth: 720 }}>
@@ -1267,6 +1279,9 @@ function PropertyDetailInner() {
                               <div className="text-[10px] text-text-disabled">
                                 {depositStatusLabel(lease.deposit_status)}
                                 {lease.deposit_amount != null ? ` · ${fmtMoney(lease.deposit_amount, lease.currency)}` : ''}
+                                {lease.deposit_status === 'refunded' && lease.deposit_refund_amount != null
+                                  ? ` · refunded ${fmtMoney(lease.deposit_refund_amount, lease.currency)}`
+                                  : ''}
                               </div>
                               <div className="text-[10px] text-text-disabled">
                                 {payerTypeLabel(lease.payer_type)}
@@ -1278,12 +1293,32 @@ function PropertyDetailInner() {
                                   </div>
                                 )}
                               </div>
-                              <div className="text-[10px] text-text-disabled">Notice {lease.notice_days ?? 30}d</div>
+                              <div className={`text-[10px] ${noticeStatus.kind === 'overdue' || noticeStatus.kind === 'vacating_soon' ? 'text-error' : 'text-text-disabled'}`}>
+                                {noticeStatus.label}
+                              </div>
                             </td>
                             <td className="data-td text-right whitespace-nowrap">
                               {canEdit && (
                                 <>
                                   <button type="button" onClick={() => openEditLease(lease)} className="text-[12px] text-primary hover:underline mr-3">Edit</button>
+                                  {canLifecycle && (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => setLeaseLifecycle({ lease, mode: 'notice' })}
+                                        className="text-[12px] text-primary hover:underline mr-3"
+                                      >
+                                        Give notice
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setLeaseLifecycle({ lease, mode: 'moveout' })}
+                                        className="text-[12px] text-primary hover:underline mr-3"
+                                      >
+                                        Move-out
+                                      </button>
+                                    </>
+                                  )}
                                   <button
                                     type="button"
                                     disabled={invoiceBusyId === lease.id || !lease.rent_amount}
@@ -1514,6 +1549,16 @@ function PropertyDetailInner() {
           siteId={id}
           siteName={site?.name}
           onClose={() => setShowGenerateRent(false)}
+          onDone={() => { void load() }}
+        />
+      )}
+
+      {leaseLifecycle && companyId && (
+        <LeaseNoticeMoveOutModal
+          companyId={companyId}
+          lease={leaseLifecycle.lease}
+          mode={leaseLifecycle.mode}
+          onClose={() => setLeaseLifecycle(null)}
           onDone={() => { void load() }}
         />
       )}
