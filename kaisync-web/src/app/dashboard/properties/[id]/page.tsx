@@ -175,6 +175,9 @@ function PropertyDetailInner() {
   const [rMoveIn, setRMoveIn] = useState('')
   const [rMoveOut, setRMoveOut] = useState('')
   const [rNotes, setRNotes] = useState('')
+  const [rEmergName, setREmergName] = useState('')
+  const [rEmergPhone, setREmergPhone] = useState('')
+  const [rEmergRel, setREmergRel] = useState('')
   const [rPortalEnabled, setRPortalEnabled] = useState(false)
   const [rPortalCode, setRPortalCode] = useState<string | null>(null)
   const [companyCode, setCompanyCode] = useState('')
@@ -498,6 +501,7 @@ function PropertyDetailInner() {
     setRName(''); setRSurname(''); setRPhone(''); setREmail('')
     setRIdNumber(''); setRPassport('')
     setRUnit(''); setRMoveIn(new Date().toISOString().slice(0, 10)); setRMoveOut(''); setRNotes('')
+    setREmergName(''); setREmergPhone(''); setREmergRel('')
     setRPortalEnabled(false); setRPortalCode(null); setCodeCopied(false)
     setShowResident(true)
   }
@@ -510,6 +514,9 @@ function PropertyDetailInner() {
     setRUnit(r.unit_id ?? '')
     setRMoveIn(r.move_in_date ?? ''); setRMoveOut(r.move_out_date ?? '')
     setRNotes(r.notes ?? '')
+    setREmergName(r.emergency_contact_name ?? '')
+    setREmergPhone(r.emergency_contact_phone ?? '')
+    setREmergRel(r.emergency_contact_relationship ?? '')
     setRPortalEnabled(!!r.portal_enabled)
     setRPortalCode(r.resident_code ?? null)
     setCodeCopied(false)
@@ -560,6 +567,9 @@ function PropertyDetailInner() {
       move_in_date: rMoveIn || null,
       move_out_date: rMoveOut || null,
       notes: rNotes.trim() || null,
+      emergency_contact_name: rEmergName.trim() || null,
+      emergency_contact_phone: rEmergPhone.trim() || null,
+      emergency_contact_relationship: rEmergRel.trim() || null,
       portal_enabled: rPortalEnabled,
     }
 
@@ -1200,6 +1210,7 @@ function PropertyDetailInner() {
                     <th className="data-th text-left">Unit</th>
                     <th className="data-th text-left">ID / Passport</th>
                     <th className="data-th text-left">Phone</th>
+                    <th className="data-th text-left">Emergency</th>
                     <th className="data-th text-left">Portal</th>
                     <th className="data-th text-left">Move in</th>
                     <th className="data-th text-left">Move out</th>
@@ -1213,6 +1224,11 @@ function PropertyDetailInner() {
                       <td className="data-td text-[13px]">{unitLabel(r.unit_id)}</td>
                       <td className="data-td text-[12px] text-text-secondary">{r.id_number || r.passport_number || '—'}</td>
                       <td className="data-td text-[13px] text-text-secondary">{r.phone ?? '—'}</td>
+                      <td className="data-td text-[12px] text-text-secondary">
+                        {r.emergency_contact_name
+                          ? `${r.emergency_contact_name}${r.emergency_contact_phone ? ` · ${r.emergency_contact_phone}` : ''}${r.emergency_contact_relationship ? ` (${r.emergency_contact_relationship})` : ''}`
+                          : '—'}
+                      </td>
                       <td className="data-td text-[12px]">{r.portal_enabled ? (r.resident_code ?? 'On') : '—'}</td>
                       <td className="data-td text-[12px]">{fmtDate(r.move_in_date)}</td>
                       <td className="data-td text-[12px]">{fmtDate(r.move_out_date)}</td>
@@ -1621,6 +1637,20 @@ function PropertyDetailInner() {
             <label className="block text-[12px] text-text-secondary">Email
               <input value={rEmail} onChange={e => setREmail(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
             </label>
+          </div>
+          <div className="rounded-lg border border-divider bg-surface-elevated p-3 space-y-3">
+            <p className="text-[12px] font-medium text-text-primary">Emergency / next of kin</p>
+            <label className="block text-[12px] text-text-secondary">Contact name
+              <input value={rEmergName} onChange={e => setREmergName(e.target.value)} placeholder="Full name" className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block text-[12px] text-text-secondary">Contact phone
+                <input value={rEmergPhone} onChange={e => setREmergPhone(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+              </label>
+              <label className="block text-[12px] text-text-secondary">Relationship
+                <input value={rEmergRel} onChange={e => setREmergRel(e.target.value)} placeholder="e.g. parent, spouse" className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+              </label>
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <label className="block text-[12px] text-text-secondary">Move in

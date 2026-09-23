@@ -53,6 +53,9 @@ function ResidentsInner() {
   const [rName, setRName] = useState('')
   const [rSurname, setRSurname] = useState('')
   const [rPhone, setRPhone] = useState('')
+  const [rEmergName, setREmergName] = useState('')
+  const [rEmergPhone, setREmergPhone] = useState('')
+  const [rEmergRel, setREmergRel] = useState('')
 
   const [showUnitModal, setShowUnitModal] = useState(false)
   const [uNumber, setUNumber] = useState('')
@@ -103,12 +106,16 @@ function ResidentsInner() {
   function openCreateResident() {
     setEditResident(null)
     setRName(''); setRSurname(''); setRPhone('')
+    setREmergName(''); setREmergPhone(''); setREmergRel('')
     setShowResidentModal(true)
   }
 
   function openEditResident(r: Resident) {
     setEditResident(r)
     setRName(r.name); setRSurname(r.surname); setRPhone(r.phone ?? '')
+    setREmergName(r.emergency_contact_name ?? '')
+    setREmergPhone(r.emergency_contact_phone ?? '')
+    setREmergRel(r.emergency_contact_relationship ?? '')
     setShowResidentModal(true)
   }
 
@@ -116,11 +123,17 @@ function ResidentsInner() {
     if (!companyId || !selectedSiteId || !rName.trim() || !rSurname.trim()) return
     setBusy(true)
     const supabase = createClient()
+    const emergency = {
+      emergency_contact_name: rEmergName.trim() || null,
+      emergency_contact_phone: rEmergPhone.trim() || null,
+      emergency_contact_relationship: rEmergRel.trim() || null,
+    }
     if (editResident) {
       await supabase.from('residents').update({
         name: rName.trim(),
         surname: rSurname.trim(),
         phone: rPhone.trim() || null,
+        ...emergency,
       }).eq('id', editResident.id)
     } else {
       const today = new Date().toISOString().split('T')[0]
@@ -131,6 +144,7 @@ function ResidentsInner() {
         surname: rSurname.trim(),
         phone: rPhone.trim() || null,
         move_in_date: today,
+        ...emergency,
       })
     }
     setBusy(false)
@@ -229,6 +243,9 @@ function ResidentsInner() {
                       <p className="text-[13px] font-medium text-text-primary">{r.name} {r.surname}</p>
                       <p className="text-[12px] text-text-secondary">
                         {r.phone ?? 'No phone'}{r.move_in_date ? ` · in ${fmtDate(r.move_in_date)}` : ''}
+                        {r.emergency_contact_name
+                          ? ` · ICE: ${r.emergency_contact_name}${r.emergency_contact_phone ? ` ${r.emergency_contact_phone}` : ''}`
+                          : ''}
                       </p>
                     </div>
                   </button>
@@ -297,6 +314,10 @@ function ResidentsInner() {
             <input value={rName} onChange={e => setRName(e.target.value)} placeholder="Name" className="dark-entry w-full" />
             <input value={rSurname} onChange={e => setRSurname(e.target.value)} placeholder="Surname" className="dark-entry w-full" />
             <input value={rPhone} onChange={e => setRPhone(e.target.value)} placeholder="Phone" className="dark-entry w-full" />
+            <p className="text-[11px] font-medium text-text-secondary">Emergency / next of kin</p>
+            <input value={rEmergName} onChange={e => setREmergName(e.target.value)} placeholder="Contact name" className="dark-entry w-full" />
+            <input value={rEmergPhone} onChange={e => setREmergPhone(e.target.value)} placeholder="Contact phone" className="dark-entry w-full" />
+            <input value={rEmergRel} onChange={e => setREmergRel(e.target.value)} placeholder="Relationship (e.g. parent)" className="dark-entry w-full" />
             <p className="text-[11px] text-text-secondary">For unit assignment, use the property detail page.</p>
             <div className="flex justify-end gap-2">
               <button type="button" onClick={() => setShowResidentModal(false)} className="btn-outlined h-9 px-3 text-[13px]">Cancel</button>

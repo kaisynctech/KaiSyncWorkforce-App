@@ -330,6 +330,7 @@ export default function UnitDetailPage() {
                   <th className="data-th text-left">Name</th>
                   <th className="data-th text-left">ID / Passport</th>
                   <th className="data-th text-left">Phone</th>
+                  <th className="data-th text-left">Emergency</th>
                   <th className="data-th text-left">Move in</th>
                   <th className="data-th text-left">Portal</th>
                 </tr>
@@ -340,6 +341,11 @@ export default function UnitDetailPage() {
                     <td className="data-td text-[13px] font-medium">{r.name} {r.surname}</td>
                     <td className="data-td text-[12px] text-text-secondary">{r.id_number || r.passport_number || '—'}</td>
                     <td className="data-td text-[13px]">{r.phone ?? '—'}</td>
+                    <td className="data-td text-[12px] text-text-secondary">
+                      {r.emergency_contact_name
+                        ? `${r.emergency_contact_name}${r.emergency_contact_phone ? ` · ${r.emergency_contact_phone}` : ''}`
+                        : '—'}
+                    </td>
                     <td className="data-td text-[12px]">{fmtDate(r.move_in_date)}</td>
                     <td className="data-td text-[12px]">{r.portal_enabled ? (r.resident_code ?? 'On') : '—'}</td>
                   </tr>
