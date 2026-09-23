@@ -15,8 +15,10 @@ import {
   resolveRentBillToClientId,
   summarizeLeaseRentStatus,
 } from '@/lib/lease-billing'
+import { summarizeLeaseNotice } from '@/lib/lease-lifecycle'
 import { recordInvoicePayment } from '@/lib/finance-api'
 import { PropertyMaintenancePanel } from '@/components/properties/PropertyMaintenancePanel'
+import { LeaseNoticeMoveOutModal } from '@/components/properties/LeaseNoticeMoveOutModal'
 import type {
   PropertyLease,
   PropertyLeaseDocument,
@@ -78,6 +80,7 @@ export default function UnitDetailPage() {
   const [employeeId, setEmployeeId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [invoiceBusy, setInvoiceBusy] = useState(false)
+  const [leaseLifecycleMode, setLeaseLifecycleMode] = useState<'notice' | 'moveout' | null>(null)
 
   const canEdit = can(perms, PERM.propertiesEdit)
 
@@ -164,6 +167,10 @@ export default function UnitDetailPage() {
   const rentStatus = useMemo(
     () => (activeLease ? summarizeLeaseRentStatus(activeLease, leaseInvoices) : null),
     [activeLease, leaseInvoices],
+  )
+  const noticeStatus = useMemo(
+    () => (activeLease ? summarizeLeaseNotice(activeLease) : null),
+    [activeLease],
   )
   const arrearsTotal = useMemo(
     () => leaseInvoices.reduce((sum, inv) => sum + (Number(inv.balance_due) || 0), 0),
@@ -345,16 +352,32 @@ export default function UnitDetailPage() {
         <section className="bg-surface border border-divider rounded-xl p-4 space-y-3">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <h2 className="text-[14px] font-semibold text-text-primary">Lease & deposit</h2>
-            <div className="flex gap-3">
+            <div className="flex gap-3 flex-wrap">
               {canEdit && activeLease && (
-                <button
-                  type="button"
-                  disabled={invoiceBusy || !activeLease.rent_amount}
-                  onClick={() => void invoiceThisMonth()}
-                  className="text-[12px] text-primary hover:underline disabled:opacity-40"
-                >
-                  {invoiceBusy ? 'Invoicing…' : 'Invoice this month'}
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setLeaseLifecycleMode('notice')}
+                    className="text-[12px] text-primary hover:underline"
+                  >
+                    Give notice
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLeaseLifecycleMode('moveout')}
+                    className="text-[12px] text-primary hover:underline"
+                  >
+                    Move-out
+                  </button>
+                  <button
+                    type="button"
+                    disabled={invoiceBusy || !activeLease.rent_amount}
+                    onClick={() => void invoiceThisMonth()}
+                    className="text-[12px] text-primary hover:underline disabled:opacity-40"
+                  >
+                    {invoiceBusy ? 'Invoicing…' : 'Invoice this month'}
+                  </button>
+                </>
               )}
               {canEdit && (
                 <Link href={`/dashboard/properties/${siteId}?tab=leases`} className="text-[12px] text-primary hover:underline">
@@ -387,7 +410,15 @@ export default function UnitDetailPage() {
                   </div>
                 )}
               </p>
-              <p><span className="text-text-secondary">Notice: </span>{activeLease.notice_days ?? 30} days</p>
+              <p><span className="text-text-secondary">Notice: </span>
+                {noticeStatus ? (
+                  <span className={noticeStatus.kind === 'overdue' || noticeStatus.kind === 'vacating_soon' ? 'text-error' : ''}>
+                    {noticeStatus.label}
+                  </span>
+                ) : (
+                  `${activeLease.notice_days ?? 30} days`
+                )}
+              </p>
               {rentStatus && (
                 <p className="sm:col-span-2">
                   <span className="text-text-secondary">Payment: </span>
@@ -539,6 +570,16 @@ export default function UnitDetailPage() {
           <p className="text-[13px] text-error">{error}</p>
         )}
       </div>
+
+      {leaseLifecycleMode && companyId && activeLease && (
+        <LeaseNoticeMoveOutModal
+          companyId={companyId}
+          lease={activeLease}
+          mode={leaseLifecycleMode}
+          onClose={() => setLeaseLifecycleMode(null)}
+          onDone={() => { void load() }}
+        />
+      )}
     </div>
   )
 }

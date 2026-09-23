@@ -898,6 +898,10 @@ export interface PropertyLease {
   /** Bill-to Money client when payer is bursary/sponsor */
   payer_client_id?: string | null
   notice_days?: number
+  /** Date notice was recorded (Wave F3) */
+  notice_given_at?: string | null
+  deposit_refunded_at?: string | null
+  deposit_refund_amount?: number | null
   currency: string
   payment_frequency: LeasePaymentFrequency
   status: LeaseStatus
