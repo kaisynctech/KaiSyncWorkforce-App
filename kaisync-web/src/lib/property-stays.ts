@@ -6,6 +6,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type {
   HousekeepingStatus,
   PropertyStay,
+  StayBookingSource,
   StayDepositStatus,
   StayStatus,
 } from '@/types/database'
@@ -69,6 +70,7 @@ export type StayCreateInput = {
   notes?: string | null
   /** If true, create as checked_in immediately */
   checkInNow?: boolean
+  bookingSource?: StayBookingSource
 }
 
 export type StayResult<T> =
@@ -177,6 +179,8 @@ export async function createStay(
       deposit_status: depositStatus,
       currency: 'ZAR',
       notes: input.notes?.trim() || null,
+      booking_source: input.bookingSource ?? 'manual',
+      sync_status: 'local',
       created_by: input.employeeId || null,
     })
     .select('*')
