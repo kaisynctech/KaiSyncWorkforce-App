@@ -895,6 +895,8 @@ export interface PropertyLease {
   deposit_paid_at?: string | null
   payer_type?: LeasePayerType
   sponsor_name?: string | null
+  /** Bill-to Money client when payer is bursary/sponsor */
+  payer_client_id?: string | null
   notice_days?: number
   currency: string
   payment_frequency: LeasePaymentFrequency

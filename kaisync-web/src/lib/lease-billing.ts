@@ -123,6 +123,64 @@ export function billingPeriodFor(d = new Date()): BillingPeriod {
   }
 }
 
+/** True when rent should bill a funder (bursary/sponsor), not the occupant. */
+export function isFunderPayer(payerType: string | null | undefined): boolean {
+  return payerType === 'bursary' || payerType === 'sponsor'
+}
+
+/**
+ * Resolve Money bill-to client for a rent invoice.
+ * Bursary/sponsor → payer_client_id (required for correct ledger); else tenant; else site fallback.
+ */
+export function resolveRentBillToClientId(
+  lease: Pick<PropertyLease, 'payer_type' | 'payer_client_id' | 'tenant_client_id'>,
+  siteClientId?: string | null,
+): string | null {
+  if (isFunderPayer(lease.payer_type) && lease.payer_client_id) {
+    return lease.payer_client_id
+  }
+  return lease.tenant_client_id ?? siteClientId ?? null
+}
+
+/**
+ * Find or create a company client for a bursary/sponsor name (e.g. NSFAS).
+ * Matches case-insensitively within the company.
+ */
+export async function ensurePayerClientFromName(
+  supabase: SupabaseClient,
+  opts: { companyId: string; name: string },
+): Promise<{ ok: true; clientId: string; created: boolean } | { ok: false; message: string }> {
+  const name = opts.name.trim()
+  if (!name) return { ok: false, message: 'Sponsor / bursary name is required.' }
+
+  const { data: existing, error: findErr } = await supabase
+    .from('clients')
+    .select('id')
+    .eq('company_id', opts.companyId)
+    .ilike('name', name)
+    .limit(1)
+    .maybeSingle()
+
+  if (findErr) return { ok: false, message: findErr.message }
+  if (existing?.id) return { ok: true, clientId: existing.id, created: false }
+
+  const { data: created, error: createErr } = await supabase
+    .from('clients')
+    .insert({
+      company_id: opts.companyId,
+      name,
+      type: 'company',
+      notes: 'Created as bursary / sponsor bill-to from property lease',
+    })
+    .select('id')
+    .single()
+
+  if (createErr || !created) {
+    return { ok: false, message: createErr?.message ?? 'Failed to create sponsor client' }
+  }
+  return { ok: true, clientId: created.id, created: true }
+}
+
 /** Active non-void rent invoice for lease whose issue_date falls in the billing month. */
 export async function findRentInvoiceForPeriod(
   supabase: SupabaseClient,
@@ -216,9 +274,20 @@ export async function createRentInvoiceForLease(
       ? ` · Payer: ${payerTypeLabel(input.lease.payer_type)}${input.lease.sponsor_name ? ` (${input.lease.sponsor_name})` : ''}`
       : ''
 
+  const funderBilling = isFunderPayer(input.lease.payer_type)
   const description =
     input.description
-    ?? `Rent — ${period.label}${payerNote}`
+    ?? (funderBilling
+      ? `Rent (billed to ${payerTypeLabel(input.lease.payer_type)}${input.lease.sponsor_name ? `: ${input.lease.sponsor_name}` : ''}) — ${period.label}`
+      : `Rent — ${period.label}${payerNote}`)
+
+  const noteParts: string[] = []
+  if (input.lease.tenant_name) {
+    noteParts.push(funderBilling ? `Occupant: ${input.lease.tenant_name}` : `Tenant: ${input.lease.tenant_name}`)
+  }
+  if (funderBilling && input.lease.sponsor_name) {
+    noteParts.push(`Funder: ${input.lease.sponsor_name}`)
+  }
 
   const now = new Date().toISOString()
   const { data: inv, error } = await supabase
@@ -244,9 +313,7 @@ export async function createRentInvoiceForLease(
       due_date: dueDate,
       created_by: input.employeeId,
       invoice_type: 'rent',
-      notes: input.lease.tenant_name
-        ? `Tenant: ${input.lease.tenant_name}`
-        : null,
+      notes: noteParts.length > 0 ? noteParts.join(' · ') : null,
     })
     .select('id')
     .single()
@@ -348,7 +415,16 @@ export async function generateMonthlyRentInvoices(
       continue
     }
 
-    const clientId = lease.tenant_client_id ?? raw.sites?.client_id ?? null
+    if (isFunderPayer(lease.payer_type) && !lease.payer_client_id) {
+      result.failed.push({
+        leaseId: lease.id,
+        tenant: lease.tenant_name,
+        message: 'Bursary/sponsor lease has no bill-to client — set payer client on the lease first.',
+      })
+      continue
+    }
+
+    const clientId = resolveRentBillToClientId(lease, raw.sites?.client_id ?? null)
     const created = await createRentInvoiceForLease(supabase, {
       companyId: input.companyId,
       employeeId: input.employeeId,

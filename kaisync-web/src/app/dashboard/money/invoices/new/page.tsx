@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { calculateVatExclusive, roundFinancial } from '@/lib/finance-calc'
+import { isFunderPayer, payerTypeLabel, resolveRentBillToClientId } from '@/lib/lease-billing'
 
 type ClientOpt = { id: string; name: string }
 type JobOpt = { id: string; title: string; job_code: string | null }
@@ -75,23 +76,27 @@ function NewMoneyInvoiceInner() {
       if (!lid) return
       const { data: lease } = await supabase
         .from('property_leases')
-        .select('id, site_id, unit_id, tenant_client_id, tenant_name, rent_amount, currency, payment_frequency, start_date, end_date, units(unit_number), sites(name)')
+        .select('id, site_id, unit_id, tenant_client_id, tenant_name, rent_amount, currency, payment_frequency, start_date, end_date, payer_type, sponsor_name, payer_client_id, units(unit_number), sites(name, client_id)')
         .eq('id', lid)
         .eq('company_id', member.companyId)
         .maybeSingle()
       if (!lease) return
       setLeaseId(lease.id)
       setSiteId(lease.site_id)
-      if (lease.tenant_client_id) setClientId(lease.tenant_client_id)
+      const siteClientId = (lease as { sites?: { client_id?: string | null } | null }).sites?.client_id ?? null
+      const billTo = resolveRentBillToClientId(lease, siteClientId)
+      if (billTo) setClientId(billTo)
       if (lease.rent_amount != null) setAmount(String(lease.rent_amount))
       setVatRate('0')
       const unitNo = (lease as { units?: { unit_number?: string } | null }).units?.unit_number
       const siteName = (lease as { sites?: { name?: string } | null }).sites?.name
       const period = new Intl.DateTimeFormat('en-ZA', { month: 'long', year: 'numeric' }).format(new Date())
+      const funder = isFunderPayer(lease.payer_type)
       const desc = [
-        'Rent',
+        funder ? `Rent (billed to ${payerTypeLabel(lease.payer_type)}${lease.sponsor_name ? `: ${lease.sponsor_name}` : ''})` : 'Rent',
         siteName,
         unitNo ? `Unit ${unitNo}` : null,
+        lease.tenant_name && funder ? `Occupant ${lease.tenant_name}` : null,
         period,
         lease.payment_frequency,
       ].filter(Boolean).join(' · ')
@@ -100,9 +105,13 @@ function NewMoneyInvoiceInner() {
       endOfMonth.setMonth(endOfMonth.getMonth() + 1, 0)
       setDueDate(endOfMonth.toISOString().slice(0, 10))
       setLeaseHint(
-        lease.tenant_client_id
-          ? 'Prefill from lease (rent invoice).'
-          : 'Lease has no tenant client — select the billable client before saving.',
+        funder && !lease.payer_client_id
+          ? 'Bursary/sponsor lease has no bill-to client — set payer client on the lease, or select the funder client here.'
+          : billTo
+            ? (funder
+              ? `Prefill from lease — billing ${payerTypeLabel(lease.payer_type)}${lease.sponsor_name ? ` (${lease.sponsor_name})` : ''}.`
+              : 'Prefill from lease (rent invoice).')
+            : 'Lease has no billable client — select the billable client before saving.',
       )
     })()
   }, [searchParams])

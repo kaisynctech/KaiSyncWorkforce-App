@@ -10,9 +10,12 @@ import { syncUnitOccupancy, UNIT_TYPES, unitTypeLabel, PROPERTY_KINDS as PROPERT
 import {
   createRentInvoiceForLease,
   depositStatusLabel,
+  ensurePayerClientFromName,
+  isFunderPayer,
   LEASE_DEPOSIT_STATUSES,
   LEASE_PAYER_TYPES,
   payerTypeLabel,
+  resolveRentBillToClientId,
   summarizeLeaseRentStatus,
 } from '@/lib/lease-billing'
 import { recordInvoicePayment } from '@/lib/finance-api'
@@ -190,6 +193,8 @@ function PropertyDetailInner() {
   const [lDepositPaidAt, setLDepositPaidAt] = useState('')
   const [lPayerType, setLPayerType] = useState<LeasePayerType>('self')
   const [lSponsor, setLSponsor] = useState('')
+  const [lPayerClient, setLPayerClient] = useState('')
+  const [payerClientBusy, setPayerClientBusy] = useState(false)
   const [lNoticeDays, setLNoticeDays] = useState('30')
   const [lFreq, setLFreq] = useState<LeasePaymentFrequency>('monthly')
   const [lStatus, setLStatus] = useState<LeaseStatus>('draft')
@@ -402,7 +407,8 @@ function PropertyDetailInner() {
       lease_id: lease.id,
       site_id: id,
     })
-    if (lease.tenant_client_id) params.set('client_id', lease.tenant_client_id)
+    const billTo = resolveRentBillToClientId(lease, site?.client_id ?? null)
+    if (billTo) params.set('client_id', billTo)
     return `/dashboard/money/invoices/new?${params.toString()}`
   }
 
@@ -594,7 +600,7 @@ function PropertyDetailInner() {
     setLStart(new Date().toISOString().slice(0, 10)); setLEnd('')
     setLRent(''); setLDeposit(''); setLDepositStatus('none')
     setLDepositPaidAmt(''); setLDepositPaidAt('')
-    setLPayerType('self'); setLSponsor(''); setLNoticeDays('30')
+    setLPayerType('self'); setLSponsor(''); setLPayerClient(''); setLNoticeDays('30')
     setLFreq('monthly'); setLStatus('draft'); setLNotes('')
     setShowLease(true)
   }
@@ -614,6 +620,7 @@ function PropertyDetailInner() {
     setLDepositPaidAt(lease.deposit_paid_at ?? '')
     setLPayerType(lease.payer_type ?? 'self')
     setLSponsor(lease.sponsor_name ?? '')
+    setLPayerClient(lease.payer_client_id ?? '')
     setLNoticeDays(String(lease.notice_days ?? 30))
     setLFreq(lease.payment_frequency || 'monthly')
     setLStatus(lease.status || 'draft')
@@ -625,6 +632,10 @@ function PropertyDetailInner() {
     if (!companyId || !canEdit || !lStart) return
     if (!lResident && !lTenantClient && !lTenantName.trim()) {
       setError('Lease needs a resident, tenant client, or tenant name.')
+      return
+    }
+    if (isFunderPayer(lPayerType) && !lPayerClient) {
+      setError('Bursary / sponsor leases need a bill-to client (Money). Create one from the sponsor name or pick an existing client.')
       return
     }
     setBusy(true)
@@ -651,9 +662,8 @@ function PropertyDetailInner() {
       deposit_paid_amount: Number.isFinite(depositPaid as number) ? depositPaid : null,
       deposit_paid_at: lDepositPaidAt || null,
       payer_type: lPayerType,
-      sponsor_name: (lPayerType === 'bursary' || lPayerType === 'sponsor')
-        ? (lSponsor.trim() || null)
-        : null,
+      sponsor_name: isFunderPayer(lPayerType) ? (lSponsor.trim() || null) : null,
+      payer_client_id: isFunderPayer(lPayerType) ? (lPayerClient || null) : null,
       notice_days: Number.isFinite(notice) ? Math.min(365, Math.max(0, notice)) : 30,
       payment_frequency: lFreq,
       status: lStatus,
@@ -686,6 +696,10 @@ function PropertyDetailInner() {
       setError('Set a rent amount on the lease first.')
       return
     }
+    if (isFunderPayer(lease.payer_type) && !lease.payer_client_id) {
+      setError('Set a bill-to bursary/sponsor client on the lease before invoicing.')
+      return
+    }
     setInvoiceBusyId(lease.id)
     setError(null)
     const supabase = createClient()
@@ -693,7 +707,7 @@ function PropertyDetailInner() {
       companyId,
       employeeId,
       lease,
-      clientId: lease.tenant_client_id,
+      clientId: resolveRentBillToClientId(lease, site?.client_id ?? null),
       send: true,
       vatPercent: 0,
     })
@@ -707,6 +721,29 @@ function PropertyDetailInner() {
       setError(`Already invoiced for this month — opening existing invoice.`)
     }
     router.push(`/dashboard/money/invoices/${result.invoiceId}`)
+  }
+
+  async function createPayerClientFromSponsor() {
+    if (!companyId || !lSponsor.trim()) {
+      setError('Enter a bursary / sponsor name first.')
+      return
+    }
+    setPayerClientBusy(true)
+    setError(null)
+    const supabase = createClient()
+    const res = await ensurePayerClientFromName(supabase, {
+      companyId,
+      name: lSponsor.trim(),
+    })
+    setPayerClientBusy(false)
+    if (!res.ok) {
+      setError(res.message)
+      return
+    }
+    setLPayerClient(res.clientId)
+    if (!clients.some(c => c.id === res.clientId)) {
+      setClients(prev => [...prev, { id: res.clientId, name: lSponsor.trim() }].sort((a, b) => a.name.localeCompare(b.name)))
+    }
   }
 
   async function reviewProof(proof: PaymentProofRow, status: 'accepted' | 'rejected', recordPayment: boolean) {
@@ -1234,6 +1271,12 @@ function PropertyDetailInner() {
                               <div className="text-[10px] text-text-disabled">
                                 {payerTypeLabel(lease.payer_type)}
                                 {lease.sponsor_name ? ` · ${lease.sponsor_name}` : ''}
+                                {isFunderPayer(lease.payer_type) && (
+                                  <div className="text-[10px] text-text-disabled">
+                                    Bill to: {clients.find(c => c.id === lease.payer_client_id)?.name
+                                      ?? (lease.payer_client_id ? 'Linked client' : 'Not set')}
+                                  </div>
+                                )}
                               </div>
                               <div className="text-[10px] text-text-disabled">Notice {lease.notice_days ?? 30}d</div>
                             </td>
@@ -1648,9 +1691,28 @@ function PropertyDetailInner() {
             </label>
           </div>
           {(lPayerType === 'bursary' || lPayerType === 'sponsor') && (
-            <label className="block text-[12px] text-text-secondary">Bursary / sponsor name
-              <input value={lSponsor} onChange={e => setLSponsor(e.target.value)} placeholder="e.g. NSFAS, employer, parent" className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
-            </label>
+            <div className="space-y-3 rounded-lg border border-divider bg-surface-elevated p-3">
+              <p className="text-[11px] text-text-secondary">
+                Rent invoices bill the funder in Money — not the student/occupant.
+              </p>
+              <label className="block text-[12px] text-text-secondary">Bursary / sponsor name
+                <input value={lSponsor} onChange={e => setLSponsor(e.target.value)} placeholder="e.g. NSFAS, employer, parent" className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+              </label>
+              <label className="block text-[12px] text-text-secondary">Bill-to client (Money) *
+                <select value={lPayerClient} onChange={e => setLPayerClient(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background">
+                  <option value="">Select client…</option>
+                  {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </label>
+              <button
+                type="button"
+                disabled={payerClientBusy || !lSponsor.trim()}
+                onClick={() => void createPayerClientFromSponsor()}
+                className="btn-outlined h-9 px-3 text-[12px] disabled:opacity-50"
+              >
+                {payerClientBusy ? 'Creating…' : 'Create / link client from name'}
+              </button>
+            </div>
           )}
           <label className="block text-[12px] text-text-secondary">Status
             <select value={lStatus} onChange={e => setLStatus(e.target.value as LeaseStatus)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background">
