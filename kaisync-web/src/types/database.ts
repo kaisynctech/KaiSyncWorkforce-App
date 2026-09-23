@@ -794,6 +794,9 @@ export interface Resident {
   email?: string | null
   id_number?: string | null
   passport_number?: string | null
+  emergency_contact_name?: string | null
+  emergency_contact_phone?: string | null
+  emergency_contact_relationship?: string | null
   move_in_date: string | null
   move_out_date?: string | null
   notes?: string | null
