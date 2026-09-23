@@ -7,9 +7,11 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
 import { KpiTile } from '@/components/ui/KpiTile'
+import { PropertyManagerField, type ManagerOption } from '@/components/properties/PropertyManagerField'
+import { ListPagination } from '@/components/properties/ListPagination'
+import { PROPERTY_KINDS, propertyKindLabel } from '@/lib/properties'
+import { paginateSlice, PROPERTY_LIST_PAGE_SIZE, totalPages } from '@/lib/property-list'
 import type { PropertyKind, Site } from '@/types/database'
-
-type ClientOption = { id: string; name: string }
 
 type SiteRow = Site & {
   units?: { count: number }[] | { count: number } | null
@@ -17,7 +19,15 @@ type SiteRow = Site & {
   occupied_count?: number
 }
 
-const KIND_FILTERS: Array<PropertyKind | 'all'> = ['all', 'residential', 'commercial', 'mixed', 'other']
+const KIND_FILTERS: Array<PropertyKind | 'all'> = [
+  'all',
+  'residential',
+  'commercial',
+  'mixed',
+  'student_accommodation',
+  'guest_house',
+  'other',
+]
 
 export default function PropertiesPage() {
   const router = useRouter()
@@ -25,7 +35,7 @@ export default function PropertiesPage() {
   const [unitStats, setUnitStats] = useState<Record<string, { total: number; occupied: number }>>({})
   const [activeLeaseCount, setActiveLeaseCount] = useState(0)
   const [arrearsCount, setArrearsCount] = useState(0)
-  const [clients, setClients] = useState<ClientOption[]>([])
+  const [employees, setEmployees] = useState<ManagerOption[]>([])
   const [loading, setLoading] = useState(true)
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [perms, setPerms] = useState<PermissionSet | null>(null)
@@ -34,13 +44,14 @@ export default function PropertiesPage() {
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [kindFilter, setKindFilter] = useState<PropertyKind | 'all'>('all')
+  const [page, setPage] = useState(1)
   const [form, setForm] = useState({
     name: '',
     address: '',
     radius_meters: '200',
     latitude: '',
     longitude: '',
-    client_id: '',
+    managed_by_employee_id: '',
     property_kind: 'residential' as PropertyKind,
     notes: '',
   })
@@ -63,25 +74,23 @@ export default function PropertiesPage() {
     setPerms(await loadPermissions(supabase, member.companyId, me?.access_level))
 
     const today = new Date().toISOString().slice(0, 10)
-    const [sRes, uRes, cRes, lRes, invRes] = await Promise.all([
+    const [sRes, statsRes, eRes, lRes, invRes] = await Promise.all([
       supabase
         .from('sites')
-        .select('*, clients(id, name)')
+        .select('*, clients(id, name), managed_by:employees!sites_managed_by_employee_id_fkey(id, name, surname)')
         .eq('company_id', member.companyId)
         .order('name'),
+      supabase.rpc('hr_site_unit_counts', { p_company_id: member.companyId }),
       supabase
-        .from('units')
-        .select('id, site_id, is_occupied')
-        .eq('company_id', member.companyId),
-      supabase
-        .from('clients')
-        .select('id, name')
+        .from('employees')
+        .select('id, name, surname')
         .eq('company_id', member.companyId)
+        .eq('is_active', true)
         .order('name')
-        .limit(500),
+        .limit(1000),
       supabase
         .from('property_leases')
-        .select('id')
+        .select('id', { count: 'exact', head: true })
         .eq('company_id', member.companyId)
         .eq('status', 'active'),
       supabase
@@ -90,22 +99,24 @@ export default function PropertiesPage() {
         .eq('company_id', member.companyId)
         .eq('invoice_type', 'rent')
         .gt('balance_due', 0)
-        .not('status', 'in', '("draft","cancelled","voided","paid")'),
+        .not('status', 'in', '("draft","cancelled","voided","paid")')
+        .limit(5000),
     ])
 
     if (sRes.error) setError(sRes.error.message)
     setSites((sRes.data ?? []) as SiteRow[])
 
     const stats: Record<string, { total: number; occupied: number }> = {}
-    for (const u of uRes.data ?? []) {
-      const sid = (u as { site_id: string }).site_id
-      if (!stats[sid]) stats[sid] = { total: 0, occupied: 0 }
-      stats[sid].total += 1
-      if ((u as { is_occupied?: boolean }).is_occupied) stats[sid].occupied += 1
+    for (const row of (statsRes.data ?? []) as { site_id: string; total: number; occupied: number }[]) {
+      stats[row.site_id] = { total: Number(row.total) || 0, occupied: Number(row.occupied) || 0 }
+    }
+    if (statsRes.error) {
+      // Fallback: non-fatal — KPIs may show 0 units until RPC is available
+      console.error('hr_site_unit_counts', statsRes.error.message)
     }
     setUnitStats(stats)
-    setClients((cRes.data ?? []) as ClientOption[])
-    setActiveLeaseCount((lRes.data ?? []).length)
+    setEmployees((eRes.data ?? []) as ManagerOption[])
+    setActiveLeaseCount(lRes.count ?? 0)
     setArrearsCount((invRes.data ?? []).filter(inv => {
       const row = inv as { status: string; due_date: string | null }
       return row.status === 'overdue' || (row.due_date != null && row.due_date < today)
@@ -129,7 +140,7 @@ export default function PropertiesPage() {
       radius_meters: parseFloat(form.radius_meters) || 200,
       latitude: Number.isFinite(lat as number) ? lat : null,
       longitude: Number.isFinite(lng as number) ? lng : null,
-      client_id: form.client_id || null,
+      managed_by_employee_id: form.managed_by_employee_id || null,
       property_kind: form.property_kind,
       notes: form.notes.trim() || null,
       is_active: true,
@@ -140,8 +151,13 @@ export default function PropertiesPage() {
       return
     }
     setShowCreate(false)
-    setForm({ name: '', address: '', radius_meters: '200', latitude: '', longitude: '', client_id: '', property_kind: 'residential', notes: '' })
+    setForm({ name: '', address: '', radius_meters: '200', latitude: '', longitude: '', managed_by_employee_id: '', property_kind: 'residential', notes: '' })
     router.push(`/dashboard/properties/${data.id}`)
+  }
+
+  function managerLabel(site: SiteRow): string {
+    if (site.managed_by) return `${site.managed_by.name} ${site.managed_by.surname}`.trim()
+    return '—'
   }
 
   const filtered = useMemo(() => {
@@ -149,12 +165,22 @@ export default function PropertiesPage() {
     return sites.filter(s => {
       if (kindFilter !== 'all' && (s.property_kind ?? 'residential') !== kindFilter) return false
       if (!q) return true
+      const mgr = s.managed_by ? `${s.managed_by.name} ${s.managed_by.surname}` : ''
       return s.name.toLowerCase().includes(q)
         || (s.address ?? '').toLowerCase().includes(q)
+        || mgr.toLowerCase().includes(q)
         || (s.clients?.name ?? '').toLowerCase().includes(q)
         || (s.property_kind ?? '').toLowerCase().includes(q)
     })
   }, [sites, search, kindFilter])
+
+  useEffect(() => { setPage(1) }, [search, kindFilter])
+
+  const pageCount = totalPages(filtered.length, PROPERTY_LIST_PAGE_SIZE)
+  const paged = useMemo(
+    () => paginateSlice(filtered, Math.min(page, pageCount), PROPERTY_LIST_PAGE_SIZE),
+    [filtered, page, pageCount],
+  )
 
   const kpis = useMemo(() => {
     const active = sites.filter(s => s.is_active !== false).length
@@ -192,6 +218,9 @@ export default function PropertiesPage() {
                 Import
               </Link>
             )}
+            <Link href="/dashboard/properties/arrears" className="btn-outlined h-9 px-3 text-[13px] inline-flex items-center">
+              Rent arrears
+            </Link>
             {canEdit && (
               <button type="button" onClick={() => setShowCreate(true)} className="btn-primary h-9 px-3 text-[13px]">
                 + Property
@@ -206,14 +235,16 @@ export default function PropertiesPage() {
           <KpiTile value={kpis.units} label="Units" bg="#1E293B" valueFg="#FCD34D" labelFg="#64748B" />
           <KpiTile value={kpis.vacant} label="Vacant units" bg="#3F1D1D" valueFg="#F87171" labelFg="#FCA5A5" />
           <KpiTile value={kpis.activeLeaseCount} label="Active leases" bg="#1E293B" valueFg="#60A5FA" labelFg="#64748B" />
-          <KpiTile value={kpis.arrearsCount} label="Rent arrears" bg="#3F1D1D" valueFg="#F87171" labelFg="#FCA5A5" />
+          <button type="button" onClick={() => router.push('/dashboard/properties/arrears')} className="text-left">
+            <KpiTile value={kpis.arrearsCount} label="Rent arrears" bg="#3F1D1D" valueFg="#F87171" labelFg="#FCA5A5" />
+          </button>
         </div>
 
         <div className="flex flex-wrap gap-2 items-center">
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Search name, address, owner…"
+            placeholder="Search name, address, manager…"
             className="flex-1 min-w-[200px] h-10 px-3 border border-border rounded-md text-[13px] bg-background"
           />
           <select
@@ -222,7 +253,7 @@ export default function PropertiesPage() {
             className="h-10 px-3 border border-border rounded-md text-[13px] bg-background"
           >
             {KIND_FILTERS.map(k => (
-              <option key={k} value={k}>{k === 'all' ? 'All kinds' : k}</option>
+              <option key={k} value={k}>{k === 'all' ? 'All kinds' : propertyKindLabel(k)}</option>
             ))}
           </select>
         </div>
@@ -241,14 +272,14 @@ export default function PropertiesPage() {
                   <th className="data-th text-left">Name</th>
                   <th className="data-th text-left">Address</th>
                   <th className="data-th text-left">Kind</th>
-                  <th className="data-th text-left">Owner</th>
+                  <th className="data-th text-left">Managed by</th>
                   <th className="data-th text-right">Units</th>
                   <th className="data-th text-left">GPS</th>
                   <th className="data-th text-left">Status</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(site => {
+                {paged.map(site => {
                   const st = unitStats[site.id] ?? { total: 0, occupied: 0 }
                   const hasGps = site.latitude != null && site.longitude != null
                   return (
@@ -259,8 +290,8 @@ export default function PropertiesPage() {
                     >
                       <td className="data-td text-[13px] font-medium text-primary">{site.name}</td>
                       <td className="data-td text-[13px] text-text-secondary truncate max-w-[200px]">{site.address ?? '—'}</td>
-                      <td className="data-td text-[12px] capitalize text-text-secondary">{site.property_kind ?? 'residential'}</td>
-                      <td className="data-td text-[13px] text-text-secondary">{site.clients?.name ?? '—'}</td>
+                      <td className="data-td text-[12px] text-text-secondary">{propertyKindLabel(site.property_kind)}</td>
+                      <td className="data-td text-[13px] text-text-secondary">{managerLabel(site)}</td>
                       <td className="data-td text-[13px] text-right">{st.occupied}/{st.total}</td>
                       <td className="data-td text-[12px]">{hasGps ? 'Yes' : '—'}</td>
                       <td className="data-td text-[12px]">{site.is_active === false ? 'Inactive' : 'Active'}</td>
@@ -269,6 +300,16 @@ export default function PropertiesPage() {
                 })}
               </tbody>
             </table>
+            <div className="px-3 pb-3">
+              <ListPagination
+                page={Math.min(page, pageCount)}
+                pageCount={pageCount}
+                total={filtered.length}
+                pageSize={PROPERTY_LIST_PAGE_SIZE}
+                onPageChange={setPage}
+                label="properties"
+              />
+            </div>
           </div>
         )}
       </div>
@@ -285,18 +326,24 @@ export default function PropertiesPage() {
             </label>
             <label className="block text-[12px] text-text-secondary">Property kind
               <select value={form.property_kind} onChange={e => setForm(f => ({ ...f, property_kind: e.target.value as PropertyKind }))} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background">
-                <option value="residential">residential</option>
-                <option value="commercial">commercial</option>
-                <option value="mixed">mixed</option>
-                <option value="other">other</option>
+                {PROPERTY_KINDS.filter(k => k.value !== 'student_accommodation' && k.value !== 'guest_house').map(k => (
+                  <option key={k.value} value={k.value}>{k.label}</option>
+                ))}
               </select>
             </label>
-            <label className="block text-[12px] text-text-secondary">Owner / principal client
-              <select value={form.client_id} onChange={e => setForm(f => ({ ...f, client_id: e.target.value }))} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background">
-                <option value="">— None —</option>
-                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-            </label>
+            <p className="text-[11px] text-text-disabled -mt-1">
+              Student accommodation and B&B / Guest house are created from their sidebar pages (with bulk rooms).
+            </p>
+            <PropertyManagerField
+              companyId={companyId}
+              value={form.managed_by_employee_id}
+              onChange={id => setForm(f => ({ ...f, managed_by_employee_id: id }))}
+              employees={employees}
+              onEmployeeCreated={emp => setEmployees(prev => {
+                if (prev.some(e => e.id === emp.id)) return prev
+                return [...prev, emp].sort((a, b) => a.name.localeCompare(b.name))
+              })}
+            />
             <label className="block text-[12px] text-text-secondary">Geofence radius (m)
               <input type="number" value={form.radius_meters} onChange={e => setForm(f => ({ ...f, radius_meters: e.target.value }))} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
             </label>

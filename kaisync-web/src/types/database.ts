@@ -147,7 +147,33 @@ export interface ClientNote {
 export type JobStatus = 'open' | 'scheduled' | 'in_progress' | 'completed' | 'cancelled'
 export type JobPriority = 'low' | 'medium' | 'high' | 'normal' | 'none'
 
-export type PropertyKind = 'residential' | 'commercial' | 'mixed' | 'other'
+export type PropertyKind =
+  | 'residential'
+  | 'commercial'
+  | 'mixed'
+  | 'student_accommodation'
+  | 'guest_house'
+  | 'other'
+
+export type UnitType =
+  | 'flat'
+  | 'studio'
+  | 'room'
+  | 'bed'
+  | 'cottage'
+  | 'back_room'
+  | 'house'
+  | 'shop'
+  | 'office'
+  | 'warehouse'
+  | 'parking'
+  | 'single'
+  | 'twin'
+  | 'double'
+  | 'family'
+  | 'luxury'
+  | 'suite'
+  | 'other'
 
 export interface Site {
   id: string
@@ -232,10 +258,14 @@ export interface Job {
   scheduled_end: string | null
   client_id: string | null
   site_id: string | null
+  unit_id?: string | null
   deal_id: string | null
   address: string | null
   assignee_employee_id: string | null
   assigned_employee_ids: string[] | null
+  contractor_id?: string | null
+  contractor_cost?: number | null
+  created_by_employee_id?: string | null
   first_response_at: string | null
   closed_at: string | null
   created_at: string
@@ -323,6 +353,8 @@ export interface Contractor {
   is_active: boolean
   /** Portal access + billable contractor seat when true (with is_active). */
   portal_enabled?: boolean
+  /** light = trade contact; full = standard contractor with compliance path */
+  profile_tier?: 'light' | 'full' | null
   rating: number
   notes: string | null
   contractor_code_expires_at: string | null
@@ -760,6 +792,8 @@ export interface Resident {
   surname: string
   phone: string | null
   email?: string | null
+  id_number?: string | null
+  passport_number?: string | null
   move_in_date: string | null
   move_out_date?: string | null
   notes?: string | null
@@ -771,6 +805,10 @@ export interface Resident {
   is_current_resident?: boolean
 }
 
+export type HousekeepingStatus = 'clean' | 'dirty' | 'inspected' | 'out_of_order'
+export type StayStatus = 'reserved' | 'checked_in' | 'checked_out' | 'cancelled' | 'no_show'
+export type StayDepositStatus = 'none' | 'due' | 'paid' | 'held' | 'refunded'
+
 export interface Unit {
   id: string
   company_id: string
@@ -781,8 +819,41 @@ export interface Unit {
   floor?: string | null
   is_occupied?: boolean | null
   notes?: string | null
+  default_rent_amount?: number | null
+  default_rent_currency?: string | null
+  housekeeping_status?: HousekeepingStatus | null
   /** Derived / legacy alias */
   display_name?: string
+}
+
+export interface PropertyStay {
+  id: string
+  company_id: string
+  site_id: string
+  unit_id: string
+  guest_name: string
+  guest_surname: string
+  guest_phone: string | null
+  guest_email: string | null
+  id_number: string | null
+  passport_number: string | null
+  check_in_date: string
+  check_out_date: string
+  check_in_at: string | null
+  check_out_at: string | null
+  status: StayStatus
+  adults: number
+  children: number
+  nightly_rate: number | null
+  total_amount: number | null
+  deposit_amount: number | null
+  deposit_status: StayDepositStatus
+  currency: string
+  notes: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+  units?: { id: string; unit_number: string; unit_type?: string | null } | null
 }
 
 export interface SiteComplianceEntry {
@@ -804,6 +875,8 @@ export interface SiteComplianceEntry {
 export type LeaseStatus = 'draft' | 'active' | 'ended' | 'cancelled'
 export type LeasePaymentFrequency = 'monthly' | 'weekly' | 'other'
 export type LeaseDocumentType = 'lease' | 'id' | 'addendum' | 'other'
+export type LeaseDepositStatus = 'none' | 'due' | 'paid' | 'partially_held' | 'refunded'
+export type LeasePayerType = 'self' | 'bursary' | 'sponsor' | 'cash' | 'eft'
 
 export interface PropertyLease {
   id: string
@@ -817,6 +890,12 @@ export interface PropertyLease {
   end_date: string | null
   rent_amount: number | null
   deposit_amount: number | null
+  deposit_status?: LeaseDepositStatus
+  deposit_paid_amount?: number | null
+  deposit_paid_at?: string | null
+  payer_type?: LeasePayerType
+  sponsor_name?: string | null
+  notice_days?: number
   currency: string
   payment_frequency: LeasePaymentFrequency
   status: LeaseStatus

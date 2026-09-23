@@ -96,6 +96,9 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: 'Properties', href: '/dashboard/properties', icon: 'home_work', flag: 'properties' },
       { label: 'Residents',  href: '/dashboard/residents',  icon: 'apartment', flag: 'residents' },
+      { label: 'Student accommodations', href: '/dashboard/student-accommodations', icon: 'school', flag: 'properties' },
+      { label: 'B&B / Guest house', href: '/dashboard/guest-houses', icon: 'hotel', flag: 'properties' },
+      { label: 'Rent arrears', href: '/dashboard/properties/arrears', icon: 'money_off', flag: 'properties' },
     ],
   },
   {

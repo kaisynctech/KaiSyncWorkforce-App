@@ -13,6 +13,8 @@ export type ContractorCreateInput = {
   companyId: string
   name: string
   partnerKind?: PartnerKind | string | null
+  /** light = roadside/trade contact; full = standard contractor */
+  profileTier?: 'light' | 'full' | null
   contractorCode?: string | null
   contactPerson?: string | null
   phone?: string | null
@@ -38,9 +40,9 @@ function emptyToNull(value: string | null | undefined): string | null {
   return t ? t : null
 }
 
-const ACCOUNT_TYPES = new Set(['cheque', 'savings', 'transmission'])
-const PAYMENT_TERMS = new Set(['7_days', '14_days', '30_days', '60_days', 'on_completion'])
-const PAYMENT_METHODS = new Set(['eft', 'cheque', 'cash', 'credit_card'])
+const ACCOUNT_TYPES = new Set(['cheque', 'savings', 'transmission', 'credit'])
+const PAYMENT_TERMS = new Set(['immediate', '7_days', '14_days', '30_days', '60_days', '90_days', 'on_completion'])
+const PAYMENT_METHODS = new Set(['eft', 'cheque', 'cash', 'card', 'credit_card'])
 
 export function parseYesNo(raw: string | null | undefined): boolean {
   if (!raw) return false
@@ -70,11 +72,12 @@ export function normalizeAccountType(raw: string | null | undefined): string {
 export function normalizePaymentTerms(raw: string | null | undefined): string {
   if (!raw) return '30_days'
   const v = raw.trim().toLowerCase().replace(/\s+/g, '_')
-  if (PAYMENT_TERMS.has(v)) return v
+  if (PAYMENT_TERMS.has(v)) return v === 'on_completion' ? 'immediate' : v
+  if (v.includes('immediate') || v.includes('completion')) return 'immediate'
   if (v.includes('7')) return '7_days'
   if (v.includes('14')) return '14_days'
   if (v.includes('60')) return '60_days'
-  if (v.includes('completion')) return 'on_completion'
+  if (v.includes('90')) return '90_days'
   if (v.includes('30')) return '30_days'
   return '30_days'
 }
@@ -82,10 +85,10 @@ export function normalizePaymentTerms(raw: string | null | undefined): string {
 export function normalizePaymentMethod(raw: string | null | undefined): string {
   if (!raw) return 'eft'
   const v = raw.trim().toLowerCase().replace(/[\s-]+/g, '_')
-  if (PAYMENT_METHODS.has(v)) return v
+  if (v === 'credit_card' || v.includes('card') || v.includes('credit')) return 'card'
+  if (PAYMENT_METHODS.has(v)) return v === 'credit_card' ? 'card' : v
   if (v.includes('eft') || v.includes('transfer')) return 'eft'
   if (v.includes('cash')) return 'cash'
-  if (v.includes('card') || v.includes('credit')) return 'credit_card'
   if (v.includes('cheque') || v.includes('check')) return 'cheque'
   return 'eft'
 }
@@ -106,6 +109,7 @@ export function buildContractorCreatePayload(input: ContractorCreateInput): Reco
     company_id: input.companyId,
     name,
     partner_kind: partnerKind,
+    profile_tier: input.profileTier === 'light' ? 'light' : 'full',
     contractor_code: emptyToNull(input.contractorCode),
     contact_person: emptyToNull(input.contactPerson),
     phone: emptyToNull(input.phone),

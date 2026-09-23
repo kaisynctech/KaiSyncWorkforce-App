@@ -8,9 +8,14 @@ export type JobCreateInput = {
   description?: string | null
   priority?: string | null
   estimatedCost?: number | null
+  actualCost?: number | null
+  contractorCost?: number | null
   scheduledStart?: string | null
   scheduledEnd?: string | null
   clientId?: string | null
+  siteId?: string | null
+  unitId?: string | null
+  contractorId?: string | null
   dealId?: string | null
   address?: string | null
   assigneeEmployeeId?: string | null
@@ -42,9 +47,14 @@ export function buildJobCreatePayload(input: JobCreateInput): Record<string, unk
     description: emptyToNull(input.description),
     priority: emptyToNull(input.priority) || 'medium',
     estimated_cost: input.estimatedCost ?? null,
+    actual_cost: input.actualCost ?? null,
+    contractor_cost: input.contractorCost ?? null,
     scheduled_start: input.scheduledStart || null,
     scheduled_end: input.scheduledEnd || null,
     client_id: input.clientId || null,
+    site_id: input.siteId || null,
+    unit_id: input.unitId || null,
+    contractor_id: input.contractorId || null,
     deal_id: input.dealId || null,
     address: emptyToNull(input.address),
     assignee_employee_id: assignee,
