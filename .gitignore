@@ -48,6 +48,7 @@ timesheets - Copy (2)/
 .claude/
 .codex/
 .mcp.json
+.cursor/mcp.json
 AGENTS.md
 
 # Arch design spec documents — kept locally, not in repo
