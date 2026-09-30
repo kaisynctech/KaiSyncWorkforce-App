@@ -10,6 +10,7 @@ import {
   listChannelConnections,
   listUnitChannelMappings,
   upsertUnitChannelMapping,
+  type IcalSyncResult,
 } from '@/lib/property-channels'
 import type {
   ChannelProvider,
@@ -33,6 +34,7 @@ export function ChannelSyncPanel({ companyId, siteId, employeeId, canEdit, units
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [syncResult, setSyncResult] = useState<IcalSyncResult | null>(null)
 
   const [showCreate, setShowCreate] = useState(false)
   const [name, setName] = useState('')
@@ -43,6 +45,7 @@ export function ChannelSyncPanel({ companyId, siteId, employeeId, canEdit, units
   const [mapUnitId, setMapUnitId] = useState('')
   const [mapExternalId, setMapExternalId] = useState('')
   const [mapExternalName, setMapExternalName] = useState('')
+  const [mapIcalUrl, setMapIcalUrl] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -116,12 +119,14 @@ export function ChannelSyncPanel({ companyId, siteId, employeeId, canEdit, units
       unitId: mapUnitId,
       externalRoomId: mapExternalId,
       externalRoomName: mapExternalName || null,
+      icalImportUrl: mapIcalUrl || null,
     })
     setBusy(false)
     if (!res.ok) { setError(res.message); return }
     setMapUnitId('')
     setMapExternalId('')
     setMapExternalName('')
+    setMapIcalUrl('')
     await loadMappings(selectedId)
   }
 
@@ -135,30 +140,82 @@ export function ChannelSyncPanel({ companyId, siteId, employeeId, canEdit, units
     await loadMappings(selectedId)
   }
 
+  async function runIcalSync() {
+    if (!canEdit || !selectedId) return
+    setBusy(true)
+    setError(null)
+    setSyncResult(null)
+    try {
+      const res = await fetch('/api/properties/ical-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ connectionId: selectedId }),
+      })
+      const json = await res.json() as IcalSyncResult & { error?: string; ok?: boolean }
+      if (!res.ok) {
+        setError(json.error ?? 'iCal sync failed')
+      } else {
+        setSyncResult(json)
+        await load()
+        await loadMappings(selectedId)
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'iCal sync failed')
+    }
+    setBusy(false)
+  }
+
   return (
     <div className="border border-divider rounded-xl p-4 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h3 className="text-[14px] font-semibold text-text-primary">Channel sync foundations</h3>
+          <h3 className="text-[14px] font-semibold text-text-primary">Channel sync</h3>
           <p className="text-[11px] text-text-secondary mt-0.5">
-            Prepare connections and room mappings for iCal / channel managers.
-            Live pull from OTAs is not enabled yet — this stores the wiring only.
+            Connect iCal feeds (Airbnb / Booking.com calendars) to block rooms automatically.
+            Map each room, paste its calendar URL, then Sync now.
           </p>
         </div>
-        {canEdit && (
-          <button type="button" onClick={() => setShowCreate(true)} className="btn-outlined h-9 px-3 text-[12px]">
-            + Connection
-          </button>
-        )}
+        <div className="flex gap-2">
+          {canEdit && selectedId && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void runIcalSync()}
+              className="btn-primary h-9 px-3 text-[12px] disabled:opacity-50"
+            >
+              {busy ? 'Syncing…' : 'Sync iCal now'}
+            </button>
+          )}
+          {canEdit && (
+            <button type="button" onClick={() => setShowCreate(true)} className="btn-outlined h-9 px-3 text-[12px]">
+              + Connection
+            </button>
+          )}
+        </div>
       </div>
 
       {error && <p className="text-[12px] text-error">{error}</p>}
+
+      {syncResult && (
+        <div className="rounded-lg border border-divider bg-surface-elevated px-3 py-2 text-[12px] text-text-primary space-y-1">
+          <p>
+            Sync done · {syncResult.roomsSynced} room feed{syncResult.roomsSynced === 1 ? '' : 's'} ·{' '}
+            {syncResult.created} created · {syncResult.updated} updated · {syncResult.cancelled} cancelled
+            {syncResult.skipped > 0 ? ` · ${syncResult.skipped} skipped` : ''}
+          </p>
+          {syncResult.errors.length > 0 && (
+            <ul className="text-[11px] text-error list-disc pl-4 max-h-24 overflow-y-auto">
+              {syncResult.errors.slice(0, 8).map((e, i) => <li key={i}>{e}</li>)}
+            </ul>
+          )}
+        </div>
+      )}
 
       {loading ? (
         <p className="text-[12px] text-text-secondary">Loading…</p>
       ) : connections.length === 0 ? (
         <p className="text-[12px] text-text-secondary">
-          No channel connections yet. Add an iCal or channel-manager connection when you are ready to sync.
+          No channel connections yet. Add an iCal connection, map rooms, then sync.
         </p>
       ) : (
         <>
@@ -166,7 +223,7 @@ export function ChannelSyncPanel({ companyId, siteId, employeeId, canEdit, units
             Active connection
             <select
               value={selectedId}
-              onChange={e => setSelectedId(e.target.value)}
+              onChange={e => { setSelectedId(e.target.value); setSyncResult(null) }}
               className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background"
             >
               {connections.map(c => (
@@ -180,16 +237,18 @@ export function ChannelSyncPanel({ companyId, siteId, employeeId, canEdit, units
 
           {selected && (
             <div className="rounded-lg bg-surface-elevated border border-divider px-3 py-2 text-[11px] text-text-secondary space-y-0.5">
-              <p>Provider: {channelProviderLabel(selected.provider)} · Sync: {selected.sync_status}</p>
-              {selected.ical_import_url && (
-                <p className="truncate">iCal URL saved (import will use this in a later wave)</p>
-              )}
-              {selected.external_property_id && (
-                <p>External property id: {selected.external_property_id}</p>
-              )}
               <p>
-                Credentials: {selected.credentials_configured ? 'configured (vault)' : 'not stored in DB (by design)'}
+                Provider: {channelProviderLabel(selected.provider)} · Sync: {selected.sync_status}
+                {selected.last_sync_at
+                  ? ` · Last: ${new Date(selected.last_sync_at).toLocaleString('en-ZA')}`
+                  : ''}
               </p>
+              {selected.ical_import_url && (
+                <p className="truncate">Connection iCal URL saved (used when a single room is mapped with no per-room URL)</p>
+              )}
+              {selected.last_sync_error && (
+                <p className="text-error">{selected.last_sync_error}</p>
+              )}
             </div>
           )}
 
@@ -198,12 +257,12 @@ export function ChannelSyncPanel({ companyId, siteId, employeeId, canEdit, units
             {mappings.length === 0 ? (
               <p className="text-[12px] text-text-secondary">No rooms mapped for this connection.</p>
             ) : (
-              <table className="w-full" style={{ minWidth: 480 }}>
+              <table className="w-full" style={{ minWidth: 560 }}>
                 <thead>
                   <tr className="border-b border-divider">
                     <th className="data-th text-left">KaiSync room</th>
-                    <th className="data-th text-left">External room id</th>
-                    <th className="data-th text-left">External name</th>
+                    <th className="data-th text-left">External id</th>
+                    <th className="data-th text-left">iCal URL</th>
                     <th className="data-th text-left" />
                   </tr>
                 </thead>
@@ -212,7 +271,9 @@ export function ChannelSyncPanel({ companyId, siteId, employeeId, canEdit, units
                     <tr key={m.id} className="border-b border-divider">
                       <td className="data-td text-[12px]">{m.units?.unit_number ?? m.unit_id.slice(0, 8)}</td>
                       <td className="data-td text-[12px] font-mono">{m.external_room_id}</td>
-                      <td className="data-td text-[12px] text-text-secondary">{m.external_room_name ?? '—'}</td>
+                      <td className="data-td text-[11px] text-text-secondary truncate max-w-[180px]">
+                        {m.ical_import_url ? 'Set' : (selected?.ical_import_url && mappings.length === 1 ? 'Uses connection URL' : 'Missing')}
+                      </td>
                       <td className="data-td text-right">
                         {canEdit && (
                           <button
@@ -232,46 +293,58 @@ export function ChannelSyncPanel({ companyId, siteId, employeeId, canEdit, units
             )}
 
             {canEdit && selectedId && (
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 items-end">
-                <label className="block text-[11px] text-text-secondary">
-                  Room
-                  <select
-                    value={mapUnitId}
-                    onChange={e => setMapUnitId(e.target.value)}
-                    className="mt-1 w-full h-9 px-2 border border-border rounded-md text-[12px] bg-background"
+              <div className="space-y-2 border border-divider rounded-lg p-3">
+                <p className="text-[11px] font-medium text-text-secondary">Add / update room mapping</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <label className="block text-[11px] text-text-secondary">
+                    Room
+                    <select
+                      value={mapUnitId}
+                      onChange={e => setMapUnitId(e.target.value)}
+                      className="mt-1 w-full h-9 px-2 border border-border rounded-md text-[12px] bg-background"
+                    >
+                      <option value="">Select…</option>
+                      {units.map(u => (
+                        <option key={u.id} value={u.id}>{u.unit_number}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block text-[11px] text-text-secondary">
+                    External room id
+                    <input
+                      value={mapExternalId}
+                      onChange={e => setMapExternalId(e.target.value)}
+                      placeholder="e.g. airbnb-listing-id"
+                      className="mt-1 w-full h-9 px-2 border border-border rounded-md text-[12px] bg-background"
+                    />
+                  </label>
+                  <label className="block text-[11px] text-text-secondary sm:col-span-2">
+                    Room iCal import URL (Airbnb / Booking calendar link)
+                    <input
+                      value={mapIcalUrl}
+                      onChange={e => setMapIcalUrl(e.target.value)}
+                      placeholder="https://…"
+                      className="mt-1 w-full h-9 px-2 border border-border rounded-md text-[12px] bg-background"
+                    />
+                  </label>
+                  <label className="block text-[11px] text-text-secondary">
+                    External name
+                    <input
+                      value={mapExternalName}
+                      onChange={e => setMapExternalName(e.target.value)}
+                      placeholder="Optional"
+                      className="mt-1 w-full h-9 px-2 border border-border rounded-md text-[12px] bg-background"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    disabled={busy || !mapUnitId || !mapExternalId.trim()}
+                    onClick={() => void saveMapping()}
+                    className="btn-outlined h-9 px-3 text-[12px] disabled:opacity-50 self-end"
                   >
-                    <option value="">Select…</option>
-                    {units.map(u => (
-                      <option key={u.id} value={u.id}>{u.unit_number}</option>
-                    ))}
-                  </select>
-                </label>
-                <label className="block text-[11px] text-text-secondary">
-                  External room id
-                  <input
-                    value={mapExternalId}
-                    onChange={e => setMapExternalId(e.target.value)}
-                    placeholder="e.g. ROOM-101"
-                    className="mt-1 w-full h-9 px-2 border border-border rounded-md text-[12px] bg-background"
-                  />
-                </label>
-                <label className="block text-[11px] text-text-secondary">
-                  External name
-                  <input
-                    value={mapExternalName}
-                    onChange={e => setMapExternalName(e.target.value)}
-                    placeholder="Optional"
-                    className="mt-1 w-full h-9 px-2 border border-border rounded-md text-[12px] bg-background"
-                  />
-                </label>
-                <button
-                  type="button"
-                  disabled={busy || !mapUnitId || !mapExternalId.trim()}
-                  onClick={() => void saveMapping()}
-                  className="btn-outlined h-9 px-3 text-[12px] disabled:opacity-50"
-                >
-                  Save mapping
-                </button>
+                    Save mapping
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -305,7 +378,7 @@ export function ChannelSyncPanel({ companyId, siteId, employeeId, canEdit, units
             </label>
             {provider === 'ical' && (
               <label className="block text-[12px] text-text-secondary">
-                iCal import URL (saved for later sync)
+                Default iCal import URL (optional — prefer per-room URLs)
                 <input
                   value={icalUrl}
                   onChange={e => setIcalUrl(e.target.value)}
@@ -325,7 +398,7 @@ export function ChannelSyncPanel({ companyId, siteId, employeeId, canEdit, units
               </label>
             )}
             <p className="text-[11px] text-text-disabled">
-              API keys are not stored on this form — credentials will use a secure vault when live sync is enabled.
+              API keys are not stored here. iCal sync uses public calendar URLs only.
             </p>
             <div className="flex justify-end gap-2">
               <button type="button" onClick={() => setShowCreate(false)} className="btn-outlined h-9 px-3 text-[13px]">Cancel</button>

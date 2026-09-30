@@ -906,6 +906,7 @@ export interface PropertyUnitChannelMapping {
   unit_id: string
   external_room_id: string
   external_room_name: string | null
+  ical_import_url: string | null
   is_active: boolean
   created_at: string
   updated_at: string
