@@ -240,10 +240,22 @@ export async function checkInStay(
   return { ok: true, data: data as PropertyStay }
 }
 
+export type StayCheckoutBilling =
+  | {
+      skipped: false
+      created: boolean
+      invoiceId: string
+      invoiceNumber: string | null
+      balanceDue: number
+      charge: number
+      depositApplied: number
+    }
+  | { skipped: true; reason: 'no_charge' }
+
 export async function checkOutStay(
   supabase: SupabaseClient,
-  opts: { companyId: string; stayId: string },
-): Promise<StayResult<PropertyStay>> {
+  opts: { companyId: string; stayId: string; employeeId?: string | null },
+): Promise<StayResult<{ stay: PropertyStay; billing: StayCheckoutBilling }>> {
   const { data: stay, error: loadErr } = await supabase
     .from('property_stays')
     .select('*')
@@ -256,6 +268,26 @@ export async function checkOutStay(
   if (row.status !== 'checked_in') {
     return { ok: false, message: `Cannot check out a stay that is ${row.status.replace(/_/g, ' ')}.` }
   }
+
+  const { createStayCheckoutInvoice } = await import('@/lib/stay-billing')
+  const billed = await createStayCheckoutInvoice(supabase, {
+    companyId: opts.companyId,
+    employeeId: opts.employeeId ?? null,
+    stay: row,
+  })
+  if (!billed.ok) return billed
+
+  const billing: StayCheckoutBilling = billed.skipped
+    ? { skipped: true, reason: 'no_charge' }
+    : {
+        skipped: false,
+        created: billed.created,
+        invoiceId: billed.invoiceId,
+        invoiceNumber: billed.invoiceNumber,
+        balanceDue: billed.balanceDue,
+        charge: billed.charge,
+        depositApplied: billed.depositApplied,
+      }
 
   const now = new Date().toISOString()
   const { data, error } = await supabase
@@ -289,7 +321,7 @@ export async function checkOutStay(
     .eq('id', row.unit_id)
     .eq('company_id', opts.companyId)
 
-  return { ok: true, data: data as PropertyStay }
+  return { ok: true, data: { stay: data as PropertyStay, billing } }
 }
 
 export async function setHousekeepingStatus(

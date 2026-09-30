@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { unitTypeLabel } from '@/lib/properties'
 import {
@@ -62,8 +63,11 @@ export function GuestHouseBoard({
   onUnitsChanged,
 }: Props) {
   const [stays, setStays] = useState<PropertyStay[]>([])
+  const [stayInvoices, setStayInvoices] = useState<Record<string, { id: string; invoice_number: string | null; balance_due: number }>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [noticeHref, setNoticeHref] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [showBook, setShowBook] = useState(false)
   const [prefillUnitId, setPrefillUnitId] = useState('')
@@ -93,15 +97,39 @@ export function GuestHouseBoard({
     setLoading(true)
     setError(null)
     const supabase = createClient()
-    const { data, error: e } = await supabase
-      .from('property_stays')
-      .select('*')
-      .eq('company_id', companyId)
-      .eq('site_id', siteId)
-      .order('check_in_date', { ascending: false })
-      .limit(300)
-    if (e) setError(e.message)
-    setStays((data ?? []) as PropertyStay[])
+    const [staysRes, invoiceRes] = await Promise.all([
+      supabase
+        .from('property_stays')
+        .select('*')
+        .eq('company_id', companyId)
+        .eq('site_id', siteId)
+        .order('check_in_date', { ascending: false })
+        .limit(300),
+      supabase
+        .from('finance_invoices')
+        .select('id, stay_id, invoice_number, balance_due, status')
+        .eq('company_id', companyId)
+        .eq('site_id', siteId)
+        .eq('invoice_type', 'stay')
+        .not('status', 'in', '("cancelled","voided")')
+        .limit(300),
+    ])
+    if (staysRes.error) setError(staysRes.error.message)
+    else if (invoiceRes.error) setError(invoiceRes.error.message)
+    setStays((staysRes.data ?? []) as PropertyStay[])
+    const byStay: Record<string, { id: string; invoice_number: string | null; balance_due: number }> = {}
+    if (!invoiceRes.error) {
+      for (const row of invoiceRes.data ?? []) {
+        const stayId = row.stay_id as string | null
+        if (!stayId || byStay[stayId]) continue
+        byStay[stayId] = {
+          id: row.id as string,
+          invoice_number: (row.invoice_number as string | null) ?? null,
+          balance_due: Number(row.balance_due) || 0,
+        }
+      }
+    }
+    setStayInvoices(byStay)
     setLoading(false)
   }, [companyId, siteId])
 
@@ -207,10 +235,25 @@ export function GuestHouseBoard({
   async function doCheckOut(stayId: string) {
     setBusy(true)
     setError(null)
+    setNotice(null)
+    setNoticeHref(null)
     const supabase = createClient()
-    const result = await checkOutStay(supabase, { companyId, stayId })
+    const result = await checkOutStay(supabase, { companyId, stayId, employeeId })
     setBusy(false)
     if (!result.ok) { setError(result.message); return }
+    const billing = result.data.billing
+    if (billing.skipped) {
+      setNotice('Checked out. This stay has no nightly rate or total, so no invoice was raised.')
+    } else {
+      const label = billing.invoiceNumber ?? 'Stay invoice'
+      const balance = fmtMoney(billing.balanceDue)
+      setNotice(
+        billing.created
+          ? `${label} raised · balance ${balance}`
+          : `${label} already existed · balance ${balance}`,
+      )
+      setNoticeHref(`/dashboard/money/invoices/${billing.invoiceId}`)
+    }
     await load()
     onUnitsChanged?.()
   }
@@ -270,6 +313,17 @@ export function GuestHouseBoard({
       </div>
 
       {error && <p className="text-[13px] text-error">{error}</p>}
+      {notice && (
+        <p className="text-[13px] text-text-primary">
+          {notice}
+          {noticeHref && (
+            <>
+              {' · '}
+              <Link href={noticeHref} className="text-primary hover:underline">Open invoice</Link>
+            </>
+          )}
+        </p>
+      )}
 
       {loading ? (
         <p className="text-[13px] text-text-secondary">Loading board…</p>
@@ -375,6 +429,7 @@ export function GuestHouseBoard({
                   <th className="data-th text-left">Dates</th>
                   <th className="data-th text-left">Source</th>
                   <th className="data-th text-left">Status</th>
+                  <th className="data-th text-left">Invoice</th>
                   <th className="data-th text-right">Total</th>
                   <th className="data-th text-left" />
                 </tr>
@@ -389,6 +444,17 @@ export function GuestHouseBoard({
                       <td className="data-td text-[12px]">{fmtDate(s.check_in_date)} → {fmtDate(s.check_out_date)}</td>
                       <td className="data-td text-[11px] text-text-secondary">{bookingSourceLabel(s.booking_source)}</td>
                       <td className="data-td text-[12px]">{stayStatusLabel(s.status)}</td>
+                      <td className="data-td text-[12px]">
+                        {stayInvoices[s.id] ? (
+                          <Link href={`/dashboard/money/invoices/${stayInvoices[s.id].id}`} className="text-primary hover:underline">
+                            {stayInvoices[s.id].invoice_number ?? 'Invoice'}
+                            {' · '}
+                            {fmtMoney(stayInvoices[s.id].balance_due)}
+                          </Link>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
                       <td className="data-td text-[13px] text-right">{fmtMoney(s.total_amount)}</td>
                       <td className="data-td text-right whitespace-nowrap">
                         {canEdit && s.status === 'reserved' && (
@@ -505,6 +571,17 @@ export function GuestHouseBoard({
               Check in now
             </label>
             {error && <p className="text-[12px] text-error">{error}</p>}
+      {notice && (
+        <p className="text-[12px] text-text-primary">
+          {notice}
+          {noticeHref && (
+            <>
+              {' · '}
+              <Link href={noticeHref} className="text-primary hover:underline">Open invoice</Link>
+            </>
+          )}
+        </p>
+      )}
             <div className="flex justify-end gap-2">
               <button type="button" onClick={() => setShowBook(false)} className="btn-outlined h-9 px-3 text-[13px]">Cancel</button>
               <button
