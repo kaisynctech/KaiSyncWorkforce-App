@@ -43,8 +43,36 @@ describe('computeStayCheckoutCharge', () => {
       deposit_status: 'none',
       deposit_amount: null,
     })
-    expect(charge.charge).toBeNull()
+    expect(charge.invoiceTotal).toBeNull()
     expect(charge.depositApplied).toBe(0)
+  })
+
+  it('adds extras to the bill and caps the deposit at that total', () => {
+    const charge = computeStayCheckoutCharge(base, 250)
+    expect(charge.charge).toBe(1500)
+    expect(charge.extras).toBe(250)
+    expect(charge.invoiceTotal).toBe(1750)
+    expect(charge.depositApplied).toBe(400)
+
+    const capped = computeStayCheckoutCharge({
+      ...base,
+      deposit_amount: 2000,
+      deposit_status: 'held',
+    }, 200)
+    expect(capped.invoiceTotal).toBe(1700)
+    expect(capped.depositApplied).toBe(1700)
+  })
+
+  it('bills extras when the stay itself has no rate', () => {
+    const charge = computeStayCheckoutCharge({
+      ...base,
+      nightly_rate: null,
+      total_amount: null,
+      deposit_status: 'none',
+      deposit_amount: null,
+    }, 80)
+    expect(charge.charge).toBeNull()
+    expect(charge.invoiceTotal).toBe(80)
   })
 
   it('bills one night when check-in and check-out are the same day', () => {

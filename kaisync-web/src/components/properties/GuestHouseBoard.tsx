@@ -22,6 +22,13 @@ import { ChannelSyncPanel } from '@/components/properties/ChannelSyncPanel'
 import { RoomStayCalendar } from '@/components/properties/RoomStayCalendar'
 import { addIsoDays, localIsoDate } from '@/lib/stay-calendar'
 import {
+  addStayExtra,
+  deleteStayExtra,
+  listStayExtras,
+  sumStayExtras,
+  type StayExtra,
+} from '@/lib/stay-extras'
+import {
   assignHousekeepingCleaner,
   completeHousekeepingForUnit,
   listOpenHousekeepingJobs,
@@ -103,6 +110,8 @@ export function GuestHouseBoard({
   const [calendarRevision, setCalendarRevision] = useState(0)
   const [cleanJobs, setCleanJobs] = useState<Record<string, HousekeepingJob>>({})
   const [cleaners, setCleaners] = useState<{ id: string; name: string; surname: string }[]>([])
+  const [extrasByStay, setExtrasByStay] = useState<Record<string, StayExtra[]>>({})
+  const [extraDrafts, setExtraDrafts] = useState<Record<string, { description: string; amount: string }>>({})
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -136,6 +145,17 @@ export function GuestHouseBoard({
     if (staysRes.error) setError(staysRes.error.message)
     else if (invoiceRes.error) setError(invoiceRes.error.message)
     setStays((staysRes.data ?? []) as PropertyStay[])
+    const stayIds = ((staysRes.data ?? []) as { id: string }[]).map(row => row.id)
+    const extraRes = await listStayExtras(supabase, { companyId, stayIds })
+    if (extraRes.ok) {
+      const grouped: Record<string, StayExtra[]> = {}
+      for (const extra of extraRes.data) {
+        grouped[extra.stay_id] = [...(grouped[extra.stay_id] ?? []), extra]
+      }
+      setExtrasByStay(grouped)
+    } else if (!staysRes.error && !invoiceRes.error) {
+      setError(extraRes.message)
+    }
     const byStay: Record<string, { id: string; invoice_number: string | null; balance_due: number }> = {}
     if (!invoiceRes.error) {
       for (const row of invoiceRes.data ?? []) {
@@ -303,6 +323,37 @@ export function GuestHouseBoard({
     onUnitsChanged?.()
   }
 
+  async function addExtra(stayId: string) {
+    if (!canEdit) return
+    const draft = extraDrafts[stayId] ?? { description: '', amount: '' }
+    const amount = parseFloat(draft.amount)
+    setBusy(true)
+    setError(null)
+    const supabase = createClient()
+    const result = await addStayExtra(supabase, {
+      companyId,
+      stayId,
+      employeeId,
+      description: draft.description,
+      amount,
+    })
+    setBusy(false)
+    if (!result.ok) { setError(result.message); return }
+    setExtraDrafts(prev => ({ ...prev, [stayId]: { description: '', amount: '' } }))
+    await load()
+  }
+
+  async function removeExtra(chargeId: string) {
+    if (!canEdit) return
+    setBusy(true)
+    setError(null)
+    const supabase = createClient()
+    const result = await deleteStayExtra(supabase, { companyId, chargeId })
+    setBusy(false)
+    if (!result.ok) { setError(result.message); return }
+    await load()
+  }
+
   async function setHk(unitIdVal: string, status: HousekeepingStatus) {
     if (!canEdit) return
     setBusy(true)
@@ -437,6 +488,50 @@ export function GuestHouseBoard({
                       {stay.children > 0 ? ` · ${stay.children} child` : ''}
                       {stay.total_amount != null ? ` · ${fmtMoney(stay.total_amount)}` : ''}
                     </p>
+                    {(stay.status === 'reserved' || stay.status === 'checked_in') && (
+                      <div className="pt-1 space-y-1">
+                        {(extrasByStay[stay.id] ?? []).map(extra => (
+                          <p key={extra.id} className="flex items-center justify-between gap-2 text-text-secondary">
+                            <span>{extra.description} · {fmtMoney(extra.amount)}</span>
+                            {canEdit && (
+                              <button type="button" disabled={busy} className="text-error hover:underline" onClick={() => void removeExtra(extra.id)}>
+                                Remove
+                              </button>
+                            )}
+                          </p>
+                        ))}
+                        {(extrasByStay[stay.id]?.length ?? 0) > 0 && (
+                          <p className="text-text-primary">Extras {fmtMoney(sumStayExtras(extrasByStay[stay.id] ?? []))}</p>
+                        )}
+                        {canEdit && (
+                          <div className="flex gap-1">
+                            <input
+                              value={extraDrafts[stay.id]?.description ?? ''}
+                              onChange={e => setExtraDrafts(prev => ({
+                                ...prev,
+                                [stay.id]: { description: e.target.value, amount: prev[stay.id]?.amount ?? '' },
+                              }))}
+                              placeholder="Breakfast, damage…"
+                              className="h-7 flex-1 min-w-0 px-2 border border-border rounded text-[11px] bg-background"
+                            />
+                            <input
+                              value={extraDrafts[stay.id]?.amount ?? ''}
+                              onChange={e => setExtraDrafts(prev => ({
+                                ...prev,
+                                [stay.id]: { description: prev[stay.id]?.description ?? '', amount: e.target.value },
+                              }))}
+                              placeholder="Amount"
+                              type="number"
+                              step="0.01"
+                              className="h-7 w-20 px-2 border border-border rounded text-[11px] bg-background"
+                            />
+                            <button type="button" disabled={busy} className="text-primary hover:underline" onClick={() => void addExtra(stay.id)}>
+                              Add
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <p className="text-[12px] text-text-secondary">Vacant</p>
