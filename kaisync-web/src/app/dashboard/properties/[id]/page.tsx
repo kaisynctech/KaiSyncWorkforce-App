@@ -28,6 +28,7 @@ import { GenerateRoomsModal } from '@/components/properties/GenerateRoomsModal'
 import { GenerateRentInvoicesModal } from '@/components/properties/GenerateRentInvoicesModal'
 import { LeaseNoticeMoveOutModal } from '@/components/properties/LeaseNoticeMoveOutModal'
 import { PropertyMaintenancePanel } from '@/components/properties/PropertyMaintenancePanel'
+import { PropertyIncidentsPanel } from '@/components/properties/PropertyIncidentsPanel'
 import { GuestHouseBoard } from '@/components/properties/GuestHouseBoard'
 import { ListPagination } from '@/components/properties/ListPagination'
 import { paginateSlice, totalPages, UNIT_LIST_PAGE_SIZE } from '@/lib/property-list'
@@ -52,7 +53,7 @@ import type {
   Unit,
 } from '@/types/database'
 
-type Tab = 'overview' | 'units' | 'residents' | 'leases' | 'stays' | 'maintenance' | 'meters' | 'inspections' | 'compliance'
+type Tab = 'overview' | 'units' | 'residents' | 'leases' | 'stays' | 'maintenance' | 'incidents' | 'meters' | 'inspections' | 'compliance'
 type ClientOption = { id: string; name: string }
 type RentInvoiceRow = {
   id: string
@@ -115,7 +116,7 @@ function PropertyDetailInner() {
   const searchParams = useSearchParams()
   const initialTab = (searchParams.get('tab') as Tab | null)
   const [tab, setTab] = useState<Tab>(
-    initialTab && ['overview', 'units', 'residents', 'leases', 'stays', 'maintenance', 'meters', 'inspections', 'compliance'].includes(initialTab)
+    initialTab && ['overview', 'units', 'residents', 'leases', 'stays', 'maintenance', 'incidents', 'meters', 'inspections', 'compliance'].includes(initialTab)
       ? initialTab
       : 'overview',
   )
@@ -941,6 +942,7 @@ function PropertyDetailInner() {
     { id: 'leases', label: 'Leases' },
     ...(propertyKind === 'guest_house' ? [{ id: 'stays' as const, label: 'Room board' }] : []),
     { id: 'maintenance', label: 'Maintenance' },
+    { id: 'incidents', label: 'Incidents' },
     { id: 'meters', label: 'Meters' },
     { id: 'inspections', label: 'Inspections' },
     { id: 'compliance', label: 'Compliance' },
@@ -1488,6 +1490,14 @@ function PropertyDetailInner() {
               units={units.map(u => ({ id: u.id, unit_number: u.unit_number }))}
             />
           </div>
+        )}
+
+        {tab === 'incidents' && companyId && (
+          <PropertyIncidentsPanel
+            companyId={companyId}
+            siteId={id}
+            canReport={can(perms, PERM.incidentsCreate)}
+          />
         )}
 
         {tab === 'meters' && (
