@@ -19,6 +19,8 @@ import {
 } from '@/lib/property-stays'
 import { BOOKING_SOURCES, bookingSourceLabel } from '@/lib/property-channels'
 import { ChannelSyncPanel } from '@/components/properties/ChannelSyncPanel'
+import { RoomStayCalendar } from '@/components/properties/RoomStayCalendar'
+import { addIsoDays, localIsoDate } from '@/lib/stay-calendar'
 import type {
   HousekeepingStatus,
   PropertyStay,
@@ -92,6 +94,7 @@ export function GuestHouseBoard({
   const [notes, setNotes] = useState('')
   const [checkInNow, setCheckInNow] = useState(false)
   const [bookingSource, setBookingSource] = useState<StayBookingSource>('manual')
+  const [calendarRevision, setCalendarRevision] = useState(0)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -130,6 +133,7 @@ export function GuestHouseBoard({
       }
     }
     setStayInvoices(byStay)
+    setCalendarRevision(n => n + 1)
     setLoading(false)
   }, [companyId, siteId])
 
@@ -159,7 +163,7 @@ export function GuestHouseBoard({
   const rateNum = nightlyRate.trim() ? parseFloat(nightlyRate) : null
   const estTotal = rateNum != null && Number.isFinite(rateNum) ? rateNum * Math.max(nights, 1) : null
 
-  function openBook(forUnitId?: string) {
+  function openBook(forUnitId?: string, night?: string) {
     const uid = forUnitId || ''
     setPrefillUnitId(uid)
     setUnitId(uid)
@@ -168,10 +172,9 @@ export function GuestHouseBoard({
     setGuestPhone('')
     setIdNumber('')
     setPassport('')
-    setCheckIn(new Date().toISOString().slice(0, 10))
-    const d = new Date()
-    d.setDate(d.getDate() + 1)
-    setCheckOut(d.toISOString().slice(0, 10))
+    const arrival = night ?? localIsoDate()
+    setCheckIn(arrival)
+    setCheckOut(addIsoDays(arrival, 1))
     setAdults('2')
     setChildren('0')
     const u = units.find(x => x.id === uid)
@@ -313,6 +316,15 @@ export function GuestHouseBoard({
       </div>
 
       {error && <p className="text-[13px] text-error">{error}</p>}
+
+      <RoomStayCalendar
+        companyId={companyId}
+        siteId={siteId}
+        units={units}
+        canEdit={canEdit}
+        revision={calendarRevision}
+        onBookNight={(unit, night) => openBook(unit, night)}
+      />
       {notice && (
         <p className="text-[13px] text-text-primary">
           {notice}
