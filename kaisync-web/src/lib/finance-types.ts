@@ -6,6 +6,7 @@ export type FinanceInvoice = {
   deal_id?: string | null
   job_id?: string | null
   lease_id?: string | null
+  stay_id?: string | null
   site_id?: string | null
   quote_id?: string | null
   invoice_number: string | null
