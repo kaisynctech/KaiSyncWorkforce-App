@@ -134,6 +134,22 @@ export default function HrNewIncidentPage() {
     )
     setJobs((jobRows ?? []) as JobOption[])
     setClients((clientRows ?? []) as ClientOption[])
+
+    const prefillSiteId = new URLSearchParams(window.location.search).get('siteId')
+    if (prefillSiteId) {
+      const { data: site } = await supabase
+        .from('sites')
+        .select('id, name, client_id')
+        .eq('id', prefillSiteId)
+        .eq('company_id', member.companyId)
+        .maybeSingle()
+      if (site) {
+        setSites([site as SiteOption])
+        setSelectedSiteId(site.id)
+        if (site.client_id) setSelectedClientId(site.client_id)
+      }
+    }
+
     setLoading(false)
   }
 
