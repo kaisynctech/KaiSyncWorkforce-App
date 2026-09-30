@@ -222,6 +222,9 @@ export default function PropertiesPage() {
                 Import
               </Link>
             )}
+            <Link href="/dashboard/properties/statement" className="btn-outlined h-9 px-3 text-[13px] inline-flex items-center">
+              Owner statement
+            </Link>
             <Link href="/dashboard/properties/arrears" className="btn-outlined h-9 px-3 text-[13px] inline-flex items-center">
               Rent arrears
             </Link>
