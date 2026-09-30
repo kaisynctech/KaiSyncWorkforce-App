@@ -143,10 +143,15 @@ export async function upsertUnitChannelMapping(
     unitId: string
     externalRoomId: string
     externalRoomName?: string | null
+    icalImportUrl?: string | null
   },
 ): Promise<ChannelResult<PropertyUnitChannelMapping>> {
   const roomId = input.externalRoomId.trim()
   if (!roomId) return { ok: false, message: 'External room id is required.' }
+
+  const icalUrl = input.icalImportUrl !== undefined
+    ? (input.icalImportUrl?.trim() || null)
+    : undefined
 
   const { data: existing } = await supabase
     .from('property_unit_channel_mappings')
@@ -156,14 +161,17 @@ export async function upsertUnitChannelMapping(
     .maybeSingle()
 
   if (existing?.id) {
+    const patch: Record<string, unknown> = {
+      external_room_id: roomId,
+      external_room_name: input.externalRoomName?.trim() || null,
+      is_active: true,
+      updated_at: new Date().toISOString(),
+    }
+    if (icalUrl !== undefined) patch.ical_import_url = icalUrl
+
     const { data, error } = await supabase
       .from('property_unit_channel_mappings')
-      .update({
-        external_room_id: roomId,
-        external_room_name: input.externalRoomName?.trim() || null,
-        is_active: true,
-        updated_at: new Date().toISOString(),
-      })
+      .update(patch)
       .eq('id', existing.id)
       .eq('company_id', input.companyId)
       .select('*, units(id, unit_number)')
@@ -180,6 +188,7 @@ export async function upsertUnitChannelMapping(
       unit_id: input.unitId,
       external_room_id: roomId,
       external_room_name: input.externalRoomName?.trim() || null,
+      ical_import_url: icalUrl ?? null,
     })
     .select('*, units(id, unit_number)')
     .single()
@@ -257,16 +266,22 @@ export async function upsertStayFromExternalBooking(
   }
 
   if (existing) {
+    const current = existing as PropertyStay
     const conflict = await findConflictingStay(supabase, {
       companyId: input.companyId,
       unitId: input.unitId,
       checkInDate: input.checkInDate,
       checkOutDate: input.checkOutDate,
-      excludeStayId: existing.id,
+      excludeStayId: current.id,
     })
     if (conflict) {
       return { ok: false, message: `Room conflict with stay ${conflict.id.slice(0, 8)}` }
     }
+
+    // Front desk progress must survive a later calendar pull. A cancelled stay can
+    // return to reserved when the event is still on the feed.
+    const keepProgress = current.status === 'checked_in' || current.status === 'checked_out'
+    const nextStatus = keepProgress ? current.status : (input.status ?? current.status)
 
     const { data, error } = await supabase
       .from('property_stays')
@@ -274,19 +289,23 @@ export async function upsertStayFromExternalBooking(
         unit_id: input.unitId,
         guest_name: input.guestName.trim(),
         guest_surname: (input.guestSurname ?? '').trim(),
-        guest_phone: input.guestPhone?.trim() || null,
-        guest_email: input.guestEmail?.trim() || null,
+        guest_phone: input.guestPhone !== undefined
+          ? (input.guestPhone?.trim() || null)
+          : current.guest_phone,
+        guest_email: input.guestEmail !== undefined
+          ? (input.guestEmail?.trim() || null)
+          : current.guest_email,
         check_in_date: input.checkInDate,
         check_out_date: input.checkOutDate,
-        status: input.status ?? (existing as PropertyStay).status,
-        nightly_rate: input.nightlyRate ?? null,
-        total_amount: input.totalAmount ?? null,
-        currency: input.currency ?? 'ZAR',
-        notes: input.notes?.trim() || null,
+        status: nextStatus,
+        nightly_rate: input.nightlyRate !== undefined ? input.nightlyRate : current.nightly_rate,
+        total_amount: input.totalAmount !== undefined ? input.totalAmount : current.total_amount,
+        currency: input.currency ?? current.currency,
+        notes: input.notes !== undefined ? (input.notes?.trim() || null) : current.notes,
         ...syncFields,
         updated_at: new Date().toISOString(),
       })
-      .eq('id', existing.id)
+      .eq('id', current.id)
       .eq('company_id', input.companyId)
       .select('*')
       .single()
@@ -332,3 +351,196 @@ export async function upsertStayFromExternalBooking(
   if (error || !data) return { ok: false, message: error?.message ?? 'Failed to create external stay' }
   return { ok: true, data: { stay: data as PropertyStay, created: true } }
 }
+
+export type IcalSyncResult = {
+  connectionId: string
+  roomsSynced: number
+  created: number
+  updated: number
+  cancelled: number
+  skipped: number
+  errors: string[]
+}
+
+/**
+ * Pull iCal feeds for a connection and upsert/cancel stays.
+ * Per-room mapping URL wins; else connection.ical_import_url is used when exactly one active mapping exists,
+ * or applied to each mapping that has no URL only if connection URL is set and there is one mapping.
+ */
+export async function syncIcalForConnection(
+  supabase: SupabaseClient,
+  opts: { companyId: string; connectionId: string },
+): Promise<ChannelResult<IcalSyncResult>> {
+  const { fetchIcalText, guestNameFromIcalSummary, parseIcalEvents } = await import('@/lib/ical')
+
+  const { data: conn, error: cErr } = await supabase
+    .from('property_channel_connections')
+    .select('*')
+    .eq('id', opts.connectionId)
+    .eq('company_id', opts.companyId)
+    .maybeSingle()
+
+  if (cErr || !conn) {
+    return { ok: false, message: cErr?.message ?? 'Connection not found' }
+  }
+
+  const connection = conn as PropertyChannelConnection
+  await supabase
+    .from('property_channel_connections')
+    .update({ sync_status: 'syncing', last_sync_error: null, updated_at: new Date().toISOString() })
+    .eq('id', connection.id)
+
+  const mapRes = await listUnitChannelMappings(supabase, {
+    companyId: opts.companyId,
+    connectionId: connection.id,
+  })
+  if (!mapRes.ok) {
+    await markConnectionError(supabase, connection.id, mapRes.message)
+    return { ok: false, message: mapRes.message }
+  }
+
+  const activeMaps = mapRes.data.filter(m => m.is_active)
+  const result: IcalSyncResult = {
+    connectionId: connection.id,
+    roomsSynced: 0,
+    created: 0,
+    updated: 0,
+    cancelled: 0,
+    skipped: 0,
+    errors: [],
+  }
+
+  if (activeMaps.length === 0) {
+    const msg = 'Add at least one room mapping before syncing iCal.'
+    await markConnectionError(supabase, connection.id, msg)
+    return { ok: false, message: msg }
+  }
+
+  const today = new Date().toISOString().slice(0, 10)
+  const seenUidsByUnit = new Map<string, Set<string>>()
+
+  for (const mapping of activeMaps) {
+    const url = (mapping.ical_import_url?.trim()
+      || (activeMaps.length === 1 ? connection.ical_import_url?.trim() : '')
+      || '')
+    if (!url) {
+      result.skipped += 1
+      result.errors.push(
+        `Room ${mapping.units?.unit_number ?? mapping.unit_id.slice(0, 8)}: no iCal URL (set per-room or connection URL).`,
+      )
+      continue
+    }
+
+    const fetched = await fetchIcalText(url)
+    if (!fetched.ok) {
+      result.errors.push(`Room ${mapping.units?.unit_number ?? mapping.external_room_id}: ${fetched.message}`)
+      continue
+    }
+
+    const events = parseIcalEvents(fetched.text)
+    const uids = new Set<string>()
+    seenUidsByUnit.set(mapping.unit_id, uids)
+    result.roomsSynced += 1
+
+    for (const ev of events) {
+      // Skip past stays that already ended before today (keep history; don't churn)
+      if (ev.endDate < today) {
+        uids.add(ev.uid)
+        continue
+      }
+      uids.add(ev.uid)
+      const guest = guestNameFromIcalSummary(ev.summary)
+      const upsert = await upsertStayFromExternalBooking(supabase, {
+        companyId: opts.companyId,
+        siteId: connection.site_id,
+        connectionId: connection.id,
+        externalBookingId: ev.uid,
+        unitId: mapping.unit_id,
+        guestName: guest.name,
+        guestSurname: guest.surname,
+        checkInDate: ev.startDate,
+        checkOutDate: ev.endDate,
+        bookingSource: 'ical',
+        externalStatus: ev.summary,
+        notes: ev.summary ? `iCal: ${ev.summary}` : 'Imported from iCal',
+        payload: { uid: ev.uid, summary: ev.summary, source: 'ical' },
+        status: 'reserved',
+      })
+      if (!upsert.ok) {
+        // Conflict with a non-matching local booking — record and continue
+        result.errors.push(`${ev.uid.slice(0, 12)}…: ${upsert.message}`)
+        continue
+      }
+      if (upsert.data.created) result.created += 1
+      else result.updated += 1
+    }
+  }
+
+  // Cancel iCal stays that disappeared from feeds (still active / future)
+  const { data: icalStays } = await supabase
+    .from('property_stays')
+    .select('id, unit_id, external_booking_id, check_out_date, status')
+    .eq('company_id', opts.companyId)
+    .eq('channel_connection_id', connection.id)
+    .eq('booking_source', 'ical')
+    .in('status', ['reserved', 'checked_in'])
+    .gte('check_out_date', today)
+
+  for (const stay of icalStays ?? []) {
+    const uid = stay.external_booking_id
+    if (!uid) continue
+    const unitSeen = seenUidsByUnit.get(stay.unit_id)
+    // Only cancel if we successfully synced that unit's feed
+    if (!unitSeen) continue
+    if (unitSeen.has(uid)) continue
+
+    const { error: cancelErr } = await supabase
+      .from('property_stays')
+      .update({
+        status: 'cancelled',
+        sync_status: 'synced',
+        last_synced_at: new Date().toISOString(),
+        external_status: 'removed_from_ical',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', stay.id)
+      .eq('company_id', opts.companyId)
+
+    if (cancelErr) result.errors.push(`Cancel ${uid.slice(0, 12)}: ${cancelErr.message}`)
+    else result.cancelled += 1
+  }
+
+  const syncOk = result.errors.length === 0 || result.created + result.updated + result.cancelled > 0
+  await supabase
+    .from('property_channel_connections')
+    .update({
+      sync_status: result.errors.length > 0 && result.created + result.updated === 0 ? 'error' : 'ok',
+      last_sync_at: new Date().toISOString(),
+      last_sync_error: result.errors.length > 0 ? result.errors.slice(0, 5).join(' · ') : null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', connection.id)
+
+  if (!syncOk && result.created === 0 && result.updated === 0 && result.roomsSynced === 0) {
+    return { ok: false, message: result.errors[0] ?? 'iCal sync failed' }
+  }
+
+  return { ok: true, data: result }
+}
+
+async function markConnectionError(
+  supabase: SupabaseClient,
+  connectionId: string,
+  message: string,
+) {
+  await supabase
+    .from('property_channel_connections')
+    .update({
+      sync_status: 'error',
+      last_sync_error: message,
+      last_sync_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', connectionId)
+}
+
