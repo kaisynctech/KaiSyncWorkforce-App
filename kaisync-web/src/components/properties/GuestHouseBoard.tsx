@@ -21,6 +21,7 @@ import { BOOKING_SOURCES, bookingSourceLabel } from '@/lib/property-channels'
 import { ChannelSyncPanel } from '@/components/properties/ChannelSyncPanel'
 import { RoomStayCalendar } from '@/components/properties/RoomStayCalendar'
 import { addIsoDays, localIsoDate } from '@/lib/stay-calendar'
+import { buildFrontDeskDay, type FrontDeskRow } from '@/lib/stay-desk'
 import {
   addStayExtra,
   deleteStayExtra,
@@ -112,6 +113,7 @@ export function GuestHouseBoard({
   const [cleaners, setCleaners] = useState<{ id: string; name: string; surname: string }[]>([])
   const [extrasByStay, setExtrasByStay] = useState<Record<string, StayExtra[]>>({})
   const [extraDrafts, setExtraDrafts] = useState<Record<string, { description: string; amount: string }>>({})
+  const [deskDay, setDeskDay] = useState(() => localIsoDate())
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -392,6 +394,12 @@ export function GuestHouseBoard({
     await load()
   }
 
+  const desk = useMemo(() => {
+    const unitNumbers: Record<string, string> = {}
+    for (const unit of units) unitNumbers[unit.id] = unit.unit_number
+    return buildFrontDeskDay(stays, deskDay, localIsoDate(), unitNumbers)
+  }, [stays, units, deskDay])
+
   const recentStays = useMemo(
     () => stays.filter(s => s.status !== 'cancelled').slice(0, 40),
     [stays],
@@ -426,6 +434,61 @@ export function GuestHouseBoard({
       </div>
 
       {error && <p className="text-[13px] text-error">{error}</p>}
+
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-[13px] font-semibold text-text-primary">Front desk</h2>
+          <input
+            type="date"
+            value={deskDay}
+            onChange={e => { if (e.target.value) setDeskDay(e.target.value) }}
+            className="h-8 px-2 border border-border rounded text-[12px] bg-background"
+          />
+          <button type="button" className="text-[12px] text-primary hover:underline" onClick={() => setDeskDay(day => addIsoDays(day, -1))}>
+            Previous
+          </button>
+          <button type="button" className="text-[12px] text-primary hover:underline" onClick={() => setDeskDay(day => addIsoDays(day, 1))}>
+            Next
+          </button>
+          {deskDay !== localIsoDate() && (
+            <button type="button" className="text-[12px] text-primary hover:underline" onClick={() => setDeskDay(localIsoDate())}>
+              Today
+            </button>
+          )}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+          <DeskList
+            title="Arrivals"
+            rows={desk.arrivals}
+            units={units}
+            canEdit={canEdit}
+            busy={busy}
+            onCheckIn={id => void doCheckIn(id)}
+            onCheckOut={id => void doCheckOut(id)}
+            onCancel={id => void doCancel(id)}
+          />
+          <DeskList
+            title="In house"
+            rows={desk.inHouse}
+            units={units}
+            canEdit={canEdit}
+            busy={busy}
+            onCheckIn={id => void doCheckIn(id)}
+            onCheckOut={id => void doCheckOut(id)}
+            onCancel={id => void doCancel(id)}
+          />
+          <DeskList
+            title="Departures"
+            rows={desk.departures}
+            units={units}
+            canEdit={canEdit}
+            busy={busy}
+            onCheckIn={id => void doCheckIn(id)}
+            onCheckOut={id => void doCheckOut(id)}
+            onCancel={id => void doCancel(id)}
+          />
+        </div>
+      </section>
 
       <RoomStayCalendar
         companyId={companyId}
@@ -782,6 +845,85 @@ export function GuestHouseBoard({
               </button>
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function DeskList({
+  title,
+  rows,
+  units,
+  canEdit,
+  busy,
+  onCheckIn,
+  onCheckOut,
+  onCancel,
+}: {
+  title: string
+  rows: FrontDeskRow[]
+  units: Unit[]
+  canEdit: boolean
+  busy: boolean
+  onCheckIn: (stayId: string) => void
+  onCheckOut: (stayId: string) => void
+  onCancel: (stayId: string) => void
+}) {
+  const room = (unitId: string) => units.find(unit => unit.id === unitId)?.unit_number ?? '—'
+  return (
+    <div className="rounded-xl border border-divider overflow-hidden">
+      <div className="px-3 py-2 border-b border-divider bg-surface-elevated flex items-center justify-between">
+        <h3 className="text-[12px] font-semibold text-text-primary">{title}</h3>
+        <span className="text-[12px] text-text-secondary">{rows.length}</span>
+      </div>
+      {rows.length === 0 ? (
+        <p className="px-3 py-3 text-[12px] text-text-secondary">None</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="data-table w-full">
+            <thead>
+              <tr>
+                <th className="data-th text-left">Room</th>
+                <th className="data-th text-left">Guest</th>
+                <th className="data-th text-left">Stay</th>
+                <th className="data-th text-left" />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(row => (
+                <tr key={row.stay.id}>
+                  <td className="data-td text-[12px]">{room(row.stay.unit_id)}</td>
+                  <td className="data-td text-[12px]">
+                    <p className="text-text-primary">{row.stay.guest_name} {row.stay.guest_surname}</p>
+                    {row.stay.guest_phone && <p className="text-text-secondary">{row.stay.guest_phone}</p>}
+                    {row.late && <p className="text-error">Overdue</p>}
+                  </td>
+                  <td className="data-td text-[12px] text-text-secondary">
+                    {fmtDate(row.stay.check_in_date)} → {fmtDate(row.stay.check_out_date)}
+                    <p>{stayStatusLabel(row.stay.status)}</p>
+                  </td>
+                  <td className="data-td text-[12px] text-right whitespace-nowrap">
+                    {canEdit && row.stay.status === 'reserved' && (
+                      <>
+                        <button type="button" disabled={busy} className="text-primary hover:underline" onClick={() => onCheckIn(row.stay.id)}>
+                          Check in
+                        </button>
+                        <button type="button" disabled={busy} className="ml-2 text-error hover:underline" onClick={() => onCancel(row.stay.id)}>
+                          Cancel
+                        </button>
+                      </>
+                    )}
+                    {canEdit && row.stay.status === 'checked_in' && row.bucket === 'departure' && (
+                      <button type="button" disabled={busy} className="text-primary hover:underline" onClick={() => onCheckOut(row.stay.id)}>
+                        Check out
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
