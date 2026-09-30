@@ -240,6 +240,10 @@ export async function checkInStay(
   return { ok: true, data: data as PropertyStay }
 }
 
+export type StayCheckoutHousekeeping =
+  | { ok: true; jobId: string; jobCode: string | null; created: boolean }
+  | { ok: false; message: string }
+
 export type StayCheckoutBilling =
   | {
       skipped: false
@@ -255,7 +259,7 @@ export type StayCheckoutBilling =
 export async function checkOutStay(
   supabase: SupabaseClient,
   opts: { companyId: string; stayId: string; employeeId?: string | null },
-): Promise<StayResult<{ stay: PropertyStay; billing: StayCheckoutBilling }>> {
+): Promise<StayResult<{ stay: PropertyStay; billing: StayCheckoutBilling; housekeeping: StayCheckoutHousekeeping }>> {
   const { data: stay, error: loadErr } = await supabase
     .from('property_stays')
     .select('*')
@@ -321,13 +325,38 @@ export async function checkOutStay(
     .eq('id', row.unit_id)
     .eq('company_id', opts.companyId)
 
-  return { ok: true, data: { stay: data as PropertyStay, billing } }
+  const { data: unit } = await supabase
+    .from('units')
+    .select('unit_number')
+    .eq('id', row.unit_id)
+    .eq('company_id', opts.companyId)
+    .maybeSingle()
+
+  const { ensureHousekeepingJob } = await import('@/lib/property-housekeeping')
+  const housekeeping = await ensureHousekeepingJob(supabase, {
+    companyId: opts.companyId,
+    siteId: row.site_id,
+    unitId: row.unit_id,
+    unitNumber: unit?.unit_number ?? 'room',
+    employeeId: opts.employeeId ?? null,
+  })
+
+  return { ok: true, data: { stay: data as PropertyStay, billing, housekeeping } }
 }
 
 export async function setHousekeepingStatus(
   supabase: SupabaseClient,
   opts: { companyId: string; unitId: string; status: HousekeepingStatus },
 ): Promise<StayResult<void>> {
+  if (opts.status === 'clean' || opts.status === 'inspected') {
+    const { closeOpenHousekeepingJob } = await import('@/lib/property-housekeeping')
+    const closed = await closeOpenHousekeepingJob(supabase, {
+      companyId: opts.companyId,
+      unitId: opts.unitId,
+    })
+    if (!closed.ok) return closed
+  }
+
   const { error } = await supabase
     .from('units')
     .update({ housekeeping_status: opts.status })

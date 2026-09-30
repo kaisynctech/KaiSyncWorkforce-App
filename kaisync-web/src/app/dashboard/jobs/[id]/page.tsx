@@ -9,6 +9,7 @@ import { FormSelect } from '@/components/FormSelect'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { isContractorKind } from '@/lib/partner-kinds'
 import { appendJobPhoto, openJobTeamThread, setJobAssignments } from '@/lib/jobs'
+import { applyHousekeepingFromCompletedJob } from '@/lib/property-housekeeping'
 import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
 import type { Job, Employee, JobContractor, LaborEntry, JobInventoryItem, JobPhoto } from '@/types/database'
 
@@ -331,7 +332,13 @@ export default function JobDetailPage() {
     const supabase = createClient()
     const { error: e } = await supabase.from('jobs').update({ status: statusUpdate }).eq('id', jobId)
     if (e) setError(e.message)
-    else setJob(prev => prev ? { ...prev, status: statusUpdate as Job['status'] } : prev)
+    else {
+      setJob(prev => prev ? { ...prev, status: statusUpdate as Job['status'] } : prev)
+      if (statusUpdate === 'completed' && companyId) {
+        const cleaned = await applyHousekeepingFromCompletedJob(supabase, { companyId, jobId })
+        if (!cleaned.ok) setError(cleaned.message)
+      }
+    }
     setSaving(false)
   }
 
@@ -372,6 +379,10 @@ export default function JobDetailPage() {
     else {
       setJob(prev => prev ? { ...prev, status: 'completed' } : prev)
       setStatusUpdate('completed')
+      if (companyId) {
+        const cleaned = await applyHousekeepingFromCompletedJob(supabase, { companyId, jobId })
+        if (!cleaned.ok) setError(cleaned.message)
+      }
     }
     setSaving(false)
   }

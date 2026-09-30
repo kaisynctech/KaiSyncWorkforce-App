@@ -21,6 +21,12 @@ import { BOOKING_SOURCES, bookingSourceLabel } from '@/lib/property-channels'
 import { ChannelSyncPanel } from '@/components/properties/ChannelSyncPanel'
 import { RoomStayCalendar } from '@/components/properties/RoomStayCalendar'
 import { addIsoDays, localIsoDate } from '@/lib/stay-calendar'
+import {
+  assignHousekeepingCleaner,
+  completeHousekeepingForUnit,
+  listOpenHousekeepingJobs,
+  type HousekeepingJob,
+} from '@/lib/property-housekeeping'
 import type {
   HousekeepingStatus,
   PropertyStay,
@@ -95,12 +101,14 @@ export function GuestHouseBoard({
   const [checkInNow, setCheckInNow] = useState(false)
   const [bookingSource, setBookingSource] = useState<StayBookingSource>('manual')
   const [calendarRevision, setCalendarRevision] = useState(0)
+  const [cleanJobs, setCleanJobs] = useState<Record<string, HousekeepingJob>>({})
+  const [cleaners, setCleaners] = useState<{ id: string; name: string; surname: string }[]>([])
 
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
     const supabase = createClient()
-    const [staysRes, invoiceRes] = await Promise.all([
+    const [staysRes, invoiceRes, jobRes, empRes] = await Promise.all([
       supabase
         .from('property_stays')
         .select('*')
@@ -116,6 +124,14 @@ export function GuestHouseBoard({
         .eq('invoice_type', 'stay')
         .not('status', 'in', '("cancelled","voided")')
         .limit(300),
+      listOpenHousekeepingJobs(supabase, { companyId, siteId }),
+      supabase
+        .from('employees')
+        .select('id, name, surname')
+        .eq('company_id', companyId)
+        .eq('is_active', true)
+        .order('name')
+        .limit(500),
     ])
     if (staysRes.error) setError(staysRes.error.message)
     else if (invoiceRes.error) setError(invoiceRes.error.message)
@@ -133,6 +149,14 @@ export function GuestHouseBoard({
       }
     }
     setStayInvoices(byStay)
+    const byUnit: Record<string, HousekeepingJob> = {}
+    if (jobRes.ok) {
+      for (const job of jobRes.jobs) {
+        if (job.unit_id && !byUnit[job.unit_id]) byUnit[job.unit_id] = job
+      }
+    }
+    setCleanJobs(byUnit)
+    setCleaners((empRes.data ?? []) as { id: string; name: string; surname: string }[])
     setCalendarRevision(n => n + 1)
     setLoading(false)
   }, [companyId, siteId])
@@ -245,6 +269,7 @@ export function GuestHouseBoard({
     setBusy(false)
     if (!result.ok) { setError(result.message); return }
     const billing = result.data.billing
+    const clean = result.data.housekeeping
     if (billing.skipped) {
       setNotice('Checked out. This stay has no nightly rate or total, so no invoice was raised.')
     } else {
@@ -256,6 +281,12 @@ export function GuestHouseBoard({
           : `${label} already existed · balance ${balance}`,
       )
       setNoticeHref(`/dashboard/money/invoices/${billing.invoiceId}`)
+    }
+    if (clean.ok) {
+      const code = clean.jobCode ?? 'Cleaning job'
+      setNotice(prev => `${prev ?? 'Checked out.'} · ${clean.created ? code : `${code} already open`}`)
+    } else {
+      setNotice(prev => `${prev ?? 'Checked out.'} · Cleaning job was not created: ${clean.message}`)
     }
     await load()
     onUnitsChanged?.()
@@ -280,6 +311,34 @@ export function GuestHouseBoard({
     setBusy(false)
     if (!result.ok) { setError(result.message); return }
     onUnitsChanged?.()
+    await load()
+  }
+
+  async function markRoomClean(unitIdVal: string) {
+    if (!canEdit) return
+    setBusy(true)
+    setError(null)
+    const supabase = createClient()
+    const result = await completeHousekeepingForUnit(supabase, { companyId, unitId: unitIdVal })
+    setBusy(false)
+    if (!result.ok) { setError(result.message); return }
+    onUnitsChanged?.()
+    await load()
+  }
+
+  async function assignCleaner(jobId: string, employeeIdValue: string) {
+    if (!canEdit) return
+    setBusy(true)
+    setError(null)
+    const supabase = createClient()
+    const result = await assignHousekeepingCleaner(supabase, {
+      companyId,
+      jobId,
+      employeeId: employeeIdValue || null,
+    })
+    setBusy(false)
+    if (!result.ok) { setError(result.message); return }
+    await load()
   }
 
   const recentStays = useMemo(
@@ -387,6 +446,28 @@ export function GuestHouseBoard({
                   <p className="text-[11px] text-sky-700 dark:text-sky-300">
                     Next: {row.upcomingStay.guest_name} {fmtDate(row.upcomingStay.check_in_date)}
                   </p>
+                )}
+
+                {canEdit && cleanJobs[row.unit.id] && (
+                  <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                    <Link href={`/dashboard/jobs/${cleanJobs[row.unit.id].id}`} className="text-primary hover:underline">
+                      {cleanJobs[row.unit.id].job_code ?? 'Cleaning job'}
+                    </Link>
+                    <select
+                      value={cleanJobs[row.unit.id].assignee_employee_id ?? ''}
+                      disabled={busy}
+                      onChange={e => void assignCleaner(cleanJobs[row.unit.id].id, e.target.value)}
+                      className="h-7 max-w-[140px] border border-border rounded px-1 bg-background"
+                    >
+                      <option value="">Assign cleaner</option>
+                      {cleaners.map(c => (
+                        <option key={c.id} value={c.id}>{c.name} {c.surname}</option>
+                      ))}
+                    </select>
+                    <button type="button" disabled={busy} className="text-primary hover:underline" onClick={() => void markRoomClean(row.unit.id)}>
+                      Mark clean
+                    </button>
+                  </div>
                 )}
 
                 {canEdit && (
