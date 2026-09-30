@@ -7,11 +7,16 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { roundFinancial } from '@/lib/finance-calc'
 import { recordInvoicePayment } from '@/lib/finance-api'
 import { nightsBetween } from '@/lib/property-stays'
+import { sumStayExtras } from '@/lib/stay-extras'
 import type { PropertyStay, StayDepositStatus } from '@/types/database'
 
 export type StayCharge = {
   nights: number
+  /** Accommodation only. Null when the stay has no rate and no stored total. */
   charge: number | null
+  extras: number
+  /** Accommodation plus extras. Null when there is nothing to bill. */
+  invoiceTotal: number | null
   depositApplied: number
   quantity: number
   unitPrice: number
@@ -24,6 +29,7 @@ export function computeStayCheckoutCharge(
     PropertyStay,
     'check_in_date' | 'check_out_date' | 'nightly_rate' | 'total_amount' | 'deposit_amount' | 'deposit_status'
   >,
+  extrasTotal = 0,
 ): StayCharge {
   const nights = Math.max(nightsBetween(stay.check_in_date, stay.check_out_date), 0)
   const rate = stay.nightly_rate != null && Number.isFinite(Number(stay.nightly_rate))
@@ -37,12 +43,16 @@ export function computeStayCheckoutCharge(
   if (storedTotal != null && storedTotal > 0) charge = roundFinancial(storedTotal)
   else if (rate != null && rate > 0) charge = roundFinancial(rate * Math.max(nights, 1))
 
+  const extras = roundFinancial(Math.max(0, Number.isFinite(extrasTotal) ? extrasTotal : 0))
+  const invoiceTotal = roundFinancial((charge ?? 0) + extras)
+  const billable = invoiceTotal > 0 ? invoiceTotal : null
+
   const depositRaw = stay.deposit_amount != null && Number.isFinite(Number(stay.deposit_amount))
     ? Number(stay.deposit_amount)
     : 0
   const depositReceived = DEPOSIT_RECEIVED.includes(stay.deposit_status) && depositRaw > 0
-  const depositApplied = charge != null && depositReceived
-    ? roundFinancial(Math.min(depositRaw, charge))
+  const depositApplied = billable != null && depositReceived
+    ? roundFinancial(Math.min(depositRaw, billable))
     : 0
 
   const billableNights = Math.max(nights, 1)
@@ -52,6 +62,8 @@ export function computeStayCheckoutCharge(
   return {
     nights: billableNights,
     charge,
+    extras,
+    invoiceTotal: billable,
     depositApplied,
     quantity: rateMatches ? billableNights : 1,
     unitPrice: rateMatches && rate != null ? roundFinancial(rate) : (charge ?? 0),
@@ -107,8 +119,16 @@ export async function createStayCheckoutInvoice(
   supabase: SupabaseClient,
   input: { companyId: string; employeeId: string | null; stay: PropertyStay },
 ): Promise<StayInvoiceResult> {
-  const charge = computeStayCheckoutCharge(input.stay)
-  if (charge.charge == null || charge.charge <= 0) {
+  const { data: extraRows, error: extraErr } = await supabase
+    .from('property_stay_charges')
+    .select('description, amount')
+    .eq('company_id', input.companyId)
+    .eq('stay_id', input.stay.id)
+    .order('created_at')
+  if (extraErr) return { ok: false, message: extraErr.message }
+  const extras = (extraRows ?? []) as { description: string; amount: number }[]
+  const charge = computeStayCheckoutCharge(input.stay, sumStayExtras(extras))
+  if (charge.invoiceTotal == null || charge.invoiceTotal <= 0) {
     return { ok: true, skipped: true, reason: 'no_charge' }
   }
 
@@ -169,12 +189,12 @@ export async function createStayCheckoutInvoice(
       status: 'sent',
       sent_at: now,
       currency: input.stay.currency || 'ZAR',
-      subtotal: charge.charge,
+      subtotal: charge.invoiceTotal,
       vat_rate: 0,
       vat_amount: 0,
-      total_amount: charge.charge,
+      total_amount: charge.invoiceTotal,
       amount_paid: 0,
-      balance_due: charge.charge,
+      balance_due: charge.invoiceTotal,
       is_vat_inclusive: false,
       tax_type: 'exempt',
       issue_date: today,
@@ -217,20 +237,48 @@ export async function createStayCheckoutInvoice(
   }
 
   const row = inv as StayInvoiceRow
-  const { error: lineErr } = await supabase.from('finance_invoice_lines').insert({
-    invoice_id: row.id,
-    company_id: input.companyId,
-    line_no: 1,
-    description,
-    quantity: charge.quantity,
-    unit_price: charge.unitPrice,
-    vat_rate: 0,
-    vat_amount: 0,
-    subtotal: charge.charge,
-    total_amount: charge.charge,
-    is_vat_inclusive: false,
-    tax_type: 'exempt',
-  })
+  const lines: Record<string, unknown>[] = []
+  if (charge.charge != null && charge.charge > 0) {
+    lines.push({
+      invoice_id: row.id,
+      company_id: input.companyId,
+      line_no: lines.length + 1,
+      description,
+      quantity: charge.quantity,
+      unit_price: charge.unitPrice,
+      vat_rate: 0,
+      vat_amount: 0,
+      subtotal: charge.charge,
+      total_amount: charge.charge,
+      is_vat_inclusive: false,
+      tax_type: 'exempt',
+    })
+  }
+  for (const extra of extras) {
+    const amount = roundFinancial(Number(extra.amount) || 0)
+    if (amount <= 0) continue
+    lines.push({
+      invoice_id: row.id,
+      company_id: input.companyId,
+      line_no: lines.length + 1,
+      description: extra.description,
+      quantity: 1,
+      unit_price: amount,
+      vat_rate: 0,
+      vat_amount: 0,
+      subtotal: amount,
+      total_amount: amount,
+      is_vat_inclusive: false,
+      tax_type: 'exempt',
+    })
+  }
+
+  if (lines.length === 0) {
+    await supabase.from('finance_invoices').delete().eq('id', row.id).eq('company_id', input.companyId)
+    return { ok: false, message: 'Stay invoice has no lines.' }
+  }
+
+  const { error: lineErr } = await supabase.from('finance_invoice_lines').insert(lines)
 
   if (lineErr) {
     await supabase
@@ -256,7 +304,7 @@ export async function createStayCheckoutInvoice(
     invoiceId: row.id,
     invoiceNumber: row.invoice_number,
     balanceDue: applied.balanceDue,
-    charge: charge.charge,
+    charge: charge.invoiceTotal,
     depositApplied: charge.depositApplied,
   }
 }
