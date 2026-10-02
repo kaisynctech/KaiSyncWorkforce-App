@@ -17,6 +17,7 @@ import {
   type PunchSessionRow,
   type ShiftTemplateLike,
 } from '@/lib/punch-session'
+import { ManualTimesheetForm } from '@/components/attendance/ManualTimesheetForm'
 import type { TimePunch } from '@/types/database'
 
 type Preset = 'today' | 'week' | 'month' | 'all' | 'custom'
@@ -177,6 +178,7 @@ export default function AttendancePage() {
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [staff, setStaff] = useState<EmpRow[]>([])
 
   const companyIdRef = useRef<string | null>(null)
   const scopedIdsRef = useRef<Set<string> | null>(null)
@@ -307,11 +309,12 @@ export default function AttendancePage() {
       typeof tzRaw === 'string' && tzRaw.trim() ? tzRaw.trim() : 'Africa/Johannesburg'
 
     const scope = scopedIdsRef.current
-    const empMap = new Map(
-      (empData ?? [])
-        .filter(e => !scope || scope.has(e.id))
-        .map(e => [e.id, e as EmpRow])
-    )
+    const visibleStaff = (empData ?? [])
+      .filter(e => !scope || scope.has(e.id))
+      .map(e => e as EmpRow)
+      .sort((a, b) => `${a.name} ${a.surname}`.localeCompare(`${b.name} ${b.surname}`))
+    setStaff(visibleStaff)
+    const empMap = new Map(visibleStaff.map(e => [e.id, e]))
     const tmplMap = new Map(
       ((tmplData ?? []) as ShiftTemplateLike[]).map(t => [t.id, t]),
     )
@@ -435,6 +438,23 @@ export default function AttendancePage() {
 
       {error && error !== 'not_linked' && (
         <p className="mb-4 text-error text-[13px]">{error}</p>
+      )}
+
+      {companyId && (
+        <div className="mb-4">
+          <ManualTimesheetForm
+            companyId={companyId}
+            employees={staff}
+            onSaved={date => {
+              if (preset === 'custom' && customFrom === date && customTo === date) fetchPunches()
+              else {
+                setPreset('custom')
+                setCustomFrom(date)
+                setCustomTo(date)
+              }
+            }}
+          />
+        </div>
       )}
 
       <div className="flex items-center gap-2 mb-4 flex-wrap">
