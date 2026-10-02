@@ -6,6 +6,7 @@ import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { getCodeSession } from '@/lib/auth/code-session'
 import { loadCompanyWorkspace, loadEmployeeWorkspace } from '@/lib/employee-workspace'
 import { useEmployeeModuleGate } from '@/lib/employee-module-gate'
+import { ManualTimesheetForm } from '@/components/attendance/ManualTimesheetForm'
 import {
   buildPunchSessions,
   earlyFlag,
@@ -125,6 +126,9 @@ export default function EmployeeAttendancePage() {
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
   const [empName, setEmpName] = useState('Employee')
+  const [selfId, setSelfId] = useState<string | null>(null)
+  const [companyId, setCompanyId] = useState<string | null>(null)
+  const [sessionToken, setSessionToken] = useState<string | null>(null)
 
   useEffect(() => {
     if (allowed !== true) return
@@ -138,10 +142,13 @@ export default function EmployeeAttendancePage() {
       const supabase = createClient()
       const member = await resolveCurrentMember(supabase)
       if (!member) return
+      setSelfId(member.employeeId)
+      setCompanyId(member.companyId)
 
       const tok = member.sessionToken
         ?? (await supabase.auth.getSession()).data.session?.access_token
         ?? null
+      setSessionToken(tok)
 
       const now = new Date()
       let fromDate: string
@@ -338,6 +345,23 @@ export default function EmployeeAttendancePage() {
           <div className="flex gap-3 mt-3">
             <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} className="input text-[13px]" />
             <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} className="input text-[13px]" />
+          </div>
+        )}
+        {companyId && selfId && (
+          <div className="mt-3">
+            <ManualTimesheetForm
+              companyId={companyId}
+              employeeId={selfId}
+              sessionToken={sessionToken}
+              onSaved={date => {
+                if (range === 'custom' && customFrom === date && customTo === date) void load()
+                else {
+                  setRange('custom')
+                  setCustomFrom(date)
+                  setCustomTo(date)
+                }
+              }}
+            />
           </div>
         )}
       </div>
