@@ -40,11 +40,12 @@ const EMP_NAV_ITEMS: NavItem[] = [
 interface SidebarProps {
   open: boolean
   onToggle: () => void
+  onClose?: () => void
   company: Company | null
   employee: Employee | null
 }
 
-export default function EmployeeSidebar({ open, onToggle, company, employee }: SidebarProps) {
+export default function EmployeeSidebar({ open, onToggle, onClose, company, employee }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
   const [modules, setModules] = useState<EmployeeModuleFlags>(ALL_MODULES_ENABLED)
@@ -60,6 +61,14 @@ export default function EmployeeSidebar({ open, onToggle, company, employee }: S
     load()
     return () => { cancelled = true }
   }, [company?.id])
+
+  // Close the mobile drawer after navigating.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (window.matchMedia('(min-width: 1024px)').matches) return
+    onClose?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname])
 
   const items = useMemo(
     () => EMP_NAV_ITEMS.filter((item) => !item.module || modules[item.module]),
@@ -83,16 +92,24 @@ export default function EmployeeSidebar({ open, onToggle, company, employee }: S
   return (
     <>
       {open && (
-        <div className="fixed inset-0 bg-black/40 z-20 lg:hidden" onClick={onToggle} />
+        <div
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+          onClick={onToggle}
+          aria-hidden
+        />
       )}
-      <aside className={cn(
-        'fixed lg:relative inset-y-0 left-0 z-30 flex flex-col bg-sidebar-bg transition-all duration-200 shrink-0',
-        open ? 'w-60' : 'w-[64px]',
-      )}>
+      <aside
+        className={cn(
+          'fixed inset-y-0 left-0 z-50 flex flex-col bg-sidebar-bg transition-transform duration-200 w-60',
+          'lg:relative lg:z-auto lg:translate-x-0 lg:shrink-0 lg:transition-[width]',
+          open ? 'translate-x-0' : '-translate-x-full',
+          open ? 'lg:w-60' : 'lg:w-[64px]',
+        )}
+      >
         <div
           className={cn(
             'flex items-center h-16 border-b border-white/10 shrink-0',
-            open ? 'gap-3 px-4' : 'justify-center px-1',
+            open ? 'gap-3 px-4' : 'lg:justify-center lg:px-1 px-4',
           )}
         >
           {open ? (
@@ -108,17 +125,17 @@ export default function EmployeeSidebar({ open, onToggle, company, employee }: S
                 type="button"
                 onClick={onToggle}
                 className="text-white/50 hover:text-white transition-colors shrink-0"
-                aria-label="Collapse sidebar"
-                title="Collapse sidebar"
+                aria-label="Close menu"
+                title="Close menu"
               >
-                <span className="material-icons text-[20px]">chevron_left</span>
+                <span className="material-icons text-[20px]">close</span>
               </button>
             </>
           ) : (
             <button
               type="button"
               onClick={onToggle}
-              className="w-10 h-10 rounded-lg bg-primary/90 hover:bg-primary flex items-center justify-center text-white transition-colors"
+              className="hidden lg:flex w-10 h-10 rounded-lg bg-primary/90 hover:bg-primary items-center justify-center text-white transition-colors"
               aria-label="Expand sidebar"
               title="Expand sidebar"
             >
@@ -137,7 +154,9 @@ export default function EmployeeSidebar({ open, onToggle, company, employee }: S
                 className={cn(
                   'flex items-center gap-3 mx-2 mb-0.5 rounded-lg px-3 h-10 transition-colors group',
                   active ? 'bg-primary/20 text-sidebar-active' : 'text-white/60 hover:text-white hover:bg-white/10',
+                  !open && 'lg:justify-center',
                 )}
+                title={item.label}
               >
                 <span className={cn(
                   'material-icons shrink-0 transition-colors text-[20px]',
@@ -145,14 +164,14 @@ export default function EmployeeSidebar({ open, onToggle, company, employee }: S
                 )}>
                   {item.icon}
                 </span>
-                {open && <span className="text-[13px] font-medium truncate">{item.label}</span>}
+                {(open) && <span className="text-[13px] font-medium truncate lg:inline">{item.label}</span>}
               </Link>
             )
           })}
         </nav>
 
         <div className="border-t border-white/10 p-3">
-          <div className={cn('flex items-center gap-3', !open && 'justify-center')}>
+          <div className={cn('flex items-center gap-3', !open && 'lg:justify-center')}>
             <div className="w-8 h-8 rounded-full bg-primary-dark flex items-center justify-center shrink-0">
               <span className="text-white text-[12px] font-semibold">{getInitials(displayName)}</span>
             </div>

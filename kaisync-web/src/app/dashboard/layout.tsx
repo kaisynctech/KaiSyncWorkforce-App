@@ -19,7 +19,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [company, setCompany] = useState<Company | null>(null)
   const [platformOnly, setPlatformOnly] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)')
+    const apply = () => setSidebarOpen(mq.matches)
+    apply()
+    mq.addEventListener('change', apply)
+    return () => mq.removeEventListener('change', apply)
+  }, [])
 
   useEffect(() => {
     const supabase = createClient()
@@ -133,11 +141,25 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <EmployeeSidebar
             open={sidebarOpen}
             onToggle={() => setSidebarOpen(v => !v)}
+            onClose={() => setSidebarOpen(false)}
             company={company}
             employee={employee}
           />
-          <div className="flex flex-col flex-1 overflow-hidden bg-background">
-            <main className="flex-1 overflow-y-auto">
+          <div className="flex flex-col flex-1 min-w-0 overflow-hidden bg-background">
+            <div className="lg:hidden flex items-center gap-2 px-3 h-12 border-b border-divider bg-surface shrink-0">
+              <button
+                type="button"
+                onClick={() => setSidebarOpen(true)}
+                className="w-10 h-10 rounded-lg flex items-center justify-center text-text-secondary hover:bg-surface-elevated hover:text-text-primary"
+                aria-label="Open menu"
+              >
+                <span className="material-icons text-[22px]">menu</span>
+              </button>
+              <p className="text-[14px] font-semibold text-text-primary truncate">
+                {company?.name ?? 'KaiSync'}
+              </p>
+            </div>
+            <main className="flex-1 overflow-y-auto min-h-0">
               {children}
             </main>
           </div>
