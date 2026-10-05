@@ -365,7 +365,7 @@ export default function Sidebar({ company, employee, platformOnly = false }: Sid
   return (
     <>
       {/* ── TOP NAV BAR ─────────────────────────────────────────────── */}
-      <header className="flex items-stretch h-[42px] shrink-0 bg-[#0C111D] border-b border-white/8 z-30">
+      <header className="flex items-stretch h-[42px] shrink-0 bg-[#0C111D] border-b border-white/8 z-30 overflow-x-auto">
 
         {/* Logo + company name */}
         <div className="flex items-center gap-2 px-3 border-r border-white/10 shrink-0">
@@ -518,8 +518,10 @@ export default function Sidebar({ company, employee, platformOnly = false }: Sid
       {activeSection && !platformOnly && (
         <aside
           className={cn(
-            'fixed top-[42px] left-0 bottom-0 flex flex-col shrink-0 bg-surface border-r border-divider overflow-hidden transition-all duration-200 z-20',
+            'fixed top-[42px] left-0 bottom-0 flex flex-col shrink-0 bg-surface border-r border-divider overflow-hidden transition-all duration-200 z-40',
             panelCollapsed ? 'w-11' : 'w-44',
+            // On phones the panel sits above page content so the screen cannot cover it.
+            'max-lg:shadow-xl',
           )}
         >
           {/* Panel header — module name + collapse toggle */}
