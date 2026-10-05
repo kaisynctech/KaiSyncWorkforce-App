@@ -14,6 +14,13 @@ import {
   totalPages,
 } from '@/lib/list-pagination'
 import { KpiTile } from '@/components/ui/KpiTile'
+import {
+  ResponsiveDataView,
+  DataCard,
+  DataCardTitle,
+  DataCardMeta,
+  DataCardRow,
+} from '@/components/ui/ResponsiveDataView'
 import { cn, formatDate, formatCurrency } from '@/lib/utils'
 import type { Job, JobStatus } from '@/types/database'
 
@@ -360,65 +367,104 @@ export default function JobsPage() {
             <p className="text-[14px] text-text-secondary">No jobs found</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="text-[13px]" style={{ minWidth: 980 }}>
-              <thead>
-                <tr className="border-b border-divider bg-surface-elevated">
-                  <th className="text-left px-4 py-3 text-[11px] font-medium text-text-secondary w-[90px]">Code</th>
-                  <th className="text-left px-4 py-3 text-[11px] font-medium text-text-secondary w-[180px]">Title</th>
-                  <th className="text-left px-4 py-3 text-[11px] font-medium text-text-secondary w-[140px]">Client</th>
-                  <th className="text-left px-4 py-3 text-[11px] font-medium text-text-secondary w-[100px]">Status</th>
-                  <th className="text-left px-4 py-3 text-[11px] font-medium text-text-secondary w-[90px]">Priority</th>
-                  <th className="text-left px-4 py-3 text-[11px] font-medium text-text-secondary w-[110px]">Start</th>
-                  <th className="text-left px-4 py-3 text-[11px] font-medium text-text-secondary w-[110px]">End</th>
-                  <th className="text-right px-4 py-3 text-[11px] font-medium text-text-secondary w-[90px]">Cost</th>
-                </tr>
-              </thead>
-              <tbody>
+          <ResponsiveDataView
+            table={
+              <table className="text-[13px]" style={{ minWidth: 980 }}>
+                <thead>
+                  <tr className="border-b border-divider bg-surface-elevated">
+                    <th className="text-left px-4 py-3 text-[11px] font-medium text-text-secondary w-[90px]">Code</th>
+                    <th className="text-left px-4 py-3 text-[11px] font-medium text-text-secondary w-[180px]">Title</th>
+                    <th className="text-left px-4 py-3 text-[11px] font-medium text-text-secondary w-[140px]">Client</th>
+                    <th className="text-left px-4 py-3 text-[11px] font-medium text-text-secondary w-[100px]">Status</th>
+                    <th className="text-left px-4 py-3 text-[11px] font-medium text-text-secondary w-[90px]">Priority</th>
+                    <th className="text-left px-4 py-3 text-[11px] font-medium text-text-secondary w-[110px]">Start</th>
+                    <th className="text-left px-4 py-3 text-[11px] font-medium text-text-secondary w-[110px]">End</th>
+                    <th className="text-right px-4 py-3 text-[11px] font-medium text-text-secondary w-[90px]">Cost</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map(job => {
+                    const statusBadge = statusBadgeOf(job.status)
+                    const priorityBadge = priorityBadgeOf(job.priority)
+                    const client = job.clients as { name: string; client_code: string | null } | undefined
+                    return (
+                      <tr
+                        key={job.id}
+                        className="border-b border-divider last:border-0 hover:bg-background transition-colors cursor-pointer"
+                        onClick={() => router.push(`/dashboard/jobs/${job.id}`)}
+                      >
+                        <td className="px-4 py-3 font-mono text-[11px] text-text-secondary">
+                          {job.job_code ?? job.id.slice(0, 8).toUpperCase()}
+                        </td>
+                        <td className="px-4 py-3">
+                          <p className="font-medium text-text-primary truncate max-w-[160px]">{job.title || '—'}</p>
+                        </td>
+                        <td className="px-4 py-3 text-text-secondary truncate max-w-[130px]">
+                          {client?.name ?? '—'}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`px-2 py-0.5 rounded-pill text-[11px] font-medium ${statusBadge.cls}`}>
+                            {statusBadge.label}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`px-2 py-0.5 rounded-pill text-[11px] font-medium ${priorityBadge.cls}`}>
+                            {priorityBadge.label}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-text-secondary text-[12px]">
+                          {job.scheduled_start ? formatDate(job.scheduled_start) : '—'}
+                        </td>
+                        <td className="px-4 py-3 text-text-secondary text-[12px]">
+                          {job.scheduled_end ? formatDate(job.scheduled_end) : '—'}
+                        </td>
+                        <td className="px-4 py-3 text-right font-medium text-text-primary">
+                          {job.estimated_cost != null ? formatCurrency(job.estimated_cost) : '—'}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            }
+            mobile={
+              <>
                 {filtered.map(job => {
                   const statusBadge = statusBadgeOf(job.status)
                   const priorityBadge = priorityBadgeOf(job.priority)
                   const client = job.clients as { name: string; client_code: string | null } | undefined
                   return (
-                    <tr
+                    <DataCard
                       key={job.id}
-                      className="border-b border-divider last:border-0 hover:bg-background transition-colors cursor-pointer"
                       onClick={() => router.push(`/dashboard/jobs/${job.id}`)}
                     >
-                      <td className="px-4 py-3 font-mono text-[11px] text-text-secondary">
-                        {job.job_code ?? job.id.slice(0, 8).toUpperCase()}
-                      </td>
-                      <td className="px-4 py-3">
-                        <p className="font-medium text-text-primary truncate max-w-[160px]">{job.title || '—'}</p>
-                      </td>
-                      <td className="px-4 py-3 text-text-secondary truncate max-w-[130px]">
-                        {client?.name ?? '—'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-0.5 rounded-pill text-[11px] font-medium ${statusBadge.cls}`}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <DataCardTitle>{job.title || '—'}</DataCardTitle>
+                          <DataCardMeta className="font-mono">
+                            {job.job_code ?? job.id.slice(0, 8).toUpperCase()}
+                          </DataCardMeta>
+                        </div>
+                        <span className={`px-2 py-0.5 rounded-pill text-[11px] font-medium shrink-0 ${statusBadge.cls}`}>
                           {statusBadge.label}
                         </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-0.5 rounded-pill text-[11px] font-medium ${priorityBadge.cls}`}>
-                          {priorityBadge.label}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-text-secondary text-[12px]">
-                        {job.scheduled_start ? formatDate(job.scheduled_start) : '—'}
-                      </td>
-                      <td className="px-4 py-3 text-text-secondary text-[12px]">
-                        {job.scheduled_end ? formatDate(job.scheduled_end) : '—'}
-                      </td>
-                      <td className="px-4 py-3 text-right font-medium text-text-primary">
-                        {job.estimated_cost != null ? formatCurrency(job.estimated_cost) : '—'}
-                      </td>
-                    </tr>
+                      </div>
+                      <DataCardRow label="Client" value={client?.name ?? '—'} />
+                      <DataCardRow label="Priority" value={priorityBadge.label} />
+                      <DataCardRow
+                        label="Start"
+                        value={job.scheduled_start ? formatDate(job.scheduled_start) : '—'}
+                      />
+                      <DataCardRow
+                        label="Cost"
+                        value={job.estimated_cost != null ? formatCurrency(job.estimated_cost) : '—'}
+                      />
+                    </DataCard>
                   )
                 })}
-              </tbody>
-            </table>
-          </div>
+              </>
+            }
+          />
         )}
       </div>
 
