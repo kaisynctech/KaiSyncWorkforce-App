@@ -8,6 +8,9 @@ import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { uploadJobPhoto, uploadJobDocument } from '@/lib/job-media'
 import { loadCompanyWorkspace, moduleFlagsForCompany } from '@/lib/employee-workspace'
 import { useEmployeeModuleGate } from '@/lib/employee-module-gate'
+import { getPackedJobDetail, loadJobPack, saveJobPack } from '@/lib/offline/job-pack'
+import { enqueueChecklistToggle, enqueueJobCard, enqueueJobPhoto } from '@/lib/offline/job-queue'
+import { networkLooksDown } from '@/lib/offline/meta'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 interface Job {
@@ -217,6 +220,7 @@ export default function JobCardPage() {
   const [loading,   setLoading]   = useState(true)
   const [notFound,  setNotFound]  = useState(false)
   const [error,     setError]     = useState<string | null>(null)
+  const [fromCache, setFromCache] = useState(false)
 
   // Job card form
   const [startTime,      setStartTime]      = useState('')
@@ -266,6 +270,7 @@ export default function JobCardPage() {
   async function init() {
     setLoading(true)
     setError(null)
+    setFromCache(false)
     const supabase = createClient()
     const member = await resolveCurrentMember(supabase)
     if (!member) { setLoading(false); return }
@@ -276,6 +281,63 @@ export default function JobCardPage() {
       ?? (await supabase.auth.getSession()).data.session?.access_token
       ?? ''
     setToken(tok)
+
+    const applyPack = async (): Promise<boolean> => {
+      const detail = await getPackedJobDetail(member.companyId, member.employeeId, jobId)
+      if (!detail) return false
+      const packedJob = detail.job as unknown as Job
+      setJob({
+        id: packedJob.id,
+        title: packedJob.title,
+        status: packedJob.status ?? null,
+        priority: packedJob.priority ?? null,
+        due_date: (packedJob as Job).due_date ?? null,
+        description: packedJob.description ?? null,
+        client_id: (packedJob as Job).client_id ?? null,
+        site_id: (packedJob as Job).site_id ?? null,
+        client_name: (packedJob as Job).client_name ?? null,
+        site_name: (packedJob as Job).site_name ?? null,
+        job_code: packedJob.job_code ?? null,
+        scheduled_start: packedJob.scheduled_start ?? null,
+        scheduled_end: packedJob.scheduled_end ?? null,
+      })
+      const card = detail.card
+      if (card) {
+        setJobCard({
+          id: card.id ?? null,
+          work_performed: card.work_performed,
+          materials_used: card.materials_used,
+          photo_urls: card.photo_urls,
+          start_time: card.start_time,
+          end_time: card.end_time,
+          is_completed: card.is_completed,
+          client_signature_url: card.client_signature_url ?? null,
+        })
+        setStartTime(toLocalDateTimeInput(card.start_time))
+        setEndTime(toLocalDateTimeInput(card.end_time))
+        setWorkPerformed(card.work_performed ?? '')
+        setMaterialsUsed(card.materials_used ?? '')
+        setIsCompleted(card.is_completed)
+      }
+      setChecklist(
+        detail.checklist.map((c, i) => ({
+          id: c.id,
+          description: c.description ?? '',
+          is_checked: c.is_checked,
+          sort_order: c.sort_order ?? i,
+        })),
+      )
+      setFromCache(true)
+      setNotFound(false)
+      return true
+    }
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      const ok = await applyPack()
+      if (!ok) setNotFound(true)
+      setLoading(false)
+      return
+    }
 
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -326,7 +388,8 @@ export default function JobCardPage() {
 
       const foundJob = ((jobsRes.data as Job[]) ?? [])[0] ?? null
       if (!foundJob) {
-        setNotFound(true)
+        const ok = await applyPack()
+        if (!ok) setNotFound(true)
         setLoading(false)
         return
       }
@@ -369,7 +432,11 @@ export default function JobCardPage() {
       setIncidents((incRes.data as Incident[]) ?? [])
 
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to load job.')
+      const ok = await applyPack()
+      if (!ok) setError(e instanceof Error ? e.message : 'Failed to load job.')
+      else if (!networkLooksDown(e instanceof Error ? e.message : null)) {
+        setError('Showing saved job on this device. Some live details may be missing.')
+      }
     }
     setLoading(false)
   }
@@ -385,26 +452,87 @@ export default function JobCardPage() {
     const supabase = createClient()
     const start = overrides?.startTime ?? startTime
     const end   = overrides?.endTime   ?? endTime
+    const payload = {
+      work_performed: workPerformed || null,
+      materials_used: materialsUsed || null,
+      start_time: start ? new Date(start).toISOString() : null,
+      end_time: end ? new Date(end).toISOString() : null,
+      is_completed: isCompleted,
+      photo_urls: jobCard?.photo_urls ?? [],
+      client_signature_url: jobCard?.client_signature_url ?? null,
+    }
+
+    const queueLocal = async () => {
+      await enqueueJobCard({ companyId, employeeId: empId, jobId, payload })
+      const pack = await loadJobPack(companyId, empId)
+      if (pack?.details[jobId]) {
+        pack.details[jobId] = {
+          ...pack.details[jobId],
+          card: {
+            ...(pack.details[jobId].card ?? {
+              work_performed: null,
+              materials_used: null,
+              start_time: null,
+              end_time: null,
+              is_completed: false,
+              photo_urls: null,
+            }),
+            ...payload,
+          },
+        }
+        await saveJobPack(pack)
+      }
+      setJobCard(prev => ({
+        id: prev?.id ?? null,
+        work_performed: payload.work_performed,
+        materials_used: payload.materials_used,
+        photo_urls: payload.photo_urls,
+        start_time: payload.start_time,
+        end_time: payload.end_time,
+        is_completed: payload.is_completed,
+        client_signature_url: payload.client_signature_url,
+      }))
+      if (!overrides?.silent) alert('Saved on this device. It will upload when you are online.')
+    }
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      try {
+        await queueLocal()
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : 'Failed to save offline.')
+      }
+      setSavingCard(false)
+      return
+    }
+
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { error: rpcErr } = await (supabase.rpc as any)('employee_upsert_job_card', {
         p_company_id:          companyId,
         p_employee_id:         empId,
         p_job_id:              jobId,
-        p_start_time:          start ? new Date(start).toISOString() : null,
-        p_end_time:            end   ? new Date(end).toISOString()   : null,
-        p_work_performed:      workPerformed  || null,
-        p_materials_used:      materialsUsed  || null,
-        p_photo_urls:          jobCard?.photo_urls ?? [],
-        p_is_completed:        isCompleted,
-        p_client_signature_url: jobCard?.client_signature_url ?? null,
+        p_start_time:          payload.start_time,
+        p_end_time:            payload.end_time,
+        p_work_performed:      payload.work_performed,
+        p_materials_used:      payload.materials_used,
+        p_photo_urls:          payload.photo_urls,
+        p_is_completed:        payload.is_completed,
+        p_client_signature_url: payload.client_signature_url,
         p_session_token:       token,
       })
       if (rpcErr) throw rpcErr
       if (!overrides?.silent) alert('Job card saved.')
       await init()
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to save job card.')
+      if (networkLooksDown(e instanceof Error ? e.message : null)) {
+        try {
+          await queueLocal()
+        } catch (qe: unknown) {
+          setError(qe instanceof Error ? qe.message : 'Failed to save offline.')
+        }
+      } else {
+        setError(e instanceof Error ? e.message : 'Failed to save job card.')
+      }
     }
     setSavingCard(false)
   }
@@ -427,8 +555,38 @@ export default function JobCardPage() {
 
   // ── Checklist ──────────────────────────────────────────────────────────
   async function toggleCheckItem(item: ChecklistItem) {
+    if (!empId || !companyId) return
     const nextChecked = !item.is_checked
     setChecklist(prev => prev.map(c => c.id === item.id ? { ...c, is_checked: nextChecked } : c))
+
+    const queueLocal = async () => {
+      await enqueueChecklistToggle({
+        companyId,
+        employeeId: empId,
+        jobId,
+        itemId: item.id,
+        isChecked: nextChecked,
+      })
+      const pack = await loadJobPack(companyId, empId)
+      if (pack?.details[jobId]) {
+        pack.details[jobId] = {
+          ...pack.details[jobId],
+          checklist: pack.details[jobId].checklist.map(c =>
+            c.id === item.id ? { ...c, is_checked: nextChecked } : c,
+          ),
+        }
+        await saveJobPack(pack)
+      }
+    }
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      try {
+        await queueLocal()
+      } catch {
+        setChecklist(prev => prev.map(c => c.id === item.id ? { ...c, is_checked: item.is_checked } : c))
+      }
+      return
+    }
 
     const supabase = createClient()
     try {
@@ -441,8 +599,13 @@ export default function JobCardPage() {
         p_session_token: token,
       })
       if (rpcErr) throw rpcErr
-    } catch {
-      // Last resort after RPC fails
+    } catch (e: unknown) {
+      if (networkLooksDown(e instanceof Error ? e.message : null)) {
+        try {
+          await queueLocal()
+          return
+        } catch { /* fall through */ }
+      }
       try {
         await supabase.from('job_checklist_items').update({ is_checked: nextChecked }).eq('id', item.id)
       } catch {
@@ -480,6 +643,19 @@ export default function JobCardPage() {
     if (!file || !companyId || !empId) return
     const supabase = createClient()
     try {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        await enqueueJobPhoto({
+          companyId,
+          employeeId: empId,
+          jobId,
+          phase,
+          file,
+        })
+        if (ref.current) ref.current.value = ''
+        setError(null)
+        alert('Photo saved on this device. It will upload when you are online.')
+        return
+      }
       await uploadJobPhoto({
         supabase,
         companyId,
@@ -493,6 +669,14 @@ export default function JobCardPage() {
       await init()
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
+      if (networkLooksDown(msg) && file) {
+        try {
+          await enqueueJobPhoto({ companyId, employeeId: empId, jobId, phase, file })
+          if (ref.current) ref.current.value = ''
+          alert('Photo saved on this device. It will upload when you are online.')
+          return
+        } catch { /* fall through */ }
+      }
       setError(`Upload failed: ${msg}`)
     }
   }
@@ -781,6 +965,11 @@ export default function JobCardPage() {
             </span>
           )}
         </div>
+        {fromCache && (
+          <p className="mt-2 text-[12px] text-warning">
+            Showing this job from this device. Card, checklist, and photos you save will upload when you reconnect.
+          </p>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4 max-w-2xl">

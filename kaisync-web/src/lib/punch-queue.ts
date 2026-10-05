@@ -1,3 +1,5 @@
+import { notifyOfflineChanged } from '@/lib/offline/meta'
+
 const QUEUE_KEY = 'kf_punch_queue'
 
 export interface QueuedPunch {
@@ -28,15 +30,18 @@ export function enqueue(punch: QueuedPunch): void {
   if (q.some((p) => p.idempotency_key === punch.idempotency_key)) return
   q.push(punch)
   localStorage.setItem(QUEUE_KEY, JSON.stringify(q))
+  notifyOfflineChanged()
 }
 
 export function dequeue(idempotency_key: string): void {
   const q = getQueue().filter((p) => p.idempotency_key !== idempotency_key)
   localStorage.setItem(QUEUE_KEY, JSON.stringify(q))
+  notifyOfflineChanged()
 }
 
 export function clearQueue(): void {
   localStorage.removeItem(QUEUE_KEY)
+  notifyOfflineChanged()
 }
 
 /** Queue on offline OR transport/network-style RPC failures . */

@@ -1,4 +1,5 @@
 import { shouldQueuePunchFailure } from '@/lib/punch-queue'
+import { notifyOfflineChanged } from '@/lib/offline/meta'
 
 const QUEUE_KEY = 'kf_incident_queue'
 
@@ -42,11 +43,13 @@ export function enqueueIncident(item: QueuedIncident): void {
   if (q.some((p) => p.local_id === item.local_id)) return
   q.push(item)
   localStorage.setItem(QUEUE_KEY, JSON.stringify(q))
+  notifyOfflineChanged()
 }
 
 export function dequeueIncident(localId: string): void {
   const q = getIncidentQueue().filter((p) => p.local_id !== localId)
   localStorage.setItem(QUEUE_KEY, JSON.stringify(q))
+  notifyOfflineChanged()
 }
 
 export function pendingIncidentCount(): number {
