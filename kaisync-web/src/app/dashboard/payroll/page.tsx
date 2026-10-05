@@ -9,6 +9,14 @@ import { StatusBadge } from '@/components/ui/StatusBadge'
 import { FilterChip } from '@/components/ui/FilterChip'
 import { StepUpDialog } from '@/components/step-up-dialog'
 import {
+  ResponsiveDataView,
+  DataCard,
+  DataCardTitle,
+  DataCardMeta,
+  DataCardRow,
+} from '@/components/ui/ResponsiveDataView'
+import { ModalShell } from '@/components/ui/ModalShell'
+import {
   approvePaymentRun,
   generatePayrollPeriod,
   lockPayrollPeriod,
@@ -597,107 +605,196 @@ export default function PayrollPage() {
 
       {/* ── Table ── */}
       <div className="flex-1 overflow-y-auto">
-        <div className="overflow-x-auto">
-          <table style={{ minWidth: 980 }} className="w-full">
-            <thead>
-              <tr className="bg-surface-elevated border-b border-divider">
-                <th style={{ width: 150 }} className="data-th cursor-pointer select-none">Employee</th>
-                <th style={{ width: 160 }} className="data-th">Period</th>
-                <th style={{ width: 85 }}  className="data-th text-right cursor-pointer select-none">Gross</th>
-                <th style={{ width: 85 }}  className="data-th text-right">Deduct.</th>
-                <th style={{ width: 85 }}  className="data-th text-right cursor-pointer select-none">Net</th>
-                <th style={{ width: 90 }}  className="data-th">Hours</th>
-                <th style={{ width: 80 }}  className="data-th cursor-pointer select-none">Status</th>
-                <th style={{ width: 100 }} className="data-th">Visible</th>
-                <th style={{ width: 200 }} className="data-th text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan={9} className="text-center py-10 text-text-secondary text-[13px]">Loading…</td></tr>
-              ) : filtered.length === 0 ? (
-                <tr><td colSpan={9} className="text-center py-10 text-text-secondary text-[13px]">No payslips found.</td></tr>
-              ) : (
-                filtered.map(p => {
-                  const emp     = p.employee
+        <ResponsiveDataView
+          table={
+            <table style={{ minWidth: 980 }} className="w-full">
+              <thead>
+                <tr className="bg-surface-elevated border-b border-divider">
+                  <th style={{ width: 150 }} className="data-th cursor-pointer select-none">Employee</th>
+                  <th style={{ width: 160 }} className="data-th">Period</th>
+                  <th style={{ width: 85 }}  className="data-th text-right cursor-pointer select-none">Gross</th>
+                  <th style={{ width: 85 }}  className="data-th text-right">Deduct.</th>
+                  <th style={{ width: 85 }}  className="data-th text-right cursor-pointer select-none">Net</th>
+                  <th style={{ width: 90 }}  className="data-th">Hours</th>
+                  <th style={{ width: 80 }}  className="data-th cursor-pointer select-none">Status</th>
+                  <th style={{ width: 100 }} className="data-th">Visible</th>
+                  <th style={{ width: 200 }} className="data-th text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr><td colSpan={9} className="text-center py-10 text-text-secondary text-[13px]">Loading…</td></tr>
+                ) : filtered.length === 0 ? (
+                  <tr><td colSpan={9} className="text-center py-10 text-text-secondary text-[13px]">No payslips found.</td></tr>
+                ) : (
+                  filtered.map(p => {
+                    const emp     = p.employee
+                    const empName = emp ? `${emp.name} ${emp.surname}` : '—'
+                    const totalHours = (p.regular_hours ?? 0) + (p.overtime_hours ?? 0)
+                    return (
+                      <tr
+                        key={p.id}
+                        onClick={() => router.push(`/dashboard/payroll/${p.id}`)}
+                        className="bg-surface-card border-b border-divider cursor-pointer hover:bg-background transition-colors"
+                      >
+                        <td className="data-td text-text-primary text-sm font-medium">{empName}</td>
+                        <td className="data-td text-text-secondary text-sm">
+                          {fmtPeriod(p.period_start, p.period_end)}
+                        </td>
+                        <td className="data-td text-sm text-right">{fmtR(p.gross_pay)}</td>
+                        <td className="data-td text-text-secondary text-sm text-right">{fmtR(p.deductions)}</td>
+                        <td className="data-td text-text-primary text-sm text-right font-medium">{fmtR(p.net_pay)}</td>
+                        <td className="data-td text-text-secondary text-sm">{totalHours.toFixed(1)}h</td>
+                        <td className="data-td">
+                          <StatusBadge label={p.status} bg={stBg(p.status)} fg={stFg(p.status)} />
+                        </td>
+                        <td className="data-td text-[11px]" style={{ color: p.shared_with_employee ? '#16A34A' : '#6B7280' }}>
+                          {p.shared_with_employee ? 'Shown' : 'Hidden'}
+                        </td>
+                        <td className="data-td">
+                          <div
+                            className="flex items-center gap-1.5 justify-end"
+                            onClick={e => e.stopPropagation()}
+                          >
+                            <button
+                              onClick={() => router.push(`/dashboard/payroll/${p.id}`)}
+                              className="bg-surface-dark text-text-primary h-9 px-2 text-[12px] rounded-md hover:bg-border transition-colors"
+                            >
+                              Open
+                            </button>
+                            {p.status === 'pending' && (
+                              <button
+                                onClick={() => approvePayslip(p.id)}
+                                className="btn-primary h-9 px-2 text-[12px]"
+                              >
+                                Approve
+                              </button>
+                            )}
+                            {p.shared_with_employee === false && p.status === 'approved' && (
+                              <button
+                                onClick={() => releasePayslip(p.id)}
+                                className="h-9 px-2 text-[12px] rounded-md text-white"
+                                style={{ backgroundColor: '#7C3AED' }}
+                              >
+                                Show
+                              </button>
+                            )}
+                            {p.status === 'pending' && (
+                              <button
+                                onClick={() => rejectPayslip(p.id)}
+                                className="h-9 px-2 text-[12px] rounded-md hover:opacity-80 transition-opacity"
+                                style={{ backgroundColor: '#FEE2E2', color: '#991B1B' }}
+                              >
+                                Reject
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+          }
+          mobile={
+            loading ? (
+              <p className="text-center py-10 text-text-secondary text-[13px]">Loading…</p>
+            ) : filtered.length === 0 ? (
+              <p className="text-center py-10 text-text-secondary text-[13px]">No payslips found.</p>
+            ) : (
+              <>
+                {filtered.map(p => {
+                  const emp = p.employee
                   const empName = emp ? `${emp.name} ${emp.surname}` : '—'
                   const totalHours = (p.regular_hours ?? 0) + (p.overtime_hours ?? 0)
                   return (
-                    <tr
-                      key={p.id}
-                      onClick={() => router.push(`/dashboard/payroll/${p.id}`)}
-                      className="bg-surface-card border-b border-divider cursor-pointer hover:bg-background transition-colors"
-                    >
-                      <td className="data-td text-text-primary text-sm font-medium">{empName}</td>
-                      <td className="data-td text-text-secondary text-sm">
-                        {fmtPeriod(p.period_start, p.period_end)}
-                      </td>
-                      <td className="data-td text-sm text-right">{fmtR(p.gross_pay)}</td>
-                      <td className="data-td text-text-secondary text-sm text-right">{fmtR(p.deductions)}</td>
-                      <td className="data-td text-text-primary text-sm text-right font-medium">{fmtR(p.net_pay)}</td>
-                      <td className="data-td text-text-secondary text-sm">{totalHours.toFixed(1)}h</td>
-                      <td className="data-td">
-                        <StatusBadge label={p.status} bg={stBg(p.status)} fg={stFg(p.status)} />
-                      </td>
-                      <td className="data-td text-[11px]" style={{ color: p.shared_with_employee ? '#16A34A' : '#6B7280' }}>
-                        {p.shared_with_employee ? 'Shown' : 'Hidden'}
-                      </td>
-                      <td className="data-td">
-                        <div
-                          className="flex items-center gap-1.5 justify-end"
-                          onClick={e => e.stopPropagation()}
-                        >
-                          <button
-                            onClick={() => router.push(`/dashboard/payroll/${p.id}`)}
-                            className="bg-surface-dark text-text-primary h-[30px] px-2 text-[11px] rounded-md hover:bg-border transition-colors"
-                          >
-                            Open
-                          </button>
-                          {p.status === 'pending' && (
-                            <button
-                              onClick={() => approvePayslip(p.id)}
-                              className="btn-primary h-[30px] px-2 text-[11px]"
-                            >
-                              Approve
-                            </button>
-                          )}
-                          {p.shared_with_employee === false && p.status === 'approved' && (
-                            <button
-                              onClick={() => releasePayslip(p.id)}
-                              className="h-[30px] px-2 text-[11px] rounded-md text-white"
-                              style={{ backgroundColor: '#7C3AED' }}
-                            >
-                              Show
-                            </button>
-                          )}
-                          {p.status === 'pending' && (
-                            <button
-                              onClick={() => rejectPayslip(p.id)}
-                              className="h-[30px] px-2 text-[11px] rounded-md hover:opacity-80 transition-opacity"
-                              style={{ backgroundColor: '#FEE2E2', color: '#991B1B' }}
-                            >
-                              Reject
-                            </button>
-                          )}
+                    <DataCard key={p.id} onClick={() => router.push(`/dashboard/payroll/${p.id}`)}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <DataCardTitle>{empName}</DataCardTitle>
+                          <DataCardMeta>{fmtPeriod(p.period_start, p.period_end)}</DataCardMeta>
                         </div>
-                      </td>
-                    </tr>
+                        <StatusBadge label={p.status} bg={stBg(p.status)} fg={stFg(p.status)} />
+                      </div>
+                      <DataCardRow label="Net" value={fmtR(p.net_pay)} />
+                      <DataCardRow label="Gross" value={fmtR(p.gross_pay)} />
+                      <DataCardRow label="Hours" value={`${totalHours.toFixed(1)}h`} />
+                      <div
+                        className="flex flex-wrap gap-2 mt-3"
+                        onClick={e => e.stopPropagation()}
+                      >
+                        {p.status === 'pending' && (
+                          <button
+                            type="button"
+                            onClick={() => approvePayslip(p.id)}
+                            className="btn-primary flex-1 h-11 text-[13px]"
+                          >
+                            Approve
+                          </button>
+                        )}
+                        {p.shared_with_employee === false && p.status === 'approved' && (
+                          <button
+                            type="button"
+                            onClick={() => releasePayslip(p.id)}
+                            className="flex-1 h-11 text-[13px] rounded-md text-white"
+                            style={{ backgroundColor: '#7C3AED' }}
+                          >
+                            Show
+                          </button>
+                        )}
+                        {p.status === 'pending' && (
+                          <button
+                            type="button"
+                            onClick={() => rejectPayslip(p.id)}
+                            className="flex-1 h-11 text-[13px] rounded-md"
+                            style={{ backgroundColor: '#FEE2E2', color: '#991B1B' }}
+                          >
+                            Reject
+                          </button>
+                        )}
+                      </div>
+                    </DataCard>
                   )
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                })}
+              </>
+            )
+          }
+        />
       </div>
 
-      {showGenModal && genPreview && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-surface rounded-xl shadow-lg w-full max-w-md p-5 space-y-3">
-            <h3 className="font-semibold text-text-primary">Generate payroll</h3>
-            <p className="text-[13px] text-text-secondary">
+      <ModalShell
+        open={Boolean(showGenModal && genPreview)}
+        onClose={() => setShowGenModal(false)}
+        title="Generate payroll"
+        footer={
+          genPreview ? (
+            <>
+              <button
+                type="button"
+                onClick={() => setShowGenModal(false)}
+                className="btn-outlined h-11 px-4 text-[13px]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmGenerate()}
+                disabled={generating || genPreview.readyCount === 0}
+                className="btn-primary h-11 px-4 text-[13px] disabled:opacity-50"
+              >
+                {generating ? 'Generating…' : `Generate ${genPreview.readyCount}`}
+              </button>
+            </>
+          ) : null
+        }
+      >
+        {genPreview && (
+          <>
+            <p className="text-[13px] text-text-secondary mb-3">
               Period {dateFrom} → {dateTo}. Uses payroll settings (OT, UIF, PAYE rates) and period punches.
             </p>
-            <ul className="text-[13px] text-text-primary space-y-1">
+            <ul className="text-[13px] text-text-primary space-y-1 mb-3">
               <li><strong>{genPreview.readyCount}</strong> ready to generate</li>
               {genPreview.duplicateCount > 0 && (
                 <li className="text-text-secondary">{genPreview.duplicateCount} already have payslips (skipped)</li>
@@ -719,26 +816,9 @@ export default function PayrollPage() {
                 ))}
               </div>
             )}
-            <div className="flex gap-2 justify-end pt-1">
-              <button
-                type="button"
-                onClick={() => setShowGenModal(false)}
-                className="btn-outlined h-9 px-4 text-[13px]"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => void confirmGenerate()}
-                disabled={generating || genPreview.readyCount === 0}
-                className="btn-primary h-9 px-4 text-[13px] disabled:opacity-50"
-              >
-                {generating ? 'Generating…' : `Generate ${genPreview.readyCount}`}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </ModalShell>
 
       <StepUpDialog
         open={stepUpOpen}

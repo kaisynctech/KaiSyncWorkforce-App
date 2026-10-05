@@ -486,7 +486,7 @@ export default function OverviewPage() {
                   <button
                     onClick={() => markAbsent(emp.id)}
                     disabled={markAbsentLoading === emp.id}
-                    className="h-[28px] px-3 text-[11px] font-medium rounded-lg border transition-opacity disabled:opacity-50"
+                    className="h-10 px-3 text-[12px] font-medium rounded-lg border transition-opacity disabled:opacity-50"
                     style={{ borderColor: '#d97706', color: '#d97706', backgroundColor: 'rgba(217,119,6,0.08)' }}>
                     {markAbsentLoading === emp.id ? '…' : 'Mark Absent'}
                   </button>

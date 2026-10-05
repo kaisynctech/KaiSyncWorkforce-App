@@ -311,7 +311,7 @@ export default function TeamPunchPage() {
         })}
       </div>
 
-      <div className="fixed bottom-0 left-[64px] right-0 px-4 py-3 bg-surface-dark border-t border-divider z-10">
+      <div className="fixed bottom-0 left-0 lg:left-[64px] right-0 px-4 py-3 bg-surface-dark border-t border-divider z-10">
         <div className="grid grid-cols-2 gap-3">
           <button
             onClick={clockIn}

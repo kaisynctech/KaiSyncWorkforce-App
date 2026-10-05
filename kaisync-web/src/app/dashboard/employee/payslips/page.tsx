@@ -7,6 +7,13 @@ import { getCodeSession } from '@/lib/auth/code-session'
 import { loadCompanyWorkspace, loadEmployeeWorkspace } from '@/lib/employee-workspace'
 import { useEmployeeModuleGate } from '@/lib/employee-module-gate'
 import { downloadPayslipPdf, parsePayslipsRpcJson, type PayslipPdfInput } from '@/lib/payslip-pdf'
+import {
+  ResponsiveDataView,
+  DataCard,
+  DataCardTitle,
+  DataCardMeta,
+  DataCardRow,
+} from '@/components/ui/ResponsiveDataView'
 
 const STATUS_STYLES: Record<string, string> = {
   pending: 'bg-warning/10 text-warning',
@@ -150,67 +157,96 @@ export default function PayslipsPage() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-[13px]">
-              <thead>
-                <tr className="border-b border-divider bg-surface-elevated">
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Period</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Gross Pay</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Deductions</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Net Pay</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Status</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Paid At</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Reg Hrs</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">OT Hrs</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Days</th>
-                  <th className="px-4 py-2.5" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-divider">
+          <ResponsiveDataView
+            table={
+              <table className="w-full text-[13px]">
+                <thead>
+                  <tr className="border-b border-divider bg-surface-elevated">
+                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Period</th>
+                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Gross Pay</th>
+                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Deductions</th>
+                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Net Pay</th>
+                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Status</th>
+                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Paid At</th>
+                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Reg Hrs</th>
+                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">OT Hrs</th>
+                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Days</th>
+                    <th className="px-4 py-2.5" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-divider">
+                  {payslips.map(p => (
+                    <tr key={p.id} className="hover:bg-surface-elevated transition-colors">
+                      <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
+                        {fmtPeriod(p.period_start, p.period_end)}
+                      </td>
+                      <td className="px-4 py-3 font-medium text-text-primary whitespace-nowrap">{fmtMoney(p.gross_pay)}</td>
+                      <td className="px-4 py-3 text-text-secondary whitespace-nowrap">{fmtMoney(p.deductions)}</td>
+                      <td className="px-4 py-3 font-bold text-text-primary whitespace-nowrap">{fmtMoney(p.net_pay)}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <span className={`text-[11px] font-semibold px-2 py-[2px] rounded-full capitalize ${STATUS_STYLES[p.status] ?? 'bg-surface-elevated text-text-secondary'}`}>
+                          {p.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
+                        {p.paid_at
+                          ? new Date(p.paid_at).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })
+                          : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
+                        {p.regular_hours != null ? Number(p.regular_hours).toFixed(1) : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
+                        {p.overtime_hours != null ? Number(p.overtime_hours).toFixed(1) : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
+                        {p.working_days != null ? p.working_days : '—'}
+                      </td>
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => void downloadPDF(p)}
+                          disabled={downloading === p.id}
+                          className="flex items-center justify-center w-10 h-10 rounded-lg border border-divider text-text-secondary hover:border-primary hover:text-primary transition-colors disabled:opacity-50"
+                          title="Download PDF"
+                        >
+                          {downloading === p.id
+                            ? <span className="material-icons animate-spin text-[18px]">refresh</span>
+                            : <span className="material-icons text-[18px]">download</span>}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            }
+            mobile={
+              <>
                 {payslips.map(p => (
-                  <tr key={p.id} className="hover:bg-surface-elevated transition-colors">
-                    <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
-                      {fmtPeriod(p.period_start, p.period_end)}
-                    </td>
-                    <td className="px-4 py-3 font-medium text-text-primary whitespace-nowrap">{fmtMoney(p.gross_pay)}</td>
-                    <td className="px-4 py-3 text-text-secondary whitespace-nowrap">{fmtMoney(p.deductions)}</td>
-                    <td className="px-4 py-3 font-bold text-text-primary whitespace-nowrap">{fmtMoney(p.net_pay)}</td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <span className={`text-[11px] font-semibold px-2 py-[2px] rounded-full capitalize ${STATUS_STYLES[p.status] ?? 'bg-surface-elevated text-text-secondary'}`}>
+                  <DataCard key={p.id}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <DataCardTitle>{fmtMoney(p.net_pay)}</DataCardTitle>
+                        <DataCardMeta>{fmtPeriod(p.period_start, p.period_end)}</DataCardMeta>
+                      </div>
+                      <span className={`text-[11px] font-semibold px-2 py-[2px] rounded-full capitalize shrink-0 ${STATUS_STYLES[p.status] ?? 'bg-surface-elevated text-text-secondary'}`}>
                         {p.status}
                       </span>
-                    </td>
-                    <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
-                      {p.paid_at
-                        ? new Date(p.paid_at).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })
-                        : '—'}
-                    </td>
-                    <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
-                      {p.regular_hours != null ? Number(p.regular_hours).toFixed(1) : '—'}
-                    </td>
-                    <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
-                      {p.overtime_hours != null ? Number(p.overtime_hours).toFixed(1) : '—'}
-                    </td>
-                    <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
-                      {p.working_days != null ? p.working_days : '—'}
-                    </td>
-                    <td className="px-4 py-3">
-                      <button
-                        onClick={() => void downloadPDF(p)}
-                        disabled={downloading === p.id}
-                        className="flex items-center justify-center w-8 h-8 rounded-lg border border-divider text-text-secondary hover:border-primary hover:text-primary transition-colors disabled:opacity-50"
-                        title="Download PDF"
-                      >
-                        {downloading === p.id
-                          ? <span className="material-icons animate-spin text-[16px]">refresh</span>
-                          : <span className="material-icons text-[16px]">download</span>}
-                      </button>
-                    </td>
-                  </tr>
+                    </div>
+                    <DataCardRow label="Gross" value={fmtMoney(p.gross_pay)} />
+                    <DataCardRow label="Deductions" value={fmtMoney(p.deductions)} />
+                    <button
+                      type="button"
+                      onClick={() => void downloadPDF(p)}
+                      disabled={downloading === p.id}
+                      className="mt-3 w-full h-11 rounded-lg border border-divider text-[13px] font-medium text-text-primary disabled:opacity-50"
+                    >
+                      {downloading === p.id ? 'Preparing…' : 'Download PDF'}
+                    </button>
+                  </DataCard>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </>
+            }
+          />
         )}
       </div>
     </div>

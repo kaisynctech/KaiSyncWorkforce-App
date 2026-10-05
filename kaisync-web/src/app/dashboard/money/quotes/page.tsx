@@ -10,6 +10,13 @@ import { quoteStatusLabel } from '@/lib/contractor-portal/quotes'
 import type { CommercialQuote } from '@/types/database'
 import { cn } from '@/lib/utils'
 import {
+  ResponsiveDataView,
+  DataCard,
+  DataCardTitle,
+  DataCardMeta,
+  DataCardRow,
+} from '@/components/ui/ResponsiveDataView'
+import {
   DEFAULT_PAGE_SIZE,
   PAGE_SIZE_OPTIONS,
   pageRange,
@@ -351,7 +358,7 @@ function QuotesPageInner() {
         ))}
       </div>
 
-      <div className="grid grid-cols-3 gap-3 px-4 py-3 border-b border-divider bg-surface shrink-0">
+      <div className="kpi-grid px-4 py-3 border-b border-divider bg-surface shrink-0">
         <KpiTile
           value={kpis.outstanding}
           label="Outstanding"
@@ -447,52 +454,81 @@ function QuotesPageInner() {
           filteredSales.length === 0 ? (
             <EmptySales onCreate={() => router.push('/dashboard/money/quotes/new')} />
           ) : (
-            <table className="w-full" style={{ minWidth: 900 }}>
-              <thead className="sticky top-0 z-10">
-                <tr className="bg-surface-elevated border-b border-divider">
-                  <th className="data-th text-left">#</th>
-                  <th className="data-th text-left">Client</th>
-                  <th className="data-th text-left">Title</th>
-                  <th className="data-th text-right">Value</th>
-                  <th className="data-th text-left">Status</th>
-                  <th className="data-th text-left">Created</th>
-                  <th className="data-th text-left">Valid Until</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pagedSales.map(q => (
-                  <tr
-                    key={q.id}
-                    onClick={() => router.push(`/dashboard/money/quotes/${q.id}`)}
-                    className="bg-surface-card border-b border-divider last:border-0 cursor-pointer hover:bg-surface-elevated transition-colors"
-                  >
-                    <td className="data-td text-sm font-mono text-text-secondary">
-                      {q.quote_number ?? '—'}
-                    </td>
-                    <td className="data-td text-sm text-text-primary">{q.clients?.name ?? '—'}</td>
-                    <td className="data-td text-sm text-text-primary max-w-[240px] truncate">
-                      {q.title || 'Untitled'}
-                    </td>
-                    <td className="data-td text-sm text-right font-medium text-text-primary">
-                      {fmtMoney(q.total_amount)}
-                    </td>
-                    <td className="data-td">
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wide ${SALES_STATUS_COLORS[q.status]}`}
+            <ResponsiveDataView
+              table={
+                <table className="w-full" style={{ minWidth: 900 }}>
+                  <thead className="sticky top-0 z-10">
+                    <tr className="bg-surface-elevated border-b border-divider">
+                      <th className="data-th text-left">#</th>
+                      <th className="data-th text-left">Client</th>
+                      <th className="data-th text-left">Title</th>
+                      <th className="data-th text-right">Value</th>
+                      <th className="data-th text-left">Status</th>
+                      <th className="data-th text-left">Created</th>
+                      <th className="data-th text-left">Valid Until</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pagedSales.map(q => (
+                      <tr
+                        key={q.id}
+                        onClick={() => router.push(`/dashboard/money/quotes/${q.id}`)}
+                        className="bg-surface-card border-b border-divider last:border-0 cursor-pointer hover:bg-surface-elevated transition-colors"
                       >
-                        {q.status.replace('_', ' ')}
-                      </span>
-                    </td>
-                    <td className="data-td text-sm text-text-secondary whitespace-nowrap">
-                      {fmt(q.created_at)}
-                    </td>
-                    <td className="data-td text-sm text-text-secondary whitespace-nowrap">
-                      {fmt(q.valid_until)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                        <td className="data-td text-sm font-mono text-text-secondary">
+                          {q.quote_number ?? '—'}
+                        </td>
+                        <td className="data-td text-sm text-text-primary">{q.clients?.name ?? '—'}</td>
+                        <td className="data-td text-sm text-text-primary max-w-[240px] truncate">
+                          {q.title || 'Untitled'}
+                        </td>
+                        <td className="data-td text-sm text-right font-medium text-text-primary">
+                          {fmtMoney(q.total_amount)}
+                        </td>
+                        <td className="data-td">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wide ${SALES_STATUS_COLORS[q.status]}`}
+                          >
+                            {q.status.replace('_', ' ')}
+                          </span>
+                        </td>
+                        <td className="data-td text-sm text-text-secondary whitespace-nowrap">
+                          {fmt(q.created_at)}
+                        </td>
+                        <td className="data-td text-sm text-text-secondary whitespace-nowrap">
+                          {fmt(q.valid_until)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              }
+              mobile={
+                <>
+                  {pagedSales.map(q => (
+                    <DataCard
+                      key={q.id}
+                      onClick={() => router.push(`/dashboard/money/quotes/${q.id}`)}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <DataCardTitle>{q.title || 'Untitled'}</DataCardTitle>
+                          <DataCardMeta className="font-mono">{q.quote_number ?? '—'}</DataCardMeta>
+                        </div>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wide shrink-0 ${SALES_STATUS_COLORS[q.status]}`}
+                        >
+                          {q.status.replace('_', ' ')}
+                        </span>
+                      </div>
+                      <DataCardRow label="Client" value={q.clients?.name ?? '—'} />
+                      <DataCardRow label="Value" value={fmtMoney(q.total_amount)} />
+                      <DataCardRow label="Valid" value={fmt(q.valid_until)} />
+                    </DataCard>
+                  ))}
+                </>
+              }
+            />
           )
         ) : filteredIncoming.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 gap-2">
@@ -503,61 +539,96 @@ function QuotesPageInner() {
             </p>
           </div>
         ) : (
-          <table className="w-full" style={{ minWidth: 960 }}>
-            <thead className="sticky top-0 z-10">
-              <tr className="bg-surface-elevated border-b border-divider">
-                <th className="data-th text-left">#</th>
-                <th className="data-th text-left">Contractor</th>
-                <th className="data-th text-left">Title</th>
-                <th className="data-th text-right">Value</th>
-                <th className="data-th text-left">Status</th>
-                <th className="data-th text-left">Submitted</th>
-                <th className="data-th text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pagedIncoming.map(q => (
-                <tr
-                  key={q.id}
-                  onClick={() => openIncoming(q)}
-                  className="bg-surface-card border-b border-divider last:border-0 cursor-pointer hover:bg-surface-elevated transition-colors"
-                >
-                  <td className="data-td text-sm font-mono text-text-secondary">
-                    {q.quote_number ?? '—'}
-                  </td>
-                  <td className="data-td text-sm text-text-primary">{q.contractors?.name ?? '—'}</td>
-                  <td className="data-td text-sm text-text-primary max-w-[240px] truncate">
-                    {q.title || 'Untitled'}
-                  </td>
-                  <td className="data-td text-sm text-right font-medium text-text-primary">
-                    {fmtMoney(q.total_amount)}
-                  </td>
-                  <td className="data-td">
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wide ${incomingBadgeClass(q.status)}`}
+          <ResponsiveDataView
+            table={
+              <table className="w-full" style={{ minWidth: 960 }}>
+                <thead className="sticky top-0 z-10">
+                  <tr className="bg-surface-elevated border-b border-divider">
+                    <th className="data-th text-left">#</th>
+                    <th className="data-th text-left">Contractor</th>
+                    <th className="data-th text-left">Title</th>
+                    <th className="data-th text-right">Value</th>
+                    <th className="data-th text-left">Status</th>
+                    <th className="data-th text-left">Submitted</th>
+                    <th className="data-th text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagedIncoming.map(q => (
+                    <tr
+                      key={q.id}
+                      onClick={() => openIncoming(q)}
+                      className="bg-surface-card border-b border-divider last:border-0 cursor-pointer hover:bg-surface-elevated transition-colors"
                     >
-                      {quoteStatusLabel(q.status)}
-                    </span>
-                  </td>
-                  <td className="data-td text-sm text-text-secondary whitespace-nowrap">
-                    {fmt(q.submitted_at ?? q.created_at)}
-                  </td>
-                  <td className="data-td text-right">
+                      <td className="data-td text-sm font-mono text-text-secondary">
+                        {q.quote_number ?? '—'}
+                      </td>
+                      <td className="data-td text-sm text-text-primary">{q.contractors?.name ?? '—'}</td>
+                      <td className="data-td text-sm text-text-primary max-w-[240px] truncate">
+                        {q.title || 'Untitled'}
+                      </td>
+                      <td className="data-td text-sm text-right font-medium text-text-primary">
+                        {fmtMoney(q.total_amount)}
+                      </td>
+                      <td className="data-td">
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wide ${incomingBadgeClass(q.status)}`}
+                        >
+                          {quoteStatusLabel(q.status)}
+                        </span>
+                      </td>
+                      <td className="data-td text-sm text-text-secondary whitespace-nowrap">
+                        {fmt(q.submitted_at ?? q.created_at)}
+                      </td>
+                      <td className="data-td text-right">
+                        <button
+                          type="button"
+                          onClick={e => {
+                            e.stopPropagation()
+                            openIncoming(q)
+                          }}
+                          className="text-[12px] font-medium text-primary hover:underline"
+                        >
+                          {INCOMING_OUTSTANDING.has(q.status) ? 'Review' : 'Open'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            }
+            mobile={
+              <>
+                {pagedIncoming.map(q => (
+                  <DataCard key={q.id} onClick={() => openIncoming(q)}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <DataCardTitle>{q.title || 'Untitled'}</DataCardTitle>
+                        <DataCardMeta>{q.contractors?.name ?? '—'} · {q.quote_number ?? '—'}</DataCardMeta>
+                      </div>
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wide shrink-0 ${incomingBadgeClass(q.status)}`}
+                      >
+                        {quoteStatusLabel(q.status)}
+                      </span>
+                    </div>
+                    <DataCardRow label="Value" value={fmtMoney(q.total_amount)} />
+                    <DataCardRow label="Submitted" value={fmt(q.submitted_at ?? q.created_at)} />
                     <button
                       type="button"
                       onClick={e => {
                         e.stopPropagation()
                         openIncoming(q)
                       }}
-                      className="text-[12px] font-medium text-primary hover:underline"
+                      className="mt-3 w-full h-11 rounded-lg text-[13px] font-medium bg-primary/10 text-primary"
                     >
                       {INCOMING_OUTSTANDING.has(q.status) ? 'Review' : 'Open'}
                     </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </DataCard>
+                ))}
+              </>
+            }
+          />
         )}
       </div>
 

@@ -7,6 +7,13 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { fmtMoney } from '@/lib/finance-calc'
 import type { FinanceInvoice } from '@/lib/finance-types'
+import {
+  ResponsiveDataView,
+  DataCard,
+  DataCardTitle,
+  DataCardMeta,
+  DataCardRow,
+} from '@/components/ui/ResponsiveDataView'
 
 type InvoiceRow = FinanceInvoice & {
   invoice_type?: string | null
@@ -178,52 +185,88 @@ function MoneyInvoicesInner() {
         {loading ? (
           <p className="text-center text-[13px] text-text-secondary py-10">Loading…</p>
         ) : (
-          <table className="w-full" style={{ minWidth: 860 }}>
-            <thead>
-              <tr className="bg-surface-elevated border-b border-divider sticky top-0">
-                <th className="data-th text-left">Number</th>
-                <th className="data-th text-left">Client</th>
-                <th className="data-th text-left">Project</th>
-                <th className="data-th text-left">Issue Date</th>
-                <th className="data-th text-left">Due</th>
-                <th className="data-th text-left">Status</th>
-                <th className="data-th text-right">Total</th>
-                <th className="data-th text-right">Balance</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map(r => (
-                <tr
-                  key={r.id}
-                  className="border-b border-divider hover:bg-surface-elevated cursor-pointer transition-colors"
-                  onClick={() => router.push(`/dashboard/money/invoices/${r.id}`)}
-                >
-                  <td className="data-td text-[13px] font-medium text-text-primary">
-                    {r.invoice_number || <span className="text-text-disabled italic">draft</span>}
-                  </td>
-                  <td className="data-td text-[13px] text-text-secondary">
-                    {(r.clients as { name: string } | null)?.name ?? '—'}
-                  </td>
-                  <td className="data-td text-[13px] text-text-secondary">
-                    {(r.client_deals as { title: string } | null)?.title ?? '—'}
-                  </td>
-                  <td className="data-td text-[13px] text-text-secondary">{r.issue_date ?? '—'}</td>
-                  <td className="data-td text-[13px] text-text-secondary">{r.due_date ?? '—'}</td>
-                  <td className="data-td"><StatusBadge status={r.status} /></td>
-                  <td className="data-td text-[13px] text-right text-text-primary">{fmtMoney(r.total_amount)}</td>
-                  <td className="data-td text-[13px] text-right font-medium text-text-primary">{fmtMoney(r.balance_due)}</td>
-                </tr>
-              ))}
-              {filtered.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="text-center text-[13px] text-text-secondary py-14">
-                    <span className="material-icons text-[32px] text-text-disabled block mb-1">receipt_long</span>
-                    No invoices found
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+          <ResponsiveDataView
+            table={
+              <table className="w-full" style={{ minWidth: 860 }}>
+                <thead>
+                  <tr className="bg-surface-elevated border-b border-divider sticky top-0">
+                    <th className="data-th text-left">Number</th>
+                    <th className="data-th text-left">Client</th>
+                    <th className="data-th text-left">Project</th>
+                    <th className="data-th text-left">Issue Date</th>
+                    <th className="data-th text-left">Due</th>
+                    <th className="data-th text-left">Status</th>
+                    <th className="data-th text-right">Total</th>
+                    <th className="data-th text-right">Balance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map(r => (
+                    <tr
+                      key={r.id}
+                      className="border-b border-divider hover:bg-surface-elevated cursor-pointer transition-colors"
+                      onClick={() => router.push(`/dashboard/money/invoices/${r.id}`)}
+                    >
+                      <td className="data-td text-[13px] font-medium text-text-primary">
+                        {r.invoice_number || <span className="text-text-disabled italic">draft</span>}
+                      </td>
+                      <td className="data-td text-[13px] text-text-secondary">
+                        {(r.clients as { name: string } | null)?.name ?? '—'}
+                      </td>
+                      <td className="data-td text-[13px] text-text-secondary">
+                        {(r.client_deals as { title: string } | null)?.title ?? '—'}
+                      </td>
+                      <td className="data-td text-[13px] text-text-secondary">{r.issue_date ?? '—'}</td>
+                      <td className="data-td text-[13px] text-text-secondary">{r.due_date ?? '—'}</td>
+                      <td className="data-td"><StatusBadge status={r.status} /></td>
+                      <td className="data-td text-[13px] text-right text-text-primary">{fmtMoney(r.total_amount)}</td>
+                      <td className="data-td text-[13px] text-right font-medium text-text-primary">{fmtMoney(r.balance_due)}</td>
+                    </tr>
+                  ))}
+                  {filtered.length === 0 && (
+                    <tr>
+                      <td colSpan={8} className="text-center text-[13px] text-text-secondary py-14">
+                        <span className="material-icons text-[32px] text-text-disabled block mb-1">receipt_long</span>
+                        No invoices found
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            }
+            mobile={
+              filtered.length === 0 ? (
+                <div className="text-center text-[13px] text-text-secondary py-14">
+                  <span className="material-icons text-[32px] text-text-disabled block mb-1">receipt_long</span>
+                  No invoices found
+                </div>
+              ) : (
+                <>
+                  {filtered.map(r => (
+                    <DataCard
+                      key={r.id}
+                      onClick={() => router.push(`/dashboard/money/invoices/${r.id}`)}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <DataCardTitle>
+                            {r.invoice_number || 'Draft'}
+                          </DataCardTitle>
+                          <DataCardMeta>
+                            {(r.clients as { name: string } | null)?.name ?? '—'}
+                          </DataCardMeta>
+                        </div>
+                        <StatusBadge status={r.status} />
+                      </div>
+                      <DataCardRow label="Total" value={fmtMoney(r.total_amount)} />
+                      <DataCardRow label="Balance" value={fmtMoney(r.balance_due)} />
+                      <DataCardRow label="Due" value={r.due_date ?? '—'} />
+                    </DataCard>
+                  ))}
+                </>
+              )
+            }
+          />
         )}
       </div>
     </div>

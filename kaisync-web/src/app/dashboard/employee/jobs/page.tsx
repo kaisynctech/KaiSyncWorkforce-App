@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { useEmployeeModuleGate } from '@/lib/employee-module-gate'
@@ -16,6 +17,13 @@ import {
 } from '@/lib/job-ownership'
 import { downloadJobPack, loadJobPack } from '@/lib/offline/job-pack'
 import { networkLooksDown } from '@/lib/offline/meta'
+import {
+  ResponsiveDataView,
+  DataCard,
+  DataCardTitle,
+  DataCardMeta,
+  DataCardRow,
+} from '@/components/ui/ResponsiveDataView'
 
 interface Job {
   id: string
@@ -60,6 +68,7 @@ const EMPTY_MESSAGES: Record<JobScope, string> = {
 }
 
 export default function EmployeeJobsPage() {
+  const router = useRouter()
   const allowed = useEmployeeModuleGate('jobs')
   const [jobs, setJobs] = useState<Job[]>([])
   const [loading, setLoading] = useState(true)
@@ -215,59 +224,96 @@ export default function EmployeeJobsPage() {
             <p className="text-[14px]">{EMPTY_MESSAGES[tab]}</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-[13px]">
-              <thead>
-                <tr className="border-b border-divider bg-surface-elevated">
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Code</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Title</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Status</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Priority</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Scheduled</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-divider">
+          <ResponsiveDataView
+            table={
+              <table className="w-full text-[13px]">
+                <thead>
+                  <tr className="border-b border-divider bg-surface-elevated">
+                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Code</th>
+                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Title</th>
+                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Status</th>
+                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Priority</th>
+                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Scheduled</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-divider">
+                  {filtered.map((job) => (
+                    <tr key={job.id} className="hover:bg-surface-elevated transition-colors">
+                      <td className="px-4 py-3 text-[12px] text-text-disabled whitespace-nowrap">
+                        {job.job_code ?? '—'}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Link
+                          href={`/dashboard/employee/jobs/${job.id}`}
+                          className="text-[13px] font-semibold text-primary hover:underline"
+                        >
+                          {job.title}
+                        </Link>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        {job.status ? (
+                          <span className={`text-[11px] font-semibold px-2 py-[3px] rounded-full capitalize ${STATUS_COLORS[normalizeStatus(job.status)] ?? 'bg-surface-elevated text-text-secondary'}`}>
+                            {statusLabel(job.status)}
+                          </span>
+                        ) : '—'}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        {job.priority ? (
+                          <span className={`text-[12px] font-medium capitalize ${PRIORITY_COLORS[job.priority] ?? 'text-text-secondary'}`}>
+                            {job.priority}
+                          </span>
+                        ) : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
+                        {job.scheduled_start
+                          ? new Date(job.scheduled_start).toLocaleDateString('en-ZA', {
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric',
+                          })
+                          : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            }
+            mobile={
+              <>
                 {filtered.map((job) => (
-                  <tr key={job.id} className="hover:bg-surface-elevated transition-colors">
-                    <td className="px-4 py-3 text-[12px] text-text-disabled whitespace-nowrap">
-                      {job.job_code ?? '—'}
-                    </td>
-                    <td className="px-4 py-3">
-                      <Link
-                        href={`/dashboard/employee/jobs/${job.id}`}
-                        className="text-[13px] font-semibold text-primary hover:underline"
-                      >
-                        {job.title}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      {job.status ? (
-                        <span className={`text-[11px] font-semibold px-2 py-[3px] rounded-full capitalize ${STATUS_COLORS[normalizeStatus(job.status)] ?? 'bg-surface-elevated text-text-secondary'}`}>
+                  <DataCard key={job.id} onClick={() => router.push(`/dashboard/employee/jobs/${job.id}`)}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <DataCardTitle>{job.title}</DataCardTitle>
+                        <DataCardMeta className="font-mono">{job.job_code ?? '—'}</DataCardMeta>
+                      </div>
+                      {job.status && (
+                        <span className={`text-[11px] font-semibold px-2 py-[3px] rounded-full capitalize shrink-0 ${STATUS_COLORS[normalizeStatus(job.status)] ?? 'bg-surface-elevated text-text-secondary'}`}>
                           {statusLabel(job.status)}
                         </span>
-                      ) : '—'}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      {job.priority ? (
-                        <span className={`text-[12px] font-medium capitalize ${PRIORITY_COLORS[job.priority] ?? 'text-text-secondary'}`}>
-                          {job.priority}
-                        </span>
-                      ) : '—'}
-                    </td>
-                    <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
-                      {job.scheduled_start
-                        ? new Date(job.scheduled_start).toLocaleDateString('en-ZA', {
-                          day: '2-digit',
-                          month: 'short',
-                          year: 'numeric',
-                        })
-                        : '—'}
-                    </td>
-                  </tr>
+                      )}
+                    </div>
+                    <DataCardRow
+                      label="Priority"
+                      value={job.priority ? job.priority : '—'}
+                    />
+                    <DataCardRow
+                      label="Scheduled"
+                      value={
+                        job.scheduled_start
+                          ? new Date(job.scheduled_start).toLocaleDateString('en-ZA', {
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric',
+                          })
+                          : '—'
+                      }
+                    />
+                  </DataCard>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </>
+            }
+          />
         )}
       </div>
     </div>
