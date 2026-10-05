@@ -8,6 +8,13 @@ import { loadCompanyWorkspace, loadEmployeeWorkspace } from '@/lib/employee-work
 import { useEmployeeModuleGate } from '@/lib/employee-module-gate'
 import { ManualTimesheetForm } from '@/components/attendance/ManualTimesheetForm'
 import {
+  ResponsiveDataView,
+  DataCard,
+  DataCardTitle,
+  DataCardMeta,
+  DataCardRow,
+} from '@/components/ui/ResponsiveDataView'
+import {
   buildPunchSessions,
   earlyFlag,
   fmtSessionDate,
@@ -392,60 +399,90 @@ export default function EmployeeAttendancePage() {
             <p className="text-[14px]">No attendance records</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-[13px]">
-              <thead>
-                <tr className="border-b border-divider bg-surface-elevated">
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Date</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Time In</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">In Location</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Time Out</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Out Location</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Total</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Notes</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-divider">
+          <ResponsiveDataView
+            table={
+              <table className="w-full text-[13px]">
+                <thead>
+                  <tr className="border-b border-divider bg-surface-elevated">
+                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Date</th>
+                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Time In</th>
+                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">In Location</th>
+                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Time Out</th>
+                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Out Location</th>
+                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Total</th>
+                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Notes</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-divider">
+                  {sessions.map((s, i) => {
+                    const kind = s.isAbsentDay ? 'absent' : s.isLeaveDay ? 'leave' : 'in'
+                    const flag = [lateFlag(s), earlyFlag(s)].filter(Boolean).join(' · ')
+                    return (
+                      <tr key={`${s.clockIn.toISOString()}-${i}`} className="hover:bg-surface-elevated transition-colors">
+                        <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">{fmtSessionDate(s.clockIn)}</td>
+                        <td className={`px-4 py-3 text-[13px] font-medium whitespace-nowrap ${
+                          s.isAbsentDay ? 'text-error' : s.isLeaveDay ? 'text-warning' : s.isLate ? 'text-error' : 'text-success'
+                        }`}>
+                          {fmtSessionTime(s.clockIn, kind as 'in' | 'absent' | 'leave')}
+                          {s.isOpen && !s.isAbsentDay && !s.isLeaveDay && (
+                            <span className="ml-1 text-[10px] text-warning font-semibold">OPEN</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-[12px] text-text-secondary max-w-[160px] truncate">
+                          {s.isAbsentDay || s.isLeaveDay ? '—' : locationDisplay(s.clockInAddress, s.clockInLat, s.clockInLng)}
+                        </td>
+                        <td className="px-4 py-3 text-[13px] text-text-primary whitespace-nowrap">
+                          {fmtSessionTime(s.clockOut, 'out')}
+                        </td>
+                        <td className="px-4 py-3 text-[12px] text-text-secondary max-w-[160px] truncate">
+                          {s.isAbsentDay || s.isLeaveDay ? '—' : locationDisplay(s.clockOutAddress, s.clockOutLat, s.clockOutLng)}
+                        </td>
+                        <td className="px-4 py-3 text-[12px] font-semibold text-text-primary whitespace-nowrap">
+                          {totalHrsDisplay(s)}
+                          {s.overtimeHours > 0 && (
+                            <span className="block text-[10px] text-warning font-medium">OT {s.overtimeHours.toFixed(1)}h</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-[12px] text-text-secondary">
+                          {flag && <span className="text-error font-semibold">{flag}</span>}
+                          {flag && (s.notes || s.statusNote) ? ' · ' : ''}
+                          {s.notes ?? s.statusNote ?? (flag ? '' : '—')}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            }
+            mobile={
+              <>
                 {sessions.map((s, i) => {
                   const kind = s.isAbsentDay ? 'absent' : s.isLeaveDay ? 'leave' : 'in'
                   const flag = [lateFlag(s), earlyFlag(s)].filter(Boolean).join(' · ')
                   return (
-                    <tr key={`${s.clockIn.toISOString()}-${i}`} className="hover:bg-surface-elevated transition-colors">
-                      <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">{fmtSessionDate(s.clockIn)}</td>
-                      <td className={`px-4 py-3 text-[13px] font-medium whitespace-nowrap ${
-                        s.isAbsentDay ? 'text-error' : s.isLeaveDay ? 'text-warning' : s.isLate ? 'text-error' : 'text-success'
-                      }`}>
-                        {fmtSessionTime(s.clockIn, kind as 'in' | 'absent' | 'leave')}
-                        {s.isOpen && !s.isAbsentDay && !s.isLeaveDay && (
-                          <span className="ml-1 text-[10px] text-warning font-semibold">OPEN</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-[12px] text-text-secondary max-w-[160px] truncate">
-                        {s.isAbsentDay || s.isLeaveDay ? '—' : locationDisplay(s.clockInAddress, s.clockInLat, s.clockInLng)}
-                      </td>
-                      <td className="px-4 py-3 text-[13px] text-text-primary whitespace-nowrap">
-                        {fmtSessionTime(s.clockOut, 'out')}
-                      </td>
-                      <td className="px-4 py-3 text-[12px] text-text-secondary max-w-[160px] truncate">
-                        {s.isAbsentDay || s.isLeaveDay ? '—' : locationDisplay(s.clockOutAddress, s.clockOutLat, s.clockOutLng)}
-                      </td>
-                      <td className="px-4 py-3 text-[12px] font-semibold text-text-primary whitespace-nowrap">
-                        {totalHrsDisplay(s)}
-                        {s.overtimeHours > 0 && (
-                          <span className="block text-[10px] text-warning font-medium">OT {s.overtimeHours.toFixed(1)}h</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-[12px] text-text-secondary">
-                        {flag && <span className="text-error font-semibold">{flag}</span>}
-                        {flag && (s.notes || s.statusNote) ? ' · ' : ''}
-                        {s.notes ?? s.statusNote ?? (flag ? '' : '—')}
-                      </td>
-                    </tr>
+                    <DataCard key={`${s.clockIn.toISOString()}-${i}`}>
+                      <div className="flex items-start justify-between gap-2">
+                        <DataCardTitle>{fmtSessionDate(s.clockIn)}</DataCardTitle>
+                        <span className={`text-[12px] font-semibold ${
+                          s.isAbsentDay ? 'text-error' : s.isLeaveDay ? 'text-warning' : 'text-success'
+                        }`}>
+                          {fmtSessionTime(s.clockIn, kind as 'in' | 'absent' | 'leave')}
+                          {s.isOpen && !s.isAbsentDay && !s.isLeaveDay ? ' · OPEN' : ''}
+                        </span>
+                      </div>
+                      <DataCardRow label="Out" value={fmtSessionTime(s.clockOut, 'out')} />
+                      <DataCardRow label="Total" value={totalHrsDisplay(s)} />
+                      {(flag || s.notes || s.statusNote) && (
+                        <DataCardMeta className="mt-1">
+                          {[flag, s.notes ?? s.statusNote].filter(Boolean).join(' · ')}
+                        </DataCardMeta>
+                      )}
+                    </DataCard>
                   )
                 })}
-              </tbody>
-            </table>
-          </div>
+              </>
+            }
+          />
         )}
       </div>
     </div>

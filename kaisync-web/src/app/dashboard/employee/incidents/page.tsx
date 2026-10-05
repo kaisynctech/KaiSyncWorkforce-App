@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { useEmployeeModuleGate } from '@/lib/employee-module-gate'
@@ -16,6 +17,13 @@ import {
   pendingIncidentCount,
 } from '@/lib/incident-queue'
 import { flushEmployeeOffline } from '@/lib/offline/flush'
+import {
+  ResponsiveDataView,
+  DataCard,
+  DataCardTitle,
+  DataCardMeta,
+  DataCardRow,
+} from '@/components/ui/ResponsiveDataView'
 
 interface Incident {
   id: string
@@ -62,6 +70,7 @@ function exportCSV(incidents: Incident[]) {
 }
 
 export default function EmployeeIncidentsPage() {
+  const router = useRouter()
   const allowed = useEmployeeModuleGate('incidents')
   const [all, setAll] = useState<Incident[]>([])
   const [loading, setLoading] = useState(true)
@@ -281,64 +290,91 @@ export default function EmployeeIncidentsPage() {
             <p className="text-[14px]">{emptyMessage()}</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-[13px]">
-              <thead>
-                <tr className="border-b border-divider bg-surface-elevated">
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Title</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Severity</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Category</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Status</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Date</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Job</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-divider">
+          <ResponsiveDataView
+            table={
+              <table className="w-full text-[13px]">
+                <thead>
+                  <tr className="border-b border-divider bg-surface-elevated">
+                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Title</th>
+                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Severity</th>
+                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Category</th>
+                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Status</th>
+                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Date</th>
+                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Job</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-divider">
+                  {filtered.map(inc => (
+                    <tr key={inc.id} className="hover:bg-surface-elevated transition-colors">
+                      <td className="px-4 py-3">
+                        <Link
+                          href={`/dashboard/employee/incidents/${inc.id}`}
+                          className="text-[13px] font-semibold text-primary hover:underline"
+                        >
+                          {displayIncidentTitle(inc.title, inc.description)}
+                        </Link>
+                        {inc.title && inc.description && (
+                          <p className="text-[11px] text-text-disabled mt-0.5 line-clamp-1">{inc.description}</p>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        {inc.severity ? (
+                          <span className={`text-[11px] font-semibold px-2 py-[2px] rounded-full capitalize ${SEVERITY_STYLES[inc.severity] ?? 'bg-surface-elevated text-text-secondary'}`}>
+                            {inc.severity}
+                          </span>
+                        ) : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-[12px] text-text-secondary capitalize">
+                        {formatIncidentLabel(inc.category)}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        {inc.status ? (
+                          <span className={`text-[11px] font-semibold px-2 py-[2px] rounded-full capitalize ${STATUS_STYLES[inc.status] ?? 'bg-surface-elevated text-text-secondary'}`}>
+                            {formatIncidentLabel(inc.status)}
+                          </span>
+                        ) : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
+                        {fmtDate(inc.occurred_at ?? inc.created_at)}
+                      </td>
+                      <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
+                        {inc.job_id ? (
+                          <span className="text-[11px] font-semibold px-2 py-[2px] rounded-full bg-primary/10 text-primary">Linked</span>
+                        ) : (
+                          <span className="text-text-disabled">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            }
+            mobile={
+              <>
                 {filtered.map(inc => (
-                  <tr key={inc.id} className="hover:bg-surface-elevated transition-colors">
-                    <td className="px-4 py-3">
-                      <Link
-                        href={`/dashboard/employee/incidents/${inc.id}`}
-                        className="text-[13px] font-semibold text-primary hover:underline"
-                      >
+                  <DataCard
+                    key={inc.id}
+                    onClick={() => router.push(`/dashboard/employee/incidents/${inc.id}`)}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <DataCardTitle className="flex-1">
                         {displayIncidentTitle(inc.title, inc.description)}
-                      </Link>
-                      {inc.title && inc.description && (
-                        <p className="text-[11px] text-text-disabled mt-0.5 line-clamp-1">{inc.description}</p>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      {inc.severity ? (
-                        <span className={`text-[11px] font-semibold px-2 py-[2px] rounded-full capitalize ${SEVERITY_STYLES[inc.severity] ?? 'bg-surface-elevated text-text-secondary'}`}>
+                      </DataCardTitle>
+                      {inc.severity && (
+                        <span className={`text-[11px] font-semibold px-2 py-[2px] rounded-full capitalize shrink-0 ${SEVERITY_STYLES[inc.severity] ?? 'bg-surface-elevated text-text-secondary'}`}>
                           {inc.severity}
                         </span>
-                      ) : '—'}
-                    </td>
-                    <td className="px-4 py-3 text-[12px] text-text-secondary capitalize">
-                      {formatIncidentLabel(inc.category)}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      {inc.status ? (
-                        <span className={`text-[11px] font-semibold px-2 py-[2px] rounded-full capitalize ${STATUS_STYLES[inc.status] ?? 'bg-surface-elevated text-text-secondary'}`}>
-                          {formatIncidentLabel(inc.status)}
-                        </span>
-                      ) : '—'}
-                    </td>
-                    <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
-                      {fmtDate(inc.occurred_at ?? inc.created_at)}
-                    </td>
-                    <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
-                      {inc.job_id ? (
-                        <span className="text-[11px] font-semibold px-2 py-[2px] rounded-full bg-primary/10 text-primary">Linked</span>
-                      ) : (
-                        <span className="text-text-disabled">—</span>
                       )}
-                    </td>
-                  </tr>
+                    </div>
+                    <DataCardMeta>
+                      {inc.status ? formatIncidentLabel(inc.status) : '—'} · {fmtDate(inc.occurred_at ?? inc.created_at)}
+                    </DataCardMeta>
+                    <DataCardRow label="Category" value={formatIncidentLabel(inc.category)} />
+                  </DataCard>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </>
+            }
+          />
         )}
       </div>
     </div>

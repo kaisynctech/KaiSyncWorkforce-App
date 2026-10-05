@@ -10,6 +10,14 @@ import { KpiTile } from '@/components/ui/KpiTile'
 import { PropertyManagerField, type ManagerOption } from '@/components/properties/PropertyManagerField'
 import { ListPagination } from '@/components/properties/ListPagination'
 import { GenerateRentInvoicesModal } from '@/components/properties/GenerateRentInvoicesModal'
+import {
+  ResponsiveDataView,
+  DataCard,
+  DataCardTitle,
+  DataCardMeta,
+  DataCardRow,
+} from '@/components/ui/ResponsiveDataView'
+import { ModalShell } from '@/components/ui/ModalShell'
 import { PROPERTY_KINDS, propertyKindLabel } from '@/lib/properties'
 import { paginateSlice, PROPERTY_LIST_PAGE_SIZE, totalPages } from '@/lib/property-list'
 import type { PropertyKind, Site } from '@/types/database'
@@ -216,29 +224,29 @@ export default function PropertiesPage() {
               {kpis.active} active · billable (20 included, then R49/property)
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
             {canEdit && (
-              <Link href="/dashboard/properties/import" className="btn-outlined h-9 px-3 text-[13px] inline-flex items-center">
+              <Link href="/dashboard/properties/import" className="btn-outlined h-10 px-3 text-[13px] inline-flex items-center">
                 Import
               </Link>
             )}
-            <Link href="/dashboard/properties/statement" className="btn-outlined h-9 px-3 text-[13px] inline-flex items-center">
+            <Link href="/dashboard/properties/statement" className="btn-outlined h-10 px-3 text-[13px] inline-flex items-center">
               Owner statement
             </Link>
-            <Link href="/dashboard/properties/arrears" className="btn-outlined h-9 px-3 text-[13px] inline-flex items-center">
+            <Link href="/dashboard/properties/arrears" className="btn-outlined h-10 px-3 text-[13px] inline-flex items-center">
               Rent arrears
             </Link>
             {canEdit && (
               <button
                 type="button"
                 onClick={() => setShowGenerateRent(true)}
-                className="btn-outlined h-9 px-3 text-[13px]"
+                className="btn-outlined h-10 px-3 text-[13px]"
               >
                 Generate rent
               </button>
             )}
             {canEdit && (
-              <button type="button" onClick={() => setShowCreate(true)} className="btn-primary h-9 px-3 text-[13px]">
+              <button type="button" onClick={() => setShowCreate(true)} className="btn-primary h-10 px-3 text-[13px]">
                 + Property
               </button>
             )}
@@ -281,41 +289,64 @@ export default function PropertiesPage() {
         ) : filtered.length === 0 ? (
           <p className="text-center text-[13px] text-text-secondary py-8">No properties found.</p>
         ) : (
-          <div className="overflow-x-auto border border-divider rounded-xl">
-            <table className="w-full" style={{ minWidth: 720 }}>
-              <thead>
-                <tr className="bg-surface-elevated border-b border-divider">
-                  <th className="data-th text-left">Name</th>
-                  <th className="data-th text-left">Address</th>
-                  <th className="data-th text-left">Kind</th>
-                  <th className="data-th text-left">Managed by</th>
-                  <th className="data-th text-right">Units</th>
-                  <th className="data-th text-left">GPS</th>
-                  <th className="data-th text-left">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {paged.map(site => {
-                  const st = unitStats[site.id] ?? { total: 0, occupied: 0 }
-                  const hasGps = site.latitude != null && site.longitude != null
-                  return (
-                    <tr
-                      key={site.id}
-                      className="border-b border-divider hover:bg-surface-elevated cursor-pointer"
-                      onClick={() => router.push(`/dashboard/properties/${site.id}`)}
-                    >
-                      <td className="data-td text-[13px] font-medium text-primary">{site.name}</td>
-                      <td className="data-td text-[13px] text-text-secondary truncate max-w-[200px]">{site.address ?? '—'}</td>
-                      <td className="data-td text-[12px] text-text-secondary">{propertyKindLabel(site.property_kind)}</td>
-                      <td className="data-td text-[13px] text-text-secondary">{managerLabel(site)}</td>
-                      <td className="data-td text-[13px] text-right">{st.occupied}/{st.total}</td>
-                      <td className="data-td text-[12px]">{hasGps ? 'Yes' : '—'}</td>
-                      <td className="data-td text-[12px]">{site.is_active === false ? 'Inactive' : 'Active'}</td>
+          <div className="border border-divider rounded-xl overflow-hidden">
+            <ResponsiveDataView
+              table={
+                <table className="w-full" style={{ minWidth: 720 }}>
+                  <thead>
+                    <tr className="bg-surface-elevated border-b border-divider">
+                      <th className="data-th text-left">Name</th>
+                      <th className="data-th text-left">Address</th>
+                      <th className="data-th text-left">Kind</th>
+                      <th className="data-th text-left">Managed by</th>
+                      <th className="data-th text-right">Units</th>
+                      <th className="data-th text-left">GPS</th>
+                      <th className="data-th text-left">Status</th>
                     </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody>
+                    {paged.map(site => {
+                      const st = unitStats[site.id] ?? { total: 0, occupied: 0 }
+                      const hasGps = site.latitude != null && site.longitude != null
+                      return (
+                        <tr
+                          key={site.id}
+                          className="border-b border-divider hover:bg-surface-elevated cursor-pointer"
+                          onClick={() => router.push(`/dashboard/properties/${site.id}`)}
+                        >
+                          <td className="data-td text-[13px] font-medium text-primary">{site.name}</td>
+                          <td className="data-td text-[13px] text-text-secondary truncate max-w-[200px]">{site.address ?? '—'}</td>
+                          <td className="data-td text-[12px] text-text-secondary">{propertyKindLabel(site.property_kind)}</td>
+                          <td className="data-td text-[13px] text-text-secondary">{managerLabel(site)}</td>
+                          <td className="data-td text-[13px] text-right">{st.occupied}/{st.total}</td>
+                          <td className="data-td text-[12px]">{hasGps ? 'Yes' : '—'}</td>
+                          <td className="data-td text-[12px]">{site.is_active === false ? 'Inactive' : 'Active'}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              }
+              mobile={
+                <>
+                  {paged.map(site => {
+                    const st = unitStats[site.id] ?? { total: 0, occupied: 0 }
+                    return (
+                      <DataCard
+                        key={site.id}
+                        onClick={() => router.push(`/dashboard/properties/${site.id}`)}
+                      >
+                        <DataCardTitle>{site.name}</DataCardTitle>
+                        <DataCardMeta>{site.address ?? '—'} · {propertyKindLabel(site.property_kind)}</DataCardMeta>
+                        <DataCardRow label="Manager" value={managerLabel(site)} />
+                        <DataCardRow label="Units" value={`${st.occupied}/${st.total}`} />
+                        <DataCardRow label="Status" value={site.is_active === false ? 'Inactive' : 'Active'} />
+                      </DataCard>
+                    )
+                  })}
+                </>
+              }
+            />
             <div className="px-3 pb-3">
               <ListPagination
                 page={Math.min(page, pageCount)}
@@ -330,59 +361,62 @@ export default function PropertiesPage() {
         )}
       </div>
 
-      {showCreate && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40">
-          <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md p-5 space-y-3 max-h-[90vh] overflow-y-auto">
-            <h2 className="text-[16px] font-semibold text-text-primary">New property</h2>
-            <label className="block text-[12px] text-text-secondary">Name *
-              <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+      <ModalShell
+        open={showCreate}
+        onClose={() => setShowCreate(false)}
+        title="New property"
+        footer={
+          <>
+            <button type="button" onClick={() => setShowCreate(false)} className="btn-outlined h-11 px-3 text-[13px]">Cancel</button>
+            <button type="button" disabled={busy || !form.name.trim()} onClick={() => void createSite()} className="btn-primary h-11 px-3 text-[13px] disabled:opacity-50">
+              {busy ? 'Saving…' : 'Create'}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <label className="block text-[12px] text-text-secondary">Name *
+            <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+          </label>
+          <label className="block text-[12px] text-text-secondary">Address
+            <input value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+          </label>
+          <label className="block text-[12px] text-text-secondary">Property kind
+            <select value={form.property_kind} onChange={e => setForm(f => ({ ...f, property_kind: e.target.value as PropertyKind }))} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background">
+              {PROPERTY_KINDS.filter(k => k.value !== 'student_accommodation' && k.value !== 'guest_house').map(k => (
+                <option key={k.value} value={k.value}>{k.label}</option>
+              ))}
+            </select>
+          </label>
+          <p className="text-[11px] text-text-disabled -mt-1">
+            Student accommodation and B&B / Guest house are created from their sidebar pages (with bulk rooms).
+          </p>
+          <PropertyManagerField
+            companyId={companyId}
+            value={form.managed_by_employee_id}
+            onChange={id => setForm(f => ({ ...f, managed_by_employee_id: id }))}
+            employees={employees}
+            onEmployeeCreated={emp => setEmployees(prev => {
+              if (prev.some(e => e.id === emp.id)) return prev
+              return [...prev, emp].sort((a, b) => a.name.localeCompare(b.name))
+            })}
+          />
+          <label className="block text-[12px] text-text-secondary">Geofence radius (m)
+            <input type="number" value={form.radius_meters} onChange={e => setForm(f => ({ ...f, radius_meters: e.target.value }))} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+          </label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label className="block text-[12px] text-text-secondary">Latitude
+              <input value={form.latitude} onChange={e => setForm(f => ({ ...f, latitude: e.target.value }))} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
             </label>
-            <label className="block text-[12px] text-text-secondary">Address
-              <input value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+            <label className="block text-[12px] text-text-secondary">Longitude
+              <input value={form.longitude} onChange={e => setForm(f => ({ ...f, longitude: e.target.value }))} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
             </label>
-            <label className="block text-[12px] text-text-secondary">Property kind
-              <select value={form.property_kind} onChange={e => setForm(f => ({ ...f, property_kind: e.target.value as PropertyKind }))} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background">
-                {PROPERTY_KINDS.filter(k => k.value !== 'student_accommodation' && k.value !== 'guest_house').map(k => (
-                  <option key={k.value} value={k.value}>{k.label}</option>
-                ))}
-              </select>
-            </label>
-            <p className="text-[11px] text-text-disabled -mt-1">
-              Student accommodation and B&B / Guest house are created from their sidebar pages (with bulk rooms).
-            </p>
-            <PropertyManagerField
-              companyId={companyId}
-              value={form.managed_by_employee_id}
-              onChange={id => setForm(f => ({ ...f, managed_by_employee_id: id }))}
-              employees={employees}
-              onEmployeeCreated={emp => setEmployees(prev => {
-                if (prev.some(e => e.id === emp.id)) return prev
-                return [...prev, emp].sort((a, b) => a.name.localeCompare(b.name))
-              })}
-            />
-            <label className="block text-[12px] text-text-secondary">Geofence radius (m)
-              <input type="number" value={form.radius_meters} onChange={e => setForm(f => ({ ...f, radius_meters: e.target.value }))} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              <label className="block text-[12px] text-text-secondary">Latitude
-                <input value={form.latitude} onChange={e => setForm(f => ({ ...f, latitude: e.target.value }))} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
-              </label>
-              <label className="block text-[12px] text-text-secondary">Longitude
-                <input value={form.longitude} onChange={e => setForm(f => ({ ...f, longitude: e.target.value }))} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
-              </label>
-            </div>
-            <label className="block text-[12px] text-text-secondary">Notes
-              <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} className="mt-1 w-full px-3 py-2 border border-border rounded-md text-[13px] bg-background" />
-            </label>
-            <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setShowCreate(false)} className="btn-outlined h-9 px-3 text-[13px]">Cancel</button>
-              <button type="button" disabled={busy || !form.name.trim()} onClick={() => void createSite()} className="btn-primary h-9 px-3 text-[13px] disabled:opacity-50">
-                {busy ? 'Saving…' : 'Create'}
-              </button>
-            </div>
           </div>
+          <label className="block text-[12px] text-text-secondary">Notes
+            <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} className="mt-1 w-full px-3 py-2 border border-border rounded-md text-[13px] bg-background" />
+          </label>
         </div>
-      )}
+      </ModalShell>
 
       {showGenerateRent && companyId && employeeId && (
         <GenerateRentInvoicesModal

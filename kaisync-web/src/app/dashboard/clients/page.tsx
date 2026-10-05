@@ -14,6 +14,13 @@ import {
   totalPages,
 } from '@/lib/list-pagination'
 import { KpiTile } from '@/components/ui/KpiTile'
+import {
+  ResponsiveDataView,
+  DataCard,
+  DataCardTitle,
+  DataCardMeta,
+  DataCardRow,
+} from '@/components/ui/ResponsiveDataView'
 import type { Client, ClientActionItem } from '@/types/database'
 import * as XLSX from 'xlsx'
 
@@ -309,7 +316,7 @@ export default function ClientsPage() {
       </div>
 
       {!loading && (
-        <div className="grid grid-cols-3 gap-2 mx-4 mt-3">
+        <div className="kpi-grid mx-4 mt-3">
           <KpiTile value={kpis.total} label="Total clients" bg="#1E293B" valueFg="#94A3B8" labelFg="#64748B" />
           <KpiTile value={kpis.portalEnabled} label="Portal enabled" bg="#0F2918" valueFg="#22C55E" labelFg="#4ADE80" />
           <KpiTile value={kpis.openJobs} label="Open jobs" bg="#1E293B" valueFg="#94A3B8" labelFg="#64748B" />
@@ -410,24 +417,26 @@ export default function ClientsPage() {
               const colors = ACTION_TYPE_COLORS[item.action_type] ?? getDefaultColor()
               return (
                 <div key={`${item.action_type}-${item.ref_id}`}
-                  className="grid items-center gap-x-2 px-3 py-2 border-t border-divider"
+                  className="flex flex-col sm:grid sm:items-center gap-2 px-3 py-2.5 border-t border-divider"
                   style={{ gridTemplateColumns: '110px 1fr 90px 70px' }}>
                   <span className="rounded-[5px] px-[6px] py-[3px] text-[10px] font-medium w-fit"
                     style={{ backgroundColor: colors.bg, color: colors.fg }}>
                     {item.action_type.replace(/_/g, ' ')}
                   </span>
-                  <div className="overflow-hidden">
+                  <div className="overflow-hidden min-w-0">
                     <p className="text-text-primary text-[12px] font-medium truncate">{item.client_name ?? '—'}</p>
                     <p className="text-text-secondary text-[11px] truncate">{item.summary}</p>
                   </div>
-                  <p className="text-text-secondary text-[11px] text-right">{fmtDate(item.created_at)}</p>
-                  <button
-                    type="button"
-                    onClick={() => openActionItem(item)}
-                    className="text-primary text-[11px] h-[30px] text-right hover:opacity-70 transition-opacity"
-                  >
-                    Open →
-                  </button>
+                  <div className="flex items-center justify-between sm:contents gap-2">
+                    <p className="text-text-secondary text-[11px] sm:text-right">{fmtDate(item.created_at)}</p>
+                    <button
+                      type="button"
+                      onClick={() => openActionItem(item)}
+                      className="text-primary text-[12px] h-10 sm:h-[30px] px-2 sm:text-right hover:opacity-70 transition-opacity"
+                    >
+                      Open →
+                    </button>
+                  </div>
                 </div>
               )
             })
@@ -436,76 +445,112 @@ export default function ClientsPage() {
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        <div className="overflow-x-auto mx-4 mb-4 bg-surface rounded-lg border border-divider">
-          <table style={{ minWidth: 760 }} className="w-full">
-            <thead>
-              <tr className="bg-surface-elevated border-b border-divider">
-                <th style={{ width: 180 }} className="data-th">Client</th>
-                <th style={{ width:  90 }} className="data-th">Code</th>
-                <th style={{ width: 100 }} className="data-th">Type</th>
-                <th style={{ width: 130 }} className="data-th">Contact</th>
-                <th style={{ width: 150 }} className="data-th">Email</th>
-                <th style={{ width: 110 }} className="data-th">Phone</th>
-                {xeroConnected && (
-                  <th style={{ width: 80 }} className="data-th text-center">Xero</th>
-                )}
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan={xeroConnected ? 7 : 6} className="py-12 text-center text-[13px] text-text-disabled">Loading…</td></tr>
-              ) : clients.length === 0 ? (
-                <tr><td colSpan={xeroConnected ? 7 : 6} className="py-8 text-center text-[13px] text-text-secondary">
-                  {total === 0 && !searchDebounced ? 'No clients yet. Click + Add Client to create one.' : 'No clients match your search.'}
-                </td></tr>
-              ) : (
-                clients.map(c => (
-                  <tr key={c.id}
-                    onClick={() => router.push(`/dashboard/clients/${c.id}`)}
-                    className="bg-surface hover:bg-background cursor-pointer border-b border-divider last:border-0 transition-colors">
-                    <td className="data-td text-text-primary font-medium">
-                      <span className="block truncate" style={{ maxWidth: 180 }}>{c.name}</span>
-                    </td>
-                    <td className="data-td text-text-primary font-medium text-[12px]">{c.client_code ?? '—'}</td>
-                    <td className="data-td text-text-secondary text-[12px]">
-                      {CLIENT_TYPE_LABELS[c.type ?? ''] ?? c.type ?? '—'}
-                    </td>
-                    <td className="data-td text-text-secondary text-[12px]">
-                      <span className="block truncate" style={{ maxWidth: 130 }}>{c.contact_person ?? '—'}</span>
-                    </td>
-                    <td className="data-td text-text-secondary text-[12px]">
-                      <span className="block truncate" style={{ maxWidth: 150 }}>{c.email ?? '—'}</span>
-                    </td>
-                    <td className="data-td text-text-secondary text-[12px]">{c.phone ?? '—'}</td>
+        <div className="mx-4 mb-4 bg-surface rounded-lg border border-divider overflow-hidden">
+          <ResponsiveDataView
+            table={
+              <table style={{ minWidth: 760 }} className="w-full">
+                <thead>
+                  <tr className="bg-surface-elevated border-b border-divider">
+                    <th style={{ width: 180 }} className="data-th">Client</th>
+                    <th style={{ width:  90 }} className="data-th">Code</th>
+                    <th style={{ width: 100 }} className="data-th">Type</th>
+                    <th style={{ width: 130 }} className="data-th">Contact</th>
+                    <th style={{ width: 150 }} className="data-th">Email</th>
+                    <th style={{ width: 110 }} className="data-th">Phone</th>
                     {xeroConnected && (
-                      <td className="data-td text-center" onClick={e => e.stopPropagation()}>
-                        {xeroLinked.has(c.id) ? (
-                          <span className="text-green-400 text-[18px]" title="Synced to Xero">✓</span>
-                        ) : canEdit ? (
-                          <button
-                            onClick={e => pushToXero(e, c.id)}
-                            disabled={xeroPushing === c.id}
-                            className="text-[11px] px-2 py-1 rounded border border-[#13B5EA] text-[#13B5EA] hover:bg-[#13B5EA]/10 disabled:opacity-40 transition-colors whitespace-nowrap"
-                          >
-                            {xeroPushing === c.id ? '…' : '+ Xero'}
-                          </button>
-                        ) : (
-                          <span className="text-text-disabled text-[11px]">—</span>
-                        )}
-                      </td>
+                      <th style={{ width: 80 }} className="data-th text-center">Xero</th>
                     )}
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                </thead>
+                <tbody>
+                  {loading ? (
+                    <tr><td colSpan={xeroConnected ? 7 : 6} className="py-12 text-center text-[13px] text-text-disabled">Loading…</td></tr>
+                  ) : clients.length === 0 ? (
+                    <tr><td colSpan={xeroConnected ? 7 : 6} className="py-8 text-center text-[13px] text-text-secondary">
+                      {total === 0 && !searchDebounced ? 'No clients yet. Click + Add Client to create one.' : 'No clients match your search.'}
+                    </td></tr>
+                  ) : (
+                    clients.map(c => (
+                      <tr key={c.id}
+                        onClick={() => router.push(`/dashboard/clients/${c.id}`)}
+                        className="bg-surface hover:bg-background cursor-pointer border-b border-divider last:border-0 transition-colors">
+                        <td className="data-td text-text-primary font-medium">
+                          <span className="block truncate" style={{ maxWidth: 180 }}>{c.name}</span>
+                        </td>
+                        <td className="data-td text-text-primary font-medium text-[12px]">{c.client_code ?? '—'}</td>
+                        <td className="data-td text-text-secondary text-[12px]">
+                          {CLIENT_TYPE_LABELS[c.type ?? ''] ?? c.type ?? '—'}
+                        </td>
+                        <td className="data-td text-text-secondary text-[12px]">
+                          <span className="block truncate" style={{ maxWidth: 130 }}>{c.contact_person ?? '—'}</span>
+                        </td>
+                        <td className="data-td text-text-secondary text-[12px]">
+                          <span className="block truncate" style={{ maxWidth: 150 }}>{c.email ?? '—'}</span>
+                        </td>
+                        <td className="data-td text-text-secondary text-[12px]">{c.phone ?? '—'}</td>
+                        {xeroConnected && (
+                          <td className="data-td text-center" onClick={e => e.stopPropagation()}>
+                            {xeroLinked.has(c.id) ? (
+                              <span className="text-green-400 text-[18px]" title="Synced to Xero">✓</span>
+                            ) : canEdit ? (
+                              <button
+                                onClick={e => pushToXero(e, c.id)}
+                                disabled={xeroPushing === c.id}
+                                className="text-[11px] px-2 py-1 rounded border border-[#13B5EA] text-[#13B5EA] hover:bg-[#13B5EA]/10 disabled:opacity-40 transition-colors whitespace-nowrap"
+                              >
+                                {xeroPushing === c.id ? '…' : '+ Xero'}
+                              </button>
+                            ) : (
+                              <span className="text-text-disabled text-[11px]">—</span>
+                            )}
+                          </td>
+                        )}
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            }
+            mobile={
+              loading ? (
+                <p className="py-12 text-center text-[13px] text-text-disabled">Loading…</p>
+              ) : clients.length === 0 ? (
+                <p className="py-8 text-center text-[13px] text-text-secondary px-4">
+                  {total === 0 && !searchDebounced ? 'No clients yet. Click + Add Client to create one.' : 'No clients match your search.'}
+                </p>
+              ) : (
+                <>
+                  {clients.map(c => (
+                    <DataCard key={c.id} onClick={() => router.push(`/dashboard/clients/${c.id}`)}>
+                      <DataCardTitle>{c.name}</DataCardTitle>
+                      <DataCardMeta>
+                        {c.client_code ?? '—'} · {CLIENT_TYPE_LABELS[c.type ?? ''] ?? c.type ?? '—'}
+                      </DataCardMeta>
+                      <DataCardRow label="Contact" value={c.contact_person ?? '—'} />
+                      <DataCardRow label="Phone" value={c.phone ?? '—'} />
+                      {xeroConnected && canEdit && !xeroLinked.has(c.id) && (
+                        <button
+                          type="button"
+                          onClick={e => { e.stopPropagation(); void pushToXero(e, c.id) }}
+                          disabled={xeroPushing === c.id}
+                          className="mt-3 w-full h-11 rounded-lg border border-[#13B5EA] text-[#13B5EA] text-[13px] disabled:opacity-40"
+                        >
+                          {xeroPushing === c.id ? '…' : '+ Sync to Xero'}
+                        </button>
+                      )}
+                    </DataCard>
+                  ))}
+                </>
+              )
+            }
+          />
         </div>
       </div>
 
       <div className="flex items-center justify-between px-4 py-2 border-t border-divider shrink-0">
-        <button disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} className="btn-outlined h-8 px-3 text-[12px] disabled:opacity-40">Previous</button>
+        <button disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} className="btn-outlined h-10 px-3 text-[12px] disabled:opacity-40">Previous</button>
         <span className="text-[12px] text-text-secondary">Page {page} of {pages}</span>
-        <button disabled={page >= pages} onClick={() => setPage(p => p + 1)} className="btn-outlined h-8 px-3 text-[12px] disabled:opacity-40">Next</button>
+        <button disabled={page >= pages} onClick={() => setPage(p => p + 1)} className="btn-outlined h-10 px-3 text-[12px] disabled:opacity-40">Next</button>
       </div>
     </div>
   )

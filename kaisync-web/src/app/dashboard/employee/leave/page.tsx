@@ -12,6 +12,13 @@ import {
   getLeaveIcon,
 } from '@/lib/leave-policy'
 import { uploadLeaveAttachment } from '@/lib/employee-media'
+import {
+  ResponsiveDataView,
+  DataCard,
+  DataCardTitle,
+  DataCardMeta,
+  DataCardRow,
+} from '@/components/ui/ResponsiveDataView'
 
 interface LeaveRequest {
   id: string
@@ -248,75 +255,104 @@ export default function EmployeeLeavePage() {
               <p className="text-[14px]">No leave requests yet</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-[13px]">
-                <thead>
-                  <tr className="border-b border-divider bg-surface-elevated">
-                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Type</th>
-                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Start</th>
-                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">End</th>
-                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Days</th>
-                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Status</th>
-                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Reason</th>
-                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Note</th>
-                    <th className="px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide text-center">Doc</th>
-                    <th className="px-4 py-2.5" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-divider">
+            <ResponsiveDataView
+              table={
+                <table className="w-full text-[13px]">
+                  <thead>
+                    <tr className="border-b border-divider bg-surface-elevated">
+                      <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Type</th>
+                      <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Start</th>
+                      <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">End</th>
+                      <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Days</th>
+                      <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Status</th>
+                      <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Reason</th>
+                      <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Note</th>
+                      <th className="px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide text-center">Doc</th>
+                      <th className="px-4 py-2.5" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-divider">
+                    {sorted.map((req) => (
+                      <tr key={req.id} className="hover:bg-surface-elevated transition-colors">
+                        <td className="px-4 py-3 text-[13px] font-semibold text-text-primary whitespace-nowrap">{req.leave_type}</td>
+                        <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">{fmtDate(req.start_date)}</td>
+                        <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">{fmtDate(req.end_date)}</td>
+                        <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">{req.total_days}d</td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span className={`text-[11px] font-semibold px-2 py-[2px] rounded-full capitalize ${STATUS_STYLES[req.status] ?? 'bg-surface-elevated text-text-secondary'}`}>
+                            {req.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-[12px] text-text-disabled max-w-[140px] truncate">
+                          {req.reason ? <span className="italic">&ldquo;{req.reason}&rdquo;</span> : '—'}
+                        </td>
+                        <td className="px-4 py-3 text-[12px] text-text-secondary max-w-[140px] truncate">
+                          {req.decision_note || '—'}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          {req.attachment_url ? (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const supabase = createClient()
+                                const { data: urlData } = await supabase.storage
+                                  .from('workforce-media')
+                                  .createSignedUrl(req.attachment_url!, 60)
+                                if (urlData?.signedUrl) window.open(urlData.signedUrl, '_blank')
+                              }}
+                              className="inline-flex items-center justify-center w-10 h-10 rounded-lg border border-divider text-text-secondary hover:border-primary hover:text-primary transition-colors"
+                              title="View attachment"
+                            >
+                              <span className="material-icons text-[18px]">attach_file</span>
+                            </button>
+                          ) : (
+                            <span className="text-text-disabled">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          {req.status === 'pending' && (
+                            <button
+                              type="button"
+                              onClick={() => openForm(req)}
+                              className="text-[12px] text-primary font-semibold hover:underline whitespace-nowrap"
+                            >
+                              Edit
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              }
+              mobile={
+                <>
                   {sorted.map((req) => (
-                    <tr key={req.id} className="hover:bg-surface-elevated transition-colors">
-                      <td className="px-4 py-3 text-[13px] font-semibold text-text-primary whitespace-nowrap">{req.leave_type}</td>
-                      <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">{fmtDate(req.start_date)}</td>
-                      <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">{fmtDate(req.end_date)}</td>
-                      <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">{req.total_days}d</td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className={`text-[11px] font-semibold px-2 py-[2px] rounded-full capitalize ${STATUS_STYLES[req.status] ?? 'bg-surface-elevated text-text-secondary'}`}>
+                    <DataCard key={req.id}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <DataCardTitle>{req.leave_type}</DataCardTitle>
+                          <DataCardMeta>{fmtDate(req.start_date)} – {fmtDate(req.end_date)} · {req.total_days}d</DataCardMeta>
+                        </div>
+                        <span className={`text-[11px] font-semibold px-2 py-[2px] rounded-full capitalize shrink-0 ${STATUS_STYLES[req.status] ?? 'bg-surface-elevated text-text-secondary'}`}>
                           {req.status}
                         </span>
-                      </td>
-                      <td className="px-4 py-3 text-[12px] text-text-disabled max-w-[140px] truncate">
-                        {req.reason ? <span className="italic">&ldquo;{req.reason}&rdquo;</span> : '—'}
-                      </td>
-                      <td className="px-4 py-3 text-[12px] text-text-secondary max-w-[140px] truncate">
-                        {req.decision_note || '—'}
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        {req.attachment_url ? (
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              const supabase = createClient()
-                              const { data: urlData } = await supabase.storage
-                                .from('workforce-media')
-                                .createSignedUrl(req.attachment_url!, 60)
-                              if (urlData?.signedUrl) window.open(urlData.signedUrl, '_blank')
-                            }}
-                            className="inline-flex items-center justify-center w-7 h-7 rounded-lg border border-divider text-text-secondary hover:border-primary hover:text-primary transition-colors"
-                            title="View attachment"
-                          >
-                            <span className="material-icons text-[14px]">attach_file</span>
-                          </button>
-                        ) : (
-                          <span className="text-text-disabled">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        {req.status === 'pending' && (
-                          <button
-                            type="button"
-                            onClick={() => openForm(req)}
-                            className="text-[12px] text-primary font-semibold hover:underline whitespace-nowrap"
-                          >
-                            Edit
-                          </button>
-                        )}
-                      </td>
-                    </tr>
+                      </div>
+                      {req.reason && <DataCardRow label="Reason" value={req.reason} />}
+                      {req.status === 'pending' && (
+                        <button
+                          type="button"
+                          onClick={() => openForm(req)}
+                          className="mt-3 w-full h-11 rounded-lg bg-primary/10 text-primary text-[13px] font-semibold"
+                        >
+                          Edit
+                        </button>
+                      )}
+                    </DataCard>
                   ))}
-                </tbody>
-              </table>
-            </div>
+                </>
+              }
+            />
           )}
         </div>
       </div>
