@@ -13,13 +13,9 @@ import {
   isIncidentOpen,
 } from '@/lib/incident-types'
 import {
-  dequeueIncident,
-  getIncidentQueue,
   pendingIncidentCount,
-  queuedPhotoToBlob,
-  type QueuedIncident,
 } from '@/lib/incident-queue'
-import { uploadIncidentPhoto } from '@/lib/incident-media'
+import { flushEmployeeOffline } from '@/lib/offline/flush'
 
 interface Incident {
   id: string
@@ -107,22 +103,18 @@ export default function EmployeeIncidentsPage() {
   }, [])
 
   async function replayQueue() {
-    const queue = getIncidentQueue()
-    if (queue.length === 0) return
     const cid = companyIdRef.current
     const empId = empIdRef.current
     if (!cid || !empId) return
 
     setReplaying(true)
     const supabase = createClient()
-    for (const item of queue) {
-      try {
-        await submitQueuedIncident(supabase, item, tokRef.current)
-        dequeueIncident(item.local_id)
-      } catch {
-        // leave in queue
-      }
-    }
+    await flushEmployeeOffline(supabase, {
+      companyId: cid,
+      employeeId: empId,
+      sessionToken: tokRef.current,
+      refreshPack: false,
+    })
     setPendingCount(pendingIncidentCount())
     await loadList()
     setReplaying(false)
@@ -353,44 +345,3 @@ export default function EmployeeIncidentsPage() {
   )
 }
 
-async function submitQueuedIncident(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  supabase: any,
-  item: QueuedIncident,
-  sessionToken: string | null,
-) {
-  const photoUrls: string[] = []
-  for (const photo of item.photos) {
-    const blob = queuedPhotoToBlob(photo)
-    const path = await uploadIncidentPhoto({
-      supabase,
-      companyId: item.company_id,
-      employeeId: item.employee_id,
-      file: blob,
-      fileName: photo.name,
-      sessionToken,
-      softFail: true,
-    })
-    if (path) photoUrls.push(path)
-  }
-
-  const { error } = await supabase.rpc('employee_insert_incident', {
-    p_company_id: item.company_id,
-    p_employee_id: item.employee_id,
-    p_description: item.description,
-    p_severity: item.severity,
-    p_job_id: item.job_id,
-    p_site_id: item.site_id,
-    p_assignee_id: item.assignee_id,
-    p_photo_urls: photoUrls.length > 0 ? photoUrls : null,
-    p_reported_by_name: item.reported_by_name,
-    p_title: item.title,
-    p_category: item.category,
-    p_occurred_at: item.occurred_at,
-    p_latitude: item.latitude,
-    p_longitude: item.longitude,
-    p_location_text: item.location_text,
-    p_session_token: sessionToken,
-  })
-  if (error) throw error
-}

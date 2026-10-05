@@ -979,24 +979,7 @@ export default function EmployeeOverviewPage() {
         </div>
       </div>
 
-      {/* Offline punch queue banner */}
-      {pendingPunches.length > 0 && (
-        <div className="mx-4 mt-3 shrink-0 rounded-xl px-4 py-3 bg-warning/10 border border-warning/30 flex items-center justify-between gap-3">
-          <div>
-            <p className="text-[13px] font-semibold text-warning">
-              {pendingPunches.length} punch{pendingPunches.length > 1 ? 'es' : ''} saved offline
-            </p>
-            <p className="text-[12px] text-text-secondary mt-0.5">
-              Will sync automatically when you reconnect.
-            </p>
-          </div>
-          <button
-            onClick={syncQueue}
-            className="text-[12px] font-semibold text-warning border border-warning/40 px-3 py-1.5 rounded-lg hover:bg-warning/10 transition-colors">
-            Retry now
-          </button>
-        </div>
-      )}
+      {/* Offline punch queue is shown on the employee layout OfflineSyncBanner */}
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
 

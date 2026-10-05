@@ -14,6 +14,8 @@ import {
   type JobScope,
   type JobStatusFilter,
 } from '@/lib/job-ownership'
+import { downloadJobPack, loadJobPack } from '@/lib/offline/job-pack'
+import { networkLooksDown } from '@/lib/offline/meta'
 
 interface Job {
   id: string
@@ -64,6 +66,8 @@ export default function EmployeeJobsPage() {
   const [tab, setTab] = useState<JobScope>('assigned')
   const [statusFilter, setStatusFilter] = useState<JobStatusFilter>('all')
   const [empId, setEmpId] = useState<string | null>(null)
+  const [fromCache, setFromCache] = useState(false)
+  const [cacheAt, setCacheAt] = useState<string | null>(null)
 
   useEffect(() => {
     if (allowed !== true) return
@@ -72,6 +76,7 @@ export default function EmployeeJobsPage() {
 
   async function init() {
     setLoading(true)
+    setFromCache(false)
     const supabase = createClient()
     const member = await resolveCurrentMember(supabase)
     if (!member) {
@@ -84,16 +89,33 @@ export default function EmployeeJobsPage() {
       const tok = member.sessionToken
         ?? (await supabase.auth.getSession()).data.session?.access_token
         ?? null
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error } = await (supabase.rpc as any)('employee_get_jobs_for_employee', {
-        p_employee_id: member.employeeId,
-        p_company_id: member.companyId,
-        p_session_token: tok,
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        const pack = await loadJobPack(member.companyId, member.employeeId)
+        if (pack) {
+          setJobs(sortJobsByCreatedDesc(pack.jobs as Job[]))
+          setFromCache(true)
+          setCacheAt(pack.syncedAt)
+        }
+        setLoading(false)
+        return
+      }
+      const pack = await downloadJobPack(supabase, {
+        companyId: member.companyId,
+        employeeId: member.employeeId,
+        sessionToken: tok,
       })
-      if (error) throw error
-      setJobs(sortJobsByCreatedDesc((data as Job[]) ?? []))
+      setJobs(sortJobsByCreatedDesc(pack.jobs as Job[]))
+      setCacheAt(pack.syncedAt)
     } catch (e) {
       console.error('Failed to load jobs:', e)
+      const pack = await loadJobPack(member.companyId, member.employeeId)
+      if (pack) {
+        setJobs(sortJobsByCreatedDesc(pack.jobs as Job[]))
+        setFromCache(true)
+        setCacheAt(pack.syncedAt)
+      } else if (!networkLooksDown(e instanceof Error ? e.message : null)) {
+        /* keep empty */
+      }
     }
     setLoading(false)
   }
@@ -136,6 +158,14 @@ export default function EmployeeJobsPage() {
             </Link>
           </div>
         </div>
+
+        {fromCache && (
+          <p className="mt-2 text-[12px] text-warning">
+            Showing jobs saved on this device
+            {cacheAt ? ` · synced ${new Date(cacheAt).toLocaleString('en-ZA', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}` : ''}.
+            Connect to get new assignments.
+          </p>
+        )}
 
         <div className="flex gap-2 mt-3">
           {([
