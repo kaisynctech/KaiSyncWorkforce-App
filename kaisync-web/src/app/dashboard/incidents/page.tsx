@@ -14,6 +14,13 @@ import {
 } from '@/lib/list-pagination'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { KpiTile } from '@/components/ui/KpiTile'
+import {
+  ResponsiveDataView,
+  DataCard,
+  DataCardTitle,
+  DataCardMeta,
+  DataCardRow,
+} from '@/components/ui/ResponsiveDataView'
 import { hrUpdateIncident } from '@/lib/incidents'
 import type { IncidentReport } from '@/types/database'
 import * as XLSX from 'xlsx'
@@ -332,7 +339,7 @@ export default function IncidentsPage() {
       </div>
 
       <div className="flex-1 overflow-auto">
-        <div className="mx-4 my-3 bg-surface rounded-lg border border-divider overflow-x-auto">
+        <div className="mx-4 my-3 bg-surface rounded-lg border border-divider overflow-hidden">
           {loading ? (
             <p className="text-text-secondary text-[13px] text-center py-12">Loading…</p>
           ) : incidents.length === 0 ? (
@@ -341,52 +348,88 @@ export default function IncidentsPage() {
               <p className="text-text-secondary text-[14px]">No incidents found</p>
             </div>
           ) : (
-            <table className="w-full text-[13px]" style={{ minWidth: 960 }}>
-              <thead>
-                <tr className="border-b border-divider bg-surface-elevated">
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase">Title</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase">Severity</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase">Status</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase">Reporter</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase">Assignee</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase">Job</th>
-                  <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase">Created</th>
-                  <th className="text-right px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-divider">
-                {incidents.map(inc => {
-                  const reporter = inc.reporter ? `${inc.reporter.name} ${inc.reporter.surname}`.trim() : '—'
-                  const assignee = inc.assignee ? `${inc.assignee.name} ${inc.assignee.surname}`.trim() : '—'
-                  return (
-                    <tr key={inc.id} className="hover:bg-background transition-colors cursor-pointer"
-                      onClick={() => router.push(`/dashboard/incidents/${inc.id}`)}>
-                      <td className="px-4 py-3 font-medium text-text-primary max-w-[220px] truncate">
-                        {inc.title ?? inc.description ?? '—'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <StatusBadge label={inc.severity} bg={sevBg(inc.severity)} fg={sevFg(inc.severity)} />
-                      </td>
-                      <td className="px-4 py-3 text-text-secondary capitalize">{inc.status}</td>
-                      <td className="px-4 py-3 text-text-secondary truncate max-w-[120px]">{reporter}</td>
-                      <td className="px-4 py-3 text-text-secondary truncate max-w-[120px]">{assignee}</td>
-                      <td className="px-4 py-3 text-text-secondary truncate max-w-[140px]">{inc.jobs?.title ?? '—'}</td>
-                      <td className="px-4 py-3 text-text-secondary whitespace-nowrap">{fmtDate(inc.created_at)}</td>
-                      <td className="px-4 py-3 text-right">
+            <ResponsiveDataView
+              table={
+                <table className="w-full text-[13px]" style={{ minWidth: 960 }}>
+                  <thead>
+                    <tr className="border-b border-divider bg-surface-elevated">
+                      <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase">Title</th>
+                      <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase">Severity</th>
+                      <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase">Status</th>
+                      <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase">Reporter</th>
+                      <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase">Assignee</th>
+                      <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase">Job</th>
+                      <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase">Created</th>
+                      <th className="text-right px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-divider">
+                    {incidents.map(inc => {
+                      const reporter = inc.reporter ? `${inc.reporter.name} ${inc.reporter.surname}`.trim() : '—'
+                      const assignee = inc.assignee ? `${inc.assignee.name} ${inc.assignee.surname}`.trim() : '—'
+                      return (
+                        <tr key={inc.id} className="hover:bg-background transition-colors cursor-pointer"
+                          onClick={() => router.push(`/dashboard/incidents/${inc.id}`)}>
+                          <td className="px-4 py-3 font-medium text-text-primary max-w-[220px] truncate">
+                            {inc.title ?? inc.description ?? '—'}
+                          </td>
+                          <td className="px-4 py-3">
+                            <StatusBadge label={inc.severity} bg={sevBg(inc.severity)} fg={sevFg(inc.severity)} />
+                          </td>
+                          <td className="px-4 py-3 text-text-secondary capitalize">{inc.status}</td>
+                          <td className="px-4 py-3 text-text-secondary truncate max-w-[120px]">{reporter}</td>
+                          <td className="px-4 py-3 text-text-secondary truncate max-w-[120px]">{assignee}</td>
+                          <td className="px-4 py-3 text-text-secondary truncate max-w-[140px]">{inc.jobs?.title ?? '—'}</td>
+                          <td className="px-4 py-3 text-text-secondary whitespace-nowrap">{fmtDate(inc.created_at)}</td>
+                          <td className="px-4 py-3 text-right">
+                            {canEdit && isOpenIncident(inc) && (
+                              <button
+                                onClick={e => { e.stopPropagation(); void closeIncident(inc) }}
+                                className="h-8 px-3 rounded-lg bg-primary text-white text-[12px] font-medium"
+                              >
+                                Close
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              }
+              mobile={
+                <>
+                  {incidents.map(inc => {
+                    const reporter = inc.reporter ? `${inc.reporter.name} ${inc.reporter.surname}`.trim() : '—'
+                    return (
+                      <DataCard
+                        key={inc.id}
+                        onClick={() => router.push(`/dashboard/incidents/${inc.id}`)}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <DataCardTitle className="flex-1">
+                            {inc.title ?? inc.description ?? '—'}
+                          </DataCardTitle>
+                          <StatusBadge label={inc.severity} bg={sevBg(inc.severity)} fg={sevFg(inc.severity)} />
+                        </div>
+                        <DataCardMeta className="capitalize">{inc.status} · {fmtDate(inc.created_at)}</DataCardMeta>
+                        <DataCardRow label="Reporter" value={reporter} />
+                        <DataCardRow label="Job" value={inc.jobs?.title ?? '—'} />
                         {canEdit && isOpenIncident(inc) && (
                           <button
+                            type="button"
                             onClick={e => { e.stopPropagation(); void closeIncident(inc) }}
-                            className="h-8 px-3 rounded-lg bg-primary text-white text-[12px] font-medium"
+                            className="mt-3 w-full h-11 rounded-lg bg-primary text-white text-[13px] font-medium"
                           >
                             Close
                           </button>
                         )}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+                      </DataCard>
+                    )
+                  })}
+                </>
+              }
+            />
           )}
         </div>
       </div>

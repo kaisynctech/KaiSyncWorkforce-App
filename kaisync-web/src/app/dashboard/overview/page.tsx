@@ -377,7 +377,7 @@ export default function OverviewPage() {
         </div>
 
         {/* ── KPI tiles ── */}
-        <div className="grid grid-cols-3 gap-3">
+        <div className="kpi-grid">
           <KpiTile icon="people" label="Employees" value={kpi.headcount} href="/dashboard/employees" iconBg="#1e3a5f" iconColor="#60a5fa" />
           <KpiTile icon="timer" label="Clocked In" value={kpi.clockedIn} href="/dashboard/attendance" iconBg="#052e16" iconColor="#22c55e" />
           <KpiTile icon="work" label="Active Jobs" value={kpi.activeJobs} href="/dashboard/jobs" iconBg="#3b1f05" iconColor="#f97316" />

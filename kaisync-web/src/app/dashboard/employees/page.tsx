@@ -13,6 +13,14 @@ import { decideLeaveRequest, formatLeaveDecideError } from '@/lib/leave'
 import { getCompanyAnnualDays, loadLeaveSettings, type LeaveSettingsMap } from '@/lib/leave-settings'
 import { createWorkTeam, listWorkTeams, withMemberCount, type WorkTeamRow } from '@/lib/work-teams'
 import type { Employee, AccessLevel, LeaveRequest, WorkTeam } from '@/types/database'
+import {
+  ResponsiveDataView,
+  DataCard,
+  DataCardTitle,
+  DataCardMeta,
+  DataCardRow,
+} from '@/components/ui/ResponsiveDataView'
+import { ModalShell } from '@/components/ui/ModalShell'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -621,68 +629,105 @@ export default function EmployeesPage() {
                 </Link>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-[13px]">
-                  <thead>
-                    <tr className="border-b border-divider bg-surface-elevated">
-                      <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Employee</th>
-                      <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Code</th>
-                      <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Role</th>
-                      <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Department</th>
-                      <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+              <ResponsiveDataView
+                table={
+                  <table className="w-full text-[13px]">
+                    <thead>
+                      <tr className="border-b border-divider bg-surface-elevated">
+                        <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Employee</th>
+                        <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Code</th>
+                        <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Role</th>
+                        <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Department</th>
+                        <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredEmployees.map(emp => {
+                        const badge = ACCESS_BADGES[normalizeAccessLevel(emp.access_level)]
+                        return (
+                          <tr
+                            key={emp.id}
+                            className="border-b border-divider last:border-0 hover:bg-background transition-colors cursor-pointer"
+                            onClick={() => router.push(`/dashboard/employees/${emp.id}`)}
+                          >
+                            <td className="px-5 py-3">
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                                  <span className="text-primary text-[12px] font-semibold">
+                                    {getInitials(`${emp.name} ${emp.surname}`)}
+                                  </span>
+                                </div>
+                                <div>
+                                  <p className="font-medium text-text-primary">{emp.name} {emp.surname}</p>
+                                  {emp.position && (
+                                    <p className="text-[11px] text-text-secondary">{emp.position}</p>
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-5 py-3 text-text-secondary font-mono">
+                              {emp.employee_code ?? '—'}
+                            </td>
+                            <td className="px-5 py-3">
+                              <span className={`px-2 py-0.5 rounded-pill text-[11px] font-medium ${badge.cls}`}>
+                                {badge.label}
+                              </span>
+                            </td>
+                            <td className="px-5 py-3 text-text-secondary">
+                              {emp.department ?? '—'}
+                            </td>
+                            <td className="px-5 py-3">
+                              <span className={`flex items-center gap-1 text-[12px] font-medium w-fit ${
+                                emp.is_active ? 'text-success' : 'text-text-disabled'
+                              }`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${
+                                  emp.is_active ? 'bg-success' : 'bg-text-disabled'
+                                }`} />
+                                {emp.is_active ? 'Active' : 'Inactive'}
+                              </span>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                }
+                mobile={
+                  <>
                     {filteredEmployees.map(emp => {
                       const badge = ACCESS_BADGES[normalizeAccessLevel(emp.access_level)]
                       return (
-                        <tr
+                        <DataCard
                           key={emp.id}
-                          className="border-b border-divider last:border-0 hover:bg-background transition-colors cursor-pointer"
                           onClick={() => router.push(`/dashboard/employees/${emp.id}`)}
                         >
-                          <td className="px-5 py-3">
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                                <span className="text-primary text-[12px] font-semibold">
-                                  {getInitials(`${emp.name} ${emp.surname}`)}
-                                </span>
-                              </div>
-                              <div>
-                                <p className="font-medium text-text-primary">{emp.name} {emp.surname}</p>
-                                {emp.position && (
-                                  <p className="text-[11px] text-text-secondary">{emp.position}</p>
-                                )}
-                              </div>
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                              <span className="text-primary text-[13px] font-semibold">
+                                {getInitials(`${emp.name} ${emp.surname}`)}
+                              </span>
                             </div>
-                          </td>
-                          <td className="px-5 py-3 text-text-secondary font-mono">
-                            {emp.employee_code ?? '—'}
-                          </td>
-                          <td className="px-5 py-3">
-                            <span className={`px-2 py-0.5 rounded-pill text-[11px] font-medium ${badge.cls}`}>
+                            <div className="min-w-0 flex-1">
+                              <DataCardTitle>{emp.name} {emp.surname}</DataCardTitle>
+                              <DataCardMeta>
+                                {emp.position || emp.employee_code || '—'}
+                              </DataCardMeta>
+                            </div>
+                            <span className={`px-2 py-0.5 rounded-pill text-[11px] font-medium shrink-0 ${badge.cls}`}>
                               {badge.label}
                             </span>
-                          </td>
-                          <td className="px-5 py-3 text-text-secondary">
-                            {emp.department ?? '—'}
-                          </td>
-                          <td className="px-5 py-3">
-                            <span className={`flex items-center gap-1 text-[12px] font-medium w-fit ${
-                              emp.is_active ? 'text-success' : 'text-text-disabled'
-                            }`}>
-                              <span className={`w-1.5 h-1.5 rounded-full ${
-                                emp.is_active ? 'bg-success' : 'bg-text-disabled'
-                              }`} />
-                              {emp.is_active ? 'Active' : 'Inactive'}
-                            </span>
-                          </td>
-                        </tr>
+                          </div>
+                          <DataCardRow label="Dept" value={emp.department ?? '—'} />
+                          <DataCardRow
+                            label="Status"
+                            value={emp.is_active ? 'Active' : 'Inactive'}
+                          />
+                        </DataCard>
                       )
                     })}
-                  </tbody>
-                </table>
-              </div>
+                  </>
+                }
+              />
             )}
           </div>
         </>
@@ -705,37 +750,40 @@ export default function EmployeesPage() {
           </div>
 
           {/* Create team modal */}
-          {showCreateTeam && (
-            <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-              <div className="bg-surface rounded-xl shadow-xl w-full max-w-sm p-6">
-                <h2 className="text-[18px] font-semibold text-text-primary mb-4">New Team</h2>
-                <input
-                  type="text"
-                  placeholder="Team name…"
-                  value={newTeamName}
-                  autoFocus
-                  onChange={e => setNewTeamName(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && createTeam()}
-                  className="w-full h-10 px-3 bg-background border border-border rounded-md text-[13px] text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 mb-4"
-                />
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => { setShowCreateTeam(false); setNewTeamName('') }}
-                    className="flex-1 h-10 rounded-md border border-border text-[13px] text-text-secondary hover:bg-background transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={createTeam}
-                    disabled={!newTeamName.trim() || teamBusy}
-                    className="flex-1 h-10 rounded-md bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors"
-                  >
-                    {teamBusy ? 'Creating…' : 'Create'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
+          <ModalShell
+            open={showCreateTeam}
+            onClose={() => { setShowCreateTeam(false); setNewTeamName('') }}
+            title="New Team"
+            footer={
+              <>
+                <button
+                  type="button"
+                  onClick={() => { setShowCreateTeam(false); setNewTeamName('') }}
+                  className="h-11 px-4 rounded-md border border-border text-[13px] text-text-secondary hover:bg-background transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={createTeam}
+                  disabled={!newTeamName.trim() || teamBusy}
+                  className="h-11 px-4 rounded-md bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors"
+                >
+                  {teamBusy ? 'Creating…' : 'Create'}
+                </button>
+              </>
+            }
+          >
+            <input
+              type="text"
+              placeholder="Team name…"
+              value={newTeamName}
+              autoFocus
+              onChange={e => setNewTeamName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && createTeam()}
+              className="w-full h-11 px-3 bg-background border border-border rounded-md text-[13px] text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          </ModalShell>
 
           {teamsLoading ? (
             <div className="py-16 text-center text-[13px] text-text-disabled">Loading…</div>
@@ -746,44 +794,66 @@ export default function EmployeesPage() {
             </div>
           ) : (
             <div className="bg-surface rounded-lg border border-divider overflow-hidden">
-              <table className="w-full text-[13px]">
-                <thead>
-                  <tr className="border-b border-divider bg-surface-elevated">
-                    <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Team</th>
-                    <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Members</th>
-                    <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {teams.map(team => (
-                    <tr
-                      key={team.id}
-                      className="border-b border-divider last:border-0 hover:bg-background transition-colors cursor-pointer"
-                      onClick={() => router.push(`/dashboard/work-teams/${team.id}`)}
-                    >
-                      <td className="px-5 py-3">
-                        <p className="font-medium text-text-primary">{team.name}</p>
-                        {team.description && (
-                          <p className="text-[11px] text-text-secondary">{team.description}</p>
-                        )}
-                      </td>
-                      <td className="px-5 py-3 text-text-secondary">
-                        {team.member_count} {team.member_count === 1 ? 'member' : 'members'}
-                      </td>
-                      <td className="px-5 py-3">
-                        <span className={`flex items-center gap-1 text-[12px] font-medium w-fit ${
-                          team.is_active ? 'text-success' : 'text-text-disabled'
-                        }`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${
-                            team.is_active ? 'bg-success' : 'bg-text-disabled'
-                          }`} />
-                          {team.is_active ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <ResponsiveDataView
+                table={
+                  <table className="w-full text-[13px]">
+                    <thead>
+                      <tr className="border-b border-divider bg-surface-elevated">
+                        <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Team</th>
+                        <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Members</th>
+                        <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {teams.map(team => (
+                        <tr
+                          key={team.id}
+                          className="border-b border-divider last:border-0 hover:bg-background transition-colors cursor-pointer"
+                          onClick={() => router.push(`/dashboard/work-teams/${team.id}`)}
+                        >
+                          <td className="px-5 py-3">
+                            <p className="font-medium text-text-primary">{team.name}</p>
+                            {team.description && (
+                              <p className="text-[11px] text-text-secondary">{team.description}</p>
+                            )}
+                          </td>
+                          <td className="px-5 py-3 text-text-secondary">
+                            {team.member_count} {team.member_count === 1 ? 'member' : 'members'}
+                          </td>
+                          <td className="px-5 py-3">
+                            <span className={`flex items-center gap-1 text-[12px] font-medium w-fit ${
+                              team.is_active ? 'text-success' : 'text-text-disabled'
+                            }`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${
+                                team.is_active ? 'bg-success' : 'bg-text-disabled'
+                              }`} />
+                              {team.is_active ? 'Active' : 'Inactive'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                }
+                mobile={
+                  <>
+                    {teams.map(team => (
+                      <DataCard
+                        key={team.id}
+                        onClick={() => router.push(`/dashboard/work-teams/${team.id}`)}
+                      >
+                        <DataCardTitle>{team.name}</DataCardTitle>
+                        {team.description && <DataCardMeta>{team.description}</DataCardMeta>}
+                        <DataCardRow
+                          label="Members"
+                          value={`${team.member_count} ${team.member_count === 1 ? 'member' : 'members'}`}
+                        />
+                        <DataCardRow label="Status" value={team.is_active ? 'Active' : 'Inactive'} />
+                      </DataCard>
+                    ))}
+                  </>
+                }
+              />
             </div>
           )}
         </>

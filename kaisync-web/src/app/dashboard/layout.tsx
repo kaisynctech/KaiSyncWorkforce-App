@@ -175,14 +175,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <Sidebar
           open={sidebarOpen}
           onToggle={() => setSidebarOpen(v => !v)}
+          onClose={() => setSidebarOpen(false)}
           company={company}
           employee={employee}
           platformOnly={platformOnly}
         />
-        <div className="flex flex-1 overflow-hidden">
-          {/* paddingLeft tracks --sidebar-panel-w set by Sidebar (fixed left panel width) */}
+        <div className="flex flex-1 min-w-0 overflow-hidden">
+          {/* paddingLeft tracks --sidebar-panel-w set by Sidebar (0 on phones — drawer overlays) */}
           <main
-            className="flex-1 overflow-y-auto bg-background transition-[padding] duration-200"
+            className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden bg-background transition-[padding] duration-200"
             style={{ paddingLeft: 'var(--sidebar-panel-w, 0px)' }}
           >
             {children}

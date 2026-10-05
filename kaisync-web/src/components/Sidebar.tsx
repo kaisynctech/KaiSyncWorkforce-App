@@ -174,13 +174,13 @@ function NavIconBtn({
       title={label}
       aria-label={label}
       className={cn(
-        'flex items-center justify-center w-8 h-8 my-auto rounded-md transition-colors',
+        'flex items-center justify-center w-11 h-12 lg:w-8 lg:h-8 my-auto rounded-md transition-colors',
         active
           ? 'bg-[#3B5CF6]/18 text-[#3B5CF6]'
           : 'text-white/50 hover:text-white/90 hover:bg-white/8',
       )}
     >
-      <span className="material-icons text-[18px]">{icon}</span>
+      <span className="material-icons text-[20px] lg:text-[18px]">{icon}</span>
     </Link>
   )
 }
@@ -191,12 +191,14 @@ function PanelItems({
   isOwner,
   pathname,
   collapsed,
+  onNavigate,
 }: {
   items: NavItem[]
   flags: HrNavFlags
   isOwner: boolean
   pathname: string
   collapsed: boolean
+  onNavigate?: () => void
 }) {
   const visible = items.filter(item => itemVisible(item, flags, isOwner))
   if (visible.length === 0) return null
@@ -229,9 +231,10 @@ function PanelItems({
                 key={item.href}
                 href={item.href}
                 title={collapsed ? item.label : undefined}
+                onClick={onNavigate}
                 className={cn(
                   'flex items-center gap-2 mx-1 mb-0.5 rounded-md transition-colors',
-                  collapsed ? 'justify-center px-0 py-2' : 'px-2 py-1.5',
+                  collapsed ? 'justify-center px-0 py-2.5 lg:py-2' : 'px-2 py-2.5 lg:py-1.5',
                   active
                     ? 'bg-primary/10 text-primary font-medium border-l-2 border-primary rounded-l-none'
                     : 'text-text-secondary hover:text-text-primary hover:bg-surface-elevated',
@@ -240,13 +243,13 @@ function PanelItems({
                 <span
                   className={cn(
                     'material-icons shrink-0',
-                    collapsed ? 'text-[18px]' : 'text-[16px]',
+                    collapsed ? 'text-[18px]' : 'text-[18px] lg:text-[16px]',
                   )}
                 >
                   {item.icon}
                 </span>
                 {!collapsed && (
-                  <span className="text-[12px] truncate">{item.label}</span>
+                  <span className="text-[13px] lg:text-[12px] truncate">{item.label}</span>
                 )}
               </Link>
             )
@@ -262,18 +265,53 @@ function PanelItems({
 interface SidebarProps {
   open: boolean
   onToggle: () => void
+  onClose?: () => void
   company: Company | null
   employee: Employee | null
   /** JWT platform admin with no employee row */
   platformOnly?: boolean
 }
 
-export default function Sidebar({ company, employee, platformOnly = false }: SidebarProps) {
+export default function Sidebar({
+  open,
+  onToggle,
+  onClose,
+  company,
+  employee,
+  platformOnly = false,
+}: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
   const [flags, setFlags] = useState<HrNavFlags>(() => flagsFromCompany(company))
   const [showPlatform, setShowPlatform] = useState(platformOnly)
   const [panelCollapsed, setPanelCollapsed] = useState(false)
+  const [accountOpen, setAccountOpen] = useState(false)
+  const [isDesktop, setIsDesktop] = useState(true)
+
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)')
+    const apply = () => setIsDesktop(mq.matches)
+    apply()
+    mq.addEventListener('change', apply)
+    return () => mq.removeEventListener('change', apply)
+  }, [])
+
+  useEffect(() => {
+    setAccountOpen(false)
+    if (!isDesktop) onClose?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname])
+
+  useEffect(() => {
+    if (!accountOpen) return
+    function onDoc(e: MouseEvent) {
+      const t = e.target as HTMLElement | null
+      if (t?.closest('[data-account-menu]')) return
+      setAccountOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [accountOpen])
 
   useEffect(() => {
     let cancelled = false
@@ -332,13 +370,22 @@ export default function Sidebar({ company, employee, platformOnly = false }: Sid
     ) ?? null
   }, [pathname, sections])
 
-  // Sync CSS variable so main content can adjust left padding
-  const panelWidth = activeSection
-    ? (panelCollapsed ? 44 : 176)
-    : 0
+  // Sync CSS variable so main content can adjust left padding (0 on phones — panel is a drawer).
   useEffect(() => {
-    document.documentElement.style.setProperty('--sidebar-panel-w', `${panelWidth}px`)
-  }, [panelWidth])
+    const apply = () => {
+      const desktop = window.matchMedia('(min-width: 1024px)').matches
+      const w = !desktop
+        ? 0
+        : activeSection
+          ? (panelCollapsed ? 44 : 176)
+          : 0
+      document.documentElement.style.setProperty('--sidebar-panel-w', `${w}px`)
+    }
+    apply()
+    const mq = window.matchMedia('(min-width: 1024px)')
+    mq.addEventListener('change', apply)
+    return () => mq.removeEventListener('change', apply)
+  }, [activeSection, panelCollapsed])
 
   async function handleSignOut() {
     const supabase = createClient()
@@ -362,14 +409,26 @@ export default function Sidebar({ company, employee, platformOnly = false }: Sid
       ? 'Platform Admin'
       : ''
 
+  const showMobileDrawer = open && !isDesktop
+  const desktopPanel = Boolean(activeSection && !platformOnly)
+
   return (
     <>
       {/* ── TOP NAV BAR ─────────────────────────────────────────────── */}
-      <header className="flex items-stretch h-[42px] shrink-0 bg-[#0C111D] border-b border-white/8 z-30 overflow-x-auto">
+      <header className="flex items-stretch h-12 lg:h-[42px] shrink-0 bg-[#0C111D] border-b border-white/8 z-30 overflow-x-auto">
+
+        <button
+          type="button"
+          onClick={onToggle}
+          className="lg:hidden flex items-center justify-center w-11 h-12 shrink-0 text-white/80 hover:text-white hover:bg-white/10"
+          aria-label={open ? 'Close menu' : 'Open menu'}
+        >
+          <span className="material-icons text-[22px]">{open ? 'close' : 'menu'}</span>
+        </button>
 
         {/* Logo + company name */}
         <div className="flex items-center gap-2 px-3 border-r border-white/10 shrink-0">
-          <div className="w-6 h-6 rounded-md bg-[#3B5CF6] flex items-center justify-center">
+          <div className="w-7 h-7 lg:w-6 lg:h-6 rounded-md bg-[#3B5CF6] flex items-center justify-center">
             <span className="material-icons text-white text-[14px]">bolt</span>
           </div>
           <span className="text-[12px] font-semibold text-white truncate max-w-[120px]">
@@ -408,24 +467,26 @@ export default function Sidebar({ company, employee, platformOnly = false }: Sid
         {/* Divider between left tabs and module tabs */}
         <div className="w-px bg-white/10 mx-2 self-stretch shrink-0" />
 
-        {/* ── Module tabs ── */}
-        {!platformOnly && sections.map(section => (
-          <NavTopBtn
-            key={section.id}
-            href={section.items[0]?.href ?? '#'}
-            icon={section.icon}
-            label={section.label}
-            active={activeSection?.id === section.id}
-          />
-        ))}
-        {showPlatform && (
-          <NavTopBtn
-            href="/dashboard/platform"
-            icon="admin_panel_settings"
-            label="Platform"
-            active={isItemActive(pathname, '/dashboard/platform')}
-          />
-        )}
+        {/* ── Module tabs (desktop / scroll on phone) ── */}
+        <div className="hidden sm:contents">
+          {!platformOnly && sections.map(section => (
+            <NavTopBtn
+              key={section.id}
+              href={section.items[0]?.href ?? '#'}
+              icon={section.icon}
+              label={section.label}
+              active={activeSection?.id === section.id}
+            />
+          ))}
+          {showPlatform && (
+            <NavTopBtn
+              href="/dashboard/platform"
+              icon="admin_panel_settings"
+              label="Platform"
+              active={isItemActive(pathname, '/dashboard/platform')}
+            />
+          )}
+        </div>
 
         <div className="flex-1" />
 
@@ -449,112 +510,185 @@ export default function Sidebar({ company, employee, platformOnly = false }: Sid
           </>
         )}
 
-        {/* Avatar + dropdown */}
-        <div className="flex items-center px-3 border-l border-white/10 ml-1">
-          <div className="relative group">
+        {/* Avatar + tap dropdown */}
+        <div className="flex items-center px-2 sm:px-3 border-l border-white/10 ml-1" data-account-menu>
+          <div className="relative">
             <button
-              className="w-7 h-7 rounded-full bg-[#3B5CF6] flex items-center justify-center text-white text-[11px] font-semibold"
+              type="button"
+              onClick={() => setAccountOpen(v => !v)}
+              className="w-9 h-9 lg:w-7 lg:h-7 rounded-full bg-[#3B5CF6] flex items-center justify-center text-white text-[11px] font-semibold"
               title={displayName}
               aria-label="Account menu"
+              aria-expanded={accountOpen}
             >
               {getInitials(displayName)}
             </button>
-            {/* Dropdown — visible on hover / focus-within */}
-            <div className="absolute right-0 top-full mt-1 w-48 bg-surface border border-divider rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible group-focus-within:opacity-100 group-focus-within:visible transition-all z-50">
-              <div className="px-3 py-2 border-b border-divider">
-                <p className="text-[12px] font-medium text-text-primary truncate">{displayName}</p>
-                <p className="text-[11px] text-text-secondary">{roleLabel}</p>
+            {accountOpen && (
+              <div className="absolute right-0 top-full mt-1 w-52 bg-surface border border-divider rounded-lg shadow-lg z-50">
+                <div className="px-3 py-2 border-b border-divider">
+                  <p className="text-[12px] font-medium text-text-primary truncate">{displayName}</p>
+                  <p className="text-[11px] text-text-secondary">{roleLabel}</p>
+                </div>
+                <Link
+                  href="/dashboard/profile"
+                  onClick={() => setAccountOpen(false)}
+                  className="flex items-center gap-2 px-3 py-2.5 text-[13px] text-text-secondary hover:text-text-primary hover:bg-surface-elevated"
+                >
+                  <span className="material-icons text-[18px]">person</span>
+                  My Profile
+                </Link>
+                <Link
+                  href="/dashboard/active-sessions"
+                  onClick={() => setAccountOpen(false)}
+                  className="flex items-center gap-2 px-3 py-2.5 text-[13px] text-text-secondary hover:text-text-primary hover:bg-surface-elevated"
+                >
+                  <span className="material-icons text-[18px]">manage_accounts</span>
+                  Active Sessions
+                </Link>
+                {isOwner && (
+                  <Link
+                    href="/dashboard/activity-log"
+                    onClick={() => setAccountOpen(false)}
+                    className="flex items-center gap-2 px-3 py-2.5 text-[13px] text-text-secondary hover:text-text-primary hover:bg-surface-elevated"
+                  >
+                    <span className="material-icons text-[18px]">history</span>
+                    Activity Log
+                  </Link>
+                )}
+                <div className="border-t border-divider" />
+                {!platformOnly && itemVisible({ label: 'Settings', href: '/dashboard/settings', icon: 'settings', flag: 'settings' }, flags, isOwner) && (
+                  <Link
+                    href="/dashboard/settings"
+                    onClick={() => setAccountOpen(false)}
+                    className="flex items-center gap-2 px-3 py-2.5 text-[13px] text-text-secondary hover:text-text-primary hover:bg-surface-elevated"
+                  >
+                    <span className="material-icons text-[18px]">settings</span>
+                    Settings
+                  </Link>
+                )}
+                <PwaInstallButton
+                  className="flex w-full items-center gap-2 px-3 py-2.5 text-[13px] text-text-secondary hover:text-text-primary hover:bg-surface-elevated"
+                />
+                <div className="border-t border-divider" />
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  className="flex w-full items-center gap-2 px-3 py-2.5 text-[13px] text-text-secondary hover:text-text-primary hover:bg-surface-elevated"
+                >
+                  <span className="material-icons text-[18px]">logout</span>
+                  Sign out
+                </button>
               </div>
-              <Link
-                href="/dashboard/profile"
-                className="flex items-center gap-2 px-3 py-2 text-[12px] text-text-secondary hover:text-text-primary hover:bg-surface-elevated"
-              >
-                <span className="material-icons text-[16px]">person</span>
-                My Profile
-              </Link>
-              <Link
-                href="/dashboard/active-sessions"
-                className="flex items-center gap-2 px-3 py-2 text-[12px] text-text-secondary hover:text-text-primary hover:bg-surface-elevated"
-              >
-                <span className="material-icons text-[16px]">manage_accounts</span>
-                Active Sessions
-              </Link>
-              {isOwner && (
-                <Link
-                  href="/dashboard/activity-log"
-                  className="flex items-center gap-2 px-3 py-2 text-[12px] text-text-secondary hover:text-text-primary hover:bg-surface-elevated"
-                >
-                  <span className="material-icons text-[16px]">history</span>
-                  Activity Log
-                </Link>
-              )}
-              <div className="border-t border-divider" />
-              {!platformOnly && itemVisible({ label: 'Settings', href: '/dashboard/settings', icon: 'settings', flag: 'settings' }, flags, isOwner) && (
-                <Link
-                  href="/dashboard/settings"
-                  className="flex items-center gap-2 px-3 py-2 text-[12px] text-text-secondary hover:text-text-primary hover:bg-surface-elevated"
-                >
-                  <span className="material-icons text-[16px]">settings</span>
-                  Settings
-                </Link>
-              )}
-              <PwaInstallButton
-                className="flex w-full items-center gap-2 px-3 py-2 text-[12px] text-text-secondary hover:text-text-primary hover:bg-surface-elevated"
-              />
-              <div className="border-t border-divider" />
-              <button
-                onClick={handleSignOut}
-                className="flex w-full items-center gap-2 px-3 py-2 text-[12px] text-text-secondary hover:text-text-primary hover:bg-surface-elevated"
-              >
-                <span className="material-icons text-[16px]">logout</span>
-                Sign out
-              </button>
-            </div>
+            )}
           </div>
         </div>
       </header>
 
-      {/* ── LEFT PANEL ──────────────────────────────────────────────── */}
-      {activeSection && !platformOnly && (
+      {/* Mobile drawer backdrop */}
+      {showMobileDrawer && (
+        <div
+          className="fixed inset-0 top-12 bg-black/50 z-40 lg:hidden"
+          onClick={onClose}
+          aria-hidden
+        />
+      )}
+
+      {/* ── LEFT PANEL (desktop fixed / phone drawer) ───────────────── */}
+      {(desktopPanel || showMobileDrawer) && !platformOnly && (
         <aside
           className={cn(
-            'fixed top-[42px] left-0 bottom-0 flex flex-col shrink-0 bg-surface border-r border-divider overflow-hidden transition-all duration-200 z-40',
-            panelCollapsed ? 'w-11' : 'w-44',
-            // On phones the panel sits above page content so the screen cannot cover it.
-            'max-lg:shadow-xl',
+            'fixed top-12 lg:top-[42px] left-0 bottom-0 flex flex-col shrink-0 bg-surface border-r border-divider overflow-hidden transition-transform duration-200 z-50',
+            'w-72 lg:transition-[width]',
+            showMobileDrawer ? 'translate-x-0' : 'max-lg:-translate-x-full',
+            desktopPanel ? 'lg:translate-x-0' : 'lg:-translate-x-full',
+            panelCollapsed ? 'lg:w-11' : 'lg:w-44',
           )}
         >
-          {/* Panel header — module name + collapse toggle */}
           <div className="flex items-center justify-between px-2 pt-2 pb-1 shrink-0">
-            {!panelCollapsed && (
+            {(!panelCollapsed || !isDesktop) && (
               <span className="text-[10px] font-semibold uppercase tracking-widest text-text-secondary px-1">
-                {activeSection.label}
+                {activeSection?.label ?? 'Menu'}
               </span>
             )}
             <button
               type="button"
-              onClick={() => setPanelCollapsed(v => !v)}
+              onClick={() => {
+                if (!isDesktop) onClose?.()
+                else setPanelCollapsed(v => !v)
+              }}
               className={cn(
-                'w-7 h-7 rounded-md flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-surface-elevated transition-colors',
-                panelCollapsed && 'mx-auto',
+                'w-9 h-9 lg:w-7 lg:h-7 rounded-md flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-surface-elevated transition-colors',
+                panelCollapsed && isDesktop && 'mx-auto',
               )}
-              title={panelCollapsed ? 'Expand panel' : 'Collapse panel'}
+              title={isDesktop ? (panelCollapsed ? 'Expand panel' : 'Collapse panel') : 'Close menu'}
             >
-              <span className="material-icons text-[16px]">
-                {panelCollapsed ? 'chevron_right' : 'chevron_left'}
+              <span className="material-icons text-[18px] lg:text-[16px]">
+                {isDesktop ? (panelCollapsed ? 'chevron_right' : 'chevron_left') : 'close'}
               </span>
             </button>
           </div>
 
-          {/* Panel items — grouped by item.group when present */}
           <nav className="flex-1 overflow-y-auto py-1">
-            <PanelItems
-              items={activeSection.items}
-              flags={flags}
-              isOwner={isOwner}
-              pathname={pathname}
-              collapsed={panelCollapsed}
-            />
+            {/* On phone: show all modules when no section, or section items + module switcher */}
+            {!isDesktop && (
+              <div className="px-2 pb-2 mb-2 border-b border-divider space-y-0.5">
+                <Link
+                  href="/dashboard/overview"
+                  onClick={onClose}
+                  className={cn(
+                    'flex items-center gap-3 rounded-lg px-3 h-11 text-[13px]',
+                    isItemActive(pathname, '/dashboard/overview') && !activeSection
+                      ? 'bg-primary/10 text-primary font-semibold'
+                      : 'text-text-secondary hover:bg-surface-elevated',
+                  )}
+                >
+                  <span className="material-icons text-[20px]">home</span>
+                  Overview
+                </Link>
+                {sections.map(section => (
+                  <Link
+                    key={section.id}
+                    href={section.items[0]?.href ?? '#'}
+                    onClick={onClose}
+                    className={cn(
+                      'flex items-center gap-3 rounded-lg px-3 h-11 text-[13px]',
+                      activeSection?.id === section.id
+                        ? 'bg-primary/10 text-primary font-semibold'
+                        : 'text-text-secondary hover:bg-surface-elevated',
+                    )}
+                  >
+                    <span className="material-icons text-[20px]">{section.icon}</span>
+                    {section.label}
+                  </Link>
+                ))}
+                {showPlatform && (
+                  <Link
+                    href="/dashboard/platform"
+                    onClick={onClose}
+                    className={cn(
+                      'flex items-center gap-3 rounded-lg px-3 h-11 text-[13px]',
+                      isItemActive(pathname, '/dashboard/platform')
+                        ? 'bg-primary/10 text-primary font-semibold'
+                        : 'text-text-secondary hover:bg-surface-elevated',
+                    )}
+                  >
+                    <span className="material-icons text-[20px]">admin_panel_settings</span>
+                    Platform
+                  </Link>
+                )}
+              </div>
+            )}
+
+            {activeSection && (
+              <PanelItems
+                items={activeSection.items}
+                flags={flags}
+                isOwner={isOwner}
+                pathname={pathname}
+                collapsed={isDesktop && panelCollapsed}
+                onNavigate={onClose}
+              />
+            )}
           </nav>
         </aside>
       )}

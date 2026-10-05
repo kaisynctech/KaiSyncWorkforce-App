@@ -18,6 +18,13 @@ import {
   type ShiftTemplateLike,
 } from '@/lib/punch-session'
 import { ManualTimesheetForm } from '@/components/attendance/ManualTimesheetForm'
+import {
+  ResponsiveDataView,
+  DataCard,
+  DataCardTitle,
+  DataCardMeta,
+  DataCardRow,
+} from '@/components/ui/ResponsiveDataView'
 import type { TimePunch } from '@/types/database'
 
 type Preset = 'today' | 'week' | 'month' | 'all' | 'custom'
@@ -529,24 +536,82 @@ export default function AttendancePage() {
             <p className="text-[14px] text-text-secondary">No attendance records for this period</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-[13px]" style={{ minWidth: 1100 }}>
-              <thead>
-                <tr className="border-b border-divider bg-surface-elevated">
-                  <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Employee</th>
-                  <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Date</th>
-                  <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Time In</th>
-                  <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">In Location</th>
-                  <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Time Out</th>
-                  <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Out Location</th>
-                  <th className="text-right px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Reg</th>
-                  <th className="text-right px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">OT</th>
-                  <th className="text-right px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Total</th>
-                  <th className="text-right px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Pay</th>
-                  <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Notes</th>
-                </tr>
-              </thead>
-              <tbody>
+          <ResponsiveDataView
+            table={
+              <table className="w-full text-[13px]" style={{ minWidth: 1100 }}>
+                <thead>
+                  <tr className="border-b border-divider bg-surface-elevated">
+                    <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Employee</th>
+                    <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Date</th>
+                    <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Time In</th>
+                    <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">In Location</th>
+                    <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Time Out</th>
+                    <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Out Location</th>
+                    <th className="text-right px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Reg</th>
+                    <th className="text-right px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">OT</th>
+                    <th className="text-right px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Total</th>
+                    <th className="text-right px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Pay</th>
+                    <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map(s => {
+                    const r = s.row
+                    const kind = r.isAbsentDay ? 'absent' : r.isLeaveDay ? 'leave' : 'in'
+                    const late = lateFlag(r)
+                    const early = earlyFlag(r)
+                    const notes = [late, early, r.notes ?? r.statusNote ?? ''].filter(Boolean).join(' · ')
+                    return (
+                      <tr key={s.key} className="border-b border-divider last:border-0 hover:bg-background transition-colors">
+                        <td className="px-4 py-3">
+                          <p className="font-medium text-text-primary whitespace-nowrap">{s.employeeName}</p>
+                          {s.employeeCode && (
+                            <p className="text-[11px] text-text-secondary font-mono">{s.employeeCode}</p>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-text-secondary whitespace-nowrap">{fmtSessionDate(r.clockIn)}</td>
+                        <td className={`px-4 py-3 font-medium whitespace-nowrap ${
+                          r.isAbsentDay ? 'text-error' : r.isLeaveDay ? 'text-warning' : r.isLate ? 'text-error' : 'text-success'
+                        }`}>
+                          {fmtSessionTime(r.clockIn, kind as 'in' | 'absent' | 'leave')}
+                          {r.isOpen && !r.isAbsentDay && !r.isLeaveDay && (
+                            <span className="ml-1 text-[10px] text-warning font-semibold">OPEN</span>
+                          )}
+                          {late && <span className="block text-[10px] text-error font-semibold">{late}</span>}
+                        </td>
+                        <td className="px-4 py-3 text-text-secondary max-w-[160px] truncate">
+                          {r.isAbsentDay || r.isLeaveDay
+                            ? '—'
+                            : locationDisplay(r.clockInAddress, r.clockInLat, r.clockInLng)}
+                        </td>
+                        <td className="px-4 py-3 text-text-primary whitespace-nowrap">
+                          {fmtSessionTime(r.clockOut, 'out')}
+                          {early && <span className="block text-[10px] text-warning font-semibold">{early}</span>}
+                        </td>
+                        <td className="px-4 py-3 text-text-secondary max-w-[160px] truncate">
+                          {r.isAbsentDay || r.isLeaveDay
+                            ? '—'
+                            : locationDisplay(r.clockOutAddress, r.clockOutLat, r.clockOutLng)}
+                        </td>
+                        <td className="px-4 py-3 text-right text-text-primary">{r.regularHours.toFixed(1)}</td>
+                        <td className="px-4 py-3 text-right text-warning font-medium">
+                          {r.overtimeHours > 0 ? r.overtimeHours.toFixed(1) : '—'}
+                        </td>
+                        <td className="px-4 py-3 text-right font-semibold text-text-primary">{totalHrsDisplay(r)}</td>
+                        <td className="px-4 py-3 text-right text-text-primary">
+                          {s.pay > 0 ? `R${s.pay.toFixed(2)}` : '—'}
+                        </td>
+                        <td className="px-4 py-3 text-text-secondary max-w-[180px] truncate">
+                          {notes || '—'}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            }
+            mobile={
+              <>
                 {filtered.map(s => {
                   const r = s.row
                   const kind = r.isAbsentDay ? 'absent' : r.isLeaveDay ? 'leave' : 'in'
@@ -554,54 +619,32 @@ export default function AttendancePage() {
                   const early = earlyFlag(r)
                   const notes = [late, early, r.notes ?? r.statusNote ?? ''].filter(Boolean).join(' · ')
                   return (
-                    <tr key={s.key} className="border-b border-divider last:border-0 hover:bg-background transition-colors">
-                      <td className="px-4 py-3">
-                        <p className="font-medium text-text-primary whitespace-nowrap">{s.employeeName}</p>
-                        {s.employeeCode && (
-                          <p className="text-[11px] text-text-secondary font-mono">{s.employeeCode}</p>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-text-secondary whitespace-nowrap">{fmtSessionDate(r.clockIn)}</td>
-                      <td className={`px-4 py-3 font-medium whitespace-nowrap ${
-                        r.isAbsentDay ? 'text-error' : r.isLeaveDay ? 'text-warning' : r.isLate ? 'text-error' : 'text-success'
-                      }`}>
-                        {fmtSessionTime(r.clockIn, kind as 'in' | 'absent' | 'leave')}
-                        {r.isOpen && !r.isAbsentDay && !r.isLeaveDay && (
-                          <span className="ml-1 text-[10px] text-warning font-semibold">OPEN</span>
-                        )}
-                        {late && <span className="block text-[10px] text-error font-semibold">{late}</span>}
-                      </td>
-                      <td className="px-4 py-3 text-text-secondary max-w-[160px] truncate">
-                        {r.isAbsentDay || r.isLeaveDay
-                          ? '—'
-                          : locationDisplay(r.clockInAddress, r.clockInLat, r.clockInLng)}
-                      </td>
-                      <td className="px-4 py-3 text-text-primary whitespace-nowrap">
-                        {fmtSessionTime(r.clockOut, 'out')}
-                        {early && <span className="block text-[10px] text-warning font-semibold">{early}</span>}
-                      </td>
-                      <td className="px-4 py-3 text-text-secondary max-w-[160px] truncate">
-                        {r.isAbsentDay || r.isLeaveDay
-                          ? '—'
-                          : locationDisplay(r.clockOutAddress, r.clockOutLat, r.clockOutLng)}
-                      </td>
-                      <td className="px-4 py-3 text-right text-text-primary">{r.regularHours.toFixed(1)}</td>
-                      <td className="px-4 py-3 text-right text-warning font-medium">
-                        {r.overtimeHours > 0 ? r.overtimeHours.toFixed(1) : '—'}
-                      </td>
-                      <td className="px-4 py-3 text-right font-semibold text-text-primary">{totalHrsDisplay(r)}</td>
-                      <td className="px-4 py-3 text-right text-text-primary">
-                        {s.pay > 0 ? `R${s.pay.toFixed(2)}` : '—'}
-                      </td>
-                      <td className="px-4 py-3 text-text-secondary max-w-[180px] truncate">
-                        {notes || '—'}
-                      </td>
-                    </tr>
+                    <DataCard key={s.key}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <DataCardTitle>{s.employeeName}</DataCardTitle>
+                          <DataCardMeta>
+                            {fmtSessionDate(r.clockIn)}
+                            {s.employeeCode ? ` · ${s.employeeCode}` : ''}
+                          </DataCardMeta>
+                        </div>
+                        <span className={`text-[12px] font-semibold shrink-0 ${
+                          r.isAbsentDay ? 'text-error' : r.isLeaveDay ? 'text-warning' : 'text-success'
+                        }`}>
+                          {fmtSessionTime(r.clockIn, kind as 'in' | 'absent' | 'leave')}
+                          {r.isOpen && !r.isAbsentDay && !r.isLeaveDay ? ' · OPEN' : ''}
+                        </span>
+                      </div>
+                      <DataCardRow label="Out" value={fmtSessionTime(r.clockOut, 'out')} />
+                      <DataCardRow label="Hours" value={totalHrsDisplay(r)} />
+                      <DataCardRow label="Pay" value={s.pay > 0 ? `R${s.pay.toFixed(2)}` : '—'} />
+                      {notes ? <DataCardRow label="Notes" value={notes} /> : null}
+                    </DataCard>
                   )
                 })}
-              </tbody>
-            </table>
-          </div>
+              </>
+            }
+          />
         )}
       </div>
     </div>
