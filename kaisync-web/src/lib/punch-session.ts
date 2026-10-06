@@ -361,7 +361,11 @@ export function totalHrsDisplay(s: PunchSessionRow): string {
 }
 
 export function locationDisplay(address: string | null, lat: number | null, lng: number | null): string {
-  if (address) return address
-  if (lat != null && lng != null) return `${lat.toFixed(4)}, ${lng.toFixed(4)}`
+  const trimmed = address?.trim() || null
+  if (trimmed && !/^-?\d{1,3}\.\d+\s*,\s*-?\d{1,3}\.\d+$/.test(trimmed)) {
+    return trimmed
+  }
+  // GPS was captured but reverse-geocode never stored a place name — never show raw coords to users.
+  if (lat != null && lng != null) return 'Location recorded'
   return '—'
 }
