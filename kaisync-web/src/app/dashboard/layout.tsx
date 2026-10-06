@@ -20,10 +20,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [platformOnly, setPlatformOnly] = useState(false)
   const [loading, setLoading] = useState(true)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [isDesktop, setIsDesktop] = useState(false)
 
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 1024px)')
-    const apply = () => setSidebarOpen(mq.matches)
+    const apply = () => {
+      const desktop = mq.matches
+      setIsDesktop(desktop)
+      // Employee + HR: drawer closed on phones; desktop starts expanded.
+      setSidebarOpen(desktop)
+    }
     apply()
     mq.addEventListener('change', apply)
     return () => mq.removeEventListener('change', apply)
@@ -133,7 +139,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     )
   }
 
-  // ── Employee shell (field workers) — old left-sidebar layout unchanged ──
+  // ── Employee shell (field workers) — drawer on phone, rail on desktop ──
   if (showEmployeeShell) {
     return (
       <DashboardCompanyProvider company={company} employee={employee}>
@@ -146,19 +152,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             employee={employee}
           />
           <div className="flex flex-col flex-1 min-w-0 overflow-hidden bg-background">
-            <div className="lg:hidden flex items-center gap-2 px-3 h-12 border-b border-divider bg-surface shrink-0">
-              <button
-                type="button"
-                onClick={() => setSidebarOpen(true)}
-                className="w-10 h-10 rounded-lg flex items-center justify-center text-text-secondary hover:bg-surface-elevated hover:text-text-primary"
-                aria-label="Open menu"
-              >
-                <span className="material-icons text-[22px]">menu</span>
-              </button>
-              <p className="text-[14px] font-semibold text-text-primary truncate">
-                {company?.name ?? 'KaiSync'}
-              </p>
-            </div>
+            {!isDesktop && (
+              <div className="flex items-center gap-2 px-3 h-12 border-b border-divider bg-surface shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setSidebarOpen(true)}
+                  className="w-10 h-10 rounded-lg flex items-center justify-center text-text-secondary hover:bg-surface-elevated hover:text-text-primary"
+                  aria-label="Open menu"
+                >
+                  <span className="material-icons text-[22px]">menu</span>
+                </button>
+                <p className="text-[14px] font-semibold text-text-primary truncate">
+                  {company?.name ?? 'KaiSync'}
+                </p>
+              </div>
+            )}
             <main className="flex-1 overflow-y-auto min-h-0">
               {children}
             </main>
