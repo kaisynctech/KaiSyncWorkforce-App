@@ -7,6 +7,7 @@ import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { filterTeamsByScope, loadScopedEmployeeIds } from '@/lib/employee-scope'
 import { getWorkTeam, listWorkTeams, memberIdsOf } from '@/lib/work-teams'
 import type { WorkTeam } from '@/types/database'
+import { reverseGeocode, looksLikeCoordinates } from '@/lib/geo-location'
 
 interface TeamEmployee {
   id: string
@@ -17,6 +18,19 @@ interface TeamEmployee {
 
 const initials = (name: string, surname: string) =>
   (name.charAt(0) + surname.charAt(0)).toUpperCase()
+
+function punchAddressOrNull(value: string | null): string | null {
+  if (!value) return null
+  if (looksLikeCoordinates(value)) return null
+  const placeholders = new Set([
+    'Getting location...',
+    'Locating address…',
+    'Location recorded',
+    'Location unavailable',
+  ])
+  if (placeholders.has(value)) return null
+  return value
+}
 
 export default function TeamPunchPage() {
   const router = useRouter()
@@ -39,10 +53,14 @@ export default function TeamPunchPage() {
   useEffect(() => {
     if (!navigator.geolocation) { setAddress('Location unavailable'); setIsGettingLocation(false); return }
     navigator.geolocation.getCurrentPosition(
-      pos => {
-        setLat(pos.coords.latitude)
-        setLng(pos.coords.longitude)
-        setAddress(pos.coords.latitude.toFixed(5) + ', ' + pos.coords.longitude.toFixed(5))
+      async pos => {
+        const latitude = pos.coords.latitude
+        const longitude = pos.coords.longitude
+        setLat(latitude)
+        setLng(longitude)
+        setAddress('Locating address…')
+        const named = await reverseGeocode(latitude, longitude)
+        setAddress(named ?? 'Location recorded')
         setIsGettingLocation(false)
       },
       () => { setAddress('Location unavailable'); setIsGettingLocation(false) }
@@ -162,7 +180,7 @@ export default function TeamPunchPage() {
       p_employee_ids: ids,
       p_latitude: lat ?? null,
       p_longitude: lng ?? null,
-      p_address: address ?? null,
+      p_address: punchAddressOrNull(address),
     })
     if (rpcErr) setActionError(rpcErr.message)
     await loadMembers(selectedTeamId)
@@ -182,7 +200,7 @@ export default function TeamPunchPage() {
       p_employee_ids: ids,
       p_latitude: lat ?? null,
       p_longitude: lng ?? null,
-      p_address: address ?? null,
+      p_address: punchAddressOrNull(address),
     })
     if (rpcErr) setActionError(rpcErr.message)
     await loadMembers(selectedTeamId)

@@ -24,6 +24,7 @@ import {
   type BranchRow,
   type BranchGeofenceStatus,
 } from '@/lib/branch-geofence'
+import { reverseGeocode, looksLikeCoordinates } from '@/lib/geo-location'
 
 // ── Interfaces ─────────────────────────────────────────────────────────────
 interface LastPunch {
@@ -191,6 +192,7 @@ export default function EmployeeOverviewPage() {
     radius_meters: number
   } | null>(null)
   const [clockLoading,   setClockLoading]   = useState(false)
+  const clockInFlightRef = useRef(false)
   const [clockError,     setClockError]     = useState<string | null>(null)
 
   // Branch geofence
@@ -677,14 +679,10 @@ export default function EmployeeOverviewPage() {
           setLiveLng(lng)
           refreshBranchStatus(lat, lng)
           try {
-            const res = await fetch(
-              `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
-              { headers: { 'Accept-Language': 'en' } }
-            )
-            const json = await res.json()
-            setGeoAddress((json as { display_name?: string }).display_name ?? null)
+            const name = await reverseGeocode(lat, lng)
+            setGeoAddress(name)
           } catch {
-            // reverse geocode failed — address stays null, punch still goes through
+            // reverse geocode failed — address stays null; submitClock will retry once
           }
         },
         () => {
@@ -756,6 +754,8 @@ export default function EmployeeOverviewPage() {
     const empId  = empIdRef.current
     const compId = companyIdRef.current
     if (!empId || !compId) return
+    if (clockInFlightRef.current || clockLoading) return
+    clockInFlightRef.current = true
     setClockLoading(true)
     setClockError(null)
 
@@ -763,11 +763,13 @@ export default function EmployeeOverviewPage() {
     if (!isClockedIn && isOnLeave) {
       setClockError('You are on approved leave today and cannot clock in.')
       setClockLoading(false)
+      clockInFlightRef.current = false
       return
     }
     if (!isClockedIn && isAbsentToday) {
       setClockError('You are marked absent today and cannot clock in.')
       setClockLoading(false)
+      clockInFlightRef.current = false
       return
     }
 
@@ -785,13 +787,29 @@ export default function EmployeeOverviewPage() {
       if (!branchResult.allowed) {
         setClockError(branchResult.message || 'Cannot Clock In')
         setClockLoading(false)
+        clockInFlightRef.current = false
         refreshBranchStatus(geoLat ?? liveLat, geoLng ?? liveLng)
         return
       }
     }
 
-    // Job-site geofence: soft warning only — do NOT hard-block 
-    // Display handled in modal UI below.
+    // Prefer a place name over raw coords — retry reverse geocode once before insert.
+    let resolvedAddress = geoAddress
+    const punchLat = geoLat
+    const punchLng = geoLng
+    if (
+      punchLat != null &&
+      punchLng != null &&
+      (!resolvedAddress || looksLikeCoordinates(resolvedAddress))
+    ) {
+      const named = await reverseGeocode(punchLat, punchLng)
+      if (named) {
+        resolvedAddress = named
+        setGeoAddress(named)
+      } else {
+        resolvedAddress = null
+      }
+    }
 
     const supabase = createClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -808,9 +826,9 @@ export default function EmployeeOverviewPage() {
         employee_id:     empId,
         type:            punchType,
         date_time:       punchDateTime,
-        latitude:        geoLat,
-        longitude:       geoLng,
-        address:         geoAddress,
+        latitude:        punchLat,
+        longitude:       punchLng,
+        address:         resolvedAddress,
         job_id:          clockJobId || null,
         notes:           clockNote || null,
         queued_at:       new Date().toISOString(),
@@ -820,6 +838,7 @@ export default function EmployeeOverviewPage() {
       setShowClockModal(false)
       setHasMissedSignOut(false)
       setClockLoading(false)
+      clockInFlightRef.current = false
     }
 
     if (!navigator.onLine) {
@@ -832,9 +851,9 @@ export default function EmployeeOverviewPage() {
       p_employee_id:           empId,
       p_type:                  punchType,
       p_date_time:             punchDateTime,
-      p_latitude:              geoLat,
-      p_longitude:             geoLng,
-      p_address:               geoAddress,
+      p_latitude:              punchLat,
+      p_longitude:             punchLng,
+      p_address:               resolvedAddress,
       p_job_id:                clockJobId || null,
       p_notes:                 clockNote || null,
       p_punched_by_manager_id: null,
@@ -849,12 +868,17 @@ export default function EmployeeOverviewPage() {
       }
       setClockError(error.message)
       setClockLoading(false)
+      clockInFlightRef.current = false
       return
     }
 
+    // Apply UI state immediately so a second tap cannot create another 'in'
+    // while soft init() is still loading.
+    applyOptimisticPunch(punchType, punchDateTime)
     setShowClockModal(false)
     setHasMissedSignOut(false)
     setClockLoading(false)
+    clockInFlightRef.current = false
     await init({ soft: true })
   }
 
@@ -1426,7 +1450,11 @@ export default function EmployeeOverviewPage() {
               {geoLat ? (
                 <p className="text-[12px] text-text-secondary flex items-center gap-1">
                   <span className="material-icons text-[14px] text-success">location_on</span>
-                  {geoAddress ?? `${geoLat.toFixed(5)}, ${geoLng?.toFixed(5)}`}
+                  {geoAddress && !looksLikeCoordinates(geoAddress)
+                    ? geoAddress
+                    : geoLat != null && geoLng != null
+                      ? 'Locating address…'
+                      : 'Getting location…'}
                 </p>
               ) : (
                 <p className="text-[12px] text-text-disabled flex items-center gap-1">
