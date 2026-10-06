@@ -139,6 +139,7 @@ export function hasCodeSession(): boolean {
 export function clearCodeSession(): void {
   if (!canUseStorage()) return
   localStorage.removeItem(CODE_SESSION_KEY)
+  void import('@/lib/supabase/resolve-company').then(m => m.clearCurrentMemberCache())
 }
 
 export function updateCodeSessionToken(sessionToken: string, patch?: Partial<CodeSession>): void {
@@ -180,4 +181,7 @@ export function clearEmpContext(): void {
 export function clearAllAuthLocalState(): void {
   clearCodeSession()
   clearEmpContext()
+  // Drop in-memory auth/workspace caches so the next login cannot reuse stale tenant.
+  void import('@/lib/supabase/resolve-company').then(m => m.clearCurrentMemberCache())
+  void import('@/lib/employee-workspace').then(m => m.clearCompanyWorkspaceCache())
 }

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import { useDashboardBootstrap } from '@/components/DashboardBootstrapContext'
 import { type QueuedPunch, getQueue, enqueue, dequeue, shouldQueuePunchFailure } from '@/lib/punch-queue'
 import {
   loadCompanyWorkspace,
@@ -12,7 +13,9 @@ import {
   moduleFlagsForCompany,
   isPendingMembership,
   type CompanyWorkspace,
+  type EmployeeWorkspace,
 } from '@/lib/employee-workspace'
+import { parseOverviewBundle } from '@/lib/employee-overview-bundle'
 import { countUnreadAppNotifications, mapAppNotification, parseNotificationsRpcJson } from '@/lib/notification-feed'
 import { ALL_MODULES_ENABLED, type EmployeeModuleFlags } from '@/lib/company-modules'
 import {
@@ -167,6 +170,7 @@ function asRpcArray<T>(data: unknown): T[] {
 // ── Component ──────────────────────────────────────────────────────────────
 export default function EmployeeOverviewPage() {
   const router = useRouter()
+  const bootstrap = useDashboardBootstrap()
 
   const [loading, setLoading]           = useState(true)
   const [initError, setInitError]       = useState(false)
@@ -294,6 +298,48 @@ export default function EmployeeOverviewPage() {
     applyLastPunch((data as LastPunch | null) ?? null, new Date().toISOString().split('T')[0])
   }
 
+  /** After clock in/out: reconcile punch UI only — do not re-fetch the whole dashboard. */
+  async function refreshPunchStateAfterClock() {
+    const empId = empIdRef.current
+    const compId = companyIdRef.current
+    if (!empId || !compId) return
+    const supabase = createClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rpc = (fn: string, args: Record<string, unknown>) => (supabase.rpc as any)(fn, args)
+    const todayStr = new Date().toISOString().split('T')[0]
+    const weekFrom = isoDateOffset(-7)
+    const tok = tokRef.current
+
+    try {
+      const [lastPunchRes, punchesTodayRes, punchesWeekRes] = await Promise.all([
+        rpc('employee_get_last_punch', { p_employee_id: empId, p_session_token: tok }),
+        rpc('employee_get_my_punches', {
+          p_company_id: compId,
+          p_employee_id: empId,
+          p_from: todayStr,
+          p_to: todayStr,
+          p_session_token: tok,
+        }),
+        rpc('employee_get_my_punches', {
+          p_company_id: compId,
+          p_employee_id: empId,
+          p_from: weekFrom,
+          p_to: todayStr,
+          p_session_token: tok,
+        }),
+      ])
+      applyLastPunch((lastPunchRes.data as LastPunch | null) ?? null, todayStr)
+      setPunchesToday(asRpcArray(punchesTodayRes.data).length)
+      const weekPunches = asRpcArray<RecentPunchRow>(punchesWeekRes.data)
+        .filter(p => typeof p.date_time === 'string' && p.date_time.length > 0)
+        .slice()
+        .sort((a, b) => b.date_time.localeCompare(a.date_time))
+      setRecentPunches(weekPunches)
+    } catch (e) {
+      console.error('[Dashboard] punch refresh failed:', e)
+    }
+  }
+
   async function refreshMembership() {
     const empId = empIdRef.current
     if (!empId) return
@@ -366,78 +412,13 @@ export default function EmployeeOverviewPage() {
     setBranchStatus(status)
   }
 
-  async function loadColleaguesOnLeave(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    supabase: any,
-    companyId: string,
-    employeeId: string,
-    todayStr: string,
-    tok: string | null,
-  ) {
-    // Prefer RPC (code-auth + JWT); fallback to JWT direct query
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error } = await (supabase.rpc as any)('employee_get_company_approved_leave', {
-        p_company_id: companyId,
-        p_employee_id: employeeId,
-        p_session_token: tok,
-      })
-      if (!error && Array.isArray(data)) {
-        const rows = (data as Array<{
-          employee_id: string
-          leave_type: string
-          start_date: string
-          end_date: string
-          status?: string
-        }>).filter(r =>
-          r.employee_id !== employeeId
-          && r.start_date <= todayStr
-          && r.end_date >= todayStr
-          && (r.status == null || r.status === 'approved')
-        )
-        if (rows.length === 0) {
-          setColleagues([])
-          return
-        }
-        const ids = [...new Set(rows.map(r => r.employee_id))]
-        const { data: emps } = await supabase
-          .from('employees')
-          .select('id, name, surname')
-          .in('id', ids)
-        const map = new Map<string, { name: string; surname: string }>(
-          ((emps as Array<{ id: string; name: string; surname: string }> | null) ?? [])
-            .map(e => [e.id, { name: e.name, surname: e.surname }])
-        )
-        setColleagues(rows.slice(0, 10).map(r => ({
-          employee_id: r.employee_id,
-          leave_type: r.leave_type,
-          end_date: r.end_date,
-          employees: map.get(r.employee_id) ?? { name: 'Colleague', surname: '' },
-        })))
-        return
-      }
-    } catch { /* fall through */ }
-
-    try {
-      const { data: colleaguesData } = await supabase
-        .from('leave_requests')
-        .select('employee_id, leave_type, end_date, employees!inner(name, surname)')
-        .eq('company_id', companyId)
-        .eq('status', 'approved')
-        .lte('start_date', todayStr)
-        .gte('end_date', todayStr)
-        .neq('employee_id', employeeId)
-        .limit(10)
-      setColleagues((colleaguesData as unknown as ColleagueOnLeave[]) ?? [])
-    } catch { /* non-critical */ }
-  }
-
   // ── Init ─────────────────────────────────────────────────────────────────
   async function init(options?: { soft?: boolean }) {
     if (!options?.soft) setLoading(true)
     setInitError(false)
     const supabase = createClient()
-    const member = await resolveCurrentMember(supabase)
+
+    const member = bootstrap.member ?? await resolveCurrentMember(supabase)
     if (!member) { setLoading(false); return }
 
     empIdRef.current     = member.employeeId
@@ -450,14 +431,18 @@ export default function EmployeeOverviewPage() {
 
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rpc = (fn: string, args: Record<string, unknown>, opts?: Record<string, unknown>) => (supabase.rpc as any)(fn, args, opts)
+      const rpc = (fn: string, args: Record<string, unknown>) => (supabase.rpc as any)(fn, args)
       const todayStr = new Date().toISOString().split('T')[0]
-      const weekFrom = isoDateOffset(-7)
 
-      const [emp, company] = await Promise.all([
-        loadEmployeeWorkspace(supabase, member.employeeId),
-        loadCompanyWorkspace(supabase, member.companyId),
-      ])
+      // Prefer shared bootstrap workspaces; fall back to direct loads.
+      let emp: EmployeeWorkspace | null = bootstrap.employeeWs
+      let company: CompanyWorkspace | null = bootstrap.companyWs
+      if (!emp || !company || emp.id !== member.employeeId || company.id !== member.companyId) {
+        ;[emp, company] = await Promise.all([
+          loadEmployeeWorkspace(supabase, member.employeeId),
+          loadCompanyWorkspace(supabase, member.companyId),
+        ])
+      }
       setCompanyWs(company)
       const flags = moduleFlagsForCompany(company)
       setModules(flags)
@@ -468,14 +453,6 @@ export default function EmployeeOverviewPage() {
       const pending = isPendingMembership(emp)
       isPendingRef.current = pending
       setIsPending(pending)
-
-      // Branches for geofence (even if later gated — cheap)
-      const { data: branchRows } = await supabase
-        .from('branches')
-        .select('id,name,latitude,longitude,is_active')
-        .eq('company_id', member.companyId)
-      const branchList = (branchRows as BranchRow[] | null) ?? []
-      branchesRef.current = branchList
 
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
@@ -490,10 +467,12 @@ export default function EmployeeOverviewPage() {
         refreshBranchStatus(null, null, emp?.branch, emp?.branch_id)
       }
 
-      // Always subscribe — membership realtime matters while pending
-      subscribeRealtime(member.companyId, member.employeeId)
+      if (!options?.soft) {
+        subscribeRealtime(member.companyId, member.employeeId)
+      }
 
       if (pending) {
+        branchesRef.current = []
         applyLastPunch(null, todayStr)
         setJobs([])
         setLeaveRequests([])
@@ -510,91 +489,59 @@ export default function EmployeeOverviewPage() {
         return
       }
 
-      const [
-        lastPunchRes, jobsRes, leaveRes,
-        onLeaveRes, incRes, punchesTodayRes,
-        punchesWeekRes, paRes, absencesRes, notifRes, teamsRes,
-      ] = await Promise.all([
-        rpc('employee_get_last_punch', { p_employee_id: member.employeeId, p_session_token: tok }),
-        flags.jobs
-          ? rpc('employee_get_jobs_for_employee', { p_employee_id: member.employeeId, p_company_id: member.companyId, p_session_token: tok })
-          : Promise.resolve({ data: [] }),
-        flags.leave
-          ? rpc('employee_get_leave_requests', { p_employee_id: member.employeeId, p_company_id: member.companyId, p_session_token: tok })
-          : Promise.resolve({ data: [] }),
-        flags.leave
-          ? rpc('employee_is_on_leave_today', { p_employee_id: member.employeeId, p_company_id: member.companyId, p_session_token: tok })
-          : Promise.resolve({ data: false }),
-        flags.incidents
-          ? rpc('employee_get_incidents', {
-              p_employee_id: member.employeeId,
-              p_company_id: member.companyId,
-              p_job_id: null,
-              p_include_closed: true,
-              p_session_token: tok,
-            })
-          : Promise.resolve({ data: [] }),
-        flags.attendance
-          ? rpc('employee_get_my_punches', {
-              p_company_id:    member.companyId,
-              p_employee_id:   member.employeeId,
-              p_from:          todayStr,
-              p_to:            todayStr,
-              p_session_token: tok,
-            })
-          : Promise.resolve({ data: [] }),
-        flags.attendance
-          ? rpc('employee_get_my_punches', {
-              p_company_id:    member.companyId,
-              p_employee_id:   member.employeeId,
-              p_from:          weekFrom,
-              p_to:            todayStr,
-              p_session_token: tok,
-            })
-          : Promise.resolve({ data: [] }),
-        flags.myPa
-          ? rpc('employee_get_pa_tasks', { p_company_id: member.companyId, p_employee_id: member.employeeId, p_session_token: tok })
-          : Promise.resolve({ data: [] }),
-        flags.attendance
-          ? rpc('employee_get_daily_absences', {
-              p_company_id:    member.companyId,
-              p_employee_id:   member.employeeId,
-              p_from:          todayStr,
-              p_to:            todayStr,
-              p_session_token: tok,
-            })
-          : Promise.resolve({ data: [] }),
-        rpc('employee_get_my_notifications_for_employee', {
-          p_employee_id: member.employeeId,
-          p_session_token: tok,
-        }),
-        Promise.resolve(rpc('employee_get_work_teams', {
-          p_company_id: member.companyId,
-          p_employee_id: member.employeeId,
-          p_session_token: tok,
-        })).catch(() => ({ data: [] })),
-      ])
+      // One round-trip for home widgets (replaces ~11 parallel RPCs).
+      const { data: bundleRaw, error: bundleErr } = await rpc('employee_get_overview_bundle', {
+        p_company_id: member.companyId,
+        p_employee_id: member.employeeId,
+        p_session_token: tok,
+        p_include_jobs: flags.jobs,
+        p_include_leave: flags.leave,
+        p_include_attendance: flags.attendance,
+        p_include_incidents: flags.incidents,
+        p_include_my_pa: flags.myPa,
+      })
+      if (bundleErr) throw bundleErr
 
-      applyLastPunch((lastPunchRes.data as LastPunch | null) ?? null, todayStr)
-      setJobs(asRpcArray<Job>(jobsRes.data))
-      setLeaveRequests(asRpcArray<LeaveRequest>(leaveRes.data))
-      setIsOnLeave(
-        onLeaveRes.data === true
-        || (Array.isArray(onLeaveRes.data) && onLeaveRes.data?.[0]?.is_on_leave === true)
-      )
-      setIncidents(asRpcArray<Incident>(incRes.data))
-      setPunchesToday(asRpcArray(punchesTodayRes.data).length)
+      const bundle = parseOverviewBundle(bundleRaw)
+      if (!bundle) throw new Error('Invalid overview bundle response')
+
+      // Bundle may include fresher company/employee than bootstrap cache.
+      if (bundle.company) {
+        const fromBundle: CompanyWorkspace = {
+          id: bundle.company.id,
+          name: bundle.company.name,
+          enabled_modules: bundle.company.enabled_modules ?? {},
+          dispatch_settings: bundle.company.dispatch_settings ?? {},
+        }
+        setCompanyWs(fromBundle)
+        dispatchSettingsRef.current = fromBundle.dispatch_settings ?? {}
+        setModules(moduleFlagsForCompany(fromBundle))
+      }
+      if (bundle.employee) {
+        employeeBranchRef.current = bundle.employee.branch ?? null
+        employeeBranchIdRef.current = bundle.employee.branch_id ?? null
+      }
+
+      branchesRef.current = (bundle.branches as BranchRow[]) ?? []
+
+      applyLastPunch((bundle.last_punch as LastPunch | null) ?? null, todayStr)
+      setJobs(asRpcArray<Job>(bundle.jobs))
+      setLeaveRequests(asRpcArray<LeaveRequest>(bundle.leave_requests))
+      setIsOnLeave(bundle.is_on_leave === true)
+      setIncidents(asRpcArray<Incident>(bundle.incidents))
+      setPunchesToday(asRpcArray(bundle.punches_today).length)
       setNotificationCount(
-        countUnreadAppNotifications(parseNotificationsRpcJson(notifRes.data).map(mapAppNotification)),
+        countUnreadAppNotifications(parseNotificationsRpcJson(bundle.notifications).map(mapAppNotification)),
       )
+      setColleagues(asRpcArray<ColleagueOnLeave>(bundle.colleagues_on_leave))
 
-      const weekPunches = asRpcArray<RecentPunchRow>(punchesWeekRes.data)
+      const weekPunches = asRpcArray<RecentPunchRow>(bundle.punches_week)
         .filter(p => typeof p.date_time === 'string' && p.date_time.length > 0)
         .slice()
         .sort((a, b) => b.date_time.localeCompare(a.date_time))
       setRecentPunches(weekPunches)
 
-      const absences = asRpcArray<DailyAbsenceRow>(absencesRes.data)
+      const absences = asRpcArray<DailyAbsenceRow>(bundle.absences_today)
       if (absences.length > 0) {
         setIsAbsentToday(true)
         setAbsenceReasonLabel(fmtAbsenceReason(absences[0].reason ?? 'other'))
@@ -603,25 +550,19 @@ export default function EmployeeOverviewPage() {
         setAbsenceReasonLabel('')
       }
 
-      const allTasks = asRpcArray<PATask>(paRes.data)
+      const allTasks = asRpcArray<PATask>(bundle.pa_tasks)
       const todayTasks = allTasks.filter(t =>
         t.status !== 'done' && t.status !== 'snoozed'
         && (!t.due_at || t.due_at.split('T')[0] === todayStr)
       )
       setPATasks(todayTasks)
 
-      const teams = asRpcArray<WorkTeam>(teamsRes.data).filter(t => {
+      const teams = asRpcArray<WorkTeam>(bundle.work_teams).filter(t => {
         if (t.is_active === false) return false
         const ids = (t.member_ids ?? []).map(String)
         return ids.includes(member.employeeId)
       })
       setMyTeams(teams)
-
-      if (flags.leave) {
-        await loadColleaguesOnLeave(supabase, member.companyId, member.employeeId, todayStr, tok)
-      } else {
-        setColleagues([])
-      }
     } catch (e) {
       console.error('[Dashboard] init failed:', e)
       setInitError(true)
@@ -873,13 +814,13 @@ export default function EmployeeOverviewPage() {
     }
 
     // Apply UI state immediately so a second tap cannot create another 'in'
-    // while soft init() is still loading.
+    // while punch reconciliation is still loading.
     applyOptimisticPunch(punchType, punchDateTime)
     setShowClockModal(false)
     setHasMissedSignOut(false)
     setClockLoading(false)
     clockInFlightRef.current = false
-    await init({ soft: true })
+    await refreshPunchStateAfterClock()
   }
 
   // ── Absence modal ──────────────────────────────────────────────────────

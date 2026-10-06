@@ -10,7 +10,7 @@ import {
   type HrNavFlags,
 } from '@/lib/company-modules'
 import { resolveFinanceNavFlag } from '@/lib/finance-gate'
-import { loadCompanyWorkspace } from '@/lib/employee-workspace'
+import { loadCompanyWorkspace, clearCompanyWorkspaceCache } from '@/lib/employee-workspace'
 import { isPlatformAdmin } from '@/lib/platform-admin'
 import { MODULES_UPDATED_EVENT, type ModulesUpdatedDetail } from '@/lib/module-events'
 import { PwaInstallButton } from '@/components/PwaInstallButton'
@@ -321,26 +321,39 @@ export default function Sidebar({
         if (!cancelled) setShowPlatform(true)
         return
       }
-      const admin = await isPlatformAdmin(supabase)
-      if (!cancelled) setShowPlatform(admin)
-
       if (!company?.id) {
-        if (!cancelled) setFlags(flagsFromCompany(null))
+        const adminOnly = await isPlatformAdmin(supabase)
+        if (!cancelled) {
+          setShowPlatform(adminOnly)
+          setFlags(flagsFromCompany(null))
+        }
         return
       }
-      const workspace = await loadCompanyWorkspace(supabase, company.id)
+
+      // Paint nav from layout company immediately; load admin + workspace in parallel.
+      if (company.enabled_modules != null) {
+        setFlags(flagsFromCompany(company))
+      }
+
+      const [admin, workspace] = await Promise.all([
+        isPlatformAdmin(supabase),
+        loadCompanyWorkspace(supabase, company.id),
+      ])
+      if (cancelled) return
+      setShowPlatform(admin)
       const modules = workspace?.enabled_modules ?? company.enabled_modules ?? {}
       const { finance } = await resolveFinanceNavFlag(supabase, company.id, modules)
       if (!cancelled) setFlags(resolveHrNavFlags(modules, finance))
     }
     void load()
     return () => { cancelled = true }
-  }, [company?.id, platformOnly])
+  }, [company?.id, company?.enabled_modules, platformOnly])
 
   useEffect(() => {
     function onModulesUpdated(ev: Event) {
       const detail = (ev as CustomEvent<ModulesUpdatedDetail>).detail
       if (!detail || detail.companyId !== company?.id) return
+      clearCompanyWorkspaceCache(detail.companyId)
       void (async () => {
         const supabase = createClient()
         const { finance } = await resolveFinanceNavFlag(supabase, detail.companyId, detail.enabledModules)
