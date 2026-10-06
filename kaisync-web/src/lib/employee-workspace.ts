@@ -29,37 +29,67 @@ export type EmployeeWorkspace = {
   access_level: string
 }
 
+type CachedCompanyWs = { at: number; data: CompanyWorkspace | null }
+const COMPANY_WS_CACHE_MS = 30_000
+const companyWsCache = new Map<string, CachedCompanyWs>()
+
 export async function loadCompanyWorkspace(
   supabase: SupabaseClient,
   companyId: string,
 ): Promise<CompanyWorkspace | null> {
-  const { data } = await supabase
+  const cached = companyWsCache.get(companyId)
+  if (cached && Date.now() - cached.at < COMPANY_WS_CACHE_MS) {
+    return cached.data
+  }
+
+  // Live schema: companies has enabled_modules + custom_settings (no dispatch_settings column).
+  const { data, error } = await supabase
     .from('companies')
-    .select('id, name, enabled_modules, dispatch_settings')
+    .select('id, name, enabled_modules, custom_settings')
     .eq('id', companyId)
     .maybeSingle()
 
+  if (error) {
+    console.error('[loadCompanyWorkspace]', error.message)
+  }
+
   if (data) {
-    return {
+    const custom = (data.custom_settings ?? {}) as Record<string, unknown>
+    const nestedDispatch = custom.dispatch_settings
+    const dispatch_settings: DispatchSettings =
+      nestedDispatch && typeof nestedDispatch === 'object'
+        ? (nestedDispatch as DispatchSettings)
+        : {}
+    const workspace: CompanyWorkspace = {
       id: data.id,
       name: data.name ?? '',
       enabled_modules: (data.enabled_modules as EnabledModules) ?? {},
-      dispatch_settings: (data.dispatch_settings as DispatchSettings) ?? {},
+      dispatch_settings,
     }
+    companyWsCache.set(companyId, { at: Date.now(), data: workspace })
+    return workspace
   }
 
   // Code-auth may not have RLS read on companies — use session company + permissive modules
   const cs = getCodeSession()
   if (cs?.company_id === companyId) {
-    return {
+    const workspace: CompanyWorkspace = {
       id: cs.company_id,
       name: cs.company.name,
       enabled_modules: {},
       dispatch_settings: {},
     }
+    companyWsCache.set(companyId, { at: Date.now(), data: workspace })
+    return workspace
   }
 
   return null
+}
+
+/** Invalidate company workspace cache (modules change / sign-out). */
+export function clearCompanyWorkspaceCache(companyId?: string) {
+  if (companyId) companyWsCache.delete(companyId)
+  else companyWsCache.clear()
 }
 
 export async function loadEmployeeWorkspace(

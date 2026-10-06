@@ -10,6 +10,7 @@ import {
   type EmployeeModuleFlags,
 } from '@/lib/company-modules'
 import { loadCompanyWorkspace, moduleFlagsForCompany } from '@/lib/employee-workspace'
+import { useDashboardBootstrap } from '@/components/DashboardBootstrapContext'
 import type { Company, Employee } from '@/types/database'
 
 interface NavItem {
@@ -48,7 +49,17 @@ interface SidebarProps {
 export default function EmployeeSidebar({ open, onToggle, onClose, company, employee }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
-  const [modules, setModules] = useState<EmployeeModuleFlags>(ALL_MODULES_ENABLED)
+  const bootstrap = useDashboardBootstrap()
+  const [modules, setModules] = useState<EmployeeModuleFlags>(() =>
+    company?.enabled_modules != null
+      ? moduleFlagsForCompany({
+          id: company.id,
+          name: company.name,
+          enabled_modules: company.enabled_modules,
+          dispatch_settings: {},
+        })
+      : ALL_MODULES_ENABLED,
+  )
   const [isDesktop, setIsDesktop] = useState(false)
 
   useEffect(() => {
@@ -60,16 +71,31 @@ export default function EmployeeSidebar({ open, onToggle, onClose, company, empl
   }, [])
 
   useEffect(() => {
+    // Prefer shared bootstrap once ready — avoids a second companies fetch.
+    if (bootstrap.ready && bootstrap.companyWs) {
+      setModules(moduleFlagsForCompany(bootstrap.companyWs))
+      return
+    }
     let cancelled = false
     async function load() {
       if (!company?.id) return
+      if (company.enabled_modules != null) {
+        setModules(
+          moduleFlagsForCompany({
+            id: company.id,
+            name: company.name,
+            enabled_modules: company.enabled_modules,
+            dispatch_settings: {},
+          }),
+        )
+      }
       const supabase = createClient()
       const workspace = await loadCompanyWorkspace(supabase, company.id)
       if (!cancelled) setModules(moduleFlagsForCompany(workspace))
     }
-    load()
+    void load()
     return () => { cancelled = true }
-  }, [company?.id])
+  }, [company?.id, company?.enabled_modules, company?.name, bootstrap.ready, bootstrap.companyWs])
 
   // Close the mobile drawer after navigating.
   useEffect(() => {
