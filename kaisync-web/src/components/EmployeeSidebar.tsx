@@ -49,6 +49,15 @@ export default function EmployeeSidebar({ open, onToggle, onClose, company, empl
   const pathname = usePathname()
   const router = useRouter()
   const [modules, setModules] = useState<EmployeeModuleFlags>(ALL_MODULES_ENABLED)
+  const [isDesktop, setIsDesktop] = useState(false)
+
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)')
+    const apply = () => setIsDesktop(mq.matches)
+    apply()
+    mq.addEventListener('change', apply)
+    return () => mq.removeEventListener('change', apply)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -64,11 +73,10 @@ export default function EmployeeSidebar({ open, onToggle, onClose, company, empl
 
   // Close the mobile drawer after navigating.
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    if (window.matchMedia('(min-width: 1024px)').matches) return
+    if (isDesktop) return
     onClose?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pathname])
+  }, [pathname, isDesktop])
 
   const items = useMemo(
     () => EMP_NAV_ITEMS.filter((item) => !item.module || modules[item.module]),
@@ -89,30 +97,37 @@ export default function EmployeeSidebar({ open, onToggle, onClose, company, empl
   const displayName = employee ? `${employee.name} ${employee.surname}` : 'Unknown'
   const roleLabel = 'Employee'
 
+  // Phone: closed drawer must not paint at all (transform hide fails on some WebViews).
+  const mobileClosed = !isDesktop && !open
+  const showLabels = isDesktop ? open : true
+  const desktopCollapsed = isDesktop && !open
+
   return (
     <>
-      {open && (
+      {!isDesktop && open && (
         <div
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-          onClick={onToggle}
+          className="fixed inset-0 bg-black/50 z-40"
+          onClick={onClose ?? onToggle}
           aria-hidden
         />
       )}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex flex-col bg-sidebar-bg transition-transform duration-200 w-60',
-          'lg:relative lg:z-auto lg:translate-x-0 lg:shrink-0 lg:transition-[width]',
-          open ? 'translate-x-0' : '-translate-x-full',
-          open ? 'lg:w-60' : 'lg:w-[64px]',
+          'flex flex-col bg-sidebar-bg',
+          mobileClosed && 'hidden',
+          !isDesktop && open && 'fixed inset-y-0 left-0 z-50 w-72 translate-x-0 shadow-xl',
+          isDesktop && 'relative z-auto shrink-0 h-full transition-[width] duration-200',
+          isDesktop && (open ? 'w-60' : 'w-16'),
         )}
+        aria-hidden={mobileClosed}
       >
         <div
           className={cn(
             'flex items-center h-16 border-b border-white/10 shrink-0',
-            open ? 'gap-3 px-4' : 'lg:justify-center lg:px-1 px-4',
+            showLabels ? 'gap-3 px-4' : 'justify-center px-1',
           )}
         >
-          {open ? (
+          {showLabels ? (
             <>
               <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0">
                 <span className="material-icons text-white text-[18px]">bolt</span>
@@ -124,18 +139,18 @@ export default function EmployeeSidebar({ open, onToggle, onClose, company, empl
               <button
                 type="button"
                 onClick={onToggle}
-                className="text-white/50 hover:text-white transition-colors shrink-0"
-                aria-label="Close menu"
-                title="Close menu"
+                className="text-white/50 hover:text-white transition-colors shrink-0 w-10 h-10 flex items-center justify-center"
+                aria-label={isDesktop ? 'Collapse sidebar' : 'Close menu'}
+                title={isDesktop ? 'Collapse sidebar' : 'Close menu'}
               >
-                <span className="material-icons text-[20px]">close</span>
+                <span className="material-icons text-[20px]">{isDesktop ? 'chevron_left' : 'close'}</span>
               </button>
             </>
           ) : (
             <button
               type="button"
               onClick={onToggle}
-              className="hidden lg:flex w-10 h-10 rounded-lg bg-primary/90 hover:bg-primary items-center justify-center text-white transition-colors"
+              className="w-10 h-10 rounded-lg bg-primary/90 hover:bg-primary flex items-center justify-center text-white transition-colors"
               aria-label="Expand sidebar"
               title="Expand sidebar"
             >
@@ -151,10 +166,13 @@ export default function EmployeeSidebar({ open, onToggle, onClose, company, empl
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={() => {
+                  if (!isDesktop) onClose?.()
+                }}
                 className={cn(
-                  'flex items-center gap-3 mx-2 mb-0.5 rounded-lg px-3 h-10 transition-colors group',
+                  'flex items-center gap-3 mx-2 mb-0.5 rounded-lg px-3 h-11 transition-colors group',
                   active ? 'bg-primary/20 text-sidebar-active' : 'text-white/60 hover:text-white hover:bg-white/10',
-                  !open && 'lg:justify-center',
+                  desktopCollapsed && 'justify-center px-0',
                 )}
                 title={item.label}
               >
@@ -164,24 +182,26 @@ export default function EmployeeSidebar({ open, onToggle, onClose, company, empl
                 )}>
                   {item.icon}
                 </span>
-                {(open) && <span className="text-[13px] font-medium truncate lg:inline">{item.label}</span>}
+                {showLabels && (
+                  <span className="text-[13px] font-medium truncate">{item.label}</span>
+                )}
               </Link>
             )
           })}
         </nav>
 
         <div className="border-t border-white/10 p-3">
-          <div className={cn('flex items-center gap-3', !open && 'lg:justify-center')}>
+          <div className={cn('flex items-center gap-3', desktopCollapsed && 'justify-center')}>
             <div className="w-8 h-8 rounded-full bg-primary-dark flex items-center justify-center shrink-0">
               <span className="text-white text-[12px] font-semibold">{getInitials(displayName)}</span>
             </div>
-            {open && (
+            {showLabels && (
               <div className="flex-1 overflow-hidden">
                 <p className="text-white text-[12px] font-medium truncate">{displayName}</p>
                 <p className="text-white/50 text-[11px]">{roleLabel}</p>
               </div>
             )}
-            {open && (
+            {showLabels && (
               <button onClick={handleSignOut} className="text-white/50 hover:text-white transition-colors" title="Sign out">
                 <span className="material-icons text-[18px]">logout</span>
               </button>
