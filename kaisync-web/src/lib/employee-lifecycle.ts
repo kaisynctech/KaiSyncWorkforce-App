@@ -25,7 +25,8 @@ export async function setEmployeeActive(
 
 /**
  * Hard delete via audited RPC (owner/hr). Prefer setEmployeeActive(false) first.
- * Removes punches for that employee before deleting the row.
+ * Clears optional assignee refs, removes punches, then deletes the row.
+ * Refuses with a clear message when leave/payroll/labor/incident history remains.
  */
 export async function deleteEmployee(
   supabase: SupabaseClient,

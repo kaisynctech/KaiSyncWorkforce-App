@@ -49,6 +49,8 @@ export type PunchSessionRow = {
   clockOut: Date | null
   jobId: string | null
   notes: string | null
+  clockInPunchId: string | null
+  clockOutPunchId: string | null
   clockInAddress: string | null
   clockOutAddress: string | null
   clockInLat: number | null
@@ -185,6 +187,8 @@ function makeSession(
     clockOut: outDt,
     jobId: clockIn?.job_id ?? null,
     notes: clockOut?.notes ?? clockIn?.notes ?? null,
+    clockInPunchId: clockIn?.id ?? null,
+    clockOutPunchId: clockOut?.id ?? null,
     clockInAddress: clockIn?.address ?? null,
     clockOutAddress: clockOut?.address ?? null,
     clockInLat: clockIn?.latitude ?? null,
@@ -241,6 +245,8 @@ export function absentDaySession(
     clockOut: d,
     jobId: null,
     notes: reason,
+    clockInPunchId: null,
+    clockOutPunchId: null,
     clockInAddress: null,
     clockOutAddress: null,
     clockInLat: null,
@@ -274,6 +280,8 @@ export function leaveDaySession(
     clockOut: d,
     jobId: null,
     notes: leaveType,
+    clockInPunchId: null,
+    clockOutPunchId: null,
     clockInAddress: null,
     clockOutAddress: null,
     clockInLat: null,
@@ -365,7 +373,8 @@ export function locationDisplay(address: string | null, lat: number | null, lng:
   if (trimmed && !/^-?\d{1,3}\.\d+\s*,\s*-?\d{1,3}\.\d+$/.test(trimmed)) {
     return trimmed
   }
-  // GPS was captured but reverse-geocode never stored a place name — never show raw coords to users.
-  if (lat != null && lng != null) return 'Location recorded'
+  // GPS existed but place name not resolved yet — never show raw coords.
+  // Callers should run resolveMissingPunchAddresses to replace this quickly.
+  if (lat != null && lng != null) return 'Resolving address…'
   return '—'
 }

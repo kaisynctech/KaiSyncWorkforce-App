@@ -7,7 +7,7 @@ import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { filterTeamsByScope, loadScopedEmployeeIds } from '@/lib/employee-scope'
 import { getWorkTeam, listWorkTeams, memberIdsOf } from '@/lib/work-teams'
 import type { WorkTeam } from '@/types/database'
-import { reverseGeocode, looksLikeCoordinates } from '@/lib/geo-location'
+import { reverseGeocodeRequired, looksLikeCoordinates } from '@/lib/geo-location'
 
 interface TeamEmployee {
   id: string
@@ -26,6 +26,7 @@ function punchAddressOrNull(value: string | null): string | null {
     'Getting location...',
     'Locating address…',
     'Location recorded',
+    'Resolving address…',
     'Location unavailable',
   ])
   if (placeholders.has(value)) return null
@@ -59,9 +60,16 @@ export default function TeamPunchPage() {
         setLat(latitude)
         setLng(longitude)
         setAddress('Locating address…')
-        const named = await reverseGeocode(latitude, longitude)
-        setAddress(named ?? 'Location recorded')
+        const named = await reverseGeocodeRequired(latitude, longitude, { maxAttempts: 4 })
+        setAddress(named ?? 'Resolving address…')
         setIsGettingLocation(false)
+        if (!named) {
+          // Keep trying in the background so team punch can still fire with a name.
+          void (async () => {
+            const retry = await reverseGeocodeRequired(latitude, longitude, { maxAttempts: 3 })
+            if (retry) setAddress(retry)
+          })()
+        }
       },
       () => { setAddress('Location unavailable'); setIsGettingLocation(false) }
     )

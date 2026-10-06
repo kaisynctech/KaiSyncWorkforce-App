@@ -7,6 +7,7 @@ import { getCodeSession } from '@/lib/auth/code-session'
 import { loadCompanyWorkspace, loadEmployeeWorkspace } from '@/lib/employee-workspace'
 import { useEmployeeModuleGate } from '@/lib/employee-module-gate'
 import { ManualTimesheetForm } from '@/components/attendance/ManualTimesheetForm'
+import { enrichSessionsWithPlaceNames } from '@/lib/punch-address-enrich'
 import {
   ResponsiveDataView,
   DataCard,
@@ -274,6 +275,20 @@ export default function EmployeeAttendancePage() {
       }
       built = mergeNonWorkDays(built, absences, leaveDays, opts)
       setSessions(built)
+
+      void (async () => {
+        const enriched = await enrichSessionsWithPlaceNames(
+          supabase,
+          member.companyId,
+          built,
+          tok,
+        )
+        const changed = enriched.some((row, i) =>
+          row.clockInAddress !== built[i].clockInAddress
+          || row.clockOutAddress !== built[i].clockOutAddress,
+        )
+        if (changed) setSessions(enriched)
+      })()
     } catch (e) {
       console.error('[Attendance] load failed:', e)
       setSessions([])
