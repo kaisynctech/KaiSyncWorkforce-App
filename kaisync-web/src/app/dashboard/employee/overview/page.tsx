@@ -27,7 +27,7 @@ import {
   type BranchRow,
   type BranchGeofenceStatus,
 } from '@/lib/branch-geofence'
-import { reverseGeocode, looksLikeCoordinates } from '@/lib/geo-location'
+import { reverseGeocodeRequired, looksLikeCoordinates } from '@/lib/geo-location'
 
 // ── Interfaces ─────────────────────────────────────────────────────────────
 interface LastPunch {
@@ -620,10 +620,10 @@ export default function EmployeeOverviewPage() {
           setLiveLng(lng)
           refreshBranchStatus(lat, lng)
           try {
-            const name = await reverseGeocode(lat, lng)
+            const name = await reverseGeocodeRequired(lat, lng, { maxAttempts: 3 })
             setGeoAddress(name)
           } catch {
-            // reverse geocode failed — address stays null; submitClock will retry once
+            // reverse geocode failed — address stays null; submitClock retries before insert
           }
         },
         () => {
@@ -734,7 +734,7 @@ export default function EmployeeOverviewPage() {
       }
     }
 
-    // Prefer a place name over raw coords — retry reverse geocode once before insert.
+    // Prefer a place name over raw coords — retry hard before insert.
     let resolvedAddress = geoAddress
     const punchLat = geoLat
     const punchLng = geoLng
@@ -743,11 +743,12 @@ export default function EmployeeOverviewPage() {
       punchLng != null &&
       (!resolvedAddress || looksLikeCoordinates(resolvedAddress))
     ) {
-      const named = await reverseGeocode(punchLat, punchLng)
+      const named = await reverseGeocodeRequired(punchLat, punchLng, { maxAttempts: 4 })
       if (named) {
         resolvedAddress = named
         setGeoAddress(named)
       } else {
+        // Never store raw coords as address. GPS is kept; address is backfilled after save.
         resolvedAddress = null
       }
     }

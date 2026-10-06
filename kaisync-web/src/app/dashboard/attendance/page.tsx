@@ -18,6 +18,7 @@ import {
   type ShiftTemplateLike,
 } from '@/lib/punch-session'
 import { ManualTimesheetForm } from '@/components/attendance/ManualTimesheetForm'
+import { enrichSessionsWithPlaceNames } from '@/lib/punch-address-enrich'
 import {
   ResponsiveDataView,
   DataCard,
@@ -392,6 +393,25 @@ export default function AttendancePage() {
     built.sort((a, b) => b.row.clockIn.getTime() - a.row.clockIn.getTime())
     setSessions(built)
     setLoading(false)
+
+    // Background: turn GPS-only punches into real place names and persist.
+    void (async () => {
+      const enrichedRows = await enrichSessionsWithPlaceNames(
+        supabase,
+        cid,
+        built.map(b => b.row),
+        null,
+      )
+      const changed = enrichedRows.some((row, i) =>
+        row.clockInAddress !== built[i].row.clockInAddress
+        || row.clockOutAddress !== built[i].row.clockOutAddress,
+      )
+      if (!changed) return
+      setSessions(built.map((b, i) => ({
+        ...b,
+        row: enrichedRows[i],
+      })))
+    })()
   }
 
   const { from, to } = getRange(preset, customFrom, customTo)
