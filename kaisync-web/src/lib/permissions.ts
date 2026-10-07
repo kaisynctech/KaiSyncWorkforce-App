@@ -39,19 +39,22 @@ export type PermissionKey = (typeof PERM)[keyof typeof PERM]
 
 type AccessLevel = string | null | undefined
 
+const OWNER_LIKE: Partial<Record<PermissionKey, boolean>> = {
+  [PERM.inventoryView]: true, [PERM.inventoryEdit]: true,
+  [PERM.suppliersView]: true, [PERM.suppliersEdit]: true,
+  [PERM.assetsView]: true, [PERM.assetsEdit]: true,
+  [PERM.contractorsView]: true, [PERM.contractorsCreate]: true, [PERM.contractorsEdit]: true,
+  [PERM.clientsView]: true, [PERM.clientsEdit]: true,
+  [PERM.projectsView]: true, [PERM.projectsViewAll]: true, [PERM.projectsCreate]: true, [PERM.projectsEdit]: true,
+  [PERM.jobsView]: true, [PERM.jobsViewAll]: true, [PERM.jobsCreate]: true, [PERM.jobsEdit]: true,
+  [PERM.incidentsView]: true, [PERM.incidentsCreate]: true, [PERM.incidentsEdit]: true,
+  [PERM.farmsView]: true, [PERM.farmsEdit]: true,
+  [PERM.propertiesView]: true, [PERM.propertiesEdit]: true,
+}
+
 const FALLBACK: Record<string, Partial<Record<PermissionKey, boolean>>> = {
-  owner: {
-    [PERM.inventoryView]: true, [PERM.inventoryEdit]: true,
-    [PERM.suppliersView]: true, [PERM.suppliersEdit]: true,
-    [PERM.assetsView]: true, [PERM.assetsEdit]: true,
-    [PERM.contractorsView]: true, [PERM.contractorsCreate]: true, [PERM.contractorsEdit]: true,
-    [PERM.clientsView]: true, [PERM.clientsEdit]: true,
-    [PERM.projectsView]: true, [PERM.projectsViewAll]: true, [PERM.projectsCreate]: true, [PERM.projectsEdit]: true,
-    [PERM.jobsView]: true, [PERM.jobsViewAll]: true, [PERM.jobsCreate]: true, [PERM.jobsEdit]: true,
-    [PERM.incidentsView]: true, [PERM.incidentsCreate]: true, [PERM.incidentsEdit]: true,
-    [PERM.farmsView]: true, [PERM.farmsEdit]: true,
-    [PERM.propertiesView]: true, [PERM.propertiesEdit]: true,
-  },
+  owner: { ...OWNER_LIKE },
+  admin: { ...OWNER_LIKE },
   hr: {
     [PERM.inventoryView]: true, [PERM.inventoryEdit]: true,
     [PERM.suppliersView]: true, [PERM.suppliersEdit]: true,

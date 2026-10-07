@@ -26,6 +26,7 @@ import { ModalShell } from '@/components/ui/ModalShell'
 
 const ACCESS_BADGES: Record<AccessLevel, { label: string; cls: string }> = {
   owner:    { label: 'Owner',    cls: 'bg-primary/10 text-primary' },
+  admin:    { label: 'Admin',    cls: 'bg-primary/10 text-primary' },
   manager:  { label: 'Manager',  cls: 'bg-warning-dark text-warning' },
   hr:       { label: 'HR',       cls: 'bg-accent-light/30 text-primary-dark' },
   employee: { label: 'Employee', cls: 'bg-success-dark text-success' },

@@ -1,4 +1,4 @@
-export type AccessLevel = 'owner' | 'manager' | 'hr' | 'employee'
+export type AccessLevel = 'owner' | 'admin' | 'manager' | 'hr' | 'employee'
 
 export interface Employee {
   id: string

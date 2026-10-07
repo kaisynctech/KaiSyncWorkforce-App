@@ -23,6 +23,7 @@ import {
   enforceBranchSignInRadius,
   type DispatchSettings,
 } from '@/lib/branch-geofence'
+import { isHrOrAbove as accessIsHrOrAbove, isOwnerOrAdmin } from '@/lib/employee-taxonomy'
 
 // ─── Local types ──────────────────────────────────────────────────────────────
 
@@ -293,7 +294,7 @@ export default function SettingsPage() {
 
     const emps = (allEmpRes.data ?? []) as HrEmployee[]
     setAllEmployees(emps)
-    setHrAdmins(emps.filter(e => ['owner', 'hr', 'manager'].includes(e.access_level)))
+    setHrAdmins(emps.filter(e => ['owner', 'admin', 'hr', 'manager'].includes(e.access_level)))
 
     await loadXero(member.companyId)
     await loadBilling(member.companyId)
@@ -552,40 +553,65 @@ export default function SettingsPage() {
 
   // ── HR user management ────────────────────────────────────────────────────
 
-  async function promoteToAdmin() {
-    if (!promoteEmployeeId || !companyId) return
+  function refreshElevatedStaff(emps: HrEmployee[]) {
+    setAllEmployees(emps)
+    setHrAdmins(emps.filter(e => ['owner', 'admin', 'hr', 'manager'].includes(e.access_level)))
+  }
+
+  /** Owner-only: grant company Admin (owner-equivalent ops). */
+  async function promoteToCompanyAdmin() {
+    if (!promoteEmployeeId || !companyId || !isOwner) return
     setHrBusy(true)
+    setError(null)
     const supabase = createClient()
-    await supabase.rpc('set_employee_role', {
+    const { error: e } = await supabase.rpc('set_employee_role', {
+      p_company_id:  companyId,
+      p_employee_id: promoteEmployeeId,
+      p_new_role:    'admin',
+    })
+    if (e) setError(e.message)
+    setPromoteEmployeeId('')
+    const { data } = await supabase.from('employees').select('id, name, surname, email, access_level')
+      .eq('company_id', companyId).eq('is_active', true).order('name')
+    refreshElevatedStaff((data ?? []) as HrEmployee[])
+    setHrBusy(false)
+  }
+
+  /** Owner or Admin: grant HR. */
+  async function promoteToHr() {
+    if (!promoteEmployeeId || !companyId || !isOwnerOrAdminAccess) return
+    setHrBusy(true)
+    setError(null)
+    const supabase = createClient()
+    const { error: e } = await supabase.rpc('set_employee_role', {
       p_company_id:  companyId,
       p_employee_id: promoteEmployeeId,
       p_new_role:    'hr',
     })
+    if (e) setError(e.message)
     setPromoteEmployeeId('')
     const { data } = await supabase.from('employees').select('id, name, surname, email, access_level')
       .eq('company_id', companyId).eq('is_active', true).order('name')
-    const emps = (data ?? []) as HrEmployee[]
-    setAllEmployees(emps)
-    setHrAdmins(emps.filter(e => ['owner', 'hr', 'manager'].includes(e.access_level)))
+    refreshElevatedStaff((data ?? []) as HrEmployee[])
     setHrBusy(false)
   }
 
   async function demoteFromAdmin(empId: string) {
     if (empId === myEmpId) return // self-demotion guard
-    if (!window.confirm('Remove HR admin access for this employee?')) return
+    if (!window.confirm('Remove elevated access for this employee? They will become a normal employee.')) return
     if (!companyId) return
     setHrBusy(true)
+    setError(null)
     const supabase = createClient()
-    await supabase.rpc('set_employee_role', {
+    const { error: e } = await supabase.rpc('set_employee_role', {
       p_company_id:  companyId,
       p_employee_id: empId,
       p_new_role:    'employee',
     })
+    if (e) setError(e.message)
     const { data } = await supabase.from('employees').select('id, name, surname, email, access_level')
       .eq('company_id', companyId).eq('is_active', true).order('name')
-    const emps = (data ?? []) as HrEmployee[]
-    setAllEmployees(emps)
-    setHrAdmins(emps.filter(e => ['owner', 'hr', 'manager'].includes(e.access_level)))
+    refreshElevatedStaff((data ?? []) as HrEmployee[])
     setHrBusy(false)
   }
 
@@ -663,9 +689,11 @@ export default function SettingsPage() {
 
   // ── Derived ───────────────────────────────────────────────────────────────
 
-  const isOwner      = employee?.access_level === 'owner'
-  const isHrOrAbove  = ['owner', 'manager', 'hr'].includes(employee?.access_level ?? '')
-  const promotable   = allEmployees.filter(e => !hrAdmins.find(a => a.id === e.id))
+  const isOwner              = employee?.access_level === 'owner'
+  const isOwnerOrAdminAccess = isOwnerOrAdmin(employee?.access_level)
+  const isHrOrAbove          = accessIsHrOrAbove(employee?.access_level)
+    || employee?.access_level === 'manager'
+  const promotable           = allEmployees.filter(e => !hrAdmins.find(a => a.id === e.id))
 
   // ── Guards ────────────────────────────────────────────────────────────────
 
@@ -1160,20 +1188,26 @@ export default function SettingsPage() {
             </div>
           </Section>
 
-          {isOwner && (
-            <Section title="HR Admins" icon="admin_panel_settings">
+          {isOwnerOrAdminAccess && (
+            <Section title="Company access" icon="admin_panel_settings">
               <div className="flex flex-col gap-3">
                 <p className="text-[13px] text-text-secondary">
-                  Employees with HR or manager access can manage attendance, payroll, and leave.
+                  <strong>Admin</strong> has the same day-to-day access as Owner (all employees, payroll, settings)
+                  except company ownership / billing transfer.
+                  <strong> HR</strong> manages people and payroll; <strong>Manager</strong> is team-scoped.
                 </p>
 
                 {hrAdmins.length === 0 ? (
-                  <p className="text-[13px] text-text-disabled py-2">No HR admins found.</p>
+                  <p className="text-[13px] text-text-disabled py-2">No elevated users found.</p>
                 ) : (
                   <div className="border border-divider rounded-lg overflow-hidden">
                     {hrAdmins.map(emp => {
                       const isMe    = emp.id === myEmpId
                       const isOwnerRow = emp.access_level === 'owner'
+                      const isAdminRow = emp.access_level === 'admin'
+                      const canDemote = !isOwnerRow && !isMe && (
+                        isOwner || (isOwnerOrAdminAccess && emp.access_level !== 'admin')
+                      )
                       return (
                         <div key={emp.id} className="flex items-center justify-between px-3 py-2.5 border-b border-divider last:border-0 gap-3">
                           <div className="min-w-0">
@@ -1185,18 +1219,18 @@ export default function SettingsPage() {
                               {emp.email ?? '—'} · <span className="capitalize">{emp.access_level}</span>
                             </p>
                           </div>
-                          {!isOwnerRow && !isMe && (
+                          {canDemote && (
                             <button
                               onClick={() => demoteFromAdmin(emp.id)}
                               disabled={hrBusy}
                               className="h-8 px-3 rounded text-[12px] text-error border border-error/30 hover:bg-error-dark disabled:opacity-50 transition-colors shrink-0"
                             >
-                              Remove admin
+                              Remove access
                             </button>
                           )}
-                          {(isOwnerRow || isMe) && (
+                          {(isOwnerRow || isAdminRow || isMe) && !canDemote && (
                             <span className="text-[11px] text-text-disabled shrink-0">
-                              {isOwnerRow ? 'Owner' : 'Self'}
+                              {isOwnerRow ? 'Owner' : isAdminRow && !isOwner ? 'Admin' : 'Self'}
                             </span>
                           )}
                         </div>
@@ -1206,21 +1240,30 @@ export default function SettingsPage() {
                 )}
 
                 {promotable.length > 0 && (
-                  <div className="flex gap-2 items-center pt-1">
+                  <div className="flex flex-wrap gap-2 items-center pt-1">
                     <select
                       value={promoteEmployeeId}
                       onChange={e => setPromoteEmployeeId(e.target.value)}
-                      className="flex-1 h-10 px-3 bg-background border border-border rounded-lg text-[13px] text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      className="flex-1 min-w-[180px] h-10 px-3 bg-background border border-border rounded-lg text-[13px] text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
                     >
                       <option value="">Select employee to promote…</option>
                       {promotable.map(e => (
                         <option key={e.id} value={e.id}>{e.name} {e.surname}</option>
                       ))}
                     </select>
+                    {isOwner && (
+                      <button
+                        onClick={promoteToCompanyAdmin}
+                        disabled={!promoteEmployeeId || hrBusy}
+                        className="h-10 px-4 rounded-lg bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors shrink-0"
+                      >
+                        {hrBusy ? '…' : 'Grant Admin'}
+                      </button>
+                    )}
                     <button
-                      onClick={promoteToAdmin}
+                      onClick={promoteToHr}
                       disabled={!promoteEmployeeId || hrBusy}
-                      className="h-10 px-4 rounded-lg bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors shrink-0"
+                      className="h-10 px-4 rounded-lg border border-border text-[13px] font-semibold text-text-primary hover:border-primary hover:text-primary disabled:opacity-50 transition-colors shrink-0"
                     >
                       {hrBusy ? '…' : 'Grant HR'}
                     </button>
