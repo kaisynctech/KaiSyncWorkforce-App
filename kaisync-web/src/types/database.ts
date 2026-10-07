@@ -80,6 +80,10 @@ export interface Branch {
   company_id: string
   name: string
   address: string | null
+  latitude?: number | null
+  longitude?: number | null
+  radius_meters?: number | null
+  is_active?: boolean | null
 }
 
 export interface BreakSlot {

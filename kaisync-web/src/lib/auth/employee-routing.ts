@@ -15,6 +15,8 @@ export const AUTH_ROUTES = {
   registerVerify: '/auth/employee-register-verify',
   linkCompany: '/auth/link-company',
   registrationStatus: '/auth/registration-status',
+  inviteComplete: '/auth/invite-complete',
+  hrSignIn: '/auth/hr-sign-in',
   employeeDashboard: '/dashboard/employee/overview',
   hrDashboard: '/dashboard/overview',
 } as const

@@ -69,6 +69,7 @@ export default function EditEmployeePage() {
   const [payBasis, setPayBasis] = useState('hourly')
   const [payeRate, setPayeRate] = useState('')
   const [exemptUif, setExemptUif] = useState(false)
+  const [payFullMonthlySalary, setPayFullMonthlySalary] = useState(false)
   const [medicalAid, setMedicalAid] = useState('')
   const [pension, setPension] = useState('')
   const [union, setUnion] = useState('')
@@ -146,6 +147,7 @@ export default function EditEmployeePage() {
     const raw = emp as Employee & {
       paye_rate_percent?: number | null
       uif_exempt?: boolean | null
+      pay_full_monthly_salary?: boolean | null
       work_days_weekly?: number | null
       account_type?: string | null
     }
@@ -156,6 +158,7 @@ export default function EditEmployeePage() {
     setPayBasis(emp.pay_basis ?? 'hourly')
     setPayeRate((raw.paye_rate_percent ?? emp.paye_rate)?.toString() ?? '')
     setExemptUif(raw.uif_exempt ?? emp.exempt_from_uif ?? false)
+    setPayFullMonthlySalary(Boolean(raw.pay_full_monthly_salary))
     setMedicalAid(emp.medical_aid_deduction?.toString() ?? '')
     setPension(emp.pension_deduction?.toString() ?? '')
     setUnion(emp.union_deduction?.toString() ?? '')
@@ -214,6 +217,7 @@ export default function EditEmployeePage() {
         monthlySalary: salaryNum,
         payByHour,
         payBasis,
+        payFullMonthlySalary,
         payeRatePercent: payeRate ? parseFloat(payeRate) : null,
         uifExempt: exemptUif,
         medicalAidDeduction: medicalAid ? parseFloat(medicalAid) : 0,
@@ -498,6 +502,13 @@ export default function EditEmployeePage() {
           <FormField label="PAYE rate %">
             <input type="number" value={payeRate} onChange={e => setPayeRate(e.target.value)} placeholder="Company default" step="0.01" min="0" max="100" className={entryClass} />
           </FormField>
+          <div className="flex items-center justify-between py-1">
+            <div>
+              <p className="text-[14px] font-medium text-text-primary">Pay full monthly salary</p>
+              <p className="text-[12px] text-text-secondary">No clock-in required — payroll always pays the full salary.</p>
+            </div>
+            <Toggle checked={payFullMonthlySalary} onChange={setPayFullMonthlySalary} />
+          </div>
           <div className="flex items-center justify-between py-1">
             <p className="text-[14px] font-medium text-text-primary">Exempt from UIF</p>
             <Toggle checked={exemptUif} onChange={setExemptUif} />

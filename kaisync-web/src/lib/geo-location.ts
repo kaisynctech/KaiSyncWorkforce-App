@@ -202,6 +202,51 @@ export async function reverseGeocodeRequired(
   return null
 }
 
+export type ForwardGeocodeResult = {
+  latitude: number
+  longitude: number
+  displayName: string
+}
+
+/**
+ * Resolve an address string to coordinates (Nominatim search).
+ * Used by Settings → Branch location editor.
+ */
+export async function forwardGeocode(query: string): Promise<ForwardGeocodeResult | null> {
+  const q = query.trim()
+  if (q.length < 3) return null
+
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&addressdetails=0`,
+      {
+        headers: {
+          Accept: 'application/json',
+          'Accept-Language': 'en',
+          'User-Agent': USER_AGENT,
+        },
+      },
+    )
+    if (!res.ok) return null
+    const json = (await res.json()) as Array<{
+      lat?: string
+      lon?: string
+      display_name?: string
+    }>
+    const hit = json[0]
+    if (!hit?.lat || !hit?.lon) return null
+    const latitude = Number(hit.lat)
+    const longitude = Number(hit.lon)
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null
+    const displayName = isUsablePlaceName(hit.display_name)
+      ? hit.display_name.trim()
+      : q
+    return { latitude, longitude, displayName }
+  } catch {
+    return null
+  }
+}
+
 function getPosition(highAccuracy = true): Promise<GeolocationPosition | null> {
   if (typeof navigator === 'undefined' || !navigator.geolocation) return Promise.resolve(null)
   return new Promise(resolve => {

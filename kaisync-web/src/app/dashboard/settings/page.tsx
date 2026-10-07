@@ -17,15 +17,31 @@ import type { Company, Employee, SecuritySettings, AuditEvent } from '@/types/da
 import { formatZar, loadCompanyBillingSummary, type BillingSummary } from '@/lib/billing'
 import { checkQuoteEmailConfigured } from '@/lib/send-quote-email'
 import type { CommercialAutomationRule, AutomationRuleExecution } from '@/types/commercial'
+import { forwardGeocode, reverseGeocode } from '@/lib/geo-location'
+import {
+  branchSignInRadiusMeters,
+  enforceBranchSignInRadius,
+  type DispatchSettings,
+} from '@/lib/branch-geofence'
 
 // ─── Local types ──────────────────────────────────────────────────────────────
 
-// Branch has more columns in DB than the exported Branch type
+const BRANCH_SELECT =
+  'id, company_id, name, address, latitude, longitude, radius_meters, is_active'
+
 type BranchRow = {
   id: string
   company_id: string
   name: string
+  address: string | null
+  latitude: number | null
+  longitude: number | null
+  radius_meters: number
   is_active: boolean
+}
+
+function branchHasLocation(b: BranchRow): boolean {
+  return b.latitude != null && b.longitude != null && Number.isFinite(b.latitude) && Number.isFinite(b.longitude)
 }
 
 type HrEmployee = Pick<Employee, 'id' | 'name' | 'surname' | 'email' | 'access_level'>
@@ -88,7 +104,19 @@ export default function SettingsPage() {
   const [newBranchName,    setNewBranchName]    = useState('')
   const [editingBranchId,  setEditingBranchId]  = useState<string | null>(null)
   const [editBranchName,   setEditBranchName]   = useState('')
+  const [editBranchAddress, setEditBranchAddress] = useState('')
+  const [editBranchLat,    setEditBranchLat]    = useState('')
+  const [editBranchLng,    setEditBranchLng]    = useState('')
+  const [editBranchRadius, setEditBranchRadius] = useState('100')
   const [branchBusy,       setBranchBusy]       = useState(false)
+  const [branchMsg,        setBranchMsg]        = useState<string | null>(null)
+  const [geocodeBusy,      setGeocodeBusy]      = useState(false)
+
+  // ── Branch sign-in (company geofence) ────────────────────────────────────
+  const [enforceBranchSignIn, setEnforceBranchSignIn] = useState(false)
+  const [defaultSignInRadius, setDefaultSignInRadius] = useState('100')
+  const [geofenceBusy,        setGeofenceBusy]        = useState(false)
+  const [geofenceMsg,         setGeofenceMsg]         = useState<string | null>(null)
 
   // ── HR user state ─────────────────────────────────────────────────────────
   const [hrAdmins,         setHrAdmins]         = useState<HrEmployee[]>([])
@@ -227,15 +255,24 @@ export default function SettingsPage() {
 
     if (!empData) { setLoading(false); return }
     setEmployee(empData as Employee)
-    const co = (empData as { companies: Company }).companies
+    const co = (empData as { companies: Company & { custom_settings?: Record<string, unknown> | null } }).companies
     setCompany(co)
     setCompanyName(co.name)
     setEnabledModules((co as Company).enabled_modules ?? {})
 
+    const custom = (co.custom_settings ?? {}) as Record<string, unknown>
+    const nested = custom.dispatch_settings
+    const dispatch: DispatchSettings =
+      nested && typeof nested === 'object' && !Array.isArray(nested)
+        ? (nested as Record<string, unknown>)
+        : custom
+    setEnforceBranchSignIn(enforceBranchSignInRadius(dispatch))
+    setDefaultSignInRadius(String(branchSignInRadiusMeters(dispatch)))
+
     const [auditRes, branchRes, allEmpRes] = await Promise.all([
       supabase.from('audit_events').select('*').eq('company_id', member.companyId)
         .order('created_at', { ascending: false }).limit(20),
-      supabase.from('branches').select('id, company_id, name, is_active')
+      supabase.from('branches').select(BRANCH_SELECT)
         .eq('company_id', member.companyId).order('name'),
       supabase.from('employees').select('id, name, surname, email, access_level')
         .eq('company_id', member.companyId).eq('is_active', true).order('name'),
@@ -339,9 +376,32 @@ export default function SettingsPage() {
 
   // ── Branch management ─────────────────────────────────────────────────────
 
+  async function refreshBranches(cId: string) {
+    const supabase = createClient()
+    const { data } = await supabase.from('branches').select(BRANCH_SELECT)
+      .eq('company_id', cId).order('name')
+    setBranches((data ?? []) as BranchRow[])
+  }
+
+  function startEditBranch(branch: BranchRow) {
+    setEditingBranchId(branch.id)
+    setEditBranchName(branch.name)
+    setEditBranchAddress(branch.address ?? '')
+    setEditBranchLat(branch.latitude != null ? String(branch.latitude) : '')
+    setEditBranchLng(branch.longitude != null ? String(branch.longitude) : '')
+    setEditBranchRadius(String(branch.radius_meters || 100))
+    setBranchMsg(null)
+  }
+
+  function cancelEditBranch() {
+    setEditingBranchId(null)
+    setBranchMsg(null)
+  }
+
   async function createBranch() {
     if (!newBranchName.trim() || !companyId) return
     setBranchBusy(true)
+    setBranchMsg(null)
     const supabase = createClient()
     const { error: e } = await supabase.from('branches').insert({
       company_id:    companyId,
@@ -349,37 +409,145 @@ export default function SettingsPage() {
       is_active:     true,
       radius_meters: 100,
     })
-    if (!e) {
+    if (e) {
+      setBranchMsg(e.message)
+    } else {
       setNewBranchName('')
-      const { data } = await supabase.from('branches').select('id, company_id, name, is_active')
-        .eq('company_id', companyId).order('name')
-      setBranches((data ?? []) as BranchRow[])
+      await refreshBranches(companyId)
     }
     setBranchBusy(false)
   }
 
-  async function renameBranch(branchId: string) {
+  async function saveBranch(branchId: string) {
     if (!editBranchName.trim() || !companyId) return
+    const latRaw = editBranchLat.trim()
+    const lngRaw = editBranchLng.trim()
+    const radiusRaw = Number(editBranchRadius)
+    const lat = latRaw === '' ? null : Number(latRaw)
+    const lng = lngRaw === '' ? null : Number(lngRaw)
+
+    if (latRaw !== '' && (!Number.isFinite(lat) || Math.abs(lat!) > 90)) {
+      setBranchMsg('Latitude must be a number between -90 and 90.')
+      return
+    }
+    if (lngRaw !== '' && (!Number.isFinite(lng) || Math.abs(lng!) > 180)) {
+      setBranchMsg('Longitude must be a number between -180 and 180.')
+      return
+    }
+    if ((lat == null) !== (lng == null)) {
+      setBranchMsg('Set both latitude and longitude, or clear both.')
+      return
+    }
+    if (!Number.isFinite(radiusRaw) || radiusRaw < 25 || radiusRaw > 5000) {
+      setBranchMsg('Sign-in radius must be between 25 and 5000 metres.')
+      return
+    }
+
     setBranchBusy(true)
+    setBranchMsg(null)
     const supabase = createClient()
-    await supabase.from('branches').update({ name: editBranchName.trim() }).eq('id', branchId)
+    const { error: e } = await supabase.from('branches').update({
+      name: editBranchName.trim(),
+      address: editBranchAddress.trim() || null,
+      latitude: lat,
+      longitude: lng,
+      radius_meters: Math.round(radiusRaw),
+    }).eq('id', branchId)
+
+    if (e) {
+      setBranchMsg(e.message)
+      setBranchBusy(false)
+      return
+    }
     setEditingBranchId(null)
-    const { data } = await supabase.from('branches').select('id, company_id, name, is_active')
-      .eq('company_id', companyId).order('name')
-    setBranches((data ?? []) as BranchRow[])
+    await refreshBranches(companyId)
     setBranchBusy(false)
+  }
+
+  async function geocodeBranchAddress() {
+    if (!editBranchAddress.trim()) {
+      setBranchMsg('Enter an address first, then click Find on map.')
+      return
+    }
+    setGeocodeBusy(true)
+    setBranchMsg(null)
+    const hit = await forwardGeocode(editBranchAddress)
+    if (!hit) {
+      setBranchMsg('Could not find that address. Try a fuller street address, or enter GPS manually.')
+      setGeocodeBusy(false)
+      return
+    }
+    setEditBranchLat(String(hit.latitude))
+    setEditBranchLng(String(hit.longitude))
+    // Keep the address the user typed; only fill display name when blank.
+    if (!editBranchAddress.trim()) setEditBranchAddress(hit.displayName)
+    setBranchMsg(`Location found: ${hit.latitude.toFixed(5)}, ${hit.longitude.toFixed(5)}`)
+    setGeocodeBusy(false)
+  }
+
+  async function useDeviceLocationForBranch() {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      setBranchMsg('Location services are not available in this browser.')
+      return
+    }
+    setGeocodeBusy(true)
+    setBranchMsg(null)
+    navigator.geolocation.getCurrentPosition(
+      async pos => {
+        const latitude = pos.coords.latitude
+        const longitude = pos.coords.longitude
+        setEditBranchLat(String(latitude))
+        setEditBranchLng(String(longitude))
+        const place = await reverseGeocode(latitude, longitude)
+        if (place) setEditBranchAddress(place)
+        setBranchMsg(`Using device location: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`)
+        setGeocodeBusy(false)
+      },
+      () => {
+        setBranchMsg('Could not read device location. Allow location access, or enter GPS manually.')
+        setGeocodeBusy(false)
+      },
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 },
+    )
   }
 
   async function deleteBranch(branchId: string) {
     if (!window.confirm('Delete this branch? Employees in this branch will be unassigned.')) return
     if (!companyId) return
     setBranchBusy(true)
+    setBranchMsg(null)
     const supabase = createClient()
-    await supabase.from('branches').delete().eq('id', branchId)
-    const { data } = await supabase.from('branches').select('id, company_id, name, is_active')
-      .eq('company_id', companyId).order('name')
-    setBranches((data ?? []) as BranchRow[])
+    const { error: e } = await supabase.from('branches').delete().eq('id', branchId)
+    if (e) setBranchMsg(e.message)
+    else await refreshBranches(companyId)
     setBranchBusy(false)
+  }
+
+  async function saveBranchSignInSettings() {
+    if (!companyId) return
+    const radius = Number(defaultSignInRadius)
+    if (!Number.isFinite(radius) || radius < 25 || radius > 5000) {
+      setGeofenceMsg('Default radius must be between 25 and 5000 metres.')
+      return
+    }
+    setGeofenceBusy(true)
+    setGeofenceMsg(null)
+    const supabase = createClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, error: e } = await (supabase.rpc as any)('set_branch_sign_in_settings', {
+      p_company_id: companyId,
+      p_enforce: enforceBranchSignIn,
+      p_radius_meters: Math.round(radius),
+    })
+    if (e) {
+      setGeofenceMsg(e.message)
+    } else {
+      const dispatch = (data ?? {}) as DispatchSettings
+      setEnforceBranchSignIn(enforceBranchSignInRadius(dispatch))
+      setDefaultSignInRadius(String(branchSignInRadiusMeters(dispatch)))
+      setGeofenceMsg('Branch sign-in settings saved.')
+    }
+    setGeofenceBusy(false)
   }
 
   // ── HR user management ────────────────────────────────────────────────────
@@ -774,10 +942,54 @@ export default function SettingsPage() {
 
       {activeTab === 'organisation' && isHrOrAbove && (
         <>
+          <Section title="Branch sign-in" icon="my_location">
+            <div className="flex flex-col gap-3">
+              <p className="text-[13px] text-text-secondary">
+                When enabled, employees must be within their assigned branch radius to clock in.
+                Set each branch address below, then assign employees to a branch on their profile.
+              </p>
+              <label className="flex items-center gap-2 text-[13px] text-text-primary cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={enforceBranchSignIn}
+                  onChange={e => { setEnforceBranchSignIn(e.target.checked); setGeofenceMsg(null) }}
+                  className="rounded border-border"
+                />
+                Require clock-in at assigned branch location
+              </label>
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="min-w-[140px]">
+                  <label className="block text-[11px] text-text-secondary mb-1">Default radius (metres)</label>
+                  <input
+                    type="number"
+                    min={25}
+                    max={5000}
+                    step={1}
+                    value={defaultSignInRadius}
+                    onChange={e => { setDefaultSignInRadius(e.target.value); setGeofenceMsg(null) }}
+                    className={inputCls}
+                  />
+                </div>
+                <button
+                  onClick={saveBranchSignInSettings}
+                  disabled={geofenceBusy}
+                  className="h-10 px-4 rounded-lg bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors"
+                >
+                  {geofenceBusy ? 'Saving…' : 'Save sign-in rules'}
+                </button>
+              </div>
+              {geofenceMsg && (
+                <p className={`text-[12px] ${geofenceMsg.includes('saved') ? 'text-success' : 'text-error'}`}>
+                  {geofenceMsg}
+                </p>
+              )}
+            </div>
+          </Section>
+
           <Section title="Branch Management" icon="account_tree">
             <div className="flex flex-col gap-3">
               <p className="text-[13px] text-text-secondary">
-                Branches are physical locations or divisions within your company. Employees can be assigned to a branch.
+                Branches are physical locations. Edit a branch to set its address, GPS pin, and sign-in radius.
               </p>
 
               <div className="flex gap-2">
@@ -798,55 +1010,148 @@ export default function SettingsPage() {
                 </button>
               </div>
 
+              {branchMsg && (
+                <p className={`text-[12px] ${branchMsg.startsWith('Location found') || branchMsg.startsWith('Using device') ? 'text-success' : 'text-error'}`}>
+                  {branchMsg}
+                </p>
+              )}
+
               {branches.length === 0 ? (
                 <p className="text-[13px] text-text-disabled py-2">No branches yet.</p>
               ) : (
                 <div className="border border-divider rounded-lg overflow-hidden">
                   {branches.map(branch => (
-                    <div key={branch.id} className="flex items-center gap-2 px-3 py-2.5 border-b border-divider last:border-0">
+                    <div key={branch.id} className="px-3 py-2.5 border-b border-divider last:border-0">
                       {editingBranchId === branch.id ? (
-                        <>
-                          <input
-                            value={editBranchName}
-                            onChange={e => setEditBranchName(e.target.value)}
-                            onKeyDown={e => e.key === 'Enter' && renameBranch(branch.id)}
-                            className="flex-1 h-8 px-2 bg-background border border-border rounded text-[13px] text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-                            autoFocus
-                          />
-                          <button
-                            onClick={() => renameBranch(branch.id)}
-                            disabled={!editBranchName.trim() || branchBusy}
-                            className="h-8 px-3 rounded text-[12px] font-semibold bg-primary text-white hover:bg-primary-dark disabled:opacity-50 transition-colors"
-                          >
-                            Save
-                          </button>
-                          <button
-                            onClick={() => setEditingBranchId(null)}
-                            className="h-8 px-3 rounded text-[12px] text-text-secondary border border-border hover:text-text-primary transition-colors"
-                          >
-                            Cancel
-                          </button>
-                        </>
+                        <div className="flex flex-col gap-2.5">
+                          <div>
+                            <label className="block text-[11px] text-text-secondary mb-1">Name</label>
+                            <input
+                              value={editBranchName}
+                              onChange={e => setEditBranchName(e.target.value)}
+                              className={inputCls}
+                              autoFocus
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[11px] text-text-secondary mb-1">Address</label>
+                            <input
+                              value={editBranchAddress}
+                              onChange={e => setEditBranchAddress(e.target.value)}
+                              placeholder="Street, suburb, city…"
+                              className={inputCls}
+                            />
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={geocodeBranchAddress}
+                              disabled={geocodeBusy || !editBranchAddress.trim()}
+                              className="h-8 px-3 rounded text-[12px] font-semibold border border-border text-text-secondary hover:text-primary hover:border-primary disabled:opacity-50 transition-colors"
+                            >
+                              {geocodeBusy ? 'Looking up…' : 'Find on map'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={useDeviceLocationForBranch}
+                              disabled={geocodeBusy}
+                              className="h-8 px-3 rounded text-[12px] font-semibold border border-border text-text-secondary hover:text-primary hover:border-primary disabled:opacity-50 transition-colors"
+                            >
+                              Use my location
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            <div>
+                              <label className="block text-[11px] text-text-secondary mb-1">Latitude</label>
+                              <input
+                                type="number"
+                                step="any"
+                                value={editBranchLat}
+                                onChange={e => setEditBranchLat(e.target.value)}
+                                placeholder="-25.74…"
+                                className={inputCls}
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] text-text-secondary mb-1">Longitude</label>
+                              <input
+                                type="number"
+                                step="any"
+                                value={editBranchLng}
+                                onChange={e => setEditBranchLng(e.target.value)}
+                                placeholder="28.18…"
+                                className={inputCls}
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] text-text-secondary mb-1">Radius (m)</label>
+                              <input
+                                type="number"
+                                min={25}
+                                max={5000}
+                                step={1}
+                                value={editBranchRadius}
+                                onChange={e => setEditBranchRadius(e.target.value)}
+                                className={inputCls}
+                              />
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-2 pt-1">
+                            <button
+                              onClick={() => saveBranch(branch.id)}
+                              disabled={!editBranchName.trim() || branchBusy}
+                              className="h-8 px-3 rounded text-[12px] font-semibold bg-primary text-white hover:bg-primary-dark disabled:opacity-50 transition-colors"
+                            >
+                              {branchBusy ? 'Saving…' : 'Save'}
+                            </button>
+                            <button
+                              onClick={cancelEditBranch}
+                              disabled={branchBusy}
+                              className="h-8 px-3 rounded text-[12px] text-text-secondary border border-border hover:text-text-primary transition-colors"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
                       ) : (
-                        <>
-                          <span className="flex-1 text-[13px] text-text-primary">{branch.name}</span>
-                          {!branch.is_active && (
-                            <span className="text-[11px] text-text-disabled px-1.5 py-0.5 rounded bg-background border border-border">Inactive</span>
-                          )}
+                        <div className="flex items-start gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-[13px] font-medium text-text-primary">{branch.name}</span>
+                              {!branch.is_active && (
+                                <span className="text-[11px] text-text-disabled px-1.5 py-0.5 rounded bg-background border border-border">Inactive</span>
+                              )}
+                              {branchHasLocation(branch) ? (
+                                <span className="text-[11px] text-success px-1.5 py-0.5 rounded bg-success/10 border border-success/20">
+                                  Location set · {Math.round(branch.radius_meters)}m
+                                </span>
+                              ) : (
+                                <span className="text-[11px] text-warning px-1.5 py-0.5 rounded bg-warning/10 border border-warning/20">
+                                  No GPS yet
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[12px] text-text-secondary mt-0.5 truncate">
+                              {branch.address?.trim()
+                                || (branchHasLocation(branch)
+                                  ? `${branch.latitude!.toFixed(5)}, ${branch.longitude!.toFixed(5)}`
+                                  : 'Add an address so employees can clock in at this site.')}
+                            </p>
+                          </div>
                           <button
-                            onClick={() => { setEditingBranchId(branch.id); setEditBranchName(branch.name) }}
-                            className="h-8 px-3 rounded text-[12px] text-text-secondary border border-border hover:text-primary hover:border-primary transition-colors"
+                            onClick={() => startEditBranch(branch)}
+                            className="h-8 px-3 rounded text-[12px] text-text-secondary border border-border hover:text-primary hover:border-primary transition-colors shrink-0"
                           >
-                            Rename
+                            Edit
                           </button>
                           <button
                             onClick={() => deleteBranch(branch.id)}
                             disabled={branchBusy}
-                            className="h-8 px-3 rounded text-[12px] font-medium text-error border border-error/30 hover:bg-error-dark disabled:opacity-50 transition-colors"
+                            className="h-8 px-3 rounded text-[12px] font-medium text-error border border-error/30 hover:bg-error-dark disabled:opacity-50 transition-colors shrink-0"
                           >
                             Delete
                           </button>
-                        </>
+                        </div>
                       )}
                     </div>
                   ))}
