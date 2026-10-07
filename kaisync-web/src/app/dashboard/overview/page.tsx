@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { timeGreeting } from '@/lib/utils'
 import type { Employee } from '@/types/database'
+import { PwaInstallButton } from '@/components/PwaInstallButton'
 
 interface TimePunch { id: string; employee_id: string; type: string; date_time: string }
 interface EmpRow {
@@ -414,6 +415,8 @@ export default function OverviewPage() {
             {punchLoading ? '…' : isClockedIn ? 'Clock Out' : 'Clock In'}
           </button>
         </div>
+
+        <PwaInstallButton variant="banner" />
 
         {/* ── KPI tiles ── */}
         <div className="kpi-grid">
