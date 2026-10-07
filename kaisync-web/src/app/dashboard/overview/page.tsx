@@ -9,7 +9,18 @@ import { timeGreeting } from '@/lib/utils'
 import type { Employee } from '@/types/database'
 
 interface TimePunch { id: string; employee_id: string; type: string; date_time: string }
-interface EmpRow { id: string; name: string; surname: string; position: string | null }
+interface EmpRow {
+  id: string
+  name: string
+  surname: string
+  position: string | null
+  /** When true, employee is paid full salary without clocking — exclude from attendance gaps. */
+  pay_full_monthly_salary?: boolean | null
+}
+
+function requiresDailyClockIn(e: EmpRow): boolean {
+  return !e.pay_full_monthly_salary
+}
 
 function todayStart() {
   const d = new Date(); d.setHours(0, 0, 0, 0); return d.toISOString()
@@ -41,7 +52,16 @@ export default function OverviewPage() {
   const eIdRef          = useRef<string>('')
   const empsRef         = useRef<EmpRow[]>([])
 
-  const [kpi, setKpi] = useState({ headcount: 0, clockedIn: 0, activeJobs: 0, pendingLeave: 0, openIncidents: 0, pendingPay: 0 })
+  const [kpi, setKpi] = useState({
+    headcount: 0,
+    /** Active employees who must clock in (excludes pay-full-monthly / no-clock staff). */
+    attendanceExpected: 0,
+    clockedIn: 0,
+    activeJobs: 0,
+    pendingLeave: 0,
+    openIncidents: 0,
+    pendingPay: 0,
+  })
   const [allEmployees, setAllEmployees] = useState<EmpRow[]>([])
   const [notClockedInIds, setNotClockedInIds] = useState<Set<string>>(new Set())
   const [onLeaveToday, setOnLeaveToday] = useState<{ id: string; name: string }[]>([])
@@ -80,12 +100,23 @@ export default function OverviewPage() {
     const punches = (data ?? []) as TimePunch[]
     const latestByEmp = new Map<string, string>()
     for (const p of punches) latestByEmp.set(p.employee_id, p.type)
+    const attendanceEmpIds = new Set(empList.filter(requiresDailyClockIn).map(e => e.id))
     const clockedInIds = new Set(
-      [...latestByEmp.entries()].filter(([, t]) => t === 'in').map(([id]) => id)
+      [...latestByEmp.entries()]
+        .filter(([id, t]) => t === 'in' && attendanceEmpIds.has(id))
+        .map(([id]) => id),
     )
-    setKpi(prev => ({ ...prev, clockedIn: clockedInIds.size }))
+    setKpi(prev => ({
+      ...prev,
+      clockedIn: clockedInIds.size,
+      attendanceExpected: attendanceEmpIds.size,
+    }))
     const punchedTodayIds = new Set(punches.map(p => p.employee_id))
-    setNotClockedInIds(new Set(empList.filter(e => !punchedTodayIds.has(e.id)).map(e => e.id)))
+    setNotClockedInIds(new Set(
+      empList
+        .filter(e => requiresDailyClockIn(e) && !punchedTodayIds.has(e.id))
+        .map(e => e.id),
+    ))
     const selfClockedIn = latestByEmp.get(eIdRef.current) === 'in'
     setIsClockedIn(selfClockedIn)
   }
@@ -139,8 +170,6 @@ export default function OverviewPage() {
     const latestByEmp = new Map<string, string>()
     for (const p of punches) latestByEmp.set(p.employee_id, p.type)
 
-    const clockedInIds = new Set([...latestByEmp.entries()].filter(([, t]) => t === 'in').map(([id]) => id))
-
     // Self punch status — base (completed sessions) stored separately from live delta
     const selfPunches = punches.filter(p => p.employee_id === member.employeeId)
     let baseMs = 0
@@ -178,7 +207,7 @@ export default function OverviewPage() {
         .eq('company_id', member.companyId).eq('status', 'open'),
       supabase.from('payment_approvals').select('id', { count: 'exact', head: true })
         .eq('company_id', member.companyId).eq('status', 'pending'),
-      supabase.from('employees').select('id, name, surname, position')
+      supabase.from('employees').select('id, name, surname, position, pay_full_monthly_salary')
         .eq('company_id', member.companyId).eq('is_active', true).order('name'),
       supabase.from('leave_requests')
         .select('id, employee_id, employees(name, surname)')
@@ -192,8 +221,18 @@ export default function OverviewPage() {
         .eq('date', todayDate),
     ])
 
+    const employees = (empsRes.data ?? []) as EmpRow[]
+    const attendanceEmployees = employees.filter(requiresDailyClockIn)
+    const attendanceEmpIds = new Set(attendanceEmployees.map(e => e.id))
+    const clockedInIds = new Set(
+      [...latestByEmp.entries()]
+        .filter(([id, t]) => t === 'in' && attendanceEmpIds.has(id))
+        .map(([id]) => id),
+    )
+
     setKpi({
       headcount: hcRes.count ?? 0,
+      attendanceExpected: attendanceEmployees.length,
       clockedIn: clockedInIds.size,
       activeJobs: jobRes.count ?? 0,
       pendingLeave: leaveRes.count ?? 0,
@@ -201,14 +240,13 @@ export default function OverviewPage() {
       pendingPay: payRes.count ?? 0,
     })
 
-    const employees = (empsRes.data ?? []) as EmpRow[]
     setAllEmployees(employees)
     empsRef.current = employees
     const punchedTodayIds = new Set(punches.map(p => p.employee_id))
     const onLeaveIds = new Set((onLeaveRes.data ?? []).map((r: { employee_id: string }) => r.employee_id))
     const absentIds = new Set((absentRes.data ?? []).map((r: { employee_id: string }) => r.employee_id))
     setNotClockedInIds(new Set(
-      employees
+      attendanceEmployees
         .filter(e => !punchedTodayIds.has(e.id) && !onLeaveIds.has(e.id) && !absentIds.has(e.id))
         .map(e => e.id),
     ))
@@ -324,7 +362,8 @@ export default function OverviewPage() {
     </div>
   )
 
-  const pct = kpi.headcount > 0 ? Math.round((kpi.clockedIn / kpi.headcount) * 100) : 0
+  const attendanceDenom = kpi.attendanceExpected
+  const pct = attendanceDenom > 0 ? Math.round((kpi.clockedIn / attendanceDenom) * 100) : 0
 
   return (
     <div className="h-full overflow-y-auto">
@@ -401,7 +440,7 @@ export default function OverviewPage() {
               <p className="text-[11px] text-text-secondary mt-0.5">employees currently clocked in</p>
             </div>
             <span className="text-[13px] font-bold text-text-secondary">
-              {kpi.clockedIn} / {kpi.headcount}
+              {kpi.clockedIn} / {attendanceDenom}
             </span>
           </div>
 
@@ -409,7 +448,7 @@ export default function OverviewPage() {
           <div className="px-4 pt-3 pb-1">
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-[11px] text-text-secondary">
-                {kpi.clockedIn} of {kpi.headcount} clocked in
+                {kpi.clockedIn} of {attendanceDenom} clocked in
               </span>
               <span className="text-[11px] font-semibold text-text-primary">{pct}%</span>
             </div>
@@ -417,8 +456,8 @@ export default function OverviewPage() {
               <div
                 className="h-full rounded-full transition-all duration-500"
                 style={{
-                  width: `${kpi.headcount > 0 ? (kpi.clockedIn / kpi.headcount) * 100 : 0}%`,
-                  backgroundColor: kpi.clockedIn === kpi.headcount ? '#22c55e' : '#3b82f6',
+                  width: `${attendanceDenom > 0 ? (kpi.clockedIn / attendanceDenom) * 100 : 0}%`,
+                  backgroundColor: kpi.clockedIn === attendanceDenom && attendanceDenom > 0 ? '#22c55e' : '#3b82f6',
                 }}
               />
             </div>
