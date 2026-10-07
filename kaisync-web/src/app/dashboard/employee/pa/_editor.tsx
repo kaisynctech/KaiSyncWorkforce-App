@@ -1,10 +1,11 @@
 'use client'
 
 import { useEffect, useRef, useState, useMemo } from 'react'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { useEmployeeModuleGate } from '@/lib/employee-module-gate'
+import { paBasePath } from '@/lib/pa-helpers'
 
 interface PATask {
   id: string
@@ -52,6 +53,8 @@ interface Props {
 export default function PATaskEditor({ mode, taskId }: Props) {
   const allowed = useEmployeeModuleGate('myPa')
   const router        = useRouter()
+  const pathname      = usePathname()
+  const basePath      = paBasePath(pathname)
   const isCodeAuthRef = useRef(false)
 
   const [loading,    setLoading]    = useState(mode === 'edit')
@@ -183,38 +186,63 @@ export default function PATaskEditor({ mode, taskId }: Props) {
     setSubmitting(true)
 
     const selectedLink = linkOptions.find(o => o.id === linkedId)
-    const params = {
-      p_company_id:          companyId,
-      p_employee_id:         empId,
-      p_title:               title.trim(),
-      p_notes:               notes.trim() || null,
-      p_due_at:              dueAt ? new Date(dueAt).toISOString() : null,
-      p_priority:            priority,
-      p_remind_at:           remindAt ? new Date(remindAt).toISOString() : null,
-      p_linked_type:         linkedType === 'none' ? null : linkedType,
-      p_linked_id:           linkedId || null,
-      p_linked_label:        selectedLink?.label ?? null,
-      p_recurrence_pattern:  recurrence === 'none' ? null : recurrence,
-      p_meeting_with:        linkedType === 'meeting' ? meetingWith || null : null,
-      p_meeting_at:          linkedType === 'meeting' && meetingAt ? new Date(meetingAt).toISOString() : null,
-      p_meeting_minutes:     linkedType === 'meeting' ? meetingMinutes || null : null,
-      p_meeting_follow_up:   linkedType === 'meeting' ? meetingFollowUp || null : null,
-      p_source_type:         'manual',
-      p_session_token:       token,
-    }
+    const dueAtIso = dueAt ? new Date(dueAt).toISOString() : null
+    const remindAtIso = remindAt ? new Date(remindAt).toISOString() : null
+    const meetingAtIso =
+      linkedType === 'meeting' && meetingAt ? new Date(meetingAt).toISOString() : null
+    const linkedTypeVal = linkedType === 'none' ? null : linkedType
+    const recurrenceVal = recurrence === 'none' ? null : recurrence
 
     const supabase = createClient()
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rpc = (fn: string, args: Record<string, unknown>, opts?: Record<string, unknown>) => (supabase.rpc as any)(fn, args, opts)
+      const rpc = (fn: string, args: Record<string, unknown>) => (supabase.rpc as any)(fn, args)
       if (mode === 'new') {
-        const { error: rpcErr } = await rpc('employee_insert_pa_task', params)
+        const { error: rpcErr } = await rpc('employee_insert_pa_task', {
+          p_company_id: companyId,
+          p_employee_id: empId,
+          p_title: title.trim(),
+          p_notes: notes.trim() || null,
+          p_due_at: dueAtIso,
+          p_priority: priority,
+          p_remind_at: remindAtIso,
+          p_linked_type: linkedTypeVal,
+          p_linked_id: linkedId || null,
+          p_linked_label: selectedLink?.label ?? null,
+          p_recurrence_pattern: recurrenceVal,
+          p_meeting_with: linkedType === 'meeting' ? meetingWith || null : null,
+          p_meeting_at: meetingAtIso,
+          p_meeting_minutes: linkedType === 'meeting' ? meetingMinutes || null : null,
+          p_meeting_follow_up: linkedType === 'meeting' ? meetingFollowUp || null : null,
+          p_session_token: token,
+        })
         if (rpcErr) throw rpcErr
       } else {
-        const { error: rpcErr } = await rpc('employee_update_pa_task', { ...params, p_task_id: taskId })
+        const patch: Record<string, string | null> = {
+          title: title.trim(),
+          notes: notes.trim() || null,
+          due_at: dueAtIso,
+          priority,
+          remind_at: remindAtIso,
+          linked_type: linkedTypeVal,
+          linked_id: linkedId || null,
+          linked_label: selectedLink?.label ?? null,
+          recurrence_pattern: recurrenceVal,
+          meeting_with: linkedType === 'meeting' ? meetingWith || null : null,
+          meeting_at: meetingAtIso,
+          meeting_minutes: linkedType === 'meeting' ? meetingMinutes || null : null,
+          meeting_follow_up: linkedType === 'meeting' ? meetingFollowUp || null : null,
+        }
+        const { error: rpcErr } = await rpc('employee_update_pa_task', {
+          p_company_id: companyId,
+          p_employee_id: empId,
+          p_task_id: taskId,
+          p_patch: patch,
+          p_session_token: token,
+        })
         if (rpcErr) throw rpcErr
       }
-      router.push('/dashboard/employee/pa')
+      router.push(basePath)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to save task.')
     }
@@ -235,7 +263,7 @@ export default function PATaskEditor({ mode, taskId }: Props) {
   return (
     <div className="h-full flex flex-col overflow-hidden">
       <div className="flex items-center gap-3 px-4 py-3 border-b border-divider shrink-0 bg-surface">
-        <button onClick={() => router.back()} className="text-text-secondary hover:text-text-primary transition-colors">
+        <button onClick={() => router.push(basePath)} className="text-text-secondary hover:text-text-primary transition-colors">
           <span className="material-icons">arrow_back</span>
         </button>
         <h1 className="text-[18px] font-semibold text-text-primary">{mode === 'new' ? 'New Task' : 'Edit Task'}</h1>

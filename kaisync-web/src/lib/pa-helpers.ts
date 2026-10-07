@@ -1,5 +1,10 @@
 /** PA helpers — status normalization, snooze, recurrence spawn . */
 
+/** HR shell: /dashboard/pa*; employee shell: /dashboard/employee/pa* */
+export function paBasePath(pathname: string | null | undefined): '/dashboard/pa' | '/dashboard/employee/pa' {
+  return pathname?.startsWith('/dashboard/pa') ? '/dashboard/pa' : '/dashboard/employee/pa'
+}
+
 export type PaStatus = 'todo' | 'in_progress' | 'done' | 'snoozed' | 'cancelled'
 
 export function normalizePaStatus(raw: string | null | undefined): PaStatus {

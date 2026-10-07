@@ -12,10 +12,12 @@ import {
   downloadIcsFile,
   nextSnoozeUntil,
   normalizePaStatus,
+  paBasePath,
   parsePaSettingsRpc,
   paTasksToIcsEntries,
   spawnNextDueAt,
 } from '@/lib/pa-helpers'
+import { localISODate } from '@/lib/utils'
 
 interface PATask {
   id: string
@@ -86,32 +88,36 @@ async function spawnRecurringNext(
   const nextDue = spawnNextDueAt(task.due_at, task.recurrence_pattern)
   if (!nextDue) return
   const supabase = createClient()
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase.rpc as any)('employee_insert_pa_task', {
-      p_company_id: companyId,
-      p_employee_id: empId,
-      p_title: task.title,
-      p_due_at: nextDue,
-      p_priority: task.priority,
-      p_source_type: 'manual',
-      p_notes: task.notes,
-      p_remind_at: null,
-      p_linked_type: task.linked_type,
-      p_linked_id: task.linked_id ?? null,
-      p_linked_label: task.linked_label,
-      p_recurrence_pattern: task.recurrence_pattern ?? null,
-      p_meeting_with: task.meeting_with,
-      p_meeting_at: task.meeting_at,
-      p_meeting_minutes: null,
-      p_meeting_follow_up: null,
-      p_session_token: token,
-    })
-  } catch (e) { console.error(e) }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase.rpc as any)('employee_insert_pa_task', {
+    p_company_id: companyId,
+    p_employee_id: empId,
+    p_title: task.title,
+    p_due_at: nextDue,
+    p_priority: task.priority,
+    p_notes: task.notes,
+    p_remind_at: null,
+    p_linked_type: task.linked_type,
+    p_linked_id: task.linked_id ?? null,
+    p_linked_label: task.linked_label,
+    p_recurrence_pattern: task.recurrence_pattern ?? null,
+    p_meeting_with: task.meeting_with,
+    p_meeting_at: task.meeting_at,
+    p_meeting_minutes: null,
+    p_meeting_follow_up: null,
+    p_session_token: token,
+  })
+  if (error) throw error
 }
 
-function TaskRow({ task, empId, companyId, token, onRefresh }: {
-  task: PATask; empId: string; companyId: string; token: string | null; onRefresh: () => void
+function TaskRow({ task, empId, companyId, token, basePath, onRefresh, onError }: {
+  task: PATask
+  empId: string
+  companyId: string
+  token: string | null
+  basePath: string
+  onRefresh: () => void
+  onError: (message: string) => void
 }) {
   const [snoozeOpen, setSnoozeOpen] = useState(false)
   const overdue = isOverdue(task)
@@ -131,7 +137,9 @@ function TaskRow({ task, empId, companyId, token, onRefresh }: {
       if (error) throw error
       await spawnRecurringNext(task, companyId, empId, token)
       onRefresh()
-    } catch (e) { console.error(e) }
+    } catch (e) {
+      onError(e instanceof Error ? e.message : 'Could not complete task.')
+    }
   }
 
   async function start() {
@@ -148,7 +156,9 @@ function TaskRow({ task, empId, companyId, token, onRefresh }: {
       })
       if (error) throw error
       onRefresh()
-    } catch (e) { console.error(e) }
+    } catch (e) {
+      onError(e instanceof Error ? e.message : 'Could not start task.')
+    }
   }
 
   async function snooze(option: string) {
@@ -167,7 +177,9 @@ function TaskRow({ task, empId, companyId, token, onRefresh }: {
       })
       if (error) throw error
       onRefresh()
-    } catch (e) { console.error(e) }
+    } catch (e) {
+      onError(e instanceof Error ? e.message : 'Could not snooze task.')
+    }
   }
 
   async function del() {
@@ -183,7 +195,9 @@ function TaskRow({ task, empId, companyId, token, onRefresh }: {
       })
       if (error) throw error
       onRefresh()
-    } catch (e) { console.error(e) }
+    } catch (e) {
+      onError(e instanceof Error ? e.message : 'Could not delete task.')
+    }
   }
 
   return (
@@ -191,7 +205,7 @@ function TaskRow({ task, empId, companyId, token, onRefresh }: {
       <div className={`w-1 shrink-0 ${PRIORITY_STRIP[task.priority] ?? 'bg-text-disabled'}`} />
       <div className="flex-1 px-3 py-3 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
-          <Link href={`/dashboard/employee/pa/${task.id}`}
+          <Link href={`${basePath}/${task.id}`}
             className="text-[14px] font-semibold text-text-primary hover:underline flex-1 min-w-0 truncate">
             {task.title}
           </Link>
@@ -244,11 +258,15 @@ function TaskRow({ task, empId, companyId, token, onRefresh }: {
 
 // ── Calendar grid ────────────────────────────────────────────────────────────
 
-function CalendarGrid({ tasks, mode, month, setMonth }: {
-  tasks: PATask[]; mode: 'month' | 'week'; month: Date; setMonth: (d: Date) => void
+function CalendarGrid({ tasks, mode, month, setMonth, basePath }: {
+  tasks: PATask[]
+  mode: 'month' | 'week'
+  month: Date
+  setMonth: (d: Date) => void
+  basePath: string
 }) {
   const [selectedDay, setSelectedDay] = useState<string | null>(null)
-  const today = new Date(); today.setHours(0,0,0,0)
+  const todayStrLocal = localISODate()
 
   function dotsFor(dateStr: string): string[] {
     return tasks
@@ -289,9 +307,9 @@ function CalendarGrid({ tasks, mode, month, setMonth }: {
       const day = month.getDay()
       const diff = day === 0 ? -6 : 1 - day
       const ws = new Date(month); ws.setDate(ws.getDate() + diff); ws.setHours(0,0,0,0)
-      return Array.from({length:7}, (_,i) => {
+      return Array.from({ length: 7 }, (_, i) => {
         const d = new Date(ws); d.setDate(d.getDate() + i)
-        return { dateStr: d.toISOString().split('T')[0], inMonth: true }
+        return { dateStr: localISODate(d), inMonth: true }
       })
     }
     const first = new Date(month.getFullYear(), month.getMonth(), 1)
@@ -299,16 +317,16 @@ function CalendarGrid({ tasks, mode, month, setMonth }: {
     const cells: Array<{ dateStr: string; inMonth: boolean }> = []
     for (let i = startDay; i > 0; i--) {
       const d = new Date(first); d.setDate(d.getDate() - i)
-      cells.push({ dateStr: d.toISOString().split('T')[0], inMonth: false })
+      cells.push({ dateStr: localISODate(d), inMonth: false })
     }
     const last = new Date(month.getFullYear(), month.getMonth() + 1, 0)
     for (let i = 1; i <= last.getDate(); i++) {
       const d = new Date(month.getFullYear(), month.getMonth(), i)
-      cells.push({ dateStr: d.toISOString().split('T')[0], inMonth: true })
+      cells.push({ dateStr: localISODate(d), inMonth: true })
     }
     while (cells.length % 7 !== 0) {
       const d = new Date(last); d.setDate(last.getDate() + (cells.length - (last.getDate() + startDay - 1)))
-      cells.push({ dateStr: d.toISOString().split('T')[0], inMonth: false })
+      cells.push({ dateStr: localISODate(d), inMonth: false })
     }
     return cells
   }
@@ -337,7 +355,7 @@ function CalendarGrid({ tasks, mode, month, setMonth }: {
       <div className="grid grid-cols-7 gap-px">
         {cells.map(({ dateStr, inMonth }) => {
           const dots = dotsFor(dateStr)
-          const isT = dateStr === today.toISOString().split('T')[0]
+          const isT = dateStr === todayStrLocal
           const isSel = dateStr === selectedDay
           return (
             <button key={dateStr} onClick={() => setSelectedDay(s => s === dateStr ? null : dateStr)}
@@ -360,7 +378,7 @@ function CalendarGrid({ tasks, mode, month, setMonth }: {
             {new Date(selectedDay + 'T12:00:00').toLocaleDateString('en-ZA', { weekday:'long', day:'2-digit', month:'long' })}
           </p>
           {selectedTasks.map(t => (
-            <Link key={t.id} href={`/dashboard/employee/pa/${t.id}`}
+            <Link key={t.id} href={`${basePath}/${t.id}`}
               className="flex items-center gap-3 bg-surface border border-divider rounded-xl px-3 py-2.5">
               <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${PRIORITY_STRIP[t.priority]}`} />
               <p className="flex-1 text-[13px] text-text-primary truncate">{t.title}</p>
@@ -377,6 +395,7 @@ export default function MyPAPage() {
   const pathname = usePathname()
   const router = useRouter()
   const isHrShell = pathname.startsWith('/dashboard/pa')
+  const basePath = paBasePath(pathname)
   const [allowed, setAllowed] = useState<boolean | null>(null)
 
   useEffect(() => {
@@ -519,56 +538,68 @@ export default function MyPAPage() {
 
   async function completeInline(t: PATask) {
     if (!empId || !companyId) return
+    setError(null)
     const supabase = createClient()
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase.rpc as any)('employee_update_pa_task_status', {
+      const { error } = await (supabase.rpc as any)('employee_update_pa_task_status', {
         p_company_id: companyId, p_employee_id: empId,
         p_task_id: t.id, p_status: 'done', p_snoozed_until: null, p_session_token: token,
       })
+      if (error) throw error
       await spawnRecurringNext(t, companyId, empId, token)
       await init()
-    } catch (e) { console.error(e) }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not complete task.')
+    }
   }
 
   async function startInline(t: PATask) {
     if (!empId || !companyId) return
+    setError(null)
     const supabase = createClient()
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase.rpc as any)('employee_update_pa_task_status', {
+      const { error } = await (supabase.rpc as any)('employee_update_pa_task_status', {
         p_company_id: companyId, p_employee_id: empId,
         p_task_id: t.id, p_status: 'in_progress', p_snoozed_until: null, p_session_token: token,
       })
+      if (error) throw error
       await init()
-    } catch (e) { console.error(e) }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not start task.')
+    }
   }
 
   async function addQuick() {
     if (!quickTitle.trim() || !empId || !companyId) return
+    setError(null)
     const supabase = createClient()
-    const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate()+1); tomorrow.setMinutes(0,0,0)
+    const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate()+1); tomorrow.setHours(9, 0, 0, 0)
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase.rpc as any)('employee_insert_pa_task', {
+      const { error } = await (supabase.rpc as any)('employee_insert_pa_task', {
         p_company_id:    companyId,
         p_employee_id:   empId,
         p_title:         quickTitle.trim(),
         p_due_at:        tomorrow.toISOString(),
         p_priority:      'medium',
-        p_source_type:   'manual',
         p_notes: null, p_remind_at: null, p_linked_type: null, p_linked_id: null,
         p_linked_label: null, p_recurrence_pattern: null, p_meeting_with: null,
         p_meeting_at: null, p_meeting_minutes: null, p_meeting_follow_up: null,
         p_session_token: token,
       })
-    } catch (e) { console.error(e) }
-    setQuickTitle(''); setQuickOpen(false)
-    await init()
+      if (error) throw error
+      setQuickTitle('')
+      setQuickOpen(false)
+      await init()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not add task.')
+    }
   }
 
   const now = new Date()
-  const todayStr = now.toISOString().split('T')[0]
+  const todayStr = localISODate(now)
 
   const openCount      = tasks.filter(t => ['todo','in_progress'].includes(t.status)).length
   const overdueCount   = tasks.filter(isOverdue).length
@@ -610,7 +641,14 @@ export default function MyPAPage() {
   }
   if (allowed === false) return null
 
-  const rowProps = { empId: empId!, companyId: companyId!, token, onRefresh: init }
+  const rowProps = {
+    empId: empId!,
+    companyId: companyId!,
+    token,
+    basePath,
+    onRefresh: init,
+    onError: (message: string) => setError(message),
+  }
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
@@ -623,7 +661,7 @@ export default function MyPAPage() {
               className="text-[12px] font-semibold px-3 py-2 rounded-lg bg-surface-elevated border border-divider text-text-primary hover:border-primary transition-colors">
               Quick add
             </button>
-            <Link href="/dashboard/employee/pa/new"
+            <Link href={`${basePath}/new`}
               className="flex items-center gap-1 bg-primary text-white text-[13px] font-semibold px-3 py-2 rounded-lg hover:bg-primary-dark transition-colors">
               <span className="material-icons text-[16px]">add</span>Task
             </Link>
@@ -698,7 +736,7 @@ export default function MyPAPage() {
                 <p className="section-label mb-2">Upcoming Reminders</p>
                 <div className="space-y-2">
                   {upcomingReminders.map(t => (
-                    <Link key={t.id} href={`/dashboard/employee/pa/${t.id}`}
+                    <Link key={t.id} href={`${basePath}/${t.id}`}
                       className="flex items-center gap-3 bg-surface border border-divider rounded-xl px-3 py-2.5">
                       <span className="material-icons text-warning text-[18px]">alarm</span>
                       <div className="flex-1 min-w-0">
@@ -761,7 +799,7 @@ export default function MyPAPage() {
                       return (
                         <tr key={t.id} className={`hover:bg-surface-elevated transition-colors ${overdue ? 'bg-error/5' : ''}`}>
                           <td className="px-4 py-3">
-                            <Link href={`/dashboard/employee/pa/${t.id}`}
+                            <Link href={`${basePath}/${t.id}`}
                               className={`text-[13px] font-semibold hover:underline ${overdue ? 'text-error' : 'text-primary'}`}>
                               {t.title}
                             </Link>
@@ -799,16 +837,22 @@ export default function MyPAPage() {
                               <button onClick={() => void completeInline(t)} title="Complete" className="p-1 rounded hover:bg-success/10">
                                 <span className="material-icons text-[16px] text-success">check_circle</span>
                               </button>
-                              <button onClick={async () => {
+                              <button onClick={() => void (async () => {
                                 if (!confirm(`Delete '${t.title}'?`)) return
+                                setError(null)
                                 const supabase = createClient()
-                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                await (supabase.rpc as any)('employee_delete_pa_task', {
-                                  p_company_id: companyId!, p_employee_id: empId!,
-                                  p_task_id: t.id, p_session_token: token,
-                                })
-                                init()
-                              }} title="Delete" className="p-1 rounded hover:bg-error/10">
+                                try {
+                                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                  const { error } = await (supabase.rpc as any)('employee_delete_pa_task', {
+                                    p_company_id: companyId!, p_employee_id: empId!,
+                                    p_task_id: t.id, p_session_token: token,
+                                  })
+                                  if (error) throw error
+                                  await init()
+                                } catch (e) {
+                                  setError(e instanceof Error ? e.message : 'Could not delete task.')
+                                }
+                              })()} title="Delete" className="p-1 rounded hover:bg-error/10">
                                 <span className="material-icons text-[16px] text-error">delete</span>
                               </button>
                             </div>
@@ -843,7 +887,7 @@ export default function MyPAPage() {
                 Export .ics
               </button>
             </div>
-            <CalendarGrid tasks={tasks} mode={calMode} month={calDate} setMonth={setCalDate} />
+            <CalendarGrid tasks={tasks} mode={calMode} month={calDate} setMonth={setCalDate} basePath={basePath} />
           </div>
         )}
 
