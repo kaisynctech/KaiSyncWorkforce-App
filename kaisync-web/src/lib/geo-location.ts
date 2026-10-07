@@ -186,7 +186,7 @@ export async function reverseGeocode(lat: number, lng: number): Promise<string |
 
 /**
  * Keep trying until a place name is found or attempts are exhausted.
- * Prefer this on clock-in / team punch before writing the punch row.
+ * Prefer after punch save (backfill) so clock-in is not blocked on geocode.
  */
 export async function reverseGeocodeRequired(
   lat: number,
