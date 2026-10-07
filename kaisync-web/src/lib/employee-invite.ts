@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js'
+import { createClient as createSupabaseJsClient, type SupabaseClient } from '@supabase/supabase-js'
 
 /** Production app origin used for invite / magic-link redirects. */
 export function appOrigin(): string {
@@ -11,13 +11,16 @@ export function appOrigin(): string {
 
 /**
  * Send a login invite email (magic link / OTP).
- * Live employees table has no invite_status / invited_at columns.
  *
- * Always sets emailRedirectTo so links do not fall back to a stale
- * Supabase Auth Site URL (e.g. a deleted Vercel preview domain).
+ * IMPORTANT: Do not use the SSR browser client for this call. That client uses
+ * PKCE and stores a code_verifier in the sender's browser — the invitee then
+ * cannot complete the link on their own device ("expired / already used").
+ *
+ * We send via a disposable anon client with implicit flow so the email link
+ * carries tokens the invitee can redeem anywhere.
  */
 export async function sendEmployeeInvite(
-  supabase: SupabaseClient,
+  _supabase: SupabaseClient,
   opts: { employeeId: string; email: string }
 ): Promise<{ ok: true } | { ok: false; message: string }> {
   const email = opts.email.trim().toLowerCase()
@@ -25,7 +28,22 @@ export async function sendEmployeeInvite(
     return { ok: false, message: 'Email is required to send an invite.' }
   }
 
-  const { error: otpErr } = await supabase.auth.signInWithOtp({
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  if (!url || !anon) {
+    return { ok: false, message: 'Supabase is not configured in this environment.' }
+  }
+
+  const mailer = createSupabaseJsClient(url, anon, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+      flowType: 'implicit',
+    },
+  })
+
+  const { error: otpErr } = await mailer.auth.signInWithOtp({
     email,
     options: {
       shouldCreateUser: true,
