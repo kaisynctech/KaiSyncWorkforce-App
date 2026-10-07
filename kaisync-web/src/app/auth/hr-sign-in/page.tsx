@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { AUTH_ROUTES, routeAfterEmailSignIn } from '@/lib/auth/employee-routing'
-import { getCurrentJwtEmployee } from '@/lib/auth/session'
+import { getCurrentJwtEmployee, markMyLoginPasswordReady } from '@/lib/auth/session'
 
 export default function HrSignInPage() {
   const router = useRouter()
@@ -63,6 +63,13 @@ export default function HrSignInPage() {
       const supabase = createClient()
       const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
       if (signInError) throw signInError
+
+      // Password sign-in proves a password exists — clear stuck mandatory-password redirect.
+      const empAfter = await getCurrentJwtEmployee(supabase)
+      if (empAfter && !empAfter.login_password_ready) {
+        await markMyLoginPasswordReady(supabase)
+      }
+
       // Authenticated but no employee record = incomplete registration — resume company setup
       const member = await resolveCurrentMember(supabase)
       if (!member) {

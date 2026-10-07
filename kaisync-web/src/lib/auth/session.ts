@@ -246,5 +246,18 @@ export async function getEmployeeForCompany(
   }
 }
 
+/**
+ * Flip login_password_ready via SECURITY DEFINER RPC.
+ * Client UPDATE on that column is revoked (ARCH-007).
+ */
+export async function markMyLoginPasswordReady(
+  supabase: SupabaseClient,
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase.rpc as any)('mark_my_login_password_ready')
+  if (error) return { ok: false, message: error.message }
+  return { ok: true }
+}
+
 /** Avoid unused import if tree-shaken oddly — keep update helper available. */
 export { updateCodeSessionToken }

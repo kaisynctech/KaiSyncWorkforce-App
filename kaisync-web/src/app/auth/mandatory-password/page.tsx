@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { AUTH_ROUTES } from '@/lib/auth/employee-routing'
-import { getCurrentJwtEmployee } from '@/lib/auth/session'
+import { markMyLoginPasswordReady } from '@/lib/auth/session'
 import {
   AuthError,
   AuthShell,
@@ -41,13 +41,8 @@ export default function MandatoryPasswordPage() {
       const { error: updateErr } = await supabase.auth.updateUser({ password })
       if (updateErr) throw updateErr
 
-      const current = await getCurrentJwtEmployee(supabase)
-      if (current?.id) {
-        await supabase
-          .from('employees')
-          .update({ login_password_ready: true })
-          .eq('id', current.id)
-      }
+      const marked = await markMyLoginPasswordReady(supabase)
+      if (!marked.ok) throw new Error(marked.message)
 
       router.push(AUTH_ROUTES.companyPicker)
     } catch (err: unknown) {
@@ -119,6 +114,19 @@ export default function MandatoryPasswordPage() {
             {loading ? 'Saving...' : 'Set password'}
           </button>
         </form>
+
+        <button
+          type="button"
+          disabled={loading}
+          onClick={async () => {
+            const supabase = createClient()
+            await supabase.auth.signOut()
+            router.replace(AUTH_ROUTES.idEntry)
+          }}
+          className="w-full text-center text-[13px] text-slate-400 hover:text-slate-200 transition-colors"
+        >
+          Sign in with a different account
+        </button>
       </div>
     </AuthShell>
   )

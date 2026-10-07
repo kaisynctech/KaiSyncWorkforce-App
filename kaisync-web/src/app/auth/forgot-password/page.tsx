@@ -34,8 +34,11 @@ function ForgotPasswordForm() {
     setLoading(true)
     try {
       const supabase = createClient()
+      const origin =
+        typeof window !== 'undefined' ? window.location.origin : 'https://www.kaisyncworkforce.com'
       const { error: resetErr } = await supabase.auth.resetPasswordForEmail(
         email.trim().toLowerCase(),
+        { redirectTo: `${origin}/auth/mandatory-password` },
       )
       if (resetErr) throw resetErr
       setSent(true)
