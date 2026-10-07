@@ -154,18 +154,24 @@ export async function createEmployee(
   }
 
   // Validate elevate permission before insert (avoids orphan employee + failed role).
-  if (desiredRole === 'manager' || desiredRole === 'hr') {
+  if (desiredRole === 'manager' || desiredRole === 'hr' || desiredRole === 'admin') {
     const callerRole = await getCallerRole(supabase, input.companyId)
-    if (callerRole !== 'owner' && callerRole !== 'hr') {
-      return {
-        ok: false,
-        message: 'Only Owner or HR can assign Manager or HR access levels.',
+    if (desiredRole === 'admin') {
+      if (callerRole !== 'owner') {
+        return {
+          ok: false,
+          message: 'Only the company Owner can assign the Admin access level.',
+        }
       }
-    }
-    if (desiredRole === 'hr' && callerRole !== 'owner') {
+    } else if (callerRole !== 'owner' && callerRole !== 'admin' && callerRole !== 'hr') {
       return {
         ok: false,
-        message: 'Only the company Owner can assign the HR access level.',
+        message: 'Only Owner, Admin, or HR can assign Manager or HR access levels.',
+      }
+    } else if (desiredRole === 'hr' && callerRole !== 'owner' && callerRole !== 'admin') {
+      return {
+        ok: false,
+        message: 'Only Owner or Admin can assign the HR access level.',
       }
     }
   }
@@ -178,7 +184,8 @@ export async function createEmployee(
   })
 
   // ARCH-009: INSERT RLS only allows access_level = 'employee'.
-  // Elevate manager/hr after insert via set_employee_role (SECURITY DEFINER).
+  // Elevate after insert via set_employee_role (SECURITY DEFINER).
+  // INSERT RLS only allows access_level = 'employee'.
   const payload = buildEmployeeCreatePayload({
     ...input,
     employmentType: normalizeEmploymentType(input.employmentType),
@@ -200,7 +207,7 @@ export async function createEmployee(
 
   let employee = data as Employee
 
-  if (desiredRole === 'manager' || desiredRole === 'hr') {
+  if (desiredRole === 'manager' || desiredRole === 'hr' || desiredRole === 'admin') {
     const { error: roleErr } = await supabase.rpc('set_employee_role', {
       p_company_id: input.companyId,
       p_employee_id: employee.id,

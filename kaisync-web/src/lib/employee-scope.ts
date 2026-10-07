@@ -24,10 +24,10 @@ export type ScopeEmployee = {
   manager_user_id?: string | null
 }
 
-/** Owner / HR see the full company. Managers are line-scoped. */
+/** Owner / Admin / HR see the full company. Managers are line-scoped. */
 export function viewerSeesAllCompany(accessLevel: string | null | undefined): boolean {
   const level: AccessLevelValue = normalizeAccessLevel(accessLevel)
-  return level === 'owner' || level === 'hr'
+  return level === 'owner' || level === 'admin' || level === 'hr'
 }
 
 export function getScopedEmployeeIds(

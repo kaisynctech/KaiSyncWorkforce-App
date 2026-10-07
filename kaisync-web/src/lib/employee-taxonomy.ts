@@ -23,6 +23,7 @@ export const ACCESS_LEVELS = [
   { value: 'employee', label: 'Employee' },
   { value: 'manager', label: 'Manager' },
   { value: 'hr', label: 'HR' },
+  { value: 'admin', label: 'Admin' },
   { value: 'owner', label: 'Owner' },
 ] as const
 
@@ -36,17 +37,18 @@ export type WorkerTypeValue = (typeof WORKER_TYPES)[number]['value']
 export type AccessLevelValue = (typeof ACCESS_LEVELS)[number]['value']
 
 /** Levels that may manage / report-to pickers (includes legacy hr_admin stored values). */
-export const MANAGER_ACCESS_LEVELS = ['owner', 'manager', 'hr', 'hr_admin'] as const
+export const MANAGER_ACCESS_LEVELS = ['owner', 'admin', 'manager', 'hr', 'hr_admin'] as const
 
 /**
  * Normalize any stored/legacy access_level to canonical web values.
- * hr_admin / hradmin / admin → hr
+ * hr_admin / hradmin → hr. Canonical `admin` is company Admin (owner-equivalent ops).
  */
 export function normalizeAccessLevel(raw: string | null | undefined): AccessLevelValue {
   const key = (raw ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_')
   if (key === 'owner') return 'owner'
+  if (key === 'admin') return 'admin'
   if (key === 'manager') return 'manager'
-  if (key === 'hr' || key === 'hr_admin' || key === 'hradmin' || key === 'admin') return 'hr'
+  if (key === 'hr' || key === 'hr_admin' || key === 'hradmin') return 'hr'
   return 'employee'
 }
 
@@ -58,7 +60,19 @@ export function labelAccessLevel(raw: string | null | undefined): string {
 /** True when the person uses the company/HR dashboard (not field employee portal). */
 export function isCompanyDashboardAccess(raw: string | null | undefined): boolean {
   const v = normalizeAccessLevel(raw)
-  return v === 'owner' || v === 'hr' || v === 'manager'
+  return v === 'owner' || v === 'admin' || v === 'hr' || v === 'manager'
+}
+
+/** Owner or company Admin — full operational access (not ownership transfer). */
+export function isOwnerOrAdmin(raw: string | null | undefined): boolean {
+  const v = normalizeAccessLevel(raw)
+  return v === 'owner' || v === 'admin'
+}
+
+/** Owner, Admin, or HR. */
+export function isHrOrAbove(raw: string | null | undefined): boolean {
+  const v = normalizeAccessLevel(raw)
+  return v === 'owner' || v === 'admin' || v === 'hr'
 }
 
 /** Normalize stored / imported employment_type to canonical lowercase values. */
