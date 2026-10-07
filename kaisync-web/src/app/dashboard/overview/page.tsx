@@ -68,6 +68,8 @@ export default function OverviewPage() {
   const [onLeaveToday, setOnLeaveToday] = useState<{ id: string; name: string }[]>([])
   const [absentToday, setAbsentToday] = useState<{ id: string; name: string; reason: string }[]>([])
   const [markAbsentLoading, setMarkAbsentLoading] = useState<string | null>(null)
+  const [markAbsentError, setMarkAbsentError] = useState<string | null>(null)
+  const [markAbsentSuccess, setMarkAbsentSuccess] = useState<string | null>(null)
 
   const [canViewCommercial, setCanViewCommercial] = useState(false)
   const [commercialKpi, setCommercialKpi] = useState({ openQuotes: 0, outstanding: 0, overdue: 0 })
@@ -272,7 +274,7 @@ export default function OverviewPage() {
     const cid = member.companyId
     const { data: canViewQuotes } = await supabase.rpc('user_has_permission', {
       p_company_id: cid,
-      p_key: 'quotes.view',
+      p_permission_key: 'quotes.view',
     })
 
     if (canViewQuotes) {
@@ -325,20 +327,29 @@ export default function OverviewPage() {
   }
 
   async function markAbsent(empId: string) {
+    if (!companyId) return
     setMarkAbsentLoading(empId)
+    setMarkAbsentError(null)
+    setMarkAbsentSuccess(null)
     const supabase = createClient()
     const { data: { session } } = await supabase.auth.getSession()
     const today = new Date().toISOString().split('T')[0]
+    const target = allEmployees.find(e => e.id === empId)
+    const targetName = target ? `${target.name} ${target.surname}` : 'Employee'
     const { error: err } = await supabase.rpc('employee_report_absence', {
       p_company_id:    companyId,
       p_employee_id:   empId,
       p_date:          today,
       p_reason:        'absent',
-      p_note:          null,
+      p_note:          'Marked absent by HR from overview',
       p_session_token: session?.access_token ?? null,
     })
-    if (err) console.error('mark absent:', err.message)
     setMarkAbsentLoading(null)
+    if (err) {
+      setMarkAbsentError(`Could not mark ${targetName} absent: ${err.message}`)
+      return
+    }
+    setMarkAbsentSuccess(`${targetName} marked absent for today.`)
     await load()
   }
 
@@ -494,6 +505,19 @@ export default function OverviewPage() {
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+
+          {(markAbsentError || markAbsentSuccess) && (
+            <div
+              className="mx-4 mt-3 px-3 py-2 rounded-lg text-[12px]"
+              style={{
+                backgroundColor: markAbsentError ? 'rgba(239,68,68,0.1)' : 'rgba(34,197,94,0.1)',
+                border: `1px solid ${markAbsentError ? 'rgba(239,68,68,0.35)' : 'rgba(34,197,94,0.35)'}`,
+                color: markAbsentError ? '#f87171' : '#4ade80',
+              }}
+            >
+              {markAbsentError ?? markAbsentSuccess}
             </div>
           )}
 
