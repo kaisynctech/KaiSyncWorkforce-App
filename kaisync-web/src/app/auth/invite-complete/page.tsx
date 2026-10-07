@@ -9,6 +9,7 @@ import {
   routeAfterCompanySelected,
   routeAfterEmailSignIn,
 } from '@/lib/auth/employee-routing'
+import { establishSessionFromUrl } from '@/lib/auth/establish-session-from-url'
 import { getCurrentJwtEmployee } from '@/lib/auth/session'
 import { saveEmpContext } from '@/lib/auth/code-session'
 import {
@@ -26,8 +27,8 @@ type ClaimResult = {
 
 /**
  * Landing page for HR/employee invite magic links.
- * Establishes session from the URL hash, links the auth user to the
- * employee row, then routes to Set Password (or dashboard if ready).
+ * Establishes session from the URL (hash or ?code=), links the auth user
+ * to the employee row, then routes to Set Password (or dashboard if ready).
  */
 export default function InviteCompletePage() {
   const router = useRouter()
@@ -41,21 +42,16 @@ export default function InviteCompletePage() {
       try {
         const supabase = createClient()
 
-        // Magic-link tokens arrive in the URL hash; give the client a moment
-        // to persist the session before we claim the employee row.
-        let session = (await supabase.auth.getSession()).data.session
+        setStatus('Signing you in from the invite link…')
+        const session = await establishSessionFromUrl(supabase, { timeoutMs: 10000 })
+        if (cancelled) return
+
         if (!session) {
-          await new Promise(r => setTimeout(r, 400))
-          session = (await supabase.auth.getSession()).data.session
-        }
-        if (!session) {
-          const { data: { user } } = await supabase.auth.getUser()
-          if (!user) {
-            throw new Error('Invite link expired or already used. Ask HR to send a new invite.')
-          }
+          throw new Error(
+            'This invite link expired or was already opened. Ask HR to click Send Invite again, then open the newest email once.',
+          )
         }
 
-        if (cancelled) return
         setStatus('Linking your account…')
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -64,7 +60,6 @@ export default function InviteCompletePage() {
 
         const claim = data as ClaimResult | null
         if (!claim?.employee_id) {
-          // Fallback: already linked via a previous visit
           const emp = await getCurrentJwtEmployee(supabase)
           if (!emp) throw new Error('Could not link your invite. Contact HR.')
           if (cancelled) return
@@ -139,7 +134,7 @@ export default function InviteCompletePage() {
               Go to HR sign in
             </Link>
             <p className="text-center text-[13px] text-slate-500">
-              Already have a password? Sign in there. Otherwise ask HR to resend your invite.
+              Open only the newest invite email once. Security scanners that open the link first can burn it.
             </p>
           </div>
         )}
