@@ -28,6 +28,7 @@ import {
   type BranchGeofenceStatus,
 } from '@/lib/branch-geofence'
 import { reverseGeocodeRequired, looksLikeCoordinates } from '@/lib/geo-location'
+import { PwaInstallButton } from '@/components/PwaInstallButton'
 
 // ── Interfaces ─────────────────────────────────────────────────────────────
 interface LastPunch {
@@ -1068,6 +1069,8 @@ export default function EmployeeOverviewPage() {
             )}
           </div>
         )}
+
+        <PwaInstallButton variant="banner" />
 
         {/* Today's PA Tasks strip */}
         {showWorkspace && modules.myPa && paTasks.length > 0 && (
