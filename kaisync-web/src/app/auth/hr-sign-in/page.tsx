@@ -1,10 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import { AUTH_ROUTES, routeAfterEmailSignIn } from '@/lib/auth/employee-routing'
+import { getCurrentJwtEmployee } from '@/lib/auth/session'
 
 export default function HrSignInPage() {
   const router = useRouter()
@@ -13,6 +15,45 @@ export default function HrSignInPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [restoring, setRestoring] = useState(true)
+
+  // Invite magic links used to land here. If a session is already present
+  // (hash tokens / prior login), continue the invite → set-password flow.
+  useEffect(() => {
+    let cancelled = false
+    async function restore() {
+      try {
+        const supabase = createClient()
+        const { data: { session } } = await supabase.auth.getSession()
+        if (cancelled) return
+        if (!session) {
+          setRestoring(false)
+          return
+        }
+
+        // Prefer invite completion when metadata or unlinked email invite applies.
+        const metaId = session.user.user_metadata?.invited_employee_id
+        if (metaId) {
+          router.replace(AUTH_ROUTES.inviteComplete)
+          return
+        }
+
+        const emp = await getCurrentJwtEmployee(supabase)
+        if (cancelled) return
+        if (emp) {
+          router.replace(routeAfterEmailSignIn(emp.login_password_ready))
+          return
+        }
+
+        // Authenticated but not linked — try claim page (email match).
+        router.replace(AUTH_ROUTES.inviteComplete)
+      } catch {
+        if (!cancelled) setRestoring(false)
+      }
+    }
+    void restore()
+    return () => { cancelled = true }
+  }, [router])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -120,11 +161,20 @@ export default function HrSignInPage() {
             </Link>
             <div>
               <h1 className="text-[22px] font-bold text-white lg:text-text-primary">HR Sign In</h1>
-              <p className="text-slate-400 text-[13px]">Sign in with your work email</p>
+              <p className="text-slate-400 text-[13px]">
+                {restoring ? 'Checking your session…' : 'Sign in with your work email'}
+              </p>
             </div>
           </div>
 
-          {error && (
+          {restoring && (
+            <div className="flex items-center gap-2 text-slate-400 text-[13px] py-6">
+              <span className="material-icons animate-spin text-[18px]">progress_activity</span>
+              Please wait…
+            </div>
+          )}
+
+          {!restoring && error && (
             <div className="p-3 rounded-xl flex items-center gap-2"
               style={{ backgroundColor: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.25)' }}>
               <span className="material-icons text-red-400 text-[18px]">error_outline</span>
@@ -132,6 +182,7 @@ export default function HrSignInPage() {
             </div>
           )}
 
+          {!restoring && (
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-[12px] font-medium text-slate-400 mb-2">Email address</label>
@@ -177,8 +228,17 @@ export default function HrSignInPage() {
               {loading ? 'Signing in...' : 'Sign In'}
             </button>
           </form>
+          )}
 
+          {!restoring && (
           <div className="space-y-2 pt-2">
+            <p className="text-center text-[13px] text-slate-500">
+              First invite? Open the link in your email to set a password.
+              Lost password?{' '}
+              <Link href={AUTH_ROUTES.forgotPassword} className="text-blue-400 font-medium hover:text-blue-300 transition-colors">
+                Reset it
+              </Link>
+            </p>
             <p className="text-center text-[13px] text-slate-500">
               Employee?{' '}
               <Link href="/auth/id-entry" className="text-blue-400 font-medium hover:text-blue-300 transition-colors">
@@ -192,6 +252,7 @@ export default function HrSignInPage() {
               </Link>
             </p>
           </div>
+          )}
         </div>
       </div>
     </div>

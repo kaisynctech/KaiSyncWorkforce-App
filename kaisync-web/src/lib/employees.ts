@@ -238,6 +238,8 @@ export type EmployeeUpdateInput = {
   monthlySalary: number
   payByHour: boolean
   payBasis?: string | null
+  /** When true, payroll pays full monthly salary without requiring clock-ins. */
+  payFullMonthlySalary?: boolean
   payeRatePercent?: number | null
   uifExempt: boolean
   medicalAidDeduction: number
@@ -310,6 +312,7 @@ export async function updateEmployee(
       monthly_salary: input.monthlySalary,
       pay_by_hour: input.payByHour,
       pay_basis: input.payByHour ? (input.payBasis || null) : null,
+      pay_full_monthly_salary: Boolean(input.payFullMonthlySalary),
       paye_rate_percent: input.payeRatePercent ?? null,
       uif_exempt: input.uifExempt,
       medical_aid_deduction: input.medicalAidDeduction,

@@ -21,7 +21,7 @@ import { ALL_MODULES_ENABLED, type EmployeeModuleFlags } from '@/lib/company-mod
 import {
   getBranchGeofenceStatus,
   validateBranchClockIn,
-  branchSignInRadiusMeters,
+  resolveBranchSignInRadiusMeters,
   enforceBranchSignInRadius,
   haversineMeters,
   type BranchRow,
@@ -400,12 +400,15 @@ export default function EmployeeOverviewPage() {
     branchName?: string | null,
     branchId?: string | null,
   ) {
+    const branch = branchesRef.current.find(
+      b => (branchId && b.id === branchId) || (branchName && b.name === branchName),
+    )
     const status = getBranchGeofenceStatus({
       enforce: enforceBranchSignInRadius(dispatchSettingsRef.current),
       employeeBranch: branchName ?? employeeBranchRef.current,
       employeeBranchId: branchId ?? employeeBranchIdRef.current,
       branches: branchesRef.current,
-      radiusMeters: branchSignInRadiusMeters(dispatchSettingsRef.current),
+      radiusMeters: resolveBranchSignInRadiusMeters(dispatchSettingsRef.current, branch),
       latitude: lat,
       longitude: lng,
     })
@@ -716,12 +719,17 @@ export default function EmployeeOverviewPage() {
 
     // Branch geofence hard-block on clock-IN
     if (!isClockedIn) {
+      const assignedBranch = branchesRef.current.find(
+        b =>
+          (employeeBranchIdRef.current && b.id === employeeBranchIdRef.current)
+          || (employeeBranchRef.current && b.name === employeeBranchRef.current),
+      )
       const branchResult = validateBranchClockIn({
         enforce: enforceBranchSignInRadius(dispatchSettingsRef.current),
         employeeBranch: employeeBranchRef.current,
         employeeBranchId: employeeBranchIdRef.current,
         branches: branchesRef.current,
-        radiusMeters: branchSignInRadiusMeters(dispatchSettingsRef.current),
+        radiusMeters: resolveBranchSignInRadiusMeters(dispatchSettingsRef.current, assignedBranch),
         latitude: geoLat ?? liveLat,
         longitude: geoLng ?? liveLng,
       })

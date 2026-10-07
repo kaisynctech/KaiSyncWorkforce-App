@@ -9,6 +9,8 @@ export type BranchRow = {
   name: string
   latitude: number | null
   longitude: number | null
+  /** Per-branch clock-in radius when set (preferred over company default). */
+  radius_meters?: number | null
   is_active?: boolean | null
 }
 
@@ -57,7 +59,22 @@ export function enforceBranchSignInRadius(settings: DispatchSettings): boolean {
 }
 
 export function branchSignInRadiusMeters(settings: DispatchSettings): number {
-  return normalizeBranchRadius(getDispatchNumber(settings, 'branch_sign_in_radius_m', 500))
+  const raw = getDispatchNumber(settings, 'branch_sign_in_radius_m', 100)
+  // Honour small explicit radii (50–150m). Legacy configs still bucket to 200/500/1000.
+  if (raw >= 50 && raw <= 150) return Math.round(raw)
+  return normalizeBranchRadius(raw)
+}
+
+/** Prefer the assigned branch radius when present. */
+export function resolveBranchSignInRadiusMeters(
+  settings: DispatchSettings,
+  branch: BranchRow | null | undefined,
+): number {
+  const fromBranch = branch?.radius_meters
+  if (typeof fromBranch === 'number' && Number.isFinite(fromBranch) && fromBranch > 0) {
+    return fromBranch
+  }
+  return branchSignInRadiusMeters(settings)
 }
 
 export function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
