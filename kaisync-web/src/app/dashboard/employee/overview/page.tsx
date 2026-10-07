@@ -29,6 +29,7 @@ import {
 } from '@/lib/branch-geofence'
 import { reverseGeocodeRequired, looksLikeCoordinates } from '@/lib/geo-location'
 import { PwaInstallButton } from '@/components/PwaInstallButton'
+import { localISODate } from '@/lib/utils'
 
 // ── Interfaces ─────────────────────────────────────────────────────────────
 interface LastPunch {
@@ -134,7 +135,7 @@ function fmtAbsenceReason(raw: string): string {
 function isoDateOffset(days: number): string {
   const d = new Date()
   d.setDate(d.getDate() + days)
-  return d.toISOString().split('T')[0]
+  return localISODate(d)
 }
 
 const PRIORITY_CLASSES: Record<string, string> = {
@@ -296,7 +297,7 @@ export default function EmployeeOverviewPage() {
       p_employee_id: empId,
       p_session_token: tokRef.current,
     })
-    applyLastPunch((data as LastPunch | null) ?? null, new Date().toISOString().split('T')[0])
+    applyLastPunch((data as LastPunch | null) ?? null, localISODate())
   }
 
   /** After clock in/out: reconcile punch UI only — do not re-fetch the whole dashboard. */
@@ -307,7 +308,7 @@ export default function EmployeeOverviewPage() {
     const supabase = createClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rpc = (fn: string, args: Record<string, unknown>) => (supabase.rpc as any)(fn, args)
-    const todayStr = new Date().toISOString().split('T')[0]
+    const todayStr = localISODate()
     const weekFrom = isoDateOffset(-7)
     const tok = tokRef.current
 
@@ -436,7 +437,7 @@ export default function EmployeeOverviewPage() {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const rpc = (fn: string, args: Record<string, unknown>) => (supabase.rpc as any)(fn, args)
-      const todayStr = new Date().toISOString().split('T')[0]
+      const todayStr = localISODate()
 
       // Prefer shared bootstrap workspaces; fall back to direct loads.
       let emp: EmployeeWorkspace | null = bootstrap.employeeWs
@@ -624,10 +625,11 @@ export default function EmployeeOverviewPage() {
           setLiveLng(lng)
           refreshBranchStatus(lat, lng)
           try {
-            const name = await reverseGeocodeRequired(lat, lng, { maxAttempts: 3 })
+            // Single attempt for display only — clock submit must not wait on geocode.
+            const name = await reverseGeocodeRequired(lat, lng, { maxAttempts: 1 })
             setGeoAddress(name)
           } catch {
-            // reverse geocode failed — address stays null; submitClock retries before insert
+            // address stays null; punch saves GPS and backfills place name after insert
           }
         },
         () => {
@@ -664,7 +666,7 @@ export default function EmployeeOverviewPage() {
       job_id: clockJobId || null,
       notes: clockNote || null,
     }
-    applyLastPunch(optimistic, new Date().toISOString().split('T')[0])
+    applyLastPunch(optimistic, localISODate())
   }
 
   async function syncQueue() {
@@ -743,24 +745,12 @@ export default function EmployeeOverviewPage() {
       }
     }
 
-    // Prefer a place name over raw coords — retry hard before insert.
-    let resolvedAddress = geoAddress
+    // Use a place name if already resolved for display; never block clock on geocode.
+    // Never store raw coordinates as address — GPS is kept; name is backfilled after save.
+    let resolvedAddress =
+      geoAddress && !looksLikeCoordinates(geoAddress) ? geoAddress : null
     const punchLat = geoLat
     const punchLng = geoLng
-    if (
-      punchLat != null &&
-      punchLng != null &&
-      (!resolvedAddress || looksLikeCoordinates(resolvedAddress))
-    ) {
-      const named = await reverseGeocodeRequired(punchLat, punchLng, { maxAttempts: 4 })
-      if (named) {
-        resolvedAddress = named
-        setGeoAddress(named)
-      } else {
-        // Never store raw coords as address. GPS is kept; address is backfilled after save.
-        resolvedAddress = null
-      }
-    }
 
     const supabase = createClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -797,7 +787,7 @@ export default function EmployeeOverviewPage() {
       return
     }
 
-    const { error } = await rpc('employee_insert_punch', {
+    const { data: punchRow, error } = await rpc('employee_insert_punch', {
       p_company_id:            compId,
       p_employee_id:           empId,
       p_type:                  punchType,
@@ -830,6 +820,35 @@ export default function EmployeeOverviewPage() {
     setHasMissedSignOut(false)
     setClockLoading(false)
     clockInFlightRef.current = false
+
+    // Resolve place name after save so clock-in feels instant.
+    const punchId =
+      punchRow && typeof punchRow === 'object' && 'id' in punchRow
+        ? String((punchRow as { id: string }).id)
+        : null
+    if (
+      punchId
+      && punchLat != null
+      && punchLng != null
+      && !resolvedAddress
+    ) {
+      void (async () => {
+        try {
+          const named = await reverseGeocodeRequired(punchLat, punchLng, { maxAttempts: 3 })
+          if (!named) return
+          setGeoAddress(named)
+          await rpc('backfill_punch_address', {
+            p_company_id:    compId,
+            p_punch_id:      punchId,
+            p_address:       named,
+            p_session_token: tokRef.current,
+          })
+        } catch (e) {
+          console.error('[Dashboard] punch address backfill failed:', e)
+        }
+      })()
+    }
+
     await refreshPunchStateAfterClock()
   }
 
@@ -839,7 +858,7 @@ export default function EmployeeOverviewPage() {
       window.alert('Clock in and other company features unlock once HR approves your account.')
       return
     }
-    setAbsenceDate(new Date().toISOString().split('T')[0])
+    setAbsenceDate(localISODate())
     setAbsenceReason('sick')
     setAbsenceNote('')
     setAbsenceError(null)
@@ -1135,7 +1154,7 @@ export default function EmployeeOverviewPage() {
               onClick={e => { if (!showWorkspace) e.preventDefault() }}
               className="bg-surface border border-divider rounded-xl p-4 hover:border-primary transition-colors">
               <div className="flex items-center gap-2 mb-1">
-                <span className="material-icons text-text-disabled text-[20px]">notifications</span>
+                <span className="material-icons text-primary text-[20px]">task_alt</span>
                 <p className="text-[11px] font-semibold text-text-disabled uppercase tracking-wide">PA Tasks Today</p>
               </div>
               <p className="text-[28px] font-bold text-text-primary">{paTasks.length}</p>
@@ -1143,7 +1162,7 @@ export default function EmployeeOverviewPage() {
           ) : (
             <div className="bg-surface border border-divider rounded-xl p-4 opacity-40">
               <div className="flex items-center gap-2 mb-1">
-                <span className="material-icons text-text-disabled text-[20px]">notifications</span>
+                <span className="material-icons text-text-disabled text-[20px]">task_alt</span>
                 <p className="text-[11px] font-semibold text-text-disabled uppercase tracking-wide">PA Tasks Today</p>
               </div>
               <p className="text-[28px] font-bold text-text-disabled">—</p>
