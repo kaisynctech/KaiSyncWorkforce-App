@@ -12,6 +12,7 @@ import {
 import { hasCodeSession } from '@/lib/auth/code-session'
 import {
   getCurrentJwtEmployee,
+  markMyLoginPasswordReady,
   refreshCodeSession,
   signInWithCode,
 } from '@/lib/auth/session'
@@ -134,7 +135,15 @@ export default function IdEntryPage() {
         return
       }
 
-      router.push(routeAfterEmailSignIn(employee.login_password_ready))
+      // Password sign-in proves a password exists — clear the stuck "set password" gate.
+      if (!employee.login_password_ready) {
+        const marked = await markMyLoginPasswordReady(supabase)
+        if (!marked.ok) {
+          router.push(AUTH_ROUTES.mandatoryPassword)
+          return
+        }
+      }
+      router.push(AUTH_ROUTES.companyPicker)
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : ''
       setError(
