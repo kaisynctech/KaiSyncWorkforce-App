@@ -32,7 +32,7 @@ function isRunningStandalone(): boolean {
  * Install / Add to Home Screen control.
  * - Android / Chromium: uses beforeinstallprompt when available, else opens /install
  * - iOS Safari: shows Share → Add to Home Screen steps (no native install event)
- * Hidden when already running as an installed PWA.
+ * Hidden only when already running as an installed PWA.
  */
 export function PwaInstallButton({
   className,
@@ -46,13 +46,11 @@ export function PwaInstallButton({
   const [installed, setInstalled] = useState(false)
   const [platform, setPlatform] = useState<Platform>('desktop')
   const [showIosHelp, setShowIosHelp] = useState(false)
-  const [ready, setReady] = useState(false)
 
   useEffect(() => {
     setPlatform(detectPlatform())
     if (isRunningStandalone()) {
       setInstalled(true)
-      setReady(true)
       return
     }
 
@@ -66,18 +64,18 @@ export function PwaInstallButton({
     }
     window.addEventListener('beforeinstallprompt', onPrompt)
     window.addEventListener('appinstalled', onInstalled)
-    setReady(true)
     return () => {
       window.removeEventListener('beforeinstallprompt', onPrompt)
       window.removeEventListener('appinstalled', onInstalled)
     }
   }, [])
 
-  if (!ready || installed) return null
+  // Only hide when the app is already installed / running standalone.
+  if (installed) return null
 
   const isIos = platform === 'ios'
   const label = isIos ? 'Add to Home Screen' : 'Install app'
-  const icon = isIos ? 'ios' : 'install_mobile'
+  const icon = isIos ? 'ios_share' : 'install_mobile'
 
   async function handleClick() {
     if (isIos) {
@@ -91,13 +89,11 @@ export function PwaInstallButton({
       setDeferred(null)
       return
     }
-    // Android / desktop without native prompt — open install guide
     window.location.href = '/install'
   }
 
   const bannerClass =
-    'flex w-full items-center justify-center gap-2 h-11 rounded-xl border border-primary/30 bg-primary/10 text-primary text-[13px] font-semibold hover:bg-primary/15 transition-colors'
-
+    'flex w-full items-center justify-center gap-2 h-11 rounded-xl border text-[13px] font-semibold transition-colors'
   const inlineDefault =
     'inline-flex items-center gap-2 rounded-lg px-3 h-9 text-[13px] font-medium'
 
@@ -106,7 +102,16 @@ export function PwaInstallButton({
       <button
         type="button"
         onClick={() => void handleClick()}
-        className={className ?? (variant === 'banner' ? bannerClass : inlineDefault)}
+        className={className || (variant === 'banner' ? bannerClass : inlineDefault)}
+        style={
+          variant === 'banner' && !className
+            ? {
+                borderColor: 'var(--color-primary)',
+                backgroundColor: 'color-mix(in srgb, var(--color-primary) 12%, transparent)',
+                color: 'var(--color-primary)',
+              }
+            : undefined
+        }
         title={isIos ? 'Add KaiSync to your Home Screen' : 'Install KaiSync on this device'}
       >
         <span className="material-icons text-[18px]">{icon}</span>

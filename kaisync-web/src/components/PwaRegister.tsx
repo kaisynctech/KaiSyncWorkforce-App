@@ -8,7 +8,8 @@ export function PwaRegister() {
     if (typeof window === 'undefined') return
     if (!('serviceWorker' in navigator)) return
     const onLoad = () => {
-      void navigator.serviceWorker.register('/sw.js').catch(() => {
+      // Version query forces browsers to fetch the latest SW after deploys.
+      void navigator.serviceWorker.register('/sw.js?v=3').catch(() => {
         /* ignore registration failures in unsupported contexts */
       })
     }

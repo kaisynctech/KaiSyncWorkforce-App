@@ -1,6 +1,6 @@
-/* KaiSync PWA — network-first for employee shell, cache static icons */
-const SHELL = 'kaisync-shell-v2'
-const PAGES = 'kaisync-employee-pages-v1'
+/* KaiSync PWA — offline shell for employee routes; do not slow HR/dashboard navigations */
+const SHELL = 'kaisync-shell-v3'
+const PAGES = 'kaisync-employee-pages-v3'
 
 const PRECACHE = [
   '/manifest.webmanifest',
@@ -50,10 +50,10 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url)
   if (url.origin !== self.location.origin) return
 
-  // Never cache API / auth RPCs / Supabase
+  // Never intercept API / auth RPCs / Supabase
   if (url.pathname.startsWith('/api') || url.pathname.includes('supabase')) return
 
-  // Static icons / manifest
+  // Static icons / manifest — network first, cache fallback
   if (url.pathname.startsWith('/icons/') || url.pathname.endsWith('.webmanifest')) {
     event.respondWith(
       fetch(req)
@@ -69,18 +69,30 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  // Employee shell + Next assets: network first, cache fallback
+  // Hashed Next.js assets — cache-first (filenames change on every deploy)
   const isAsset =
     url.pathname.startsWith('/_next/static/')
     || url.pathname.startsWith('/_next/image')
-  const isEmployeePage = shouldCacheEmployeePage(url.pathname)
 
-  if (!isAsset && !isEmployeePage) {
+  if (isAsset) {
     event.respondWith(
-      fetch(req).catch(() =>
-        caches.match(req).then((cached) => cached || caches.match('/auth/id-entry')),
-      ),
+      caches.match(req).then((cached) => {
+        if (cached) return cached
+        return fetch(req).then((res) => {
+          if (res.ok) {
+            const copy = res.clone()
+            caches.open(SHELL).then((cache) => cache.put(req, copy))
+          }
+          return res
+        })
+      }),
     )
+    return
+  }
+
+  // Employee shell pages only — network first, offline cache fallback
+  if (!shouldCacheEmployeePage(url.pathname)) {
+    // HR / overview / everything else: do not intercept (browser + CDN handle it)
     return
   }
 
@@ -89,16 +101,15 @@ self.addEventListener('fetch', (event) => {
       .then((res) => {
         if (res.ok) {
           const copy = res.clone()
-          const cacheName = isAsset ? SHELL : PAGES
-          caches.open(cacheName).then((cache) => cache.put(req, copy))
+          caches.open(PAGES).then((cache) => cache.put(req, copy))
         }
         return res
       })
       .catch(() =>
         caches.match(req).then((cached) => {
           if (cached) return cached
-          if (isEmployeePage) return caches.match('/dashboard/employee/overview')
-          return caches.match('/auth/id-entry')
+          return caches.match('/dashboard/employee/overview')
+            .then((fallback) => fallback || caches.match('/auth/id-entry'))
         }),
       ),
   )
