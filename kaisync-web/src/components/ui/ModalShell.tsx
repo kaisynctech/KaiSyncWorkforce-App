@@ -1,6 +1,7 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
 
 /**
@@ -24,14 +25,16 @@ export function ModalShell({
   className?: string
   size?: 'sm' | 'md' | 'lg'
 }) {
-  if (!open) return null
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
+  if (!open || !mounted) return null
 
   const width =
     size === 'sm' ? 'md:max-w-sm' : size === 'lg' ? 'md:max-w-2xl' : 'md:max-w-md'
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-end md:items-center justify-center"
+      className="fixed inset-0 z-[80] flex items-end md:items-center justify-center"
       role="dialog"
       aria-modal="true"
       aria-label={title}
@@ -71,6 +74,7 @@ export function ModalShell({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
