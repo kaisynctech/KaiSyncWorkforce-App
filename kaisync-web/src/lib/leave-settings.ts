@@ -43,6 +43,54 @@ function canonicalLeaveType(leaveType: string): string {
   )
 }
 
+/** Inclusive upper bound for a company entitlement (Unpaid Leave default is 365). */
+export const LEAVE_DAYS_MAX = 366
+
+export type LeaveEntitlementField = {
+  leaveType: string
+  label: string
+  settingsKey: string
+  defaultDays: number
+}
+
+/** One row per leave type, using the canonical leave_settings key. */
+export function leaveEntitlementFields(): LeaveEntitlementField[] {
+  return LEAVE_TYPES.map(t => ({
+    leaveType: t.key,
+    label: t.label,
+    settingsKey: SETTINGS_KEYS_BY_TYPE[t.key][0],
+    defaultDays: t.annualDays,
+  }))
+}
+
+/** Whole days, 0 through LEAVE_DAYS_MAX. Blank and fractions are rejected. */
+export function parseLeaveDayInput(raw: string): number | null {
+  const trimmed = raw.trim()
+  if (!/^\d+$/.test(trimmed)) return null
+  const n = Number(trimmed)
+  if (!Number.isInteger(n) || n > LEAVE_DAYS_MAX) return null
+  return n
+}
+
+/**
+ * Write canonical day keys onto a copy of leave_settings.
+ * Unknown keys already stored on the company are kept.
+ */
+export function mergeLeaveDaySettings(
+  existing: LeaveSettingsMap | null | undefined,
+  daysByType: Record<string, number>,
+): LeaveSettingsMap {
+  const next: LeaveSettingsMap = { ...(existing ?? {}) }
+  for (const field of leaveEntitlementFields()) {
+    const n = daysByType[field.leaveType]
+    if (!Number.isInteger(n) || n < 0 || n > LEAVE_DAYS_MAX) {
+      throw new Error(`${field.label} must be a whole number from 0 to ${LEAVE_DAYS_MAX}.`)
+    }
+    next[field.settingsKey] = n
+  }
+  return next
+}
+
 /** Annual entitlement for a leave type, preferring company leave_settings. */
 export function getCompanyAnnualDays(
   leaveType: string,
@@ -95,4 +143,79 @@ export async function loadLeaveSettings(
       ? row.leave_settings
       : {}
   return { ok: true, data: settings }
+}
+
+type CompanySettingsRow = {
+  timezone?: string | null
+  currency?: string | null
+  vat_rate?: number | string | null
+  branding?: unknown
+  logo_url?: string | null
+  primary_color?: string | null
+  secondary_color?: string | null
+  payroll_preferences?: unknown
+  leave_settings?: LeaveSettingsMap | null
+}
+
+function asSettingsNumber(v: unknown, fallback: number): number {
+  if (typeof v === 'number' && Number.isFinite(v)) return v
+  if (typeof v === 'string' && v.trim() !== '') {
+    const n = Number(v)
+    if (Number.isFinite(n)) return n
+  }
+  return fallback
+}
+
+/**
+ * Persist leave entitlements. Echoes the rest of company_settings because
+ * upsert_company_settings replaces jsonb columns present in the INSERT row.
+ */
+export async function saveLeaveDaySettings(
+  supabase: SupabaseClient,
+  companyId: string,
+  daysByType: Record<string, number>,
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const { data, error } = await supabase.rpc('get_company_settings', {
+    p_company_id: companyId,
+  })
+  if (error) return { ok: false, message: error.message }
+
+  const row = (data ?? {}) as CompanySettingsRow
+  const existing =
+    row.leave_settings && typeof row.leave_settings === 'object'
+      ? row.leave_settings
+      : {}
+
+  let leave_settings: LeaveSettingsMap
+  try {
+    leave_settings = mergeLeaveDaySettings(existing, daysByType)
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : 'Invalid leave days.' }
+  }
+
+  const branding =
+    row.branding && typeof row.branding === 'object' && !Array.isArray(row.branding)
+      ? row.branding
+      : {}
+  const payroll_preferences =
+    row.payroll_preferences && typeof row.payroll_preferences === 'object' && !Array.isArray(row.payroll_preferences)
+      ? row.payroll_preferences
+      : {}
+
+  const { error: saveError } = await supabase.rpc('upsert_company_settings', {
+    p_company_id: companyId,
+    p_payload: {
+      timezone: row.timezone ?? 'Africa/Johannesburg',
+      currency: row.currency ?? 'ZAR',
+      vat_rate: asSettingsNumber(row.vat_rate, 15),
+      branding,
+      logo_url: row.logo_url ?? null,
+      primary_color: row.primary_color ?? null,
+      secondary_color: row.secondary_color ?? null,
+      payroll_preferences,
+      leave_settings,
+    },
+  })
+  if (saveError) return { ok: false, message: saveError.message }
+  return { ok: true }
 }
