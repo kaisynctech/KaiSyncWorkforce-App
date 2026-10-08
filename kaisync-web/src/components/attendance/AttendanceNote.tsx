@@ -19,17 +19,22 @@ export function AttendanceNote({
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
-        className="block max-w-[180px] truncate text-left text-text-secondary hover:text-primary hover:underline"
+        onClick={(e) => {
+          e.stopPropagation()
+          setOpen(true)
+        }}
+        title={text}
+        className="inline-flex max-w-[220px] items-center gap-1 text-left text-primary underline cursor-pointer"
         aria-label="View attendance note"
       >
-        {text}
+        <span className="truncate">{text}</span>
+        <span className="material-icons text-[14px] shrink-0">open_in_full</span>
       </button>
       <ModalShell open={open} onClose={() => setOpen(false)} title="Attendance note" size="sm">
         {context ? (
           <p className="text-[12px] text-text-secondary mb-2">{context}</p>
         ) : null}
-        <p className="text-[13px] text-text-primary whitespace-pre-wrap break-words">{text}</p>
+        <p className="text-[13px] text-text-primary whitespace-pre-wrap break-words select-text">{text}</p>
       </ModalShell>
     </>
   )
