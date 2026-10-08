@@ -9,7 +9,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { normalizeAccessLevel, type AccessLevelValue } from '@/lib/employee-taxonomy'
-import { listWorkTeams, memberIdsOf, type WorkTeamRow } from '@/lib/work-teams'
+import { memberIdsOf, type WorkTeamRow } from '@/lib/work-teams'
 
 export type ScopeViewer = {
   id: string
@@ -89,42 +89,47 @@ export type ScopedIdsResult =
  * Load viewer + company employees + teams, return allowed employee id set.
  * When seesAll is true, callers should not filter by ids.
  */
+type ScopeStatePayload = {
+  sees_all?: boolean
+  ids?: string[] | null
+  viewer?: ScopeViewer | null
+}
+
+/**
+ * Server-enforced scope. Owner, Admin, and HR see the company.
+ * Managers receive only their own line and work-team ids — not the full roster.
+ */
 export async function loadScopedEmployeeIds(
   supabase: SupabaseClient,
   companyId: string,
   viewerEmployeeId: string
 ): Promise<ScopedIdsResult> {
-  const [{ data: viewerRow, error: viewerErr }, { data: empRows, error: empErr }, teamsRes] =
-    await Promise.all([
-      supabase
-        .from('employees')
-        .select('id, company_id, user_id, access_level')
-        .eq('id', viewerEmployeeId)
-        .eq('company_id', companyId)
-        .maybeSingle(),
-      supabase
-        .from('employees')
-        .select('id, manager_id, manager_user_id')
-        .eq('company_id', companyId),
-      listWorkTeams(supabase, companyId),
-    ])
+  const { data, error } = await supabase.rpc('employee_scope_state', {
+    p_company_id: companyId,
+  })
+  if (error) return { ok: false, message: error.message }
 
-  if (viewerErr) return { ok: false, message: viewerErr.message }
-  if (empErr) return { ok: false, message: empErr.message }
-  if (!viewerRow) return { ok: false, message: 'Viewer employee not found.' }
-  if (!teamsRes.ok) return { ok: false, message: teamsRes.message }
-
-  const viewer = viewerRow as ScopeViewer
-  if (viewerSeesAllCompany(viewer.access_level)) {
-    return { ok: true, seesAll: true, ids: null, viewer }
+  const body = (data ?? {}) as ScopeStatePayload
+  if (!body.viewer?.id) {
+    if (body.sees_all) {
+      return {
+        ok: true,
+        seesAll: true,
+        ids: null,
+        viewer: {
+          id: viewerEmployeeId,
+          company_id: companyId,
+          user_id: null,
+          access_level: 'admin',
+        },
+      }
+    }
+    return { ok: false, message: 'Viewer employee not found.' }
   }
 
-  const ids = getScopedEmployeeIds(
-    viewer,
-    (empRows ?? []) as ScopeEmployee[],
-    teamsRes.data
-  )
-  return { ok: true, seesAll: false, ids, viewer }
+  const viewer = body.viewer
+  if (body.sees_all) return { ok: true, seesAll: true, ids: null, viewer }
+  return { ok: true, seesAll: false, ids: new Set(body.ids ?? []), viewer }
 }
 
 export function isInScope(

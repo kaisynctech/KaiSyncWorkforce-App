@@ -9,6 +9,7 @@ import {
   type EmployeeCreateInput,
 } from '@/lib/employee-create-payload'
 import { deleteEmployee, setEmployeeActive } from '@/lib/employee-lifecycle'
+import { EMPLOYEE_SAFE_SELECT } from '@/lib/employee-columns'
 import { buildOrgWriteFields } from '@/lib/employee-org'
 import { loadScopedEmployeeIds } from '@/lib/employee-scope'
 import {
@@ -40,6 +41,21 @@ function normAccountType(v: string | null | undefined): string {
   return (v ?? '').trim().toLowerCase()
 }
 
+export type EmployeeDirectoryQuery = {
+  search?: string
+  role?: string
+  status?: '' | 'active' | 'inactive'
+  employmentType?: string
+  branchId?: string | null
+  limit?: number
+  offset?: number
+}
+
+type DirectoryPayload = {
+  total?: number
+  rows?: Employee[]
+}
+
 export async function listEmployees(
   supabase: SupabaseClient,
   companyId: string,
@@ -47,18 +63,45 @@ export async function listEmployees(
 ): Promise<EmployeeResult<Employee[]>> {
   let q = supabase
     .from('employees')
-    .select('*')
+    .select(EMPLOYEE_SAFE_SELECT)
     .eq('company_id', companyId)
     .order('name')
   if (opts?.activeOnly) q = q.eq('is_active', true)
   const { data, error } = await q
   if (error) return { ok: false, message: error.message }
-  return { ok: true, data: (data ?? []) as Employee[] }
+  return { ok: true, data: (data ?? []) as unknown as Employee[] }
+}
+
+/** One page of the directory. The server applies manager scope and omits pay, banking, and secrets. */
+export async function listEmployeeDirectory(
+  supabase: SupabaseClient,
+  companyId: string,
+  query: EmployeeDirectoryQuery = {}
+): Promise<EmployeeResult<{ total: number; rows: Employee[] }>> {
+  const { data, error } = await supabase.rpc('list_employee_directory', {
+    p_company_id: companyId,
+    p_search: query.search?.trim() || null,
+    p_role: query.role?.trim() || null,
+    p_status: query.status?.trim() || null,
+    p_employment_type: query.employmentType?.trim() || null,
+    p_branch_id: query.branchId || null,
+    p_limit: query.limit ?? 50,
+    p_offset: query.offset ?? 0,
+  })
+  if (error) return { ok: false, message: error.message }
+  const body = (data ?? {}) as DirectoryPayload
+  return {
+    ok: true,
+    data: {
+      total: Number(body.total ?? 0),
+      rows: (body.rows ?? []) as Employee[],
+    },
+  }
 }
 
 /**
- * Company employees filtered by viewer role (owner/HR = all; manager = line + teams).
- * Pass viewerEmployeeId from resolveCurrentMember.
+ * Employees the viewer may see (owner/admin/HR = company; manager = line + teams).
+ * Pages through the directory RPC so a manager never downloads the rest of the company.
  */
 export async function listEmployeesScoped(
   supabase: SupabaseClient,
@@ -66,18 +109,23 @@ export async function listEmployeesScoped(
   viewerEmployeeId: string,
   opts?: { activeOnly?: boolean }
 ): Promise<EmployeeResult<Employee[]>> {
-  const [listRes, scopeRes] = await Promise.all([
-    listEmployees(supabase, companyId, opts),
-    loadScopedEmployeeIds(supabase, companyId, viewerEmployeeId),
-  ])
-  if (!listRes.ok) return listRes
-  if (!scopeRes.ok) return { ok: false, message: scopeRes.message }
-  if (scopeRes.seesAll) return listRes
-
-  return {
-    ok: true,
-    data: listRes.data.filter(e => scopeRes.ids.has(e.id)),
-  }
+  void viewerEmployeeId
+  const pageSize = 200
+  const rows: Employee[] = []
+  let offset = 0
+  let total = 0
+  do {
+    const page = await listEmployeeDirectory(supabase, companyId, {
+      status: opts?.activeOnly ? 'active' : '',
+      limit: pageSize,
+      offset,
+    })
+    if (!page.ok) return page
+    total = page.data.total
+    rows.push(...page.data.rows)
+    offset += pageSize
+  } while (rows.length < total && offset < 5000)
+  return { ok: true, data: rows }
 }
 
 export async function getEmployee(
@@ -85,14 +133,21 @@ export async function getEmployee(
   companyId: string,
   employeeId: string
 ): Promise<EmployeeResult<Employee | null>> {
+  const { data: visible, error: visErr } = await supabase.rpc('employee_can_view', {
+    p_company_id: companyId,
+    p_employee_id: employeeId,
+  })
+  if (visErr) return { ok: false, message: visErr.message }
+  if (!visible) return { ok: true, data: null }
+
   const { data, error } = await supabase
     .from('employees')
-    .select('*')
+    .select(EMPLOYEE_SAFE_SELECT)
     .eq('id', employeeId)
     .eq('company_id', companyId)
     .maybeSingle()
   if (error) return { ok: false, message: error.message }
-  return { ok: true, data: (data as Employee | null) ?? null }
+  return { ok: true, data: (data as unknown as Employee | null) ?? null }
 }
 
 export async function listManagerOptions(
@@ -201,11 +256,11 @@ export async function createEmployee(
   const { data, error } = await supabase
     .from('employees')
     .insert(payload)
-    .select()
+    .select(EMPLOYEE_SAFE_SELECT)
     .single()
   if (error) return { ok: false, message: error.message }
 
-  let employee = data as Employee
+  let employee = data as unknown as Employee
 
   if (desiredRole === 'manager' || desiredRole === 'hr' || desiredRole === 'admin') {
     const { error: roleErr } = await supabase.rpc('set_employee_role', {
@@ -214,9 +269,19 @@ export async function createEmployee(
       p_new_role: desiredRole,
     })
     if (roleErr) {
+      const removed = await deleteEmployee(supabase, {
+        companyId: input.companyId,
+        employeeId: employee.id,
+      })
+      if (removed.ok) {
+        return {
+          ok: false,
+          message: `Could not assign ${desiredRole}: ${roleErr.message}. The new employee was not saved.`,
+        }
+      }
       return {
         ok: false,
-        message: `Employee created, but role could not be set to ${desiredRole}: ${roleErr.message}`,
+        message: `The person was saved as Employee because ${desiredRole} could not be applied (${roleErr.message}). The record could not be removed: ${removed.message}`,
       }
     }
     employee = { ...employee, access_level: desiredRole }
@@ -334,16 +399,6 @@ export async function updateEmployee(
     .eq('company_id', input.companyId)
   if (error) return { ok: false, message: error.message }
 
-  // Never mutate owner via this path; use transfer_company_ownership.
-  if (currentRole !== 'owner' && desiredRole !== 'owner' && desiredRole !== currentRole) {
-    const { error: roleErr } = await supabase.rpc('set_employee_role', {
-      p_company_id: input.companyId,
-      p_employee_id: employeeId,
-      p_new_role: desiredRole,
-    })
-    if (roleErr) return { ok: false, message: roleErr.message }
-  }
-
   const nextBank = {
     bank_name: normBank(input.bankName) || null,
     bank_account: normBank(input.bankAccount) || null,
@@ -369,12 +424,28 @@ export async function updateEmployee(
     normBank(current.bank_branch_code) !== (nextBank.bank_branch_code ?? '') ||
     accountTypeChanged
 
+  // Never mutate owner via this path; use transfer_company_ownership.
+  if (currentRole !== 'owner' && desiredRole !== 'owner' && desiredRole !== currentRole) {
+    const { error: roleErr } = await supabase.rpc('set_employee_role', {
+      p_company_id: input.companyId,
+      p_employee_id: employeeId,
+      p_new_role: desiredRole,
+    })
+    if (roleErr) {
+      const bankNote = bankingChanged ? ' Banking was not saved.' : ''
+      return {
+        ok: false,
+        message: `Profile saved. The role was not changed: ${roleErr.message}.${bankNote}`,
+      }
+    }
+  }
+
   if (bankingChanged) {
     const prompt = opts?.promptPassword
     if (!prompt) {
       return {
         ok: false,
-        message: 'Banking details changed — step-up verification is required to save them.',
+        message: 'Profile saved. Banking was not updated: step-up verification is required to save banking details.',
       }
     }
     const bankResult = await executeWithStepUp(
@@ -394,7 +465,12 @@ export async function updateEmployee(
       },
       prompt
     )
-    if (!bankResult.ok) return bankResult
+    if (!bankResult.ok) {
+      return {
+        ok: false,
+        message: `Profile saved. Banking was not updated: ${bankResult.message}`,
+      }
+    }
   }
 
   return { ok: true, data: undefined }

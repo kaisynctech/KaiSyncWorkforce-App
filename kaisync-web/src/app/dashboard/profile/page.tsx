@@ -8,6 +8,7 @@ import { getCodeSession } from '@/lib/auth/code-session'
 import { prepareMediaUpload, consumeMediaUpload } from '@/lib/job-media'
 import { loadCompanyWorkspace, moduleFlagsForCompany } from '@/lib/employee-workspace'
 import { getInitials } from '@/lib/utils'
+import { EMPLOYEE_SAFE_SELECT } from '@/lib/employee-columns'
 import type { Employee } from '@/types/database'
 
 function FormField({ label, children }: { label: string; children: React.ReactNode }) {
@@ -187,13 +188,13 @@ export default function ProfilePage() {
     // 1) Try employees table (may fail RLS for code-auth)
     const { data: empRow } = await supabase
       .from('employees')
-      .select('*')
+      .select(EMPLOYEE_SAFE_SELECT)
       .eq('id', member.employeeId)
       .eq('company_id', member.companyId)
       .maybeSingle()
 
     if (empRow) {
-      loaded = empRow as EmployeeWithDob
+      loaded = empRow as unknown as EmployeeWithDob
     } else {
       // 2) Fall back to employee_get_profile with session token
       try {

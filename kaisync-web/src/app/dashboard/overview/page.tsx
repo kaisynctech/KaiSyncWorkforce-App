@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { timeGreeting } from '@/lib/utils'
+import { EMPLOYEE_SAFE_SELECT } from '@/lib/employee-columns'
 import type { Employee } from '@/types/database'
 import { PwaInstallButton } from '@/components/PwaInstallButton'
 
@@ -156,10 +157,10 @@ export default function OverviewPage() {
     eIdRef.current = member.employeeId
 
     const { data: empData } = await supabase
-      .from('employees').select('*, companies(name)').eq('id', member.employeeId).maybeSingle()
+      .from('employees').select(`${EMPLOYEE_SAFE_SELECT}, companies(name)`).eq('id', member.employeeId).maybeSingle()
     if (!empData) { setLoading(false); return }
-    setEmployee(empData as Employee)
-    setCompanyName((empData as { companies: { name: string } | null }).companies?.name ?? '')
+    setEmployee(empData as unknown as Employee)
+    setCompanyName((empData as unknown as { companies: { name: string } | null }).companies?.name ?? '')
 
     // Fetch today's time_punches for whole company (needed for KPIs + attendance)
     const { data: todayPunches } = await supabase

@@ -6,9 +6,9 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { getInitials } from '@/lib/utils'
-import { listBranches, listEmployeesScoped } from '@/lib/employees'
+import { listBranches, listEmployeeDirectory, listEmployeesScoped } from '@/lib/employees'
 import { loadScopedEmployeeIds } from '@/lib/employee-scope'
-import { employmentTypesMatch, normalizeAccessLevel } from '@/lib/employee-taxonomy'
+import { normalizeAccessLevel } from '@/lib/employee-taxonomy'
 import { decideLeaveRequest, formatLeaveDecideError } from '@/lib/leave'
 import { getCompanyAnnualDays, loadLeaveSettings, type LeaveSettingsMap } from '@/lib/leave-settings'
 import { createWorkTeam, listWorkTeams, withMemberCount, type WorkTeamRow } from '@/lib/work-teams'
@@ -23,6 +23,8 @@ import {
 import { ModalShell } from '@/components/ui/ModalShell'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
+
+const DIRECTORY_PAGE_SIZE = 50
 
 const ACCESS_BADGES: Record<AccessLevel, { label: string; cls: string }> = {
   owner:    { label: 'Owner',    cls: 'bg-primary/10 text-primary' },
@@ -143,6 +145,8 @@ export default function EmployeesPage() {
 
   // ── Tab 1 — Employees ─────────────────────────────────────────────────────
   const [employees,     setEmployees]     = useState<Employee[]>([])
+  const [directoryTotal, setDirectoryTotal] = useState(0)
+  const [page,          setPage]          = useState(0)
   const [branches,      setBranches]      = useState<Branch[]>([])
   const [onLeave,       setOnLeave]       = useState<OnLeaveRecord[]>([])
   const [empLoading,    setEmpLoading]    = useState(true)
@@ -187,6 +191,36 @@ export default function EmployeesPage() {
     if (tab === 'pending' && !pendingLoaded) loadPending()
   }, [tab, companyId])
 
+  useEffect(() => {
+    if (!companyId) return
+    const timer = setTimeout(() => { void loadDirectory() }, 200)
+    return () => clearTimeout(timer)
+  }, [companyId, page, search, filterRole, filterStatus, filterBranch, filterEmpType])
+
+  async function loadDirectory() {
+    if (!companyId) return
+    setEmpLoading(true)
+    const supabase = createClient()
+    const result = await listEmployeeDirectory(supabase, companyId, {
+      search,
+      role: filterRole,
+      status: filterStatus,
+      employmentType: filterEmpType,
+      branchId: filterBranch || null,
+      limit: DIRECTORY_PAGE_SIZE,
+      offset: page * DIRECTORY_PAGE_SIZE,
+    })
+    if (!result.ok) {
+      setError(result.message)
+      setEmployees([])
+      setDirectoryTotal(0)
+    } else {
+      setEmployees(result.data.rows)
+      setDirectoryTotal(result.data.total)
+    }
+    setEmpLoading(false)
+  }
+
   async function init() {
     const supabase = createClient()
     const member   = await resolveCurrentMember(supabase)
@@ -196,8 +230,7 @@ export default function EmployeesPage() {
     setMyEmployeeId(member.employeeId)
 
     const today = new Date().toISOString().split('T')[0]
-    const [empRes, branchRes, scopeRes, settingsRes, onLeaveRes] = await Promise.all([
-      listEmployeesScoped(supabase, member.companyId, member.employeeId),
+    const [branchRes, scopeRes, settingsRes, onLeaveRes] = await Promise.all([
       listBranches(supabase, member.companyId),
       loadScopedEmployeeIds(supabase, member.companyId, member.employeeId),
       loadLeaveSettings(supabase, member.companyId),
@@ -209,13 +242,11 @@ export default function EmployeesPage() {
         .gte('end_date', today),
     ])
 
-    if (!empRes.ok) { setError(empRes.message); setEmpLoading(false); return }
     if (!scopeRes.ok) { setError(scopeRes.message); setEmpLoading(false); return }
 
     setMyAccessLevel(normalizeAccessLevel(scopeRes.viewer.access_level) as AccessLevel)
     setScopedIds(scopeRes.seesAll ? null : scopeRes.ids)
     if (settingsRes.ok) setLeaveSettings(settingsRes.data)
-    setEmployees(empRes.data)
     setBranches(
       branchRes.ok
         ? branchRes.data.map(b => ({ id: b.id, name: b.name }))
@@ -228,7 +259,6 @@ export default function EmployeesPage() {
         ? leaveRows
         : leaveRows.filter(r => scopeRes.ids.has(r.employee_id))
     )
-    setEmpLoading(false)
   }
 
   // ── Tab 2 ─────────────────────────────────────────────────────────────────
@@ -295,9 +325,17 @@ export default function EmployeesPage() {
     const approved = (data ?? []) as Pick<LeaveRequest, 'employee_id' | 'leave_type' | 'total_days' | 'start_date'>[]
     const pending = (pendingData ?? []) as LeaveRequest[]
     const inScope = (employeeId: string) => !scopedIds || scopedIds.has(employeeId)
+    const people = myEmployeeId
+      ? await listEmployeesScoped(supabase, companyId, myEmployeeId)
+      : { ok: true as const, data: [] as Employee[] }
+    if (!people.ok) {
+      setError(people.message)
+      setLeaveLoading(false)
+      return
+    }
 
     setLeaveBalances(
-      buildLeaveBalances(employees, approved.filter(r => inScope(r.employee_id)), leaveSettings)
+      buildLeaveBalances(people.data, approved.filter(r => inScope(r.employee_id)), leaveSettings)
     )
     setPendingLeave(pending.filter(r => inScope(r.employee_id)))
     setLeaveLoaded(true)
@@ -394,7 +432,7 @@ export default function EmployeesPage() {
   // ── Derived ───────────────────────────────────────────────────────────────
   // Owner / HR / managers with leave.approve — managers see scoped queue only
   const canSeeLeave = myAccessLevel !== null &&
-    ['owner', 'hr', 'manager'].includes(normalizeAccessLevel(myAccessLevel))
+    ['owner', 'admin', 'hr', 'manager'].includes(normalizeAccessLevel(myAccessLevel))
 
   const TABS: { key: Tab; label: string }[] = [
     { key: 'employees', label: 'Employees' },
@@ -411,24 +449,9 @@ export default function EmployeesPage() {
     },
   ]
 
-  const filteredEmployees = employees.filter(e => {
-    if (filterRole && normalizeAccessLevel(e.access_level) !== filterRole) return false
-    if (filterBranch  && e.branch_id       !== filterBranch)  return false
-    if (filterEmpType && !employmentTypesMatch(e.employment_type, filterEmpType)) return false
-    if (filterStatus === 'active'   && !e.is_active) return false
-    if (filterStatus === 'inactive' &&  e.is_active) return false
-    if (search) {
-      const q = search.toLowerCase()
-      return (
-        e.name.toLowerCase().includes(q) ||
-        e.surname.toLowerCase().includes(q) ||
-        (e.employee_code ?? '').toLowerCase().includes(q) ||
-        (e.department ?? '').toLowerCase().includes(q) ||
-        (e.position ?? '').toLowerCase().includes(q)
-      )
-    }
-    return true
-  })
+  const filteredEmployees = employees
+  const pageStart = directoryTotal === 0 ? 0 : page * DIRECTORY_PAGE_SIZE + 1
+  const pageEnd = Math.min(directoryTotal, (page + 1) * DIRECTORY_PAGE_SIZE)
 
   const leaveTypes = Array.from(new Set(leaveBalances.map(b => b.leaveType))).sort()
 
@@ -462,7 +485,7 @@ export default function EmployeesPage() {
       <div className="flex items-center justify-between mb-5">
         <div>
           <h1 className="text-[22px] font-semibold text-text-primary">Employees</h1>
-          <p className="text-[13px] text-text-secondary mt-0.5">{employees.length} total</p>
+          <p className="text-[13px] text-text-secondary mt-0.5">{directoryTotal} total</p>
         </div>
         <div className="flex items-center gap-2">
           <Link
@@ -512,24 +535,25 @@ export default function EmployeesPage() {
                 type="text"
                 placeholder="Search by name, code, department…"
                 value={search}
-                onChange={e => setSearch(e.target.value)}
+                onChange={e => { setSearch(e.target.value); setPage(0) }}
                 className="flex-1 text-[13px] text-text-primary placeholder:text-text-disabled bg-transparent focus:outline-none"
               />
             </div>
             <select
               value={filterRole}
-              onChange={e => setFilterRole(e.target.value as AccessLevel | '')}
+              onChange={e => { setFilterRole(e.target.value as AccessLevel | ''); setPage(0) }}
               className="h-10 px-3 bg-surface border border-border rounded-md text-[13px] text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 appearance-none"
             >
               <option value="">All roles</option>
               <option value="owner">Owner</option>
+              <option value="admin">Admin</option>
               <option value="manager">Manager</option>
               <option value="hr">HR</option>
               <option value="employee">Employee</option>
             </select>
             <select
               value={filterStatus}
-              onChange={e => setFilterStatus(e.target.value as 'active' | 'inactive' | '')}
+              onChange={e => { setFilterStatus(e.target.value as 'active' | 'inactive' | ''); setPage(0) }}
               className="h-10 px-3 bg-surface border border-border rounded-md text-[13px] text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 appearance-none"
             >
               <option value="">All statuses</option>
@@ -538,7 +562,7 @@ export default function EmployeesPage() {
             </select>
             <select
               value={filterEmpType}
-              onChange={e => setFilterEmpType(e.target.value)}
+              onChange={e => { setFilterEmpType(e.target.value); setPage(0) }}
               className="h-10 px-3 bg-surface border border-border rounded-md text-[13px] text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 appearance-none"
             >
               <option value="">All types</option>
@@ -553,7 +577,7 @@ export default function EmployeesPage() {
           {branches.length > 0 && (
             <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1">
               <button
-                onClick={() => setFilterBranch('')}
+                onClick={() => { setFilterBranch(''); setPage(0) }}
                 className={`shrink-0 h-7 px-3 rounded-full text-[11px] font-medium transition-colors ${
                   filterBranch === ''
                     ? 'bg-primary text-white'
@@ -565,7 +589,7 @@ export default function EmployeesPage() {
               {branches.map(b => (
                 <button
                   key={b.id}
-                  onClick={() => setFilterBranch(b.id)}
+                  onClick={() => { setFilterBranch(b.id); setPage(0) }}
                   className={`shrink-0 h-7 px-3 rounded-full text-[11px] font-medium transition-colors ${
                     filterBranch === b.id
                       ? 'bg-primary text-white'
@@ -729,6 +753,31 @@ export default function EmployeesPage() {
                   </>
                 }
               />
+            )}
+            {directoryTotal > 0 && (
+              <div className="flex items-center justify-between gap-3 px-5 py-3 border-t border-divider">
+                <p className="text-[12px] text-text-secondary">
+                  {pageStart}–{pageEnd} of {directoryTotal}
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={page === 0 || empLoading}
+                    onClick={() => setPage(p => Math.max(0, p - 1))}
+                    className="h-8 px-3 rounded-md border border-border text-[12px] font-medium text-text-primary disabled:opacity-40"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    disabled={pageEnd >= directoryTotal || empLoading}
+                    onClick={() => setPage(p => p + 1)}
+                    className="h-8 px-3 rounded-md border border-border text-[12px] font-medium text-text-primary disabled:opacity-40"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         </>
