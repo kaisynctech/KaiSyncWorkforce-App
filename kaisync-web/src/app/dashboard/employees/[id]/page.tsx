@@ -9,6 +9,7 @@ import { cn, formatDate, formatDateTime, formatCurrency, getInitials } from '@/l
 import { labelEmploymentType, labelWorkerType } from '@/lib/employee-taxonomy'
 import { getCompanyAnnualDays, loadLeaveSettings, readCustomLeaveTypes, type LeaveSettingsMap } from '@/lib/leave-settings'
 import { LEAVE_TYPES } from '@/lib/leave-policy'
+import { getEmployee } from '@/lib/employees'
 import { assessPayrollReadiness } from '@/lib/payroll-readiness'
 import type { Employee, LeaveRequest, TimePunch, AccessLevel } from '@/types/database'
 
@@ -146,12 +147,17 @@ export default function EmployeeDetailPage() {
     setMyCompanyId(member.companyId)
     setMyEmployeeId(member.employeeId)
 
-    const [{ data: emp }, { data: me }] = await Promise.all([
-      supabase.from('employees').select('*').eq('id', id).eq('company_id', member.companyId).maybeSingle(),
+    const [empRes, { data: me }] = await Promise.all([
+      getEmployee(supabase, member.companyId, id),
       supabase.from('employees').select('access_level').eq('id', member.employeeId).single(),
     ])
 
-    const employeeRow = emp as Employee | null
+    if (!empRes.ok) {
+      setError(empRes.message)
+      setLoading(false)
+      return
+    }
+    const employeeRow = empRes.data
     setEmployee(employeeRow)
     setMyAccessLevel(((me as { access_level: AccessLevel } | null)?.access_level) ?? 'employee')
 

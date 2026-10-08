@@ -13,6 +13,7 @@ import {
   type EnabledModules,
 } from '@/lib/company-modules'
 import { notifyModulesUpdated } from '@/lib/module-events'
+import { EMPLOYEE_SAFE_SELECT } from '@/lib/employee-columns'
 import type { Company, Employee, SecuritySettings, AuditEvent } from '@/types/database'
 import { formatZar, loadCompanyBillingSummary, type BillingSummary } from '@/lib/billing'
 import { checkQuoteEmailConfigured } from '@/lib/send-quote-email'
@@ -270,13 +271,13 @@ export default function SettingsPage() {
 
     const { data: empData } = await supabase
       .from('employees')
-      .select('*, companies(*)')
+      .select(`${EMPLOYEE_SAFE_SELECT}, companies(*)`)
       .eq('id', member.employeeId)
       .maybeSingle()
 
     if (!empData) { setLoading(false); return }
-    setEmployee(empData as Employee)
-    const co = (empData as { companies: Company & { custom_settings?: Record<string, unknown> | null } }).companies
+    setEmployee(empData as unknown as Employee)
+    const co = (empData as unknown as { companies: Company & { custom_settings?: Record<string, unknown> | null } }).companies
     setCompany(co)
     setCompanyName(co.name)
     setEnabledModules((co as Company).enabled_modules ?? {})

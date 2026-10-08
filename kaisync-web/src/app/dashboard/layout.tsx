@@ -11,6 +11,7 @@ import { getCodeSession, getEmpContext, clearCodeSession } from '@/lib/auth/code
 import { AUTH_ROUTES, usesCompanyDashboard } from '@/lib/auth/employee-routing'
 import { refreshCodeSession } from '@/lib/auth/session'
 import { isPlatformAdmin } from '@/lib/platform-admin'
+import { EMPLOYEE_SAFE_SELECT } from '@/lib/employee-columns'
 import type { Company, Employee } from '@/types/database'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -50,7 +51,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         let query = supabase
           .from('employees')
-          .select('*, companies(*)')
+          .select(`${EMPLOYEE_SAFE_SELECT}, companies(*)`)
           .eq('user_id', user.id)
           .eq('is_active', true)
 
@@ -62,15 +63,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         if (cancelled) return
 
         if (emp) {
-          const access = (emp as Employee).access_level
+          const access = (emp as unknown as Employee).access_level
           // Pure employees must pick a company when no ctx
           if (!ctx && access === 'employee') {
             router.replace(AUTH_ROUTES.companyPicker)
             setLoading(false)
             return
           }
-          setEmployee(emp as Employee)
-          setCompany((emp as { companies: Company }).companies)
+          setEmployee(emp as unknown as Employee)
+          setCompany((emp as unknown as { companies: Company }).companies)
           setPlatformOnly(false)
           setLoading(false)
           return

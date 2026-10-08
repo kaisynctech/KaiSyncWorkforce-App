@@ -250,7 +250,7 @@ export default function EditEmployeePage() {
       })
       if (!activeResult.ok) {
         setSaving(false)
-        setError(activeResult.message)
+        setError(`Profile saved. Active status was not changed: ${activeResult.message}`)
         return
       }
     }
