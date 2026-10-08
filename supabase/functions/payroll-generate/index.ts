@@ -145,7 +145,7 @@ async function loadShiftTemplates(
 ): Promise<{ byId: Map<string, ShiftTemplateLike>; defaultTemplate: ShiftTemplateLike | null }> {
   const { data } = await admin
     .from('employee_shift_templates')
-    .select('id, start_time, end_time, break_minutes, is_default')
+    .select('id, start_time, end_time, break_minutes, is_default, weekend_start_time, weekend_end_time, ot_start_time, weekend_ot_start_time')
     .eq('company_id', companyId)
 
   const byId = new Map<string, ShiftTemplateLike>()
@@ -156,6 +156,10 @@ async function loadShiftTemplates(
       start_time: row.start_time as string | null,
       end_time: row.end_time as string | null,
       break_minutes: Number(row.break_minutes ?? 0),
+      weekend_start_time: row.weekend_start_time as string | null,
+      weekend_end_time: row.weekend_end_time as string | null,
+      ot_start_time: row.ot_start_time as string | null,
+      weekend_ot_start_time: row.weekend_ot_start_time as string | null,
     }
     byId.set(tmpl.id, tmpl)
     if (row.is_default && !defaultTemplate) defaultTemplate = tmpl

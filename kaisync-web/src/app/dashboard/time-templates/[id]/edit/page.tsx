@@ -5,6 +5,8 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import { ScheduleFields } from '@/components/time-templates/ScheduleFields'
+import { templateSchedulePayload } from '@/lib/shift-template-schedule'
 
 interface BreakEntry { id: string; label: string; minutes: number }
 
@@ -14,6 +16,10 @@ type TemplateRow = {
   name: string
   start_time: string | null
   end_time: string | null
+  weekend_start_time: string | null
+  weekend_end_time: string | null
+  ot_start_time: string | null
+  weekend_ot_start_time: string | null
   break_minutes: number | null
   breaks: { label?: string; Label?: string; minutes?: number; Minutes?: number }[] | null
 }
@@ -53,6 +59,11 @@ export default function EditTimeTemplatePage() {
   const [name, setName] = useState('')
   const [startTime, setStartTime] = useState('08:00')
   const [endTime, setEndTime] = useState('17:00')
+  const [otStart, setOtStart] = useState('')
+  const [weekendEnabled, setWeekendEnabled] = useState(false)
+  const [weekendStart, setWeekendStart] = useState('08:00')
+  const [weekendEnd, setWeekendEnd] = useState('13:00')
+  const [weekendOtStart, setWeekendOtStart] = useState('')
   const [breaks, setBreaks] = useState<BreakEntry[]>([])
   const [errorMsg, setErrorMsg] = useState('')
   const [busy, setBusy] = useState(false)
@@ -71,7 +82,7 @@ export default function EditTimeTemplatePage() {
 
     const { data } = await supabase
       .from('employee_shift_templates')
-      .select('id, company_id, name, start_time, end_time, break_minutes, breaks')
+      .select('id, company_id, name, start_time, end_time, break_minutes, breaks, weekend_start_time, weekend_end_time, ot_start_time, weekend_ot_start_time')
       .eq('id', templateId)
       .eq('company_id', member.companyId)
       .maybeSingle()
@@ -82,6 +93,12 @@ export default function EditTimeTemplatePage() {
     setName(t.name)
     setStartTime(toTimeInput(t.start_time))
     setEndTime(toTimeInput(t.end_time))
+    setOtStart(t.ot_start_time ? toTimeInput(t.ot_start_time) : '')
+    const hasWeekend = Boolean(t.weekend_start_time && t.weekend_end_time)
+    setWeekendEnabled(hasWeekend)
+    setWeekendStart(hasWeekend ? toTimeInput(t.weekend_start_time) : '08:00')
+    setWeekendEnd(hasWeekend ? toTimeInput(t.weekend_end_time) : '13:00')
+    setWeekendOtStart(t.weekend_ot_start_time ? toTimeInput(t.weekend_ot_start_time) : '')
     const rawBreaks = Array.isArray(t.breaks) ? t.breaks : []
     if (rawBreaks.length > 0) {
       setBreaks(rawBreaks.map((b, i) => ({
@@ -112,6 +129,10 @@ export default function EditTimeTemplatePage() {
     setBusy(true)
     setErrorMsg('')
     const supabase = createClient()
+    const schedule = templateSchedulePayload({
+      weekendEnabled, weekendStart, weekendEnd, otStart, weekendOtStart,
+    })
+    if (!schedule.ok) { setErrorMsg(schedule.message); setBusy(false); return }
     const breakMins = breaks.reduce((s, b) => s + (b.minutes || 0), 0)
     const { error: rpcErr } = await supabase.rpc('hr_upsert_shift_template', {
       p_company_id: companyId,
@@ -121,6 +142,10 @@ export default function EditTimeTemplatePage() {
       p_end_time: toTimeSql(endTime),
       p_break_minutes: breakMins,
       p_breaks: breaks.map(b => ({ label: b.label, minutes: b.minutes })),
+      p_weekend_start_time: schedule.weekendStart,
+      p_weekend_end_time: schedule.weekendEnd,
+      p_ot_start_time: schedule.otStart,
+      p_weekend_ot_start_time: schedule.weekendOtStart,
     })
     if (rpcErr) {
       setErrorMsg(rpcErr.message || 'Failed to save template.')
@@ -159,21 +184,24 @@ export default function EditTimeTemplatePage() {
               placeholder="e.g. Office Hours, Night Shift, Cleaners"
               className="dark-entry w-full" />
           </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs text-text-secondary font-medium">Start time</label>
-            <div className="bg-surface-dark rounded-lg px-3 py-1">
-              <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)}
-                className="bg-transparent text-text-primary outline-none h-9 w-full" />
-            </div>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs text-text-secondary font-medium">End time</label>
-            <div className="bg-surface-dark rounded-lg px-3 py-1">
-              <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)}
-                className="bg-transparent text-text-primary outline-none h-9 w-full" />
-            </div>
-          </div>
         </div>
+
+        <ScheduleFields
+          startTime={startTime}
+          endTime={endTime}
+          otStart={otStart}
+          weekendEnabled={weekendEnabled}
+          weekendStart={weekendStart}
+          weekendEnd={weekendEnd}
+          weekendOtStart={weekendOtStart}
+          onStartTime={setStartTime}
+          onEndTime={setEndTime}
+          onOtStart={setOtStart}
+          onWeekendEnabled={setWeekendEnabled}
+          onWeekendStart={setWeekendStart}
+          onWeekendEnd={setWeekendEnd}
+          onWeekendOtStart={setWeekendOtStart}
+        />
 
         <div className="card p-4 space-y-3">
           <div className="flex items-center justify-between">
