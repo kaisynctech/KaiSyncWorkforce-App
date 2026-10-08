@@ -18,6 +18,7 @@ import {
   type ShiftTemplateLike,
 } from '@/lib/punch-session'
 import { ManualTimesheetForm } from '@/components/attendance/ManualTimesheetForm'
+import { AttendanceNote } from '@/components/attendance/AttendanceNote'
 import { enrichSessionsWithPlaceNames } from '@/lib/punch-address-enrich'
 import {
   ResponsiveDataView,
@@ -621,8 +622,11 @@ export default function AttendancePage() {
                         <td className="px-4 py-3 text-right text-text-primary">
                           {s.pay > 0 ? `R${s.pay.toFixed(2)}` : '—'}
                         </td>
-                        <td className="px-4 py-3 text-text-secondary max-w-[180px] truncate">
-                          {notes || '—'}
+                        <td className="px-4 py-3">
+                          <AttendanceNote
+                            note={notes}
+                            context={`${s.employeeName} · ${fmtSessionDate(r.clockIn)}`}
+                          />
                         </td>
                       </tr>
                     )
@@ -658,7 +662,12 @@ export default function AttendancePage() {
                       <DataCardRow label="Out" value={fmtSessionTime(r.clockOut, 'out')} />
                       <DataCardRow label="Hours" value={totalHrsDisplay(r)} />
                       <DataCardRow label="Pay" value={s.pay > 0 ? `R${s.pay.toFixed(2)}` : '—'} />
-                      {notes ? <DataCardRow label="Notes" value={notes} /> : null}
+                      {notes ? (
+                        <AttendanceNote
+                          note={notes}
+                          context={`${s.employeeName} · ${fmtSessionDate(r.clockIn)}`}
+                        />
+                      ) : null}
                     </DataCard>
                   )
                 })}
