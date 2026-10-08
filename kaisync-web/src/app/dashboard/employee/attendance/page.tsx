@@ -7,12 +7,12 @@ import { getCodeSession } from '@/lib/auth/code-session'
 import { loadCompanyWorkspace, loadEmployeeWorkspace } from '@/lib/employee-workspace'
 import { useEmployeeModuleGate } from '@/lib/employee-module-gate'
 import { ManualTimesheetForm } from '@/components/attendance/ManualTimesheetForm'
+import { AttendanceNote } from '@/components/attendance/AttendanceNote'
 import { enrichSessionsWithPlaceNames } from '@/lib/punch-address-enrich'
 import {
   ResponsiveDataView,
   DataCard,
   DataCardTitle,
-  DataCardMeta,
   DataCardRow,
 } from '@/components/ui/ResponsiveDataView'
 import {
@@ -458,10 +458,11 @@ export default function EmployeeAttendancePage() {
                             <span className="block text-[10px] text-warning font-medium">OT {s.overtimeHours.toFixed(1)}h</span>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-[12px] text-text-secondary">
-                          {flag && <span className="text-error font-semibold">{flag}</span>}
-                          {flag && (s.notes || s.statusNote) ? ' · ' : ''}
-                          {s.notes ?? s.statusNote ?? (flag ? '' : '—')}
+                        <td className="px-4 py-3">
+                          <AttendanceNote
+                            note={[flag, s.notes ?? s.statusNote ?? ''].filter(Boolean).join(' · ')}
+                            context={fmtSessionDate(s.clockIn)}
+                          />
                         </td>
                       </tr>
                     )
@@ -487,11 +488,12 @@ export default function EmployeeAttendancePage() {
                       </div>
                       <DataCardRow label="Out" value={fmtSessionTime(s.clockOut, 'out')} />
                       <DataCardRow label="Total" value={totalHrsDisplay(s)} />
-                      {(flag || s.notes || s.statusNote) && (
-                        <DataCardMeta className="mt-1">
-                          {[flag, s.notes ?? s.statusNote].filter(Boolean).join(' · ')}
-                        </DataCardMeta>
-                      )}
+                      {(flag || s.notes || s.statusNote) ? (
+                        <AttendanceNote
+                          note={[flag, s.notes ?? s.statusNote ?? ''].filter(Boolean).join(' · ')}
+                          context={fmtSessionDate(s.clockIn)}
+                        />
+                      ) : null}
                     </DataCard>
                   )
                 })}
