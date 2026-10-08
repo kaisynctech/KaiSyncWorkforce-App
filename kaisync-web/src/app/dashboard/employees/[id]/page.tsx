@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { cn, formatDate, formatDateTime, formatCurrency, getInitials } from '@/lib/utils'
 import { labelEmploymentType, labelWorkerType } from '@/lib/employee-taxonomy'
-import { getCompanyAnnualDays, loadLeaveSettings, type LeaveSettingsMap } from '@/lib/leave-settings'
+import { getCompanyAnnualDays, loadLeaveSettings, readCustomLeaveTypes, type LeaveSettingsMap } from '@/lib/leave-settings'
 import { LEAVE_TYPES } from '@/lib/leave-policy'
 import { assessPayrollReadiness } from '@/lib/payroll-readiness'
 import type { Employee, LeaveRequest, TimePunch, AccessLevel } from '@/types/database'
@@ -612,10 +612,12 @@ function LeaveTab({
   const leaveTypes = LEAVE_TYPES.map(t => t.key).filter(
     lt => (byType[lt] ?? 0) > 0 || leaveRequests.some(r => r.leave_type === lt)
   )
-  // Always show core types even with zero usage
-  const balanceTypes = leaveTypes.length > 0
-    ? leaveTypes
-    : LEAVE_TYPES.slice(0, 4).map(t => t.key)
+  const customNames = readCustomLeaveTypes(leaveSettings).map(t => t.name)
+  // Always show core types even with zero usage, plus company policies.
+  const balanceTypes = Array.from(new Set([
+    ...(leaveTypes.length > 0 ? leaveTypes : LEAVE_TYPES.slice(0, 4).map(t => t.key)),
+    ...customNames,
+  ]))
 
   return (
     <div className="space-y-4">
