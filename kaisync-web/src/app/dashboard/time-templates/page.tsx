@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import type { ShiftTemplate } from '@/types/database'
+import { templateHoursSummary } from '@/lib/shift-template-schedule'
 
 export default function TimeTemplatesPage() {
   const router = useRouter()
@@ -135,13 +136,9 @@ export default function TimeTemplatesPage() {
                   Delete
                 </button>
               </div>
-              {t.summary ? (
-                <p className="text-xs text-text-secondary">{t.summary}</p>
-              ) : (t.start_time || t.end_time) ? (
-                <p className="text-xs text-text-secondary">
-                  {(t.start_time ?? '').slice(0, 5)} – {(t.end_time ?? '').slice(0, 5)}
-                </p>
-              ) : null}
+              {(t.start_time || t.end_time) && (
+                <p className="text-xs text-text-secondary">{templateHoursSummary(t)}</p>
+              )}
             </div>
           ))
         )}

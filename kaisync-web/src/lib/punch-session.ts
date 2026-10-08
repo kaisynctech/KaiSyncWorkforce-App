@@ -25,10 +25,16 @@ export type PunchLike = {
 
 export type ShiftTemplateLike = {
   id: string
-  start_time?: string | null // "HH:mm:ss" or "HH:mm"
+  start_time?: string | null // "HH:mm:ss" or "HH:mm" — Monday to Friday
   end_time?: string | null
   break_minutes?: number | null
   total_break_minutes?: number | null
+  /** Saturday and Sunday. Both must be set to replace the weekday hours. */
+  weekend_start_time?: string | null
+  weekend_end_time?: string | null
+  /** Clock time overtime begins. Blank uses the company grace after the day's end. */
+  ot_start_time?: string | null
+  weekend_ot_start_time?: string | null
 }
 
 export type PunchSessionOptions = {
@@ -76,14 +82,49 @@ function parseTimeOnly(raw: string | null | undefined): { h: number; m: number }
   return { h: Number(m[1]), m: Number(m[2]) }
 }
 
-function paidHoursOf(template: ShiftTemplateLike): number {
-  const start = parseTimeOnly(template.start_time)
-  const end = parseTimeOnly(template.end_time)
-  if (!start || !end) return 8
+/** Weekday of a company-local calendar date. Sunday = 0. */
+function zonedWeekday(instant: Date, timeZone: string): number {
+  const dateStr = toZonedDateStr(instant, timeZone)
+  const [y, m, d] = dateStr.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d, 12, 0, 0)).getUTCDay()
+}
+
+/** Hours that apply to the punch's company-local day. */
+export function scheduleForPunchDay(
+  template: ShiftTemplateLike,
+  clockIn: Date,
+  timeZone: string,
+): {
+  start: { h: number; m: number } | null
+  end: { h: number; m: number } | null
+  otStart: { h: number; m: number } | null
+} {
+  const weekday = zonedWeekday(clockIn, timeZone)
+  const weekend = weekday === 0 || weekday === 6
+  const weekendStart = parseTimeOnly(template.weekend_start_time)
+  const weekendEnd = parseTimeOnly(template.weekend_end_time)
+  if (weekend && weekendStart && weekendEnd) {
+    return {
+      start: weekendStart,
+      end: weekendEnd,
+      otStart: parseTimeOnly(template.weekend_ot_start_time),
+    }
+  }
+  return {
+    start: parseTimeOnly(template.start_time),
+    end: parseTimeOnly(template.end_time),
+    otStart: parseTimeOnly(template.ot_start_time),
+  }
+}
+
+function paidHoursBetween(
+  start: { h: number; m: number },
+  end: { h: number; m: number },
+  breakMinutes: number,
+): number {
   let span = (end.h * 60 + end.m) - (start.h * 60 + start.m)
   if (span <= 0) span += 24 * 60
-  const brk = Number(template.total_break_minutes ?? template.break_minutes ?? 0)
-  return Math.max(0, span / 60 - brk / 60)
+  return Math.max(0, span / 60 - breakMinutes / 60)
 }
 
 function breakMinutesOf(template: ShiftTemplateLike | null | undefined): number {
@@ -111,8 +152,10 @@ function computeMetrics(
   let regularHours = 0
   let overtimeHours = 0
 
-  const startT = template ? parseTimeOnly(template.start_time) : null
-  const endT = template ? parseTimeOnly(template.end_time) : null
+  const daySchedule = template ? scheduleForPunchDay(template, clockIn, timeZone) : null
+  const startT = daySchedule?.start ?? null
+  const endT = daySchedule?.end ?? null
+  const otStartT = daySchedule?.otStart ?? null
 
   if (template && startT) {
     const shiftStart = zonedTimeOnPunchDay(clockIn, startT.h, startT.m, timeZone)
@@ -145,19 +188,24 @@ function computeMetrics(
       ? clockIn
       : zonedTimeOnPunchDay(clockIn, startT.h, startT.m, timeZone)
     const brk = breakMinutesOf(template) / 60
-    const paidCap = paidHoursOf(template)
+    const paidCap = startT && endT
+      ? paidHoursBetween(startT, endT, breakMinutesOf(template))
+      : 8
     if (!clockOut) {
       regularHours = Math.max(0, (now.getTime() - billingStart.getTime()) / 3600000 - brk)
     } else {
       const paidElapsed = (clockOut.getTime() - billingStart.getTime()) / 3600000 - brk
       regularHours = Math.max(0, Math.min(paidElapsed, paidCap))
-      if (endT) {
-        let shiftEnd = zonedTimeOnPunchDay(clockOut, endT.h, endT.m, timeZone)
-        if (shiftEnd.getTime() < billingStart.getTime()) {
-          shiftEnd = new Date(shiftEnd.getTime() + 24 * 3600000)
+      const otLine = otStartT ?? endT
+      if (otLine) {
+        let otAt = zonedTimeOnPunchDay(clockOut, otLine.h, otLine.m, timeZone)
+        if (otAt.getTime() < billingStart.getTime()) {
+          otAt = new Date(otAt.getTime() + 24 * 3600000)
         }
-        const minutesPastEnd = (clockOut.getTime() - shiftEnd.getTime()) / 60000
-        overtimeHours = minutesPastEnd > otAfter ? (minutesPastEnd - otAfter) / 60 : 0
+        const minutesPast = (clockOut.getTime() - otAt.getTime()) / 60000
+        overtimeHours = otStartT
+          ? (minutesPast > 0 ? minutesPast / 60 : 0)
+          : (minutesPast > otAfter ? (minutesPast - otAfter) / 60 : 0)
       }
     }
   }

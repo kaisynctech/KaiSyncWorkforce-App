@@ -220,7 +220,7 @@ export default function EmployeeAttendancePage() {
         if (tid) {
           const { data: tmpl } = await supabase
             .from('employee_shift_templates')
-            .select('id, start_time, end_time, break_minutes')
+            .select('id, start_time, end_time, break_minutes, weekend_start_time, weekend_end_time, ot_start_time, weekend_ot_start_time')
             .eq('id', tid)
             .maybeSingle()
           if (tmpl) template = tmpl as ShiftTemplateLike
