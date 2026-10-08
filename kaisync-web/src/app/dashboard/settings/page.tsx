@@ -24,6 +24,14 @@ import {
   type DispatchSettings,
 } from '@/lib/branch-geofence'
 import { isHrOrAbove as accessIsHrOrAbove, isOwnerOrAdmin } from '@/lib/employee-taxonomy'
+import { getAnnualDays } from '@/lib/leave-policy'
+import {
+  getCompanyAnnualDays,
+  leaveEntitlementFields,
+  loadLeaveSettings,
+  parseLeaveDayInput,
+  saveLeaveDaySettings,
+} from '@/lib/leave-settings'
 
 // ─── Local types ──────────────────────────────────────────────────────────────
 
@@ -118,6 +126,10 @@ export default function SettingsPage() {
   const [defaultSignInRadius, setDefaultSignInRadius] = useState('100')
   const [geofenceBusy,        setGeofenceBusy]        = useState(false)
   const [geofenceMsg,         setGeofenceMsg]         = useState<string | null>(null)
+  const [leaveDays,           setLeaveDays]           = useState<Record<string, string>>({})
+  const [leaveBusy,           setLeaveBusy]           = useState(false)
+  const [leaveMsg,            setLeaveMsg]            = useState<string | null>(null)
+  const [leaveErr,            setLeaveErr]            = useState<string | null>(null)
 
   // ── HR user state ─────────────────────────────────────────────────────────
   const [hrAdmins,         setHrAdmins]         = useState<HrEmployee[]>([])
@@ -298,6 +310,22 @@ export default function SettingsPage() {
 
     await loadXero(member.companyId)
     await loadBilling(member.companyId)
+
+    const leaveRes = await loadLeaveSettings(supabase, member.companyId)
+    if (!leaveRes.ok) {
+      setLeaveErr(leaveRes.message)
+      setLeaveDays(Object.fromEntries(
+        leaveEntitlementFields().map(field => [field.leaveType, String(field.defaultDays)]),
+      ))
+    } else {
+      setLeaveErr(null)
+      setLeaveDays(Object.fromEntries(
+        leaveEntitlementFields().map(field => [
+          field.leaveType,
+          String(getCompanyAnnualDays(field.leaveType, leaveRes.data)),
+        ]),
+      ))
+    }
     setLoading(false)
   }
 
@@ -326,6 +354,36 @@ export default function SettingsPage() {
   }
 
   // ── Company settings ──────────────────────────────────────────────────────
+
+  async function saveLeaveDays() {
+    if (!company || employee?.access_level !== 'owner') return
+    setLeaveBusy(true)
+    setLeaveMsg(null)
+    setLeaveErr(null)
+    const daysByType: Record<string, number> = {}
+    for (const field of leaveEntitlementFields()) {
+      const parsed = parseLeaveDayInput(leaveDays[field.leaveType] ?? '')
+      if (parsed == null) {
+        setLeaveErr(`${field.label} must be a whole number from 0 to 366.`)
+        setLeaveBusy(false)
+        return
+      }
+      daysByType[field.leaveType] = parsed
+    }
+    const supabase = createClient()
+    const result = await saveLeaveDaySettings(supabase, company.id, daysByType)
+    if (!result.ok) setLeaveErr(result.message)
+    else setLeaveMsg('Leave entitlements saved. Leave balances use these days.')
+    setLeaveBusy(false)
+  }
+
+  function restoreLeaveDefaults() {
+    setLeaveMsg(null)
+    setLeaveErr(null)
+    setLeaveDays(Object.fromEntries(
+      leaveEntitlementFields().map(field => [field.leaveType, String(getAnnualDays(field.leaveType))]),
+    ))
+  }
 
   async function saveCompanyName() {
     if (!company || !companyName.trim()) return
@@ -1556,13 +1614,63 @@ export default function SettingsPage() {
           </Section>
 
           <Section title="Leave Policies" icon="event_available">
-            <div className="flex flex-col gap-3">
-              <RowInfo label="Annual leave days" value="21 days" />
-              <RowInfo label="Sick leave days" value="30 days" />
-              <RowInfo label="Family responsibility" value="3 days" />
-              <p className="text-[12px] text-text-secondary pt-1">
-                Additional leave policy configuration coming soon.
+            <div className="flex flex-col">
+              <p className="text-[12px] text-text-secondary pb-2">
+                Annual entitlements for this company. Leave balances use these days. A company stays on the statutory default until the owner saves a change. Restore defaults fills those numbers; save to apply them.
               </p>
+              {leaveEntitlementFields().map(field => (
+                <div key={field.leaveType} className="flex items-center justify-between gap-3 py-2 border-b border-divider last:border-0">
+                  <div className="min-w-0">
+                    <p className="text-[13px] text-text-primary">{field.label}</p>
+                    <p className="text-[11px] text-text-disabled">Default {field.defaultDays} days</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <input
+                      type="number"
+                      min={0}
+                      max={366}
+                      step={1}
+                      inputMode="numeric"
+                      disabled={!isOwner || leaveBusy}
+                      aria-label={`${field.label} days`}
+                      value={leaveDays[field.leaveType] ?? String(field.defaultDays)}
+                      onChange={e => setLeaveDays(prev => ({ ...prev, [field.leaveType]: e.target.value }))}
+                      className="h-9 w-20 px-2 text-right bg-background border border-border rounded-lg text-[13px] text-text-primary disabled:opacity-60"
+                    />
+                    <span className="text-[12px] text-text-secondary w-8">days</span>
+                  </div>
+                </div>
+              ))}
+              {leaveErr && (
+                <p className="text-[12px] text-error pt-2">{leaveErr}</p>
+              )}
+              {leaveMsg && (
+                <p className="text-[12px] text-success pt-2">{leaveMsg}</p>
+              )}
+              {isOwner ? (
+                <div className="flex flex-wrap gap-2 pt-3">
+                  <button
+                    type="button"
+                    onClick={() => void saveLeaveDays()}
+                    disabled={leaveBusy}
+                    className="h-9 px-4 rounded-md bg-primary text-white text-[13px] font-semibold disabled:opacity-60"
+                  >
+                    {leaveBusy ? 'Saving…' : 'Save leave days'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={restoreLeaveDefaults}
+                    disabled={leaveBusy}
+                    className="h-9 px-4 rounded-md bg-surface border border-border text-[13px] text-text-secondary font-medium hover:border-primary hover:text-primary disabled:opacity-60"
+                  >
+                    Restore defaults
+                  </button>
+                </div>
+              ) : (
+                <p className="text-[12px] text-text-secondary pt-2">
+                  Only the company owner can change these entitlements.
+                </p>
+              )}
             </div>
           </Section>
 
