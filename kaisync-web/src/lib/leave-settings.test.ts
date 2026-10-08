@@ -2,9 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { getAnnualDays } from '@/lib/leave-policy'
 import {
   getCompanyAnnualDays,
+  leavePolicyNameError,
   mergeLeaveDaySettings,
+  parseCustomLeaveTypes,
   parseLeaveDayInput,
+  readCustomLeaveTypes,
   resolveLeaveTypeOptions,
+  summarizeCompanyLeave,
 } from '@/lib/leave-settings'
 
 describe('getCompanyAnnualDays', () => {
@@ -70,5 +74,44 @@ describe('mergeLeaveDaySettings', () => {
     expect(merged.sick_leave_days).toBe(30)
     expect(merged.notes).toBe('keep')
     expect(getCompanyAnnualDays('Annual Leave', merged)).toBe(21)
+  })
+
+  it('replaces additional policies and keeps them beside statutory days', () => {
+    const merged = mergeLeaveDaySettings(
+      { annual_leave_days: 15, custom_leave_types: [{ name: 'Old Policy', days: 2 }] },
+      {
+        'Annual Leave': 15,
+        'Sick Leave': 10,
+        'Family Responsibility': 3,
+        'Maternity Leave': 60,
+        'Paternity Leave': 10,
+        'Study Leave': 5,
+        'Unpaid Leave': 365,
+      },
+      [{ name: 'Compassionate Leave', days: 4 }],
+    )
+    expect(readCustomLeaveTypes(merged)).toEqual([{ name: 'Compassionate Leave', days: 4 }])
+    expect(getCompanyAnnualDays('Compassionate Leave', merged)).toBe(4)
+  })
+})
+
+describe('custom leave policies', () => {
+  it('rejects a duplicate of a standard type', () => {
+    expect(leavePolicyNameError('annual leave', [])).toMatch(/standard leave type/)
+  })
+
+  it('parses an additional policy', () => {
+    const parsed = parseCustomLeaveTypes([{ name: '  Compassion  Leave ', days: '4' }])
+    expect(parsed).toEqual({ ok: true, types: [{ name: 'Compassion Leave', days: 4 }] })
+  })
+
+  it('appears on leave type options and balances', () => {
+    const settings = {
+      custom_leave_types: [{ name: 'Compassionate Leave', days: 4 }],
+    }
+    const opts = resolveLeaveTypeOptions(settings)
+    expect(opts.some(o => o.key === 'Compassionate Leave' && o.annualDays === 4)).toBe(true)
+    const summary = summarizeCompanyLeave([], settings)
+    expect(summary.find(s => s.leave_type === 'Compassionate Leave')?.annual_days).toBe(4)
   })
 })

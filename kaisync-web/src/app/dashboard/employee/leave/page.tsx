@@ -5,12 +5,16 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { useEmployeeModuleGate } from '@/lib/employee-module-gate'
 import {
-  LEAVE_TYPE_KEYS,
   LEAVE_ATTACHMENT_ACCEPT,
   calcLeaveTotalDays,
-  computeLeaveSummary,
   getLeaveIcon,
 } from '@/lib/leave-policy'
+import {
+  loadLeaveSettings,
+  resolveLeaveTypeOptions,
+  summarizeCompanyLeave,
+  type LeaveSettingsMap,
+} from '@/lib/leave-settings'
 import { uploadLeaveAttachment } from '@/lib/employee-media'
 import {
   ResponsiveDataView,
@@ -51,6 +55,7 @@ function fmtDate(iso: string): string {
 export default function EmployeeLeavePage() {
   const allowed = useEmployeeModuleGate('leave')
   const [requests, setRequests] = useState<LeaveRequest[]>([])
+  const [leaveSettings, setLeaveSettings] = useState<LeaveSettingsMap>({})
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editRequest, setEditRequest] = useState<LeaveRequest | null>(null)
@@ -95,6 +100,8 @@ export default function EmployeeLeavePage() {
       p_session_token: tok,
     })
     if (!error) setRequests((data as LeaveRequest[]) ?? [])
+    const settingsRes = await loadLeaveSettings(supabase, member.companyId)
+    if (settingsRes.ok) setLeaveSettings(settingsRes.data)
     setLoading(false)
   }
 
@@ -203,7 +210,11 @@ export default function EmployeeLeavePage() {
     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   })
 
-  const summary = computeLeaveSummary(requests)
+  const summary = summarizeCompanyLeave(requests, leaveSettings)
+  const typeOptions = resolveLeaveTypeOptions(leaveSettings)
+  const leaveTypeChoices = typeOptions.some(t => t.key === leaveType)
+    ? typeOptions
+    : [...typeOptions, { key: leaveType, label: leaveType, annualDays: 0, color: '', icon: 'event_busy' }]
   const existingAttachment = editRequest?.attachment_url && !removeExistingAttachment
     ? editRequest.attachment_url
     : null
@@ -379,8 +390,8 @@ export default function EmployeeLeavePage() {
               <div className="flex flex-col gap-1.5">
                 <label className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide">Leave Type</label>
                 <select className="input" value={leaveType} onChange={(e) => setLeaveType(e.target.value)}>
-                  {LEAVE_TYPE_KEYS.map((t) => (
-                    <option key={t} value={t}>{t}</option>
+                  {leaveTypeChoices.map((t) => (
+                    <option key={t.key} value={t.key}>{t.label}</option>
                   ))}
                 </select>
               </div>

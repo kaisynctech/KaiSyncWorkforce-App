@@ -28,9 +28,14 @@ import { getAnnualDays } from '@/lib/leave-policy'
 import {
   getCompanyAnnualDays,
   leaveEntitlementFields,
+  leavePolicyNameError,
   loadLeaveSettings,
+  normalizeLeavePolicyName,
+  parseCustomLeaveTypes,
   parseLeaveDayInput,
+  readCustomLeaveTypes,
   saveLeaveDaySettings,
+  CUSTOM_LEAVE_TYPE_LIMIT,
 } from '@/lib/leave-settings'
 
 // ─── Local types ──────────────────────────────────────────────────────────────
@@ -127,6 +132,9 @@ export default function SettingsPage() {
   const [geofenceBusy,        setGeofenceBusy]        = useState(false)
   const [geofenceMsg,         setGeofenceMsg]         = useState<string | null>(null)
   const [leaveDays,           setLeaveDays]           = useState<Record<string, string>>({})
+  const [customLeave,         setCustomLeave]         = useState<{ name: string; days: string }[]>([])
+  const [newLeaveName,        setNewLeaveName]        = useState('')
+  const [newLeaveDays,        setNewLeaveDays]        = useState('')
   const [leaveBusy,           setLeaveBusy]           = useState(false)
   const [leaveMsg,            setLeaveMsg]            = useState<string | null>(null)
   const [leaveErr,            setLeaveErr]            = useState<string | null>(null)
@@ -317,6 +325,7 @@ export default function SettingsPage() {
       setLeaveDays(Object.fromEntries(
         leaveEntitlementFields().map(field => [field.leaveType, String(field.defaultDays)]),
       ))
+      setCustomLeave([])
     } else {
       setLeaveErr(null)
       setLeaveDays(Object.fromEntries(
@@ -325,6 +334,10 @@ export default function SettingsPage() {
           String(getCompanyAnnualDays(field.leaveType, leaveRes.data)),
         ]),
       ))
+      setCustomLeave(readCustomLeaveTypes(leaveRes.data).map(t => ({
+        name: t.name,
+        days: String(t.days),
+      })))
     }
     setLoading(false)
   }
@@ -370,11 +383,40 @@ export default function SettingsPage() {
       }
       daysByType[field.leaveType] = parsed
     }
+    const customParsed = parseCustomLeaveTypes(customLeave)
+    if (!customParsed.ok) {
+      setLeaveErr(customParsed.message)
+      setLeaveBusy(false)
+      return
+    }
     const supabase = createClient()
-    const result = await saveLeaveDaySettings(supabase, company.id, daysByType)
+    const result = await saveLeaveDaySettings(supabase, company.id, daysByType, customParsed.types)
     if (!result.ok) setLeaveErr(result.message)
     else setLeaveMsg('Leave entitlements saved. Leave balances use these days.')
     setLeaveBusy(false)
+  }
+
+  function addCustomLeave() {
+    if (customLeave.length >= CUSTOM_LEAVE_TYPE_LIMIT) {
+      setLeaveErr(`A company can have at most ${CUSTOM_LEAVE_TYPE_LIMIT} additional leave policies.`)
+      return
+    }
+    const nameError = leavePolicyNameError(newLeaveName, customLeave.map(t => t.name))
+    if (nameError) {
+      setLeaveErr(nameError)
+      return
+    }
+    const days = parseLeaveDayInput(newLeaveDays)
+    const name = normalizeLeavePolicyName(newLeaveName)
+    if (!name || days == null) {
+      setLeaveErr('Enter a policy name and whole days from 0 to 366.')
+      return
+    }
+    setCustomLeave(prev => [...prev, { name, days: String(days) }])
+    setNewLeaveName('')
+    setNewLeaveDays('')
+    setLeaveErr(null)
+    setLeaveMsg('Policy added. Save leave days to apply it.')
   }
 
   function restoreLeaveDefaults() {
@@ -1616,7 +1658,7 @@ export default function SettingsPage() {
           <Section title="Leave Policies" icon="event_available">
             <div className="flex flex-col">
               <p className="text-[12px] text-text-secondary pb-2">
-                Annual entitlements for this company. Leave balances use these days. A company stays on the statutory default until the owner saves a change. Restore defaults fills those numbers; save to apply them.
+                Annual entitlements for this company. Leave balances and leave applications use these days. A company stays on the statutory default until the owner saves a change. Restore defaults fills the standard types only. Additional policies stay until you remove them and save.
               </p>
               {leaveEntitlementFields().map(field => (
                 <div key={field.leaveType} className="flex items-center justify-between gap-3 py-2 border-b border-divider last:border-0">
@@ -1641,6 +1683,86 @@ export default function SettingsPage() {
                   </div>
                 </div>
               ))}
+              <div className="pt-4 mt-2 border-t border-divider">
+                <p className="text-[13px] font-semibold text-text-primary">Additional leave policies</p>
+                <p className="text-[12px] text-text-secondary pb-2">
+                  Add a company leave type and its annual days. Save to make it available on leave applications.
+                </p>
+                {customLeave.length === 0 ? (
+                  <p className="text-[12px] text-text-disabled py-1">No additional policies yet.</p>
+                ) : customLeave.map(policy => (
+                  <div key={policy.name} className="flex items-center justify-between gap-3 py-2 border-b border-divider">
+                    <p className="text-[13px] text-text-primary min-w-0 truncate">{policy.name}</p>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <input
+                        type="number"
+                        min={0}
+                        max={366}
+                        step={1}
+                        inputMode="numeric"
+                        disabled={!isOwner || leaveBusy}
+                        aria-label={`${policy.name} days`}
+                        value={policy.days}
+                        onChange={e => setCustomLeave(prev => prev.map(row => (
+                          row.name === policy.name ? { ...row, days: e.target.value } : row
+                        )))}
+                        className="h-9 w-20 px-2 text-right bg-background border border-border rounded-lg text-[13px] text-text-primary disabled:opacity-60"
+                      />
+                      <span className="text-[12px] text-text-secondary w-8">days</span>
+                      {isOwner && (
+                        <button
+                          type="button"
+                          disabled={leaveBusy}
+                          onClick={() => setCustomLeave(prev => prev.filter(row => row.name !== policy.name))}
+                          className="text-[12px] font-semibold text-error hover:underline disabled:opacity-60"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {isOwner && (
+                  <div className="flex flex-wrap items-end gap-2 pt-3">
+                    <div className="flex flex-col gap-1 min-w-[180px] flex-1">
+                      <label className="text-[11px] font-medium text-text-secondary" htmlFor="new-leave-policy">Policy name</label>
+                      <input
+                        id="new-leave-policy"
+                        type="text"
+                        maxLength={60}
+                        disabled={leaveBusy}
+                        value={newLeaveName}
+                        onChange={e => setNewLeaveName(e.target.value)}
+                        placeholder="Compassionate leave"
+                        className="h-9 px-3 bg-background border border-border rounded-lg text-[13px] text-text-primary"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[11px] font-medium text-text-secondary" htmlFor="new-leave-days">Days</label>
+                      <input
+                        id="new-leave-days"
+                        type="number"
+                        min={0}
+                        max={366}
+                        step={1}
+                        inputMode="numeric"
+                        disabled={leaveBusy}
+                        value={newLeaveDays}
+                        onChange={e => setNewLeaveDays(e.target.value)}
+                        className="h-9 w-20 px-2 text-right bg-background border border-border rounded-lg text-[13px] text-text-primary"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={addCustomLeave}
+                      disabled={leaveBusy}
+                      className="h-9 px-4 rounded-md bg-surface border border-border text-[13px] text-text-primary font-medium hover:border-primary hover:text-primary disabled:opacity-60"
+                    >
+                      Add policy
+                    </button>
+                  </div>
+                )}
+              </div>
               {leaveErr && (
                 <p className="text-[12px] text-error pt-2">{leaveErr}</p>
               )}
