@@ -48,6 +48,16 @@ export default function IdEntryPage() {
     async function restore() {
       try {
         const supabase = createClient()
+
+        if (hasCodeSession()) {
+          const session = await refreshCodeSession(supabase)
+          if (cancelled) return
+          if (session) {
+            router.replace(routeAfterCompanySelected(session.employee.access_level))
+            return
+          }
+        }
+
         let jwtEmp = await getCurrentJwtEmployee(supabase)
         if (!jwtEmp) {
           const claimed = await claimEmployeeInvite(supabase)
@@ -57,15 +67,6 @@ export default function IdEntryPage() {
         if (jwtEmp) {
           router.replace(routeAfterEmailSignIn(jwtEmp.login_password_ready))
           return
-        }
-
-        if (hasCodeSession()) {
-          const session = await refreshCodeSession(supabase)
-          if (cancelled) return
-          if (session) {
-            router.replace(routeAfterCompanySelected(session.employee.access_level))
-            return
-          }
         }
 
         // Authenticated but no employee — resume self-registration link company

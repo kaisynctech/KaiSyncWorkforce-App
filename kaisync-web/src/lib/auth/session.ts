@@ -55,9 +55,11 @@ export async function signInWithCode(
   companyCode: string,
   employeeCode: string,
 ): Promise<CodeSession> {
+  const company = companyCode.trim().toUpperCase()
+  const loginCode = employeeCode.trim().replace(/\s+/g, '')
   const { data, error } = await supabase.rpc('employee_sign_in_with_code', {
-    p_company_code: companyCode.trim().toUpperCase(),
-    p_employee_code: employeeCode.trim(),
+    p_company_code: company,
+    p_employee_code: loginCode,
   })
 
   if (error) {
@@ -69,8 +71,17 @@ export async function signInWithCode(
   }
   if (!data) throw new Error('Invalid company code or login code.')
 
-  const session = saveCodeSession(data as CodeLoginRpcResult, companyCode, employeeCode)
+  const session = saveCodeSession(data as CodeLoginRpcResult, company, loginCode)
   if (!session) throw new Error('Login succeeded but no employee was returned from server.')
+
+  // A leftover email session must not hide this code login.
+  const { data: { user } } = await supabase.auth.getUser()
+  if (user) {
+    const linked = await getCurrentJwtEmployee(supabase)
+    if (!linked || linked.id !== session.employee_id) {
+      await supabase.auth.signOut()
+    }
+  }
   return session
 }
 
@@ -167,7 +178,7 @@ export async function getMyMemberships(
       const claimed = await claimEmployeeInvite(supabase)
       if (claimed) memberships = await loadMembershipsForUser(supabase, user.id)
     }
-    if (memberships) return memberships
+    if (memberships && memberships.length > 0) return memberships
   }
 
   const cs = getCodeSession()
