@@ -247,25 +247,86 @@ export async function forwardGeocode(query: string): Promise<ForwardGeocodeResul
   }
 }
 
-function getPosition(highAccuracy = true): Promise<GeolocationPosition | null> {
-  if (typeof navigator === 'undefined' || !navigator.geolocation) return Promise.resolve(null)
+const POSITION_DENIED = 1
+
+export type DeviceLocationFailure = 'unsupported' | 'denied' | 'unavailable' | 'timeout'
+
+export type DeviceLocationResult =
+  | { ok: true; latitude: number; longitude: number }
+  | { ok: false; reason: DeviceLocationFailure }
+
+export function deviceLocationFailureMessage(reason: DeviceLocationFailure): string {
+  if (reason === 'denied') {
+    return 'Location is blocked for KaiSync. In the phone settings, set Location for this app to Allow, then tap Yes again.'
+  }
+  if (reason === 'unsupported') {
+    return 'This device cannot share location with KaiSync.'
+  }
+  return 'No position arrived yet. Tap Yes to try again.'
+}
+
+function acceptPosition(position: GeolocationPosition): DeviceLocationResult | null {
+  const { latitude, longitude } = position.coords
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null
+  return { ok: true, latitude, longitude }
+}
+
+/**
+ * Call this directly from a tap. The phone permission prompt is tied to that tap.
+ * After she taps Allow, the first lookup often fails. Listening continues until a
+ * position arrives, instead of treating that first failure as "location not found".
+ */
+export function requestDeviceCoordinatesFromGesture(): Promise<DeviceLocationResult> {
+  if (typeof navigator === 'undefined' || !navigator.geolocation) {
+    return Promise.resolve({ ok: false, reason: 'unsupported' })
+  }
+
   return new Promise(resolve => {
+    let settled = false
+    let watchId: number | null = null
+    const timer = window.setTimeout(() => finish({ ok: false, reason: 'timeout' }), 20_000)
+
+    function finish(result: DeviceLocationResult) {
+      if (settled) return
+      settled = true
+      window.clearTimeout(timer)
+      if (watchId != null) navigator.geolocation.clearWatch(watchId)
+      resolve(result)
+    }
+
+    function accept(position: GeolocationPosition) {
+      const result = acceptPosition(position)
+      if (result) finish(result)
+    }
+
+    function onError(error: GeolocationPositionError) {
+      if (error.code === POSITION_DENIED) finish({ ok: false, reason: 'denied' })
+    }
+
+    watchId = navigator.geolocation.watchPosition(
+      accept,
+      onError,
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 20_000 },
+    )
     navigator.geolocation.getCurrentPosition(
-      pos => resolve(pos),
-      () => resolve(null),
-      { enableHighAccuracy: highAccuracy, timeout: 20000, maximumAge: 0 },
+      accept,
+      onError,
+      { enableHighAccuracy: false, maximumAge: 60_000, timeout: 12_000 },
     )
   })
 }
 
+/** Same listener as a tap, for callers that already have permission. */
+export function readDeviceCoordinates(): Promise<DeviceLocationResult> {
+  return requestDeviceCoordinatesFromGesture()
+}
+
 /** Best-effort GPS + place name. Never throws. */
 export async function captureLocation(): Promise<CapturedLocation> {
-  const pos = await getPosition(true)
-  if (!pos) return { latitude: null, longitude: null, address: null }
-  const latitude = pos.coords.latitude
-  const longitude = pos.coords.longitude
-  const address = await reverseGeocodeRequired(latitude, longitude)
-  return { latitude, longitude, address }
+  const pos = await readDeviceCoordinates()
+  if (!pos.ok) return { latitude: null, longitude: null, address: null }
+  const address = await reverseGeocodeRequired(pos.latitude, pos.longitude)
+  return { latitude: pos.latitude, longitude: pos.longitude, address }
 }
 
 export type PunchLocFields = {
