@@ -88,12 +88,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           return
         }
 
-        // JWT but no employee row — resume link company
-        router.replace(
-          `${AUTH_ROUTES.linkCompany}?email=${encodeURIComponent(user.email ?? '')}&firstName=&lastName=`,
-        )
-        setLoading(false)
-        return
+        // A company-code sign-in is stored separately. Use it before
+        // sending an unlinked email session off to link a company.
+        const codeSession = getCodeSession()
+        if (!(codeSession?.employee?.id && codeSession.company?.id)) {
+          router.replace(
+            `${AUTH_ROUTES.linkCompany}?email=${encodeURIComponent(user.email ?? '')}&firstName=&lastName=`,
+          )
+          setLoading(false)
+          return
+        }
       }
 
       // ── Path 2: Code session (code-authenticated employees) ──
