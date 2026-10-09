@@ -22,6 +22,7 @@ import {
   DataCardRow,
 } from '@/components/ui/ResponsiveDataView'
 import { cn, formatDate, formatCurrency } from '@/lib/utils'
+import { Toggle } from '@/components/Toggle'
 import type { Job, JobStatus } from '@/types/database'
 
 type Scope = 'all' | 'mine'
@@ -317,18 +318,7 @@ export default function JobsPage() {
           <div className="bg-surface border border-divider rounded-sm p-3 space-y-3">
             <div className="flex items-center justify-between">
               <p className="text-[13px] font-medium text-text-primary">Date filter</p>
-              <button
-                onClick={() => setDateFilter(v => !v)}
-                className={cn(
-                  'relative w-[44px] h-[26px] rounded-pill transition-colors',
-                  dateFilter ? 'bg-primary' : 'bg-border'
-                )}
-              >
-                <span className={cn(
-                  'absolute top-[3px] w-5 h-5 bg-white rounded-full shadow transition-transform',
-                  dateFilter ? 'translate-x-[21px]' : 'translate-x-[3px]'
-                )} />
-              </button>
+              <Toggle checked={dateFilter} onChange={setDateFilter} />
             </div>
             {dateFilter && (
               <div className="flex items-center gap-2">

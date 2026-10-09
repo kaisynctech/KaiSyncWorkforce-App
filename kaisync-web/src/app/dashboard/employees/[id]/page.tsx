@@ -397,7 +397,7 @@ export default function EmployeeDetailPage() {
       </div>
 
       {/* Tab content */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-4 pr-5 space-y-4 [scrollbar-gutter:stable]">
         {tab === 'overview' && (
           <>
             <div className="bg-surface border border-divider rounded-lg px-4 py-4 flex items-start gap-[14px]">
