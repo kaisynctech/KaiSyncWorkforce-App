@@ -9,6 +9,7 @@ import { cn, formatDate, formatDateTime, formatCurrency, getInitials } from '@/l
 import { labelEmploymentType, labelWorkerType } from '@/lib/employee-taxonomy'
 import { getCompanyAnnualDays, loadLeaveSettings, readCustomLeaveTypes, type LeaveSettingsMap } from '@/lib/leave-settings'
 import { LEAVE_TYPES } from '@/lib/leave-policy'
+import { listExtraBranchIds } from '@/lib/employee-branches'
 import { getEmployee } from '@/lib/employees'
 import { assessPayrollReadiness } from '@/lib/payroll-readiness'
 import type { Employee, LeaveRequest, TimePunch, AccessLevel } from '@/types/database'
@@ -162,19 +163,26 @@ export default function EmployeeDetailPage() {
     setMyAccessLevel(((me as { access_level: AccessLevel } | null)?.access_level) ?? 'employee')
 
     if (employeeRow) {
-      const [branchRes, managerRes] = await Promise.all([
+      const [branchRes, managerRes, extraRes] = await Promise.all([
         employeeRow.branch_id
           ? supabase.from('branches').select('name').eq('id', employeeRow.branch_id).maybeSingle()
           : Promise.resolve({ data: null }),
         employeeRow.manager_id
           ? supabase.from('employees').select('name, surname').eq('id', employeeRow.manager_id).maybeSingle()
           : Promise.resolve({ data: null }),
+        listExtraBranchIds(supabase, member.companyId, employeeRow.id),
       ])
-      setBranchName(
-        (branchRes.data as { name: string } | null)?.name
-          ?? employeeRow.branch
-          ?? null
-      )
+      const homeName = (branchRes.data as { name: string } | null)?.name ?? employeeRow.branch ?? null
+      let extraNames: string[] = []
+      if (extraRes.ok && extraRes.ids.length > 0) {
+        const { data: extraBranches } = await supabase
+          .from('branches')
+          .select('id, name')
+          .in('id', extraRes.ids)
+        extraNames = ((extraBranches ?? []) as { name: string }[]).map(b => b.name).filter(Boolean)
+      }
+      const names = [homeName, ...extraNames].filter((name): name is string => Boolean(name))
+      setBranchName(names.length > 0 ? [...new Set(names)].join(', ') : null)
       const mgr = managerRes.data as { name: string; surname: string } | null
       setManagerName(mgr ? `${mgr.name} ${mgr.surname}`.trim() : null)
     } else {
