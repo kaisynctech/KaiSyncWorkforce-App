@@ -58,6 +58,15 @@ export function enforceBranchSignInRadius(settings: DispatchSettings): boolean {
   return getDispatchFlag(settings, 'enforce_branch_sign_in_radius', false)
 }
 
+/** Company enforcement is the master switch. A person can be opted out and still record a location. */
+export function employeeMustUseBranchGeofence(
+  settings: DispatchSettings,
+  enforceForEmployee: boolean | null | undefined,
+): boolean {
+  if (!enforceBranchSignInRadius(settings)) return false
+  return enforceForEmployee !== false
+}
+
 export function branchSignInRadiusMeters(settings: DispatchSettings): number {
   const raw = getDispatchNumber(settings, 'branch_sign_in_radius_m', 100)
   // Honour small explicit radii (50–150m). Legacy configs still bucket to 200/500/1000.

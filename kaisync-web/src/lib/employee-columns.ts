@@ -68,6 +68,7 @@ export const EMPLOYEE_SAFE_SELECT = [
   'locked_at',
   'locked_reason',
   'branch_id',
+  'enforce_branch_geofence',
   'manager_id',
   'pay_by_hour',
   'account_type',

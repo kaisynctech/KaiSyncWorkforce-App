@@ -16,6 +16,8 @@ export type EmployeeOverviewBundle = {
     surname: string
     branch_id: string | null
     branch: string | null
+    enforce_branch_geofence?: boolean
+
     registration_status: string
     is_active: boolean
     access_level: string
