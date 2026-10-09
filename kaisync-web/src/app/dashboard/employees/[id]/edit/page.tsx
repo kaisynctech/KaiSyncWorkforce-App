@@ -18,6 +18,7 @@ import {
   normalizeEmploymentType,
 } from '@/lib/employee-taxonomy'
 import { sendEmployeeInvite } from '@/lib/employee-invite'
+import { listExtraBranchIds, saveExtraBranches } from '@/lib/employee-branches'
 import {
   deleteEmployee,
   getEmployee,
@@ -58,6 +59,7 @@ export default function EditEmployeePage() {
   const [position, setPosition] = useState('')
   const [department, setDepartment] = useState('')
   const [branchId, setBranchId] = useState('')
+  const [extraBranchIds, setExtraBranchIds] = useState<string[]>([])
   const [templateId, setTemplateId] = useState('')
   const [employmentType, setEmploymentType] = useState('permanent')
   const [accessLevel, setAccessLevel] = useState('employee')
@@ -141,6 +143,8 @@ export default function EditEmployeePage() {
     setPosition(emp.position ?? '')
     setDepartment(emp.department ?? '')
     setBranchId(emp.branch_id ?? '')
+    const extra = await listExtraBranchIds(supabase, member.companyId, id)
+    if (extra.ok) setExtraBranchIds(extra.ids.filter(branch => branch !== emp.branch_id))
     setTemplateId(emp.shift_template_id ?? '')
     setEmploymentType(normalizeEmploymentType(emp.employment_type))
     setAccessLevel(normalizeAccessLevel(emp.access_level))
@@ -238,6 +242,19 @@ export default function EditEmployeePage() {
     if (!updated.ok) {
       setSaving(false)
       setError(updated.message)
+      return
+    }
+
+    const extraSaved = await saveExtraBranches(
+      supabase,
+      companyId,
+      id,
+      branchId || null,
+      extraBranchIds,
+    )
+    if (!extraSaved.ok) {
+      setSaving(false)
+      setError(`Profile saved. Other branches were not updated: ${extraSaved.message}`)
       return
     }
 
@@ -445,6 +462,28 @@ export default function EditEmployeePage() {
             <option value="">None</option>
             {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
           </FormSelect>
+          {branches.some(b => b.id !== branchId) && (
+            <FormField label="Also works at" hint="Clock-in is allowed at the home branch and every branch ticked here.">
+              <div className="flex flex-col gap-2">
+                {branches.filter(b => b.id !== branchId).map(b => (
+                  <label key={b.id} className="flex items-center gap-2 text-[13px] text-text-primary">
+                    <input
+                      type="checkbox"
+                      checked={extraBranchIds.includes(b.id)}
+                      onChange={e => {
+                        setExtraBranchIds(current =>
+                          e.target.checked
+                            ? [...current, b.id]
+                            : current.filter(branch => branch !== b.id),
+                        )
+                      }}
+                    />
+                    {b.name}
+                  </label>
+                ))}
+              </div>
+            </FormField>
+          )}
           <FormSelect label="Time Template" value={templateId} onChange={e => setTemplateId(e.target.value)}>
             <option value="">None</option>
             {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}

@@ -98,18 +98,31 @@ function findBranchByName(branches: BranchRow[], branchName: string): BranchRow 
   )
 }
 
-/** Prefer branch_id; fall back to legacy branch name text. */
-function resolveBranch(
+function branchCandidates(
   branches: BranchRow[],
-  branchId: string | null | undefined,
-  branchName: string | null | undefined,
-): BranchRow | undefined {
-  if (branchId?.trim()) {
-    const byId = findBranchById(branches, branchId.trim())
-    if (byId) return byId
-  }
-  if (branchName?.trim()) return findBranchByName(branches, branchName)
-  return undefined
+  branchIds: string[] | null | undefined,
+  employeeBranchId: string | null | undefined,
+  employeeBranch: string | null | undefined,
+): BranchRow[] {
+  const fromList = [...new Set((branchIds ?? []).map(id => id.trim()).filter(Boolean))]
+  const ids = fromList.length
+    ? fromList
+    : (employeeBranchId?.trim() ? [employeeBranchId.trim()] : [])
+  const found = ids
+    .map(id => findBranchById(branches, id))
+    .filter((branch): branch is BranchRow => Boolean(branch))
+  if (found.length > 0) return found
+  const byName = employeeBranch?.trim() ? findBranchByName(branches, employeeBranch) : undefined
+  return byName ? [byName] : []
+}
+
+function radiusForBranch(
+  settings: DispatchSettings | undefined,
+  branch: BranchRow,
+  fallbackRadius: number,
+): number {
+  if (settings) return resolveBranchSignInRadiusMeters(settings, branch)
+  return fallbackRadius
 }
 
 export function validateBranchClockIn(params: {
@@ -117,23 +130,25 @@ export function validateBranchClockIn(params: {
   employeeBranch: string | null | undefined
   /** Canonical FK — preferred over employeeBranch name */
   employeeBranchId?: string | null
+  /** Home branch plus any extra branches. Clock-in succeeds at any of them. */
+  branchIds?: string[] | null
+  settings?: DispatchSettings
   branches: BranchRow[]
   radiusMeters: number
   latitude: number | null
   longitude: number | null
 }): BranchGeofenceResult {
-  const { enforce, employeeBranch, employeeBranchId, branches, radiusMeters, latitude, longitude } = params
+  const { enforce, employeeBranch, employeeBranchId, branchIds, settings, branches, radiusMeters, latitude, longitude } = params
   if (!enforce) return { allowed: true, message: '' }
 
-  const branch = resolveBranch(branches, employeeBranchId, employeeBranch)
-  const branchName = branch?.name?.trim() || employeeBranch?.trim() || ''
-  if (!branch && !branchName) return { allowed: true, message: '' }
-
-  if (!branch || branch.latitude == null || branch.longitude == null) {
+  const assigned = branchCandidates(branches, branchIds, employeeBranchId, employeeBranch)
+  if (assigned.length === 0) {
+    const branchName = employeeBranch?.trim() || ''
+    if (!branchName) return { allowed: true, message: '' }
     return {
       allowed: false,
-      message: `Branch "${branchName || 'assigned'}" does not have a sign-in location yet. Ask HR to set the branch address in Settings.`,
-      branchName: branchName || undefined,
+      message: `Branch "${branchName}" does not have a sign-in location yet. Ask HR to set the branch address in Settings.`,
+      branchName,
     }
   }
 
@@ -141,22 +156,46 @@ export function validateBranchClockIn(params: {
     return {
       allowed: false,
       message: 'Location is required for branch sign-in. Enable location services and try again.',
-      branchName,
+      branchName: assigned.map(b => b.name).filter(Boolean).join(', ') || undefined,
     }
   }
 
-  const distanceM = haversineMeters(latitude, longitude, branch.latitude, branch.longitude)
-  if (distanceM > radiusMeters) {
-    return {
+  let closest: BranchGeofenceResult | null = null
+  for (const branch of assigned) {
+    const branchName = branch.name?.trim() || 'assigned'
+    if (branch.latitude == null || branch.longitude == null) {
+      const missing: BranchGeofenceResult = {
+        allowed: false,
+        message: `Branch "${branchName}" does not have a sign-in location yet. Ask HR to set the branch address in Settings.`,
+        branchName,
+      }
+      if (!closest) closest = missing
+      continue
+    }
+    const allowedRadius = radiusForBranch(settings, branch, radiusMeters)
+    const distanceM = haversineMeters(latitude, longitude, branch.latitude, branch.longitude)
+    if (distanceM <= allowedRadius) {
+      return {
+        allowed: true,
+        message: '',
+        distanceMeters: distanceM,
+        allowedRadiusMeters: allowedRadius,
+        branchName,
+      }
+    }
+    const outside: BranchGeofenceResult = {
       allowed: false,
-      message: `You are ${distanceM.toFixed(0)}m away from your branch sign-in location (${branchName}). Move within ${radiusMeters.toFixed(0)}m to clock in.`,
+      message: `You are ${distanceM.toFixed(0)}m away from your branch sign-in location (${branchName}). Move within ${allowedRadius.toFixed(0)}m to clock in.`,
       distanceMeters: distanceM,
-      allowedRadiusMeters: radiusMeters,
+      allowedRadiusMeters: allowedRadius,
       branchName,
+    }
+    if (!closest || (closest.distanceMeters == null) || distanceM < closest.distanceMeters) {
+      closest = outside
     }
   }
 
-  return { allowed: true, message: '', distanceMeters: distanceM, allowedRadiusMeters: radiusMeters, branchName }
+  return closest ?? { allowed: false, message: 'Cannot clock in at your assigned branches.' }
 }
 
 export function getBranchGeofenceStatus(params: {
@@ -164,52 +203,38 @@ export function getBranchGeofenceStatus(params: {
   employeeBranch: string | null | undefined
   /** Canonical FK — preferred over employeeBranch name */
   employeeBranchId?: string | null
+  /** Home branch plus any extra branches. */
+  branchIds?: string[] | null
+  settings?: DispatchSettings
   branches: BranchRow[]
   radiusMeters: number
   latitude: number | null
   longitude: number | null
 }): BranchGeofenceStatus {
-  const { enforce, employeeBranch, employeeBranchId, branches, radiusMeters, latitude, longitude } = params
-  if (!enforce) {
+  const result = validateBranchClockIn(params)
+  if (!params.enforce) {
     return { enforcementActive: false, isWithinRadius: true, displayMessage: '' }
   }
-
-  const branch = resolveBranch(branches, employeeBranchId, employeeBranch)
-  const branchName = branch?.name?.trim() || employeeBranch?.trim() || ''
-  if (!branch && !branchName) {
+  const assigned = branchCandidates(params.branches, params.branchIds, params.employeeBranchId, params.employeeBranch)
+  if (assigned.length === 0 && !params.employeeBranch?.trim()) {
     return { enforcementActive: false, isWithinRadius: true, displayMessage: '' }
   }
-
-  if (!branch || branch.latitude == null || branch.longitude == null) {
+  if (result.allowed && result.branchName && result.distanceMeters != null && result.allowedRadiusMeters != null) {
     return {
       enforcementActive: true,
-      isWithinRadius: false,
-      allowedRadiusMeters: radiusMeters,
-      branchName: branchName || undefined,
-      displayMessage: `Branch "${branchName || 'assigned'}" needs a location in HR Settings before you can clock in.`,
+      isWithinRadius: true,
+      distanceMeters: result.distanceMeters,
+      allowedRadiusMeters: result.allowedRadiusMeters,
+      branchName: result.branchName,
+      displayMessage: `Within ${result.branchName} sign-in area (${result.distanceMeters.toFixed(0)}m / ${result.allowedRadiusMeters.toFixed(0)}m)`,
     }
   }
-
-  if (latitude == null || longitude == null) {
-    return {
-      enforcementActive: true,
-      isWithinRadius: false,
-      allowedRadiusMeters: radiusMeters,
-      branchName,
-      displayMessage: 'Turn on location to verify you are at your branch.',
-    }
-  }
-
-  const distanceM = haversineMeters(latitude, longitude, branch.latitude, branch.longitude)
-  const within = distanceM <= radiusMeters
   return {
     enforcementActive: true,
-    isWithinRadius: within,
-    distanceMeters: distanceM,
-    allowedRadiusMeters: radiusMeters,
-    branchName,
-    displayMessage: within
-      ? `Within ${branchName} sign-in area (${distanceM.toFixed(0)}m / ${radiusMeters.toFixed(0)}m)`
-      : `Outside ${branchName} sign-in area (${distanceM.toFixed(0)}m away — must be within ${radiusMeters.toFixed(0)}m)`,
+    isWithinRadius: false,
+    distanceMeters: result.distanceMeters,
+    allowedRadiusMeters: result.allowedRadiusMeters,
+    branchName: result.branchName,
+    displayMessage: result.message || 'Outside your branch sign-in area.',
   }
 }

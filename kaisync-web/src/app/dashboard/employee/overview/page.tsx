@@ -18,10 +18,11 @@ import {
 import { parseOverviewBundle } from '@/lib/employee-overview-bundle'
 import { countUnreadAppNotifications, mapAppNotification, parseNotificationsRpcJson } from '@/lib/notification-feed'
 import { ALL_MODULES_ENABLED, type EmployeeModuleFlags } from '@/lib/company-modules'
+import { listAssignedBranchIds } from '@/lib/employee-branches'
 import {
   getBranchGeofenceStatus,
   validateBranchClockIn,
-  resolveBranchSignInRadiusMeters,
+  branchSignInRadiusMeters,
   enforceBranchSignInRadius,
   haversineMeters,
   type BranchRow,
@@ -238,6 +239,7 @@ export default function EmployeeOverviewPage() {
   const tickerRef       = useRef<ReturnType<typeof setInterval> | null>(null)
   const employeeBranchRef = useRef<string | null>(null)
   const employeeBranchIdRef = useRef<string | null>(null)
+  const employeeBranchIdsRef = useRef<string[]>([])
   const dispatchSettingsRef = useRef<CompanyWorkspace['dispatch_settings']>({})
   const branchesRef = useRef<BranchRow[]>([])
   const realtimeCleanupRef = useRef<(() => void) | null>(null)
@@ -349,7 +351,7 @@ export default function EmployeeOverviewPage() {
     const emp = await loadEmployeeWorkspace(supabase, empId)
     if (!emp) return
     employeeBranchRef.current = emp.branch
-    employeeBranchIdRef.current = emp.branch_id
+    rememberBranches(emp.branch_id, employeeBranchIdsRef.current)
     const pending = isPendingMembership(emp)
     const wasPending = isPendingRef.current
     isPendingRef.current = pending
@@ -396,21 +398,21 @@ export default function EmployeeOverviewPage() {
     }
   }
 
-  function refreshBranchStatus(
-    lat: number | null,
-    lng: number | null,
-    branchName?: string | null,
-    branchId?: string | null,
-  ) {
-    const branch = branchesRef.current.find(
-      b => (branchId && b.id === branchId) || (branchName && b.name === branchName),
-    )
+  function rememberBranches(homeId: string | null | undefined, assignedIds: string[]) {
+    employeeBranchIdRef.current = homeId ?? null
+    const ids = [...new Set([...(homeId ? [homeId] : []), ...assignedIds])]
+    employeeBranchIdsRef.current = ids
+  }
+
+  function refreshBranchStatus(lat: number | null, lng: number | null) {
     const status = getBranchGeofenceStatus({
       enforce: enforceBranchSignInRadius(dispatchSettingsRef.current),
-      employeeBranch: branchName ?? employeeBranchRef.current,
-      employeeBranchId: branchId ?? employeeBranchIdRef.current,
+      employeeBranch: employeeBranchRef.current,
+      employeeBranchId: employeeBranchIdRef.current,
+      branchIds: employeeBranchIdsRef.current,
+      settings: dispatchSettingsRef.current,
       branches: branchesRef.current,
-      radiusMeters: resolveBranchSignInRadiusMeters(dispatchSettingsRef.current, branch),
+      radiusMeters: branchSignInRadiusMeters(dispatchSettingsRef.current),
       latitude: lat,
       longitude: lng,
     })
@@ -452,7 +454,8 @@ export default function EmployeeOverviewPage() {
       const flags = moduleFlagsForCompany(company)
       setModules(flags)
       employeeBranchRef.current = emp?.branch ?? null
-      employeeBranchIdRef.current = emp?.branch_id ?? null
+      const assignedIds = await listAssignedBranchIds(supabase, member.companyId, member.employeeId, tok)
+      rememberBranches(emp?.branch_id, assignedIds)
       dispatchSettingsRef.current = company?.dispatch_settings ?? {}
 
       const pending = isPendingMembership(emp)
@@ -464,12 +467,12 @@ export default function EmployeeOverviewPage() {
           pos => {
             setLiveLat(pos.coords.latitude)
             setLiveLng(pos.coords.longitude)
-            refreshBranchStatus(pos.coords.latitude, pos.coords.longitude, emp?.branch, emp?.branch_id)
+            refreshBranchStatus(pos.coords.latitude, pos.coords.longitude)
           },
-          () => refreshBranchStatus(null, null, emp?.branch, emp?.branch_id),
+          () => refreshBranchStatus(null, null),
         )
       } else {
-        refreshBranchStatus(null, null, emp?.branch, emp?.branch_id)
+        refreshBranchStatus(null, null)
       }
 
       if (!options?.soft) {
@@ -524,7 +527,9 @@ export default function EmployeeOverviewPage() {
       }
       if (bundle.employee) {
         employeeBranchRef.current = bundle.employee.branch ?? null
-        employeeBranchIdRef.current = bundle.employee.branch_id ?? null
+        const assignedIds = await listAssignedBranchIds(supabase, member.companyId, member.employeeId, tok)
+        rememberBranches(bundle.employee.branch_id, assignedIds)
+        refreshBranchStatus(liveLat, liveLng)
       }
 
       branchesRef.current = (bundle.branches as BranchRow[]) ?? []
@@ -722,17 +727,14 @@ export default function EmployeeOverviewPage() {
 
     // Branch geofence hard-block on clock-IN
     if (!isClockedIn) {
-      const assignedBranch = branchesRef.current.find(
-        b =>
-          (employeeBranchIdRef.current && b.id === employeeBranchIdRef.current)
-          || (employeeBranchRef.current && b.name === employeeBranchRef.current),
-      )
       const branchResult = validateBranchClockIn({
         enforce: enforceBranchSignInRadius(dispatchSettingsRef.current),
         employeeBranch: employeeBranchRef.current,
         employeeBranchId: employeeBranchIdRef.current,
+        branchIds: employeeBranchIdsRef.current,
+        settings: dispatchSettingsRef.current,
         branches: branchesRef.current,
-        radiusMeters: resolveBranchSignInRadiusMeters(dispatchSettingsRef.current, assignedBranch),
+        radiusMeters: branchSignInRadiusMeters(dispatchSettingsRef.current),
         latitude: geoLat ?? liveLat,
         longitude: geoLng ?? liveLng,
       })
