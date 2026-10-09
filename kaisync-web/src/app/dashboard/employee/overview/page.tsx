@@ -28,7 +28,13 @@ import {
   type BranchRow,
   type BranchGeofenceStatus,
 } from '@/lib/branch-geofence'
-import { reverseGeocodeRequired, looksLikeCoordinates } from '@/lib/geo-location'
+import {
+  reverseGeocodeRequired,
+  looksLikeCoordinates,
+  requestDeviceCoordinatesFromGesture,
+  deviceLocationFailureMessage,
+  type DeviceLocationResult,
+} from '@/lib/geo-location'
 import { PwaInstallButton } from '@/components/PwaInstallButton'
 import { localISODate } from '@/lib/utils'
 
@@ -201,6 +207,8 @@ export default function EmployeeOverviewPage() {
   const [clockLoading,   setClockLoading]   = useState(false)
   const clockInFlightRef = useRef(false)
   const [clockError,     setClockError]     = useState<string | null>(null)
+  const [locationAsk, setLocationAsk] = useState(false)
+  const [locationSearching, setLocationSearching] = useState(false)
 
   // Branch geofence
   const [branchStatus, setBranchStatus] = useState<BranchGeofenceStatus | null>(null)
@@ -242,6 +250,8 @@ export default function EmployeeOverviewPage() {
   const employeeBranchIdsRef = useRef<string[]>([])
   const dispatchSettingsRef = useRef<CompanyWorkspace['dispatch_settings']>({})
   const branchesRef = useRef<BranchRow[]>([])
+  const coordsRef = useRef<{ latitude: number; longitude: number; at: number } | null>(null)
+  const locationReadRef = useRef<Promise<DeviceLocationResult> | null>(null)
   const realtimeCleanupRef = useRef<(() => void) | null>(null)
   const isPendingRef = useRef(false)
 
@@ -419,6 +429,74 @@ export default function EmployeeOverviewPage() {
     setBranchStatus(status)
   }
 
+  function applyDeviceCoordinates(latitude: number, longitude: number) {
+    coordsRef.current = { latitude, longitude, at: Date.now() }
+    setLiveLat(latitude)
+    setLiveLng(longitude)
+    setGeoLat(latitude)
+    setGeoLng(longitude)
+    refreshBranchStatus(latitude, longitude)
+  }
+
+  function noteLocationFailure(result: DeviceLocationResult) {
+    if (result.ok) return
+    if (coordsRef.current) {
+      refreshBranchStatus(coordsRef.current.latitude, coordsRef.current.longitude)
+      return
+    }
+    if (!enforceBranchSignInRadius(dispatchSettingsRef.current)) return
+    setBranchStatus({
+      enforcementActive: true,
+      isWithinRadius: false,
+      displayMessage: deviceLocationFailureMessage(result.reason),
+    })
+  }
+
+  /** Start from a tap. A second call shares the in-flight read so one failure cannot wipe a fix. */
+  function beginLocationRead() {
+    const cached = coordsRef.current
+    if (cached && Date.now() - cached.at < 20_000) {
+      return Promise.resolve({
+        ok: true as const,
+        latitude: cached.latitude,
+        longitude: cached.longitude,
+      })
+    }
+    if (locationReadRef.current) return locationReadRef.current
+    let pending!: Promise<DeviceLocationResult>
+    pending = requestDeviceCoordinatesFromGesture().then(result => {
+      if (result.ok) applyDeviceCoordinates(result.latitude, result.longitude)
+      else noteLocationFailure(result)
+      return result
+    }).finally(() => {
+      if (locationReadRef.current === pending) locationReadRef.current = null
+    })
+    locationReadRef.current = pending
+    return pending
+  }
+
+  function allowLocation() {
+    const read = beginLocationRead()
+    setLocationSearching(true)
+    setLocationAsk(true)
+    setClockError(null)
+    void read.then(async result => {
+      setLocationSearching(false)
+      if (result.ok) {
+        setLocationAsk(false)
+        try {
+          const name = await reverseGeocodeRequired(result.latitude, result.longitude, { maxAttempts: 1 })
+          setGeoAddress(name)
+        } catch {
+          // address stays null; punch saves GPS and backfills place name after insert
+        }
+        return
+      }
+      setLocationAsk(true)
+      setClockError(deviceLocationFailureMessage(result.reason))
+    })
+  }
+
   // ── Init ─────────────────────────────────────────────────────────────────
   async function init(options?: { soft?: boolean }) {
     if (!options?.soft) setLoading(true)
@@ -461,19 +539,6 @@ export default function EmployeeOverviewPage() {
       const pending = isPendingMembership(emp)
       isPendingRef.current = pending
       setIsPending(pending)
-
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          pos => {
-            setLiveLat(pos.coords.latitude)
-            setLiveLng(pos.coords.longitude)
-            refreshBranchStatus(pos.coords.latitude, pos.coords.longitude)
-          },
-          () => refreshBranchStatus(null, null),
-        )
-      } else {
-        refreshBranchStatus(null, null)
-      }
 
       if (!options?.soft) {
         subscribeRealtime(member.companyId, member.employeeId)
@@ -529,10 +594,12 @@ export default function EmployeeOverviewPage() {
         employeeBranchRef.current = bundle.employee.branch ?? null
         const assignedIds = await listAssignedBranchIds(supabase, member.companyId, member.employeeId, tok)
         rememberBranches(bundle.employee.branch_id, assignedIds)
-        refreshBranchStatus(liveLat, liveLng)
       }
 
       branchesRef.current = (bundle.branches as BranchRow[]) ?? []
+      if (coordsRef.current) {
+        refreshBranchStatus(coordsRef.current.latitude, coordsRef.current.longitude)
+      }
 
       applyLastPunch((bundle.last_punch as LastPunch | null) ?? null, todayStr)
       setJobs(asRpcArray<Job>(bundle.jobs))
@@ -613,34 +680,31 @@ export default function EmployeeOverviewPage() {
     setClockError(null)
     setClockNote('')
     setClockJobId(null)
-    setGeoLat(null)
-    setGeoLng(null)
-    setGeoAddress(null)
+    if (!coordsRef.current) {
+      setGeoLat(null)
+      setGeoLng(null)
+      setGeoAddress(null)
+    }
     setGeofenceData(null)
+    const mustAllow = !isClockedIn
+      && enforceBranchSignInRadius(dispatchSettingsRef.current)
+      && !coordsRef.current
+    setLocationAsk(mustAllow)
+    setLocationSearching(false)
+    if (mustAllow) setBranchStatus(null)
     setShowClockModal(true)
 
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        async pos => {
-          const lat = pos.coords.latitude
-          const lng = pos.coords.longitude
-          setGeoLat(lat)
-          setGeoLng(lng)
-          setLiveLat(lat)
-          setLiveLng(lng)
-          refreshBranchStatus(lat, lng)
-          try {
-            // Single attempt for display only — clock submit must not wait on geocode.
-            const name = await reverseGeocodeRequired(lat, lng, { maxAttempts: 1 })
-            setGeoAddress(name)
-          } catch {
-            // address stays null; punch saves GPS and backfills place name after insert
-          }
-        },
-        () => {
-          refreshBranchStatus(null, null)
+    if (!mustAllow && !isClockedIn && !coordsRef.current) {
+      const read = beginLocationRead()
+      void read.then(async result => {
+        if (!result.ok) return
+        try {
+          const name = await reverseGeocodeRequired(result.latitude, result.longitude, { maxAttempts: 1 })
+          setGeoAddress(name)
+        } catch {
+          // address stays null; punch saves GPS and backfills place name after insert
         }
-      )
+      })
     }
   }
 
@@ -703,6 +767,8 @@ export default function EmployeeOverviewPage() {
   }
 
   async function submitClock() {
+    const enforcedOnOpen = !isClockedIn && enforceBranchSignInRadius(dispatchSettingsRef.current)
+    const locationRead = enforcedOnOpen && !coordsRef.current ? beginLocationRead() : null
     const empId  = empIdRef.current
     const compId = companyIdRef.current
     if (!empId || !compId) return
@@ -726,23 +792,37 @@ export default function EmployeeOverviewPage() {
     }
 
     // Branch geofence hard-block on clock-IN
+    let punchLat = coordsRef.current?.latitude ?? geoLat
+    let punchLng = coordsRef.current?.longitude ?? geoLng
     if (!isClockedIn) {
+      const enforced = enforceBranchSignInRadius(dispatchSettingsRef.current)
+      if (enforced && (punchLat == null || punchLng == null) && locationRead) {
+        const located = await locationRead
+        if (!located.ok) {
+          setClockError(deviceLocationFailureMessage(located.reason))
+          setClockLoading(false)
+          clockInFlightRef.current = false
+          return
+        }
+        punchLat = located.latitude
+        punchLng = located.longitude
+      }
       const branchResult = validateBranchClockIn({
-        enforce: enforceBranchSignInRadius(dispatchSettingsRef.current),
+        enforce: enforced,
         employeeBranch: employeeBranchRef.current,
         employeeBranchId: employeeBranchIdRef.current,
         branchIds: employeeBranchIdsRef.current,
         settings: dispatchSettingsRef.current,
         branches: branchesRef.current,
         radiusMeters: branchSignInRadiusMeters(dispatchSettingsRef.current),
-        latitude: geoLat ?? liveLat,
-        longitude: geoLng ?? liveLng,
+        latitude: punchLat,
+        longitude: punchLng,
       })
       if (!branchResult.allowed) {
         setClockError(branchResult.message || 'Cannot Clock In')
         setClockLoading(false)
         clockInFlightRef.current = false
-        refreshBranchStatus(geoLat ?? liveLat, geoLng ?? liveLng)
+        refreshBranchStatus(punchLat, punchLng)
         return
       }
     }
@@ -751,8 +831,6 @@ export default function EmployeeOverviewPage() {
     // Never store raw coordinates as address — GPS is kept; name is backfilled after save.
     let resolvedAddress =
       geoAddress && !looksLikeCoordinates(geoAddress) ? geoAddress : null
-    const punchLat = geoLat
-    const punchLng = geoLng
 
     const supabase = createClient()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1419,6 +1497,26 @@ export default function EmployeeOverviewPage() {
                 value={clockNote} onChange={e => setClockNote(e.target.value)} />
             </div>
 
+            {/* Location permission — Yes starts the phone prompt and keeps listening after Allow */}
+            {!isClockedIn && locationAsk && (
+              <div className="rounded-xl px-4 py-3 bg-primary/10 border border-primary/30 space-y-3">
+                <p className="text-[14px] font-semibold text-text-primary">Allow location for KaiSync</p>
+                <p className="text-[12px] text-text-secondary">
+                  {locationSearching
+                    ? 'Finding your location… If the phone asks, tap Allow.'
+                    : 'Tap Yes. If the phone then asks for location, tap Allow there too.'}
+                </p>
+                <button
+                  type="button"
+                  onClick={allowLocation}
+                  disabled={locationSearching}
+                  className="w-full h-11 rounded-xl bg-primary text-white text-[14px] font-bold disabled:opacity-60"
+                >
+                  {locationSearching ? 'Finding location…' : 'Yes'}
+                </button>
+              </div>
+            )}
+
             {/* Location feedback */}
             <div className="mb-3">
               {geoLat ? (
@@ -1426,16 +1524,14 @@ export default function EmployeeOverviewPage() {
                   <span className="material-icons text-[14px] text-success">location_on</span>
                   {geoAddress && !looksLikeCoordinates(geoAddress)
                     ? geoAddress
-                    : geoLat != null && geoLng != null
-                      ? 'Locating address…'
-                      : 'Getting location…'}
+                    : 'Location found'}
                 </p>
-              ) : (
+              ) : !locationAsk ? (
                 <p className="text-[12px] text-text-disabled flex items-center gap-1">
                   <span className="material-icons text-[14px]">location_searching</span>
                   Getting location…
                 </p>
-              )}
+              ) : null}
             </div>
 
             {/* Duplicate shift warning */}
@@ -1449,7 +1545,7 @@ export default function EmployeeOverviewPage() {
             )}
 
             {/* Branch geofence status in modal */}
-            {!isClockedIn && branchStatus?.enforcementActive && (
+            {!isClockedIn && !locationAsk && !locationSearching && branchStatus?.enforcementActive && (
               <div className={`rounded-lg px-3 py-2.5 mb-3 ${
                 branchStatus.isWithinRadius
                   ? 'bg-success/10 border border-success/30'
@@ -1488,7 +1584,7 @@ export default function EmployeeOverviewPage() {
                 className="flex-1 h-11 rounded-xl border border-divider text-[14px] font-semibold text-text-secondary hover:bg-surface-elevated transition-colors">
                 Cancel
               </button>
-              <button onClick={submitClock} disabled={clockLoading}
+              <button onClick={submitClock} disabled={clockLoading || (!isClockedIn && locationAsk)}
                 className={`flex-1 h-11 rounded-xl text-white text-[14px] font-bold transition-colors disabled:opacity-60 ${
                   isClockedIn ? 'bg-error hover:bg-error/90' : 'bg-primary hover:bg-primary-dark'
                 }`}>
