@@ -476,4 +476,20 @@ export async function updateEmployee(
   return { ok: true, data: undefined }
 }
 
+/** Branch fence for one person. Off still stores the clock-in location. */
+export async function setEmployeeBranchGeofence(
+  supabase: SupabaseClient,
+  companyId: string,
+  employeeId: string,
+  enforce: boolean,
+): Promise<EmployeeResult<void>> {
+  const { error } = await supabase
+    .from('employees')
+    .update({ enforce_branch_geofence: enforce })
+    .eq('id', employeeId)
+    .eq('company_id', companyId)
+  if (error) return { ok: false, message: error.message }
+  return { ok: true, data: undefined }
+}
+
 export { setEmployeeActive, deleteEmployee, loadScopedEmployeeIds }

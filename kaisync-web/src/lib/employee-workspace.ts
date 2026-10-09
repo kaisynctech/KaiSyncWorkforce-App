@@ -24,6 +24,8 @@ export type EmployeeWorkspace = {
   branch_id: string | null
   /** Legacy text mirror of branch name */
   branch: string | null
+  /** False opts this person out of branch clock-in enforcement. */
+  enforce_branch_geofence: boolean
   registration_status: string
   is_active: boolean
   access_level: string
@@ -98,7 +100,7 @@ export async function loadEmployeeWorkspace(
 ): Promise<EmployeeWorkspace | null> {
   const { data } = await supabase
     .from('employees')
-    .select('id, company_id, name, surname, branch_id, branch, registration_status, is_active, access_level')
+    .select('id, company_id, name, surname, branch_id, branch, enforce_branch_geofence, registration_status, is_active, access_level')
     .eq('id', employeeId)
     .maybeSingle()
 
@@ -110,6 +112,7 @@ export async function loadEmployeeWorkspace(
       surname: data.surname ?? '',
       branch_id: data.branch_id ?? null,
       branch: data.branch ?? null,
+      enforce_branch_geofence: data.enforce_branch_geofence !== false,
       registration_status: data.registration_status ?? 'active',
       is_active: data.is_active !== false,
       access_level: data.access_level ?? 'employee',
@@ -126,6 +129,7 @@ export async function loadEmployeeWorkspace(
       surname: cs.employee.surname,
       branch_id: null,
       branch: cs.employee.branch ?? null,
+      enforce_branch_geofence: true,
       registration_status: cs.employee.registration_status ?? 'active',
       is_active: cs.employee.is_active !== false,
       access_level: cs.employee.access_level,

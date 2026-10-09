@@ -181,8 +181,11 @@ export default function EmployeeDetailPage() {
           .in('id', extraRes.ids)
         extraNames = ((extraBranches ?? []) as { name: string }[]).map(b => b.name).filter(Boolean)
       }
-      const names = [homeName, ...extraNames].filter((name): name is string => Boolean(name))
-      setBranchName(names.length > 0 ? [...new Set(names)].join(', ') : null)
+      const labels = [
+        homeName ? `Main: ${homeName}` : null,
+        ...extraNames.map(name => `Second: ${name}`),
+      ].filter((name): name is string => Boolean(name))
+      setBranchName(labels.length > 0 ? labels.join(' · ') : null)
       const mgr = managerRes.data as { name: string; surname: string } | null
       setManagerName(mgr ? `${mgr.name} ${mgr.surname}`.trim() : null)
     } else {

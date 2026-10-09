@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { getInitials } from '@/lib/utils'
-import { listBranches, listEmployeeDirectory, listEmployeesScoped } from '@/lib/employees'
+import { listBranches, listEmployeeDirectory, listEmployeesScoped, setEmployeeBranchGeofence } from '@/lib/employees'
 import { loadScopedEmployeeIds } from '@/lib/employee-scope'
 import { normalizeAccessLevel } from '@/lib/employee-taxonomy'
 import { decideLeaveRequest, formatLeaveDecideError } from '@/lib/leave'
@@ -433,6 +433,20 @@ export default function EmployeesPage() {
   // Owner / HR / managers with leave.approve — managers see scoped queue only
   const canSeeLeave = myAccessLevel !== null &&
     ['owner', 'admin', 'hr', 'manager'].includes(normalizeAccessLevel(myAccessLevel))
+  const canSetGeofence = canSeeLeave
+
+  async function toggleGeofence(emp: Employee, event: { stopPropagation: () => void }) {
+    event.stopPropagation()
+    if (!companyId || !canSetGeofence) return
+    const next = emp.enforce_branch_geofence === false
+    setEmployees(rows => rows.map(row => row.id === emp.id ? { ...row, enforce_branch_geofence: next } : row))
+    const supabase = createClient()
+    const saved = await setEmployeeBranchGeofence(supabase, companyId, emp.id, next)
+    if (!saved.ok) {
+      setEmployees(rows => rows.map(row => row.id === emp.id ? { ...row, enforce_branch_geofence: !next } : row))
+      setError(saved.message)
+    }
+  }
 
   const TABS: { key: Tab; label: string }[] = [
     { key: 'employees', label: 'Employees' },
@@ -573,6 +587,9 @@ export default function EmployeesPage() {
             </select>
           </div>
 
+          <p className="text-[12px] text-text-secondary mb-3">
+            Geofence on means clock-in must be at their branch when branch sign-in is enforced in Settings. Off still records where they are.
+          </p>
           {/* Branch filter pills */}
           {branches.length > 0 && (
             <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1">
@@ -664,6 +681,7 @@ export default function EmployeesPage() {
                         <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Role</th>
                         <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Department</th>
                         <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Status</th>
+                        <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Geofence</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -711,6 +729,20 @@ export default function EmployeesPage() {
                                 {emp.is_active ? 'Active' : 'Inactive'}
                               </span>
                             </td>
+                            <td className="px-5 py-3">
+                              <button
+                                type="button"
+                                disabled={!canSetGeofence}
+                                onClick={event => { void toggleGeofence(emp, event) }}
+                                className={`h-7 px-3 rounded-full text-[11px] font-semibold ${
+                                  emp.enforce_branch_geofence === false
+                                    ? 'bg-surface-elevated text-text-secondary border border-divider'
+                                    : 'bg-primary/10 text-primary'
+                                } disabled:opacity-60`}
+                              >
+                                {emp.enforce_branch_geofence === false ? 'Off' : 'On'}
+                              </button>
+                            </td>
                           </tr>
                         )
                       })}
@@ -747,6 +779,21 @@ export default function EmployeesPage() {
                             label="Status"
                             value={emp.is_active ? 'Active' : 'Inactive'}
                           />
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-[12px] text-text-secondary">Geofence</span>
+                            <button
+                              type="button"
+                              disabled={!canSetGeofence}
+                              onClick={event => { void toggleGeofence(emp, event) }}
+                              className={`h-7 px-3 rounded-full text-[11px] font-semibold ${
+                                emp.enforce_branch_geofence === false
+                                  ? 'bg-surface-elevated text-text-secondary border border-divider'
+                                  : 'bg-primary/10 text-primary'
+                              } disabled:opacity-60`}
+                            >
+                              {emp.enforce_branch_geofence === false ? 'Off' : 'On'}
+                            </button>
+                          </div>
                         </DataCard>
                       )
                     })}

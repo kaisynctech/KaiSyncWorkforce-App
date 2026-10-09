@@ -46,6 +46,8 @@ export interface Employee {
   manager_user_id?: string | null
   /** Canonical branch FK → branches.id */
   branch_id: string | null
+  /** False: clock-in is not limited to a branch. The punch still stores location. */
+  enforce_branch_geofence?: boolean
   /** Dual-write mirror of branches.name */
   branch?: string | null
   shift_template_id: string | null

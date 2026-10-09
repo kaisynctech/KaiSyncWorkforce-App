@@ -59,7 +59,8 @@ export default function EditEmployeePage() {
   const [position, setPosition] = useState('')
   const [department, setDepartment] = useState('')
   const [branchId, setBranchId] = useState('')
-  const [extraBranchIds, setExtraBranchIds] = useState<string[]>([])
+  const [secondBranchOn, setSecondBranchOn] = useState(false)
+  const [secondBranchId, setSecondBranchId] = useState('')
   const [templateId, setTemplateId] = useState('')
   const [employmentType, setEmploymentType] = useState('permanent')
   const [accessLevel, setAccessLevel] = useState('employee')
@@ -144,7 +145,9 @@ export default function EditEmployeePage() {
     setDepartment(emp.department ?? '')
     setBranchId(emp.branch_id ?? '')
     const extra = await listExtraBranchIds(supabase, member.companyId, id)
-    if (extra.ok) setExtraBranchIds(extra.ids.filter(branch => branch !== emp.branch_id))
+    const extras = extra.ok ? extra.ids.filter(branch => branch !== emp.branch_id) : []
+    setSecondBranchOn(extras.length > 0)
+    setSecondBranchId(extras[0] ?? '')
     setTemplateId(emp.shift_template_id ?? '')
     setEmploymentType(normalizeEmploymentType(emp.employment_type))
     setAccessLevel(normalizeAccessLevel(emp.access_level))
@@ -250,7 +253,7 @@ export default function EditEmployeePage() {
       companyId,
       id,
       branchId || null,
-      extraBranchIds,
+      secondBranchOn && secondBranchId && secondBranchId !== branchId ? [secondBranchId] : [],
     )
     if (!extraSaved.ok) {
       setSaving(false)
@@ -458,30 +461,47 @@ export default function EditEmployeePage() {
           <FormField label="Department">
             <input type="text" value={department} onChange={e => setDepartment(e.target.value)} placeholder="e.g. Operations, Finance" className={entryClass} />
           </FormField>
-          <FormSelect label="Branch" value={branchId} onChange={e => setBranchId(e.target.value)}>
+          <FormSelect
+            label="Main branch"
+            value={branchId}
+            onChange={e => {
+              const next = e.target.value
+              setBranchId(next)
+              if (secondBranchId === next) setSecondBranchId('')
+            }}
+          >
             <option value="">None</option>
             {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
           </FormSelect>
           {branches.some(b => b.id !== branchId) && (
-            <FormField label="Also works at" hint="Clock-in is allowed at the home branch and every branch ticked here.">
-              <div className="flex flex-col gap-2">
-                {branches.filter(b => b.id !== branchId).map(b => (
-                  <label key={b.id} className="flex items-center gap-2 text-[13px] text-text-primary">
-                    <input
-                      type="checkbox"
-                      checked={extraBranchIds.includes(b.id)}
-                      onChange={e => {
-                        setExtraBranchIds(current =>
-                          e.target.checked
-                            ? [...current, b.id]
-                            : current.filter(branch => branch !== b.id),
-                        )
-                      }}
-                    />
-                    {b.name}
-                  </label>
-                ))}
-              </div>
+            <FormField label="Second branch" hint="Clock-in is allowed at the main branch and this branch.">
+              <label className="flex items-center gap-2 text-[13px] text-text-primary mb-2">
+                <input
+                  type="checkbox"
+                  checked={secondBranchOn}
+                  onChange={e => {
+                    const on = e.target.checked
+                    setSecondBranchOn(on)
+                    if (on && !secondBranchId) {
+                      const first = branches.find(b => b.id !== branchId)
+                      if (first) setSecondBranchId(first.id)
+                    }
+                  }}
+                />
+                Add a second branch
+              </label>
+              {secondBranchOn && (
+                <select
+                  value={secondBranchId}
+                  onChange={e => setSecondBranchId(e.target.value)}
+                  className={entryClass}
+                >
+                  <option value="">Choose a branch</option>
+                  {branches.filter(b => b.id !== branchId).map(b => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </select>
+              )}
             </FormField>
           )}
           <FormSelect label="Time Template" value={templateId} onChange={e => setTemplateId(e.target.value)}>

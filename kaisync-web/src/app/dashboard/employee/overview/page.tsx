@@ -23,7 +23,7 @@ import {
   getBranchGeofenceStatus,
   validateBranchClockIn,
   branchSignInRadiusMeters,
-  enforceBranchSignInRadius,
+  employeeMustUseBranchGeofence,
   haversineMeters,
   type BranchRow,
   type BranchGeofenceStatus,
@@ -250,6 +250,7 @@ export default function EmployeeOverviewPage() {
   const employeeBranchIdsRef = useRef<string[]>([])
   const dispatchSettingsRef = useRef<CompanyWorkspace['dispatch_settings']>({})
   const branchesRef = useRef<BranchRow[]>([])
+  const enforceGeofenceRef = useRef(true)
   const coordsRef = useRef<{ latitude: number; longitude: number; at: number } | null>(null)
   const locationReadRef = useRef<Promise<DeviceLocationResult> | null>(null)
   const realtimeCleanupRef = useRef<(() => void) | null>(null)
@@ -361,6 +362,7 @@ export default function EmployeeOverviewPage() {
     const emp = await loadEmployeeWorkspace(supabase, empId)
     if (!emp) return
     employeeBranchRef.current = emp.branch
+    enforceGeofenceRef.current = emp.enforce_branch_geofence !== false
     rememberBranches(emp.branch_id, employeeBranchIdsRef.current)
     const pending = isPendingMembership(emp)
     const wasPending = isPendingRef.current
@@ -416,7 +418,7 @@ export default function EmployeeOverviewPage() {
 
   function refreshBranchStatus(lat: number | null, lng: number | null) {
     const status = getBranchGeofenceStatus({
-      enforce: enforceBranchSignInRadius(dispatchSettingsRef.current),
+      enforce: employeeMustUseBranchGeofence(dispatchSettingsRef.current, enforceGeofenceRef.current),
       employeeBranch: employeeBranchRef.current,
       employeeBranchId: employeeBranchIdRef.current,
       branchIds: employeeBranchIdsRef.current,
@@ -444,7 +446,7 @@ export default function EmployeeOverviewPage() {
       refreshBranchStatus(coordsRef.current.latitude, coordsRef.current.longitude)
       return
     }
-    if (!enforceBranchSignInRadius(dispatchSettingsRef.current)) return
+    if (!employeeMustUseBranchGeofence(dispatchSettingsRef.current, enforceGeofenceRef.current)) return
     setBranchStatus({
       enforcementActive: true,
       isWithinRadius: false,
@@ -532,6 +534,7 @@ export default function EmployeeOverviewPage() {
       const flags = moduleFlagsForCompany(company)
       setModules(flags)
       employeeBranchRef.current = emp?.branch ?? null
+      enforceGeofenceRef.current = emp?.enforce_branch_geofence !== false
       const assignedIds = await listAssignedBranchIds(supabase, member.companyId, member.employeeId, tok)
       rememberBranches(emp?.branch_id, assignedIds)
       dispatchSettingsRef.current = company?.dispatch_settings ?? {}
@@ -593,6 +596,7 @@ export default function EmployeeOverviewPage() {
       if (bundle.employee) {
         employeeBranchRef.current = bundle.employee.branch ?? null
         const assignedIds = await listAssignedBranchIds(supabase, member.companyId, member.employeeId, tok)
+        enforceGeofenceRef.current = bundle.employee.enforce_branch_geofence !== false
         rememberBranches(bundle.employee.branch_id, assignedIds)
       }
 
@@ -687,7 +691,7 @@ export default function EmployeeOverviewPage() {
     }
     setGeofenceData(null)
     const mustAllow = !isClockedIn
-      && enforceBranchSignInRadius(dispatchSettingsRef.current)
+      && employeeMustUseBranchGeofence(dispatchSettingsRef.current, enforceGeofenceRef.current)
       && !coordsRef.current
     setLocationAsk(mustAllow)
     setLocationSearching(false)
@@ -767,8 +771,8 @@ export default function EmployeeOverviewPage() {
   }
 
   async function submitClock() {
-    const enforcedOnOpen = !isClockedIn && enforceBranchSignInRadius(dispatchSettingsRef.current)
-    const locationRead = enforcedOnOpen && !coordsRef.current ? beginLocationRead() : null
+    const enforcedOnOpen = !isClockedIn && employeeMustUseBranchGeofence(dispatchSettingsRef.current, enforceGeofenceRef.current)
+    const locationRead = !isClockedIn && !coordsRef.current ? beginLocationRead() : null
     const empId  = empIdRef.current
     const compId = companyIdRef.current
     if (!empId || !compId) return
@@ -795,17 +799,18 @@ export default function EmployeeOverviewPage() {
     let punchLat = coordsRef.current?.latitude ?? geoLat
     let punchLng = coordsRef.current?.longitude ?? geoLng
     if (!isClockedIn) {
-      const enforced = enforceBranchSignInRadius(dispatchSettingsRef.current)
-      if (enforced && (punchLat == null || punchLng == null) && locationRead) {
+      const enforced = employeeMustUseBranchGeofence(dispatchSettingsRef.current, enforceGeofenceRef.current)
+      if ((punchLat == null || punchLng == null) && locationRead) {
         const located = await locationRead
-        if (!located.ok) {
+        if (located.ok) {
+          punchLat = located.latitude
+          punchLng = located.longitude
+        } else if (enforced) {
           setClockError(deviceLocationFailureMessage(located.reason))
           setClockLoading(false)
           clockInFlightRef.current = false
           return
         }
-        punchLat = located.latitude
-        punchLng = located.longitude
       }
       const branchResult = validateBranchClockIn({
         enforce: enforced,
