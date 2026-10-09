@@ -371,8 +371,8 @@ export default function EditEmployeePage({
   return (
     <div className={embedded ? 'space-y-4' : 'flex flex-col h-full overflow-hidden'}>
       {/* Sticky header */}
-      <div className={embedded ? '' : 'bg-surface border-b border-divider shrink-0'}>
-        <div className="flex items-center justify-between px-4 pt-4 pb-[10px] gap-3">
+      <div className={embedded ? 'space-y-3' : 'bg-surface border-b border-divider shrink-0 px-4 pt-4 pb-[14px] space-y-3'}>
+        <div className="flex items-center justify-between gap-4 min-w-0">
           <div className="flex items-center gap-3 min-w-0">
             {!embedded && (
               <Link href={`/dashboard/employees/${id}`} className="text-text-secondary hover:text-text-primary transition-colors shrink-0">
@@ -384,23 +384,20 @@ export default function EditEmployeePage({
               <p className="text-[12px] text-text-secondary">Editing employee record</p>
             </div>
           </div>
-          <div className={cn(
-            'flex items-center gap-2 px-[10px] py-[6px] rounded-[10px] shrink-0',
-            isActive ? 'bg-success-dark' : 'bg-error-dark'
-          )}>
-            <span className={cn('text-[12px] font-semibold', isActive ? 'text-[#166534]' : 'text-[#991B1B]')}>
+          <div className="flex items-center gap-2 shrink-0">
+            <span className={cn('text-[13px] font-medium', isActive ? 'text-text-primary' : 'text-text-secondary')}>
               {isActive ? 'Active' : 'Inactive'}
             </span>
             <Toggle checked={isActive} onChange={setIsActive} />
           </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 px-4 pb-[14px]">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={handleSave}
             disabled={saving || deleting}
-            className="bg-primary text-white h-11 rounded-sm font-semibold text-[13px] hover:bg-primary-dark disabled:opacity-50 transition-colors"
+            className="bg-primary text-white h-10 px-4 rounded-sm font-semibold text-[13px] hover:bg-primary-dark disabled:opacity-50 transition-colors"
           >
             {saving ? 'Saving…' : 'Save Changes'}
           </button>
@@ -408,7 +405,7 @@ export default function EditEmployeePage({
             type="button"
             onClick={handleSendInvite}
             disabled={deleting}
-            className="border border-primary text-primary h-11 rounded-sm font-medium text-[13px] hover:bg-primary/5 transition-colors disabled:opacity-50"
+            className="border border-primary text-primary bg-surface h-10 px-4 rounded-sm font-medium text-[13px] hover:bg-primary/5 transition-colors disabled:opacity-50"
           >
             Send Invite
           </button>
@@ -417,7 +414,7 @@ export default function EditEmployeePage({
             onClick={handleToggleActive}
             disabled={archiving || deleting}
             className={cn(
-              'h-11 rounded-sm font-semibold text-[13px] disabled:opacity-50 transition-colors',
+              'h-10 px-4 rounded-sm font-semibold text-[13px] disabled:opacity-50 transition-colors',
               isActive
                 ? 'bg-warning text-white hover:opacity-90'
                 : 'bg-success text-white hover:opacity-90'
@@ -429,16 +426,16 @@ export default function EditEmployeePage({
             type="button"
             onClick={handleDelete}
             disabled={deleting || archiving}
-            className="bg-error text-white h-11 rounded-sm font-semibold text-[13px] hover:opacity-90 disabled:opacity-50 transition-colors"
+            className="bg-error text-white h-10 px-4 rounded-sm font-semibold text-[13px] hover:opacity-90 disabled:opacity-50 transition-colors"
           >
             {deleting ? '…' : 'Delete'}
           </button>
         </div>
 
-        {error && <p className="px-4 pb-[10px] text-error text-[13px]">{error}</p>}
+        {error && <p className="text-error text-[13px]">{error}</p>}
         {inviteMsg && (
           <p className={cn(
-            'px-4 pb-[10px] text-[13px]',
+            'text-[13px]',
             inviteMsg === 'Invite sent.' ? 'text-success' : 'text-error'
           )}>
             {inviteMsg}
