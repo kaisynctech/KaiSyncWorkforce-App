@@ -32,7 +32,13 @@ import type { Branch, ShiftTemplate, Employee } from '@/types/database'
 
 const ACCOUNT_TYPES = ['Cheque', 'Savings', 'Transmission']
 
-export default function EditEmployeePage() {
+export default function EditEmployeePage({
+  embedded = false,
+  onSaved,
+}: {
+  embedded?: boolean
+  onSaved?: () => void
+} = {}) {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
 
@@ -276,6 +282,10 @@ export default function EditEmployeePage() {
     }
 
     setSaving(false)
+    if (embedded) {
+      onSaved?.()
+      return
+    }
     router.push(`/dashboard/employees/${id}`)
   }
 
@@ -359,16 +369,18 @@ export default function EditEmployeePage() {
   const fullName = `${firstName || employee.name} ${lastName || employee.surname}`
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className={embedded ? 'space-y-4' : 'flex flex-col h-full overflow-hidden'}>
       {/* Sticky header */}
-      <div className="bg-surface border-b border-divider shrink-0">
+      <div className={embedded ? '' : 'bg-surface border-b border-divider shrink-0'}>
         <div className="flex items-center justify-between px-4 pt-4 pb-[10px] gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            <Link href={`/dashboard/employees/${id}`} className="text-text-secondary hover:text-text-primary transition-colors shrink-0">
-              <span className="material-icons text-[20px]">arrow_back</span>
-            </Link>
+            {!embedded && (
+              <Link href={`/dashboard/employees/${id}`} className="text-text-secondary hover:text-text-primary transition-colors shrink-0">
+                <span className="material-icons text-[20px]">arrow_back</span>
+              </Link>
+            )}
             <div className="min-w-0">
-              <p className="text-[19px] font-bold text-text-primary truncate">{fullName}</p>
+              <p className="text-[19px] font-bold text-text-primary truncate">{embedded ? 'Edit profile' : fullName}</p>
               <p className="text-[12px] text-text-secondary">Editing employee record</p>
             </div>
           </div>
@@ -435,7 +447,7 @@ export default function EditEmployeePage() {
       </div>
 
       {/* Scrollable form */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-8">
+      <div className={embedded ? 'space-y-4 pb-8' : 'flex-1 overflow-y-auto p-4 space-y-4 pb-8'}>
         <SectionCard title="PERSONAL INFO">
           <FormField label="First name *">
             <input type="text" value={firstName} onChange={e => setFirstName(e.target.value)} placeholder="First name" className={entryClass} />
