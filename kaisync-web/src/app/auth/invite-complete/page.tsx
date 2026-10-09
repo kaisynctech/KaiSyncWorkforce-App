@@ -67,11 +67,23 @@ export default function InviteCompletePage() {
           return
         }
 
-        const { data: empRow } = await supabase
+        saveEmpContext({
+          employee_id: claim.employee_id,
+          company_id: claim.company_id,
+          access_level: claim.access_level ?? 'employee',
+        })
+
+        // Names are optional. A slow profile read must not keep this screen up.
+        const profile = supabase
           .from('employees')
           .select('id, company_id, access_level, name, surname, companies(name, code)')
           .eq('id', claim.employee_id)
           .maybeSingle()
+        const timed = await Promise.race([
+          profile,
+          new Promise<null>(resolve => setTimeout(() => resolve(null), 4000)),
+        ])
+        const empRow = timed && 'data' in timed ? timed.data : null
 
         if (empRow) {
           const companies = empRow.companies as
