@@ -547,7 +547,7 @@ export default function EmployeesPage() {
               <span className="material-icons text-text-disabled text-[18px]">search</span>
               <input
                 type="text"
-                placeholder="Search by name, code, department…"
+                placeholder="Search by name, ID number, department…"
                 value={search}
                 onChange={e => { setSearch(e.target.value); setPage(0) }}
                 className="flex-1 text-[13px] text-text-primary placeholder:text-text-disabled bg-transparent focus:outline-none"
@@ -677,7 +677,7 @@ export default function EmployeesPage() {
                     <thead>
                       <tr className="border-b border-divider bg-surface-elevated">
                         <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Employee</th>
-                        <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Code</th>
+                        <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">ID number</th>
                         <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Role</th>
                         <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Department</th>
                         <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Status</th>
@@ -709,7 +709,7 @@ export default function EmployeesPage() {
                               </div>
                             </td>
                             <td className="px-5 py-3 text-text-secondary font-mono">
-                              {emp.employee_code ?? '—'}
+                              {emp.id_number?.trim() || '—'}
                             </td>
                             <td className="px-5 py-3">
                               <span className={`px-2 py-0.5 rounded-pill text-[11px] font-medium ${badge.cls}`}>
@@ -767,13 +767,14 @@ export default function EmployeesPage() {
                             <div className="min-w-0 flex-1">
                               <DataCardTitle>{emp.name} {emp.surname}</DataCardTitle>
                               <DataCardMeta>
-                                {emp.position || emp.employee_code || '—'}
+                                {emp.position || '—'}
                               </DataCardMeta>
                             </div>
                             <span className={`px-2 py-0.5 rounded-pill text-[11px] font-medium shrink-0 ${badge.cls}`}>
                               {badge.label}
                             </span>
                           </div>
+                          <DataCardRow label="ID number" value={emp.id_number?.trim() || '—'} />
                           <DataCardRow label="Dept" value={emp.department ?? '—'} />
                           <DataCardRow
                             label="Status"
