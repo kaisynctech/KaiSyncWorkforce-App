@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -55,6 +55,17 @@ type LeaveBalance = {
   usedDays: number
   remaining: number
   lastRequestDate: string | null
+}
+
+type UpcomingLeave = {
+  id: string
+  employee_id: string
+  leave_type: string
+  start_date: string
+  end_date: string
+  total_days: number | null
+  status: string
+  employees: { name: string; surname: string } | null
 }
 
 type PendingEmployee = {
@@ -124,6 +135,26 @@ function fmtDate(d: string) {
   })
 }
 
+function monthBounds(yearMonth: string): { start: string; end: string } {
+  const [year, month] = yearMonth.split('-').map(Number)
+  const lastDay = new Date(year, month, 0).getDate()
+  return {
+    start: `${yearMonth}-01`,
+    end: `${yearMonth}-${String(lastDay).padStart(2, '0')}`,
+  }
+}
+
+function monthLabel(yearMonth: string) {
+  const [year, month] = yearMonth.split('-').map(Number)
+  return new Date(year, month - 1, 1).toLocaleDateString('en-ZA', { month: 'long', year: 'numeric' })
+}
+
+function shiftYearMonth(yearMonth: string, delta: number) {
+  const [year, month] = yearMonth.split('-').map(Number)
+  const next = new Date(year, month - 1 + delta, 1)
+  return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`
+}
+
 function returnDate(endDate: string) {
   const [y, m, d] = endDate.split('-').map(Number)
   return new Date(y, m - 1, d + 1).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short' })
@@ -172,7 +203,14 @@ export default function EmployeesPage() {
   const [leaveLoaded,     setLeaveLoaded]     = useState(false)
   const [leaveSearch,     setLeaveSearch]     = useState('')
   const [leaveTypeFilter, setLeaveTypeFilter] = useState('')
-  const [leaveSubTab,     setLeaveSubTab]     = useState<'pending' | 'balances'>('pending')
+  const [leaveSubTab,     setLeaveSubTab]     = useState<'pending' | 'upcoming' | 'balances'>('pending')
+  const [leaveMonth,      setLeaveMonth]      = useState(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  })
+  const [upcomingLeave,   setUpcomingLeave]   = useState<UpcomingLeave[]>([])
+  const [upcomingLoading, setUpcomingLoading] = useState(false)
+  const upcomingRequestRef = useRef(0)
   const [leaveActionBusy, setLeaveActionBusy] = useState<string | null>(null)
 
   // ── Tab 4 — Pending ───────────────────────────────────────────────────────
@@ -340,6 +378,53 @@ export default function EmployeesPage() {
     setPendingLeave(pending.filter(r => inScope(r.employee_id)))
     setLeaveLoaded(true)
     setLeaveLoading(false)
+    void loadUpcoming(leaveMonth)
+  }
+
+  async function loadUpcoming(yearMonth: string) {
+    if (!companyId) return
+    const request = ++upcomingRequestRef.current
+    setUpcomingLoading(true)
+    const supabase = createClient()
+    const { start, end } = monthBounds(yearMonth)
+    const { data, error: loadError } = await supabase
+      .from('leave_requests')
+      .select('id, employee_id, leave_type, start_date, end_date, total_days, status, employees(name, surname)')
+      .eq('company_id', companyId)
+      .in('status', ['approved', 'pending'])
+      .lte('start_date', end)
+      .gte('end_date', start)
+      .order('start_date', { ascending: true })
+    if (request !== upcomingRequestRef.current) return
+    if (loadError) {
+      setError(loadError.message)
+      setUpcomingLeave([])
+      setUpcomingLoading(false)
+      return
+    }
+    const inScope = (employeeId: string) => !scopedIds || scopedIds.has(employeeId)
+    const rows = (data ?? []).map(row => {
+      const linked = Array.isArray(row.employees) ? row.employees[0] : row.employees
+      return {
+        id: row.id,
+        employee_id: row.employee_id,
+        leave_type: row.leave_type,
+        start_date: row.start_date,
+        end_date: row.end_date,
+        total_days: row.total_days,
+        status: row.status,
+        employees: linked ?? null,
+      }
+    })
+    if (request !== upcomingRequestRef.current) return
+    setUpcomingLeave(rows.filter(row => inScope(row.employee_id)))
+    setUpcomingLoading(false)
+  }
+
+  function changeLeaveMonth(delta: number) {
+    const next = shiftYearMonth(leaveMonth, delta)
+    setLeaveMonth(next)
+    void loadUpcoming(next)
   }
 
   async function decideLeave(requestId: string, decision: 'approved' | 'declined') {
@@ -972,6 +1057,14 @@ export default function EmployeesPage() {
               Pending ({pendingLeave.length})
             </button>
             <button
+              onClick={() => setLeaveSubTab('upcoming')}
+              className={`h-8 px-3 rounded-2xl text-[12px] font-medium ${
+                leaveSubTab === 'upcoming' ? 'bg-primary text-white' : 'bg-surface border border-border text-text-secondary'
+              }`}
+            >
+              Upcoming{upcomingLeave.length > 0 ? ` (${upcomingLeave.length})` : ''}
+            </button>
+            <button
               onClick={() => setLeaveSubTab('balances')}
               className={`h-8 px-3 rounded-2xl text-[12px] font-medium ${
                 leaveSubTab === 'balances' ? 'bg-primary text-white' : 'bg-surface border border-border text-text-secondary'
@@ -981,7 +1074,87 @@ export default function EmployeesPage() {
             </button>
           </div>
 
-          {leaveSubTab === 'pending' ? (
+          {leaveSubTab === 'upcoming' ? (
+            <>
+              <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+                <p className="text-[13px] text-text-secondary">
+                  Approved and pending leave in {monthLabel(leaveMonth)}.
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => changeLeaveMonth(-1)}
+                    className="h-9 w-9 rounded-md border border-border bg-surface text-text-primary"
+                    aria-label="Previous month"
+                  >
+                    <span className="material-icons text-[18px]">chevron_left</span>
+                  </button>
+                  <span className="min-w-[140px] text-center text-[13px] font-semibold text-text-primary">
+                    {monthLabel(leaveMonth)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => changeLeaveMonth(1)}
+                    className="h-9 w-9 rounded-md border border-border bg-surface text-text-primary"
+                    aria-label="Next month"
+                  >
+                    <span className="material-icons text-[18px]">chevron_right</span>
+                  </button>
+                </div>
+              </div>
+              <div className="bg-surface rounded-lg border border-divider overflow-hidden">
+                {upcomingLoading ? (
+                  <div className="py-16 text-center text-[13px] text-text-disabled">Loading…</div>
+                ) : upcomingLeave.length === 0 ? (
+                  <div className="py-16 text-center">
+                    <span className="material-icons text-[48px] text-text-disabled block mb-2">event_available</span>
+                    <p className="text-[14px] text-text-secondary">No leave in {monthLabel(leaveMonth)}</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-[13px]">
+                      <thead>
+                        <tr className="border-b border-divider bg-surface-elevated">
+                          <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Employee</th>
+                          <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Leave type</th>
+                          <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">From</th>
+                          <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">To</th>
+                          <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Days</th>
+                          <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {upcomingLeave.map(row => {
+                          const name = row.employees
+                            ? `${row.employees.name} ${row.employees.surname}`.trim()
+                            : 'Employee'
+                          const approved = row.status === 'approved'
+                          return (
+                            <tr key={row.id} className="border-b border-divider last:border-0">
+                              <td className="px-5 py-3 font-medium text-text-primary">{name}</td>
+                              <td className="px-5 py-3 text-text-secondary capitalize">
+                                {row.leave_type.replace(/_/g, ' ')}
+                              </td>
+                              <td className="px-5 py-3 text-text-secondary">{fmtDate(row.start_date)}</td>
+                              <td className="px-5 py-3 text-text-secondary">{row.end_date ? fmtDate(row.end_date) : '—'}</td>
+                              <td className="px-5 py-3 text-text-secondary">{row.total_days ?? '—'}</td>
+                              <td className="px-5 py-3">
+                                <span className={`px-2 py-0.5 rounded-pill text-[11px] font-medium ${
+                                  approved ? 'bg-success-dark text-success' : 'bg-warning-dark text-warning'
+                                }`}>
+                                  {approved ? 'Approved' : 'Pending'}
+                                </span>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </>
+          ) : leaveSubTab === 'pending' ? (
             <div className="bg-surface rounded-lg border border-divider overflow-hidden">
               {leaveLoading ? (
                 <div className="py-16 text-center text-[13px] text-text-disabled">Loading…</div>
