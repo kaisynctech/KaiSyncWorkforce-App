@@ -1,0 +1,12 @@
+---
+description: Commit and push finished work on this repo
+alwaysApply: true
+---
+
+# Commit and push finished work
+
+When a requested change is finished, commit it and push it to the current branch. Do not wait to be asked.
+
+- Leave unrelated files out, including a line-ending-only `.gitignore` change.
+- Follow the repository git safety rules: no force push, no config changes, no skipping hooks, no amend unless the amend rules allow it.
+- Do not commit if the user said not to, or if the build required for that change is still failing.
