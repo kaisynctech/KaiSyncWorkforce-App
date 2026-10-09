@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
-import { cn, formatDate, formatDateTime, formatCurrency, getInitials } from '@/lib/utils'
+import { cn, formatDate, formatDateTime, formatCurrency, getInitials, localISODate } from '@/lib/utils'
 import { labelEmploymentType } from '@/lib/employee-taxonomy'
 import { getCompanyAnnualDays, loadLeaveSettings, readCustomLeaveTypes, type LeaveSettingsMap } from '@/lib/leave-settings'
 import { LEAVE_TYPES } from '@/lib/leave-policy'
@@ -111,6 +111,49 @@ function checkPayrollReadiness(emp: Employee): PayrollReady {
   }
 }
 
+const PAYROLL_SUMMARY_MONTHS = 6
+
+function currentYearMonth() {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+}
+
+function monthLabel(yearMonth: string) {
+  const [year, month] = yearMonth.split('-').map(Number)
+  return new Date(year, month - 1, 1).toLocaleDateString('en-ZA', { month: 'long', year: 'numeric' })
+}
+
+function shiftYearMonth(yearMonth: string, delta: number) {
+  const [year, month] = yearMonth.split('-').map(Number)
+  const next = new Date(year, month - 1 + delta, 1)
+  return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`
+}
+
+function monthInstantRange(yearMonth: string) {
+  const [year, month] = yearMonth.split('-').map(Number)
+  return {
+    start: new Date(year, month - 1, 1).toISOString(),
+    end: new Date(year, month, 0, 23, 59, 59, 999).toISOString(),
+  }
+}
+
+function recentYearMonths(count: number) {
+  return Array.from({ length: count }, (_, index) => shiftYearMonth(currentYearMonth(), -index))
+}
+
+type MonthPay = {
+  month: string
+  days: number
+  hours: number
+  amount: number
+}
+
+function summarizeSessions(pairs: PairSession[], rate: number) {
+  const days = new Set(pairs.map(pair => localISODate(new Date(pair.punchIn)))).size
+  const hours = pairs.reduce((sum, pair) => sum + pair.hoursWorked, 0)
+  return { days, hours, amount: hours * rate }
+}
+
 function periodRange(period: Period, customFrom: string, customTo: string): { from: string; to: string } {
   const now = new Date()
   if (period === 'today') {
@@ -151,6 +194,10 @@ export default function EmployeeDetailPage() {
   const [appliedCustomTo, setAppliedCustomTo] = useState('')
   const [punches, setPunches] = useState<PairSession[]>([])
   const [punchLoading, setPunchLoading] = useState(false)
+  const [overviewMonth, setOverviewMonth] = useState(currentYearMonth)
+  const [overviewPunches, setOverviewPunches] = useState<PairSession[]>([])
+  const [overviewLoading, setOverviewLoading] = useState(false)
+  const overviewRequestRef = useRef(0)
 
   // Leave
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([])
@@ -163,8 +210,11 @@ export default function EmployeeDetailPage() {
 
   useEffect(() => { loadEmployee() }, [id])
   useEffect(() => {
-    if (employee && (tab === 'overview' || tab === 'attendance')) loadAttendance()
+    if (employee && tab === 'attendance') loadAttendance()
   }, [employee, tab, period, appliedCustomFrom, appliedCustomTo])
+  useEffect(() => {
+    if (employee && tab === 'overview') void loadOverview()
+  }, [employee, tab, overviewMonth])
   useEffect(() => {
     if (employee && tab === 'leave' && !leaveLoaded) loadLeave()
   }, [employee, tab])
@@ -259,6 +309,24 @@ export default function EmployeeDetailPage() {
     setPunchLoading(false)
   }
 
+  async function loadOverview() {
+    if (!employee) return
+    const requestId = ++overviewRequestRef.current
+    setOverviewLoading(true)
+    const supabase = createClient()
+    const { start, end } = monthInstantRange(overviewMonth)
+    const { data } = await supabase
+      .from('time_punches')
+      .select('id, employee_id, type, date_time')
+      .eq('employee_id', employee.id)
+      .gte('date_time', start)
+      .lte('date_time', end)
+      .order('date_time', { ascending: true })
+    if (requestId !== overviewRequestRef.current) return
+    setOverviewPunches(buildPairs((data ?? []) as TimePunch[]))
+    setOverviewLoading(false)
+  }
+
   async function loadLeave() {
     if (!employee || !myCompanyId) return
     const supabase = createClient()
@@ -305,71 +373,11 @@ export default function EmployeeDetailPage() {
   const fullName = `${employee.name} ${employee.surname}`
   const initials = getInitials(fullName)
   const payrollReadiness = checkPayrollReadiness(employee)
-
-  const totalHours = punches.reduce((s, p) => s + p.hoursWorked, 0)
-  const sessions = punches.length
-  const daysWorked = new Set(punches.map(p => p.punchIn.split('T')[0])).size
-  const payDue = (employee.hourly_rate ?? 0) * totalHours
+  const overviewStats = summarizeSessions(overviewPunches, employee.hourly_rate ?? 0)
+  const overviewIsCurrentMonth = overviewMonth >= currentYearMonth()
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* Sticky hero header */}
-      <div className="bg-surface border-b border-divider">
-        <div className="px-4 pt-[18px] pb-3 flex items-start gap-[14px]">
-          <div className="w-[72px] h-[72px] rounded-full bg-primary flex items-center justify-center shrink-0">
-            <span className="text-[24px] font-bold text-white">{initials}</span>
-          </div>
-          <div className="flex-1 min-w-0 space-y-1">
-            <p className="text-[19px] font-bold text-text-primary truncate">{fullName}</p>
-            {employee.position && (
-              <p className="text-[13px] text-text-secondary">{employee.position}</p>
-            )}
-            <div className="flex gap-[6px] flex-wrap items-center">
-              <span className={cn(
-                'text-[11px] font-semibold px-2 py-[3px] rounded-[10px]',
-                employee.is_active ? 'bg-success-dark text-[#166534]' : 'bg-error-dark text-[#991B1B]'
-              )}>
-                {employee.is_active ? 'Active' : 'Inactive'}
-              </span>
-              {employee.employment_type && (
-                <span className="text-[11px] text-text-secondary bg-surface-elevated border border-divider px-2 py-[3px] rounded-[10px]">
-                  {labelEmploymentType(employee.employment_type)}
-                </span>
-              )}
-              {employee.id_number && (
-                <span className="flex items-center gap-[5px] bg-surface-elevated border border-divider rounded-sm px-2 py-[3px]">
-                  <span className="text-[11px] text-text-secondary">ID</span>
-                  <span className="text-[11px] font-medium text-text-primary">{employee.id_number}</span>
-                </span>
-              )}
-              {employee.email && (
-                <span className="flex items-center gap-[5px] bg-surface-elevated border border-divider rounded-sm px-2 py-[3px] min-w-0">
-                  <span className="text-[11px] text-text-secondary">Email</span>
-                  <span className="text-[11px] font-medium text-text-primary truncate">{employee.email}</span>
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {(employee.employment_date || employee.phone) && (
-          <div className="flex gap-2 px-4 pb-3 overflow-x-auto">
-            {employee.employment_date && (
-              <div className="flex items-center gap-[5px] bg-surface-elevated border border-divider rounded-sm px-2 py-[5px] shrink-0">
-                <span className="text-[11px] text-text-secondary">Since</span>
-                <span className="text-[11px] font-medium text-text-primary">{formatDate(employee.employment_date)}</span>
-              </div>
-            )}
-            {employee.phone && (
-              <div className="flex items-center gap-[5px] bg-surface-elevated border border-divider rounded-sm px-2 py-[5px] shrink-0">
-                <span className="text-[11px] text-text-secondary">Phone</span>
-                <span className="text-[11px] font-medium text-text-primary">{employee.phone}</span>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
       {/* Sticky tab bar */}
       <div className="bg-surface border-b border-divider px-3 py-2 shrink-0">
         <div className="flex gap-[6px] overflow-x-auto">
@@ -392,6 +400,24 @@ export default function EmployeeDetailPage() {
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {tab === 'overview' && (
           <>
+            <div className="bg-surface border border-divider rounded-lg px-4 py-4 flex items-start gap-[14px]">
+              <div className="w-[72px] h-[72px] rounded-full bg-primary flex items-center justify-center shrink-0">
+                <span className="text-[24px] font-bold text-white">{initials}</span>
+              </div>
+              <div className="flex-1 min-w-0 space-y-1">
+                <p className="text-[19px] font-bold text-text-primary truncate">{fullName}</p>
+                {employee.position && (
+                  <p className="text-[13px] text-text-secondary">{employee.position}</p>
+                )}
+                <span className={cn(
+                  'inline-flex text-[11px] font-semibold px-2 py-[3px] rounded-[10px]',
+                  employee.is_active ? 'bg-success-dark text-[#166534]' : 'bg-error-dark text-[#991B1B]'
+                )}>
+                  {employee.is_active ? 'Active' : 'Inactive'}
+                </span>
+              </div>
+            </div>
+
             <div className={cn(
               'px-3 py-[10px] rounded-[10px] border',
               payrollReadiness.ready ? 'border-success bg-success-dark/40' : 'border-warning bg-warning-dark/40'
@@ -404,119 +430,60 @@ export default function EmployeeDetailPage() {
               ))}
             </div>
 
-            {/* KPI row */}
-            <div className="grid grid-cols-4 gap-3">
-              <KpiCard label="Days Worked" value={String(daysWorked)} color="text-primary" />
-              <KpiCard label="Hours / Month" value={`${totalHours.toFixed(1)}h`} color="text-primary" />
-              <KpiCard label="Pay Due" value={formatCurrency(payDue)} color="text-success" />
-              <KpiCard label="Punches" value={String(sessions)} color="text-text-primary" />
+            <div className="bg-surface border border-divider rounded-lg overflow-hidden">
+              <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-divider">
+                <p className="text-[14px] font-semibold text-text-primary">{monthLabel(overviewMonth)}</p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setOverviewMonth(month => shiftYearMonth(month, -1))}
+                    className="h-9 w-9 rounded-md border border-border bg-surface text-text-primary"
+                    aria-label="Previous month"
+                  >
+                    <span className="material-icons text-[18px]">chevron_left</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOverviewMonth(month => shiftYearMonth(month, 1))}
+                    disabled={overviewIsCurrentMonth}
+                    className="h-9 w-9 rounded-md border border-border bg-surface text-text-primary disabled:opacity-40"
+                    aria-label="Next month"
+                  >
+                    <span className="material-icons text-[18px]">chevron_right</span>
+                  </button>
+                </div>
+              </div>
+              {overviewLoading ? (
+                <div className="py-8 text-center text-[13px] text-text-disabled">Loading…</div>
+              ) : (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-4">
+                  <KpiCard label="Days worked" value={String(overviewStats.days)} color="text-primary" />
+                  <KpiCard label="Hours" value={`${overviewStats.hours.toFixed(1)}h`} color="text-primary" />
+                  <KpiCard
+                    label="Pay"
+                    value={(employee.hourly_rate ?? 0) > 0 ? formatCurrency(overviewStats.amount) : '—'}
+                    color="text-success"
+                  />
+                  <KpiCard label="Punches" value={String(overviewPunches.length)} color="text-text-primary" />
+                </div>
+              )}
             </div>
 
-            {/* Organisation */}
             <div className="bg-surface border border-divider rounded-lg overflow-hidden">
               <div className="px-4 py-3 border-b border-divider">
-                <p className="text-[14px] font-semibold text-text-primary">Organisation</p>
+                <p className="text-[14px] font-semibold text-text-primary">General information</p>
               </div>
               <div className="p-4 grid grid-cols-2 gap-3">
-                <InfoCell label="Department" value={employee.department ?? '—'} />
                 <InfoCell label="Branch" value={branchName ?? '—'} />
-                <InfoCell label="Reports to" value={managerName ?? '—'} />
                 <InfoCell label="Position" value={employee.position ?? '—'} />
+                <InfoCell label="ID number" value={employee.id_number ?? '—'} />
+                <InfoCell label="Email" value={employee.email ?? '—'} />
+                <InfoCell label="Employment" value={employee.employment_type ? labelEmploymentType(employee.employment_type) : '—'} />
+                <InfoCell label="Department" value={employee.department ?? '—'} />
+                <InfoCell label="Reports to" value={managerName ?? '—'} />
+                <InfoCell label="Phone" value={employee.phone ?? '—'} />
+                <InfoCell label="Started" value={employee.employment_date ? formatDate(employee.employment_date) : '—'} />
               </div>
-            </div>
-
-            {/* Banking details */}
-            <div className="bg-surface border border-divider rounded-lg overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
-                <p className="text-[14px] font-semibold text-text-primary">Banking Details</p>
-                <button
-                  type="button"
-                  onClick={() => setTab('edit')}
-                  className="bg-surface-elevated text-primary h-9 px-[14px] rounded-sm text-[12px] font-medium flex items-center hover:bg-primary/5 transition-colors"
-                >
-                  Edit Banking
-                </button>
-              </div>
-              {employee.bank_name ? (
-                <div className="p-4 grid grid-cols-2 gap-3">
-                  <InfoCell label="Account" value={employee.bank_account ? `****${employee.bank_account.slice(-4)}` : '—'} />
-                  <InfoCell label="Bank" value={employee.bank_name} />
-                  <InfoCell label="Branch code" value={employee.bank_branch_code ?? '—'} />
-                  <InfoCell label="Type" value={employee.account_type ?? '—'} />
-                </div>
-              ) : (
-                <p className="px-4 py-4 text-[12px] text-text-disabled">No banking details on file yet.</p>
-              )}
-            </div>
-
-            {/* Attendance section */}
-            <div className="bg-surface border border-divider rounded-lg overflow-hidden">
-              <div className="px-4 py-3 border-b border-divider">
-                <p className="text-[14px] font-semibold text-text-primary mb-2">Attendance</p>
-                <div className="flex gap-2 flex-wrap">
-                  {(['today', 'week', 'month', 'custom'] as Period[]).map(p => (
-                    <button
-                      key={p}
-                      onClick={() => setPeriod(p)}
-                      className={cn(
-                        'h-8 px-3 rounded-sm text-[12px] font-medium capitalize transition-colors',
-                        period === p ? 'bg-primary text-white' : 'bg-surface-elevated text-text-secondary hover:text-text-primary'
-                      )}
-                    >
-                      {p === 'week' ? 'This Week' : p === 'month' ? 'This Month' : p.charAt(0).toUpperCase() + p.slice(1)}
-                    </button>
-                  ))}
-                </div>
-                {period === 'custom' && (
-                  <div className="flex items-center gap-2 mt-2">
-                    <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
-                      className="h-9 px-2 rounded-sm border border-border bg-surface-elevated text-[13px] text-text-primary focus:outline-none focus:ring-1 focus:ring-primary" />
-                    <span className="text-text-secondary">–</span>
-                    <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
-                      className="h-9 px-2 rounded-sm border border-border bg-surface-elevated text-[13px] text-text-primary focus:outline-none focus:ring-1 focus:ring-primary" />
-                    <button
-                      onClick={() => { setAppliedCustomFrom(customFrom); setAppliedCustomTo(customTo) }}
-                      className="h-9 px-3 bg-primary text-white rounded-sm text-[12px] font-medium hover:bg-primary-dark transition-colors"
-                    >
-                      Apply
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              <div className="grid grid-cols-3 divide-x divide-divider border-b border-divider">
-                <div className="p-3 text-center">
-                  <p className="text-[18px] font-bold text-text-primary">{sessions}</p>
-                  <p className="text-[10px] text-text-secondary">Sessions</p>
-                </div>
-                <div className="p-3 text-center">
-                  <p className="text-[18px] font-bold text-primary">{totalHours.toFixed(1)}h</p>
-                  <p className="text-[10px] text-text-secondary">Hours</p>
-                </div>
-                <div className="p-3 text-center">
-                  <p className="text-[18px] font-bold text-text-primary">0</p>
-                  <p className="text-[10px] text-text-secondary">Late</p>
-                </div>
-              </div>
-
-              {punchLoading ? (
-                <div className="py-8 text-center text-[13px] text-text-disabled">Loading…</div>
-              ) : punches.length === 0 ? (
-                <div className="py-8 text-center text-[13px] text-text-disabled">No records for this period</div>
-              ) : (
-                punches.map((p, i) => (
-                  <div key={p.punchIn + i} className="flex items-center gap-3 px-4 py-3 border-b border-divider last:border-0">
-                    <span className="material-icons text-text-disabled text-[18px]">schedule</span>
-                    <div className="flex-1">
-                      <p className="text-[13px] text-text-primary">{formatDateTime(p.punchIn)}</p>
-                      {p.punchOut && <p className="text-[11px] text-text-secondary">→ {formatDateTime(p.punchOut)}</p>}
-                    </div>
-                    {p.hoursWorked > 0 && (
-                      <span className="text-[12px] font-semibold text-text-secondary">{p.hoursWorked.toFixed(1)}h</span>
-                    )}
-                  </div>
-                ))
-              )}
             </div>
           </>
         )}
@@ -642,26 +609,24 @@ function InfoCell({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <p className="text-[11px] text-text-secondary">{label}</p>
-      <p className="text-[13px] font-medium text-text-primary">{value}</p>
+      <p className="text-[13px] font-medium text-text-primary break-words">{value}</p>
     </div>
   )
 }
 
 function PaymentsTab({ employee }: { employee: Employee }) {
-  const [month, setMonth] = useState(() => {
-    const d = new Date()
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-  })
-  const [punches, setPunches] = useState<PairSession[]>([])
+  const [rows, setRows] = useState<MonthPay[]>([])
   const [loading, setLoading] = useState(true)
+  const rate = employee.hourly_rate ?? 0
 
   useEffect(() => {
+    let cancelled = false
     async function load() {
       setLoading(true)
+      const months = recentYearMonths(PAYROLL_SUMMARY_MONTHS)
       const supabase = createClient()
-      const [year, mon] = month.split('-').map(Number)
-      const start = new Date(year, mon - 1, 1).toISOString()
-      const end = new Date(year, mon, 0, 23, 59, 59).toISOString()
+      const { start } = monthInstantRange(months[months.length - 1])
+      const { end } = monthInstantRange(months[0])
       const { data } = await supabase
         .from('time_punches')
         .select('id, employee_id, type, date_time')
@@ -669,45 +634,61 @@ function PaymentsTab({ employee }: { employee: Employee }) {
         .gte('date_time', start)
         .lte('date_time', end)
         .order('date_time', { ascending: true })
-      setPunches(buildPairs((data ?? []) as TimePunch[]))
+      if (cancelled) return
+      const pairs = buildPairs((data ?? []) as TimePunch[])
+      const byMonth = new Map<string, PairSession[]>()
+      for (const pair of pairs) {
+        const key = `${new Date(pair.punchIn).getFullYear()}-${String(new Date(pair.punchIn).getMonth() + 1).padStart(2, '0')}`
+        const list = byMonth.get(key) ?? []
+        list.push(pair)
+        byMonth.set(key, list)
+      }
+      setRows(months.map(month => ({
+        month,
+        ...summarizeSessions(byMonth.get(month) ?? [], rate),
+      })))
       setLoading(false)
     }
-    load()
-  }, [employee.id, month])
-
-  const totalHours = punches.reduce((s, p) => s + p.hoursWorked, 0)
-  const rate = employee.hourly_rate ?? 0
-  const gross = rate * totalHours
+    void load()
+    return () => { cancelled = true }
+  }, [employee.id, rate])
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-[15px] font-semibold text-text-primary">Payroll Summary</p>
-        <input type="month" value={month} onChange={e => setMonth(e.target.value)}
-          className="h-9 px-3 rounded-sm border border-border bg-surface text-[13px] text-text-primary focus:outline-none focus:ring-1 focus:ring-primary" />
-      </div>
-      <div className="grid grid-cols-3 gap-3">
-        <KpiCard label="Hours" value={`${totalHours.toFixed(1)}h`} color="text-primary" />
-        <KpiCard label="Rate/hr" value={rate > 0 ? formatCurrency(rate) : '—'} color="text-text-primary" />
-        <KpiCard label="Gross Pay" value={gross > 0 ? formatCurrency(gross) : '—'} color="text-success" />
+      <div>
+        <p className="text-[15px] font-semibold text-text-primary">Payroll summary</p>
+        <p className="text-[12px] text-text-secondary mt-1">
+          Hours times the hourly rate for each of the last {PAYROLL_SUMMARY_MONTHS} months.
+        </p>
       </div>
       {loading ? (
         <p className="text-center text-[13px] text-text-disabled py-8">Loading…</p>
-      ) : punches.length === 0 ? (
-        <p className="text-center text-[13px] text-text-disabled py-8">No payroll data for this period</p>
       ) : (
         <div className="bg-surface border border-divider rounded-lg overflow-hidden">
-          {punches.map((p, i) => (
-            <div key={p.punchIn + i} className="flex items-center gap-3 px-4 py-3 border-b border-divider last:border-0">
-              <span className="material-icons text-text-disabled text-[16px]">schedule</span>
-              <div className="flex-1">
-                <p className="text-[13px] text-text-primary">{formatDateTime(p.punchIn)}</p>
-              </div>
-              <span className="text-[13px] font-semibold text-text-secondary">
-                {p.hoursWorked.toFixed(1)}h = {formatCurrency(p.hoursWorked * rate)}
-              </span>
-            </div>
-          ))}
+          <div className="overflow-x-auto">
+            <table className="w-full text-[13px]">
+              <thead>
+                <tr className="border-b border-divider bg-surface-elevated">
+                  <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Month</th>
+                  <th className="text-right px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Days</th>
+                  <th className="text-right px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Hours</th>
+                  <th className="text-right px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(row => (
+                  <tr key={row.month} className="border-b border-divider last:border-0">
+                    <td className="px-4 py-3 text-text-primary whitespace-nowrap">{monthLabel(row.month)}</td>
+                    <td className="px-4 py-3 text-right text-text-secondary">{row.days}</td>
+                    <td className="px-4 py-3 text-right text-text-secondary">{row.hours.toFixed(1)}</td>
+                    <td className="px-4 py-3 text-right font-semibold text-text-primary">
+                      {rate > 0 ? formatCurrency(row.amount) : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
