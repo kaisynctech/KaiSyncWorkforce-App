@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { cn, formatDate, formatDateTime, formatCurrency, getInitials } from '@/lib/utils'
-import { labelEmploymentType, labelWorkerType } from '@/lib/employee-taxonomy'
+import { labelEmploymentType } from '@/lib/employee-taxonomy'
 import { getCompanyAnnualDays, loadLeaveSettings, readCustomLeaveTypes, type LeaveSettingsMap } from '@/lib/leave-settings'
 import { LEAVE_TYPES } from '@/lib/leave-policy'
 import { listExtraBranchIds } from '@/lib/employee-branches'
@@ -324,7 +324,7 @@ export default function EmployeeDetailPage() {
             {employee.position && (
               <p className="text-[13px] text-text-secondary">{employee.position}</p>
             )}
-            <div className="flex gap-[6px] flex-wrap">
+            <div className="flex gap-[6px] flex-wrap items-center">
               <span className={cn(
                 'text-[11px] font-semibold px-2 py-[3px] rounded-[10px]',
                 employee.is_active ? 'bg-success-dark text-[#166534]' : 'bg-error-dark text-[#991B1B]'
@@ -336,55 +336,38 @@ export default function EmployeeDetailPage() {
                   {labelEmploymentType(employee.employment_type)}
                 </span>
               )}
-              {employee.worker_type && (
-                <span className="text-[11px] text-text-secondary bg-surface-elevated border border-divider px-2 py-[3px] rounded-[10px]">
-                  {labelWorkerType(employee.worker_type)}
+              {employee.id_number && (
+                <span className="flex items-center gap-[5px] bg-surface-elevated border border-divider rounded-sm px-2 py-[3px]">
+                  <span className="text-[11px] text-text-secondary">ID</span>
+                  <span className="text-[11px] font-medium text-text-primary">{employee.id_number}</span>
                 </span>
               )}
-              <span className="text-[11px] text-text-secondary bg-surface-elevated border border-divider px-2 py-[3px] rounded-[10px] capitalize">
-                {employee.access_level}
-              </span>
+              {employee.email && (
+                <span className="flex items-center gap-[5px] bg-surface-elevated border border-divider rounded-sm px-2 py-[3px] min-w-0">
+                  <span className="text-[11px] text-text-secondary">Email</span>
+                  <span className="text-[11px] font-medium text-text-primary truncate">{employee.email}</span>
+                </span>
+              )}
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => setTab('edit')}
-            className="border border-primary text-primary rounded-sm h-10 px-[14px] text-[13px] font-medium flex items-center whitespace-nowrap hover:bg-primary/5 transition-colors"
-          >
-            Edit Profile
-          </button>
         </div>
 
-        {/* Payroll readiness banner */}
-        <div className={cn(
-          'mx-4 mb-3 px-3 py-[10px] rounded-[10px] border',
-          payrollReadiness.ready ? 'border-success bg-success-dark/40' : 'border-warning bg-warning-dark/40'
-        )}>
-          <p className={cn('text-[13px] font-semibold', payrollReadiness.ready ? 'text-success' : 'text-warning')}>
-            Payroll: {payrollReadiness.statusLabel}
-          </p>
-          {payrollReadiness.issues.map(issue => (
-            <p key={issue} className="text-[12px] text-text-secondary">• {issue}</p>
-          ))}
-        </div>
-
-        {/* Info chips */}
-        <div className="flex gap-2 px-4 pb-3 overflow-x-auto">
-          {[
-            employee.id_number && { label: 'ID', value: employee.id_number },
-            employee.employment_date && { label: 'Since', value: formatDate(employee.employment_date) },
-            employee.email && { label: 'Email', value: employee.email },
-            employee.phone && { label: 'Phone', value: employee.phone },
-          ].filter(Boolean).map((chip) => {
-            const c = chip as { label: string; value: string }
-            return (
-              <div key={c.label} className="flex items-center gap-[5px] bg-surface-elevated border border-divider rounded-sm px-2 py-[5px] shrink-0">
-                <span className="text-[11px] text-text-secondary">{c.label}</span>
-                <span className="text-[11px] font-medium text-text-primary">{c.value}</span>
+        {(employee.employment_date || employee.phone) && (
+          <div className="flex gap-2 px-4 pb-3 overflow-x-auto">
+            {employee.employment_date && (
+              <div className="flex items-center gap-[5px] bg-surface-elevated border border-divider rounded-sm px-2 py-[5px] shrink-0">
+                <span className="text-[11px] text-text-secondary">Since</span>
+                <span className="text-[11px] font-medium text-text-primary">{formatDate(employee.employment_date)}</span>
               </div>
-            )
-          })}
-        </div>
+            )}
+            {employee.phone && (
+              <div className="flex items-center gap-[5px] bg-surface-elevated border border-divider rounded-sm px-2 py-[5px] shrink-0">
+                <span className="text-[11px] text-text-secondary">Phone</span>
+                <span className="text-[11px] font-medium text-text-primary">{employee.phone}</span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Sticky tab bar */}
@@ -409,6 +392,18 @@ export default function EmployeeDetailPage() {
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {tab === 'overview' && (
           <>
+            <div className={cn(
+              'px-3 py-[10px] rounded-[10px] border',
+              payrollReadiness.ready ? 'border-success bg-success-dark/40' : 'border-warning bg-warning-dark/40'
+            )}>
+              <p className={cn('text-[13px] font-semibold', payrollReadiness.ready ? 'text-success' : 'text-warning')}>
+                Payroll: {payrollReadiness.statusLabel}
+              </p>
+              {payrollReadiness.issues.map(issue => (
+                <p key={issue} className="text-[12px] text-text-secondary">• {issue}</p>
+              ))}
+            </div>
+
             {/* KPI row */}
             <div className="grid grid-cols-4 gap-3">
               <KpiCard label="Days Worked" value={String(daysWorked)} color="text-primary" />
