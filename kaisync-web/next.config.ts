@@ -1,6 +1,22 @@
+import { execSync } from "node:child_process";
 import type { NextConfig } from "next";
 
+function resolveBuildId(): string {
+  const fromEnv = process.env.VERCEL_GIT_COMMIT_SHA || process.env.GITHUB_SHA
+  if (fromEnv) return fromEnv
+  try {
+    return execSync("git rev-parse HEAD", { encoding: "utf8" }).trim()
+  } catch {
+    return "dev"
+  }
+}
+
+const buildId = resolveBuildId()
+
 const nextConfig: NextConfig = {
+  env: {
+    NEXT_PUBLIC_BUILD_ID: buildId,
+  },
   async redirects() {
     return [
       { source: '/login', destination: '/auth/id-entry', permanent: false },
