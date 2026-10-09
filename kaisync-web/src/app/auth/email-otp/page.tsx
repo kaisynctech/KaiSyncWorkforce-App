@@ -7,7 +7,7 @@ import {
   AUTH_ROUTES,
   routeAfterCompanySelected,
 } from '@/lib/auth/employee-routing'
-import { getCurrentJwtEmployee } from '@/lib/auth/session'
+import { claimEmployeeInvite, getCurrentJwtEmployee } from '@/lib/auth/session'
 import {
   AuthBackButton,
   AuthError,
@@ -70,9 +70,13 @@ function EmailOtpForm() {
         if (magicErr) throw new Error('Invalid or expired code.')
       }
 
-      const employee = await getCurrentJwtEmployee(supabase)
+      let employee = await getCurrentJwtEmployee(supabase)
       if (!employee) {
-        setError('Invalid or expired code.')
+        const claimed = await claimEmployeeInvite(supabase)
+        if (claimed) employee = await getCurrentJwtEmployee(supabase)
+      }
+      if (!employee) {
+        setError('No employee record is linked to this email. Ask HR to send an invite.')
         return
       }
 

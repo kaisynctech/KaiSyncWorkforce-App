@@ -137,17 +137,37 @@ export async function revokeCodeSession(supabase: SupabaseClient): Promise<void>
   }
 }
 
+/** Bind the signed-in email to a pre-created employee row when user_id is still empty. */
+export async function claimEmployeeInvite(supabase: SupabaseClient): Promise<boolean> {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return false
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase.rpc as any)('claim_employee_invite')
+  return !error
+}
+
+async function loadMembershipsForUser(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<EmployeeMembership[] | null> {
+  const { data, error } = await supabase.rpc('employee_get_my_memberships', {
+    p_user_id: userId,
+  })
+  if (error || !Array.isArray(data)) return null
+  return data.map((row) => asMembership(row as Record<string, unknown>))
+}
+
 export async function getMyMemberships(
   supabase: SupabaseClient,
 ): Promise<EmployeeMembership[]> {
   const { data: { user } } = await supabase.auth.getUser()
   if (user) {
-    const { data, error } = await supabase.rpc('employee_get_my_memberships', {
-      p_user_id: user.id,
-    })
-    if (!error && Array.isArray(data)) {
-      return data.map((row) => asMembership(row as Record<string, unknown>))
+    let memberships = await loadMembershipsForUser(supabase, user.id)
+    if (memberships && memberships.length === 0) {
+      const claimed = await claimEmployeeInvite(supabase)
+      if (claimed) memberships = await loadMembershipsForUser(supabase, user.id)
     }
+    if (memberships) return memberships
   }
 
   const cs = getCodeSession()

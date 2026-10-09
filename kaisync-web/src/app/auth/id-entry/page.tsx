@@ -11,6 +11,7 @@ import {
 } from '@/lib/auth/employee-routing'
 import { hasCodeSession } from '@/lib/auth/code-session'
 import {
+  claimEmployeeInvite,
   getCurrentJwtEmployee,
   markMyLoginPasswordReady,
   refreshCodeSession,
@@ -47,7 +48,11 @@ export default function IdEntryPage() {
     async function restore() {
       try {
         const supabase = createClient()
-        const jwtEmp = await getCurrentJwtEmployee(supabase)
+        let jwtEmp = await getCurrentJwtEmployee(supabase)
+        if (!jwtEmp) {
+          const claimed = await claimEmployeeInvite(supabase)
+          if (claimed) jwtEmp = await getCurrentJwtEmployee(supabase)
+        }
         if (cancelled) return
         if (jwtEmp) {
           router.replace(routeAfterEmailSignIn(jwtEmp.login_password_ready))
@@ -128,7 +133,11 @@ export default function IdEntryPage() {
       })
       if (signInError) throw signInError
 
-      const employee = await getCurrentJwtEmployee(supabase)
+      let employee = await getCurrentJwtEmployee(supabase)
+      if (!employee) {
+        const claimed = await claimEmployeeInvite(supabase)
+        if (claimed) employee = await getCurrentJwtEmployee(supabase)
+      }
       if (!employee) {
         setError('No account found for this email. Contact your administrator.')
         await supabase.auth.signOut()
