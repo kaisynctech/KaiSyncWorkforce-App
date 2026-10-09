@@ -11,6 +11,7 @@ import { getCompanyAnnualDays, loadLeaveSettings, readCustomLeaveTypes, type Lea
 import { LEAVE_TYPES } from '@/lib/leave-policy'
 import { listExtraBranchIds } from '@/lib/employee-branches'
 import { getEmployee } from '@/lib/employees'
+import EditEmployeePage from './edit/page'
 import { assessPayrollReadiness } from '@/lib/payroll-readiness'
 import type { Employee, LeaveRequest, TimePunch, AccessLevel } from '@/types/database'
 
@@ -18,6 +19,9 @@ type PairSession = {
   punchIn: string
   punchOut: string | null
   hoursWorked: number
+  inAddress: string | null
+  outAddress: string | null
+  notes: string | null
 }
 
 function buildPairs(raw: TimePunch[]): PairSession[] {
@@ -30,7 +34,15 @@ function buildPairs(raw: TimePunch[]): PairSession[] {
       const hours = nextOut
         ? (new Date(nextOut.date_time).getTime() - new Date(p.date_time).getTime()) / 3600000
         : 0
-      pairs.push({ punchIn: p.date_time, punchOut: nextOut?.date_time ?? null, hoursWorked: hours })
+      const notes = [p.notes, nextOut?.notes].map(note => note?.trim()).filter(Boolean).join(' · ')
+      pairs.push({
+        punchIn: p.date_time,
+        punchOut: nextOut?.date_time ?? null,
+        hoursWorked: hours,
+        inAddress: placeLabel(p.address, p.latitude, p.longitude),
+        outAddress: nextOut ? placeLabel(nextOut.address, nextOut.latitude, nextOut.longitude) : null,
+        notes: notes || null,
+      })
       i = nextOut ? raw.indexOf(nextOut) + 1 : raw.length
     } else { i++ }
   }
@@ -49,7 +61,26 @@ type EmployeeDocument = {
   created_at: string | null
 }
 
-type Tab = 'overview' | 'payments' | 'leave' | 'documents'
+type Tab = 'overview' | 'edit' | 'attendance' | 'payments' | 'leave' | 'documents'
+
+const EMPLOYEE_TABS: { id: Tab; label: string }[] = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'edit', label: 'Edit Profile' },
+  { id: 'attendance', label: 'Attendance' },
+  { id: 'payments', label: 'Payments' },
+  { id: 'leave', label: 'Leave' },
+  { id: 'documents', label: 'Documents' },
+]
+
+function placeLabel(
+  address: string | null | undefined,
+  latitude: number | null | undefined,
+  longitude: number | null | undefined,
+): string | null {
+  if (address?.trim()) return address.trim()
+  if (latitude != null && longitude != null) return `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`
+  return null
+}
 type Period = 'today' | 'week' | 'month' | 'custom'
 
 interface PayrollReady {
@@ -132,8 +163,8 @@ export default function EmployeeDetailPage() {
 
   useEffect(() => { loadEmployee() }, [id])
   useEffect(() => {
-    if (employee && tab === 'overview') loadAttendance()
-  }, [employee, period, appliedCustomFrom, appliedCustomTo])
+    if (employee && (tab === 'overview' || tab === 'attendance')) loadAttendance()
+  }, [employee, tab, period, appliedCustomFrom, appliedCustomTo])
   useEffect(() => {
     if (employee && tab === 'leave' && !leaveLoaded) loadLeave()
   }, [employee, tab])
@@ -218,7 +249,7 @@ export default function EmployeeDetailPage() {
 
     const { data } = await supabase
       .from('time_punches')
-      .select('id, employee_id, type, date_time')
+      .select('id, employee_id, type, date_time, address, notes, latitude, longitude')
       .eq('employee_id', employee.id)
       .gte('date_time', from)
       .lt('date_time', nextDay.toISOString().split('T')[0])
@@ -315,12 +346,13 @@ export default function EmployeeDetailPage() {
               </span>
             </div>
           </div>
-          <Link
-            href={`/dashboard/employees/${employee.id}/edit`}
+          <button
+            type="button"
+            onClick={() => setTab('edit')}
             className="border border-primary text-primary rounded-sm h-10 px-[14px] text-[13px] font-medium flex items-center whitespace-nowrap hover:bg-primary/5 transition-colors"
           >
             Edit Profile
-          </Link>
+          </button>
         </div>
 
         {/* Payroll readiness banner */}
@@ -357,17 +389,17 @@ export default function EmployeeDetailPage() {
 
       {/* Sticky tab bar */}
       <div className="bg-surface border-b border-divider px-3 py-2 shrink-0">
-        <div className="grid grid-cols-4 gap-[6px]">
-          {(['overview', 'payments', 'leave', 'documents'] as Tab[]).map(t => (
+        <div className="flex gap-[6px] overflow-x-auto">
+          {EMPLOYEE_TABS.map(t => (
             <button
-              key={t}
-              onClick={() => setTab(t)}
+              key={t.id}
+              onClick={() => setTab(t.id)}
               className={cn(
-                'h-10 rounded-sm font-medium text-[12px] capitalize transition-colors',
-                tab === t ? 'bg-primary text-white' : 'bg-background text-text-secondary hover:text-text-primary'
+                'h-10 px-3 rounded-sm font-medium text-[12px] whitespace-nowrap transition-colors',
+                tab === t.id ? 'bg-primary text-white' : 'bg-background text-text-secondary hover:text-text-primary'
               )}
             >
-              {t}
+              {t.label}
             </button>
           ))}
         </div>
@@ -402,12 +434,13 @@ export default function EmployeeDetailPage() {
             <div className="bg-surface border border-divider rounded-lg overflow-hidden">
               <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
                 <p className="text-[14px] font-semibold text-text-primary">Banking Details</p>
-                <Link
-                  href={`/dashboard/employees/${employee.id}/edit`}
+                <button
+                  type="button"
+                  onClick={() => setTab('edit')}
                   className="bg-surface-elevated text-primary h-9 px-[14px] rounded-sm text-[12px] font-medium flex items-center hover:bg-primary/5 transition-colors"
                 >
                   Edit Banking
-                </Link>
+                </button>
               </div>
               {employee.bank_name ? (
                 <div className="p-4 grid grid-cols-2 gap-3">
@@ -491,6 +524,91 @@ export default function EmployeeDetailPage() {
               )}
             </div>
           </>
+        )}
+
+        {tab === 'edit' && (
+          <EditEmployeePage
+            embedded
+            onSaved={() => {
+              void loadEmployee()
+              setTab('overview')
+            }}
+          />
+        )}
+
+        {tab === 'attendance' && (
+          <div className="bg-surface border border-divider rounded-lg overflow-hidden">
+            <div className="px-4 py-3 border-b border-divider">
+              <p className="text-[14px] font-semibold text-text-primary mb-2">Attendance</p>
+              <div className="flex gap-2 flex-wrap">
+                {(['today', 'week', 'month', 'custom'] as Period[]).map(p => (
+                  <button
+                    key={p}
+                    onClick={() => setPeriod(p)}
+                    className={cn(
+                      'h-8 px-3 rounded-sm text-[12px] font-medium capitalize transition-colors',
+                      period === p ? 'bg-primary text-white' : 'bg-surface-elevated text-text-secondary hover:text-text-primary'
+                    )}
+                  >
+                    {p === 'week' ? 'This Week' : p === 'month' ? 'This Month' : p.charAt(0).toUpperCase() + p.slice(1)}
+                  </button>
+                ))}
+              </div>
+              {period === 'custom' && (
+                <div className="flex items-center gap-2 mt-2">
+                  <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
+                    className="h-9 px-2 rounded-sm border border-border bg-surface-elevated text-[13px] text-text-primary focus:outline-none focus:ring-1 focus:ring-primary" />
+                  <span className="text-text-secondary">–</span>
+                  <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
+                    className="h-9 px-2 rounded-sm border border-border bg-surface-elevated text-[13px] text-text-primary focus:outline-none focus:ring-1 focus:ring-primary" />
+                  <button
+                    onClick={() => { setAppliedCustomFrom(customFrom); setAppliedCustomTo(customTo) }}
+                    className="h-9 px-3 bg-primary text-white rounded-sm text-[12px] font-medium hover:bg-primary-dark transition-colors"
+                  >
+                    Apply
+                  </button>
+                </div>
+              )}
+            </div>
+            <div className="overflow-x-auto">
+              {punchLoading ? (
+                <div className="py-16 text-center text-[13px] text-text-disabled">Loading…</div>
+              ) : punches.length === 0 ? (
+                <div className="py-16 text-center text-[13px] text-text-disabled">No records for this period</div>
+              ) : (
+                <table className="w-full text-[13px]" style={{ minWidth: 860 }}>
+                  <thead>
+                    <tr className="border-b border-divider bg-surface-elevated">
+                      <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Date</th>
+                      <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Time in</th>
+                      <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">In location</th>
+                      <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Time out</th>
+                      <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Out location</th>
+                      <th className="text-right px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Hours</th>
+                      <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {punches.map((p, i) => (
+                      <tr key={p.punchIn + i} className="border-b border-divider last:border-0">
+                        <td className="px-4 py-3 text-text-primary whitespace-nowrap">{formatDate(p.punchIn)}</td>
+                        <td className="px-4 py-3 text-success font-medium whitespace-nowrap">{formatDateTime(p.punchIn)}</td>
+                        <td className="px-4 py-3 text-text-secondary max-w-[200px] truncate">{p.inAddress ?? '—'}</td>
+                        <td className="px-4 py-3 text-text-primary whitespace-nowrap">
+                          {p.punchOut ? formatDateTime(p.punchOut) : 'Open'}
+                        </td>
+                        <td className="px-4 py-3 text-text-secondary max-w-[200px] truncate">{p.outAddress ?? '—'}</td>
+                        <td className="px-4 py-3 text-right font-semibold text-text-primary">
+                          {p.hoursWorked > 0 ? p.hoursWorked.toFixed(1) : '—'}
+                        </td>
+                        <td className="px-4 py-3 text-text-secondary max-w-[220px] truncate">{p.notes ?? '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
         )}
 
         {tab === 'payments' && <PaymentsTab employee={employee} />}
