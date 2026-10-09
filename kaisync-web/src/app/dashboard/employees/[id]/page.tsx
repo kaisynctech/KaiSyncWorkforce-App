@@ -379,7 +379,7 @@ export default function EmployeeDetailPage() {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Sticky tab bar */}
-      <div className="bg-surface border-b border-divider px-3 py-2 shrink-0">
+      <div className="bg-surface border-b border-divider px-4 pt-8 pb-3 shrink-0">
         <div className="flex gap-[6px] overflow-x-auto">
           {EMPLOYEE_TABS.map(t => (
             <button
