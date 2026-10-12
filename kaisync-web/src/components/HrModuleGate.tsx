@@ -17,7 +17,6 @@ import {
 } from '@/lib/company-modules'
 import { can, loadPermissions, type PermissionKey } from '@/lib/permissions'
 import { loadCompanyWorkspace } from '@/lib/employee-workspace'
-import { resolveFinanceNavFlag } from '@/lib/finance-gate'
 
 export function HrModuleGate({
   flag,
@@ -70,8 +69,10 @@ export function HrModuleGate({
         ...(modulesOverride ?? {}),
       }
 
-      const { finance } = await resolveFinanceNavFlag(supabase, companyId, enabled)
-      const flags = resolveHrNavFlags(enabled, finance)
+      // No HrModuleGate flag reads `flags.finance`. Finance routes use
+      // FinanceLayout, which calls canAccessFinance itself. Waiting on the
+      // SaaS subscription lookup here only delays every other module.
+      const flags = resolveHrNavFlags(enabled)
       const moduleAllowed = Boolean(flags[flag])
 
       if (!moduleAllowed) {
