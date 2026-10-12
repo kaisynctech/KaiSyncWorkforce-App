@@ -62,6 +62,41 @@ const PRIORITY_BADGES: Record<string, { label: string; cls: string }> = {
 
 const FALLBACK_BADGE = { label: '—', cls: 'bg-surface-elevated text-text-secondary' }
 
+type JobListFilters = {
+  companyId: string
+  employeeId: string
+  scope: Scope
+  canViewAll: boolean
+  statusFilter: JobStatus | 'all'
+  search: string
+  dateFilter: boolean
+  dateFrom: string
+  dateTo: string
+  clientIds: string[]
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function withJobFilters(query: any, filters: JobListFilters) {
+  const effectiveScope: Scope =
+    filters.scope === 'all' && !filters.canViewAll ? 'mine' : filters.scope
+  let next = query.eq('company_id', filters.companyId)
+  if (effectiveScope === 'mine') {
+    next = next.or(
+      `assignee_employee_id.eq.${filters.employeeId},assigned_employee_ids.cs.{${filters.employeeId}}`,
+    )
+  }
+  if (filters.statusFilter !== 'all') next = next.eq('status', filters.statusFilter)
+  if (filters.search) {
+    const q = escapeIlike(filters.search)
+    const parts = [`title.ilike.%${q}%`, `job_code.ilike.%${q}%`]
+    if (filters.clientIds.length > 0) parts.push(`client_id.in.(${filters.clientIds.join(',')})`)
+    next = next.or(parts.join(','))
+  }
+  if (filters.dateFilter && filters.dateFrom) next = next.gte('scheduled_start', filters.dateFrom)
+  if (filters.dateFilter && filters.dateTo) next = next.lte('scheduled_end', `${filters.dateTo}T23:59:59`)
+  return next
+}
+
 function statusBadgeOf(raw: string | null | undefined) {
   if (!raw) return FALLBACK_BADGE
   return STATUS_BADGES[raw] ?? STATUS_BADGES[raw.toLowerCase()] ?? {
@@ -122,54 +157,64 @@ export default function JobsPage() {
     const nextPerms = await loadPermissions(supabase, member.companyId, me?.access_level)
     setPerms(nextPerms)
 
-    const effectiveScope: Scope =
-      scope === 'all' && !can(nextPerms, PERM.jobsViewAll) ? 'mine' : scope
-
-    const jobScope = () =>
-      supabase.from('jobs').select('id', { count: 'exact', head: true }).eq('company_id', member.companyId)
-
-    const { from, to } = pageRange(page, pageSize)
-    let query = supabase
-      .from('jobs')
-      .select('*, clients(name, client_code)', { count: 'exact' })
-      .eq('company_id', member.companyId)
-      .order('created_at', { ascending: false })
-
-    if (effectiveScope === 'mine') {
-      query = query.or(`assignee_employee_id.eq.${member.employeeId},assigned_employee_ids.cs.{${member.employeeId}}`)
-    }
-    if (statusFilter !== 'all') query = query.eq('status', statusFilter)
+    let clientIds: string[] = []
     if (searchDebounced) {
       const q = escapeIlike(searchDebounced)
-      query = query.or(`title.ilike.%${q}%,job_code.ilike.%${q}%`)
+      const { data: clientRows } = await supabase
+        .from('clients')
+        .select('id')
+        .eq('company_id', member.companyId)
+        .ilike('name', `%${q}%`)
+      clientIds = (clientRows ?? []).map(row => row.id as string)
     }
-    if (dateFilter && dateFrom) query = query.gte('scheduled_start', dateFrom)
-    if (dateFilter && dateTo) query = query.lte('scheduled_end', `${dateTo}T23:59:59`)
 
-    const [pageRes, totalRes, openRes, inProgRes, unassignedRes] = await Promise.all([
-      query.range(from, to),
-      jobScope(),
-      jobScope().in('status', ['open', 'scheduled', 'in_progress']),
-      jobScope().eq('status', 'in_progress'),
-      jobScope().is('assignee_employee_id', null).neq('status', 'completed').neq('status', 'cancelled'),
+    const filters: JobListFilters = {
+      companyId: member.companyId,
+      employeeId: member.employeeId,
+      scope,
+      canViewAll: can(nextPerms, PERM.jobsViewAll),
+      statusFilter,
+      search: searchDebounced,
+      dateFilter,
+      dateFrom,
+      dateTo,
+      clientIds,
+    }
+
+    const { from, to } = pageRange(page, pageSize)
+    const countOf = () =>
+      withJobFilters(
+        supabase.from('jobs').select('id', { count: 'exact', head: true }),
+        filters,
+      )
+
+    const [pageRes, openRes, inProgRes, unassignedRes] = await Promise.all([
+      withJobFilters(
+        supabase.from('jobs').select('*, clients(name, client_code)', { count: 'exact' }),
+        filters,
+      ).order('created_at', { ascending: false }).range(from, to),
+      countOf().in('status', ['open', 'scheduled', 'in_progress']),
+      countOf().eq('status', 'in_progress'),
+      countOf().is('assignee_employee_id', null).neq('status', 'completed').neq('status', 'cancelled'),
     ])
 
     if (pageRes.error) {
       setError(pageRes.error.message)
       setJobs([])
       setTotal(0)
+      setKpis({ total: 0, open: 0, inProgress: 0, unassigned: 0 })
     } else {
       setError(null)
       setJobs((pageRes.data ?? []) as Job[])
-      setTotal(pageRes.count ?? 0)
+      const matched = pageRes.count ?? 0
+      setTotal(matched)
+      setKpis({
+        total: matched,
+        open: openRes.count ?? 0,
+        inProgress: inProgRes.count ?? 0,
+        unassigned: unassignedRes.count ?? 0,
+      })
     }
-
-    setKpis({
-      total: totalRes.count ?? 0,
-      open: openRes.count ?? 0,
-      inProgress: inProgRes.count ?? 0,
-      unassigned: unassignedRes.count ?? 0,
-    })
     setLoading(false)
   }, [scope, page, pageSize, searchDebounced, statusFilter, dateFilter, dateFrom, dateTo])
 
@@ -178,9 +223,53 @@ export default function JobsPage() {
   const filtered = jobs
   const pages = totalPages(total, pageSize)
 
-  function downloadCSV() {
+  async function downloadCSV() {
+    const supabase = createClient()
+    const member = await resolveCurrentMember(supabase)
+    if (!member) return
+
+    let clientIds: string[] = []
+    if (searchDebounced) {
+      const q = escapeIlike(searchDebounced)
+      const { data: clientRows } = await supabase
+        .from('clients')
+        .select('id')
+        .eq('company_id', member.companyId)
+        .ilike('name', `%${q}%`)
+      clientIds = (clientRows ?? []).map(row => row.id as string)
+    }
+
+    const filters: JobListFilters = {
+      companyId: member.companyId,
+      employeeId: member.employeeId,
+      scope,
+      canViewAll,
+      statusFilter,
+      search: searchDebounced,
+      dateFilter,
+      dateFrom,
+      dateTo,
+      clientIds,
+    }
+
+    const rows: Job[] = []
+    const batch = 500
+    for (let from = 0; from < 20000; from += batch) {
+      const { data, error: exportError } = await withJobFilters(
+        supabase.from('jobs').select('*, clients(name, client_code)'),
+        filters,
+      ).order('created_at', { ascending: false }).range(from, from + batch - 1)
+      if (exportError) {
+        setError(exportError.message)
+        return
+      }
+      const pageRows = (data ?? []) as Job[]
+      rows.push(...pageRows)
+      if (pageRows.length < batch) break
+    }
+
     const headers = ['Code', 'Title', 'Client', 'Status', 'Priority', 'Start', 'End', 'Estimated Cost']
-    const rows = filtered.map(job => {
+    const csvRows = rows.map(job => {
       const client = (job.clients as { name: string } | undefined)?.name ?? ''
       return [
         job.job_code ?? job.id.slice(0, 8).toUpperCase(),
@@ -193,7 +282,7 @@ export default function JobsPage() {
         job.estimated_cost != null ? String(job.estimated_cost) : '',
       ]
     })
-    const csv = [headers, ...rows]
+    const csv = [headers, ...csvRows]
       .map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
       .join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
@@ -296,7 +385,7 @@ export default function JobsPage() {
             <span className="material-icons text-text-disabled text-[18px]">search</span>
             <input
               type="text"
-              placeholder="Search jobs…"
+              placeholder="Search title, code, or client"
               value={search}
               onChange={e => setSearch(e.target.value)}
               className="flex-1 text-[13px] text-text-primary placeholder:text-text-disabled bg-transparent focus:outline-none"
@@ -444,6 +533,10 @@ export default function JobsPage() {
                       <DataCardRow
                         label="Start"
                         value={job.scheduled_start ? formatDate(job.scheduled_start) : '—'}
+                      />
+                      <DataCardRow
+                        label="End"
+                        value={job.scheduled_end ? formatDate(job.scheduled_end) : '—'}
                       />
                       <DataCardRow
                         label="Cost"

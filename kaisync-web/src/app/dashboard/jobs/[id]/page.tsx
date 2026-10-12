@@ -96,6 +96,7 @@ export default function JobDetailPage() {
   const [editEnd,         setEditEnd]         = useState('')
   const [editClientId,    setEditClientId]    = useState<string | null>(null)
   const [editDealId,      setEditDealId]      = useState<string | null>(null)
+  const [editAddress,     setEditAddress]     = useState('')
   const [clients,         setClients]         = useState<ClientRow[]>([])
   const [deals,           setDeals]           = useState<DealRow[]>([])
 
@@ -222,6 +223,7 @@ export default function JobDetailPage() {
     setEditEnd(job.scheduled_end ? job.scheduled_end.slice(0, 16) : '')
     setEditClientId(job.client_id ?? null)
     setEditDealId(job.deal_id ?? null)
+    setEditAddress(job.address ?? '')
     setIsEditing(true)
   }
 
@@ -239,6 +241,7 @@ export default function JobDetailPage() {
       scheduled_end:   editEnd ? new Date(editEnd).toISOString() : null,
       client_id:       editClientId,
       deal_id:         editDealId,
+      address:         editAddress.trim() || null,
     }).eq('id', jobId)
     if (e) {
       setError(e.message)
@@ -252,6 +255,7 @@ export default function JobDetailPage() {
         scheduled_end:   editEnd ? new Date(editEnd).toISOString() : null,
         client_id:       editClientId,
         deal_id:         editDealId,
+        address:         editAddress.trim() || null,
         client_deals:    selectedDeal
           ? { id: selectedDeal.id, title: selectedDeal.title, project_code: selectedDeal.project_code }
           : null,
@@ -528,14 +532,16 @@ export default function JobDetailPage() {
             Cancel
           </button>
         )}
-        <button
-          onClick={handleDeleteJob}
-          disabled={deleting}
-          className="h-[42px] px-[18px] text-sm min-w-[72px] rounded-xl border font-semibold disabled:opacity-50 shrink-0"
-          style={{ backgroundColor: '#450A0A', color: '#FCA5A5', borderColor: '#FCA5A5' }}
-        >
-          {deleting ? '…' : 'Delete'}
-        </button>
+        {canEdit && (
+          <button
+            onClick={handleDeleteJob}
+            disabled={deleting}
+            className="h-[42px] px-[18px] text-sm min-w-[72px] rounded-xl border font-semibold disabled:opacity-50 shrink-0"
+            style={{ backgroundColor: '#450A0A', color: '#FCA5A5', borderColor: '#FCA5A5' }}
+          >
+            {deleting ? '…' : 'Delete'}
+          </button>
+        )}
       </div>
 
       {/* Error banner */}
@@ -595,6 +601,15 @@ export default function JobDetailPage() {
                   className={inputCls}
                 />
               </div>
+            </div>
+            <div>
+              <label className="text-[11px] text-text-secondary mb-1 block">Address</label>
+              <input
+                value={editAddress}
+                onChange={e => setEditAddress(e.target.value)}
+                className={inputCls}
+                placeholder="Full address or description"
+              />
             </div>
             <div>
               <label className="text-[11px] text-text-secondary mb-1 block">Client</label>
@@ -697,7 +712,7 @@ export default function JobDetailPage() {
           </>
         )}
 
-        {isOpen && !isEditing && (
+        {canEdit && isOpen && !isEditing && (
           <div className="flex gap-2 pt-1 border-t border-divider flex-wrap">
             {!job.first_response_at && (
               <button
@@ -720,6 +735,7 @@ export default function JobDetailPage() {
       </div>
 
       {/* ── Status update card ── */}
+      {canEdit && (
       <div className="bg-surface rounded-xl p-4 border border-divider space-y-3">
         <p className="text-[11px] font-semibold text-text-secondary tracking-wider uppercase">Update Status</p>
         <div className="flex gap-2 items-end">
@@ -739,6 +755,7 @@ export default function JobDetailPage() {
           </button>
         </div>
       </div>
+      )}
 
       {/* ── Team & Contractor card ── */}
       <div className="bg-surface rounded-xl border border-divider overflow-hidden">
@@ -759,6 +776,7 @@ export default function JobDetailPage() {
                   type="checkbox"
                   checked={assignedIds.has(emp.id)}
                   onChange={() => toggleEmployee(emp.id)}
+                  disabled={!canEdit}
                   className="rounded border-border accent-primary"
                 />
                 <span className="text-[13px] text-text-primary">{emp.name} {emp.surname}</span>
@@ -794,12 +812,14 @@ export default function JobDetailPage() {
                           {jc.agreed_amount != null ? `R${jc.agreed_amount.toFixed(2)}` : '—'}
                         </td>
                         <td className="py-2">
-                          <button
-                            onClick={() => handleRemoveContractor(jc.id)}
-                            className="text-text-secondary hover:text-error w-9 h-8 text-[13px] transition-colors"
-                          >
-                            ✕
-                          </button>
+                          {canEdit && (
+                            <button
+                              onClick={() => handleRemoveContractor(jc.id)}
+                              className="text-text-secondary hover:text-error w-9 h-8 text-[13px] transition-colors"
+                            >
+                              ✕
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -812,21 +832,25 @@ export default function JobDetailPage() {
               <p className="text-text-secondary text-[12px]">No contractors assigned yet.</p>
             )}
 
-            <button
-              onClick={() => { setShowContractorModal(true); setContractorSearch(''); setSelectedContractorId(''); setAgreedAmount('') }}
-              className="h-10 px-4 text-[13px] rounded-lg border border-border text-text-secondary hover:text-text-primary hover:border-primary transition-colors"
-            >
-              + Assign Contractor
-            </button>
+            {canEdit && (
+              <button
+                onClick={() => { setShowContractorModal(true); setContractorSearch(''); setSelectedContractorId(''); setAgreedAmount('') }}
+                className="h-10 px-4 text-[13px] rounded-lg border border-border text-text-secondary hover:text-text-primary hover:border-primary transition-colors"
+              >
+                + Assign Contractor
+              </button>
+            )}
           </div>
 
-          <button
-            onClick={handleSaveTeam}
-            disabled={saving}
-            className="w-full h-11 text-[13px] rounded-lg bg-primary text-white font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors"
-          >
-            Save team & contractor
-          </button>
+          {canEdit && (
+            <button
+              onClick={handleSaveTeam}
+              disabled={saving}
+              className="w-full h-11 text-[13px] rounded-lg bg-primary text-white font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors"
+            >
+              Save team & contractor
+            </button>
+          )}
         </div>
       </div>
 
@@ -970,12 +994,14 @@ export default function JobDetailPage() {
       <div className="bg-surface rounded-xl p-4 border border-divider space-y-2">
         <div className="flex items-center justify-between mb-1">
           <p className="text-[11px] font-semibold text-text-secondary tracking-wider uppercase">Inventory</p>
-          <button
-            onClick={() => { setShowInventoryModal(true); setInventorySearch(''); setSelectedItemId(''); setQuantity('1') }}
-            className="h-9 px-3 text-[12px] rounded-lg border border-border text-text-secondary hover:text-text-primary hover:border-primary transition-colors"
-          >
-            + Add
-          </button>
+          {canEdit && (
+            <button
+              onClick={() => { setShowInventoryModal(true); setInventorySearch(''); setSelectedItemId(''); setQuantity('1') }}
+              className="h-9 px-3 text-[12px] rounded-lg border border-border text-text-secondary hover:text-text-primary hover:border-primary transition-colors"
+            >
+              + Add
+            </button>
+          )}
         </div>
         {inventoryTotal > 0 && (
           <p className="text-primary text-[12px]">Total inventory cost: R{inventoryTotal.toFixed(2)}</p>
@@ -1003,22 +1029,24 @@ export default function JobDetailPage() {
           <p className="text-[11px] font-semibold text-text-secondary tracking-wider uppercase">Job Photos</p>
           {photoBusy && <span className="material-icons text-[16px] text-text-secondary animate-spin">refresh</span>}
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => beforeInputRef.current?.click()}
-            disabled={photoBusy}
-            className="h-10 px-[14px] text-[12px] rounded-lg bg-primary text-white font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors"
-          >
-            Upload Before
-          </button>
-          <button
-            onClick={() => afterInputRef.current?.click()}
-            disabled={photoBusy}
-            className="h-10 px-[14px] text-[12px] rounded-lg border border-primary text-primary font-semibold hover:bg-primary/5 disabled:opacity-50 transition-colors"
-          >
-            Upload After
-          </button>
-        </div>
+        {canEdit && (
+          <div className="flex gap-2">
+            <button
+              onClick={() => beforeInputRef.current?.click()}
+              disabled={photoBusy}
+              className="h-10 px-[14px] text-[12px] rounded-lg bg-primary text-white font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors"
+            >
+              Upload Before
+            </button>
+            <button
+              onClick={() => afterInputRef.current?.click()}
+              disabled={photoBusy}
+              className="h-10 px-[14px] text-[12px] rounded-lg border border-primary text-primary font-semibold hover:bg-primary/5 disabled:opacity-50 transition-colors"
+            >
+              Upload After
+            </button>
+          </div>
+        )}
 
         <input ref={beforeInputRef} type="file" accept="image/*" className="hidden"
           onChange={async e => {
