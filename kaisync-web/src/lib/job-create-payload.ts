@@ -30,6 +30,13 @@ function emptyToNull(value: string | null | undefined): string | null {
   return t ? t : null
 }
 
+/** jobs.estimated_cost, actual_cost, and contractor_cost are NOT NULL DEFAULT 0.
+ *  An explicit null overrides that default and the insert is rejected. */
+function costOrOmit(value: number | null | undefined): number | undefined {
+  if (value == null || Number.isNaN(value)) return undefined
+  return value
+}
+
 export function buildJobCreatePayload(input: JobCreateInput): Record<string, unknown> {
   const title = input.title.trim()
   if (!title) throw new Error('Job title is required.')
@@ -46,9 +53,9 @@ export function buildJobCreatePayload(input: JobCreateInput): Record<string, unk
     title,
     description: emptyToNull(input.description),
     priority: emptyToNull(input.priority) || 'medium',
-    estimated_cost: input.estimatedCost ?? null,
-    actual_cost: input.actualCost ?? null,
-    contractor_cost: input.contractorCost ?? null,
+    estimated_cost: costOrOmit(input.estimatedCost),
+    actual_cost: costOrOmit(input.actualCost),
+    contractor_cost: costOrOmit(input.contractorCost),
     scheduled_start: input.scheduledStart || null,
     scheduled_end: input.scheduledEnd || null,
     client_id: input.clientId || null,
