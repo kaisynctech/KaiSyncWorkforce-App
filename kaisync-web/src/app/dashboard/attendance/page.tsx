@@ -12,6 +12,7 @@ import {
   lateFlag,
   locationDisplay,
   mergeNonWorkDays,
+  toLocalDateStr,
   totalHrsDisplay,
   type PunchLike,
   type PunchSessionRow,
@@ -20,6 +21,8 @@ import {
 import { ManualTimesheetForm } from '@/components/attendance/ManualTimesheetForm'
 import { AttendanceNote } from '@/components/attendance/AttendanceNote'
 import { enrichSessionsWithPlaceNames } from '@/lib/punch-address-enrich'
+import { resumeSameDayShift } from '@/lib/resume-shift'
+import { returnToWorkLabel } from '@/lib/utils'
 import {
   ResponsiveDataView,
   DataCard,
@@ -30,6 +33,7 @@ import {
 import type { TimePunch } from '@/types/database'
 
 type Preset = 'today' | 'week' | 'month' | 'all' | 'custom'
+type AttendanceView = 'attendance' | 'timesheet'
 
 type EmpRow = {
   id: string
@@ -58,9 +62,14 @@ type OnLeaveTodayRow = {
 }
 
 function returnDate(endDate: string) {
-  const [y, m, d] = endDate.split('-').map(Number)
-  if (!y || !m || !d) return '—'
-  return new Date(y, m - 1, d + 1).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short' })
+  return returnToWorkLabel(endDate)
+}
+
+function focusDayForRange(from: string, to: string, timeZone: string): string {
+  if (from === to) return from
+  const today = toLocalDateStr(new Date(), timeZone)
+  if (today >= from && today <= to) return today
+  return to
 }
 
 const todayStr = () => new Date().toISOString().split('T')[0]
@@ -203,6 +212,9 @@ export default function AttendancePage() {
   const [staff, setStaff] = useState<EmpRow[]>([])
   const [onLeaveToday, setOnLeaveToday] = useState<OnLeaveTodayRow[]>([])
   const [showOnLeave, setShowOnLeave] = useState(true)
+  const [view, setView] = useState<AttendanceView>('attendance')
+  const [timeZone, setTimeZone] = useState('Africa/Johannesburg')
+  const [resumeBusy, setResumeBusy] = useState<string | null>(null)
 
   const companyIdRef = useRef<string | null>(null)
   const scopedIdsRef = useRef<Set<string> | null>(null)
@@ -340,6 +352,7 @@ export default function AttendancePage() {
     const tzRaw = (coSettings as { timezone?: string } | null)?.timezone
     const timeZone =
       typeof tzRaw === 'string' && tzRaw.trim() ? tzRaw.trim() : 'Africa/Johannesburg'
+    setTimeZone(timeZone)
 
     const scope = scopedIdsRef.current
     const leaveRows = (onLeaveTodayRes.data ?? []) as unknown as OnLeaveTodayRow[]
@@ -451,8 +464,43 @@ export default function AttendancePage() {
 
   const onSite = sessions.filter(s => s.row.isOpen && !s.row.isAbsentDay && !s.row.isLeaveDay).length
   const completed = sessions.filter(s => !s.row.isOpen && !s.row.isAbsentDay && !s.row.isLeaveDay).length
-  const totalHours = sessions.reduce((sum, s) => sum + s.row.regularHours + s.row.overtimeHours, 0)
-  const totalPay = sessions.reduce((sum, s) => sum + s.pay, 0)
+  const focusDay = focusDayForRange(from, to, timeZone)
+  const presentOnFocus = new Set<string>()
+  const excusedOnFocus = new Set<string>()
+  for (const s of sessions) {
+    const day = toLocalDateStr(s.row.clockIn, timeZone)
+    if (day !== focusDay) continue
+    if (s.row.isLeaveDay || s.row.isAbsentDay) excusedOnFocus.add(s.employeeId)
+    else if (s.row.clockInPunchId) presentOnFocus.add(s.employeeId)
+  }
+  const missedClockIn = staff.filter(e => !presentOnFocus.has(e.id) && !excusedOnFocus.has(e.id)).length
+  const continueKeys = new Set<string>()
+  const byEmpDay = new Map<string, DisplaySession[]>()
+  for (const s of sessions) {
+    if (s.row.isLeaveDay || s.row.isAbsentDay || !s.row.clockInPunchId) continue
+    const day = toLocalDateStr(s.row.clockIn, timeZone)
+    const list = byEmpDay.get(`${s.employeeId}|${day}`) ?? []
+    list.push(s)
+    byEmpDay.set(`${s.employeeId}|${day}`, list)
+  }
+  for (const list of byEmpDay.values()) {
+    if (!list.some(s => s.row.isOpen) || !list.some(s => s.row.clockOut)) continue
+    const openRow = list.find(s => s.row.isOpen)
+    if (openRow) continueKeys.add(openRow.key)
+  }
+
+  async function continueShift(employeeId: string) {
+    if (!companyId) return
+    setResumeBusy(employeeId)
+    setError(null)
+    const result = await resumeSameDayShift(createClient(), { companyId, employeeId })
+    setResumeBusy(null)
+    if (!result.ok) {
+      setError(result.message)
+      return
+    }
+    fetchPunches()
+  }
 
   if (error === 'not_linked') return (
     <div className="flex items-center justify-center h-full">
@@ -472,9 +520,26 @@ export default function AttendancePage() {
       <div className="flex items-center justify-between mb-5">
         <div>
           <h1 className="text-[22px] font-semibold text-text-primary">Attendance</h1>
-          <p className="text-[13px] text-text-secondary mt-0.5">{sessions.length} sessions</p>
+          <div className="flex gap-1 mt-2 bg-surface border border-divider rounded-md p-1 w-fit">
+            <button
+              type="button"
+              onClick={() => setView('attendance')}
+              className={`h-8 px-3 rounded text-[13px] font-medium ${view === 'attendance' ? 'bg-primary text-white' : 'text-text-secondary'}`}
+            >
+              Attendance
+            </button>
+            <button
+              type="button"
+              onClick={() => setView('timesheet')}
+              className={`h-8 px-3 rounded text-[13px] font-medium ${view === 'timesheet' ? 'bg-primary text-white' : 'text-text-secondary'}`}
+            >
+              Timesheet
+            </button>
+          </div>
         </div>
         <div className="flex gap-2">
+          {view === 'attendance' && (
+            <>
           <button
             onClick={() => exportCSV(filtered, from, to)}
             className="h-10 px-4 text-[13px] font-medium rounded-lg border border-border bg-surface text-text-primary hover:bg-background transition-colors"
@@ -487,6 +552,8 @@ export default function AttendancePage() {
           >
             Export PDF
           </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -494,7 +561,23 @@ export default function AttendancePage() {
         <p className="mb-4 text-error text-[13px]">{error}</p>
       )}
 
-      {onLeaveToday.length > 0 && (
+      {view === 'timesheet' && companyId && (
+        <ManualTimesheetForm
+          companyId={companyId}
+          employees={staff}
+          onSaved={date => {
+            setView('attendance')
+            if (preset === 'custom' && customFrom === date && customTo === date) fetchPunches()
+            else {
+              setPreset('custom')
+              setCustomFrom(date)
+              setCustomTo(date)
+            }
+          }}
+        />
+      )}
+
+      {view === 'attendance' && onLeaveToday.length > 0 && (
         <div className="mb-4 bg-surface border border-divider rounded-lg overflow-hidden">
           <button
             type="button"
@@ -533,23 +616,8 @@ export default function AttendancePage() {
         </div>
       )}
 
-      {companyId && (
-        <div className="mb-4">
-          <ManualTimesheetForm
-            companyId={companyId}
-            employees={staff}
-            onSaved={date => {
-              if (preset === 'custom' && customFrom === date && customTo === date) fetchPunches()
-              else {
-                setPreset('custom')
-                setCustomFrom(date)
-                setCustomTo(date)
-              }
-            }}
-          />
-        </div>
-      )}
-
+      {view === 'attendance' && (
+      <>
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         {PRESETS.map(p => (
           <button
@@ -583,7 +651,7 @@ export default function AttendancePage() {
         )}
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-5">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
         <div className="bg-surface rounded-lg border border-divider p-4">
           <p className="text-[24px] font-bold text-primary">{onSite}</p>
           <p className="text-[12px] text-text-secondary">Currently on site</p>
@@ -593,12 +661,9 @@ export default function AttendancePage() {
           <p className="text-[12px] text-text-secondary">Completed shifts</p>
         </div>
         <div className="bg-surface rounded-lg border border-divider p-4">
-          <p className="text-[24px] font-bold text-text-primary">{totalHours.toFixed(1)}h</p>
-          <p className="text-[12px] text-text-secondary">Total hours</p>
-        </div>
-        <div className="bg-surface rounded-lg border border-divider p-4">
-          <p className="text-[24px] font-bold text-text-primary">R{totalPay.toFixed(2)}</p>
-          <p className="text-[12px] text-text-secondary">Total pay</p>
+          <p className="text-[24px] font-bold text-text-primary">{missedClockIn}</p>
+          <p className="text-[12px] text-text-secondary">Didn't clock in</p>
+          <p className="text-[11px] text-text-disabled mt-0.5">{fmtSessionDate(new Date(`${focusDay}T12:00:00`))}</p>
         </div>
       </div>
 
@@ -653,6 +718,16 @@ export default function AttendancePage() {
                           <p className="font-medium text-text-primary whitespace-nowrap">{s.employeeName}</p>
                           {s.employeeCode && (
                             <p className="text-[11px] text-text-secondary font-mono">{s.employeeCode}</p>
+                          )}
+                          {continueKeys.has(s.key) && (
+                            <button
+                              type="button"
+                              disabled={resumeBusy === s.employeeId}
+                              onClick={() => void continueShift(s.employeeId)}
+                              className="mt-1 text-[12px] font-medium text-primary hover:underline disabled:opacity-50"
+                            >
+                              {resumeBusy === s.employeeId ? 'Continuing…' : 'Continue first shift'}
+                            </button>
                           )}
                         </td>
                         <td className="px-4 py-3 text-text-secondary whitespace-nowrap">{fmtSessionDate(r.clockIn)}</td>
@@ -716,6 +791,16 @@ export default function AttendancePage() {
                             {fmtSessionDate(r.clockIn)}
                             {s.employeeCode ? ` · ${s.employeeCode}` : ''}
                           </DataCardMeta>
+                          {continueKeys.has(s.key) && (
+                            <button
+                              type="button"
+                              disabled={resumeBusy === s.employeeId}
+                              onClick={() => void continueShift(s.employeeId)}
+                              className="mt-1 text-[12px] font-medium text-primary hover:underline disabled:opacity-50"
+                            >
+                              {resumeBusy === s.employeeId ? 'Continuing…' : 'Continue first shift'}
+                            </button>
+                          )}
                         </div>
                         <span className={`text-[12px] font-semibold shrink-0 ${
                           r.isAbsentDay ? 'text-error' : r.isLeaveDay ? 'text-warning' : 'text-success'
@@ -741,6 +826,8 @@ export default function AttendancePage() {
           />
         )}
       </div>
+      </>
+      )}
     </div>
   )
 }

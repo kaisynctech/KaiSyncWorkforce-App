@@ -44,6 +44,17 @@ export function getInitials(name: string | null | undefined): string {
     .join('')
 }
 
+/** The day the person is back at work: the calendar day after leave ends. */
+export function returnToWorkLabel(endDate: string): string {
+  const [y, m, d] = endDate.split('-').map(Number)
+  if (!y || !m || !d) return '—'
+  return new Date(y, m - 1, d + 1).toLocaleDateString('en-ZA', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+}
+
 /** Calendar date in the user's local timezone as YYYY-MM-DD (not UTC). */
 export function localISODate(date: Date = new Date()): string {
   const y = date.getFullYear()

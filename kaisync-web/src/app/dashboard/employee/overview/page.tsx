@@ -37,6 +37,7 @@ import {
 } from '@/lib/geo-location'
 import { PwaInstallButton } from '@/components/PwaInstallButton'
 import { localISODate } from '@/lib/utils'
+import { toLocalDateStr } from '@/lib/punch-session'
 
 // ── Interfaces ─────────────────────────────────────────────────────────────
 interface LastPunch {
@@ -937,6 +938,35 @@ export default function EmployeeOverviewPage() {
     await refreshPunchStateAfterClock()
   }
 
+  async function resumeShift() {
+    const empId = empIdRef.current
+    const compId = companyIdRef.current
+    if (!empId || !compId || clockInFlightRef.current) return
+    clockInFlightRef.current = true
+    setClockLoading(true)
+    setClockError(null)
+    const supabase = createClient()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rpc = (fn: string, args: Record<string, unknown>) => (supabase.rpc as any)(fn, args)
+    const { data, error } = await rpc('resume_same_day_shift', {
+      p_company_id: compId,
+      p_employee_id: empId,
+      p_session_token: tokRef.current,
+    })
+    if (error) {
+      setClockError(error.message)
+      setClockLoading(false)
+      clockInFlightRef.current = false
+      return
+    }
+    const row = data as LastPunch | null
+    if (row?.date_time) applyLastPunch(row, localISODate())
+    setShowClockModal(false)
+    setClockLoading(false)
+    clockInFlightRef.current = false
+    await refreshPunchStateAfterClock()
+  }
+
   // ── Absence modal ──────────────────────────────────────────────────────
   function openAbsenceModal() {
     if (isPending) {
@@ -988,6 +1018,14 @@ export default function EmployeeOverviewPage() {
   const activeJobs    = jobs.filter(j => j.status !== 'completed' && j.status !== 'cancelled')
   const showBranchBanner = showClockCard && !isClockedIn && !!branchStatus?.enforcementActive && !!branchStatus.displayMessage
   const companyName = companyWs?.name ?? 'your company'
+  const todayKey = localISODate()
+  const firstClockInToday = recentPunches
+    .filter(p => p.type === 'in' && toLocalDateStr(new Date(p.date_time)) === todayKey)
+    .sort((a, b) => a.date_time.localeCompare(b.date_time))[0]
+  const canResumeShift = !isClockedIn && lastPunch?.type === 'out' && Boolean(firstClockInToday)
+  const resumedStartLabel = firstClockInToday
+    ? new Date(firstClockInToday.date_time).toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit', hour12: false })
+    : ''
   const pendingBannerText = companyWs
     ? `Awaiting HR approval at ${companyName}. You can upload documents below — only this company can see them.`
     : 'Awaiting HR approval. You can upload documents for this company while you wait.'
@@ -1540,14 +1578,29 @@ export default function EmployeeOverviewPage() {
             </div>
 
             {/* Duplicate shift warning */}
-            {!isClockedIn && punchesToday >= 2 && (
+            {canResumeShift ? (
+              <div className="rounded-lg px-3 py-2.5 bg-warning/10 border border-warning/30 mb-3 space-y-2">
+                <p className="text-[12px] font-semibold text-warning">You already clocked out today</p>
+                <p className="text-[12px] text-text-secondary">
+                  Continue the shift you started at {resumedStartLabel}? That removes the clock-out and keeps one shift.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void resumeShift()}
+                  disabled={clockLoading}
+                  className="w-full h-11 rounded-xl bg-primary text-white text-[14px] font-bold disabled:opacity-60"
+                >
+                  {clockLoading ? '…' : 'Continue this shift'}
+                </button>
+              </div>
+            ) : !isClockedIn && punchesToday >= 2 ? (
               <div className="rounded-lg px-3 py-2.5 bg-warning/10 border border-warning/30 mb-3">
                 <p className="text-[12px] font-semibold text-warning">Shift already recorded today</p>
                 <p className="text-[12px] text-text-secondary mt-0.5">
                   You have {punchesToday} punches today. Clock in again only if starting a second shift.
                 </p>
               </div>
-            )}
+            ) : null}
 
             {/* Branch geofence status in modal */}
             {!isClockedIn && !locationAsk && !locationSearching && branchStatus?.enforcementActive && (
@@ -1593,7 +1646,7 @@ export default function EmployeeOverviewPage() {
                 className={`flex-1 h-11 rounded-xl text-white text-[14px] font-bold transition-colors disabled:opacity-60 ${
                   isClockedIn ? 'bg-error hover:bg-error/90' : 'bg-primary hover:bg-primary-dark'
                 }`}>
-                {clockLoading ? '…' : isClockedIn ? 'Clock Out' : 'Clock In'}
+                {clockLoading ? '…' : isClockedIn ? 'Clock Out' : canResumeShift ? 'Start a new shift' : 'Clock In'}
               </button>
             </div>
           </div>
