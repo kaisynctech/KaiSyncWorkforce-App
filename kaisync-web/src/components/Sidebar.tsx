@@ -140,10 +140,13 @@ function isItemActive(pathname: string, href: string): boolean {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
+// Shell links do not prefetch. A warm Overview load was requesting every
+// visible dashboard route, often several times, before any click.
 function NavTopBtn({ href, icon, label, active }: { href: string; icon: string; label: string; active: boolean }) {
   return (
     <Link
       href={href}
+      prefetch={false}
       className={cn(
         'flex items-center gap-1.5 px-3 text-[12px] border-b-2 transition-colors self-stretch whitespace-nowrap',
         active
@@ -171,6 +174,7 @@ function NavIconBtn({
   return (
     <Link
       href={href}
+      prefetch={false}
       title={label}
       aria-label={label}
       className={cn(
@@ -230,6 +234,7 @@ function PanelItems({
               <Link
                 key={item.href}
                 href={item.href}
+                prefetch={false}
                 title={collapsed ? item.label : undefined}
                 onClick={onNavigate}
                 className={cn(
@@ -544,6 +549,7 @@ export default function Sidebar({
                 </div>
                 <Link
                   href="/dashboard/profile"
+                  prefetch={false}
                   onClick={() => setAccountOpen(false)}
                   className="flex items-center gap-2 px-3 py-2.5 text-[13px] text-text-secondary hover:text-text-primary hover:bg-surface-elevated"
                 >
@@ -552,6 +558,7 @@ export default function Sidebar({
                 </Link>
                 <Link
                   href="/dashboard/active-sessions"
+                  prefetch={false}
                   onClick={() => setAccountOpen(false)}
                   className="flex items-center gap-2 px-3 py-2.5 text-[13px] text-text-secondary hover:text-text-primary hover:bg-surface-elevated"
                 >
@@ -561,6 +568,7 @@ export default function Sidebar({
                 {isOwner && (
                   <Link
                     href="/dashboard/activity-log"
+                    prefetch={false}
                     onClick={() => setAccountOpen(false)}
                     className="flex items-center gap-2 px-3 py-2.5 text-[13px] text-text-secondary hover:text-text-primary hover:bg-surface-elevated"
                   >
@@ -572,6 +580,7 @@ export default function Sidebar({
                 {!platformOnly && itemVisible({ label: 'Settings', href: '/dashboard/settings', icon: 'settings', flag: 'settings' }, flags, isOwner) && (
                   <Link
                     href="/dashboard/settings"
+                    prefetch={false}
                     onClick={() => setAccountOpen(false)}
                     className="flex items-center gap-2 px-3 py-2.5 text-[13px] text-text-secondary hover:text-text-primary hover:bg-surface-elevated"
                   >
@@ -647,6 +656,7 @@ export default function Sidebar({
               <div className="px-2 pb-2 mb-2 border-b border-divider space-y-0.5">
                 <Link
                   href="/dashboard/overview"
+                  prefetch={false}
                   onClick={onClose}
                   className={cn(
                     'flex items-center gap-3 rounded-lg px-3 h-11 text-[13px]',
@@ -662,6 +672,7 @@ export default function Sidebar({
                   <Link
                     key={section.id}
                     href={section.items[0]?.href ?? '#'}
+                    prefetch={false}
                     onClick={onClose}
                     className={cn(
                       'flex items-center gap-3 rounded-lg px-3 h-11 text-[13px]',
@@ -677,6 +688,7 @@ export default function Sidebar({
                 {showPlatform && (
                   <Link
                     href="/dashboard/platform"
+                    prefetch={false}
                     onClick={onClose}
                     className={cn(
                       'flex items-center gap-3 rounded-lg px-3 h-11 text-[13px]',

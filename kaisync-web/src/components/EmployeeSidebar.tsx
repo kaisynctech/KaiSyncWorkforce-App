@@ -186,12 +186,14 @@ export default function EmployeeSidebar({ open, onToggle, onClose, company, empl
         </div>
 
         <nav className="flex-1 py-4 overflow-y-auto overflow-x-hidden">
+          {/* Same prefetch opt-out as the HR shell. These are all dashboard routes. */}
           {items.map((item) => {
             const active = pathname === item.href || pathname.startsWith(item.href + '/')
             return (
               <Link
                 key={item.href}
                 href={item.href}
+                prefetch={false}
                 onClick={() => {
                   if (!isDesktop) onClose?.()
                 }}
