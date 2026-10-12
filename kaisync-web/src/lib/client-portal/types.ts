@@ -9,6 +9,19 @@ export type ClientPortalLogin = {
   email?: string | null
 }
 
+export type ClientPortalJob = {
+  id: string
+  job_code: string | null
+  title: string
+  status: string
+  scheduled_start: string | null
+  scheduled_end: string | null
+  created_at: string
+  deal_id: string | null
+  project_code: string | null
+  project_title: string | null
+}
+
 export type ClientPortalProject = {
   id: string
   company_id: string

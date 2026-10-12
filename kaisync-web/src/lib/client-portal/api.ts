@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import type {
   ActivityUpdate,
   ClientPayment,
+  ClientPortalJob,
   ClientPortalLogin,
   ClientPortalProject,
   DealMessage,
@@ -197,6 +198,24 @@ export async function resolveClientByCode(
     }
     throw e instanceof Error ? e : new Error(msg)
   }
+}
+
+export async function listJobs(companyCode: string, clientCode: string): Promise<ClientPortalJob[]> {
+  const data = await rpc('client_portal_list_jobs', codes(companyCode, clientCode))
+  return asArray(data)
+    .map((row) => ({
+      id: str(row.id),
+      job_code: strN(row.job_code),
+      title: str(row.title),
+      status: str(row.status),
+      scheduled_start: strN(row.scheduled_start),
+      scheduled_end: strN(row.scheduled_end),
+      created_at: str(row.created_at) || new Date().toISOString(),
+      deal_id: strN(row.deal_id),
+      project_code: strN(row.project_code),
+      project_title: strN(row.project_title),
+    }))
+    .filter(job => job.id)
 }
 
 export async function listProjects(companyCode: string, clientCode: string): Promise<ClientPortalProject[]> {

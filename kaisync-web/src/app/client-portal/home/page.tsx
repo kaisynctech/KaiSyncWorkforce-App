@@ -4,13 +4,13 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { ClientPortalShell } from '@/components/ClientPortalShell'
 import { useRequireClientPortalSession } from '@/lib/client-portal/use-session'
-import { listInvoices, listMessageInbox, listProjects } from '@/lib/client-portal/api'
+import { listInvoices, listJobs, listMessageInbox, listProjects } from '@/lib/client-portal/api'
 import { getDealMessagesReadAt } from '@/lib/client-portal/session'
 import { fmtDate, fmtDateTime, projectStatusLabel } from '@/lib/client-portal/format'
 import { moneyZAR } from '@/lib/client-portal/quotation'
-import { isInvoiceOutstanding, type ClientPortalProject, type MessageInboxItem, type PortalInvoice } from '@/lib/client-portal/types'
+import { isInvoiceOutstanding, type ClientPortalJob, type ClientPortalProject, type MessageInboxItem, type PortalInvoice } from '@/lib/client-portal/types'
 
-type Tab = 'projects' | 'messages' | 'invoices'
+type Tab = 'projects' | 'jobs' | 'messages' | 'invoices'
 
 export default function ClientPortalHomePage() {
   const { session, ready } = useRequireClientPortalSession()
@@ -18,6 +18,7 @@ export default function ClientPortalHomePage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [projects, setProjects] = useState<ClientPortalProject[]>([])
+  const [jobs, setJobs] = useState<ClientPortalJob[]>([])
   const [inbox, setInbox] = useState<MessageInboxItem[]>([])
   const [invoices, setInvoices] = useState<PortalInvoice[]>([])
 
@@ -32,8 +33,9 @@ export default function ClientPortalHomePage() {
     setLoading(true)
     setError(null)
     try {
-      const [p, m, inv] = await Promise.all([
+      const [p, jobRows, m, inv] = await Promise.all([
         listProjects(session.company_code, session.client_code),
+        listJobs(session.company_code, session.client_code),
         listMessageInbox(session.company_code, session.client_code),
         listInvoices(session.company_code, session.client_code),
       ])
@@ -46,6 +48,7 @@ export default function ClientPortalHomePage() {
         return { ...item, has_unread: hasUnread }
       })
       setProjects(p)
+      setJobs(jobRows)
       setInbox(withUnread)
       setInvoices(inv)
     } catch (e: unknown) {
@@ -73,12 +76,13 @@ export default function ClientPortalHomePage() {
       <div className="max-w-5xl mx-auto px-4 py-4 space-y-4">
         <div>
           <h1 className="text-white text-[20px] font-bold">Welcome, {session.client_name}</h1>
-          <p className="text-slate-400 text-[13px] mt-0.5">Your projects, messages, and invoices</p>
+          <p className="text-slate-400 text-[13px] mt-0.5">Your projects, jobs, messages, and invoices</p>
         </div>
 
         <div className="flex gap-1 p-1 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)' }}>
           {([
             ['projects', 'Projects'],
+            ['jobs', 'Jobs'],
             ['messages', unreadCount > 0 ? `Messages (${unreadCount})` : 'Messages'],
             ['invoices', 'Invoices'],
           ] as [Tab, string][]).map(([key, label]) => (
@@ -106,6 +110,8 @@ export default function ClientPortalHomePage() {
           <div className="py-16 text-center text-slate-400 text-[14px]">Loading…</div>
         ) : tab === 'projects' ? (
           <ProjectsTab projects={projects} />
+        ) : tab === 'jobs' ? (
+          <JobsTab jobs={jobs} />
         ) : tab === 'messages' ? (
           <MessagesTab inbox={inbox} />
         ) : (
@@ -148,6 +154,51 @@ function ProjectsTab({ projects }: { projects: ClientPortalProject[] }) {
               <td className="px-3 py-3 text-slate-300 whitespace-nowrap">{p.progress_percent}%</td>
               <td className="px-3 py-3 text-slate-300 whitespace-nowrap">{moneyZAR(p.offer_amount)}</td>
               <td className="px-3 py-3 text-slate-500 whitespace-nowrap">{fmtDate(p.last_update_at ?? p.updated_at)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function JobsTab({ jobs }: { jobs: ClientPortalJob[] }) {
+  if (jobs.length === 0) {
+    return (
+      <Empty icon="work_outline" title="No jobs yet" sub="Jobs for you will appear here, including ones that are not on a project." />
+    )
+  }
+  return (
+    <div className="overflow-x-auto rounded-xl border" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
+      <table className="w-full text-[13px]">
+        <thead>
+          <tr style={{ background: 'rgba(255,255,255,0.04)' }}>
+            <Th>Code</Th>
+            <Th>Job</Th>
+            <Th>Status</Th>
+            <Th>Project</Th>
+            <Th>Start</Th>
+            <Th>End</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {jobs.map(job => (
+            <tr key={job.id} className="border-t" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
+              <td className="px-3 py-3 text-slate-400 whitespace-nowrap">{job.job_code || '—'}</td>
+              <td className="px-3 py-3 text-white font-semibold">{job.title || '—'}</td>
+              <td className="px-3 py-3 text-slate-300 whitespace-nowrap">{projectStatusLabel(job.status)}</td>
+              <td className="px-3 py-3 whitespace-nowrap">
+                {job.deal_id && job.project_title ? (
+                  <Link href={`/client-portal/projects/${job.deal_id}`} className="text-blue-300 hover:text-blue-200 font-semibold">
+                    {job.project_title}
+                    {job.project_code ? <span className="text-slate-500 font-normal"> · {job.project_code}</span> : null}
+                  </Link>
+                ) : (
+                  <span className="text-slate-500">—</span>
+                )}
+              </td>
+              <td className="px-3 py-3 text-slate-500 whitespace-nowrap">{fmtDate(job.scheduled_start)}</td>
+              <td className="px-3 py-3 text-slate-500 whitespace-nowrap">{fmtDate(job.scheduled_end)}</td>
             </tr>
           ))}
         </tbody>
