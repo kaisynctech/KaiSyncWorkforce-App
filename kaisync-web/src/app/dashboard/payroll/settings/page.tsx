@@ -163,6 +163,7 @@ export default function PayrollSettingsPage() {
           <p className="section-label">TIME &amp; ATTENDANCE</p>
           <p className="text-xs text-text-secondary mt-1 mb-3">
             Used when building sessions and calculating late/OT for payroll.
+            Anyone without their own time template uses the company default template.
           </p>
           <Row label="Sign-in grace period (minutes)">
             <NumInput value={s.late_threshold_minutes} onChange={v => set('late_threshold_minutes', v)} />

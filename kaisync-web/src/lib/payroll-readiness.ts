@@ -32,6 +32,7 @@ export type PayrollGeneratePreview = {
   duplicateCount: number
   notInPeriodCount: number
   contractorCount: number
+  companyHasDefaultTemplate: boolean
   detailLines: string[]
 }
 
@@ -43,12 +44,17 @@ function hasBanking(emp: PayrollEmployeeLike): boolean {
   return Boolean(emp.bank_name?.trim() && emp.bank_account?.trim())
 }
 
-export function assessPayrollReadiness(emp: PayrollEmployeeLike): PayrollReadinessInfo {
+export function assessPayrollReadiness(
+  emp: PayrollEmployeeLike,
+  options?: { companyHasDefaultTemplate?: boolean }
+): PayrollReadinessInfo {
   const issues: string[] = []
 
   if (!emp.is_active) issues.push('Employee is inactive')
   if (!hasPayRate(emp)) issues.push('No monthly salary or hourly/daily rate')
-  if (!emp.shift_template_id) issues.push('No shift template — grace period and OT may not apply')
+  if (!emp.shift_template_id && !options?.companyHasDefaultTemplate) {
+    issues.push('No shift template, and the company has no default template')
+  }
   if (!hasBanking(emp)) issues.push('Banking details not set')
   if (emp.worker_type === 'contractor' || emp.worker_type === 'subcontractor') {
     issues.push('Contractor — review statutory deductions')
@@ -82,8 +88,10 @@ export function buildPayrollGeneratePreview(
   employees: PayrollEmployeeLike[],
   periodStart: string,
   periodEnd: string,
-  existingEmployeeIds: Set<string>
+  existingEmployeeIds: Set<string>,
+  options?: { companyHasDefaultTemplate?: boolean }
 ): PayrollGeneratePreview {
+  const companyHasDefaultTemplate = Boolean(options?.companyHasDefaultTemplate)
   let ready = 0
   let missingRates = 0
   let missingShift = 0
@@ -104,7 +112,7 @@ export function buildPayrollGeneratePreview(
       continue
     }
 
-    const info = assessPayrollReadiness(emp)
+    const info = assessPayrollReadiness(emp, { companyHasDefaultTemplate })
     if (!hasPayRate(emp)) missingRates++
     if (!emp.shift_template_id) missingShift++
     if (!hasBanking(emp)) missingBank++
@@ -122,6 +130,7 @@ export function buildPayrollGeneratePreview(
     duplicateCount: duplicate,
     notInPeriodCount: notInPeriod,
     contractorCount: contractor,
+    companyHasDefaultTemplate,
     detailLines: details,
   }
 }
