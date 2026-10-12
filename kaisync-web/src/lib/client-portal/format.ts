@@ -10,6 +10,8 @@ const STATUS_LABELS: Record<string, string> = {
   completed: 'Completed',
   cancelled: 'Cancelled',
   on_hold: 'On hold',
+  open: 'Open',
+  scheduled: 'Scheduled',
 }
 
 export function projectStatusLabel(raw: string | null | undefined): string {
