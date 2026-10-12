@@ -34,6 +34,11 @@ export async function createJob(
   input: JobCreateInput & { assignCode?: boolean },
 ): Promise<JobResult<{ id: string; job_code: string | null }>> {
   try {
+    const { data: authData, error: authError } = await supabase.auth.getUser()
+    if (authError || !authData.user) {
+      return { ok: false, message: 'Sign in again to create a job.' }
+    }
+
     let jobCode = input.jobCode?.trim() || null
     if (!jobCode && input.assignCode !== false) {
       const codeRes = await allocateJobCode(supabase, input.companyId)
