@@ -49,16 +49,58 @@ describe('template overtime and weekend hours', () => {
     expect(row.overtimeHours).toBe(1)
     expect(row.regularHours).toBe(5)
   })
+
+  it('pays early overtime from the early clock until the shift start', () => {
+    const template: ShiftTemplateLike = {
+      ...weekdayTemplate,
+      start_time: '07:00:00',
+      end_time: '16:00:00',
+      ot_start_time: '16:00:00',
+      early_ot_start_time: '06:00:00',
+    }
+    const onTheLine = hours(template, '2026-10-08T04:00:00.000Z', '2026-10-08T14:00:00.000Z')
+    const afterTheLine = hours(template, '2026-10-08T04:30:00.000Z', '2026-10-08T14:00:00.000Z')
+    const beforeTheLine = hours(template, '2026-10-08T03:00:00.000Z', '2026-10-08T14:00:00.000Z')
+    expect(onTheLine.overtimeHours).toBe(1)
+    expect(onTheLine.regularHours).toBe(9)
+    expect(afterTheLine.overtimeHours).toBe(0.5)
+    expect(beforeTheLine.overtimeHours).toBe(1)
+    expect(beforeTheLine.regularHours).toBe(9)
+  })
+
+  it('pays weekend early overtime against the weekend start', () => {
+    const template = { ...weekdayTemplate, weekend_early_ot_start_time: '07:00:00' }
+    const row = hours(template, '2026-10-10T05:00:00.000Z', '2026-10-10T12:00:00.000Z')
+    expect(row.overtimeHours).toBe(2)
+    expect(row.regularHours).toBe(5)
+  })
 })
 
 describe('templateSchedulePayload', () => {
   it('requires both weekend times', () => {
     const result = templateSchedulePayload({
+      startTime: '08:00',
       weekendEnabled: true,
       weekendStart: '08:00',
       weekendEnd: '',
       otStart: '',
       weekendOtStart: '',
+      earlyOtStart: '',
+      weekendEarlyOtStart: '',
+    })
+    expect(result.ok).toBe(false)
+  })
+
+  it('rejects an early overtime clock that is not before the start', () => {
+    const result = templateSchedulePayload({
+      startTime: '07:00',
+      weekendEnabled: false,
+      weekendStart: '',
+      weekendEnd: '',
+      otStart: '',
+      weekendOtStart: '',
+      earlyOtStart: '07:00',
+      weekendEarlyOtStart: '',
     })
     expect(result.ok).toBe(false)
   })
