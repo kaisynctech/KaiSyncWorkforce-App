@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { PayrollTabs } from '@/components/payroll/PayrollTabs'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import {
@@ -113,8 +114,9 @@ export default function PayrollSettingsPage() {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-divider shrink-0 bg-surface">
-        <h1 className="text-[18px] font-semibold text-text-primary flex-1">Payroll Settings</h1>
+      <div className="px-4 pt-3 pb-3 border-b border-divider shrink-0 bg-surface">
+        <h1 className="text-[18px] font-semibold text-text-primary">Payroll</h1>
+        <PayrollTabs active="settings" />
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4 max-w-2xl">

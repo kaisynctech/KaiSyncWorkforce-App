@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import Link from 'next/link'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { PayrollTabs } from '@/components/payroll/PayrollTabs'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { StatusBadge } from '@/components/ui/StatusBadge'
@@ -97,6 +97,8 @@ function fmtPeriod(start: string, end: string) {
 
 export default function PayrollPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const section = searchParams.get('tab') === 'bank' ? 'bank' : 'payslips'
 
   // persist company across re-renders without triggering re-fetch
   const companyIdRef = useRef<string | null>(null)
@@ -459,84 +461,12 @@ export default function PayrollPage() {
   return (
     <div className="h-full flex flex-col">
       {/* ── Header ── */}
-      <div className="px-4 pt-3 pb-2 border-b border-divider shrink-0 bg-surface space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <h1 className="text-[18px] font-semibold text-text-primary shrink-0">Payroll</h1>
-          <div className="flex items-center gap-1.5 flex-wrap justify-end">
-            <Link
-              href="/dashboard/payroll/settings"
-              className="bg-surface-dark rounded-md h-9 w-9 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
-              title="Payroll settings"
-            >
-              <span className="material-icons text-[18px]">settings</span>
-            </Link>
-            {/* Lock/Unlock — writes to payroll_period_locks */}
-            <button
-              onClick={() => void toggleLock()}
-              title={isLocked ? 'Unlock period' : 'Lock period'}
-              className="bg-surface-dark rounded-md h-9 w-9 flex items-center justify-center transition-colors hover:text-text-primary"
-              style={{ color: isLocked ? '#DC2626' : undefined }}
-            >
-              <span className="material-icons text-[18px]">{isLocked ? 'lock' : 'lock_open'}</span>
-            </button>
-            <button
-              onClick={exportRegisterCSV}
-              disabled={filtered.length === 0}
-              className="h-9 px-3 text-[12px] rounded-md bg-surface-dark border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-40"
-            >
-              Register
-            </button>
-            <select
-              value={bankFormat}
-              onChange={e => setBankFormat(e.target.value as BankFormat)}
-              className="h-9 px-2 text-[12px] rounded-md bg-surface-dark border border-border text-text-secondary"
-              title="Bank file format"
-            >
-              <option value="generic">Bank: Generic</option>
-              <option value="fnb">Bank: FNB</option>
-              <option value="absa">Bank: ABSA</option>
-              <option value="standard_bank">Bank: Standard</option>
-            </select>
-            <button
-              onClick={exportBankCSV}
-              disabled={filtered.length === 0}
-              className="h-9 px-3 text-[12px] rounded-md bg-surface-dark border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-40"
-            >
-              Bank CSV
-            </button>
-            <button
-              onClick={exportIRP5CSV}
-              disabled={filtered.length === 0}
-              className="h-9 px-3 text-[12px] rounded-md bg-surface-dark border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-40"
-            >
-              IRP5
-            </button>
-            <button
-              onClick={() => void openGenerate()}
-              disabled={generating || isLocked}
-              className="h-9 px-3 text-[12px] rounded-md bg-surface-dark border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
-            >
-              {generating ? 'Generating…' : 'Generate'}
-            </button>
-            <button
-              onClick={approveAll}
-              disabled={approving}
-              className="btn-primary h-9 px-3 text-[12px] disabled:opacity-50"
-            >
-              {approving ? 'Approving…' : 'Approve All'}
-            </button>
-            <button
-              onClick={releaseAll}
-              disabled={releasing}
-              className="h-9 px-3 text-[12px] rounded-md border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
-              style={{ backgroundColor: '#4C1D95', color: '#C4B5FD', borderColor: '#7C3AED' }}
-            >
-              {releasing ? 'Releasing…' : 'Release All'}
-            </button>
-          </div>
+      <div className="px-4 pt-3 pb-3 border-b border-divider shrink-0 bg-surface space-y-3">
+        <div>
+          <h1 className="text-[18px] font-semibold text-text-primary">Payroll</h1>
+          <PayrollTabs active={section} />
         </div>
 
-        {/* Feedback banners */}
         {success && (
           <p className="text-success text-[13px] font-medium">{success}</p>
         )}
@@ -544,28 +474,7 @@ export default function PayrollPage() {
           <p className="text-error text-[13px] font-medium">{error}</p>
         )}
 
-        {/* Period cockpit */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="rounded-lg py-2 px-3 flex flex-col items-center gap-0.5 bg-surface-elevated border border-divider">
-            <span className="text-[17px] font-semibold text-text-primary">{fmtR(pendingGross)}</span>
-            <span className="text-[10px] text-text-secondary">Pending gross ({pendingCount})</span>
-          </div>
-          <div className="rounded-lg py-2 px-3 flex flex-col items-center gap-0.5 bg-surface-elevated border border-divider">
-            <span className="text-[17px] font-semibold text-text-primary">{fmtR(approvedGross)}</span>
-            <span className="text-[10px] text-text-secondary">Approved gross ({approvedCount})</span>
-          </div>
-          <div className="rounded-lg py-2 px-3 flex flex-col items-center gap-0.5 bg-surface-elevated border border-divider">
-            <span className="text-[17px] font-semibold text-text-primary">{fmtR(approvedNet)}</span>
-            <span className="text-[10px] text-text-secondary">Approved net (bankable)</span>
-          </div>
-          <div className="rounded-lg py-2 px-3 flex flex-col items-center gap-0.5 bg-surface-elevated border border-divider">
-            <span className="text-[17px] font-semibold text-text-primary">{isLocked ? 'Locked' : 'Open'}</span>
-            <span className="text-[10px] text-text-secondary">Period status</span>
-          </div>
-        </div>
-
-        {/* Date range — changes trigger DB query reload */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1">
             <label className="text-[11px] text-text-secondary font-medium">From</label>
             <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="dark-entry" />
@@ -574,36 +483,160 @@ export default function PayrollPage() {
             <label className="text-[11px] text-text-secondary font-medium">To</label>
             <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="dark-entry" />
           </div>
+          <button
+            type="button"
+            onClick={() => void toggleLock()}
+            className="h-10 px-3 text-[13px] rounded-md border border-border bg-surface-dark text-text-primary hover:opacity-80"
+          >
+            {isLocked ? 'Unlock period' : 'Lock period'}
+          </button>
+          <span className="text-[13px] text-text-secondary pb-2">{isLocked ? 'Locked' : 'Open'}</span>
         </div>
 
-        {/* Period lock label */}
         {isLocked && (
           <p className="text-error text-sm font-medium">Period is locked — recalculation and overrides are disabled.</p>
         )}
 
-        {/* Filter toolbar */}
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex items-center gap-1 flex-1 min-w-[160px] bg-surface border border-border rounded-lg px-2">
-            <span className="material-icons text-text-secondary text-[16px]">search</span>
-            <input
-              placeholder="Search employee, period…"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="flex-1 bg-transparent text-text-primary text-[13px] h-[38px] outline-none placeholder:text-text-disabled"
-            />
-          </div>
-          {(['all', 'pending', 'approved', 'paid'] as StatusFilter[]).map(s => (
-            <FilterChip
-              key={s}
-              label={s.charAt(0).toUpperCase() + s.slice(1)}
-              active={statusFilter === s}
-              onClick={() => setStatusFilter(s)}
-            />
-          ))}
-        </div>
+        {section === 'payslips' && (
+          <>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="rounded-lg py-2 px-3 flex flex-col items-center gap-0.5 bg-surface-elevated border border-divider">
+                <span className="text-[17px] font-semibold text-text-primary">{fmtR(pendingGross)}</span>
+                <span className="text-[10px] text-text-secondary">Pending gross ({pendingCount})</span>
+              </div>
+              <div className="rounded-lg py-2 px-3 flex flex-col items-center gap-0.5 bg-surface-elevated border border-divider">
+                <span className="text-[17px] font-semibold text-text-primary">{fmtR(approvedGross)}</span>
+                <span className="text-[10px] text-text-secondary">Approved gross ({approvedCount})</span>
+              </div>
+              <div className="rounded-lg py-2 px-3 flex flex-col items-center gap-0.5 bg-surface-elevated border border-divider">
+                <span className="text-[17px] font-semibold text-text-primary">{fmtR(approvedNet)}</span>
+                <span className="text-[10px] text-text-secondary">Approved net (bankable)</span>
+              </div>
+              <div className="rounded-lg py-2 px-3 flex flex-col items-center gap-0.5 bg-surface-elevated border border-divider">
+                <span className="text-[17px] font-semibold text-text-primary">{filtered.length}</span>
+                <span className="text-[10px] text-text-secondary">Payslips in view</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => void openGenerate()}
+                disabled={generating || isLocked}
+                className="h-9 px-3 text-[12px] rounded-md bg-surface-dark border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
+              >
+                {generating ? 'Generating…' : 'Generate'}
+              </button>
+              <button
+                onClick={approveAll}
+                disabled={approving}
+                className="btn-primary h-9 px-3 text-[12px] disabled:opacity-50"
+              >
+                {approving ? 'Approving…' : 'Approve All'}
+              </button>
+              <button
+                onClick={releaseAll}
+                disabled={releasing}
+                className="h-9 px-3 text-[12px] rounded-md border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
+                style={{ backgroundColor: '#4C1D95', color: '#C4B5FD', borderColor: '#7C3AED' }}
+              >
+                {releasing ? 'Releasing…' : 'Release All'}
+              </button>
+            </div>
+
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-1 flex-1 min-w-[160px] bg-surface border border-border rounded-lg px-2">
+                <span className="material-icons text-text-secondary text-[16px]">search</span>
+                <input
+                  placeholder="Search employee, period…"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  className="flex-1 bg-transparent text-text-primary text-[13px] h-[38px] outline-none placeholder:text-text-disabled"
+                />
+              </div>
+              {(['all', 'pending', 'approved', 'paid'] as StatusFilter[]).map(s => (
+                <FilterChip
+                  key={s}
+                  label={s.charAt(0).toUpperCase() + s.slice(1)}
+                  active={statusFilter === s}
+                  onClick={() => setStatusFilter(s)}
+                />
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
-      {/* ── Table ── */}
+      {section === 'bank' && (
+        <div className="flex-1 overflow-y-auto p-4">
+          {(search.trim() !== '' || statusFilter !== 'all') && (
+            <p className="text-[12px] text-text-secondary mb-3 max-w-3xl">
+              These files use the Payslips search and status filter.
+            </p>
+          )}
+          <div className="grid gap-3 max-w-3xl md:grid-cols-3">
+            <section className="card p-4 flex flex-col gap-3">
+              <div>
+                <p className="text-[14px] font-semibold text-text-primary">Payroll register</p>
+                <p className="text-[12px] text-text-secondary mt-1">
+                  Gross, deductions, net, hours, and status for the {filtered.length} payslips in this view.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={exportRegisterCSV}
+                disabled={filtered.length === 0}
+                className="mt-auto h-9 px-3 text-[12px] rounded-md bg-surface-dark border border-border text-text-primary disabled:opacity-40"
+              >
+                Download register
+              </button>
+            </section>
+            <section className="card p-4 flex flex-col gap-3">
+              <div>
+                <p className="text-[14px] font-semibold text-text-primary">Bank file</p>
+                <p className="text-[12px] text-text-secondary mt-1">
+                  Approved and paid payslips with a net amount, in the bank layout you choose.
+                </p>
+              </div>
+              <select
+                value={bankFormat}
+                onChange={e => setBankFormat(e.target.value as BankFormat)}
+                className="h-9 px-2 text-[12px] rounded-md bg-surface-dark border border-border text-text-primary"
+              >
+                <option value="generic">Generic</option>
+                <option value="fnb">FNB</option>
+                <option value="absa">ABSA</option>
+                <option value="standard_bank">Standard Bank</option>
+              </select>
+              <button
+                type="button"
+                onClick={exportBankCSV}
+                disabled={filtered.length === 0}
+                className="mt-auto h-9 px-3 text-[12px] rounded-md bg-surface-dark border border-border text-text-primary disabled:opacity-40"
+              >
+                Download bank file
+              </button>
+            </section>
+            <section className="card p-4 flex flex-col gap-3">
+              <div>
+                <p className="text-[14px] font-semibold text-text-primary">IRP5</p>
+                <p className="text-[12px] text-text-secondary mt-1">
+                  Year-to-date totals for the tax year that contains {dateTo}, from approved and paid payslips in this view.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={exportIRP5CSV}
+                disabled={filtered.length === 0}
+                className="mt-auto h-9 px-3 text-[12px] rounded-md bg-surface-dark border border-border text-text-primary disabled:opacity-40"
+              >
+                Download IRP5
+              </button>
+            </section>
+          </div>
+        </div>
+      )}
+
+      {section === 'payslips' && (
       <div className="flex-1 overflow-y-auto">
         <ResponsiveDataView
           table={
@@ -762,6 +795,7 @@ export default function PayrollPage() {
           }
         />
       </div>
+      )}
 
       <ModalShell
         open={Boolean(showGenModal && genPreview)}
