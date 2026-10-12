@@ -40,13 +40,6 @@ type Tab = 'employees' | 'teams' | 'leave' | 'pending'
 
 type Branch = { id: string; name: string }
 
-type OnLeaveRecord = {
-  employee_id: string
-  leave_type: string
-  end_date: string
-  employees: { name: string; surname: string } | null
-}
-
 type LeaveBalance = {
   employeeId: string
   employeeName: string
@@ -155,11 +148,6 @@ function shiftYearMonth(yearMonth: string, delta: number) {
   return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`
 }
 
-function returnDate(endDate: string) {
-  const [y, m, d] = endDate.split('-').map(Number)
-  return new Date(y, m - 1, d + 1).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short' })
-}
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function EmployeesPage() {
@@ -179,9 +167,7 @@ export default function EmployeesPage() {
   const [directoryTotal, setDirectoryTotal] = useState(0)
   const [page,          setPage]          = useState(0)
   const [branches,      setBranches]      = useState<Branch[]>([])
-  const [onLeave,       setOnLeave]       = useState<OnLeaveRecord[]>([])
   const [empLoading,    setEmpLoading]    = useState(true)
-  const [showOnLeave,   setShowOnLeave]   = useState(true)
   const [search,        setSearch]        = useState('')
   const [filterRole,    setFilterRole]    = useState<AccessLevel | ''>('')
   const [filterStatus,  setFilterStatus]  = useState<'active' | 'inactive' | ''>('')
@@ -267,17 +253,10 @@ export default function EmployeesPage() {
     setCompanyId(member.companyId)
     setMyEmployeeId(member.employeeId)
 
-    const today = new Date().toISOString().split('T')[0]
-    const [branchRes, scopeRes, settingsRes, onLeaveRes] = await Promise.all([
+    const [branchRes, scopeRes, settingsRes] = await Promise.all([
       listBranches(supabase, member.companyId),
       loadScopedEmployeeIds(supabase, member.companyId, member.employeeId),
       loadLeaveSettings(supabase, member.companyId),
-      supabase.from('leave_requests')
-        .select('employee_id, leave_type, end_date, employees(name, surname)')
-        .eq('company_id', member.companyId)
-        .eq('status', 'approved')
-        .lte('start_date', today)
-        .gte('end_date', today),
     ])
 
     if (!scopeRes.ok) { setError(scopeRes.message); setEmpLoading(false); return }
@@ -289,13 +268,6 @@ export default function EmployeesPage() {
       branchRes.ok
         ? branchRes.data.map(b => ({ id: b.id, name: b.name }))
         : []
-    )
-
-    const leaveRows = (onLeaveRes.data ?? []) as unknown as OnLeaveRecord[]
-    setOnLeave(
-      scopeRes.seesAll
-        ? leaveRows
-        : leaveRows.filter(r => scopeRes.ids.has(r.employee_id))
     )
   }
 
@@ -701,45 +673,6 @@ export default function EmployeesPage() {
                   {b.name}
                 </button>
               ))}
-            </div>
-          )}
-
-          {/* On Leave Today */}
-          {onLeave.length > 0 && (
-            <div className="mb-4 bg-surface border border-divider rounded-lg overflow-hidden">
-              <button
-                onClick={() => setShowOnLeave(v => !v)}
-                className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-background transition-colors"
-              >
-                <div className="flex items-center gap-2">
-                  <span className="material-icons text-[18px] text-warning">event_busy</span>
-                  <span className="text-[13px] font-medium text-text-primary">
-                    On Leave Today ({onLeave.length})
-                  </span>
-                </div>
-                <span className="material-icons text-[18px] text-text-secondary">
-                  {showOnLeave ? 'expand_less' : 'expand_more'}
-                </span>
-              </button>
-              {showOnLeave && (
-                <div className="border-t border-divider divide-y divide-divider">
-                  {onLeave.map((r, i) => (
-                    <div key={i} className="flex items-center justify-between px-4 py-2.5">
-                      <div>
-                        <span className="text-[13px] font-medium text-text-primary">
-                          {r.employees ? `${r.employees.name} ${r.employees.surname}` : 'Unknown'}
-                        </span>
-                        <span className="text-[12px] text-text-secondary ml-2">
-                          — {r.leave_type.replace(/_/g, ' ')}
-                        </span>
-                      </div>
-                      <span className="text-[11px] text-text-secondary">
-                        back {returnDate(r.end_date)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
           )}
 
