@@ -50,6 +50,19 @@ type DisplaySession = {
   pay: number
 }
 
+type OnLeaveTodayRow = {
+  employee_id: string
+  leave_type: string
+  end_date: string
+  employees: { name: string; surname: string } | null
+}
+
+function returnDate(endDate: string) {
+  const [y, m, d] = endDate.split('-').map(Number)
+  if (!y || !m || !d) return '—'
+  return new Date(y, m - 1, d + 1).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short' })
+}
+
 const todayStr = () => new Date().toISOString().split('T')[0]
 
 function eachDateInclusive(from: string, to: string): string[] {
@@ -188,6 +201,8 @@ export default function AttendancePage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [staff, setStaff] = useState<EmpRow[]>([])
+  const [onLeaveToday, setOnLeaveToday] = useState<OnLeaveTodayRow[]>([])
+  const [showOnLeave, setShowOnLeave] = useState(true)
 
   const companyIdRef = useRef<string | null>(null)
   const scopedIdsRef = useRef<Set<string> | null>(null)
@@ -257,6 +272,7 @@ export default function AttendancePage() {
       settingsRes,
       leaveRes,
       absenceRes,
+      onLeaveTodayRes,
     ] = await Promise.all([
       supabase.from('employees')
         .select('id, name, surname, employee_code, hourly_rate, daily_hours, shift_template_id')
@@ -287,6 +303,12 @@ export default function AttendancePage() {
         .eq('company_id', cid)
         .gte('date', from)
         .lte('date', to),
+      supabase.from('leave_requests')
+        .select('employee_id, leave_type, end_date, employees(name, surname)')
+        .eq('company_id', cid)
+        .eq('status', 'approved')
+        .lte('start_date', todayStr())
+        .gte('end_date', todayStr()),
     ])
 
     const firstErr =
@@ -296,10 +318,12 @@ export default function AttendancePage() {
       companyRes.error?.message ||
       settingsRes.error?.message ||
       leaveRes.error?.message ||
-      absenceRes.error?.message
+      absenceRes.error?.message ||
+      onLeaveTodayRes.error?.message
     if (firstErr) {
       setError(firstErr)
       setSessions([])
+      setOnLeaveToday([])
       setLoading(false)
       return
     }
@@ -318,6 +342,8 @@ export default function AttendancePage() {
       typeof tzRaw === 'string' && tzRaw.trim() ? tzRaw.trim() : 'Africa/Johannesburg'
 
     const scope = scopedIdsRef.current
+    const leaveRows = (onLeaveTodayRes.data ?? []) as unknown as OnLeaveTodayRow[]
+    setOnLeaveToday(scope ? leaveRows.filter(r => scope.has(r.employee_id)) : leaveRows)
     const visibleStaff = (empData ?? [])
       .filter(e => !scope || scope.has(e.id))
       .map(e => e as EmpRow)
@@ -466,6 +492,45 @@ export default function AttendancePage() {
 
       {error && error !== 'not_linked' && (
         <p className="mb-4 text-error text-[13px]">{error}</p>
+      )}
+
+      {onLeaveToday.length > 0 && (
+        <div className="mb-4 bg-surface border border-divider rounded-lg overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setShowOnLeave(v => !v)}
+            className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-background transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <span className="material-icons text-[18px] text-warning">event_busy</span>
+              <span className="text-[13px] font-medium text-text-primary">
+                On Leave Today ({onLeaveToday.length})
+              </span>
+            </div>
+            <span className="material-icons text-[18px] text-text-secondary">
+              {showOnLeave ? 'expand_less' : 'expand_more'}
+            </span>
+          </button>
+          {showOnLeave && (
+            <div className="border-t border-divider divide-y divide-divider">
+              {onLeaveToday.map(r => (
+                <div key={`${r.employee_id}-${r.end_date}-${r.leave_type}`} className="flex items-center justify-between px-4 py-2.5">
+                  <div>
+                    <span className="text-[13px] font-medium text-text-primary">
+                      {r.employees ? `${r.employees.name} ${r.employees.surname}` : 'Unknown'}
+                    </span>
+                    <span className="text-[12px] text-text-secondary ml-2">
+                      — {r.leave_type.replace(/_/g, ' ')}
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-text-secondary">
+                    back {returnDate(r.end_date)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       {companyId && (
