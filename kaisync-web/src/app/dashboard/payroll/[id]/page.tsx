@@ -4,10 +4,13 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { formatDateTime } from '@/lib/utils'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { Toggle } from '@/components/Toggle'
 import { PayrollLineItemsTable } from '@/components/payroll-line-items-table'
 import { recalculatePayslip } from '@/lib/payroll'
+import { loadPayrollSettings } from '@/lib/payroll-settings'
+import { buildPunchSessions, toLocalDateStr, type ShiftTemplateLike } from '@/lib/punch-session'
 import type { EmployeePayment, PayrollLineItem, YtdTotals, PayrollAuditEntry } from '@/types/database'
 
 const fmtR = (n: number) =>
@@ -25,6 +28,23 @@ const PAYSLIP_COLORS: Record<string, { bg: string; fg: string }> = {
   rejected: { bg: '#FEE2E2', fg: '#991B1B' },
   pending:  { bg: '#FEF9C3', fg: '#854D0E' },
 }
+const PAYSLIP_TEMPLATE_SELECT = 'id, name, start_time, end_time, break_minutes, weekend_start_time, weekend_end_time, ot_start_time, weekend_ot_start_time, early_ot_start_time, weekend_early_ot_start_time'
+
+type PayslipDay = {
+  key: string
+  dateLabel: string
+  inLabel: string
+  outLabel: string
+  regularHours: number
+  overtimeHours: number
+  open: boolean
+}
+function labelPayslipDay(iso: string) {
+  const [year, month, day] = iso.split('-').map(Number)
+  if (!year || !month || !day) return iso
+  return new Intl.DateTimeFormat('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(year, month - 1, day))
+}
+
 function stBg(s: string) { return (PAYSLIP_COLORS[s?.toLowerCase()] ?? PAYSLIP_COLORS.pending).bg }
 function stFg(s: string) { return (PAYSLIP_COLORS[s?.toLowerCase()] ?? PAYSLIP_COLORS.pending).fg }
 
@@ -41,6 +61,10 @@ export default function PayslipDetailPage() {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [days, setDays] = useState<PayslipDay[]>([])
+  const [daysLoading, setDaysLoading] = useState(false)
+  const [daysError, setDaysError] = useState<string | null>(null)
+  const [templateLabel, setTemplateLabel] = useState<string | null>(null)
 
   // Override fields
   const [payFullSalary, setPayFullSalary] = useState(false)
@@ -52,6 +76,94 @@ export default function PayslipDetailPage() {
   const [bonusNote, setBonusNote] = useState('')
 
   useEffect(() => { load() }, [paymentId])
+
+  useEffect(() => {
+    if (!payment?.employee_id || !payment.period_start || !payment.period_end) return
+    let cancelled = false
+    async function loadDays() {
+      setDaysLoading(true)
+      setDaysError(null)
+      const supabase = createClient()
+      const periodStart = payment!.period_start!
+      const periodEnd = payment!.period_end!
+      const [{ data: empRow, error: empErr }, settingsRes, { data: punches, error: punchErr }] = await Promise.all([
+        supabase.from('employees').select('shift_template_id, daily_hours').eq('id', payment!.employee_id).maybeSingle(),
+        loadPayrollSettings(supabase, payment!.company_id),
+        supabase.from('time_punches')
+          .select('id, employee_id, type, date_time, address, notes')
+          .eq('company_id', payment!.company_id)
+          .eq('employee_id', payment!.employee_id)
+          .gte('date_time', `${periodStart}T00:00:00`)
+          .lte('date_time', `${periodEnd}T23:59:59`)
+          .order('date_time', { ascending: true }),
+      ])
+      if (cancelled) return
+      if (empErr || punchErr || !settingsRes.ok) {
+        setDaysError(empErr?.message ?? punchErr?.message ?? (!settingsRes.ok ? settingsRes.message : 'Could not load attendance'))
+        setDays([])
+        setDaysLoading(false)
+        return
+      }
+
+      const personalId = (empRow as { shift_template_id?: string | null } | null)?.shift_template_id ?? null
+      const templateSelect = () => supabase.from('employee_shift_templates').select(PAYSLIP_TEMPLATE_SELECT).eq('company_id', payment!.company_id)
+      let template = null as (ShiftTemplateLike & { name?: string | null }) | null
+      let usedPersonal = false
+      if (personalId) {
+        const { data, error } = await templateSelect().eq('id', personalId).maybeSingle()
+        if (cancelled) return
+        if (error) {
+          setDaysError(error.message)
+          setDays([])
+          setDaysLoading(false)
+          return
+        }
+        if (data) {
+          template = data as ShiftTemplateLike & { name?: string | null }
+          usedPersonal = true
+        }
+      }
+      if (!template) {
+        const { data, error } = await templateSelect().eq('is_default', true).limit(1).maybeSingle()
+        if (cancelled) return
+        if (error) {
+          setDaysError(error.message)
+          setDays([])
+          setDaysLoading(false)
+          return
+        }
+        template = (data as (ShiftTemplateLike & { name?: string | null }) | null) ?? null
+      }
+      const settings = settingsRes.settings
+      const rows = buildPunchSessions((punches ?? []) as { type: string; date_time: string; id?: string; employee_id?: string; address?: string | null; notes?: string | null }[], {
+        employeeId: payment!.employee_id,
+        dailyHours: Number((empRow as { daily_hours?: number | null } | null)?.daily_hours) || 8,
+        lateThresholdMinutes: settings.late_threshold_minutes,
+        otStartAfterMinutes: settings.ot_start_after_minutes,
+        shiftTemplate: template,
+        timeZone: settings.company_timezone,
+      }).filter(row => {
+        const day = toLocalDateStr(row.clockIn, settings.company_timezone)
+        return day >= periodStart && day <= periodEnd && !row.isAbsentDay && !row.isLeaveDay
+      }).sort((a, b) => a.clockIn.getTime() - b.clockIn.getTime())
+
+      setTemplateLabel(template?.name
+        ? (usedPersonal ? template.name : `${template.name} (company default)`)
+        : null)
+      setDays(rows.map(row => ({
+        key: `${row.clockInPunchId ?? row.clockIn.toISOString()}`,
+        dateLabel: labelPayslipDay(toLocalDateStr(row.clockIn, settings.company_timezone)),
+        inLabel: formatDateTime(row.clockIn.toISOString()),
+        outLabel: row.clockOut ? formatDateTime(row.clockOut.toISOString()) : 'Open',
+        regularHours: row.regularHours,
+        overtimeHours: row.overtimeHours,
+        open: row.isOpen,
+      })))
+      setDaysLoading(false)
+    }
+    void loadDays()
+    return () => { cancelled = true }
+  }, [payment?.id, payment?.employee_id, payment?.company_id, payment?.period_start, payment?.period_end])
 
   async function load() {
     setLoading(true)
@@ -252,6 +364,56 @@ export default function PayslipDetailPage() {
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <div className="card p-4 space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="section-label">DAYS ATTENDED</p>
+              <p className="text-[12px] text-text-secondary mt-1">
+                {daysLoading
+                  ? 'Loading this pay period…'
+                  : `${days.filter(day => !day.open).length} finished ${days.filter(day => !day.open).length === 1 ? 'day' : 'days'} in this pay period.`}
+                {templateLabel ? ` Hours follow ${templateLabel}.` : ' No time template is applied, so overtime clocks are not used.'}
+              </p>
+            </div>
+            {payment.period_start && payment.period_end && (
+              <Link
+                href={`/dashboard/employees/${payment.employee_id}?tab=attendance&from=${payment.period_start}&to=${payment.period_end}`}
+                className="text-[12px] text-primary shrink-0 hover:opacity-80"
+              >
+                Full attendance
+              </Link>
+            )}
+          </div>
+          {daysError && <p className="text-error text-[13px]">{daysError}</p>}
+          {!daysLoading && days.length === 0 && !daysError && (
+            <p className="text-[13px] text-text-secondary">No clock-ins in this pay period.</p>
+          )}
+          {days.length > 0 && (
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-divider">
+                  <th className="text-left text-[11px] text-text-secondary font-medium py-2">Date</th>
+                  <th className="text-left text-[11px] text-text-secondary font-medium py-2">In</th>
+                  <th className="text-left text-[11px] text-text-secondary font-medium py-2">Out</th>
+                  <th className="text-right text-[11px] text-text-secondary font-medium py-2">Regular</th>
+                  <th className="text-right text-[11px] text-text-secondary font-medium py-2">OT</th>
+                </tr>
+              </thead>
+              <tbody>
+                {days.map(day => (
+                  <tr key={day.key} className="border-b border-divider last:border-0">
+                    <td className="py-2 text-[13px] text-text-primary">{day.dateLabel}</td>
+                    <td className="py-2 text-[13px] text-text-secondary">{day.inLabel}</td>
+                    <td className="py-2 text-[13px] text-text-secondary">{day.outLabel}</td>
+                    <td className="py-2 text-[13px] text-right text-text-primary">{day.open ? '—' : `${day.regularHours.toFixed(1)}h`}</td>
+                    <td className="py-2 text-[13px] text-right text-text-primary">{day.open ? '—' : `${day.overtimeHours.toFixed(1)}h`}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
 
         {/* HR Adjustments — shown when payslip is still pending */}

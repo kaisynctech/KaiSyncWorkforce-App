@@ -146,7 +146,7 @@ export async function previewPayrollGenerate(
   periodStart: string,
   periodEnd: string
 ): Promise<PayrollResult<PayrollGeneratePreview>> {
-  const [{ data: emps, error: empErr }, { data: existing, error: existErr }] = await Promise.all([
+  const [{ data: emps, error: empErr }, { data: existing, error: existErr }, { count: defaultCount, error: defaultErr }] = await Promise.all([
     supabase.from('employees').select(EMP_SELECT).eq('company_id', companyId).eq('is_active', true),
     supabase
       .from('payment_approvals')
@@ -154,9 +154,15 @@ export async function previewPayrollGenerate(
       .eq('company_id', companyId)
       .eq('period_start', periodStart)
       .eq('period_end', periodEnd),
+    supabase
+      .from('employee_shift_templates')
+      .select('id', { count: 'exact', head: true })
+      .eq('company_id', companyId)
+      .eq('is_default', true),
   ])
   if (empErr) return { ok: false, message: empErr.message }
   if (existErr) return { ok: false, message: existErr.message }
+  if (defaultErr) return { ok: false, message: defaultErr.message }
 
   const existingIds = new Set((existing ?? []).map(r => r.employee_id as string))
   return {
@@ -165,7 +171,8 @@ export async function previewPayrollGenerate(
       (emps ?? []) as PayrollEmployeeLike[],
       periodStart,
       periodEnd,
-      existingIds
+      existingIds,
+      { companyHasDefaultTemplate: (defaultCount ?? 0) > 0 }
     ),
   }
 }

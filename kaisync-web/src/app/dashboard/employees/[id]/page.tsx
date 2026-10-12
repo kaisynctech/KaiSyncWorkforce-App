@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
@@ -175,6 +175,7 @@ function periodRange(period: Period, customFrom: string, customTo: string): { fr
 export default function EmployeeDetailPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
+  const searchParams = useSearchParams()
 
   const [employee, setEmployee] = useState<Employee | null>(null)
   const [branchName, setBranchName] = useState<string | null>(null)
@@ -209,6 +210,21 @@ export default function EmployeeDetailPage() {
   const [docsLoaded, setDocsLoaded] = useState(false)
 
   useEffect(() => { loadEmployee() }, [id])
+  useEffect(() => {
+    const requested = searchParams.get('tab')
+    const allowed = new Set(EMPLOYEE_TABS.map(t => t.id))
+    if (requested && allowed.has(requested as Tab)) setTab(requested as Tab)
+    const from = searchParams.get('from')
+    const to = searchParams.get('to')
+    const iso = /^\d{4}-\d{2}-\d{2}$/
+    if (from && to && iso.test(from) && iso.test(to)) {
+      setPeriod('custom')
+      setCustomFrom(from)
+      setCustomTo(to)
+      setAppliedCustomFrom(from)
+      setAppliedCustomTo(to)
+    }
+  }, [searchParams])
   useEffect(() => {
     if (employee && tab === 'attendance') loadAttendance()
   }, [employee, tab, period, appliedCustomFrom, appliedCustomTo])

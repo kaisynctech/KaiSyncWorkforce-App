@@ -836,6 +836,13 @@ export default function PayrollPage() {
               {genPreview.missingRatesCount > 0 && (
                 <li className="text-warning">{genPreview.missingRatesCount} missing pay rates</li>
               )}
+              {genPreview.missingShiftCount > 0 && (
+                <li className={genPreview.companyHasDefaultTemplate ? 'text-text-secondary' : 'text-warning'}>
+                  {genPreview.companyHasDefaultTemplate
+                    ? `${genPreview.missingShiftCount} people have no template of their own. Payroll uses the company default.`
+                    : `${genPreview.missingShiftCount} people have no template, and this company has no default. Set one under Time Templates.`}
+                </li>
+              )}
               {genPreview.missingBankCount > 0 && (
                 <li className="text-warning">{genPreview.missingBankCount} missing banking</li>
               )}

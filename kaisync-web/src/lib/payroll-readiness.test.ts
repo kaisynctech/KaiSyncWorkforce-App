@@ -39,6 +39,20 @@ describe('assessPayrollReadiness', () => {
     expect(info.statusLabel).toBe('Missing pay rates')
   })
 
+  it('uses the company default when the person has no template', () => {
+    const info = assessPayrollReadiness(
+      { ...base, shift_template_id: null },
+      { companyHasDefaultTemplate: true }
+    )
+    expect(info.isReady).toBe(true)
+  })
+
+  it('requires a company default when the person has no template', () => {
+    const info = assessPayrollReadiness({ ...base, shift_template_id: null })
+    expect(info.isReady).toBe(false)
+    expect(info.issues.some(i => i.includes('no default template'))).toBe(true)
+  })
+
   it('flags contractors for statutory review', () => {
     const info = assessPayrollReadiness({ ...base, worker_type: 'contractor' })
     expect(info.issues.some(i => i.toLowerCase().includes('contractor'))).toBe(true)
