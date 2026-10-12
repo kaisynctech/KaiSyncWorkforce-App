@@ -1,13 +1,13 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { loadScopedEmployeeIds, viewerSeesAllCompany } from '@/lib/employee-scope'
 import { decideLeaveRequest, formatLeaveDecideError } from '@/lib/leave'
 import { getCompanyAnnualDays, loadLeaveSettings, type LeaveSettingsMap } from '@/lib/leave-settings'
-import { formatDate } from '@/lib/utils'
+import { formatDate, returnToWorkLabel } from '@/lib/utils'
 import {
   ResponsiveDataView,
   DataCard,
@@ -18,13 +18,49 @@ import {
 import { ModalShell } from '@/components/ui/ModalShell'
 import type { LeaveRequest } from '@/types/database'
 
-type Tab = 'pending' | 'all'
+type Tab = 'pending' | 'all' | 'upcoming'
 
 type OnLeaveRecord = {
   id: string
   leave_type: string
   end_date: string
   employees: { name: string; surname: string } | null
+}
+
+type UpcomingLeave = {
+  id: string
+  employee_id: string
+  leave_type: string
+  start_date: string
+  end_date: string
+  total_days: number | null
+  status: string
+  employees: { name: string; surname: string } | null
+}
+
+function monthBounds(yearMonth: string): { start: string; end: string } {
+  const [year, month] = yearMonth.split('-').map(Number)
+  const lastDay = new Date(year, month, 0).getDate()
+  return {
+    start: `${yearMonth}-01`,
+    end: `${yearMonth}-${String(lastDay).padStart(2, '0')}`,
+  }
+}
+
+function monthLabel(yearMonth: string) {
+  const [year, month] = yearMonth.split('-').map(Number)
+  return new Date(year, month - 1, 1).toLocaleDateString('en-ZA', { month: 'long', year: 'numeric' })
+}
+
+function shiftYearMonth(yearMonth: string, delta: number) {
+  const [year, month] = yearMonth.split('-').map(Number)
+  const next = new Date(year, month - 1 + delta, 1)
+  return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`
+}
+
+function currentYearMonth() {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 }
 
 const STATUS_BADGES: Record<string, { label: string; cls: string }> = {
@@ -57,6 +93,11 @@ export default function LeavePage() {
     employeeName: string
   } | null>(null)
   const [decisionNote, setDecisionNote] = useState('')
+  const [upcoming, setUpcoming] = useState<UpcomingLeave[]>([])
+  const [upcomingLoading, setUpcomingLoading] = useState(false)
+  const [leaveMonth, setLeaveMonth] = useState(currentYearMonth)
+  const [scopeIds, setScopeIds] = useState<Set<string> | null>(null)
+  const upcomingRequestRef = useRef(0)
 
   useEffect(() => { void load() }, [])
 
@@ -90,6 +131,7 @@ export default function LeavePage() {
     if (reqsRes.error) { setError(reqsRes.error.message); setLoading(false); return }
     if (onLeaveRes.error) { setError(onLeaveRes.error.message); setLoading(false); return }
     const ids = scopeRes.seesAll ? null : scopeRes.ids
+    setScopeIds(ids)
     setSeesAll(scopeRes.seesAll || viewerSeesAllCompany(scopeRes.viewer.access_level))
     if (settingsRes.ok) setLeaveSettings(settingsRes.data)
 
@@ -133,6 +175,43 @@ export default function LeavePage() {
     await load()
   }
 
+  async function loadUpcoming(yearMonth: string) {
+    if (!companyId) return
+    const request = ++upcomingRequestRef.current
+    setUpcomingLoading(true)
+    const supabase = createClient()
+    const { start, end } = monthBounds(yearMonth)
+    const { data, error: loadError } = await supabase
+      .from('leave_requests')
+      .select('id, employee_id, leave_type, start_date, end_date, total_days, status, employees(name, surname)')
+      .eq('company_id', companyId)
+      .in('status', ['approved', 'pending'])
+      .lte('start_date', end)
+      .gte('end_date', start)
+      .order('start_date', { ascending: true })
+    if (request !== upcomingRequestRef.current) return
+    if (loadError) {
+      setActionError(loadError.message)
+      setUpcoming([])
+      setUpcomingLoading(false)
+      return
+    }
+    const inScope = (employeeId: string) => !scopeIds || scopeIds.has(employeeId)
+    const rows = ((data ?? []) as unknown as (UpcomingLeave & { employees: UpcomingLeave['employees'] | UpcomingLeave['employees'][] })[]).map(row => {
+      const linked = Array.isArray(row.employees) ? row.employees[0] ?? null : row.employees
+      return { ...row, employees: linked }
+    })
+    if (request !== upcomingRequestRef.current) return
+    setUpcoming(rows.filter(row => inScope(row.employee_id)))
+    setUpcomingLoading(false)
+  }
+
+  function changeLeaveMonth(delta: number) {
+    const next = shiftYearMonth(leaveMonth, delta)
+    setLeaveMonth(next)
+    void loadUpcoming(next)
+  }
+
   const leaveTypes = Array.from(new Set(requests.map(r => r.leave_type))).sort()
   const yearStart = `${new Date().getFullYear()}-01-01`
   const usedByKey = requests
@@ -156,6 +235,15 @@ export default function LeavePage() {
   })
 
   const pendingCount = requests.filter(r => r.status === 'pending').length
+
+  const upcomingView = upcoming.filter(row => {
+    if (leaveTypeFilter !== 'all' && row.leave_type !== leaveTypeFilter) return false
+    if (search) {
+      const name = `${row.employees?.name ?? ''} ${row.employees?.surname ?? ''}`.toLowerCase()
+      if (!name.includes(search.toLowerCase())) return false
+    }
+    return true
+  })
 
   if (error === 'not_linked') return (
     <div className="flex items-center justify-center h-full">
@@ -212,7 +300,7 @@ export default function LeavePage() {
                     {r.employees ? `${r.employees.name} ${r.employees.surname}` : 'Unknown'}
                   </span>
                   <span className="text-text-secondary">
-                    {r.leave_type} · back {formatDate(r.end_date)}
+                    {r.leave_type} · back {returnToWorkLabel(r.end_date)}
                   </span>
                 </div>
               ))}
@@ -257,19 +345,99 @@ export default function LeavePage() {
         </div>
 
         <div className="flex gap-1 bg-surface border border-divider rounded-md p-1 w-fit">
-          {(['pending', 'all'] as Tab[]).map(t => (
+          {(['pending', 'upcoming', 'all'] as Tab[]).map(t => (
             <button
               key={t}
-              onClick={() => setTab(t)}
+              onClick={() => {
+                setTab(t)
+                if (t === 'upcoming') void loadUpcoming(leaveMonth)
+              }}
               className={`px-4 h-8 rounded text-[13px] font-medium transition-colors capitalize ${
                 tab === t ? 'bg-primary text-white' : 'text-text-secondary hover:text-text-primary'
               }`}
             >
-              {t === 'pending' ? `Pending (${pendingCount})` : 'All'}
+              {t === 'pending' ? `Pending (${pendingCount})` : t === 'upcoming' ? 'Upcoming' : 'All'}
             </button>
           ))}
         </div>
 
+        {tab === 'upcoming' ? (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <p className="text-[13px] text-text-secondary">
+                Approved and pending leave in {monthLabel(leaveMonth)}. Back is the day they return.
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => changeLeaveMonth(-1)}
+                  className="h-9 w-9 rounded-md border border-border bg-surface text-text-primary"
+                  aria-label="Previous month"
+                >
+                  <span className="material-icons text-[18px]">chevron_left</span>
+                </button>
+                <span className="min-w-[140px] text-center text-[13px] font-semibold text-text-primary">
+                  {monthLabel(leaveMonth)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => changeLeaveMonth(1)}
+                  className="h-9 w-9 rounded-md border border-border bg-surface text-text-primary"
+                  aria-label="Next month"
+                >
+                  <span className="material-icons text-[18px]">chevron_right</span>
+                </button>
+              </div>
+            </div>
+            <div className="bg-surface rounded-lg border border-divider overflow-hidden">
+              {upcomingLoading ? (
+                <div className="py-16 text-center text-[13px] text-text-disabled">Loading…</div>
+              ) : upcomingView.length === 0 ? (
+                <div className="py-16 text-center">
+                  <span className="material-icons text-[48px] text-text-disabled block mb-2">event_available</span>
+                  <p className="text-[14px] text-text-secondary">No leave in {monthLabel(leaveMonth)}</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-[13px]">
+                    <thead>
+                      <tr className="border-b border-divider bg-surface-elevated/50">
+                        <th className="text-left px-4 py-2.5 font-medium text-text-secondary">Employee</th>
+                        <th className="text-left px-4 py-2.5 font-medium text-text-secondary">Type</th>
+                        <th className="text-left px-4 py-2.5 font-medium text-text-secondary">From</th>
+                        <th className="text-left px-4 py-2.5 font-medium text-text-secondary">To</th>
+                        <th className="text-center px-4 py-2.5 font-medium text-text-secondary">Days</th>
+                        <th className="text-left px-4 py-2.5 font-medium text-text-secondary">Back</th>
+                        <th className="text-left px-4 py-2.5 font-medium text-text-secondary">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {upcomingView.map(row => {
+                        const badge = STATUS_BADGES[row.status] ?? STATUS_BADGES.cancelled
+                        const name = row.employees ? `${row.employees.name} ${row.employees.surname}` : 'Unknown'
+                        return (
+                          <tr key={row.id} className="border-b border-divider last:border-0">
+                            <td className="px-4 py-3 font-medium text-text-primary">{name}</td>
+                            <td className="px-4 py-3 text-text-primary">{row.leave_type}</td>
+                            <td className="px-4 py-3 text-text-secondary whitespace-nowrap">{formatDate(row.start_date)}</td>
+                            <td className="px-4 py-3 text-text-secondary whitespace-nowrap">{formatDate(row.end_date)}</td>
+                            <td className="px-4 py-3 text-center text-text-primary">{row.total_days ?? '—'}</td>
+                            <td className="px-4 py-3 text-text-secondary whitespace-nowrap">back {returnToWorkLabel(row.end_date)}</td>
+                            <td className="px-4 py-3">
+                              <span className={`px-2 py-0.5 rounded-pill text-[11px] font-medium ${badge.cls}`}>
+                                {badge.label}
+                              </span>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
         <div className="bg-surface rounded-lg border border-divider overflow-hidden">
           {loading ? (
             <div className="py-16 text-center text-[13px] text-text-disabled">Loading…</div>
@@ -427,6 +595,7 @@ export default function LeavePage() {
             />
           )}
         </div>
+        )}
       </div>
 
       <ModalShell
