@@ -164,7 +164,13 @@ async function rpc(fn: string, args: Record<string, unknown>): Promise<any> {
   const supabase = createClient()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase.rpc as any)(fn, args)
-  if (error) throw error
+  if (error) {
+    const raw = error as { message?: unknown }
+    const message = typeof raw.message === 'string' && raw.message.trim()
+      ? raw.message
+      : 'Request failed.'
+    throw new Error(message)
+  }
   return data
 }
 
