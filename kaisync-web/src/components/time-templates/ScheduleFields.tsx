@@ -31,38 +31,52 @@ export function ScheduleFields({
   startTime,
   endTime,
   otStart,
+  earlyOtStart,
   weekendEnabled,
   weekendStart,
   weekendEnd,
   weekendOtStart,
+  weekendEarlyOtStart,
   onStartTime,
   onEndTime,
   onOtStart,
+  onEarlyOtStart,
   onWeekendEnabled,
   onWeekendStart,
   onWeekendEnd,
   onWeekendOtStart,
+  onWeekendEarlyOtStart,
 }: {
   startTime: string
   endTime: string
   otStart: string
+  earlyOtStart: string
   weekendEnabled: boolean
   weekendStart: string
   weekendEnd: string
   weekendOtStart: string
+  weekendEarlyOtStart: string
   onStartTime: (value: string) => void
   onEndTime: (value: string) => void
   onOtStart: (value: string) => void
+  onEarlyOtStart: (value: string) => void
   onWeekendEnabled: (value: boolean) => void
   onWeekendStart: (value: string) => void
   onWeekendEnd: (value: string) => void
   onWeekendOtStart: (value: string) => void
+  onWeekendEarlyOtStart: (value: string) => void
 }) {
   return (
     <>
       <div className="card p-4 space-y-3">
         <p className="section-label">MONDAY TO FRIDAY</p>
         <TimeField label="Start time" value={startTime} onChange={onStartTime} />
+        <TimeField
+          label="Early overtime starts at"
+          value={earlyOtStart}
+          onChange={onEarlyOtStart}
+          hint="Leave blank if time before the start is not paid. Set 06:00 on a 07:00 start to pay 06:00–07:00 as overtime."
+        />
         <TimeField label="End time" value={endTime} onChange={onEndTime} />
         <TimeField
           label="Overtime starts at"
@@ -97,6 +111,12 @@ export function ScheduleFields({
         {weekendEnabled && (
           <>
             <TimeField label="Start time" value={weekendStart} onChange={onWeekendStart} />
+            <TimeField
+              label="Early overtime starts at"
+              value={weekendEarlyOtStart}
+              onChange={onWeekendEarlyOtStart}
+              hint="Leave blank if time before this weekend start is not paid."
+            />
             <TimeField label="End time" value={weekendEnd} onChange={onWeekendEnd} />
             <TimeField
               label="Overtime starts at"

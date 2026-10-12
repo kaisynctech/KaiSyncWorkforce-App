@@ -105,6 +105,8 @@ export interface ShiftTemplate {
   weekend_end_time?: string | null
   ot_start_time?: string | null
   weekend_ot_start_time?: string | null
+  early_ot_start_time?: string | null
+  weekend_early_ot_start_time?: string | null
   break_minutes?: number
   is_default: boolean
   breaks?: BreakSlot[]

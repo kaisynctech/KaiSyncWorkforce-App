@@ -32,9 +32,12 @@ export type ShiftTemplateLike = {
   /** Saturday and Sunday. Both must be set to replace the weekday hours. */
   weekend_start_time?: string | null
   weekend_end_time?: string | null
-  /** Clock time overtime begins. Blank uses the company grace after the day's end. */
+  /** Clock time afternoon overtime begins. Blank uses the company grace after the day's end. */
   ot_start_time?: string | null
   weekend_ot_start_time?: string | null
+  /** Earliest clock that counts as overtime before the shift starts. Blank means that time is not paid. */
+  early_ot_start_time?: string | null
+  weekend_early_ot_start_time?: string | null
 }
 
 export type PunchSessionOptions = {
@@ -98,6 +101,7 @@ export function scheduleForPunchDay(
   start: { h: number; m: number } | null
   end: { h: number; m: number } | null
   otStart: { h: number; m: number } | null
+  earlyOt: { h: number; m: number } | null
 } {
   const weekday = zonedWeekday(clockIn, timeZone)
   const weekend = weekday === 0 || weekday === 6
@@ -108,12 +112,14 @@ export function scheduleForPunchDay(
       start: weekendStart,
       end: weekendEnd,
       otStart: parseTimeOnly(template.weekend_ot_start_time),
+      earlyOt: parseTimeOnly(template.weekend_early_ot_start_time),
     }
   }
   return {
     start: parseTimeOnly(template.start_time),
     end: parseTimeOnly(template.end_time),
     otStart: parseTimeOnly(template.ot_start_time),
+    earlyOt: parseTimeOnly(template.early_ot_start_time),
   }
 }
 
@@ -130,6 +136,26 @@ function paidHoursBetween(
 function breakMinutesOf(template: ShiftTemplateLike | null | undefined): number {
   if (!template) return 0
   return Number(template.total_break_minutes ?? template.break_minutes ?? 0)
+}
+
+/** Overtime from the early clock until the shift start. Time before the early clock is not paid. */
+function earlyOvertimeHours(
+  clockIn: Date,
+  clockOut: Date | null,
+  now: Date,
+  startT: { h: number; m: number },
+  earlyOtT: { h: number; m: number } | null,
+  timeZone: string,
+): number {
+  if (!earlyOtT) return 0
+  const shiftStart = zonedTimeOnPunchDay(clockIn, startT.h, startT.m, timeZone)
+  const earlyLine = zonedTimeOnPunchDay(clockIn, earlyOtT.h, earlyOtT.m, timeZone)
+  if (earlyLine.getTime() >= shiftStart.getTime()) return 0
+  const windowEnd = clockOut ?? now
+  const endOfEarly = windowEnd.getTime() < shiftStart.getTime() ? windowEnd : shiftStart
+  const from = clockIn.getTime() > earlyLine.getTime() ? clockIn : earlyLine
+  if (endOfEarly.getTime() <= from.getTime()) return 0
+  return (endOfEarly.getTime() - from.getTime()) / 3600000
 }
 
 function computeMetrics(
@@ -156,6 +182,7 @@ function computeMetrics(
   const startT = daySchedule?.start ?? null
   const endT = daySchedule?.end ?? null
   const otStartT = daySchedule?.otStart ?? null
+  const earlyOtT = daySchedule?.earlyOt ?? null
 
   if (template && startT) {
     const shiftStart = zonedTimeOnPunchDay(clockIn, startT.h, startT.m, timeZone)
@@ -208,6 +235,7 @@ function computeMetrics(
           : (minutesPast > otAfter ? (minutesPast - otAfter) / 60 : 0)
       }
     }
+    overtimeHours += earlyOvertimeHours(clockIn, clockOut, now, startT, earlyOtT, timeZone)
   }
 
   return {

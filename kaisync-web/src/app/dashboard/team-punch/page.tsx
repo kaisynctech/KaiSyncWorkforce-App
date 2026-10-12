@@ -8,12 +8,19 @@ import { filterTeamsByScope, loadScopedEmployeeIds } from '@/lib/employee-scope'
 import { getWorkTeam, listWorkTeams, memberIdsOf } from '@/lib/work-teams'
 import type { WorkTeam } from '@/types/database'
 import { reverseGeocodeRequired, looksLikeCoordinates } from '@/lib/geo-location'
+import { localISODate } from '@/lib/utils'
 
 interface TeamEmployee {
   id: string
   employee_id: string
   employee: { name: string; surname: string; position: string | null }
   is_clocked_in: boolean
+  punched_at: string | null
+}
+
+type TeamPunchResult = {
+  clocked?: string[]
+  skipped?: { employee_id: string; reason: string }[]
 }
 
 const initials = (name: string, surname: string) =>
@@ -50,6 +57,7 @@ export default function TeamPunchPage() {
   const [selfEmployeeId, setSelfEmployeeId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [actionNote, setActionNote] = useState<string | null>(null)
 
   useEffect(() => {
     if (!navigator.geolocation) { setAddress('Location unavailable'); setIsGettingLocation(false); return }
@@ -130,37 +138,32 @@ export default function TeamPunchPage() {
       return
     }
 
-    const { data: recentPunches, error: punchErr } = await supabase
-      .from('time_punches')
-      .select('employee_id, type, date_time')
-      .in('employee_id', empIds)
-      .gte('date_time', new Date(new Date().setHours(0, 0, 0, 0)).toISOString())
-      .order('date_time', { ascending: false })
+    const { data: latestPunches, error: punchErr } = await supabase.rpc('hr_team_latest_punches', {
+      p_company_id: companyId,
+      p_employee_ids: empIds,
+    })
 
     if (punchErr) {
       setActionError(punchErr.message)
     }
 
-    const latestByEmployee = new Map<string, string>()
-    for (const p of (recentPunches ?? []) as { employee_id: string; type: string }[]) {
-      if (!latestByEmployee.has(p.employee_id)) {
-        latestByEmployee.set(p.employee_id, p.type)
-      }
+    const latestByEmployee = new Map<string, { type: string; punched_at: string }>()
+    for (const p of (latestPunches ?? []) as { employee_id: string; punch_type: string; punched_at: string }[]) {
+      latestByEmployee.set(p.employee_id, { type: p.punch_type, punched_at: p.punched_at })
     }
-    const clockedIn = new Set(
-      [...latestByEmployee.entries()].filter(([, t]) => t === 'in').map(([id]) => id)
-    )
 
     const byId = new Map((emps ?? []).map(e => [e.id, e]))
     setMembers(empIds.map(id => {
       const emp = byId.get(id)
+      const latest = latestByEmployee.get(id)
       return {
         id,
         employee_id: id,
         employee: emp
           ? { name: emp.name, surname: emp.surname, position: emp.position }
           : { name: 'Unknown', surname: '', position: null },
-        is_clocked_in: clockedIn.has(id),
+        is_clocked_in: latest?.type === 'in',
+        punched_at: latest?.punched_at ?? null,
       }
     }))
     setSelected(new Set())
@@ -176,42 +179,50 @@ export default function TeamPunchPage() {
     })
   }
 
-  async function clockIn() {
-    if (!companyId) return
-    setBusy(true)
-    setActionError(null)
-    const supabase = createClient()
-    const ids = [...selected]
-    if (includeSelf && selfEmployeeId) ids.push(selfEmployeeId)
-    const { error: rpcErr } = await supabase.rpc('hr_team_clock_in', {
-      p_company_id: companyId,
-      p_employee_ids: ids,
-      p_latitude: lat ?? null,
-      p_longitude: lng ?? null,
-      p_address: punchAddressOrNull(address),
-    })
-    if (rpcErr) setActionError(rpcErr.message)
-    await loadMembers(selectedTeamId)
-    setSelected(new Set())
-    setBusy(false)
+  function nameOf(employeeId: string): string {
+    const member = members.find(m => m.employee_id === employeeId)
+    if (!member) return 'Employee'
+    return `${member.employee.name} ${member.employee.surname}`.trim()
   }
 
-  async function clockOut() {
+  function punchNote(data: TeamPunchResult | null, verb: 'in' | 'out'): string | null {
+    const clocked = data?.clocked ?? []
+    const skipped = data?.skipped ?? []
+    if (clocked.length === 0 && skipped.length === 0) return null
+    const reasonLabel: Record<string, string> = {
+      already_in: 'already clocked in',
+      not_in: 'not clocked in',
+      not_in_company: 'not in this company',
+    }
+    const parts: string[] = []
+    if (clocked.length > 0) {
+      parts.push(`Clocked ${verb}: ${clocked.map(nameOf).join(', ')}`)
+    }
+    if (skipped.length > 0) {
+      parts.push(`Skipped: ${skipped.map(row => `${nameOf(row.employee_id)} (${reasonLabel[row.reason] ?? row.reason})`).join(', ')}`)
+    }
+    return parts.join('. ')
+  }
+
+  async function punch(kind: 'in' | 'out') {
     if (!companyId) return
     setBusy(true)
     setActionError(null)
+    setActionNote(null)
     const supabase = createClient()
     const ids = [...selected]
-    if (includeSelf && selfEmployeeId) ids.push(selfEmployeeId)
-    const { error: rpcErr } = await supabase.rpc('hr_team_clock_out', {
+    if (includeSelf && selfEmployeeId && !ids.includes(selfEmployeeId)) ids.push(selfEmployeeId)
+    const rpc = kind === 'in' ? 'hr_team_clock_in' : 'hr_team_clock_out'
+    const { data, error: rpcErr } = await supabase.rpc(rpc, {
       p_company_id: companyId,
       p_employee_ids: ids,
       p_latitude: lat ?? null,
       p_longitude: lng ?? null,
       p_address: punchAddressOrNull(address),
     })
-    if (rpcErr) setActionError(rpcErr.message)
     await loadMembers(selectedTeamId)
+    if (rpcErr) setActionError(rpcErr.message)
+    else setActionNote(punchNote(data as TeamPunchResult | null, kind))
     setSelected(new Set())
     setBusy(false)
   }
@@ -241,6 +252,9 @@ export default function TeamPunchPage() {
 
       {actionError && (
         <p className="px-4 py-2 text-error text-[13px] shrink-0">{actionError}</p>
+      )}
+      {actionNote && (
+        <p className="px-4 py-2 text-[13px] text-text-primary shrink-0">{actionNote}</p>
       )}
 
       <div className="card mx-4 mt-3 p-3.5 shrink-0 space-y-2.5">
@@ -330,6 +344,11 @@ export default function TeamPunchPage() {
                     }>
                     {clockedIn ? 'In' : 'Out'}
                   </span>
+                  {clockedIn && m.punched_at && localISODate(new Date(m.punched_at)) < localISODate() && (
+                    <span className="text-[10px] text-text-secondary">
+                      Open since {new Date(m.punched_at).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' })}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -340,7 +359,7 @@ export default function TeamPunchPage() {
       <div className="fixed bottom-0 left-0 lg:left-[64px] right-0 px-4 py-3 bg-surface-dark border-t border-divider z-10">
         <div className="grid grid-cols-2 gap-3">
           <button
-            onClick={clockIn}
+            onClick={() => punch('in')}
             disabled={busy || (n === 0 && !includeSelf)}
             className="h-[50px] rounded-xl font-semibold text-[14px] text-white disabled:opacity-40 transition-opacity"
             style={{ backgroundColor: '#22C55E' }}
@@ -348,7 +367,7 @@ export default function TeamPunchPage() {
             {n > 0 ? ('Clock In ' + n + ' Selected') : 'Clock In'}
           </button>
           <button
-            onClick={clockOut}
+            onClick={() => punch('out')}
             disabled={busy || (n === 0 && !includeSelf)}
             className="h-[50px] rounded-xl font-semibold text-[14px] text-white disabled:opacity-40 transition-opacity"
             style={{ backgroundColor: '#EF4444' }}

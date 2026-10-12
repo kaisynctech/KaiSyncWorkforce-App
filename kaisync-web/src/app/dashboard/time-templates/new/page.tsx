@@ -35,10 +35,12 @@ export default function NewTimeTemplatePage() {
   const [startTime, setStartTime] = useState('08:00')
   const [endTime, setEndTime] = useState('17:00')
   const [otStart, setOtStart] = useState('')
+  const [earlyOtStart, setEarlyOtStart] = useState('')
   const [weekendEnabled, setWeekendEnabled] = useState(false)
   const [weekendStart, setWeekendStart] = useState('08:00')
   const [weekendEnd, setWeekendEnd] = useState('13:00')
   const [weekendOtStart, setWeekendOtStart] = useState('')
+  const [weekendEarlyOtStart, setWeekendEarlyOtStart] = useState('')
   const [breaks, setBreaks] = useState<BreakEntry[]>([])
   const [errorMsg, setErrorMsg] = useState('')
   const [busy, setBusy] = useState(false)
@@ -69,7 +71,9 @@ export default function NewTimeTemplatePage() {
     if (!member) { setError('not_linked'); setBusy(false); return }
 
     const schedule = templateSchedulePayload({
+      startTime,
       weekendEnabled, weekendStart, weekendEnd, otStart, weekendOtStart,
+      earlyOtStart, weekendEarlyOtStart,
     })
     if (!schedule.ok) { setErrorMsg(schedule.message); setBusy(false); return }
     const breakMins = breaks.reduce((s, b) => s + (b.minutes || 0), 0)
@@ -85,6 +89,8 @@ export default function NewTimeTemplatePage() {
       p_weekend_end_time: schedule.weekendEnd,
       p_ot_start_time: schedule.otStart,
       p_weekend_ot_start_time: schedule.weekendOtStart,
+      p_early_ot_start_time: schedule.earlyOtStart,
+      p_weekend_early_ot_start_time: schedule.weekendEarlyOtStart,
     })
 
     if (rpcErr) {
@@ -135,17 +141,21 @@ export default function NewTimeTemplatePage() {
           startTime={startTime}
           endTime={endTime}
           otStart={otStart}
+          earlyOtStart={earlyOtStart}
           weekendEnabled={weekendEnabled}
           weekendStart={weekendStart}
           weekendEnd={weekendEnd}
           weekendOtStart={weekendOtStart}
+          weekendEarlyOtStart={weekendEarlyOtStart}
           onStartTime={setStartTime}
           onEndTime={setEndTime}
           onOtStart={setOtStart}
+          onEarlyOtStart={setEarlyOtStart}
           onWeekendEnabled={setWeekendEnabled}
           onWeekendStart={setWeekendStart}
           onWeekendEnd={setWeekendEnd}
           onWeekendOtStart={setWeekendOtStart}
+          onWeekendEarlyOtStart={setWeekendEarlyOtStart}
         />
 
         <div className="card p-4 space-y-3">

@@ -20,6 +20,8 @@ type TemplateRow = {
   weekend_end_time: string | null
   ot_start_time: string | null
   weekend_ot_start_time: string | null
+  early_ot_start_time: string | null
+  weekend_early_ot_start_time: string | null
   break_minutes: number | null
   breaks: { label?: string; Label?: string; minutes?: number; Minutes?: number }[] | null
 }
@@ -60,10 +62,12 @@ export default function EditTimeTemplatePage() {
   const [startTime, setStartTime] = useState('08:00')
   const [endTime, setEndTime] = useState('17:00')
   const [otStart, setOtStart] = useState('')
+  const [earlyOtStart, setEarlyOtStart] = useState('')
   const [weekendEnabled, setWeekendEnabled] = useState(false)
   const [weekendStart, setWeekendStart] = useState('08:00')
   const [weekendEnd, setWeekendEnd] = useState('13:00')
   const [weekendOtStart, setWeekendOtStart] = useState('')
+  const [weekendEarlyOtStart, setWeekendEarlyOtStart] = useState('')
   const [breaks, setBreaks] = useState<BreakEntry[]>([])
   const [errorMsg, setErrorMsg] = useState('')
   const [busy, setBusy] = useState(false)
@@ -82,7 +86,7 @@ export default function EditTimeTemplatePage() {
 
     const { data } = await supabase
       .from('employee_shift_templates')
-      .select('id, company_id, name, start_time, end_time, break_minutes, breaks, weekend_start_time, weekend_end_time, ot_start_time, weekend_ot_start_time')
+      .select('id, company_id, name, start_time, end_time, break_minutes, breaks, weekend_start_time, weekend_end_time, ot_start_time, weekend_ot_start_time, early_ot_start_time, weekend_early_ot_start_time')
       .eq('id', templateId)
       .eq('company_id', member.companyId)
       .maybeSingle()
@@ -94,11 +98,13 @@ export default function EditTimeTemplatePage() {
     setStartTime(toTimeInput(t.start_time))
     setEndTime(toTimeInput(t.end_time))
     setOtStart(t.ot_start_time ? toTimeInput(t.ot_start_time) : '')
+    setEarlyOtStart(t.early_ot_start_time ? toTimeInput(t.early_ot_start_time) : '')
     const hasWeekend = Boolean(t.weekend_start_time && t.weekend_end_time)
     setWeekendEnabled(hasWeekend)
     setWeekendStart(hasWeekend ? toTimeInput(t.weekend_start_time) : '08:00')
     setWeekendEnd(hasWeekend ? toTimeInput(t.weekend_end_time) : '13:00')
     setWeekendOtStart(t.weekend_ot_start_time ? toTimeInput(t.weekend_ot_start_time) : '')
+    setWeekendEarlyOtStart(t.weekend_early_ot_start_time ? toTimeInput(t.weekend_early_ot_start_time) : '')
     const rawBreaks = Array.isArray(t.breaks) ? t.breaks : []
     if (rawBreaks.length > 0) {
       setBreaks(rawBreaks.map((b, i) => ({
@@ -130,7 +136,9 @@ export default function EditTimeTemplatePage() {
     setErrorMsg('')
     const supabase = createClient()
     const schedule = templateSchedulePayload({
+      startTime,
       weekendEnabled, weekendStart, weekendEnd, otStart, weekendOtStart,
+      earlyOtStart, weekendEarlyOtStart,
     })
     if (!schedule.ok) { setErrorMsg(schedule.message); setBusy(false); return }
     const breakMins = breaks.reduce((s, b) => s + (b.minutes || 0), 0)
@@ -146,6 +154,8 @@ export default function EditTimeTemplatePage() {
       p_weekend_end_time: schedule.weekendEnd,
       p_ot_start_time: schedule.otStart,
       p_weekend_ot_start_time: schedule.weekendOtStart,
+      p_early_ot_start_time: schedule.earlyOtStart,
+      p_weekend_early_ot_start_time: schedule.weekendEarlyOtStart,
     })
     if (rpcErr) {
       setErrorMsg(rpcErr.message || 'Failed to save template.')
@@ -190,17 +200,21 @@ export default function EditTimeTemplatePage() {
           startTime={startTime}
           endTime={endTime}
           otStart={otStart}
+          earlyOtStart={earlyOtStart}
           weekendEnabled={weekendEnabled}
           weekendStart={weekendStart}
           weekendEnd={weekendEnd}
           weekendOtStart={weekendOtStart}
+          weekendEarlyOtStart={weekendEarlyOtStart}
           onStartTime={setStartTime}
           onEndTime={setEndTime}
           onOtStart={setOtStart}
+          onEarlyOtStart={setEarlyOtStart}
           onWeekendEnabled={setWeekendEnabled}
           onWeekendStart={setWeekendStart}
           onWeekendEnd={setWeekendEnd}
           onWeekendOtStart={setWeekendOtStart}
+          onWeekendEarlyOtStart={setWeekendEarlyOtStart}
         />
 
         <div className="card p-4 space-y-3">
