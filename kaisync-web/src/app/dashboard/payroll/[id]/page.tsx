@@ -6,7 +6,8 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { Toggle } from '@/components/Toggle'
-import { savePayslipLines, type PayslipLineAmounts } from '@/lib/payroll'
+import { approvePaymentRun, releasePayslipToEmployee, savePayslipLines, type PayslipLineAmounts } from '@/lib/payroll'
+import { downloadPayslipTemplatePdf, imageUrlToDataUrl } from '@/lib/payslip-pdf'
 import { executeWithStepUp } from '@/lib/step-up'
 import { StepUpDialog } from '@/components/step-up-dialog'
 import { isUnpaidLeave } from '@/lib/payroll/leave-days'
@@ -54,6 +55,7 @@ function parseDmy(value: string): string | null {
 }
 
 const slipField = 'h-10 w-full rounded-md border border-border bg-surface-elevated px-2 text-[13px] text-text-primary outline-none placeholder:text-text-disabled'
+const slipFieldQuiet = 'h-8 w-full rounded-md border border-border/70 bg-transparent px-2 text-[12px] text-text-primary outline-none placeholder:text-text-disabled'
 
 const fmtDateTime = (s: string) =>
   new Intl.DateTimeFormat('en-ZA', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(s))
@@ -315,10 +317,13 @@ export default function PayslipDetailPage() {
   const [stepUpOpen, setStepUpOpen] = useState(false)
   const [stepUpBusy, setStepUpBusy] = useState(false)
   const [stepUpError, setStepUpError] = useState<string | null>(null)
+  const [stepUpMessage, setStepUpMessage] = useState('Re-enter your password to save these bank details. This opens a 15-minute verification window.')
+  const [releasing, setReleasing] = useState(false)
   const stepUpResolverRef = useRef<((password: string | null) => void) | null>(null)
   const [leaveLines, setLeaveLines] = useState<{ start: string; end: string; type: string; unpaid: boolean }[]>([])
 
-  function promptStepUpPassword(): Promise<string | null> {
+  function promptStepUpPassword(message = 'Re-enter your password to save these bank details. This opens a 15-minute verification window.'): Promise<string | null> {
+    setStepUpMessage(message)
     setStepUpError(null)
     setStepUpBusy(false)
     setStepUpOpen(true)
@@ -874,6 +879,79 @@ export default function PayslipDetailPage() {
     }))
   }
 
+  async function downloadPdf() {
+    if (!payment) return
+    const supabase = createClient()
+    const { data: company } = await supabase
+      .from('companies')
+      .select('name, address, logo_url')
+      .eq('id', payment.company_id)
+      .maybeSingle()
+    const companyRow = company as { name?: string | null; address?: string | null; logo_url?: string | null } | null
+    let logoDataUrl: string | null = null
+    if (companyRow?.logo_url) {
+      const { data: signed } = await supabase.storage.from('workforce-media').createSignedUrl(companyRow.logo_url, 120)
+      if (signed?.signedUrl) logoDataUrl = await imageUrlToDataUrl(signed.signedUrl)
+    }
+    const paid = paidLeaveText.trim() === '' ? null : moneyValue(paidLeaveText)
+    const sick = sickLeaveText.trim() === '' ? null : moneyValue(sickLeaveText)
+    downloadPayslipTemplatePdf({
+      companyName: companyRow?.name?.trim() || companyName,
+      companyAddress: companyRow?.address ?? companyAddress,
+      logoDataUrl,
+      employeeName: fullName,
+      address: homeAddress,
+      employeeId: employeeIdNumber,
+      employeeNumber,
+      employmentDate: personPay.employment_date,
+      periodStart: payment.period_start ?? '',
+      periodEnd: payment.period_end ?? '',
+      hourlyRate: moneyValue(hourlyRateText),
+      overtimeRate: moneyValue(overtimeRateText),
+      regular: moneyValue(lines.regular),
+      overtime: moneyValue(lines.overtime),
+      bonus: moneyValue(lines.bonus),
+      incentive: moneyValue(lines.incentive),
+      refund: moneyValue(lines.refund),
+      uif: moneyValue(lines.uif),
+      paye: moneyValue(lines.paye),
+      loanDeduction: moneyValue(lines.loanDeduction),
+      loanBalance: moneyValue(lines.loanBalance),
+      unpaidLeave: moneyValue(lines.unpaidLeave),
+      bankName,
+      bankBranch,
+      bankAccount,
+      paidTimeOff: paid,
+      sickTimeOff: sick,
+    })
+  }
+
+  async function releaseThisPayslip() {
+    if (!payment || payment.status === 'rejected' || payment.shared_with_employee) return
+    setReleasing(true)
+    setErrorMsg(null)
+    const supabase = createClient()
+    if (payment.status === 'pending') {
+      const approved = await approvePaymentRun(supabase, payment.company_id, payment.id, {
+        promptPassword: () => promptStepUpPassword('Re-enter your password to release this payslip. This opens a 15-minute verification window.'),
+      })
+      if (!approved.ok) {
+        setErrorMsg(approved.message)
+        setReleasing(false)
+        return
+      }
+      setPayment(current => current ? { ...current, status: 'approved' } : current)
+    }
+    const released = await releasePayslipToEmployee(supabase, payment.company_id, payment.id)
+    setReleasing(false)
+    if (!released.ok) {
+      setErrorMsg(released.message)
+      return
+    }
+    setPayment(current => current ? { ...current, status: current.status === 'pending' ? 'approved' : current.status, shared_with_employee: true } : current)
+    setAuditEntries(current => [...current, { action: 'released', detail: 'Shared with employee', at: new Date().toISOString() }])
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -921,7 +999,7 @@ export default function PayslipDetailPage() {
         })
       }}
       placeholder={field === 'name' ? 'Bank name' : field === 'branch' ? 'Branch code' : 'Account number'}
-      className={slipField}
+      className={slipFieldQuiet}
     />
   )
   const amountCell = (key: keyof SlipLines) => (
@@ -940,7 +1018,7 @@ export default function PayslipDetailPage() {
               setLines(next)
               void saveLines(next)
             }}
-            className="h-10 w-[7rem] rounded-md border border-border bg-surface-elevated px-2 text-right text-[13px] text-text-primary outline-none"
+            className="h-8 w-[6.5rem] rounded-md border border-border/70 bg-transparent px-2 text-right text-[12px] text-text-primary outline-none"
           />
         </span>
       ) : (
@@ -1251,43 +1329,43 @@ export default function PayslipDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                <tr className="h-11">
+                <tr className="h-9">
                   <td className="px-4 text-[13px] border-b border-divider">Regular Earnings</td>
                   {amountCell('regular')}
                   <td className="px-4 text-[13px] border-b border-l border-divider">UIF</td>
                   {amountCell('uif')}
                 </tr>
-                <tr className="h-11">
+                <tr className="h-9">
                   <td className="px-4 text-[13px] border-b border-divider">Overtime</td>
                   {amountCell('overtime')}
                   <td className="px-4 text-[13px] border-b border-l border-divider">PAYE</td>
                   {amountCell('paye')}
                 </tr>
-                <tr className="h-11">
+                <tr className="h-9">
                   <td className="px-4 text-[13px] border-b border-divider">Bonus</td>
                   {amountCell('bonus')}
                   <td className="px-4 text-[13px] border-b border-l border-divider">Loan Deduction</td>
                   {amountCell('loanDeduction')}
                 </tr>
-                <tr className="h-11">
+                <tr className="h-9">
                   <td className="px-4 text-[13px] border-b border-divider">Incentive Pay</td>
                   {amountCell('incentive')}
                   <td className="px-4 text-[13px] border-b border-l border-divider">Loan Balance</td>
                   {amountCell('loanBalance')}
                 </tr>
-                <tr className="h-11">
+                <tr className="h-9">
                   <td className="px-4 text-[13px] border-b border-divider">Refund</td>
                   {amountCell('refund')}
                   <td className="px-4 text-[13px] border-b border-l border-divider">Unpaid Leave</td>
                   {amountCell('unpaidLeave')}
                 </tr>
-                <tr className="h-11 font-semibold">
+                <tr className="h-9 font-semibold">
                   <td className="px-4 text-[13px] border-b border-divider">Gross Salary</td>
                   <td className="px-4 text-right text-[13px] whitespace-nowrap border-b border-divider">{fmtR(grossNow)}</td>
                   <td className="px-4 text-[13px] border-b border-l border-divider">Total Deduction</td>
                   <td className="px-4 text-right text-[13px] whitespace-nowrap border-b border-divider">{fmtR(deductedNow)}</td>
                 </tr>
-                <tr className="h-11 font-semibold">
+                <tr className="h-9 font-semibold">
                   <td className="px-4 text-[13px]">Current NET Salary</td>
                   <td className="px-4 text-right text-[13px] whitespace-nowrap">{fmtR(netNow)}</td>
                   <td className="border-l border-divider" />
@@ -1306,23 +1384,23 @@ export default function PayslipDetailPage() {
               </tr>
             </thead>
             <tbody>
-              <tr className="h-11">
+              <tr className="h-9">
                 <td className="px-4 text-[13px] border-b border-divider">Bank Name</td>
                 <td className="px-3 border-b border-divider">{bankField(bankName, setBankName, 'name')}</td>
                 <td className="px-4 text-[13px] border-b border-l border-divider">Paid time off balance</td>
                 <td className="px-3 border-b border-divider">
-                  <input type="number" min="0" step="0.5" value={paidLeaveText} onChange={e => setPaidLeaveText(e.target.value)} onBlur={e => { void saveLeaveBalance('paid', e.target.value) }} placeholder="0" className={`${slipField} text-right`} />
+                  <input type="number" min="0" step="0.5" value={paidLeaveText} onChange={e => setPaidLeaveText(e.target.value)} onBlur={e => { void saveLeaveBalance('paid', e.target.value) }} placeholder="0" className={`${slipFieldQuiet} text-right`} />
                 </td>
               </tr>
-              <tr className="h-11">
+              <tr className="h-9">
                 <td className="px-4 text-[13px] border-b border-divider">Branch Code</td>
                 <td className="px-3 border-b border-divider">{bankField(bankBranch, setBankBranch, 'branch')}</td>
                 <td className="px-4 text-[13px] border-b border-l border-divider">Sick time off balance</td>
                 <td className="px-3 border-b border-divider">
-                  <input type="number" min="0" step="0.5" value={sickLeaveText} onChange={e => setSickLeaveText(e.target.value)} onBlur={e => { void saveLeaveBalance('sick', e.target.value) }} placeholder="0" className={`${slipField} text-right`} />
+                  <input type="number" min="0" step="0.5" value={sickLeaveText} onChange={e => setSickLeaveText(e.target.value)} onBlur={e => { void saveLeaveBalance('sick', e.target.value) }} placeholder="0" className={`${slipFieldQuiet} text-right`} />
                 </td>
               </tr>
-              <tr className="h-11">
+              <tr className="h-9">
                 <td className="px-4 text-[13px]">Account Number</td>
                 <td className="px-3">{bankField(bankAccount, setBankAccount, 'account')}</td>
                 <td className="px-4 text-[13px] border-l border-divider">Total time off balance</td>
@@ -1330,6 +1408,24 @@ export default function PayslipDetailPage() {
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => { void downloadPdf() }}
+            className="h-9 px-4 rounded-md border border-border bg-surface text-[13px] font-medium text-text-primary hover:border-primary"
+          >
+            Download PDF
+          </button>
+          <button
+            type="button"
+            onClick={() => { void releaseThisPayslip() }}
+            disabled={releasing || payment.shared_with_employee || payment.status === 'rejected'}
+            className="h-9 px-4 rounded-md bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark disabled:opacity-50"
+          >
+            {payment.shared_with_employee ? 'Released' : releasing ? 'Releasing…' : 'Release payslip'}
+          </button>
         </div>
 
         {/* Audit Trail */}
@@ -1393,7 +1489,7 @@ export default function PayslipDetailPage() {
         open={stepUpOpen}
         busy={stepUpBusy}
         error={stepUpError}
-        message="Re-enter your password to save these bank details. This opens a 15-minute verification window."
+        message={stepUpMessage}
         onCancel={() => finishStepUpPrompt(null)}
         onVerify={password => {
           setStepUpBusy(true)

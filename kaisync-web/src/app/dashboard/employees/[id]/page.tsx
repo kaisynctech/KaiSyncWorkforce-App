@@ -13,6 +13,7 @@ import { listExtraBranchIds } from '@/lib/employee-branches'
 import { getEmployee } from '@/lib/employees'
 import EditEmployeePage from './edit/page'
 import { assessPayrollReadiness } from '@/lib/payroll-readiness'
+import { downloadPayslipTemplatePdf, imageUrlToDataUrl } from '@/lib/payslip-pdf'
 import type { Employee, LeaveRequest, TimePunch, AccessLevel } from '@/types/database'
 
 type PairSession = {
@@ -544,7 +545,11 @@ export default function EmployeeDetailPage() {
               <div className="p-4 grid grid-cols-2 gap-3">
                 <InfoCell label="Branch" value={branchName ?? '—'} />
                 <InfoCell label="Position" value={employee.position ?? '—'} />
+                <InfoCell label="Employee number" value={employee.employee_code ?? '—'} />
                 <InfoCell label="ID number" value={employee.id_number ?? '—'} />
+                <InfoCell label="Address" value={employee.address ?? '—'} />
+                <InfoCell label="Hourly rate" value={employee.hourly_rate != null ? formatCurrency(employee.hourly_rate) : '—'} />
+                <InfoCell label="Overtime rate" value={employee.overtime_hourly_rate != null ? formatCurrency(employee.overtime_hourly_rate) : '—'} />
                 <InfoCell label="Email" value={employee.email ?? '—'} />
                 <InfoCell label="Employment" value={employee.employment_type ? labelEmploymentType(employee.employment_type) : '—'} />
                 <InfoCell label="Department" value={employee.department ?? '—'} />
@@ -757,6 +762,120 @@ function PaymentsTab({ employee }: { employee: Employee }) {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+      <EmployeePayslips employee={employee} />
+    </div>
+  )
+}
+
+function EmployeePayslips({ employee }: { employee: Employee }) {
+  const [rows, setRows] = useState<{
+    id: string
+    period_start: string
+    period_end: string
+    status: string
+    net_pay: number | null
+    shared_with_employee: boolean | null
+    payslip_lines: Record<string, number> | null
+    regular_pay: number | null
+    overtime_pay: number | null
+    bonus_amount: number | null
+    manual_adjustment: number | null
+    manual_paye_override: number | null
+  }[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      const supabase = createClient()
+      const { data } = await supabase
+        .from('payment_approvals')
+        .select('id, period_start, period_end, status, net_pay, shared_with_employee, payslip_lines, regular_pay, overtime_pay, bonus_amount, manual_adjustment, manual_paye_override')
+        .eq('company_id', employee.company_id)
+        .eq('employee_id', employee.id)
+        .order('period_start', { ascending: false })
+      if (!cancelled) {
+        setRows((data ?? []) as typeof rows)
+        setLoading(false)
+      }
+    }
+    void load()
+    return () => { cancelled = true }
+  }, [employee.id, employee.company_id])
+
+  async function download(row: (typeof rows)[number]) {
+    const supabase = createClient()
+    const { data: company } = await supabase.from('companies').select('name, address, logo_url').eq('id', employee.company_id).maybeSingle()
+    const companyRow = company as { name?: string | null; address?: string | null; logo_url?: string | null } | null
+    let logoDataUrl: string | null = null
+    if (companyRow?.logo_url) {
+      const { data: signed } = await supabase.storage.from('workforce-media').createSignedUrl(companyRow.logo_url, 120)
+      if (signed?.signedUrl) logoDataUrl = await imageUrlToDataUrl(signed.signedUrl)
+    }
+    const lines = row.payslip_lines ?? {}
+    const amount = (key: string, fallback: number | null) => {
+      const value = lines[key]
+      return value == null ? Number(fallback ?? 0) : Number(value)
+    }
+    downloadPayslipTemplatePdf({
+      companyName: companyRow?.name ?? 'Company',
+      companyAddress: companyRow?.address,
+      logoDataUrl,
+      employeeName: `${employee.name} ${employee.surname}`.trim(),
+      address: employee.address,
+      employeeId: employee.id_number,
+      employeeNumber: employee.employee_code,
+      employmentDate: employee.employment_date,
+      periodStart: row.period_start,
+      periodEnd: row.period_end,
+      hourlyRate: Number(employee.hourly_rate ?? 0),
+      overtimeRate: Number(employee.overtime_hourly_rate ?? 0),
+      regular: amount('regular', row.regular_pay),
+      overtime: amount('overtime', row.overtime_pay),
+      bonus: amount('bonus', row.bonus_amount),
+      incentive: amount('incentive', 0),
+      refund: amount('refund', 0),
+      uif: amount('uif', 0),
+      paye: amount('paye', row.manual_paye_override),
+      loanDeduction: amount('loanDeduction', row.manual_adjustment),
+      loanBalance: amount('loanBalance', 0),
+      unpaidLeave: amount('unpaidLeave', 0),
+      bankName: employee.bank_name,
+      bankBranch: employee.bank_branch_code,
+      bankAccount: employee.bank_account,
+      paidTimeOff: employee.paid_leave_balance ?? null,
+      sickTimeOff: employee.sick_leave_balance ?? null,
+    })
+  }
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <p className="text-[15px] font-semibold text-text-primary">Payslips</p>
+        <p className="text-[12px] text-text-secondary mt-1">Released payslips also appear for this person when they sign in.</p>
+      </div>
+      {loading ? (
+        <p className="text-[13px] text-text-disabled">Loading…</p>
+      ) : rows.length === 0 ? (
+        <p className="text-[13px] text-text-secondary">No payslips yet.</p>
+      ) : (
+        <div className="bg-surface border border-divider rounded-lg overflow-hidden">
+          <table className="w-full text-[13px]">
+            <tbody>
+              {rows.map(row => (
+                <tr key={row.id} className="border-b border-divider last:border-0">
+                  <td className="px-4 py-3 text-text-primary">{formatDate(row.period_start)} – {formatDate(row.period_end)}</td>
+                  <td className="px-4 py-3 text-text-secondary">{row.shared_with_employee ? 'Released' : row.status}</td>
+                  <td className="px-4 py-3 text-right font-semibold">{row.net_pay != null ? formatCurrency(row.net_pay) : '—'}</td>
+                  <td className="px-4 py-3 text-right">
+                    <button type="button" onClick={() => { void download(row) }} className="text-primary text-[12px] font-medium">PDF</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
