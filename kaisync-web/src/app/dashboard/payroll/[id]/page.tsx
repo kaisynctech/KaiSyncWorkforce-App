@@ -4,13 +4,27 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { formatDateTime } from '@/lib/utils'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { Toggle } from '@/components/Toggle'
 import { PayrollLineItemsTable } from '@/components/payroll-line-items-table'
 import { recalculatePayslip } from '@/lib/payroll'
 import { loadPayrollSettings } from '@/lib/payroll-settings'
-import { buildPunchSessions, toLocalDateStr, type ShiftTemplateLike } from '@/lib/punch-session'
+import { AttendanceNote } from '@/components/attendance/AttendanceNote'
+import { enrichSessionsWithPlaceNames } from '@/lib/punch-address-enrich'
+import {
+  buildPunchSessions,
+  earlyFlag,
+  fmtSessionDate,
+  fmtSessionTime,
+  lateFlag,
+  locationDisplay,
+  mergeNonWorkDays,
+  toLocalDateStr,
+  totalHrsDisplay,
+  type PunchLike,
+  type PunchSessionRow,
+  type ShiftTemplateLike,
+} from '@/lib/punch-session'
 import type { EmployeePayment, PayrollLineItem, YtdTotals, PayrollAuditEntry } from '@/types/database'
 
 const fmtR = (n: number) =>
@@ -51,19 +65,16 @@ function requiredWorkingDays(start: string, end: string, daysPerWeek: number): n
   return count
 }
 
-type PayslipDay = {
-  key: string
-  dateLabel: string
-  inLabel: string
-  outLabel: string
-  regularHours: number
-  overtimeHours: number
-  open: boolean
-}
-function labelPayslipDay(iso: string) {
-  const [year, month, day] = iso.split('-').map(Number)
-  if (!year || !month || !day) return iso
-  return new Intl.DateTimeFormat('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(year, month - 1, day))
+function eachDateInclusive(from: string, to: string): string[] {
+  const out: string[] = []
+  const cur = new Date(from + 'T12:00:00')
+  const end = new Date(to + 'T12:00:00')
+  if (Number.isNaN(cur.getTime()) || Number.isNaN(end.getTime())) return out
+  while (cur <= end) {
+    out.push(cur.toISOString().split('T')[0])
+    cur.setDate(cur.getDate() + 1)
+  }
+  return out
 }
 
 function stBg(s: string) { return (PAYSLIP_COLORS[s?.toLowerCase()] ?? PAYSLIP_COLORS.pending).bg }
@@ -82,7 +93,7 @@ export default function PayslipDetailPage() {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
-  const [days, setDays] = useState<PayslipDay[]>([])
+  const [days, setDays] = useState<PunchSessionRow[]>([])
   const [daysLoading, setDaysLoading] = useState(false)
   const [daysError, setDaysError] = useState<string | null>(null)
   const [templateLabel, setTemplateLabel] = useState<string | null>(null)
@@ -113,20 +124,40 @@ export default function PayslipDetailPage() {
       const supabase = createClient()
       const periodStart = payment!.period_start!
       const periodEnd = payment!.period_end!
-      const [{ data: empRow, error: empErr }, settingsRes, { data: punches, error: punchErr }] = await Promise.all([
+      const [{ data: empRow, error: empErr }, settingsRes, punchRes, companyRes, leaveRes, absenceRes] = await Promise.all([
         supabase.from('employees').select('shift_template_id, daily_hours, work_days_weekly, vat_applies').eq('id', payment!.employee_id).maybeSingle(),
         loadPayrollSettings(supabase, payment!.company_id),
         supabase.from('time_punches')
-          .select('id, employee_id, type, date_time, address, notes')
+          .select('id, employee_id, type, date_time, latitude, longitude, address, notes')
           .eq('company_id', payment!.company_id)
           .eq('employee_id', payment!.employee_id)
           .gte('date_time', `${periodStart}T00:00:00`)
           .lte('date_time', `${periodEnd}T23:59:59`)
           .order('date_time', { ascending: true }),
+        supabase.from('companies').select('custom_settings').eq('id', payment!.company_id).maybeSingle(),
+        supabase.from('leave_requests')
+          .select('start_date, end_date, leave_type, status')
+          .eq('company_id', payment!.company_id)
+          .eq('employee_id', payment!.employee_id)
+          .eq('status', 'approved')
+          .lte('start_date', periodEnd)
+          .gte('end_date', periodStart),
+        supabase.from('daily_absences')
+          .select('date, reason, note')
+          .eq('company_id', payment!.company_id)
+          .eq('employee_id', payment!.employee_id)
+          .gte('date', periodStart)
+          .lte('date', periodEnd),
       ])
       if (cancelled) return
-      if (empErr || punchErr || !settingsRes.ok) {
-        setDaysError(empErr?.message ?? punchErr?.message ?? (!settingsRes.ok ? settingsRes.message : 'Could not load attendance'))
+      const loadError = empErr?.message
+        ?? punchRes.error?.message
+        ?? companyRes.error?.message
+        ?? leaveRes.error?.message
+        ?? absenceRes.error?.message
+        ?? (!settingsRes.ok ? settingsRes.message : null)
+      if (loadError) {
+        setDaysError(loadError)
         setDays([])
         setDaysLoading(false)
         return
@@ -161,18 +192,34 @@ export default function PayslipDetailPage() {
         }
         template = (data as (ShiftTemplateLike & { name?: string | null }) | null) ?? null
       }
+      if (!settingsRes.ok) return
       const settings = settingsRes.settings
-      const rows = buildPunchSessions((punches ?? []) as { type: string; date_time: string; id?: string; employee_id?: string; address?: string | null; notes?: string | null }[], {
+      const custom = (companyRes.data?.custom_settings ?? {}) as Record<string, unknown>
+      const lateMin = Number(custom.late_threshold_minutes ?? 30) || 30
+      const otMin = Number(custom.ot_start_after_minutes ?? 30) || 30
+      const sessionOpts = {
         employeeId: payment!.employee_id,
         dailyHours: Number((empRow as { daily_hours?: number | null } | null)?.daily_hours) || 8,
-        lateThresholdMinutes: settings.late_threshold_minutes,
-        otStartAfterMinutes: settings.ot_start_after_minutes,
+        lateThresholdMinutes: lateMin,
+        otStartAfterMinutes: otMin,
         shiftTemplate: template,
         timeZone: settings.company_timezone,
-      }).filter(row => {
+      }
+      const punches = (punchRes.data ?? []) as PunchLike[]
+      let rows = buildPunchSessions(punches, sessionOpts).filter(row => {
         const day = toLocalDateStr(row.clockIn, settings.company_timezone)
-        return day >= periodStart && day <= periodEnd && !row.isAbsentDay && !row.isLeaveDay
-      }).sort((a, b) => a.clockIn.getTime() - b.clockIn.getTime())
+        return day >= periodStart && day <= periodEnd
+      })
+      const leaveDays = ((leaveRes.data ?? []) as { start_date: string; end_date: string; leave_type: string }[])
+        .flatMap(leave => eachDateInclusive(leave.start_date, leave.end_date)
+          .filter(day => day >= periodStart && day <= periodEnd)
+          .map(day => ({ date: day, leave_type: leave.leave_type })))
+      rows = mergeNonWorkDays(
+        rows,
+        (absenceRes.data ?? []) as { date: string; reason?: string | null; note?: string | null }[],
+        leaveDays,
+        sessionOpts,
+      )
 
       setTemplateLabel(template?.name
         ? (usedPersonal ? template.name : `${template.name} (company default)`)
@@ -188,16 +235,10 @@ export default function PayslipDetailPage() {
       setVatApplies(Boolean(person?.vat_applies))
       setWeekdayHours(clockRange(times?.start_time, times?.end_time))
       setWeekendHours(clockRange(times?.weekend_start_time, times?.weekend_end_time))
-      setDays(rows.map(row => ({
-        key: `${row.clockInPunchId ?? row.clockIn.toISOString()}`,
-        dateLabel: labelPayslipDay(toLocalDateStr(row.clockIn, settings.company_timezone)),
-        inLabel: formatDateTime(row.clockIn.toISOString()),
-        outLabel: row.clockOut ? formatDateTime(row.clockOut.toISOString()) : 'Open',
-        regularHours: row.regularHours,
-        overtimeHours: row.overtimeHours,
-        open: row.isOpen,
-      })))
+      setDays(rows)
       setDaysLoading(false)
+      const named = await enrichSessionsWithPlaceNames(supabase, payment!.company_id, rows)
+      if (!cancelled) setDays(named)
     }
     void loadDays()
     return () => { cancelled = true }
@@ -448,8 +489,8 @@ export default function PayslipDetailPage() {
               <p className="text-[12px] text-text-secondary mt-1">
                 {daysLoading
                   ? 'Loading this pay period…'
-                  : `${days.filter(day => !day.open).length} finished ${days.filter(day => !day.open).length === 1 ? 'day' : 'days'} in this pay period.`}
-                {templateLabel ? ` Hours follow ${templateLabel}.` : ' No time template is applied, so overtime clocks are not used.'}
+                  : `${days.filter(day => !day.isOpen && !day.isAbsentDay && !day.isLeaveDay).length} finished days in this pay period.`}
+                {templateLabel ? ` Late and hours follow ${templateLabel}.` : ' No time template is applied, so late and overtime clocks are not used.'}
               </p>
             </div>
             {payment.period_start && payment.period_end && (
@@ -466,28 +507,63 @@ export default function PayslipDetailPage() {
             <p className="text-[13px] text-text-secondary">No clock-ins in this pay period.</p>
           )}
           {days.length > 0 && (
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-divider">
-                  <th className="text-left text-[11px] text-text-secondary font-medium py-2">Date</th>
-                  <th className="text-left text-[11px] text-text-secondary font-medium py-2">In</th>
-                  <th className="text-left text-[11px] text-text-secondary font-medium py-2">Out</th>
-                  <th className="text-right text-[11px] text-text-secondary font-medium py-2">Regular</th>
-                  <th className="text-right text-[11px] text-text-secondary font-medium py-2">OT</th>
-                </tr>
-              </thead>
-              <tbody>
-                {days.map(day => (
-                  <tr key={day.key} className="border-b border-divider last:border-0">
-                    <td className="py-2 text-[13px] text-text-primary">{day.dateLabel}</td>
-                    <td className="py-2 text-[13px] text-text-secondary">{day.inLabel}</td>
-                    <td className="py-2 text-[13px] text-text-secondary">{day.outLabel}</td>
-                    <td className="py-2 text-[13px] text-right text-text-primary">{day.open ? '—' : `${day.regularHours.toFixed(1)}h`}</td>
-                    <td className="py-2 text-[13px] text-right text-text-primary">{day.open ? '—' : `${day.overtimeHours.toFixed(1)}h`}</td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-[13px]" style={{ minWidth: 980 }}>
+                <thead>
+                  <tr className="border-b border-divider bg-surface-elevated">
+                    <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Date</th>
+                    <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Time In</th>
+                    <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">In Location</th>
+                    <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Time Out</th>
+                    <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Out Location</th>
+                    <th className="text-right px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Reg</th>
+                    <th className="text-right px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">OT</th>
+                    <th className="text-right px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Total</th>
+                    <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Notes</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {days.map(row => {
+                    const kind = row.isAbsentDay ? 'absent' : row.isLeaveDay ? 'leave' : 'in'
+                    const late = lateFlag(row)
+                    const early = earlyFlag(row)
+                    const notes = [late, early, row.notes ?? row.statusNote ?? ''].filter(Boolean).join(' · ')
+                    return (
+                      <tr key={`${row.clockInPunchId ?? row.clockIn.toISOString()}-${kind}`} className="border-b border-divider last:border-0">
+                        <td className="px-4 py-3 text-text-secondary whitespace-nowrap">{fmtSessionDate(row.clockIn)}</td>
+                        <td className={`px-4 py-3 font-medium whitespace-nowrap ${
+                          row.isAbsentDay ? 'text-error' : row.isLeaveDay ? 'text-warning' : row.isLate ? 'text-error' : 'text-success'
+                        }`}>
+                          {fmtSessionTime(row.clockIn, kind)}
+                          {row.isOpen && !row.isAbsentDay && !row.isLeaveDay && (
+                            <span className="ml-1 text-[10px] text-warning font-semibold">OPEN</span>
+                          )}
+                          {late && <span className="block text-[10px] text-error font-semibold">{late}</span>}
+                        </td>
+                        <td className="px-4 py-3 text-text-secondary max-w-[160px] truncate">
+                          {row.isAbsentDay || row.isLeaveDay ? '—' : locationDisplay(row.clockInAddress, row.clockInLat, row.clockInLng)}
+                        </td>
+                        <td className="px-4 py-3 text-text-primary whitespace-nowrap">
+                          {fmtSessionTime(row.clockOut, 'out')}
+                          {early && <span className="block text-[10px] text-warning font-semibold">{early}</span>}
+                        </td>
+                        <td className="px-4 py-3 text-text-secondary max-w-[160px] truncate">
+                          {row.isAbsentDay || row.isLeaveDay ? '—' : locationDisplay(row.clockOutAddress, row.clockOutLat, row.clockOutLng)}
+                        </td>
+                        <td className="px-4 py-3 text-right text-text-primary">{row.regularHours.toFixed(1)}</td>
+                        <td className="px-4 py-3 text-right text-warning font-medium">
+                          {row.overtimeHours > 0 ? row.overtimeHours.toFixed(1) : '—'}
+                        </td>
+                        <td className="px-4 py-3 text-right font-semibold text-text-primary">{totalHrsDisplay(row)}</td>
+                        <td className="px-4 py-3">
+                          <AttendanceNote note={notes} context={fmtSessionDate(row.clockIn)} />
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
         </div>
