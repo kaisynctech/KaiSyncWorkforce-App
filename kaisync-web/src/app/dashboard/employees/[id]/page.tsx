@@ -834,6 +834,7 @@ function EmployeePayslips({ employee }: { employee: Employee }) {
       periodEnd: row.period_end,
       hourlyRate: Number(employee.hourly_rate ?? 0),
       overtimeRate: Number(employee.overtime_hourly_rate ?? 0),
+      overtimeFactor: Number(employee.overtime_rate) > 0 ? Number(employee.overtime_rate) : 1.5,
       regular: amount('regular', row.regular_pay),
       overtime: amount('overtime', row.overtime_pay),
       bonus: amount('bonus', row.bonus_amount),

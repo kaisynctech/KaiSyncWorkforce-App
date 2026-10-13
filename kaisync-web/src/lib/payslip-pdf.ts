@@ -211,6 +211,8 @@ export type PayslipTemplatePdfInput = {
   periodEnd: string
   hourlyRate: number
   overtimeRate: number
+  /** Ordinary overtime multiple, usually 1.5. Printed beside the Overtime line. */
+  overtimeFactor?: number | null
   regular: number
   overtime: number
   bonus: number
@@ -226,6 +228,12 @@ export type PayslipTemplatePdfInput = {
   bankAccount?: string | null
   paidTimeOff?: number | null
   sickTimeOff?: number | null
+}
+
+function overtimeLabel(factor: number | null | undefined): string {
+  if (factor == null || !(factor > 0)) return 'Overtime'
+  const shown = Math.round(factor * 100) / 100
+  return `Overtime (${Number.isInteger(shown) ? shown.toFixed(0) : String(shown)})`
 }
 
 function dmy(iso: string | null | undefined): string {
@@ -325,7 +333,7 @@ export function downloadPayslipTemplatePdf(input: PayslipTemplatePdfInput): void
   y += 12
   const moneyRows: [string, number, string, number][] = [
     ['Regular Earnings', input.regular, 'UIF', input.uif],
-    ['Overtime', input.overtime, 'PAYE', input.paye],
+    [overtimeLabel(input.overtimeFactor), input.overtime, 'PAYE', input.paye],
     ['Bonus', input.bonus, 'Loan Deduction', input.loanDeduction],
     ['Incentive Pay', input.incentive, 'Loan Balance', input.loanBalance],
     ['Refund', input.refund, 'Unpaid Leave', input.unpaidLeave],

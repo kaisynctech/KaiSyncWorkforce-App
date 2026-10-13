@@ -105,7 +105,7 @@ export default function PayslipsPage() {
     const supabase = createClient()
     try {
       const [{ data: person }, { data: company }] = await Promise.all([
-        supabase.from('employees').select('name, surname, address, employee_code, id_number, tax_number, employment_date, hourly_rate, overtime_hourly_rate, bank_name, bank_branch_code, bank_account, paid_leave_balance, sick_leave_balance').eq('id', employeeId).maybeSingle(),
+        supabase.from('employees').select('name, surname, address, employee_code, id_number, tax_number, employment_date, hourly_rate, overtime_rate, overtime_hourly_rate, bank_name, bank_branch_code, bank_account, paid_leave_balance, sick_leave_balance').eq('id', employeeId).maybeSingle(),
         supabase.from('companies').select('name, address, logo_url').eq('id', companyId).maybeSingle(),
       ])
       const personRow = person as {
@@ -117,6 +117,7 @@ export default function PayslipsPage() {
         tax_number?: string | null
         employment_date?: string | null
         hourly_rate?: number | null
+        overtime_rate?: number | null
         overtime_hourly_rate?: number | null
         bank_name?: string | null
         bank_branch_code?: string | null
@@ -149,6 +150,7 @@ export default function PayslipsPage() {
         periodEnd: payslip.period_end,
         hourlyRate: Number(personRow?.hourly_rate ?? 0),
         overtimeRate: Number(personRow?.overtime_hourly_rate ?? 0),
+        overtimeFactor: Number(personRow?.overtime_rate) > 0 ? Number(personRow?.overtime_rate) : 1.5,
         regular: amount('regular', payslip.regular_pay),
         overtime: amount('overtime', payslip.overtime_pay),
         bonus: amount('bonus', 0),
