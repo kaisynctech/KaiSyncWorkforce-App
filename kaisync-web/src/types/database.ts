@@ -25,6 +25,12 @@ export interface Employee {
   employment_type: string | null
   worker_type: string | null
   hourly_rate: number | null
+  /** Rand amount per overtime hour on the payslip. Null uses hourly times the overtime multiple. */
+  overtime_hourly_rate?: number | null
+  /** Typed paid time off days. Null uses the calculated annual balance. */
+  paid_leave_balance?: number | null
+  /** Typed sick time off days. Null uses the calculated sick balance. */
+  sick_leave_balance?: number | null
   monthly_salary: number | null
   daily_rate: number | null
   /** @deprecated live column is paye_rate_percent */

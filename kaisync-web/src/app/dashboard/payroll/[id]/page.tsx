@@ -36,6 +36,25 @@ const fmtR = (n: number) =>
 const fmtDate = (s: string) =>
   new Intl.DateTimeFormat('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(s))
 
+function fmtDmy(s: string): string {
+  const [year, month, day] = s.slice(0, 10).split('-')
+  if (!year || !month || !day) return s
+  return `${day.padStart(2, '0')}-${month.padStart(2, '0')}-${year}`
+}
+
+function parseDmy(value: string): string | null {
+  const match = value.trim().match(/^(\d{2})-(\d{2})-(\d{4})$/)
+  if (!match) return null
+  const day = Number(match[1])
+  const month = Number(match[2])
+  const year = Number(match[3])
+  const parsed = new Date(year, month - 1, day)
+  if (parsed.getFullYear() !== year || parsed.getMonth() !== month - 1 || parsed.getDate() !== day) return null
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+
+const slipField = 'h-10 w-full rounded-md border border-border bg-surface-elevated px-2 text-[13px] text-text-primary outline-none placeholder:text-text-disabled'
+
 const fmtDateTime = (s: string) =>
   new Intl.DateTimeFormat('en-ZA', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(s))
 
@@ -276,6 +295,19 @@ export default function PayslipDetailPage() {
   const [companyName, setCompanyName] = useState('')
   const [companyAddress, setCompanyAddress] = useState('')
   const [homeAddress, setHomeAddress] = useState('')
+  const [fullName, setFullName] = useState('')
+  const [employeeNumber, setEmployeeNumber] = useState('')
+  const [employeeIdNumber, setEmployeeIdNumber] = useState('')
+  const [employmentDateText, setEmploymentDateText] = useState('')
+  const [hourlyRateText, setHourlyRateText] = useState('0.00')
+  const [overtimeRateText, setOvertimeRateText] = useState('0.00')
+  const [paidLeaveText, setPaidLeaveText] = useState('')
+  const [sickLeaveText, setSickLeaveText] = useState('')
+  const overtimeRateSaved = useRef<number | null>(null)
+  const paidLeaveSaved = useRef<number | null>(null)
+  const sickLeaveSaved = useRef<number | null>(null)
+  const paidLeaveShown = useRef('')
+  const sickLeaveShown = useRef('')
   const [bankName, setBankName] = useState('')
   const [bankBranch, setBankBranch] = useState('')
   const [bankAccount, setBankAccount] = useState('')
@@ -491,13 +523,17 @@ export default function PayslipDetailPage() {
     setBonusNote(p.bonus_note ?? '')
 
     const settingsRes = await loadPayrollSettings(supabase, p.company_id)
+    let companyOt = 1.5
     if (settingsRes.ok) {
+      companyOt = settingsRes.settings.overtime_multiplier > 0 ? settingsRes.settings.overtime_multiplier : 1.5
       setUifRate(settingsRes.settings.uif_rate_percent > 0 ? settingsRes.settings.uif_rate_percent : 1)
       setUifCeiling(settingsRes.settings.uif_ceiling_monthly > 0 ? settingsRes.settings.uif_ceiling_monthly : 17712)
-      setOtMultiplier(settingsRes.settings.overtime_multiplier > 0 ? settingsRes.settings.overtime_multiplier : 1.5)
+      setOtMultiplier(companyOt)
     }
 
     const year = (p.period_start ?? '').slice(0, 4)
+    let computedPaid: number | null = null
+    let computedSick: number | null = null
     if (year) {
       const { data: yearLeave, error: yearLeaveErr } = await supabase
         .from('leave_requests')
@@ -507,14 +543,17 @@ export default function PayslipDetailPage() {
         .gte('start_date', `${year}-01-01`)
         .lte('start_date', `${year}-12-31`)
       if (!yearLeaveErr) {
-        setLeaveBalances(computeLeaveSummary((yearLeave ?? []) as { leave_type: string; start_date: string; total_days: number; status: string }[]))
+        const summary = computeLeaveSummary((yearLeave ?? []) as { leave_type: string; start_date: string; total_days: number; status: string }[])
+        setLeaveBalances(summary)
+        computedPaid = summary.find(item => item.leave_type === 'Annual Leave')?.days_remaining ?? null
+        computedSick = summary.find(item => item.leave_type === 'Sick Leave')?.days_remaining ?? null
       }
     }
 
     const [{ data: person, error: personErr }, { data: company, error: companyErr }] = await Promise.all([
       supabase
         .from('employees')
-        .select('monthly_salary, hourly_rate, daily_rate, daily_hours, work_days_weekly, uif_fixed_amount, uif_rate_percent, uif_exempt, employment_date, termination_date, pay_full_monthly_salary, bank_name, bank_branch_code, bank_account, account_type, employee_code, id_number, overtime_rate, address')
+        .select('name, surname, monthly_salary, hourly_rate, daily_rate, daily_hours, work_days_weekly, uif_fixed_amount, uif_rate_percent, uif_exempt, employment_date, termination_date, pay_full_monthly_salary, bank_name, bank_branch_code, bank_account, account_type, employee_code, id_number, overtime_rate, overtime_hourly_rate, paid_leave_balance, sick_leave_balance, address')
         .eq('id', p.employee_id)
         .eq('company_id', p.company_id)
         .maybeSingle(),
@@ -531,7 +570,14 @@ export default function PayslipDetailPage() {
     setHomeAddress(((person as { address?: string | null } | null)?.address ?? '').trim())
     if (personErr) setErrorMsg(personErr.message)
     if (person) {
-      const row = person as PersonPay
+      const row = person as PersonPay & {
+        name?: string | null
+        surname?: string | null
+        address?: string | null
+        overtime_hourly_rate?: number | null
+        paid_leave_balance?: number | null
+        sick_leave_balance?: number | null
+      }
       const monthly = Number(row.monthly_salary) || 0
       const uifFixed = Number(row.uif_fixed_amount) || 0
       const slipUif = (p.deductions_breakdown ?? []).find(line => line.label.trim().toLowerCase() === 'uif')?.amount ?? 0
@@ -559,6 +605,28 @@ export default function PayslipDetailPage() {
       setBankName(row.bank_name ?? '')
       setBankBranch(row.bank_branch_code ?? '')
       setBankAccount(row.bank_account ?? '')
+      setFullName(`${row.name ?? ''} ${row.surname ?? ''}`.replace(/\s+/g, ' ').trim())
+      setEmployeeNumber(row.employee_code ?? '')
+      setEmployeeIdNumber(row.id_number ?? '')
+      setEmploymentDateText(row.employment_date ? fmtDmy(row.employment_date) : '')
+      const hourly = Number(row.hourly_rate) || 0
+      setHourlyRateText(moneyText(hourly))
+      const storedOt = row.overtime_hourly_rate == null ? null : Number(row.overtime_hourly_rate)
+      overtimeRateSaved.current = Number.isFinite(storedOt ?? NaN) ? storedOt : null
+      const factor = (Number(row.overtime_rate) || 0) > 0 ? Number(row.overtime_rate) : companyOt
+      setOvertimeRateText(moneyText(overtimeRateSaved.current ?? hourly * factor))
+      const storedPaid = row.paid_leave_balance == null ? null : Number(row.paid_leave_balance)
+      const storedSick = row.sick_leave_balance == null ? null : Number(row.sick_leave_balance)
+      paidLeaveSaved.current = storedPaid != null && Number.isFinite(storedPaid) ? storedPaid : null
+      sickLeaveSaved.current = storedSick != null && Number.isFinite(storedSick) ? storedSick : null
+      const paidShown = paidLeaveSaved.current ?? computedPaid
+      const sickShown = sickLeaveSaved.current ?? computedSick
+      const paidText = paidShown == null ? '' : String(paidShown)
+      const sickText = sickShown == null ? '' : String(sickShown)
+      paidLeaveShown.current = paidText
+      sickLeaveShown.current = sickText
+      setPaidLeaveText(paidText)
+      setSickLeaveText(sickText)
       setSalaryInput(monthly > 0 ? String(monthly) : '')
       setUifInput(row.uif_exempt ? '' : shownUif > 0 ? shownUif.toFixed(2) : '')
       setUifTouched(uifFixed > 0)
@@ -587,18 +655,135 @@ export default function PayslipDetailPage() {
     setLoading(false)
   }
 
-  async function saveAddress(next: string) {
-    if (!payment) return
-    const trimmed = next.trim()
-    setHomeAddress(trimmed)
+  async function saveEmployee(patch: Record<string, string | number | null>): Promise<boolean> {
+    if (!payment) return false
     setErrorMsg(null)
     const supabase = createClient()
     const { error } = await supabase
       .from('employees')
-      .update({ address: trimmed || null })
+      .update(patch)
       .eq('id', payment.employee_id)
       .eq('company_id', payment.company_id)
-    if (error) setErrorMsg(error.message)
+    if (error) {
+      setErrorMsg(error.message)
+      return false
+    }
+    return true
+  }
+
+  async function saveAddress(next: string) {
+    const trimmed = next.trim()
+    setHomeAddress(trimmed)
+    await saveEmployee({ address: trimmed || null })
+  }
+
+  async function saveName(next: string) {
+    const trimmed = next.trim().replace(/\s+/g, ' ')
+    if (!trimmed) {
+      setErrorMsg('Enter the employee name.')
+      return
+    }
+    const splitAt = trimmed.lastIndexOf(' ')
+    const name = splitAt < 0 ? trimmed : trimmed.slice(0, splitAt)
+    const surname = splitAt < 0 ? '' : trimmed.slice(splitAt + 1)
+    const saved = await saveEmployee({ name, surname })
+    if (saved) setFullName(trimmed)
+  }
+
+  async function saveEmployeeNumber(next: string) {
+    const trimmed = next.trim()
+    setEmployeeNumber(trimmed)
+    const saved = await saveEmployee({ employee_code: trimmed || null })
+    if (saved) setPersonPay(current => ({ ...current, employee_code: trimmed || null }))
+  }
+
+  async function saveEmployeeId(next: string) {
+    const trimmed = next.trim()
+    setEmployeeIdNumber(trimmed)
+    const saved = await saveEmployee({ id_number: trimmed || null })
+    if (saved) setPersonPay(current => ({ ...current, id_number: trimmed || null }))
+  }
+
+  async function saveEmploymentDate(next: string) {
+    const trimmed = next.trim()
+    if (!trimmed) {
+      const saved = await saveEmployee({ employment_date: null })
+      if (saved) {
+        setEmploymentDateText('')
+        setPersonPay(current => ({ ...current, employment_date: null }))
+      }
+      return
+    }
+    const iso = parseDmy(trimmed)
+    if (!iso) {
+      setErrorMsg('Use the date format 01-10-2026.')
+      setEmploymentDateText(personPay.employment_date ? fmtDmy(personPay.employment_date) : '')
+      return
+    }
+    const saved = await saveEmployee({ employment_date: iso })
+    if (!saved) return
+    setEmploymentDateText(fmtDmy(iso))
+    setPersonPay(current => ({ ...current, employment_date: iso }))
+  }
+
+  async function saveHourlyRate(next: string) {
+    const hourly = moneyValue(next)
+    const daily = Math.round(hourly * (personPay.daily_hours > 0 ? personPay.daily_hours : 8) * 100) / 100
+    const saved = await saveEmployee({ hourly_rate: hourly, daily_rate: daily })
+    if (!saved) {
+      setHourlyRateText(moneyText(personPay.hourly_rate))
+      return
+    }
+    setHourlyRateText(moneyText(hourly))
+    setPersonPay(current => ({ ...current, hourly_rate: hourly, daily_rate: daily }))
+    if (overtimeRateSaved.current == null) {
+      const factor = personPay.overtime_rate > 0 ? personPay.overtime_rate : otMultiplier
+      setOvertimeRateText(moneyText(hourly * factor))
+    }
+    if (payment?.status === 'pending') void saveLines(lines)
+  }
+
+  async function saveOvertimeRate(next: string) {
+    const amount = moneyValue(next)
+    if (overtimeRateSaved.current != null && Math.abs(overtimeRateSaved.current - amount) < 0.005) {
+      setOvertimeRateText(moneyText(amount))
+      return
+    }
+    const derived = personPay.hourly_rate * (personPay.overtime_rate > 0 ? personPay.overtime_rate : otMultiplier)
+    if (overtimeRateSaved.current == null && Math.abs(derived - amount) < 0.005) {
+      setOvertimeRateText(moneyText(derived))
+      return
+    }
+    const saved = await saveEmployee({ overtime_hourly_rate: amount })
+    if (!saved) {
+      setOvertimeRateText(moneyText(overtimeRateSaved.current ?? derived))
+      return
+    }
+    overtimeRateSaved.current = amount
+    setOvertimeRateText(moneyText(amount))
+  }
+
+  async function saveLeaveBalance(which: 'paid' | 'sick', next: string) {
+    const trimmed = next.trim()
+    const shown = which === 'paid' ? paidLeaveShown.current : sickLeaveShown.current
+    if (trimmed === shown.trim()) return
+    const value = trimmed === '' ? null : moneyValue(trimmed)
+    const previous = which === 'paid' ? paidLeaveSaved.current : sickLeaveSaved.current
+    if (value == null && previous == null) return
+    if (value != null && previous != null && Math.abs(value - previous) < 0.005) return
+    const column = which === 'paid' ? 'paid_leave_balance' : 'sick_leave_balance'
+    const saved = await saveEmployee({ [column]: value })
+    if (!saved) return
+    const text = value == null ? '' : String(value)
+    if (which === 'paid') {
+      paidLeaveSaved.current = value
+      paidLeaveShown.current = text
+      setPaidLeaveText(text)
+    } else {
+      sickLeaveSaved.current = value
+      sickLeaveShown.current = text
+      setSickLeaveText(text)
+    }
   }
 
   async function saveBank(next: { name: string; branch: string; account: string }) {
@@ -682,20 +867,11 @@ export default function PayslipDetailPage() {
       overtime_pay: moneyValue(next.overtime),
       bonus_amount: moneyValue(next.bonus),
     } : current)
-    setPersonPay(current => {
-      const regular = moneyValue(next.regular)
-      const days = current.work_days_weekly > 0 ? current.work_days_weekly : 5
-      const hours = current.daily_hours > 0 ? current.daily_hours : 8
-      const daily = regular > 0 ? regular / ((days * 52) / 12) : current.daily_rate
-      const hourly = regular > 0 && hours > 0 ? daily / hours : current.hourly_rate
-      return {
-        ...current,
-        monthly_salary: regular,
-        uif_fixed_amount: moneyValue(next.uif),
-        daily_rate: daily,
-        hourly_rate: hourly,
-      }
-    })
+    setPersonPay(current => ({
+      ...current,
+      monthly_salary: moneyValue(next.regular),
+      uif_fixed_amount: moneyValue(next.uif),
+    }))
   }
 
   if (loading) {
@@ -728,11 +904,9 @@ export default function PayslipDetailPage() {
   const grossNow = moneyValue(lines.regular) + moneyValue(lines.overtime) + moneyValue(lines.bonus) + moneyValue(lines.incentive) + moneyValue(lines.refund)
   const deductedNow = moneyValue(lines.uif) + moneyValue(lines.paye) + moneyValue(lines.loanDeduction) + moneyValue(lines.unpaidLeave)
   const netNow = Math.max(0, Math.round((grossNow - deductedNow) * 100) / 100)
-  const paidTimeOff = leaveBalances.find(item => item.leave_type === 'Annual Leave')?.days_remaining
-  const sickTimeOff = leaveBalances.find(item => item.leave_type === 'Sick Leave')?.days_remaining
-  const totalTimeOff = paidTimeOff != null && sickTimeOff != null ? paidTimeOff + sickTimeOff : null
-  const otFactor = personPay.overtime_rate > 0 ? personPay.overtime_rate : otMultiplier
-  const overtimeHourly = Math.round(personPay.hourly_rate * otFactor * 100) / 100
+  const paidNow = paidLeaveText.trim() === '' ? null : moneyValue(paidLeaveText)
+  const sickNow = sickLeaveText.trim() === '' ? null : moneyValue(sickLeaveText)
+  const totalTimeOff = paidNow != null && sickNow != null ? Math.round((paidNow + sickNow) * 100) / 100 : null
   const bankField = (value: string, setValue: (next: string) => void, field: 'name' | 'branch' | 'account') => (
     <input
       type="text"
@@ -746,7 +920,8 @@ export default function PayslipDetailPage() {
           account: field === 'account' ? typed : bankAccount,
         })
       }}
-      className="h-10 w-full bg-transparent text-[13px] text-text-primary outline-none"
+      placeholder={field === 'name' ? 'Bank name' : field === 'branch' ? 'Branch code' : 'Account number'}
+      className={slipField}
     />
   )
   const amountCell = (key: keyof SlipLines) => (
@@ -765,7 +940,7 @@ export default function PayslipDetailPage() {
               setLines(next)
               void saveLines(next)
             }}
-            className="h-10 w-[7rem] bg-transparent text-right text-[13px] text-text-primary outline-none"
+            className="h-10 w-[7rem] rounded-md border border-border bg-surface-elevated px-2 text-right text-[13px] text-text-primary outline-none"
           />
         </span>
       ) : (
@@ -791,7 +966,7 @@ export default function PayslipDetailPage() {
           <span className="material-icons text-[20px]">arrow_back</span>
         </Link>
         <div className="flex-1 min-w-0">
-          <h1 className="text-[18px] font-semibold text-text-primary truncate">{empName}</h1>
+          <h1 className="text-[18px] font-semibold text-text-primary truncate">{fullName || empName}</h1>
           <p className="text-text-secondary text-sm">
             {payment.period_start && payment.period_end
               ? `${fmtDate(payment.period_start)} – ${fmtDate(payment.period_end)}`
@@ -1014,40 +1189,53 @@ export default function PayslipDetailPage() {
               <tbody>
                 <tr className="border-b border-divider">
                   <td className="py-2 pr-3 text-[13px] text-text-secondary whitespace-nowrap w-[168px]">Employee name</td>
-                  <td className="py-2 pr-6 text-[14px] font-semibold text-text-primary">{empName}</td>
-                  <td className="py-2 pr-3 text-[13px] text-text-secondary whitespace-nowrap w-[168px] border-l border-divider pl-4">Employee number</td>
-                  <td className="py-2 text-[13px] text-text-primary whitespace-nowrap">{personPay.employee_code || '—'}</td>
+                  <td className="py-2 pr-4">
+                    <input type="text" value={fullName} onChange={e => setFullName(e.target.value)} onBlur={e => { void saveName(e.target.value) }} placeholder="Name and surname" className={slipField} />
+                  </td>
+                  <td className="py-2 pr-3 pl-4 text-[13px] text-text-secondary whitespace-nowrap border-l border-divider w-[150px]">Rate</td>
+                  <td className="py-2 w-[11rem]">
+                    <span className="inline-flex items-center gap-1 w-full">
+                      <span className="text-[13px] text-text-secondary">R</span>
+                      <input type="number" min="0" step="0.01" value={hourlyRateText} onChange={e => setHourlyRateText(e.target.value)} onBlur={e => { void saveHourlyRate(e.target.value) }} placeholder="0.00" className={slipField} />
+                    </span>
+                  </td>
                 </tr>
                 <tr className="border-b border-divider">
                   <td className="py-2 pr-3 text-[13px] text-text-secondary align-middle">Employee address</td>
-                  <td className="py-2" colSpan={3}>
-                    <input
-                      type="text"
-                      value={homeAddress}
-                      onChange={e => setHomeAddress(e.target.value)}
-                      onBlur={e => { void saveAddress(e.target.value) }}
-                      placeholder="Street, suburb, city"
-                      className="h-10 w-full bg-transparent text-[13px] text-text-primary outline-none"
-                    />
+                  <td className="py-2 pr-4" colSpan={3}>
+                    <input type="text" value={homeAddress} onChange={e => setHomeAddress(e.target.value)} onBlur={e => { void saveAddress(e.target.value) }} placeholder="Street, suburb, city" className={slipField} />
                   </td>
                 </tr>
                 <tr className="border-b border-divider">
                   <td className="py-2 pr-3 text-[13px] text-text-secondary whitespace-nowrap">Employee ID</td>
-                  <td className="py-2 pr-6 text-[13px] text-text-primary">{personPay.id_number || '—'}</td>
-                  <td className="py-2 pr-3 text-[13px] text-text-secondary whitespace-nowrap border-l border-divider pl-4">Employment date</td>
-                  <td className="py-2 text-[13px] text-text-primary whitespace-nowrap">{personPay.employment_date ? fmtDate(personPay.employment_date) : '—'}</td>
+                  <td className="py-2 pr-4">
+                    <input type="text" value={employeeIdNumber} onChange={e => setEmployeeIdNumber(e.target.value)} onBlur={e => { void saveEmployeeId(e.target.value) }} placeholder="ID number" className={slipField} />
+                  </td>
+                  <td className="py-2 pr-3 pl-4 text-[13px] text-text-secondary whitespace-nowrap border-l border-divider">Employee number</td>
+                  <td className="py-2">
+                    <input type="text" value={employeeNumber} onChange={e => setEmployeeNumber(e.target.value)} onBlur={e => { void saveEmployeeNumber(e.target.value) }} placeholder="Employee number" className={slipField} />
+                  </td>
+                </tr>
+                <tr className="border-b border-divider">
+                  <td className="py-2 pr-3 text-[13px] text-text-secondary whitespace-nowrap">Employment date</td>
+                  <td className="py-2 pr-4">
+                    <input type="text" value={employmentDateText} onChange={e => setEmploymentDateText(e.target.value)} onBlur={e => { void saveEmploymentDate(e.target.value) }} placeholder="01-10-2026" className={slipField} />
+                  </td>
+                  <td className="py-2 pr-3 pl-4 text-[13px] text-text-secondary whitespace-nowrap border-l border-divider">Overtime rate</td>
+                  <td className="py-2">
+                    <span className="inline-flex items-center gap-1 w-full">
+                      <span className="text-[13px] text-text-secondary">R</span>
+                      <input type="number" min="0" step="0.01" value={overtimeRateText} onChange={e => setOvertimeRateText(e.target.value)} onBlur={e => { void saveOvertimeRate(e.target.value) }} placeholder="0.00" className={slipField} />
+                    </span>
+                  </td>
                 </tr>
                 <tr className="border-b border-divider">
                   <td className="py-2 pr-3 text-[13px] text-text-secondary whitespace-nowrap">Pay period begin</td>
-                  <td className="py-2 pr-6 text-[13px] text-text-primary whitespace-nowrap">{payment.period_start ? fmtDate(payment.period_start) : '—'}</td>
-                  <td className="py-2 pr-3 text-[13px] text-text-secondary whitespace-nowrap border-l border-divider pl-4">Pay period end</td>
-                  <td className="py-2 text-[13px] text-text-primary whitespace-nowrap">{payment.period_end ? fmtDate(payment.period_end) : '—'}</td>
+                  <td className="py-2 text-[13px] text-text-primary whitespace-nowrap" colSpan={3}>{payment.period_start ? fmtDmy(payment.period_start) : '—'}</td>
                 </tr>
                 <tr>
-                  <td className="py-2 pr-3 text-[13px] text-text-secondary whitespace-nowrap">Rate</td>
-                  <td className="py-2 pr-6 text-[13px] text-text-primary whitespace-nowrap">{fmtR(personPay.hourly_rate)}</td>
-                  <td className="py-2 pr-3 text-[13px] text-text-secondary whitespace-nowrap border-l border-divider pl-4">Overtime rate</td>
-                  <td className="py-2 text-[13px] text-text-primary whitespace-nowrap">{fmtR(overtimeHourly)}</td>
+                  <td className="py-2 pr-3 text-[13px] text-text-secondary whitespace-nowrap">Pay period end</td>
+                  <td className="py-2 text-[13px] text-text-primary whitespace-nowrap" colSpan={3}>{payment.period_end ? fmtDmy(payment.period_end) : '—'}</td>
                 </tr>
               </tbody>
             </table>
@@ -1122,13 +1310,17 @@ export default function PayslipDetailPage() {
                 <td className="px-4 text-[13px] border-b border-divider">Bank Name</td>
                 <td className="px-3 border-b border-divider">{bankField(bankName, setBankName, 'name')}</td>
                 <td className="px-4 text-[13px] border-b border-l border-divider">Paid time off balance</td>
-                <td className="px-4 text-right text-[13px] whitespace-nowrap border-b border-divider">{paidTimeOff ?? '—'}</td>
+                <td className="px-3 border-b border-divider">
+                  <input type="number" min="0" step="0.5" value={paidLeaveText} onChange={e => setPaidLeaveText(e.target.value)} onBlur={e => { void saveLeaveBalance('paid', e.target.value) }} placeholder="0" className={`${slipField} text-right`} />
+                </td>
               </tr>
               <tr className="h-11">
                 <td className="px-4 text-[13px] border-b border-divider">Branch Code</td>
                 <td className="px-3 border-b border-divider">{bankField(bankBranch, setBankBranch, 'branch')}</td>
                 <td className="px-4 text-[13px] border-b border-l border-divider">Sick time off balance</td>
-                <td className="px-4 text-right text-[13px] whitespace-nowrap border-b border-divider">{sickTimeOff ?? '—'}</td>
+                <td className="px-3 border-b border-divider">
+                  <input type="number" min="0" step="0.5" value={sickLeaveText} onChange={e => setSickLeaveText(e.target.value)} onBlur={e => { void saveLeaveBalance('sick', e.target.value) }} placeholder="0" className={`${slipField} text-right`} />
+                </td>
               </tr>
               <tr className="h-11">
                 <td className="px-4 text-[13px]">Account Number</td>
