@@ -186,6 +186,8 @@ export default function EmployeeDetailPage() {
   const [tab, setTab] = useState<Tab>('overview')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [clockExcuseBusy, setClockExcuseBusy] = useState(false)
+  const [clockExcuseError, setClockExcuseError] = useState<string | null>(null)
 
   // Attendance
   const [period, setPeriod] = useState<Period>('month')
@@ -237,6 +239,24 @@ export default function EmployeeDetailPage() {
   useEffect(() => {
     if (employee && myCompanyId && tab === 'documents' && !docsLoaded) loadDocs()
   }, [employee, tab, myCompanyId])
+
+  async function setNoClockIn(next: boolean) {
+    if (!employee || !myCompanyId) return
+    setClockExcuseBusy(true)
+    setClockExcuseError(null)
+    const supabase = createClient()
+    const { error: updateError } = await supabase
+      .from('employees')
+      .update({ pay_full_monthly_salary: next })
+      .eq('id', employee.id)
+      .eq('company_id', myCompanyId)
+    setClockExcuseBusy(false)
+    if (updateError) {
+      setClockExcuseError(updateError.message)
+      return
+    }
+    setEmployee({ ...employee, pay_full_monthly_salary: next })
+  }
 
   async function loadEmployee() {
     const supabase = createClient()
@@ -420,19 +440,37 @@ export default function EmployeeDetailPage() {
               <div className="w-[72px] h-[72px] rounded-full bg-primary flex items-center justify-center shrink-0">
                 <span className="text-[24px] font-bold text-white">{initials}</span>
               </div>
-              <div className="flex-1 min-w-0 space-y-1">
-                <p className="text-[19px] font-bold text-text-primary truncate">{fullName}</p>
-                {employee.position && (
-                  <p className="text-[13px] text-text-secondary">{employee.position}</p>
-                )}
-                <span className={cn(
-                  'inline-flex text-[11px] font-semibold px-2 py-[3px] rounded-[10px]',
-                  employee.is_active ? 'bg-success-dark text-[#166534]' : 'bg-error-dark text-[#991B1B]'
-                )}>
-                  {employee.is_active ? 'Active' : 'Inactive'}
-                </span>
+              <div className="flex-1 min-w-0 flex items-start justify-between gap-3">
+                <div className="min-w-0 space-y-1">
+                  <p className="text-[19px] font-bold text-text-primary truncate">{fullName}</p>
+                  {employee.position && (
+                    <p className="text-[13px] text-text-secondary">{employee.position}</p>
+                  )}
+                  <span className={cn(
+                    'inline-flex text-[11px] font-semibold px-2 py-[3px] rounded-[10px]',
+                    employee.is_active ? 'bg-success-dark text-[#166534]' : 'bg-error-dark text-[#991B1B]'
+                  )}>
+                    {employee.is_active ? 'Active' : 'Inactive'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void setNoClockIn(!employee.pay_full_monthly_salary)}
+                  disabled={clockExcuseBusy}
+                  className={cn(
+                    'h-9 shrink-0 px-3 rounded-md border text-[12px] font-medium disabled:opacity-50',
+                    employee.pay_full_monthly_salary
+                      ? 'border-primary bg-primary text-white'
+                      : 'border-border bg-surface text-text-primary'
+                  )}
+                >
+                  {clockExcuseBusy ? 'Saving…' : employee.pay_full_monthly_salary ? 'Does not clock in' : 'No clock-in'}
+                </button>
               </div>
             </div>
+            {clockExcuseError && (
+              <p className="text-error text-[13px]">{clockExcuseError}</p>
+            )}
 
             <div className={cn(
               'px-3 py-[10px] rounded-[10px] border',
