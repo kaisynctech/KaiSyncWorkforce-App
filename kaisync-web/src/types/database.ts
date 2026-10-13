@@ -20,6 +20,8 @@ export interface Employee {
   /** Home or postal address shown on the payslip. */
   address?: string | null
   id_number: string | null
+  /** SARS income tax reference shown on the payslip. */
+  tax_number?: string | null
   start_date: string | null
   employment_date: string | null
   employment_type: string | null

@@ -547,6 +547,7 @@ export default function EmployeeDetailPage() {
                 <InfoCell label="Position" value={employee.position ?? '—'} />
                 <InfoCell label="Employee number" value={employee.employee_code ?? '—'} />
                 <InfoCell label="ID number" value={employee.id_number ?? '—'} />
+                <InfoCell label="Income tax number" value={employee.tax_number ?? '—'} />
                 <InfoCell label="Address" value={employee.address ?? '—'} />
                 <InfoCell label="Hourly rate" value={employee.hourly_rate != null ? formatCurrency(employee.hourly_rate) : '—'} />
                 <InfoCell label="Overtime rate" value={employee.overtime_hourly_rate != null ? formatCurrency(employee.overtime_hourly_rate) : '—'} />
@@ -826,6 +827,7 @@ function EmployeePayslips({ employee }: { employee: Employee }) {
       employeeName: `${employee.name} ${employee.surname}`.trim(),
       address: employee.address,
       employeeId: employee.id_number,
+      incomeTaxNumber: employee.tax_number,
       employeeNumber: employee.employee_code,
       employmentDate: employee.employment_date,
       periodStart: row.period_start,

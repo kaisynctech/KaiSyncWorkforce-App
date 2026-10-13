@@ -204,6 +204,7 @@ export type PayslipTemplatePdfInput = {
   employeeName: string
   address?: string | null
   employeeId?: string | null
+  incomeTaxNumber?: string | null
   employeeNumber?: string | null
   employmentDate?: string | null
   periodStart: string
@@ -299,6 +300,7 @@ export function downloadPayslipTemplatePdf(input: PayslipTemplatePdfInput): void
     ['Employee name', input.employeeName || '—'],
     ['Employee address', input.address || '—'],
     ['Employee ID', input.employeeId || '—'],
+    ['Income tax number', input.incomeTaxNumber || '—'],
     ['Employee number', input.employeeNumber || '—'],
     ['Employment date', dmy(input.employmentDate)],
     ['Rate', money(input.hourlyRate)],
@@ -369,6 +371,22 @@ export function downloadPayslipTemplatePdf(input: PayslipTemplatePdfInput): void
     doc.text(d, right - 2, y, { align: 'right' })
     y += 6
   }
+
+  y += 6
+  doc.setDrawColor(30, 58, 95)
+  doc.setLineWidth(0.4)
+  doc.line(left, y, right, y)
+  y += 8
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(12)
+  doc.setTextColor(15, 23, 42)
+  doc.text('Net pay', left, y)
+  doc.text(money(net), right, y, { align: 'right' })
+  y += 10
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(8)
+  doc.setTextColor(100, 116, 139)
+  doc.text('Powered by KaiSync Workforce', (left + right) / 2, y, { align: 'center' })
 
   const safe = (input.employeeName || 'Employee').replace(/[^a-z0-9]+/gi, '_').slice(0, 40)
   const month = (input.periodStart || '').slice(0, 7) || 'period'
