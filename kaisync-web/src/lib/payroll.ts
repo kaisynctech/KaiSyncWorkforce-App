@@ -187,10 +187,11 @@ export async function previewPayrollGenerate(
 
 type PayrollGenerateFunctionBody = {
   company_id: string
-  action: 'generate' | 'recalculate'
+  action: 'generate' | 'recalculate' | 'save_lines'
   period_start?: string
   period_end?: string
   payment_id?: string
+  lines?: Record<string, number>
   overrides?: {
     payFullBaseSalary?: boolean
     waivePenalties?: boolean
@@ -297,4 +298,45 @@ export async function recalculatePayslip(
   })
   if (!result.ok) return result
   return { ok: true, data: undefined }
+}
+
+export type PayslipLineAmounts = {
+  regular: number
+  overtime: number
+  bonus: number
+  incentive: number
+  refund: number
+  uif: number
+  paye: number
+  loanDeduction: number
+  loanBalance: number
+  unpaidLeave: number
+}
+
+export async function savePayslipLines(
+  supabase: SupabaseClient,
+  companyId: string,
+  paymentId: string,
+  lines: PayslipLineAmounts,
+  flags: { payFullBaseSalary: boolean; waivePenalties: boolean }
+): Promise<PayrollResult<{ gross_pay: number; deductions: number; net_pay: number }>> {
+  const result = await callPayrollGenerateFunction(supabase, {
+    company_id: companyId,
+    action: 'save_lines',
+    payment_id: paymentId,
+    lines,
+    overrides: {
+      payFullBaseSalary: flags.payFullBaseSalary,
+      waivePenalties: flags.waivePenalties,
+    },
+  })
+  if (!result.ok) return result
+  return {
+    ok: true,
+    data: {
+      gross_pay: Number(result.data.gross_pay ?? 0),
+      deductions: Number(result.data.deductions ?? 0),
+      net_pay: Number(result.data.net_pay ?? 0),
+    },
+  }
 }
