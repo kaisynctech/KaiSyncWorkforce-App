@@ -6,7 +6,6 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { Toggle } from '@/components/Toggle'
-import { PayrollLineItemsTable } from '@/components/payroll-line-items-table'
 import { recalculatePayslip } from '@/lib/payroll'
 import { isUnpaidLeave } from '@/lib/payroll/leave-days'
 import { computeLeaveSummary, type LeaveSummary } from '@/lib/leave-policy'
@@ -27,7 +26,7 @@ import {
   type PunchSessionRow,
   type ShiftTemplateLike,
 } from '@/lib/punch-session'
-import type { EmployeePayment, PayrollLineItem, YtdTotals, PayrollAuditEntry } from '@/types/database'
+import type { EmployeePayment, PayrollLineItem, PayrollAuditEntry } from '@/types/database'
 
 const fmtR = (n: number) =>
   `R ${(n ?? 0).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -207,9 +206,7 @@ export default function PayslipDetailPage() {
   const paymentId = params.id
 
   const [payment, setPayment] = useState<EmployeePayment | null>(null)
-  const [earningsLines, setEarningsLines] = useState<PayrollLineItem[]>([])
   const [deductionLines, setDeductionLines] = useState<PayrollLineItem[]>([])
-  const [ytd, setYtd] = useState<YtdTotals | null>(null)
   const [auditEntries, setAuditEntries] = useState<PayrollAuditEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -411,17 +408,13 @@ export default function PayslipDetailPage() {
     if (!data) { router.push('/dashboard/payroll'); return }
 
     const p = data as EmployeePayment & {
-      earnings_breakdown:   PayrollLineItem[] | null
       deductions_breakdown: PayrollLineItem[] | null
-      ytd_json:             YtdTotals | null
       audit_log:            PayrollAuditEntry[] | null
       leave_days:           number | null
       working_days:         number | null
     }
     setPayment(p)
-    setEarningsLines(p.earnings_breakdown ?? [])
     setDeductionLines(p.deductions_breakdown ?? [])
-    setYtd(p.ytd_json ?? null)
     setAuditEntries(p.audit_log ?? [])
 
     setPayFullSalary(p.pay_full_base_salary ?? false)
@@ -1069,49 +1062,6 @@ export default function PayslipDetailPage() {
             </table>
           </div>
         </div>
-
-        {/* Earnings Breakdown */}
-        {earningsLines.length > 0 && (
-          <div className="card p-4 space-y-2">
-            <p className="section-label">EARNINGS BREAKDOWN</p>
-            <PayrollLineItemsTable items={earningsLines} />
-          </div>
-        )}
-
-        {/* Deductions Breakdown */}
-        {deductionLines.length > 0 && (
-          <div className="card p-4 space-y-2">
-            <p className="section-label">DEDUCTIONS BREAKDOWN</p>
-            <PayrollLineItemsTable items={deductionLines} showAsDeductions />
-          </div>
-        )}
-
-        {/* Year to Date */}
-        {ytd && (
-          <div className="card p-4 space-y-2">
-            <p className="section-label">YEAR TO DATE (TAX YEAR)</p>
-            <table className="w-full">
-              <tbody>
-                <tr className="border-b border-divider">
-                  <td className="data-td text-text-secondary text-[13px]">YTD Gross</td>
-                  <td className="data-td text-right text-[13px] w-[110px]">{fmtR(ytd.gross_pay)}</td>
-                </tr>
-                <tr className="border-b border-divider">
-                  <td className="data-td text-text-secondary text-[13px]">YTD PAYE</td>
-                  <td className="data-td text-right text-[13px] w-[110px] text-error">{fmtR(ytd.paye)}</td>
-                </tr>
-                <tr className="border-b border-divider">
-                  <td className="data-td text-text-secondary text-[13px]">YTD UIF</td>
-                  <td className="data-td text-right text-[13px] w-[110px] text-error">{fmtR(ytd.uif)}</td>
-                </tr>
-                <tr>
-                  <td className="data-td text-text-primary text-[13px]">YTD Net</td>
-                  <td className="data-td text-right text-[13px] w-[110px] text-text-primary font-medium">{fmtR(ytd.net_pay)}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        )}
 
         {/* Audit Trail */}
         {auditEntries.length > 0 && (
