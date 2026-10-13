@@ -17,6 +17,8 @@ export interface Employee {
   position: string | null
   email: string | null
   phone: string | null
+  /** Home or postal address shown on the payslip. */
+  address?: string | null
   id_number: string | null
   start_date: string | null
   employment_date: string | null

@@ -26,6 +26,7 @@ export const EMPLOYEE_SAFE_SELECT = [
   'work_days_weekly',
   'email',
   'phone',
+  'address',
   'manager_user_id',
   'is_active',
   'profile_photo_url',

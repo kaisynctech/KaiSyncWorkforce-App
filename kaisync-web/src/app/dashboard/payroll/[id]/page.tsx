@@ -263,6 +263,9 @@ export default function PayslipDetailPage() {
   const [leaveBalances, setLeaveBalances] = useState<LeaveSummary[]>([])
   const [lines, setLines] = useState<SlipLines>(EMPTY_LINES)
   const [personPay, setPersonPay] = useState<PersonPay>(EMPTY_PERSON_PAY)
+  const [companyName, setCompanyName] = useState('')
+  const [companyAddress, setCompanyAddress] = useState('')
+  const [homeAddress, setHomeAddress] = useState('')
   const [leaveLines, setLeaveLines] = useState<{ start: string; end: string; type: string; unpaid: boolean }[]>([])
 
   useEffect(() => { load() }, [paymentId])
@@ -471,12 +474,24 @@ export default function PayslipDetailPage() {
       }
     }
 
-    const { data: person, error: personErr } = await supabase
-      .from('employees')
-      .select('monthly_salary, hourly_rate, daily_rate, daily_hours, work_days_weekly, uif_fixed_amount, uif_rate_percent, uif_exempt, employment_date, termination_date, pay_full_monthly_salary, bank_name, bank_branch_code, bank_account')
-      .eq('id', p.employee_id)
-      .eq('company_id', p.company_id)
-      .maybeSingle()
+    const [{ data: person, error: personErr }, { data: company, error: companyErr }] = await Promise.all([
+      supabase
+        .from('employees')
+        .select('monthly_salary, hourly_rate, daily_rate, daily_hours, work_days_weekly, uif_fixed_amount, uif_rate_percent, uif_exempt, employment_date, termination_date, pay_full_monthly_salary, bank_name, bank_branch_code, bank_account, address')
+        .eq('id', p.employee_id)
+        .eq('company_id', p.company_id)
+        .maybeSingle(),
+      supabase
+        .from('companies')
+        .select('name, address')
+        .eq('id', p.company_id)
+        .maybeSingle(),
+    ])
+    if (companyErr) setErrorMsg(companyErr.message)
+    const companyRow = company as { name?: string | null; address?: string | null } | null
+    setCompanyName(companyRow?.name?.trim() ?? '')
+    setCompanyAddress(companyRow?.address?.trim() ?? '')
+    setHomeAddress(((person as { address?: string | null } | null)?.address ?? '').trim())
     if (personErr) setErrorMsg(personErr.message)
     if (person) {
       const row = person as PersonPay
@@ -526,6 +541,20 @@ export default function PayslipDetailPage() {
     })
 
     setLoading(false)
+  }
+
+  async function saveAddress(next: string) {
+    if (!payment) return
+    const trimmed = next.trim()
+    setHomeAddress(trimmed)
+    setErrorMsg(null)
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('employees')
+      .update({ address: trimmed || null })
+      .eq('id', payment.employee_id)
+      .eq('company_id', payment.company_id)
+    if (error) setErrorMsg(error.message)
   }
 
   async function saveLines(next: SlipLines, flags?: { payFull?: boolean; waive?: boolean }) {
@@ -854,8 +883,39 @@ export default function PayslipDetailPage() {
 
         <div className={slipTab === 'pay' ? 'space-y-4' : 'hidden print:block print:space-y-4'}>
         <div className="card overflow-hidden">
-          <div className="px-4 pt-4 pb-2">
+          <div className="px-4 pt-4 pb-3 border-b border-divider">
             <p className="section-label">PAYSLIP</p>
+            {(companyName || companyAddress) && (
+              <div className="mt-3">
+                {companyName && <p className="text-[15px] font-semibold text-text-primary">{companyName}</p>}
+                {companyAddress && <p className="text-[13px] text-text-secondary whitespace-pre-line">{companyAddress}</p>}
+              </div>
+            )}
+            <table className="w-full mt-3">
+              <tbody>
+                <tr className="border-b border-divider">
+                  <td className="py-2 pr-3 text-[13px] text-text-secondary w-[120px]">Employee</td>
+                  <td className="py-2 text-[14px] font-semibold text-text-primary">{empName}</td>
+                  <td className="py-2 pl-4 text-[13px] text-text-secondary w-[72px]">Date</td>
+                  <td className="py-2 text-right text-[13px] text-text-primary whitespace-nowrap">
+                    {payment.period_start ? fmtDate(payment.period_start) : '—'}
+                  </td>
+                </tr>
+                <tr>
+                  <td className="py-2 pr-3 text-[13px] text-text-secondary align-middle">Address</td>
+                  <td className="py-2" colSpan={3}>
+                    <input
+                      type="text"
+                      value={homeAddress}
+                      onChange={e => setHomeAddress(e.target.value)}
+                      onBlur={e => { void saveAddress(e.target.value) }}
+                      placeholder="Street, suburb, city"
+                      className="h-10 w-full bg-transparent text-[13px] text-text-primary outline-none"
+                    />
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full border-collapse" style={{ minWidth: 720 }}>
