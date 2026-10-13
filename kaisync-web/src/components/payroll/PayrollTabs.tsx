@@ -10,9 +10,9 @@ const TABS: { id: PayrollSection; label: string; href: string }[] = [
   { id: 'settings', label: 'Settings', href: '/dashboard/payroll/settings' },
 ]
 
-export function PayrollTabs({ active }: { active: PayrollSection }) {
+export function PayrollTabs({ active, className = 'mt-2' }: { active: PayrollSection; className?: string }) {
   return (
-    <div className="flex gap-1 mt-2 bg-surface border border-divider rounded-md p-1 w-fit">
+    <div className={`flex gap-1 bg-surface border border-divider rounded-md p-1 w-fit ${className}`}>
       {TABS.map(tab => (
         <Link
           key={tab.id}
