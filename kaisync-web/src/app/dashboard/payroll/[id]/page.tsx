@@ -9,6 +9,7 @@ import { Toggle } from '@/components/Toggle'
 import { PayrollLineItemsTable } from '@/components/payroll-line-items-table'
 import { recalculatePayslip } from '@/lib/payroll'
 import { isUnpaidLeave } from '@/lib/payroll/leave-days'
+import { computeLeaveSummary, type LeaveSummary } from '@/lib/leave-policy'
 import { loadPayrollSettings } from '@/lib/payroll-settings'
 import { AttendanceNote } from '@/components/attendance/AttendanceNote'
 import { enrichSessionsWithPlaceNames } from '@/lib/punch-address-enrich'
@@ -92,6 +93,10 @@ type PersonPay = {
   employment_date: string | null
   termination_date: string | null
   pay_full_monthly_salary: boolean
+  uif_rate_percent: number
+  bank_name: string | null
+  bank_branch_code: string | null
+  bank_account: string | null
 }
 
 const EMPTY_PERSON_PAY: PersonPay = {
@@ -105,6 +110,10 @@ const EMPTY_PERSON_PAY: PersonPay = {
   employment_date: null,
   termination_date: null,
   pay_full_monthly_salary: false,
+  uif_rate_percent: 0,
+  bank_name: null,
+  bank_branch_code: null,
+  bank_account: null,
 }
 
 function inPayPeriod(date: string | null, start?: string | null, end?: string | null): boolean {
@@ -117,6 +126,79 @@ function ratesFromSalary(salary: number, daysPerWeek: number, dailyHours: number
   const hours = dailyHours > 0 ? dailyHours : 8
   const daily = salary / ((days * 52) / 12)
   return { daily, hourly: daily / hours }
+}
+
+function absencePayWasChosen(audit: PayrollAuditEntry[] | null | undefined): boolean {
+  return (audit ?? []).some(entry => (entry.detail ?? '').includes('absence pay'))
+}
+
+function lineAmount(lines: PayrollLineItem[], label: string): number {
+  const wanted = label.toLowerCase()
+  const found = lines.find(line => line.label.trim().toLowerCase() === wanted || line.label.trim().toLowerCase().startsWith(wanted))
+  return found?.amount ?? 0
+}
+
+function SessionTable({ rows }: { rows: PunchSessionRow[] }) {
+  if (rows.length === 0) return <p className="text-[13px] text-text-secondary">None in this month.</p>
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-[13px]" style={{ minWidth: 980 }}>
+        <thead>
+          <tr className="border-b border-divider bg-surface-elevated">
+            <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Date</th>
+            <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Time In</th>
+            <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">In Location</th>
+            <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Time Out</th>
+            <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Out Location</th>
+            <th className="text-right px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Reg</th>
+            <th className="text-right px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">OT</th>
+            <th className="text-right px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Total</th>
+            <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(row => {
+            const kind = row.isAbsentDay ? 'absent' : row.isLeaveDay ? 'leave' : 'in'
+            const late = lateFlag(row)
+            const early = earlyFlag(row)
+            const notes = [late, early, row.notes ?? row.statusNote ?? ''].filter(Boolean).join(' · ')
+            return (
+              <tr key={`${row.clockInPunchId ?? row.clockIn.toISOString()}-${kind}`} className="border-b border-divider last:border-0">
+                <td className="px-4 py-3 text-text-secondary whitespace-nowrap">{fmtSessionDate(row.clockIn)}</td>
+                <td className={`px-4 py-3 font-medium whitespace-nowrap ${
+                  row.isAbsentDay ? 'text-error' : row.isLeaveDay ? 'text-warning' : row.isLate ? 'text-error' : 'text-success'
+                }`}>
+                  {fmtSessionTime(row.clockIn, kind)}
+                  {row.isOpen && !row.isAbsentDay && !row.isLeaveDay && (
+                    <span className="ml-1 text-[10px] text-warning font-semibold">OPEN</span>
+                  )}
+                  {late && <span className="block text-[10px] text-error font-semibold">{late}</span>}
+                </td>
+                <td className="px-4 py-3 text-text-secondary max-w-[160px] truncate">
+                  {row.isAbsentDay || row.isLeaveDay ? '—' : locationDisplay(row.clockInAddress, row.clockInLat, row.clockInLng)}
+                </td>
+                <td className="px-4 py-3 text-text-primary whitespace-nowrap">
+                  {fmtSessionTime(row.clockOut, 'out')}
+                  {early && <span className="block text-[10px] text-warning font-semibold">{early}</span>}
+                </td>
+                <td className="px-4 py-3 text-text-secondary max-w-[160px] truncate">
+                  {row.isAbsentDay || row.isLeaveDay ? '—' : locationDisplay(row.clockOutAddress, row.clockOutLat, row.clockOutLng)}
+                </td>
+                <td className="px-4 py-3 text-right text-text-primary">{row.regularHours.toFixed(1)}</td>
+                <td className="px-4 py-3 text-right text-warning font-medium">
+                  {row.overtimeHours > 0 ? row.overtimeHours.toFixed(1) : '—'}
+                </td>
+                <td className="px-4 py-3 text-right font-semibold text-text-primary">{totalHrsDisplay(row)}</td>
+                <td className="px-4 py-3">
+                  <AttendanceNote note={notes} context={fmtSessionDate(row.clockIn)} />
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
 }
 
 export default function PayslipDetailPage() {
@@ -153,6 +235,11 @@ export default function PayslipDetailPage() {
   const [bonusNote, setBonusNote] = useState('')
   const [salaryInput, setSalaryInput] = useState('')
   const [uifInput, setUifInput] = useState('')
+  const [uifTouched, setUifTouched] = useState(false)
+  const [uifRate, setUifRate] = useState(1)
+  const [uifCeiling, setUifCeiling] = useState(17712)
+  const [addingExtra, setAddingExtra] = useState(false)
+  const [leaveBalances, setLeaveBalances] = useState<LeaveSummary[]>([])
   const [personPay, setPersonPay] = useState<PersonPay>(EMPTY_PERSON_PAY)
   const [leaveLines, setLeaveLines] = useState<{ start: string; end: string; type: string; unpaid: boolean }[]>([])
 
@@ -338,16 +425,37 @@ export default function PayslipDetailPage() {
     setAuditEntries(p.audit_log ?? [])
 
     setPayFullSalary(p.pay_full_base_salary ?? false)
-    setWaivePenalties(p.waive_penalties ?? false)
+    setWaivePenalties(absencePayWasChosen(p.audit_log) ? Boolean(p.waive_penalties) : true)
     setManualPaye(p.manual_paye_override != null ? String(p.manual_paye_override) : '')
-    setExtraDeduction(p.manual_adjustment != null ? String(p.manual_adjustment) : '')
+    setExtraDeduction(p.manual_adjustment != null && p.manual_adjustment > 0 ? String(p.manual_adjustment) : '')
     setAdjustmentNote(p.adjustment_note ?? '')
-    setBonusAmount(p.bonus_amount != null ? String(p.bonus_amount) : '')
+    setAddingExtra(Boolean(p.adjustment_note) || (p.manual_adjustment ?? 0) > 0)
+    setBonusAmount(p.bonus_amount != null && p.bonus_amount > 0 ? String(p.bonus_amount) : '')
     setBonusNote(p.bonus_note ?? '')
+
+    const settingsRes = await loadPayrollSettings(supabase, p.company_id)
+    if (settingsRes.ok) {
+      setUifRate(settingsRes.settings.uif_rate_percent > 0 ? settingsRes.settings.uif_rate_percent : 1)
+      setUifCeiling(settingsRes.settings.uif_ceiling_monthly > 0 ? settingsRes.settings.uif_ceiling_monthly : 17712)
+    }
+
+    const year = (p.period_start ?? '').slice(0, 4)
+    if (year) {
+      const { data: yearLeave, error: yearLeaveErr } = await supabase
+        .from('leave_requests')
+        .select('leave_type, start_date, total_days, status')
+        .eq('company_id', p.company_id)
+        .eq('employee_id', p.employee_id)
+        .gte('start_date', `${year}-01-01`)
+        .lte('start_date', `${year}-12-31`)
+      if (!yearLeaveErr) {
+        setLeaveBalances(computeLeaveSummary((yearLeave ?? []) as { leave_type: string; start_date: string; total_days: number; status: string }[]))
+      }
+    }
 
     const { data: person, error: personErr } = await supabase
       .from('employees')
-      .select('monthly_salary, hourly_rate, daily_rate, daily_hours, work_days_weekly, uif_fixed_amount, uif_exempt, employment_date, termination_date, pay_full_monthly_salary')
+      .select('monthly_salary, hourly_rate, daily_rate, daily_hours, work_days_weekly, uif_fixed_amount, uif_rate_percent, uif_exempt, employment_date, termination_date, pay_full_monthly_salary, bank_name, bank_branch_code, bank_account')
       .eq('id', p.employee_id)
       .eq('company_id', p.company_id)
       .maybeSingle()
@@ -356,6 +464,8 @@ export default function PayslipDetailPage() {
       const row = person as PersonPay
       const monthly = Number(row.monthly_salary) || 0
       const uifFixed = Number(row.uif_fixed_amount) || 0
+      const slipUif = (p.deductions_breakdown ?? []).find(line => line.label.trim().toLowerCase() === 'uif')?.amount ?? 0
+      const shownUif = uifFixed > 0 ? uifFixed : slipUif
       setPersonPay({
         monthly_salary: monthly,
         hourly_rate: Number(row.hourly_rate) || 0,
@@ -364,12 +474,17 @@ export default function PayslipDetailPage() {
         work_days_weekly: Number(row.work_days_weekly) || 5,
         uif_fixed_amount: uifFixed,
         uif_exempt: Boolean(row.uif_exempt),
+        uif_rate_percent: Number(row.uif_rate_percent) || 0,
         employment_date: row.employment_date ?? null,
         termination_date: row.termination_date ?? null,
         pay_full_monthly_salary: Boolean(row.pay_full_monthly_salary),
+        bank_name: row.bank_name ?? null,
+        bank_branch_code: row.bank_branch_code ?? null,
+        bank_account: row.bank_account ?? null,
       })
       setSalaryInput(monthly > 0 ? String(monthly) : '')
-      setUifInput(uifFixed > 0 ? String(uifFixed) : '')
+      setUifInput(row.uif_exempt ? '' : shownUif > 0 ? shownUif.toFixed(2) : '')
+      setUifTouched(uifFixed > 0)
     }
 
     setLoading(false)
@@ -382,15 +497,16 @@ export default function PayslipDetailPage() {
     const supabase = createClient()
 
     const salary = salaryInput.trim() === '' ? 0 : Number(salaryInput)
-    const uif = uifInput.trim() === '' ? 0 : Number(uifInput)
+    const typedUif = uifInput.trim() === '' ? 0 : Number(uifInput)
+    const saveFixedUif = personPay.uif_exempt ? 0 : (uifTouched || personPay.uif_fixed_amount > 0 ? typedUif : 0)
     if (!Number.isFinite(salary) || salary < 0) {
       setBusy(false)
       setErrorMsg('Enter a full month salary of zero or more.')
       return
     }
-    if (!Number.isFinite(uif) || uif < 0) {
+    if (!Number.isFinite(typedUif) || typedUif < 0) {
       setBusy(false)
-      setErrorMsg('Enter a UIF amount of zero or more, or leave it blank to use the company percent.')
+      setErrorMsg('Enter a UIF amount of zero or more.')
       return
     }
 
@@ -398,8 +514,8 @@ export default function PayslipDetailPage() {
       ? ratesFromSalary(salary, personPay.work_days_weekly, personPay.daily_hours)
       : { daily: personPay.daily_rate, hourly: personPay.hourly_rate }
     const employeeUpdate = salary > 0
-      ? { monthly_salary: salary, daily_rate: rates.daily, hourly_rate: rates.hourly, uif_fixed_amount: uif }
-      : { monthly_salary: salary, uif_fixed_amount: uif }
+      ? { monthly_salary: salary, daily_rate: rates.daily, hourly_rate: rates.hourly, uif_fixed_amount: saveFixedUif }
+      : { monthly_salary: salary, uif_fixed_amount: saveFixedUif }
     const { error: empErr } = await supabase
       .from('employees')
       .update(employeeUpdate)
@@ -436,12 +552,12 @@ export default function PayslipDetailPage() {
       manualAdjustment: extraDeduction ? parseFloat(extraDeduction) : null,
       adjustmentNote: adjustmentNote.trim() || null,
       bonusAmount: bonusAmount ? parseFloat(bonusAmount) : null,
-      bonusNote: bonusNote.trim() || null,
+      bonusNote: bonusAmount ? (bonusNote.trim() || 'Bonus') : null,
     })
     // Persist note fields separately (engine doesn't write notes)
     const { error: noteErr } = await supabase.from('payment_approvals').update({
       adjustment_note: adjustmentNote || null,
-      bonus_note: bonusNote || null,
+      bonus_note: bonusAmount ? (bonusNote.trim() || 'Bonus') : null,
     }).eq('id', paymentId)
 
     setBusy(false)
@@ -482,6 +598,14 @@ export default function PayslipDetailPage() {
   const leftThisMonth = inPayPeriod(personPay.termination_date, payment.period_start, payment.period_end)
   const paysFullMonth = payFullSalary || personPay.pay_full_monthly_salary
   const uifOnSlip = deductionLines.find(line => line.label.trim().toLowerCase() === 'uif')
+  const payeOnSlip = lineAmount(deductionLines, 'paye')
+  const unpaidOnSlip = lineAmount(deductionLines, 'unpaid leave')
+  const overtimeRows = days.filter(day => !day.isAbsentDay && !day.isLeaveDay && day.overtimeHours > 0)
+  const absentRows = days.filter(day => day.isAbsentDay)
+  const leaveDayRows = days.filter(day => day.isLeaveDay)
+  const extraOpen = addingExtra || Boolean(adjustmentNote.trim()) || Boolean(extraDeduction)
+  const paidTimeOff = leaveBalances.find(item => item.leave_type === 'Annual Leave')?.days_remaining
+  const sickTimeOff = leaveBalances.find(item => item.leave_type === 'Sick Leave')?.days_remaining
   const inputClass = 'dark-entry w-full h-9 px-2 text-[13px]'
 
   return (
@@ -594,98 +718,136 @@ export default function PayslipDetailPage() {
           </table>
         </div>
 
-        <div className="card p-4 space-y-3">
+        <div className="card p-4 space-y-4">
           <div>
             <p className="section-label">SALARY AND DEDUCTIONS</p>
-            <p className="text-[12px] text-text-secondary mt-1">
-              The full month salary and UIF are saved on the person, so the next payslip uses them too. The extra deduction is only for this payslip.
-            </p>
+            <p className="text-[12px] text-text-secondary mt-1">Full salary and UIF are saved on the person. A bonus or extra deduction applies to this payslip.</p>
           </div>
           {canEdit ? (
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="block">
-                <span className="text-[12px] text-text-secondary">Full month salary (R)</span>
-                <input type="number" min="0" step="0.01" value={salaryInput} onChange={e => setSalaryInput(e.target.value)} className={`${inputClass} mt-1`} />
-              </label>
-              <label className="block">
-                <span className="text-[12px] text-text-secondary">UIF amount (R)</span>
+            <div className="space-y-3">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block">
+                  <span className="text-[12px] text-text-secondary">Full salary</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={salaryInput}
+                    onChange={e => {
+                      const next = e.target.value
+                      setSalaryInput(next)
+                      if (!uifTouched && !personPay.uif_exempt) {
+                        const salary = Number(next)
+                        const rate = personPay.uif_rate_percent > 0 ? personPay.uif_rate_percent : uifRate
+                        if (Number.isFinite(salary) && salary > 0 && rate > 0) {
+                          const base = Math.min(salary, uifCeiling)
+                          setUifInput(((base * rate) / 100).toFixed(2))
+                        }
+                      }
+                    }}
+                    className={`${inputClass} mt-1`}
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-[12px] text-text-secondary">UIF amount</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={personPay.uif_exempt ? '' : uifInput}
+                    placeholder={personPay.uif_exempt ? 'Exempt' : ''}
+                    disabled={personPay.uif_exempt}
+                    onChange={e => { setUifTouched(true); setUifInput(e.target.value) }}
+                    className={`${inputClass} mt-1`}
+                  />
+                </label>
+              </div>
+              <label className="block sm:max-w-xs">
+                <span className="text-[12px] text-text-secondary">Bonus</span>
                 <input
                   type="number"
                   min="0"
                   step="0.01"
-                  value={uifInput}
-                  onChange={e => setUifInput(e.target.value)}
-                  placeholder={personPay.uif_exempt ? 'Exempt' : 'Company percent'}
-                  disabled={personPay.uif_exempt}
+                  value={bonusAmount}
+                  onChange={e => setBonusAmount(e.target.value)}
                   className={`${inputClass} mt-1`}
                 />
               </label>
-              <label className="block">
-                <span className="text-[12px] text-text-secondary">Extra deduction name</span>
-                <input type="text" value={adjustmentNote} onChange={e => setAdjustmentNote(e.target.value)} placeholder="e.g. Staff loan" className={`${inputClass} mt-1`} />
-              </label>
-              <label className="block">
-                <span className="text-[12px] text-text-secondary">Extra deduction amount (R)</span>
-                <input type="number" min="0" step="0.01" value={extraDeduction} onChange={e => setExtraDeduction(e.target.value)} className={`${inputClass} mt-1`} />
-              </label>
-              <label className="block">
-                <span className="text-[12px] text-text-secondary">Extra pay name</span>
-                <input type="text" value={bonusNote} onChange={e => setBonusNote(e.target.value)} placeholder="e.g. Bonus" className={`${inputClass} mt-1`} />
-              </label>
-              <label className="block">
-                <span className="text-[12px] text-text-secondary">Extra pay amount (R)</span>
-                <input type="number" min="0" step="0.01" value={bonusAmount} onChange={e => setBonusAmount(e.target.value)} className={`${inputClass} mt-1`} />
-              </label>
-              <label className="block sm:col-span-2">
-                <span className="text-[12px] text-text-secondary">PAYE amount (R)</span>
-                <input type="number" min="0" step="0.01" value={manualPaye} onChange={e => setManualPaye(e.target.value)} placeholder="Leave blank to calculate" className={`${inputClass} mt-1 sm:max-w-xs`} />
-              </label>
+              {extraOpen ? (
+                <div className="grid gap-3 sm:grid-cols-[1fr_180px_auto] sm:items-end">
+                  <label className="block">
+                    <span className="text-[12px] text-text-secondary">Deduction name</span>
+                    <input type="text" value={adjustmentNote} onChange={e => setAdjustmentNote(e.target.value)} placeholder="Loan deduction" className={`${inputClass} mt-1`} />
+                  </label>
+                  <label className="block">
+                    <span className="text-[12px] text-text-secondary">Amount</span>
+                    <input type="number" min="0" step="0.01" value={extraDeduction} onChange={e => setExtraDeduction(e.target.value)} className={`${inputClass} mt-1`} />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => { setAddingExtra(false); setAdjustmentNote(''); setExtraDeduction('') }}
+                    className="h-9 px-3 text-[12px] text-text-secondary"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ) : (
+                <button type="button" onClick={() => setAddingExtra(true)} className="inline-flex items-center gap-1 h-9 px-2 text-[13px] text-primary font-medium">
+                  <span className="material-icons text-[18px]">add</span>
+                  Add extra deduction
+                </button>
+              )}
             </div>
           ) : (
             <table className="w-full">
               <tbody>
                 <tr className="border-b border-divider">
-                  <td className="py-2 text-[13px] text-text-primary">Full month salary</td>
+                  <td className="py-2 text-[13px] text-text-primary">Full salary</td>
                   <td className="py-2 text-right text-[13px]">{fmtR(personPay.monthly_salary)}</td>
                 </tr>
                 <tr className="border-b border-divider">
-                  <td className="py-2 text-[13px] text-text-primary">UIF</td>
-                  <td className="py-2 text-right text-[13px]">{personPay.uif_exempt ? 'Exempt' : uifOnSlip ? fmtR(uifOnSlip.amount) : fmtR(personPay.uif_fixed_amount)}</td>
+                  <td className="py-2 text-[13px] text-text-primary">UIF amount</td>
+                  <td className="py-2 text-right text-[13px]">{personPay.uif_exempt ? 'Exempt' : uifInput ? fmtR(Number(uifInput)) : ''}</td>
                 </tr>
-                <tr>
-                  <td className="py-2 text-[13px] text-text-primary">{adjustmentNote || 'Extra deduction'}</td>
-                  <td className="py-2 text-right text-[13px]">{extraDeduction ? fmtR(Number(extraDeduction)) : '—'}</td>
+                <tr className="border-b border-divider">
+                  <td className="py-2 text-[13px] text-text-primary">Bonus</td>
+                  <td className="py-2 text-right text-[13px]">{bonusAmount ? fmtR(Number(bonusAmount)) : ''}</td>
                 </tr>
+                {(adjustmentNote || extraDeduction) && (
+                  <tr>
+                    <td className="py-2 text-[13px] text-text-primary">{adjustmentNote || 'Extra deduction'}</td>
+                    <td className="py-2 text-right text-[13px]">{extraDeduction ? fmtR(Number(extraDeduction)) : ''}</td>
+                  </tr>
+                )}
               </tbody>
             </table>
-          )}
-          {canEdit && (
-            <p className="text-[12px] text-text-secondary">
-              {personPay.uif_exempt
-                ? 'This person is exempt from UIF.'
-                : `UIF on this payslip is ${uifOnSlip ? fmtR(uifOnSlip.amount) : 'not calculated yet'}. Leave the amount blank to keep the company percent.`}
-            </p>
           )}
         </div>
 
         <div className="card p-4 space-y-3">
           <div>
-            <p className="section-label">ABSENCE</p>
+            <p className="section-label">OVERTIME</p>
             <p className="text-[12px] text-text-secondary mt-1">
-              {(payment.absent_days ?? 0) === 0
-                ? 'No absent days in this month.'
-                : `${payment.absent_days} absent day${payment.absent_days === 1 ? '' : 's'} in this month.`}
+              {daysLoading ? 'Loading this pay period…' : `${overtimeRows.length} day${overtimeRows.length === 1 ? '' : 's'} with overtime.`}
             </p>
           </div>
-          <div className="flex items-center justify-between gap-3">
+          {!daysLoading && <SessionTable rows={overtimeRows} />}
+        </div>
+
+        <div className="card p-4 space-y-3">
+          <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-[14px] text-text-primary">Pay these absent days</p>
+              <p className="section-label">ABSENCE</p>
               <p className="text-[12px] text-text-secondary mt-1">
-                On means this payslip does not deduct absence, late arrivals, early departures, or unpaid leave.
+                {daysLoading ? 'Loading this pay period…' : `${absentRows.length} absent day${absentRows.length === 1 ? '' : 's'}.`}
               </p>
             </div>
-            <Toggle checked={waivePenalties} onChange={setWaivePenalties} disabled={!canEdit} />
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-[13px] text-text-primary">Pay these absent days</span>
+              <Toggle checked={waivePenalties} onChange={setWaivePenalties} disabled={!canEdit} />
+            </div>
           </div>
+          {!daysLoading && <SessionTable rows={absentRows} />}
         </div>
 
         <div className="card p-4 space-y-3">
@@ -715,6 +877,7 @@ export default function PayslipDetailPage() {
               </tr>
             </tbody>
           </table>
+          <SessionTable rows={leaveDayRows} />
           {leaveLines.length > 0 && (
             <div className="space-y-1">
               {leaveLines.map(line => (
@@ -778,98 +941,133 @@ export default function PayslipDetailPage() {
           {!daysLoading && days.length === 0 && !daysError && (
             <p className="text-[13px] text-text-secondary">No clock-ins in this pay period.</p>
           )}
-          {days.length > 0 && (
-            <div className="overflow-x-auto">
-              <table className="w-full text-[13px]" style={{ minWidth: 980 }}>
-                <thead>
-                  <tr className="border-b border-divider bg-surface-elevated">
-                    <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Date</th>
-                    <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Time In</th>
-                    <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">In Location</th>
-                    <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Time Out</th>
-                    <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Out Location</th>
-                    <th className="text-right px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Reg</th>
-                    <th className="text-right px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">OT</th>
-                    <th className="text-right px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Total</th>
-                    <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Notes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {days.map(row => {
-                    const kind = row.isAbsentDay ? 'absent' : row.isLeaveDay ? 'leave' : 'in'
-                    const late = lateFlag(row)
-                    const early = earlyFlag(row)
-                    const notes = [late, early, row.notes ?? row.statusNote ?? ''].filter(Boolean).join(' · ')
-                    return (
-                      <tr key={`${row.clockInPunchId ?? row.clockIn.toISOString()}-${kind}`} className="border-b border-divider last:border-0">
-                        <td className="px-4 py-3 text-text-secondary whitespace-nowrap">{fmtSessionDate(row.clockIn)}</td>
-                        <td className={`px-4 py-3 font-medium whitespace-nowrap ${
-                          row.isAbsentDay ? 'text-error' : row.isLeaveDay ? 'text-warning' : row.isLate ? 'text-error' : 'text-success'
-                        }`}>
-                          {fmtSessionTime(row.clockIn, kind)}
-                          {row.isOpen && !row.isAbsentDay && !row.isLeaveDay && (
-                            <span className="ml-1 text-[10px] text-warning font-semibold">OPEN</span>
-                          )}
-                          {late && <span className="block text-[10px] text-error font-semibold">{late}</span>}
-                        </td>
-                        <td className="px-4 py-3 text-text-secondary max-w-[160px] truncate">
-                          {row.isAbsentDay || row.isLeaveDay ? '—' : locationDisplay(row.clockInAddress, row.clockInLat, row.clockInLng)}
-                        </td>
-                        <td className="px-4 py-3 text-text-primary whitespace-nowrap">
-                          {fmtSessionTime(row.clockOut, 'out')}
-                          {early && <span className="block text-[10px] text-warning font-semibold">{early}</span>}
-                        </td>
-                        <td className="px-4 py-3 text-text-secondary max-w-[160px] truncate">
-                          {row.isAbsentDay || row.isLeaveDay ? '—' : locationDisplay(row.clockOutAddress, row.clockOutLat, row.clockOutLng)}
-                        </td>
-                        <td className="px-4 py-3 text-right text-text-primary">{row.regularHours.toFixed(1)}</td>
-                        <td className="px-4 py-3 text-right text-warning font-medium">
-                          {row.overtimeHours > 0 ? row.overtimeHours.toFixed(1) : '—'}
-                        </td>
-                        <td className="px-4 py-3 text-right font-semibold text-text-primary">{totalHrsDisplay(row)}</td>
-                        <td className="px-4 py-3">
-                          <AttendanceNote note={notes} context={fmtSessionDate(row.clockIn)} />
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+          {days.length > 0 && <SessionTable rows={days} />}
         </div>
         </div>
 
         <div className={slipTab === 'pay' ? 'space-y-4' : 'hidden print:block print:space-y-4'}>
         <div className="card overflow-hidden">
           <div className="px-4 pt-4 pb-2">
-            <p className="section-label">CALCULATED PAY</p>
-            <p className="text-[12px] text-text-secondary mt-1">These amounts follow the salary, absence, and leave choices above.</p>
+            <p className="section-label">PAYSLIP</p>
           </div>
-          <table className="w-full">
-            <tbody>
-              <tr className="border-b border-divider">
-                <td className="data-td text-text-primary text-[13px]">Regular pay</td>
-                <td className="data-td text-right text-[13px] w-[140px]">{fmtR(payment.regular_pay ?? 0)}</td>
-              </tr>
-              <tr className="border-b border-divider">
-                <td className="data-td text-text-primary text-[13px]">Overtime pay</td>
-                <td className="data-td text-right text-[13px]">{fmtR(payment.overtime_pay ?? 0)}</td>
-              </tr>
-              <tr className="border-b border-divider">
-                <td className="data-td text-text-primary text-[13px]">Gross pay</td>
-                <td className="data-td text-right text-[13px]">{fmtR(payment.gross_pay)}</td>
-              </tr>
-              <tr className="border-b border-divider">
-                <td className="data-td text-text-primary text-[13px]">Deductions</td>
-                <td className="data-td text-right text-[13px] text-error">{fmtR(payment.deductions ?? 0)}</td>
-              </tr>
-              <tr className="bg-surface-elevated">
-                <td className="data-td text-text-primary font-bold text-[14px]">Net pay</td>
-                <td className="data-td text-right font-bold text-[16px] text-text-primary">{fmtR(payment.net_pay)}</td>
-              </tr>
-            </tbody>
-          </table>
+          <div className="grid md:grid-cols-2">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-primary/10">
+                  <th className="text-left px-4 py-2 text-[12px] font-semibold text-text-primary">Earnings</th>
+                  <th className="w-8" />
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="border-b border-divider">
+                  <td className="px-4 py-2 text-[13px]">Regular Earnings</td>
+                  <td className="px-4 py-2 text-right text-[13px]">{fmtR(payment.regular_pay ?? 0)}</td>
+                </tr>
+                <tr className="border-b border-divider">
+                  <td className="px-4 py-2 text-[13px]">Overtime{(payment.overtime_hours ?? 0) > 0 ? ` (${payment.overtime_hours} hours)` : ''}</td>
+                  <td className="px-4 py-2 text-right text-[13px]">{(payment.overtime_pay ?? 0) > 0 ? fmtR(payment.overtime_pay ?? 0) : ''}</td>
+                </tr>
+                <tr className="border-b border-divider">
+                  <td className="px-4 py-2 text-[13px]">Bonus</td>
+                  <td className="px-4 py-2 text-right text-[13px]">{(payment.bonus_amount ?? 0) > 0 ? fmtR(payment.bonus_amount ?? 0) : ''}</td>
+                </tr>
+                <tr className="border-b border-divider">
+                  <td className="px-4 py-2 text-[13px]">Incentive Pay</td>
+                  <td className="px-4 py-2 text-right text-[13px]" />
+                </tr>
+                <tr className="border-b border-divider">
+                  <td className="px-4 py-2 text-[13px]">Refund</td>
+                  <td className="px-4 py-2 text-right text-[13px]" />
+                </tr>
+                <tr className="border-b border-divider font-semibold">
+                  <td className="px-4 py-2 text-[13px]">Gross Salary</td>
+                  <td className="px-4 py-2 text-right text-[13px]">{fmtR(payment.gross_pay)}</td>
+                </tr>
+                <tr className="font-semibold">
+                  <td className="px-4 py-2 text-[13px]">Current NET Salary</td>
+                  <td className="px-4 py-2 text-right text-[13px]">{fmtR(payment.net_pay)}</td>
+                </tr>
+              </tbody>
+            </table>
+            <table className="w-full border-t md:border-t-0 md:border-l border-divider">
+              <thead>
+                <tr className="bg-primary/10">
+                  <th className="text-left px-4 py-2 text-[12px] font-semibold text-text-primary">Deductions</th>
+                  <th className="w-8" />
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="border-b border-divider">
+                  <td className="px-4 py-2 text-[13px]">UIF</td>
+                  <td className="px-4 py-2 text-right text-[13px]">{uifOnSlip && uifOnSlip.amount > 0 ? fmtR(uifOnSlip.amount) : ''}</td>
+                </tr>
+                <tr className="border-b border-divider">
+                  <td className="px-4 py-2 text-[13px]">PAYE</td>
+                  <td className="px-4 py-2 text-right text-[13px]">{payeOnSlip > 0 ? fmtR(payeOnSlip) : ''}</td>
+                </tr>
+                <tr className="border-b border-divider">
+                  <td className="px-4 py-2 text-[13px]">{adjustmentNote.trim() || 'Loan Deduction'}</td>
+                  <td className="px-4 py-2 text-right text-[13px]">{(payment.manual_adjustment ?? 0) > 0 ? fmtR(payment.manual_adjustment ?? 0) : ''}</td>
+                </tr>
+                <tr className="border-b border-divider">
+                  <td className="px-4 py-2 text-[13px]">Loan Balance</td>
+                  <td className="px-4 py-2 text-right text-[13px]" />
+                </tr>
+                <tr className="border-b border-divider">
+                  <td className="px-4 py-2 text-[13px]">Unpaid Leave</td>
+                  <td className="px-4 py-2 text-right text-[13px]">{unpaidOnSlip > 0 ? fmtR(unpaidOnSlip) : ''}</td>
+                </tr>
+                <tr className="font-semibold">
+                  <td className="px-4 py-2 text-[13px]">Total Deduction</td>
+                  <td className="px-4 py-2 text-right text-[13px]">{fmtR(payment.deductions ?? 0)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div className="grid md:grid-cols-2 border-t border-divider">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-primary/10">
+                  <th className="text-left px-4 py-2 text-[12px] font-semibold text-text-primary" colSpan={2}>Payment Information</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="border-b border-divider">
+                  <td className="px-4 py-2 text-[13px] text-text-secondary">Bank Name</td>
+                  <td className="px-4 py-2 text-right text-[13px]">{personPay.bank_name || ''}</td>
+                </tr>
+                <tr className="border-b border-divider">
+                  <td className="px-4 py-2 text-[13px] text-text-secondary">Branch Code</td>
+                  <td className="px-4 py-2 text-right text-[13px]">{personPay.bank_branch_code || ''}</td>
+                </tr>
+                <tr>
+                  <td className="px-4 py-2 text-[13px] text-text-secondary">Account Number</td>
+                  <td className="px-4 py-2 text-right text-[13px]">{personPay.bank_account || ''}</td>
+                </tr>
+              </tbody>
+            </table>
+            <table className="w-full border-t md:border-t-0 md:border-l border-divider">
+              <thead>
+                <tr className="bg-primary/10">
+                  <th className="text-left px-4 py-2 text-[12px] font-semibold text-text-primary" colSpan={2}>Time Off Balance</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="border-b border-divider">
+                  <td className="px-4 py-2 text-[13px] text-text-secondary">Paid Time Off Balance</td>
+                  <td className="px-4 py-2 text-right text-[13px]">{paidTimeOff ?? ''}</td>
+                </tr>
+                <tr className="border-b border-divider">
+                  <td className="px-4 py-2 text-[13px] text-text-secondary">Sick Time Balance</td>
+                  <td className="px-4 py-2 text-right text-[13px]">{sickTimeOff ?? ''}</td>
+                </tr>
+                <tr>
+                  <td className="px-4 py-2 text-[13px] text-text-secondary">Total Time Off Balance</td>
+                  <td className="px-4 py-2 text-right text-[13px]">{paidTimeOff != null && sickTimeOff != null ? paidTimeOff + sickTimeOff : ''}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
 
         {/* Earnings Breakdown */}
