@@ -43,6 +43,7 @@ type EmpRow = {
   hourly_rate: number | null
   daily_hours: number | null
   shift_template_id: string | null
+  pay_full_monthly_salary?: boolean | null
 }
 
 type DisplaySession = {
@@ -287,7 +288,7 @@ export default function AttendancePage() {
       onLeaveTodayRes,
     ] = await Promise.all([
       supabase.from('employees')
-        .select('id, name, surname, employee_code, hourly_rate, daily_hours, shift_template_id')
+        .select('id, name, surname, employee_code, hourly_rate, daily_hours, shift_template_id, pay_full_monthly_salary')
         .eq('company_id', cid)
         .eq('is_active', true),
       supabase.from('time_punches')
@@ -473,7 +474,7 @@ export default function AttendancePage() {
     if (s.row.isLeaveDay || s.row.isAbsentDay) excusedOnFocus.add(s.employeeId)
     else if (s.row.clockInPunchId) presentOnFocus.add(s.employeeId)
   }
-  const missedClockIn = staff.filter(e => !presentOnFocus.has(e.id) && !excusedOnFocus.has(e.id)).length
+  const missedClockIn = staff.filter(e => !e.pay_full_monthly_salary && !presentOnFocus.has(e.id) && !excusedOnFocus.has(e.id)).length
   const continueKeys = new Set<string>()
   const byEmpDay = new Map<string, DisplaySession[]>()
   for (const s of sessions) {
