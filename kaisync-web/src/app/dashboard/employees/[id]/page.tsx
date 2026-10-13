@@ -453,19 +453,33 @@ export default function EmployeeDetailPage() {
                     {employee.is_active ? 'Active' : 'Inactive'}
                   </span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => void setNoClockIn(!employee.pay_full_monthly_salary)}
-                  disabled={clockExcuseBusy}
-                  className={cn(
-                    'h-9 shrink-0 px-3 rounded-md border text-[12px] font-medium disabled:opacity-50',
-                    employee.pay_full_monthly_salary
-                      ? 'border-primary bg-primary text-white'
-                      : 'border-border bg-surface text-text-primary'
-                  )}
-                >
-                  {clockExcuseBusy ? 'Saving…' : employee.pay_full_monthly_salary ? 'Does not clock in' : 'No clock-in'}
-                </button>
+                <div className="shrink-0 text-right">
+                  <p className="text-[11px] text-text-secondary mb-1">Required to clock in</p>
+                  <div className="inline-flex rounded-md border border-border overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => void setNoClockIn(false)}
+                      disabled={clockExcuseBusy || !employee.pay_full_monthly_salary}
+                      className={cn(
+                        'h-8 px-3 text-[12px] font-medium disabled:opacity-100',
+                        !employee.pay_full_monthly_salary ? 'bg-primary text-white' : 'bg-surface text-text-secondary'
+                      )}
+                    >
+                      Yes
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void setNoClockIn(true)}
+                      disabled={clockExcuseBusy || Boolean(employee.pay_full_monthly_salary)}
+                      className={cn(
+                        'h-8 px-3 text-[12px] font-medium border-l border-border disabled:opacity-100',
+                        employee.pay_full_monthly_salary ? 'bg-primary text-white' : 'bg-surface text-text-secondary'
+                      )}
+                    >
+                      {clockExcuseBusy ? '…' : 'No'}
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
             {clockExcuseError && (
