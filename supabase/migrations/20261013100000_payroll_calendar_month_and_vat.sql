@@ -7,6 +7,7 @@ alter table public.employees
 comment on column public.employees.vat_applies is
   'Whether VAT applies to this person. Does not change PAYE or UIF.';
 
+grant select (vat_applies) on table public.employees to anon, authenticated;
 grant update (vat_applies) on table public.employees to authenticated;
 
 with ranked as (
