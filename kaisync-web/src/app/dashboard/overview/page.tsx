@@ -69,6 +69,7 @@ export default function OverviewPage() {
   const [onLeaveToday, setOnLeaveToday] = useState<{ id: string; name: string }[]>([])
   const [absentToday, setAbsentToday] = useState<{ id: string; name: string; reason: string }[]>([])
   const [markAbsentLoading, setMarkAbsentLoading] = useState<string | null>(null)
+  const [noClockLoading, setNoClockLoading] = useState<string | null>(null)
   const [markAbsentError, setMarkAbsentError] = useState<string | null>(null)
   const [markAbsentSuccess, setMarkAbsentSuccess] = useState<string | null>(null)
 
@@ -354,6 +355,28 @@ export default function OverviewPage() {
     await load()
   }
 
+  async function excuseClockIn(empId: string) {
+    if (!companyId) return
+    setNoClockLoading(empId)
+    setMarkAbsentError(null)
+    setMarkAbsentSuccess(null)
+    const supabase = createClient()
+    const target = allEmployees.find(e => e.id === empId)
+    const targetName = target ? `${target.name} ${target.surname}` : 'Employee'
+    const { error: err } = await supabase
+      .from('employees')
+      .update({ pay_full_monthly_salary: true })
+      .eq('id', empId)
+      .eq('company_id', companyId)
+    setNoClockLoading(null)
+    if (err) {
+      setMarkAbsentError(`Could not excuse ${targetName} from clock-in: ${err.message}`)
+      return
+    }
+    setMarkAbsentSuccess(`${targetName} does not have to clock in. Payroll still pays the full salary.`)
+    await load()
+  }
+
   const greeting = timeGreeting()
   const notSignedInList = allEmployees.filter(e => notClockedInIds.has(e.id))
 
@@ -551,8 +574,15 @@ export default function OverviewPage() {
                     )}
                   </div>
                   <button
+                    onClick={() => excuseClockIn(emp.id)}
+                    disabled={noClockLoading === emp.id || markAbsentLoading === emp.id}
+                    className="h-10 px-3 text-[12px] font-medium rounded-lg border transition-opacity disabled:opacity-50"
+                    style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-primary)', backgroundColor: 'var(--color-surface)' }}>
+                    {noClockLoading === emp.id ? '…' : 'No clock-in'}
+                  </button>
+                  <button
                     onClick={() => markAbsent(emp.id)}
-                    disabled={markAbsentLoading === emp.id}
+                    disabled={markAbsentLoading === emp.id || noClockLoading === emp.id}
                     className="h-10 px-3 text-[12px] font-medium rounded-lg border transition-opacity disabled:opacity-50"
                     style={{ borderColor: '#d97706', color: '#d97706', backgroundColor: 'rgba(217,119,6,0.08)' }}>
                     {markAbsentLoading === emp.id ? '…' : 'Mark Absent'}
