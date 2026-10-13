@@ -444,7 +444,6 @@ export default function PayrollPage() {
   const approvedNet = filtered.filter(p => p.status === 'approved' || p.status === 'paid')
     .reduce((s, p) => s + (p.net_pay ?? 0), 0)
   const pendingCount = filtered.filter(p => p.status === 'pending').length
-  const approvedCount = filtered.filter(p => p.status === 'approved' || p.status === 'paid').length
 
   // ── Guards ─────────────────────────────────────────────────────────────────
 
@@ -466,10 +465,22 @@ export default function PayrollPage() {
   return (
     <div className="h-full flex flex-col">
       {/* ── Header ── */}
-      <div className="px-4 pt-3 pb-3 border-b border-divider shrink-0 bg-surface space-y-3">
-        <div>
-          <h1 className="text-[18px] font-semibold text-text-primary">Payroll</h1>
-          <PayrollTabs active={section} />
+      <div className="px-4 py-2 border-b border-divider shrink-0 bg-surface space-y-2">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <h1 className="text-[16px] font-semibold text-text-primary">Payroll</h1>
+          <PayrollTabs active={section} className="" />
+          <div className="flex-1 min-w-[8px]" />
+          <label className="text-[11px] text-text-secondary">Month</label>
+          <input type="month" value={month} onChange={e => setMonth(e.target.value)} className="dark-entry h-8" />
+          <span className="text-[12px] text-text-secondary">{dateFrom} to {dateTo}</span>
+          <button
+            type="button"
+            onClick={() => void toggleLock()}
+            className="h-8 px-3 text-[12px] rounded-md border border-border bg-surface-dark text-text-primary hover:opacity-80"
+          >
+            {isLocked ? 'Unlock period' : 'Lock period'}
+          </button>
+          <span className="text-[12px] text-text-secondary">{isLocked ? 'Locked' : 'Open'}</span>
         </div>
 
         {success && (
@@ -478,93 +489,62 @@ export default function PayrollPage() {
         {error && error !== 'not_linked' && (
           <p className="text-error text-[13px] font-medium">{error}</p>
         )}
-
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="flex flex-col gap-1">
-            <label className="text-[11px] text-text-secondary font-medium">Month</label>
-            <input type="month" value={month} onChange={e => setMonth(e.target.value)} className="dark-entry" />
-          </div>
-          <span className="text-[13px] text-text-secondary pb-2">{dateFrom} to {dateTo}</span>
-          <button
-            type="button"
-            onClick={() => void toggleLock()}
-            className="h-10 px-3 text-[13px] rounded-md border border-border bg-surface-dark text-text-primary hover:opacity-80"
-          >
-            {isLocked ? 'Unlock period' : 'Lock period'}
-          </button>
-          <span className="text-[13px] text-text-secondary pb-2">{isLocked ? 'Locked' : 'Open'}</span>
-        </div>
-
         {isLocked && (
-          <p className="text-error text-sm font-medium">Period is locked — recalculation and overrides are disabled.</p>
+          <p className="text-error text-[12px] font-medium">Period is locked. Recalculation and overrides are disabled.</p>
         )}
 
         {section === 'payslips' && (
-          <>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="rounded-lg py-2 px-3 flex flex-col items-center gap-0.5 bg-surface-elevated border border-divider">
-                <span className="text-[17px] font-semibold text-text-primary">{fmtR(pendingGross)}</span>
-                <span className="text-[10px] text-text-secondary">Pending gross ({pendingCount})</span>
-              </div>
-              <div className="rounded-lg py-2 px-3 flex flex-col items-center gap-0.5 bg-surface-elevated border border-divider">
-                <span className="text-[17px] font-semibold text-text-primary">{fmtR(approvedGross)}</span>
-                <span className="text-[10px] text-text-secondary">Approved gross ({approvedCount})</span>
-              </div>
-              <div className="rounded-lg py-2 px-3 flex flex-col items-center gap-0.5 bg-surface-elevated border border-divider">
-                <span className="text-[17px] font-semibold text-text-primary">{fmtR(approvedNet)}</span>
-                <span className="text-[10px] text-text-secondary">Approved net (bankable)</span>
-              </div>
-              <div className="rounded-lg py-2 px-3 flex flex-col items-center gap-0.5 bg-surface-elevated border border-divider">
-                <span className="text-[17px] font-semibold text-text-primary">{filtered.length}</span>
-                <span className="text-[10px] text-text-secondary">Payslips in view</span>
-              </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-[12px] text-text-secondary whitespace-nowrap">
+              Pending <span className="text-text-primary font-medium">{fmtR(pendingGross)}</span>
+              <span className="text-text-disabled"> ({pendingCount})</span>
+              <span className="mx-1.5 text-text-disabled">·</span>
+              Approved <span className="text-text-primary font-medium">{fmtR(approvedGross)}</span>
+              <span className="mx-1.5 text-text-disabled">·</span>
+              Net <span className="text-text-primary font-medium">{fmtR(approvedNet)}</span>
+              <span className="mx-1.5 text-text-disabled">·</span>
+              {filtered.length} in view
+            </p>
+            <div className="flex items-center gap-1 flex-1 min-w-[180px] bg-surface border border-border rounded-md px-2">
+              <span className="material-icons text-text-secondary text-[16px]">search</span>
+              <input
+                placeholder="Search employee, period…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="flex-1 bg-transparent text-text-primary text-[13px] h-8 outline-none placeholder:text-text-disabled"
+              />
             </div>
-
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                onClick={() => void openGenerate()}
-                disabled={generating || isLocked}
-                className="h-9 px-3 text-[12px] rounded-md bg-surface-dark border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
-              >
-                {generating ? 'Generating…' : 'Generate'}
-              </button>
-              <button
-                onClick={approveAll}
-                disabled={approving}
-                className="btn-primary h-9 px-3 text-[12px] disabled:opacity-50"
-              >
-                {approving ? 'Approving…' : 'Approve All'}
-              </button>
-              <button
-                onClick={releaseAll}
-                disabled={releasing}
-                className="h-9 px-3 text-[12px] rounded-md border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
-                style={{ backgroundColor: '#4C1D95', color: '#C4B5FD', borderColor: '#7C3AED' }}
-              >
-                {releasing ? 'Releasing…' : 'Release All'}
-              </button>
-            </div>
-
-            <div className="flex items-center gap-3 flex-wrap">
-              <div className="flex items-center gap-1 flex-1 min-w-[160px] bg-surface border border-border rounded-lg px-2">
-                <span className="material-icons text-text-secondary text-[16px]">search</span>
-                <input
-                  placeholder="Search employee, period…"
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  className="flex-1 bg-transparent text-text-primary text-[13px] h-[38px] outline-none placeholder:text-text-disabled"
-                />
-              </div>
-              {(['all', 'pending', 'approved', 'paid'] as StatusFilter[]).map(s => (
-                <FilterChip
-                  key={s}
-                  label={s.charAt(0).toUpperCase() + s.slice(1)}
-                  active={statusFilter === s}
-                  onClick={() => setStatusFilter(s)}
-                />
-              ))}
-            </div>
-          </>
+            {(['all', 'pending', 'approved', 'paid'] as StatusFilter[]).map(s => (
+              <FilterChip
+                key={s}
+                label={s.charAt(0).toUpperCase() + s.slice(1)}
+                active={statusFilter === s}
+                onClick={() => setStatusFilter(s)}
+              />
+            ))}
+            <button
+              onClick={() => void openGenerate()}
+              disabled={generating || isLocked}
+              className="h-8 px-3 text-[12px] rounded-md bg-surface-dark border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
+            >
+              {generating ? 'Generating…' : 'Generate'}
+            </button>
+            <button
+              onClick={approveAll}
+              disabled={approving}
+              className="btn-primary h-8 px-3 text-[12px] disabled:opacity-50"
+            >
+              {approving ? 'Approving…' : 'Approve All'}
+            </button>
+            <button
+              onClick={releaseAll}
+              disabled={releasing}
+              className="h-8 px-3 text-[12px] rounded-md border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
+              style={{ backgroundColor: '#4C1D95', color: '#C4B5FD', borderColor: '#7C3AED' }}
+            >
+              {releasing ? 'Releasing…' : 'Release All'}
+            </button>
+          </div>
         )}
       </div>
 
@@ -643,7 +623,7 @@ export default function PayrollPage() {
         <ResponsiveDataView
           table={
             <table style={{ minWidth: 980 }} className="w-full">
-              <thead>
+              <thead className="sticky top-0 z-10">
                 <tr className="bg-surface-elevated border-b border-divider">
                   <th style={{ width: 150 }} className="data-th cursor-pointer select-none">Employee</th>
                   <th style={{ width: 160 }} className="data-th">Period</th>
