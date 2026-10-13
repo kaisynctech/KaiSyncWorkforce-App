@@ -300,6 +300,7 @@ export default function PayslipDetailPage() {
   const [fullName, setFullName] = useState('')
   const [employeeNumber, setEmployeeNumber] = useState('')
   const [employeeIdNumber, setEmployeeIdNumber] = useState('')
+  const [incomeTaxNumber, setIncomeTaxNumber] = useState('')
   const [employmentDateText, setEmploymentDateText] = useState('')
   const [hourlyRateText, setHourlyRateText] = useState('0.00')
   const [overtimeRateText, setOvertimeRateText] = useState('0.00')
@@ -558,7 +559,7 @@ export default function PayslipDetailPage() {
     const [{ data: person, error: personErr }, { data: company, error: companyErr }] = await Promise.all([
       supabase
         .from('employees')
-        .select('name, surname, monthly_salary, hourly_rate, daily_rate, daily_hours, work_days_weekly, uif_fixed_amount, uif_rate_percent, uif_exempt, employment_date, termination_date, pay_full_monthly_salary, bank_name, bank_branch_code, bank_account, account_type, employee_code, id_number, overtime_rate, overtime_hourly_rate, paid_leave_balance, sick_leave_balance, address')
+        .select('name, surname, monthly_salary, hourly_rate, daily_rate, daily_hours, work_days_weekly, uif_fixed_amount, uif_rate_percent, uif_exempt, employment_date, termination_date, pay_full_monthly_salary, bank_name, bank_branch_code, bank_account, account_type, employee_code, id_number, tax_number, overtime_rate, overtime_hourly_rate, paid_leave_balance, sick_leave_balance, address')
         .eq('id', p.employee_id)
         .eq('company_id', p.company_id)
         .maybeSingle(),
@@ -613,6 +614,7 @@ export default function PayslipDetailPage() {
       setFullName(`${row.name ?? ''} ${row.surname ?? ''}`.replace(/\s+/g, ' ').trim())
       setEmployeeNumber(row.employee_code ?? '')
       setEmployeeIdNumber(row.id_number ?? '')
+      setIncomeTaxNumber((row as PersonPay & { tax_number?: string | null }).tax_number ?? '')
       setEmploymentDateText(row.employment_date ? fmtDmy(row.employment_date) : '')
       const hourly = Number(row.hourly_rate) || 0
       setHourlyRateText(moneyText(hourly))
@@ -700,6 +702,12 @@ export default function PayslipDetailPage() {
     setEmployeeNumber(trimmed)
     const saved = await saveEmployee({ employee_code: trimmed || null })
     if (saved) setPersonPay(current => ({ ...current, employee_code: trimmed || null }))
+  }
+
+  async function saveIncomeTax(next: string) {
+    const trimmed = next.trim()
+    setIncomeTaxNumber(trimmed)
+    await saveEmployee({ tax_number: trimmed || null })
   }
 
   async function saveEmployeeId(next: string) {
@@ -902,6 +910,7 @@ export default function PayslipDetailPage() {
       employeeName: fullName,
       address: homeAddress,
       employeeId: employeeIdNumber,
+      incomeTaxNumber,
       employeeNumber,
       employmentDate: personPay.employment_date,
       periodStart: payment.period_start ?? '',
@@ -1295,6 +1304,12 @@ export default function PayslipDetailPage() {
                   </td>
                 </tr>
                 <tr className="border-b border-divider">
+                  <td className="py-2 pr-3 text-[13px] text-text-secondary whitespace-nowrap">Income tax number</td>
+                  <td className="py-2 pr-4" colSpan={3}>
+                    <input type="text" value={incomeTaxNumber} onChange={e => setIncomeTaxNumber(e.target.value)} onBlur={e => { void saveIncomeTax(e.target.value) }} placeholder="Income tax number" className={slipField} />
+                  </td>
+                </tr>
+                <tr className="border-b border-divider">
                   <td className="py-2 pr-3 text-[13px] text-text-secondary whitespace-nowrap">Employment date</td>
                   <td className="py-2 pr-4">
                     <input type="text" value={employmentDateText} onChange={e => setEmploymentDateText(e.target.value)} onBlur={e => { void saveEmploymentDate(e.target.value) }} placeholder="01-10-2026" className={slipField} />
@@ -1408,6 +1423,12 @@ export default function PayslipDetailPage() {
               </tr>
             </tbody>
           </table>
+          <div className="px-4 py-6 border-t border-divider text-center">
+            <p className="text-[12px] text-text-secondary">Net pay</p>
+            <p className="text-[22px] font-semibold text-text-primary mt-1">{fmtR(netNow)}</p>
+            <p className="text-[12px] text-text-secondary mt-1">This is the amount they will receive.</p>
+            <p className="text-[11px] text-text-disabled mt-5">Powered by KaiSync Workforce</p>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center justify-end gap-2">

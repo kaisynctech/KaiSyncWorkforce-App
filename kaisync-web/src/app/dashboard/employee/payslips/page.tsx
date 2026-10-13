@@ -105,7 +105,7 @@ export default function PayslipsPage() {
     const supabase = createClient()
     try {
       const [{ data: person }, { data: company }] = await Promise.all([
-        supabase.from('employees').select('name, surname, address, employee_code, id_number, employment_date, hourly_rate, overtime_hourly_rate, bank_name, bank_branch_code, bank_account, paid_leave_balance, sick_leave_balance').eq('id', employeeId).maybeSingle(),
+        supabase.from('employees').select('name, surname, address, employee_code, id_number, tax_number, employment_date, hourly_rate, overtime_hourly_rate, bank_name, bank_branch_code, bank_account, paid_leave_balance, sick_leave_balance').eq('id', employeeId).maybeSingle(),
         supabase.from('companies').select('name, address, logo_url').eq('id', companyId).maybeSingle(),
       ])
       const personRow = person as {
@@ -114,6 +114,7 @@ export default function PayslipsPage() {
         address?: string | null
         employee_code?: string | null
         id_number?: string | null
+        tax_number?: string | null
         employment_date?: string | null
         hourly_rate?: number | null
         overtime_hourly_rate?: number | null
@@ -141,6 +142,7 @@ export default function PayslipsPage() {
         employeeName: personRow ? `${personRow.name ?? ''} ${personRow.surname ?? ''}`.trim() : employeeName,
         address: personRow?.address,
         employeeId: personRow?.id_number,
+        incomeTaxNumber: personRow?.tax_number,
         employeeNumber: personRow?.employee_code,
         employmentDate: personRow?.employment_date,
         periodStart: payslip.period_start,
