@@ -62,7 +62,9 @@ type RequestBody = {
     waivePenalties?: boolean
     manualPayeOverride?: number | null
     manualAdjustment?: number | null
+    adjustmentNote?: string | null
     bonusAmount?: number | null
+    bonusNote?: string | null
   }
 }
 
@@ -120,6 +122,58 @@ async function loadLeaveRecordsInPeriod(
   }))
 }
 
+function latestSalaryOnOrBefore(history: SalaryHistoryEntry[], asOf: string): SalaryHistoryEntry | undefined {
+  return history
+    .filter(row => row.effective_date <= asOf)
+    .sort((a, b) => {
+      if (a.effective_date !== b.effective_date) return a.effective_date < b.effective_date ? 1 : -1
+      const aCreated = a.created_at ?? ''
+      const bCreated = b.created_at ?? ''
+      if (aCreated === bCreated) return 0
+      return aCreated < bCreated ? 1 : -1
+    })[0]
+}
+
+/** Keeps this month on the salary stored on the person when an older history row would override it. */
+async function recordSalaryChange(
+  admin: SupabaseClient,
+  companyId: string,
+  employeeId: string,
+  monthlySalary: number,
+  hourlyRate: number,
+  dailyRate: number,
+  periodEnd: string,
+  history: SalaryHistoryEntry[]
+): Promise<string | null> {
+  const applicable = latestSalaryOnOrBefore(history, periodEnd)
+  if (!applicable) return null
+  const same =
+    Math.abs(applicable.monthly_salary - monthlySalary) < 0.005 &&
+    Math.abs(applicable.hourly_rate - hourlyRate) < 0.005 &&
+    Math.abs(applicable.daily_rate - dailyRate) < 0.005
+  if (same) return null
+  const createdAt = new Date().toISOString()
+  const { error } = await admin.from('employee_salary_history').insert({
+    employee_id: employeeId,
+    company_id: companyId,
+    effective_date: periodEnd,
+    monthly_salary: monthlySalary,
+    hourly_rate: hourlyRate,
+    daily_rate: dailyRate,
+    note: 'Updated from payslip',
+    created_at: createdAt,
+  })
+  if (error) return error.message
+  history.push({
+    effective_date: periodEnd,
+    monthly_salary: monthlySalary,
+    hourly_rate: hourlyRate,
+    daily_rate: dailyRate,
+    created_at: createdAt,
+  })
+  return null
+}
+
 async function loadSalaryHistory(
   admin: SupabaseClient,
   companyId: string,
@@ -127,7 +181,7 @@ async function loadSalaryHistory(
 ): Promise<SalaryHistoryEntry[]> {
   const { data } = await admin
     .from('employee_salary_history')
-    .select('effective_date, monthly_salary, hourly_rate, daily_rate')
+    .select('effective_date, monthly_salary, hourly_rate, daily_rate, created_at')
     .eq('company_id', companyId)
     .eq('employee_id', employeeId)
     .order('effective_date', { ascending: false })
@@ -137,6 +191,7 @@ async function loadSalaryHistory(
     monthly_salary: Number(row.monthly_salary ?? 0),
     hourly_rate: Number(row.hourly_rate ?? 0),
     daily_rate: Number(row.daily_rate ?? 0),
+    created_at: (row.created_at as string | null) ?? null,
   }))
 }
 
@@ -255,7 +310,7 @@ async function handleGenerate(
     admin.from('employees').select(EMP_SELECT).eq('company_id', companyId).eq('is_active', true),
     admin
       .from('payment_approvals')
-      .select('id, employee_id, status, pay_full_base_salary, waive_penalties, manual_paye_override, manual_adjustment, bonus_amount, audit_log')
+      .select('id, employee_id, status, pay_full_base_salary, waive_penalties, manual_paye_override, manual_adjustment, adjustment_note, bonus_amount, bonus_note, audit_log')
       .eq('company_id', companyId)
       .gte('period_start', periodStart)
       .lte('period_start', periodEnd)
@@ -281,7 +336,9 @@ async function handleGenerate(
     waive_penalties: boolean | null
     manual_paye_override: number | null
     manual_adjustment: number | null
+    adjustment_note: string | null
     bonus_amount: number | null
+    bonus_note: string | null
     audit_log: unknown
   }
   const existingByEmployee = new Map<string, ExistingPay>()
@@ -325,7 +382,9 @@ async function handleGenerate(
           waivePenalties: existingPay.waive_penalties ?? false,
           manualPayeOverride: existingPay.manual_paye_override,
           manualAdjustment: existingPay.manual_adjustment,
+          adjustmentNote: existingPay.adjustment_note,
           bonusAmount: existingPay.bonus_amount,
+          bonusNote: existingPay.bonus_note,
         }
       : undefined
 
@@ -475,10 +534,24 @@ async function handleRecalculate(
       overrides.manualPayeOverride !== undefined ? overrides.manualPayeOverride : payment.manual_paye_override,
     manualAdjustment:
       overrides.manualAdjustment !== undefined ? overrides.manualAdjustment : payment.manual_adjustment,
+    adjustmentNote:
+      overrides.adjustmentNote !== undefined ? overrides.adjustmentNote : payment.adjustment_note,
     bonusAmount: overrides.bonusAmount !== undefined ? overrides.bonusAmount : payment.bonus_amount,
+    bonusNote: overrides.bonusNote !== undefined ? overrides.bonusNote : payment.bonus_note,
   }
 
   const empRow = emp as EngineEmployee
+  const salaryError = await recordSalaryChange(
+    admin,
+    companyId,
+    payment.employee_id,
+    Number(empRow.monthly_salary ?? 0),
+    Number(empRow.hourly_rate ?? 0),
+    Number(empRow.daily_rate ?? 0),
+    payment.period_end,
+    salaryHistory
+  )
+  if (salaryError) return json({ ok: false, error: salaryError }, 500)
   const shiftTemplate =
     (empRow.shift_template_id ? templates.byId.get(empRow.shift_template_id) : null) ??
     templates.defaultTemplate

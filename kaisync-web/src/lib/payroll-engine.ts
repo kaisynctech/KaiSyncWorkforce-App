@@ -62,7 +62,9 @@ export type PayslipOverrides = {
   waivePenalties?: boolean
   manualPayeOverride?: number | null
   manualAdjustment?: number | null
+  adjustmentNote?: string | null
   bonusAmount?: number | null
+  bonusNote?: string | null
 }
 
 export type EnginePayslip = {
@@ -202,7 +204,9 @@ export function calculatePayslip(input: {
       waivePenalties: overrides.waivePenalties,
       manualPayeOverride: overrides.manualPayeOverride ?? null,
       manualAdjustment: overrides.manualAdjustment ?? 0,
+      adjustmentNote: overrides.adjustmentNote ?? null,
       bonusAmount: overrides.bonusAmount ?? 0,
+      bonusNote: overrides.bonusNote ?? null,
     },
     priorYtd,
     salaryHistory: input.salaryHistory ?? null,

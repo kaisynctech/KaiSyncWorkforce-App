@@ -15,6 +15,7 @@ export type SalaryHistoryEntry = {
   monthly_salary: number
   hourly_rate: number
   daily_rate: number
+  created_at?: string | null
 }
 
 export function resolveAsOf(
@@ -30,7 +31,13 @@ export function resolveAsOf(
 
   const applicable = history
     .filter(h => h.effective_date <= asOfDate)
-    .sort((a, b) => (a.effective_date < b.effective_date ? 1 : a.effective_date > b.effective_date ? -1 : 0))[0]
+    .sort((a, b) => {
+      if (a.effective_date !== b.effective_date) return a.effective_date < b.effective_date ? 1 : -1
+      const aCreated = a.created_at ?? ''
+      const bCreated = b.created_at ?? ''
+      if (aCreated === bCreated) return 0
+      return aCreated < bCreated ? 1 : -1
+    })[0]
 
   return applicable
     ? { monthlySalary: applicable.monthly_salary, hourlyRate: applicable.hourly_rate, dailyRate: applicable.daily_rate }
