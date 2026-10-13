@@ -711,13 +711,12 @@ async function handleSaveLines(
     .maybeSingle()
   if (empErr) return json({ ok: false, error: empErr.message }, 500)
 
-  const days = Number(emp?.work_days_weekly) || 5
-  const hours = Number(emp?.daily_hours) || 8
-  const daily = totals.regular > 0 ? totals.regular / ((days * 52) / 12) : Number(emp?.daily_rate) || 0
-  const hourly = totals.regular > 0 && hours > 0 ? daily / hours : Number(emp?.hourly_rate) || 0
-  const employeeUpdate = totals.regular > 0
-    ? { monthly_salary: totals.regular, daily_rate: daily, hourly_rate: hourly, uif_fixed_amount: lineAmount(body.lines.uif) }
-    : { monthly_salary: totals.regular, uif_fixed_amount: lineAmount(body.lines.uif) }
+  const daily = Number(emp?.daily_rate) || 0
+  const hourly = Number(emp?.hourly_rate) || 0
+  const employeeUpdate = {
+    monthly_salary: totals.regular,
+    uif_fixed_amount: lineAmount(body.lines.uif),
+  }
   const { error: salaryErr } = await admin
     .from('employees')
     .update(employeeUpdate)
