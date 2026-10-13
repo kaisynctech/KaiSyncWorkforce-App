@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { calculateAnnualTax, calculateMonthlyPaye } from './sars-paye'
+import { annualTaxThreshold, calculateAnnualTax, calculateMonthlyPaye, isBelowAnnualTaxThreshold } from './sars-paye'
 
 describe('calculateAnnualTax', () => {
   it('applies the first bracket rate from zero', () => {
@@ -17,6 +17,17 @@ describe('calculateAnnualTax', () => {
   it('returns 0 for non-positive income', () => {
     expect(calculateAnnualTax(0)).toBe(0)
     expect(calculateAnnualTax(-500)).toBe(0)
+  })
+})
+
+describe('annualTaxThreshold', () => {
+  it('is the 2025/26 under-65 threshold', () => {
+    expect(annualTaxThreshold()).toBe(95_750)
+  })
+
+  it('treats R4,000 a month as below the threshold', () => {
+    expect(isBelowAnnualTaxThreshold(4_000)).toBe(true)
+    expect(calculateMonthlyPaye(4_000)).toBe(0)
   })
 })
 

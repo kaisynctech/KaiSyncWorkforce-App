@@ -30,6 +30,17 @@ export function yearMonthOf(d: ISODate): { year: number; month: number } {
   return { year, month }
 }
 
+/** First through last calendar day of the month that contains `isoDate`. */
+export function calendarMonthBounds(isoDate: ISODate): { start: ISODate; end: ISODate } {
+  const { year, month } = parseISODate(isoDate)
+  const mm = String(month).padStart(2, '0')
+  const last = daysInMonth(year, month)
+  return {
+    start: `${year}-${mm}-01`,
+    end: `${year}-${mm}-${String(last).padStart(2, '0')}`,
+  }
+}
+
 export function addDaysISO(d: ISODate, days: number): ISODate {
   const { year, month, day } = parseISODate(d)
   return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10)

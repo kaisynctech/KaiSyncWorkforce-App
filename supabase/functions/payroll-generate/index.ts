@@ -27,6 +27,7 @@ import {
 } from '../_shared/payroll/adapter.ts'
 import { prefsToSettings, withCompanyTimezone, type PayrollSettings } from '../_shared/payroll/prefs.ts'
 import type { AbsenceSnapshot } from '../_shared/payroll/calculator.ts'
+import { calendarMonthBounds } from '../_shared/payroll/period.ts'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -226,14 +227,17 @@ async function handleGenerate(
   body: RequestBody,
   actorUserId: string
 ) {
-  const { company_id: companyId, period_start: periodStart, period_end: periodEnd } = body
+  const { company_id: companyId, period_start: requestedStart } = body
+  if (!requestedStart) return json({ ok: false, error: 'Missing period_start.' }, 400)
+  const { start: periodStart, end: periodEnd } = calendarMonthBounds(requestedStart)
 
   const { data: lockRow, error: lockErr } = await admin
     .from('payroll_period_locks')
     .select('company_id')
     .eq('company_id', companyId)
-    .eq('period_start', periodStart)
-    .eq('period_end', periodEnd)
+    .gte('period_start', periodStart)
+    .lte('period_start', periodEnd)
+    .limit(1)
     .maybeSingle()
   if (lockErr) return json({ ok: false, error: lockErr.message }, 500)
   if (lockRow) return json({ ok: false, error: 'This payroll period is locked and cannot be regenerated.' }, 409)
@@ -251,10 +255,11 @@ async function handleGenerate(
     admin.from('employees').select(EMP_SELECT).eq('company_id', companyId).eq('is_active', true),
     admin
       .from('payment_approvals')
-      .select('employee_id')
+      .select('id, employee_id, status, pay_full_base_salary, waive_penalties, manual_paye_override, manual_adjustment, bonus_amount, audit_log')
       .eq('company_id', companyId)
-      .eq('period_start', periodStart)
-      .eq('period_end', periodEnd),
+      .gte('period_start', periodStart)
+      .lte('period_start', periodEnd)
+      .neq('status', 'rejected'),
     admin
       .from('time_punches')
       .select('employee_id, type, date_time')
@@ -268,9 +273,27 @@ async function handleGenerate(
   if (existErr) return json({ ok: false, error: existErr.message }, 500)
   if (punchErr) return json({ ok: false, error: punchErr.message }, 500)
 
-  const existingIds = new Set((existing ?? []).map(r => r.employee_id as string))
+  type ExistingPay = {
+    id: string
+    employee_id: string
+    status: string
+    pay_full_base_salary: boolean | null
+    waive_penalties: boolean | null
+    manual_paye_override: number | null
+    manual_adjustment: number | null
+    bonus_amount: number | null
+    audit_log: unknown
+  }
+  const existingByEmployee = new Map<string, ExistingPay>()
+  for (const row of (existing ?? []) as ExistingPay[]) {
+    const prev = existingByEmployee.get(row.employee_id)
+    if (!prev || (prev.status !== 'pending' && row.status === 'pending')) {
+      existingByEmployee.set(row.employee_id, row)
+    }
+  }
   const punchRows = (punches ?? []) as PunchLike[]
   let generated = 0
+  let updated = 0
   let skipped = 0
   const errors: string[] = []
 
@@ -279,7 +302,8 @@ async function handleGenerate(
       skipped++
       continue
     }
-    if (existingIds.has(raw.id)) {
+    const existingPay = existingByEmployee.get(raw.id)
+    if (existingPay && existingPay.status !== 'pending') {
       skipped++
       continue
     }
@@ -295,12 +319,23 @@ async function handleGenerate(
       (raw.shift_template_id ? templates.byId.get(raw.shift_template_id) : null) ??
       templates.defaultTemplate
 
+    const overrides: PayslipOverrides | undefined = existingPay
+      ? {
+          payFullBaseSalary: existingPay.pay_full_base_salary ?? false,
+          waivePenalties: existingPay.waive_penalties ?? false,
+          manualPayeOverride: existingPay.manual_paye_override,
+          manualAdjustment: existingPay.manual_adjustment,
+          bonusAmount: existingPay.bonus_amount,
+        }
+      : undefined
+
     const slip = calculatePayslip({
       employee: raw,
       settings,
       punches: punchRows,
       periodStart,
       periodEnd,
+      overrides,
       leaveRecords,
       absences,
       shiftTemplate,
@@ -312,9 +347,7 @@ async function handleGenerate(
       continue
     }
 
-    const { error: insertErr } = await admin.from('payment_approvals').insert({
-      company_id: companyId,
-      employee_id: slip.employee_id,
+    const figures = {
       period_start: slip.period_start,
       period_end: slip.period_end,
       regular_hours: slip.regular_hours,
@@ -336,6 +369,26 @@ async function handleGenerate(
       deductions_breakdown: slip.deductions_breakdown,
       policy_snapshot: slip.policy_snapshot,
       ytd_json: slip.ytd_json,
+    }
+
+    if (existingPay) {
+      const priorAudit = Array.isArray(existingPay.audit_log) ? existingPay.audit_log : []
+      const { error: updateErr } = await admin.from('payment_approvals').update({
+        ...figures,
+        audit_log: [
+          ...priorAudit,
+          { action: 'refreshed', detail: `Month ${periodStart} to ${periodEnd} by user ${actorUserId}`, at: new Date().toISOString() },
+        ],
+      }).eq('id', existingPay.id).eq('company_id', companyId)
+      if (updateErr) errors.push(`${raw.name} ${raw.surname}: ${updateErr.message}`)
+      else updated++
+      continue
+    }
+
+    const { error: insertErr } = await admin.from('payment_approvals').insert({
+      ...figures,
+      company_id: companyId,
+      employee_id: slip.employee_id,
       audit_log: [
         ...slip.audit_log,
         { action: 'generated', detail: `By user ${actorUserId} via payroll-generate EF`, at: new Date().toISOString() },
@@ -351,7 +404,7 @@ async function handleGenerate(
     }
   }
 
-  return json({ ok: true, generated, skipped, errors })
+  return json({ ok: true, generated, updated, skipped, errors })
 }
 
 async function handleRecalculate(

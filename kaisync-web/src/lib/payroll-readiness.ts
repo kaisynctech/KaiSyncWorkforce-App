@@ -30,6 +30,7 @@ export type PayrollGeneratePreview = {
   missingShiftCount: number
   missingBankCount: number
   duplicateCount: number
+  refreshCount: number
   notInPeriodCount: number
   contractorCount: number
   companyHasDefaultTemplate: boolean
@@ -89,14 +90,16 @@ export function buildPayrollGeneratePreview(
   periodStart: string,
   periodEnd: string,
   existingEmployeeIds: Set<string>,
-  options?: { companyHasDefaultTemplate?: boolean }
+  options?: { companyHasDefaultTemplate?: boolean; lockedEmployeeIds?: Set<string> }
 ): PayrollGeneratePreview {
   const companyHasDefaultTemplate = Boolean(options?.companyHasDefaultTemplate)
+  const lockedEmployeeIds = options?.lockedEmployeeIds ?? new Set<string>()
   let ready = 0
   let missingRates = 0
   let missingShift = 0
   let missingBank = 0
   let duplicate = 0
+  let refresh = 0
   let notInPeriod = 0
   let contractor = 0
   const details: string[] = []
@@ -106,11 +109,12 @@ export function buildPayrollGeneratePreview(
       notInPeriod++
       continue
     }
-    if (existingEmployeeIds.has(emp.id)) {
+    if (lockedEmployeeIds.has(emp.id)) {
       duplicate++
-      details.push(`${emp.name} ${emp.surname}: payslip already exists for this period`)
+      details.push(`${emp.name} ${emp.surname}: approved payslip for this month is left as it is`)
       continue
     }
+    if (existingEmployeeIds.has(emp.id)) refresh++
 
     const info = assessPayrollReadiness(emp, { companyHasDefaultTemplate })
     if (!hasPayRate(emp)) missingRates++
@@ -128,6 +132,7 @@ export function buildPayrollGeneratePreview(
     missingShiftCount: missingShift,
     missingBankCount: missingBank,
     duplicateCount: duplicate,
+    refreshCount: refresh,
     notInPeriodCount: notInPeriod,
     contractorCount: contractor,
     companyHasDefaultTemplate,

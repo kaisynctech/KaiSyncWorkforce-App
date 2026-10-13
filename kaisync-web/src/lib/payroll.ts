@@ -15,6 +15,7 @@ import {
   type PayrollEmployeeLike,
 } from '@/lib/payroll-readiness'
 import { executeWithStepUp, isStepUpRequiredMessage } from '@/lib/step-up'
+import { calendarMonthBounds } from '@/lib/payroll/period'
 
 export type PayrollResult<T> =
   | { ok: true; data: T }
@@ -146,14 +147,16 @@ export async function previewPayrollGenerate(
   periodStart: string,
   periodEnd: string
 ): Promise<PayrollResult<PayrollGeneratePreview>> {
+  const month = calendarMonthBounds(periodStart)
   const [{ data: emps, error: empErr }, { data: existing, error: existErr }, { count: defaultCount, error: defaultErr }] = await Promise.all([
     supabase.from('employees').select(EMP_SELECT).eq('company_id', companyId).eq('is_active', true),
     supabase
       .from('payment_approvals')
-      .select('employee_id')
+      .select('employee_id, status')
       .eq('company_id', companyId)
-      .eq('period_start', periodStart)
-      .eq('period_end', periodEnd),
+      .gte('period_start', month.start)
+      .lte('period_start', month.end)
+      .neq('status', 'rejected'),
     supabase
       .from('employee_shift_templates')
       .select('id', { count: 'exact', head: true })
@@ -164,15 +167,20 @@ export async function previewPayrollGenerate(
   if (existErr) return { ok: false, message: existErr.message }
   if (defaultErr) return { ok: false, message: defaultErr.message }
 
-  const existingIds = new Set((existing ?? []).map(r => r.employee_id as string))
+  const pendingIds = new Set(
+    (existing ?? []).filter(r => r.status === 'pending').map(r => r.employee_id as string)
+  )
+  const lockedIds = new Set(
+    (existing ?? []).filter(r => r.status !== 'pending').map(r => r.employee_id as string)
+  )
   return {
     ok: true,
     data: buildPayrollGeneratePreview(
       (emps ?? []) as PayrollEmployeeLike[],
-      periodStart,
-      periodEnd,
-      existingIds,
-      { companyHasDefaultTemplate: (defaultCount ?? 0) > 0 }
+      month.start,
+      month.end,
+      pendingIds,
+      { companyHasDefaultTemplate: (defaultCount ?? 0) > 0, lockedEmployeeIds: lockedIds }
     ),
   }
 }
@@ -247,7 +255,7 @@ export async function generatePayrollPeriod(
   companyId: string,
   periodStart: string,
   periodEnd: string
-): Promise<PayrollResult<{ generated: number; skipped: number; errors: string[] }>> {
+): Promise<PayrollResult<{ generated: number; updated: number; skipped: number; errors: string[] }>> {
   const result = await callPayrollGenerateFunction(supabase, {
     company_id: companyId,
     action: 'generate',
@@ -257,9 +265,10 @@ export async function generatePayrollPeriod(
   if (!result.ok) return result
 
   const generated = Number(result.data.generated ?? 0)
+  const updated = Number(result.data.updated ?? 0)
   const skipped = Number(result.data.skipped ?? 0)
   const errors = Array.isArray(result.data.errors) ? (result.data.errors as string[]) : []
-  return { ok: true, data: { generated, skipped, errors } }
+  return { ok: true, data: { generated, updated, skipped, errors } }
 }
 
 export async function recalculatePayslip(

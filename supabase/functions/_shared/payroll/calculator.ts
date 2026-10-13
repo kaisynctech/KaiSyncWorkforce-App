@@ -29,7 +29,7 @@ import {
 } from './period.ts'
 import { countDaysInPeriod, isUnpaidLeave } from './leave-days.ts'
 import { resolveAsOf, type SalaryHistoryEntry } from './salary-resolver.ts'
-import { calculateMonthlyPaye } from './sars-paye.ts'
+import { calculateMonthlyPaye, isBelowAnnualTaxThreshold } from './sars-paye.ts'
 import { mergeYtd, type YtdTotals } from './irp5.ts'
 
 export type PayBasis = 'monthly_salary' | 'hourly' | 'daily'
@@ -215,7 +215,7 @@ export function sumPunchHours(
 
 /**
  * Legacy day-bucket hours helper (no template). Prefer `buildTemplateAwareSessions`
- * in `sessions-from-punches.ts` for late/early + MAUI-parity OT.
+ * in `sessions-from-punches.ts` for late/early + OT calculation.
  */
 export function buildSessionsFromPunches(
   punches: PunchLike[],
@@ -485,6 +485,8 @@ function addStatutoryDeductions(
         paye = emp.payeFixedAmount
       } else if (policy.statutory.useSarsTaxTables) {
         paye = calculateMonthlyPaye(grossPay, emp.dateOfBirth, emp.taxDirectiveRatePercent ?? emp.payeRatePercent)
+      } else if (isBelowAnnualTaxThreshold(grossPay, emp.dateOfBirth)) {
+        paye = 0
       } else if (emp.payeRatePercent != null && emp.payeRatePercent > 0) {
         paye = round2((grossPay * emp.payeRatePercent) / 100)
       } else if (policy.statutory.defaultPayeRatePercent > 0) {

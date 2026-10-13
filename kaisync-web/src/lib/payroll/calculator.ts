@@ -23,7 +23,7 @@ import {
 } from './period'
 import { countDaysInPeriod, isUnpaidLeave } from './leave-days'
 import { resolveAsOf, type SalaryHistoryEntry } from './salary-resolver'
-import { calculateMonthlyPaye } from './sars-paye'
+import { calculateMonthlyPaye, isBelowAnnualTaxThreshold } from './sars-paye'
 import { mergeYtd, type YtdTotals } from './irp5'
 
 export type PayBasis = 'monthly_salary' | 'hourly' | 'daily'
@@ -479,6 +479,8 @@ function addStatutoryDeductions(
         paye = emp.payeFixedAmount
       } else if (policy.statutory.useSarsTaxTables) {
         paye = calculateMonthlyPaye(grossPay, emp.dateOfBirth, emp.taxDirectiveRatePercent ?? emp.payeRatePercent)
+      } else if (isBelowAnnualTaxThreshold(grossPay, emp.dateOfBirth)) {
+        paye = 0
       } else if (emp.payeRatePercent != null && emp.payeRatePercent > 0) {
         paye = round2((grossPay * emp.payeRatePercent) / 100)
       } else if (policy.statutory.defaultPayeRatePercent > 0) {
