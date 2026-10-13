@@ -502,8 +502,39 @@ async function handleGenerate(
       continue
     }
 
+    const { data: priorSlip } = await admin
+      .from('payment_approvals')
+      .select('payslip_lines, pay_full_base_salary, waive_penalties')
+      .eq('company_id', companyId)
+      .eq('employee_id', slip.employee_id)
+      .lt('period_start', periodStart)
+      .order('period_start', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    const carried = priorSlip?.payslip_lines && typeof priorSlip.payslip_lines === 'object'
+      ? totalsFromLines(priorSlip.payslip_lines as Record<string, unknown>)
+      : null
+
     const { error: insertErr } = await admin.from('payment_approvals').insert({
       ...figures,
+      ...(carried
+        ? {
+            regular_pay: carried.regular,
+            overtime_pay: carried.overtime,
+            base_salary: carried.regular,
+            gross_pay: carried.gross,
+            deductions: carried.deductions,
+            net_pay: carried.net,
+            bonus_amount: carried.bonus,
+            manual_adjustment: carried.loanDeduction,
+            manual_paye_override: carried.paye,
+            earnings_breakdown: carried.earnings,
+            deductions_breakdown: carried.deductionLines,
+            payslip_lines: carried.saved,
+            pay_full_base_salary: priorSlip?.pay_full_base_salary ?? false,
+            waive_penalties: priorSlip?.waive_penalties ?? false,
+          }
+        : {}),
       company_id: companyId,
       employee_id: slip.employee_id,
       audit_log: [

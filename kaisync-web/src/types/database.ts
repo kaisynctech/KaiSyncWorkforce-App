@@ -85,6 +85,8 @@ export interface Company {
   industry: string | null
   size_range: string | null
   address: string | null
+  /** Storage path in workforce-media, shown on the payslip PDF. */
+  logo_url?: string | null
   enabled_modules?: Record<string, boolean> | null
   created_at: string
 }

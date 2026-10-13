@@ -113,6 +113,8 @@ export default function SettingsPage() {
   const [companyId,   setCompanyId]   = useState<string | null>(null)
   const [myEmpId,     setMyEmpId]     = useState<string | null>(null)
   const [companyName, setCompanyName] = useState('')
+  const [logoPreview, setLogoPreview] = useState<string | null>(null)
+  const [logoMsg, setLogoMsg] = useState<string | null>(null)
 
   // ── Branch state ─────────────────────────────────────────────────────────
   const [branches,         setBranches]         = useState<BranchRow[]>([])
@@ -280,6 +282,12 @@ export default function SettingsPage() {
     const co = (empData as unknown as { companies: Company & { custom_settings?: Record<string, unknown> | null } }).companies
     setCompany(co)
     setCompanyName(co.name)
+    if (co.logo_url) {
+      const { data: signed } = await supabase.storage.from('workforce-media').createSignedUrl(co.logo_url, 3600)
+      setLogoPreview(signed?.signedUrl ?? null)
+    } else {
+      setLogoPreview(null)
+    }
     setEnabledModules((co as Company).enabled_modules ?? {})
 
     const custom = (co.custom_settings ?? {}) as Record<string, unknown>
@@ -426,6 +434,43 @@ export default function SettingsPage() {
     setLeaveDays(Object.fromEntries(
       leaveEntitlementFields().map(field => [field.leaveType, String(getAnnualDays(field.leaveType))]),
     ))
+  }
+
+  async function uploadCompanyLogo(file: File) {
+    if (!company || !isHrOrAbove) return
+    if (!['image/png', 'image/jpeg'].includes(file.type)) {
+      setLogoMsg('Use a PNG or JPEG logo.')
+      return
+    }
+    if (file.size > 2_000_000) {
+      setLogoMsg('Use a logo smaller than 2 MB.')
+      return
+    }
+    setSaving('logo')
+    setLogoMsg(null)
+    const supabase = createClient()
+    const ext = file.type === 'image/png' ? 'png' : 'jpg'
+    const path = `company_logos/${company.id}/logo.${ext}`
+    const { error: uploadError } = await supabase.storage.from('workforce-media').upload(path, file, {
+      upsert: true,
+      contentType: file.type,
+    })
+    if (uploadError) {
+      setLogoMsg(uploadError.message)
+      setSaving(null)
+      return
+    }
+    const { error: saveError } = await supabase.from('companies').update({ logo_url: path }).eq('id', company.id)
+    if (saveError) {
+      setLogoMsg(saveError.message)
+      setSaving(null)
+      return
+    }
+    const { data: signed } = await supabase.storage.from('workforce-media').createSignedUrl(path, 3600)
+    setLogoPreview(signed?.signedUrl ?? null)
+    setCompany({ ...company, logo_url: path })
+    setLogoMsg('Logo saved. It will show on payslip PDFs.')
+    setSaving(null)
   }
 
   async function saveCompanyName() {
@@ -853,6 +898,32 @@ export default function SettingsPage() {
       {activeTab === 'general' && (
         <Section title="Company" icon="business">
           <div className="flex flex-col gap-4">
+            <Field label="Company logo">
+              <div className="flex items-center gap-4">
+                <div className="h-16 w-16 rounded-md border border-border bg-surface-elevated overflow-hidden flex items-center justify-center">
+                  {logoPreview
+                    ? <img src={logoPreview} alt="" className="h-full w-full object-contain" />
+                    : <span className="material-icons text-text-disabled">image</span>}
+                </div>
+                {isHrOrAbove && (
+                  <label className="h-9 px-4 rounded-md border border-border text-[13px] font-medium inline-flex items-center cursor-pointer hover:border-primary">
+                    {saving === 'logo' ? 'Uploading…' : 'Add logo'}
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg"
+                      className="hidden"
+                      disabled={saving === 'logo'}
+                      onChange={e => {
+                        const file = e.target.files?.[0]
+                        if (file) void uploadCompanyLogo(file)
+                        e.target.value = ''
+                      }}
+                    />
+                  </label>
+                )}
+              </div>
+              {logoMsg && <p className="text-[12px] text-text-secondary mt-2">{logoMsg}</p>}
+            </Field>
             <Field label="Company Name">
               <input
                 type="text"

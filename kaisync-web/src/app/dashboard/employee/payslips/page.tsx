@@ -6,7 +6,7 @@ import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { getCodeSession } from '@/lib/auth/code-session'
 import { loadCompanyWorkspace, loadEmployeeWorkspace } from '@/lib/employee-workspace'
 import { useEmployeeModuleGate } from '@/lib/employee-module-gate'
-import { downloadPayslipPdf, parsePayslipsRpcJson, type PayslipPdfInput } from '@/lib/payslip-pdf'
+import { downloadPayslipTemplatePdf, imageUrlToDataUrl, parsePayslipsRpcJson, type PayslipPdfInput } from '@/lib/payslip-pdf'
 import {
   ResponsiveDataView,
   DataCard,
@@ -104,21 +104,67 @@ export default function PayslipsPage() {
     setDownloading(payslip.id)
     const supabase = createClient()
     try {
-      const path = `payslips/${companyId}/${employeeId}/${payslip.id}.pdf`
-      const { data: urlData } = await supabase.storage
-        .from('workforce-media')
-        .createSignedUrl(path, 60)
-      if (urlData?.signedUrl) {
-        window.open(urlData.signedUrl, '_blank')
-      } else {
-        downloadPayslipPdf(payslip, employeeName, companyName)
+      const [{ data: person }, { data: company }] = await Promise.all([
+        supabase.from('employees').select('name, surname, address, employee_code, id_number, employment_date, hourly_rate, overtime_hourly_rate, bank_name, bank_branch_code, bank_account, paid_leave_balance, sick_leave_balance').eq('id', employeeId).maybeSingle(),
+        supabase.from('companies').select('name, address, logo_url').eq('id', companyId).maybeSingle(),
+      ])
+      const personRow = person as {
+        name?: string | null
+        surname?: string | null
+        address?: string | null
+        employee_code?: string | null
+        id_number?: string | null
+        employment_date?: string | null
+        hourly_rate?: number | null
+        overtime_hourly_rate?: number | null
+        bank_name?: string | null
+        bank_branch_code?: string | null
+        bank_account?: string | null
+        paid_leave_balance?: number | null
+        sick_leave_balance?: number | null
+      } | null
+      const companyRow = company as { name?: string | null; address?: string | null; logo_url?: string | null } | null
+      let logoDataUrl: string | null = null
+      if (companyRow?.logo_url) {
+        const { data: signed } = await supabase.storage.from('workforce-media').createSignedUrl(companyRow.logo_url, 120)
+        if (signed?.signedUrl) logoDataUrl = await imageUrlToDataUrl(signed.signedUrl)
       }
+      const lines = (payslip as PayslipPdfInput & { payslip_lines?: Record<string, number> | null }).payslip_lines ?? {}
+      const amount = (key: string, fallback: number | null | undefined) => {
+        const value = lines[key]
+        return value == null ? Number(fallback ?? 0) : Number(value)
+      }
+      downloadPayslipTemplatePdf({
+        companyName: companyRow?.name ?? companyName,
+        companyAddress: companyRow?.address,
+        logoDataUrl,
+        employeeName: personRow ? `${personRow.name ?? ''} ${personRow.surname ?? ''}`.trim() : employeeName,
+        address: personRow?.address,
+        employeeId: personRow?.id_number,
+        employeeNumber: personRow?.employee_code,
+        employmentDate: personRow?.employment_date,
+        periodStart: payslip.period_start,
+        periodEnd: payslip.period_end,
+        hourlyRate: Number(personRow?.hourly_rate ?? 0),
+        overtimeRate: Number(personRow?.overtime_hourly_rate ?? 0),
+        regular: amount('regular', payslip.regular_pay),
+        overtime: amount('overtime', payslip.overtime_pay),
+        bonus: amount('bonus', 0),
+        incentive: amount('incentive', 0),
+        refund: amount('refund', 0),
+        uif: amount('uif', 0),
+        paye: amount('paye', 0),
+        loanDeduction: amount('loanDeduction', 0),
+        loanBalance: amount('loanBalance', 0),
+        unpaidLeave: amount('unpaidLeave', 0),
+        bankName: personRow?.bank_name,
+        bankBranch: personRow?.bank_branch_code,
+        bankAccount: personRow?.bank_account,
+        paidTimeOff: personRow?.paid_leave_balance ?? null,
+        sickTimeOff: personRow?.sick_leave_balance ?? null,
+      })
     } catch {
-      try {
-        downloadPayslipPdf(payslip, employeeName, companyName)
-      } catch {
-        showToast('Could not generate PDF.')
-      }
+      showToast('Could not generate PDF.')
     }
     setDownloading(null)
   }
