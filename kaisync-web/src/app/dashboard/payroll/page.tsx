@@ -75,14 +75,16 @@ const PAYSLIP_COLORS: Record<string, { bg: string; fg: string }> = {
 function stBg(s: string) { return (PAYSLIP_COLORS[s?.toLowerCase()] ?? PAYSLIP_COLORS.pending).bg }
 function stFg(s: string) { return (PAYSLIP_COLORS[s?.toLowerCase()] ?? PAYSLIP_COLORS.pending).fg }
 
-function todayDateStr() {
+function currentMonthValue() {
   const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
-function firstOfMonthStr() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
+function monthBounds(month: string): { start: string; end: string } {
+  const [year, mon] = month.split('-').map(Number)
+  const last = new Date(year, mon, 0).getDate()
+  const mm = String(mon).padStart(2, '0')
+  return { start: `${year}-${mm}-01`, end: `${year}-${mm}-${String(last).padStart(2, '0')}` }
 }
 
 function fmtPeriod(start: string, end: string) {
@@ -107,8 +109,8 @@ export default function PayrollPage() {
   const [loading,      setLoading]      = useState(true)
   const [error,        setError]        = useState<string | null>(null)
   const [success,      setSuccess]      = useState<string | null>(null)
-  const [dateFrom,     setDateFrom]     = useState(firstOfMonthStr)
-  const [dateTo,       setDateTo]       = useState(todayDateStr)
+  const [month,        setMonth]        = useState(currentMonthValue)
+  const { start: dateFrom, end: dateTo } = monthBounds(month)
   const [search,       setSearch]       = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [isLocked,     setIsLocked]     = useState(false)
@@ -223,8 +225,11 @@ export default function PayrollPage() {
       setError(result.message)
       return
     }
-    const { generated, skipped, errors } = result.data
-    let msg = `Generated ${generated} payslip${generated !== 1 ? 's' : ''}`
+    const { generated, updated, skipped, errors } = result.data
+    const parts: string[] = []
+    if (generated) parts.push(`Created ${generated}`)
+    if (updated) parts.push(`Updated ${updated}`)
+    let msg = parts.length ? parts.join('. ') : 'No payslips changed'
     if (skipped) msg += ` (${skipped} skipped)`
     if (errors.length) msg += `. ${errors.length} error(s): ${errors[0]}`
     setSuccess(msg)
@@ -476,13 +481,10 @@ export default function PayrollPage() {
 
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1">
-            <label className="text-[11px] text-text-secondary font-medium">From</label>
-            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="dark-entry" />
+            <label className="text-[11px] text-text-secondary font-medium">Month</label>
+            <input type="month" value={month} onChange={e => setMonth(e.target.value)} className="dark-entry" />
           </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-[11px] text-text-secondary font-medium">To</label>
-            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="dark-entry" />
-          </div>
+          <span className="text-[13px] text-text-secondary pb-2">{dateFrom} to {dateTo}</span>
           <button
             type="button"
             onClick={() => void toggleLock()}
@@ -648,7 +650,6 @@ export default function PayrollPage() {
                   <th style={{ width: 85 }}  className="data-th text-right cursor-pointer select-none">Gross</th>
                   <th style={{ width: 85 }}  className="data-th text-right">Deduct.</th>
                   <th style={{ width: 85 }}  className="data-th text-right cursor-pointer select-none">Net</th>
-                  <th style={{ width: 90 }}  className="data-th">Hours</th>
                   <th style={{ width: 80 }}  className="data-th cursor-pointer select-none">Status</th>
                   <th style={{ width: 100 }} className="data-th">Visible</th>
                   <th style={{ width: 200 }} className="data-th text-right">Actions</th>
@@ -656,14 +657,13 @@ export default function PayrollPage() {
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={9} className="text-center py-10 text-text-secondary text-[13px]">Loading…</td></tr>
+                  <tr><td colSpan={8} className="text-center py-10 text-text-secondary text-[13px]">Loading…</td></tr>
                 ) : filtered.length === 0 ? (
-                  <tr><td colSpan={9} className="text-center py-10 text-text-secondary text-[13px]">No payslips found.</td></tr>
+                  <tr><td colSpan={8} className="text-center py-10 text-text-secondary text-[13px]">No payslips found.</td></tr>
                 ) : (
                   filtered.map(p => {
                     const emp     = p.employee
                     const empName = emp ? `${emp.name} ${emp.surname}` : '—'
-                    const totalHours = (p.regular_hours ?? 0) + (p.overtime_hours ?? 0)
                     return (
                       <tr
                         key={p.id}
@@ -677,7 +677,6 @@ export default function PayrollPage() {
                         <td className="data-td text-sm text-right">{fmtR(p.gross_pay)}</td>
                         <td className="data-td text-text-secondary text-sm text-right">{fmtR(p.deductions)}</td>
                         <td className="data-td text-text-primary text-sm text-right font-medium">{fmtR(p.net_pay)}</td>
-                        <td className="data-td text-text-secondary text-sm">{totalHours.toFixed(1)}h</td>
                         <td className="data-td">
                           <StatusBadge label={p.status} bg={stBg(p.status)} fg={stFg(p.status)} />
                         </td>
@@ -740,7 +739,6 @@ export default function PayrollPage() {
                 {filtered.map(p => {
                   const emp = p.employee
                   const empName = emp ? `${emp.name} ${emp.surname}` : '—'
-                  const totalHours = (p.regular_hours ?? 0) + (p.overtime_hours ?? 0)
                   return (
                     <DataCard key={p.id} onClick={() => router.push(`/dashboard/payroll/${p.id}`)}>
                       <div className="flex items-start justify-between gap-2">
@@ -752,7 +750,6 @@ export default function PayrollPage() {
                       </div>
                       <DataCardRow label="Net" value={fmtR(p.net_pay)} />
                       <DataCardRow label="Gross" value={fmtR(p.gross_pay)} />
-                      <DataCardRow label="Hours" value={`${totalHours.toFixed(1)}h`} />
                       <div
                         className="flex flex-wrap gap-2 mt-3"
                         onClick={e => e.stopPropagation()}
@@ -817,7 +814,7 @@ export default function PayrollPage() {
                 disabled={generating || genPreview.readyCount === 0}
                 className="btn-primary h-11 px-4 text-[13px] disabled:opacity-50"
               >
-                {generating ? 'Generating…' : `Generate ${genPreview.readyCount}`}
+                {generating ? 'Working…' : genPreview.refreshCount > 0 ? `Update ${genPreview.readyCount}` : `Generate ${genPreview.readyCount}`}
               </button>
             </>
           ) : null
@@ -826,12 +823,15 @@ export default function PayrollPage() {
         {genPreview && (
           <>
             <p className="text-[13px] text-text-secondary mb-3">
-              Period {dateFrom} → {dateTo}. Uses payroll settings (OT, UIF, PAYE rates) and period punches.
+              {dateFrom} to {dateTo}. One payslip per person for the month. Generating again updates that payslip as punches come in.
             </p>
             <ul className="text-[13px] text-text-primary space-y-1 mb-3">
-              <li><strong>{genPreview.readyCount}</strong> ready to generate</li>
+              <li><strong>{genPreview.readyCount}</strong> ready</li>
+              {genPreview.refreshCount > 0 && (
+                <li className="text-text-secondary">{genPreview.refreshCount} already have this month and will be updated</li>
+              )}
               {genPreview.duplicateCount > 0 && (
-                <li className="text-text-secondary">{genPreview.duplicateCount} already have payslips (skipped)</li>
+                <li className="text-text-secondary">{genPreview.duplicateCount} already approved (left as they are)</li>
               )}
               {genPreview.missingRatesCount > 0 && (
                 <li className="text-warning">{genPreview.missingRatesCount} missing pay rates</li>

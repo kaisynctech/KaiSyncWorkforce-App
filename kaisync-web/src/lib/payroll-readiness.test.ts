@@ -77,7 +77,8 @@ describe('isEligibleForPeriod / buildPayrollGeneratePreview', () => {
       '2026-08-31',
       new Set(['e1'])
     )
-    expect(preview.duplicateCount).toBe(1)
-    expect(preview.missingRatesCount).toBeGreaterThanOrEqual(0)
+    expect(preview.refreshCount).toBe(1)
+    expect(preview.duplicateCount).toBe(0)
+    expect(preview.readyCount).toBe(1)
   })
 })

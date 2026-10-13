@@ -30,6 +30,27 @@ const PAYSLIP_COLORS: Record<string, { bg: string; fg: string }> = {
 }
 const PAYSLIP_TEMPLATE_SELECT = 'id, name, start_time, end_time, break_minutes, weekend_start_time, weekend_end_time, ot_start_time, weekend_ot_start_time, early_ot_start_time, weekend_early_ot_start_time'
 
+type SlipTab = 'pay' | 'timesheet' | 'schedule'
+
+function clockRange(start?: string | null, end?: string | null): string | null {
+  if (!start || !end) return null
+  return `${start.slice(0, 5)} – ${end.slice(0, 5)}`
+}
+
+function requiredWorkingDays(start: string, end: string, daysPerWeek: number): number {
+  const weekly = Math.min(7, Math.max(0, Math.round(daysPerWeek)))
+  if (weekly <= 0) return 0
+  const [sy, sm, sd] = start.split('-').map(Number)
+  const [ey, em, ed] = end.split('-').map(Number)
+  let count = 0
+  for (let t = Date.UTC(sy, sm - 1, sd); t <= Date.UTC(ey, em - 1, ed); t += 86_400_000) {
+    const dow = new Date(t).getUTCDay()
+    const mondayIndex = dow === 0 ? 7 : dow
+    if (mondayIndex <= weekly) count++
+  }
+  return count
+}
+
 type PayslipDay = {
   key: string
   dateLabel: string
@@ -65,6 +86,12 @@ export default function PayslipDetailPage() {
   const [daysLoading, setDaysLoading] = useState(false)
   const [daysError, setDaysError] = useState<string | null>(null)
   const [templateLabel, setTemplateLabel] = useState<string | null>(null)
+  const [slipTab, setSlipTab] = useState<SlipTab>('pay')
+  const [daysPerWeek, setDaysPerWeek] = useState(5)
+  const [vatApplies, setVatApplies] = useState(false)
+  const [vatSaving, setVatSaving] = useState(false)
+  const [weekdayHours, setWeekdayHours] = useState<string | null>(null)
+  const [weekendHours, setWeekendHours] = useState<string | null>(null)
 
   // Override fields
   const [payFullSalary, setPayFullSalary] = useState(false)
@@ -87,7 +114,7 @@ export default function PayslipDetailPage() {
       const periodStart = payment!.period_start!
       const periodEnd = payment!.period_end!
       const [{ data: empRow, error: empErr }, settingsRes, { data: punches, error: punchErr }] = await Promise.all([
-        supabase.from('employees').select('shift_template_id, daily_hours').eq('id', payment!.employee_id).maybeSingle(),
+        supabase.from('employees').select('shift_template_id, daily_hours, work_days_weekly, vat_applies').eq('id', payment!.employee_id).maybeSingle(),
         loadPayrollSettings(supabase, payment!.company_id),
         supabase.from('time_punches')
           .select('id, employee_id, type, date_time, address, notes')
@@ -150,6 +177,17 @@ export default function PayslipDetailPage() {
       setTemplateLabel(template?.name
         ? (usedPersonal ? template.name : `${template.name} (company default)`)
         : null)
+      const times = template as {
+        start_time?: string | null
+        end_time?: string | null
+        weekend_start_time?: string | null
+        weekend_end_time?: string | null
+      } | null
+      const person = empRow as { work_days_weekly?: number | null; vat_applies?: boolean | null } | null
+      setDaysPerWeek(Number(person?.work_days_weekly) || 5)
+      setVatApplies(Boolean(person?.vat_applies))
+      setWeekdayHours(clockRange(times?.start_time, times?.end_time))
+      setWeekendHours(clockRange(times?.weekend_start_time, times?.weekend_end_time))
       setDays(rows.map(row => ({
         key: `${row.clockInPunchId ?? row.clockIn.toISOString()}`,
         dateLabel: labelPayslipDay(toLocalDateStr(row.clockIn, settings.company_timezone)),
@@ -164,6 +202,24 @@ export default function PayslipDetailPage() {
     void loadDays()
     return () => { cancelled = true }
   }, [payment?.id, payment?.employee_id, payment?.company_id, payment?.period_start, payment?.period_end])
+
+  async function saveVat(next: boolean) {
+    if (!payment) return
+    setVatSaving(true)
+    setErrorMsg(null)
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('employees')
+      .update({ vat_applies: next })
+      .eq('id', payment.employee_id)
+      .eq('company_id', payment.company_id)
+    setVatSaving(false)
+    if (error) {
+      setErrorMsg(error.message)
+      return
+    }
+    setVatApplies(next)
+  }
 
   async function load() {
     setLoading(true)
@@ -287,6 +343,22 @@ export default function PayslipDetailPage() {
               ? `${fmtDate(payment.period_start)} – ${fmtDate(payment.period_end)}`
               : (payment.period_label ?? '—')}
           </p>
+          <div className="flex gap-2 mt-2">
+            {([
+              ['pay', 'Payslip'],
+              ['timesheet', 'Timesheet'],
+              ['schedule', 'Schedule'],
+            ] as const).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setSlipTab(id)}
+                className={`h-8 px-3 text-[12px] rounded-md border ${slipTab === id ? 'bg-primary text-white border-primary' : 'bg-surface-dark text-text-primary border-border'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
         <StatusBadge label={payment.status} bg={stBg(payment.status)} fg={stFg(payment.status)} />
         <button
@@ -299,12 +371,13 @@ export default function PayslipDetailPage() {
       </div>
 
       {/* Scrollable body */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 max-w-2xl">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 w-full">
 
         {errorMsg && (
           <p className="text-error text-[13px]">{errorMsg}</p>
         )}
 
+        <div className={slipTab === 'pay' ? 'space-y-4' : 'hidden print:block print:space-y-4'}>
         {/* Payslip summary card */}
         <div className="card overflow-hidden">
           <table className="w-full">
@@ -365,7 +438,9 @@ export default function PayslipDetailPage() {
             </tbody>
           </table>
         </div>
+        </div>
 
+        <div className={slipTab === 'timesheet' ? 'space-y-4' : 'hidden print:block print:space-y-4'}>
         <div className="card p-4 space-y-3">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -415,7 +490,9 @@ export default function PayslipDetailPage() {
             </table>
           )}
         </div>
+        </div>
 
+        <div className={slipTab === 'pay' ? 'space-y-4' : 'hidden print:block print:space-y-4'}>
         {/* HR Adjustments — shown when payslip is still pending */}
         {payment.status === 'pending' && (
           <div data-noprint className="card p-4 space-y-3">
@@ -520,6 +597,51 @@ export default function PayslipDetailPage() {
             </table>
           </div>
         )}
+        </div>
+
+        <div className={slipTab === 'schedule' ? 'space-y-4' : 'hidden print:block print:space-y-4'}>
+          <div className="card p-4 space-y-3">
+            <p className="section-label">TIME TEMPLATE</p>
+            <p className="text-[14px] text-text-primary font-medium">{templateLabel ?? 'No template'}</p>
+            <table className="w-full">
+              <tbody>
+                <tr className="border-b border-divider">
+                  <td className="data-td text-text-secondary text-[13px]">Expected weekday times</td>
+                  <td className="data-td text-right text-[13px]">{weekdayHours ?? '—'}</td>
+                </tr>
+                <tr className="border-b border-divider">
+                  <td className="data-td text-text-secondary text-[13px]">Expected weekend times</td>
+                  <td className="data-td text-right text-[13px]">{weekendHours ?? 'Not set'}</td>
+                </tr>
+                <tr className="border-b border-divider">
+                  <td className="data-td text-text-secondary text-[13px]">Days a week</td>
+                  <td className="data-td text-right text-[13px]">{daysPerWeek}</td>
+                </tr>
+                <tr>
+                  <td className="data-td text-text-secondary text-[13px]">Required working days this month</td>
+                  <td className="data-td text-right text-[13px]">
+                    {payment.period_start && payment.period_end
+                      ? requiredWorkingDays(payment.period_start, payment.period_end, daysPerWeek)
+                      : '—'}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <p className="text-[12px] text-text-secondary">
+              Required days count Monday first. Five days a week is Monday to Friday. Six includes Saturday.
+            </p>
+          </div>
+          <div className="card p-4 space-y-3">
+            <p className="section-label">VAT</p>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[14px] text-text-primary">VAT applies to this person</p>
+                <p className="text-[12px] text-text-secondary mt-1">This does not change PAYE or UIF. It records whether VAT applies.</p>
+              </div>
+              <Toggle checked={vatApplies} onChange={v => { void saveVat(v) }} disabled={vatSaving} />
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   )

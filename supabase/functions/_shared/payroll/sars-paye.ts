@@ -53,6 +53,17 @@ function rebatesFor(dateOfBirth?: string | null): number {
   return PRIMARY_REBATE_ANNUAL
 }
 
+/** Annual income at which PAYE becomes payable (rebate ÷ first-bracket rate). 2025/26. */
+export function annualTaxThreshold(dateOfBirth?: string | null): number {
+  return Math.round((rebatesFor(dateOfBirth) / 0.18) * 100) / 100
+}
+
+/** True when a full year at this monthly amount is at or under the SARS tax threshold. */
+export function isBelowAnnualTaxThreshold(monthlyTaxable: number, dateOfBirth?: string | null): boolean {
+  if (monthlyTaxable <= 0) return true
+  return monthlyTaxable * 12 <= annualTaxThreshold(dateOfBirth)
+}
+
 export function calculateMonthlyPaye(
   monthlyTaxableIncome: number,
   dateOfBirth?: string | null,

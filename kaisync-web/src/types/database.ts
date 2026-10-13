@@ -31,6 +31,8 @@ export interface Employee {
   /** @deprecated live column is uif_exempt */
   exempt_from_uif?: boolean
   uif_exempt?: boolean
+  /** Whether VAT applies to this person. Does not change PAYE or UIF. */
+  vat_applies?: boolean | null
   medical_aid_deduction: number | null
   pension_deduction: number | null
   union_deduction: number | null
