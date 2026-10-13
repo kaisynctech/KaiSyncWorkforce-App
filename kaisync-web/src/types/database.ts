@@ -41,6 +41,8 @@ export interface Employee {
   work_days_weekly?: number | null
   daily_hours: number | null
   pay_by_hour: boolean
+  /** True: this person is not expected to clock in, and payroll pays the full monthly salary. */
+  pay_full_monthly_salary?: boolean | null
   pay_basis: string | null
   /** Canonical reports-to: employees.id */
   manager_id: string | null
