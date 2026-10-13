@@ -604,7 +604,7 @@ async function handleRecalculate(
         ...slip.audit_log,
         {
           action: 'recalculated',
-          detail: `By user ${actorUserId} via payroll-generate EF (server)`,
+          detail: `By user ${actorUserId} via payroll-generate EF (server). absence pay ${mergedOverrides.waivePenalties ? 'on' : 'off'}`,
           at: new Date().toISOString(),
         },
       ],
