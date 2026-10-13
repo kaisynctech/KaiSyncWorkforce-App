@@ -917,6 +917,7 @@ export default function PayslipDetailPage() {
       periodEnd: payment.period_end ?? '',
       hourlyRate: moneyValue(hourlyRateText),
       overtimeRate: moneyValue(overtimeRateText),
+      overtimeFactor: personPay.overtime_rate > 0 ? personPay.overtime_rate : otMultiplier,
       regular: moneyValue(lines.regular),
       overtime: moneyValue(lines.overtime),
       bonus: moneyValue(lines.bonus),
@@ -1351,7 +1352,9 @@ export default function PayslipDetailPage() {
                   {amountCell('uif')}
                 </tr>
                 <tr className="h-9">
-                  <td className="px-4 text-[13px] border-b border-divider">Overtime</td>
+                  <td className="px-4 text-[13px] border-b border-divider whitespace-nowrap">
+                    Overtime <span className="text-text-secondary">{String(Math.round((personPay.overtime_rate > 0 ? personPay.overtime_rate : otMultiplier) * 100) / 100)}</span>
+                  </td>
                   {amountCell('overtime')}
                   <td className="px-4 text-[13px] border-b border-l border-divider">PAYE</td>
                   {amountCell('paye')}
