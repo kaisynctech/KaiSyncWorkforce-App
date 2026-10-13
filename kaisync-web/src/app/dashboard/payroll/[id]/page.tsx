@@ -1,12 +1,14 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { Toggle } from '@/components/Toggle'
 import { savePayslipLines, type PayslipLineAmounts } from '@/lib/payroll'
+import { executeWithStepUp } from '@/lib/step-up'
+import { StepUpDialog } from '@/components/step-up-dialog'
 import { isUnpaidLeave } from '@/lib/payroll/leave-days'
 import { computeLeaveSummary, type LeaveSummary } from '@/lib/leave-policy'
 import { loadPayrollSettings } from '@/lib/payroll-settings'
@@ -96,6 +98,10 @@ type PersonPay = {
   bank_name: string | null
   bank_branch_code: string | null
   bank_account: string | null
+  account_type: string | null
+  employee_code: string | null
+  id_number: string | null
+  overtime_rate: number
 }
 
 type SlipLines = {
@@ -150,6 +156,10 @@ const EMPTY_PERSON_PAY: PersonPay = {
   bank_name: null,
   bank_branch_code: null,
   bank_account: null,
+  account_type: null,
+  employee_code: null,
+  id_number: null,
+  overtime_rate: 0,
 }
 
 function inPayPeriod(date: string | null, start?: string | null, end?: string | null): boolean {
@@ -266,7 +276,33 @@ export default function PayslipDetailPage() {
   const [companyName, setCompanyName] = useState('')
   const [companyAddress, setCompanyAddress] = useState('')
   const [homeAddress, setHomeAddress] = useState('')
+  const [bankName, setBankName] = useState('')
+  const [bankBranch, setBankBranch] = useState('')
+  const [bankAccount, setBankAccount] = useState('')
+  const [otMultiplier, setOtMultiplier] = useState(1.5)
+  const [stepUpOpen, setStepUpOpen] = useState(false)
+  const [stepUpBusy, setStepUpBusy] = useState(false)
+  const [stepUpError, setStepUpError] = useState<string | null>(null)
+  const stepUpResolverRef = useRef<((password: string | null) => void) | null>(null)
   const [leaveLines, setLeaveLines] = useState<{ start: string; end: string; type: string; unpaid: boolean }[]>([])
+
+  function promptStepUpPassword(): Promise<string | null> {
+    setStepUpError(null)
+    setStepUpBusy(false)
+    setStepUpOpen(true)
+    return new Promise(resolve => {
+      stepUpResolverRef.current = resolve
+    })
+  }
+
+  function finishStepUpPrompt(password: string | null) {
+    const resolve = stepUpResolverRef.current
+    stepUpResolverRef.current = null
+    setStepUpOpen(false)
+    setStepUpBusy(false)
+    setStepUpError(null)
+    resolve?.(password)
+  }
 
   useEffect(() => { load() }, [paymentId])
 
@@ -458,6 +494,7 @@ export default function PayslipDetailPage() {
     if (settingsRes.ok) {
       setUifRate(settingsRes.settings.uif_rate_percent > 0 ? settingsRes.settings.uif_rate_percent : 1)
       setUifCeiling(settingsRes.settings.uif_ceiling_monthly > 0 ? settingsRes.settings.uif_ceiling_monthly : 17712)
+      setOtMultiplier(settingsRes.settings.overtime_multiplier > 0 ? settingsRes.settings.overtime_multiplier : 1.5)
     }
 
     const year = (p.period_start ?? '').slice(0, 4)
@@ -477,7 +514,7 @@ export default function PayslipDetailPage() {
     const [{ data: person, error: personErr }, { data: company, error: companyErr }] = await Promise.all([
       supabase
         .from('employees')
-        .select('monthly_salary, hourly_rate, daily_rate, daily_hours, work_days_weekly, uif_fixed_amount, uif_rate_percent, uif_exempt, employment_date, termination_date, pay_full_monthly_salary, bank_name, bank_branch_code, bank_account, address')
+        .select('monthly_salary, hourly_rate, daily_rate, daily_hours, work_days_weekly, uif_fixed_amount, uif_rate_percent, uif_exempt, employment_date, termination_date, pay_full_monthly_salary, bank_name, bank_branch_code, bank_account, account_type, employee_code, id_number, overtime_rate, address')
         .eq('id', p.employee_id)
         .eq('company_id', p.company_id)
         .maybeSingle(),
@@ -514,7 +551,14 @@ export default function PayslipDetailPage() {
         bank_name: row.bank_name ?? null,
         bank_branch_code: row.bank_branch_code ?? null,
         bank_account: row.bank_account ?? null,
+        account_type: row.account_type ?? null,
+        employee_code: row.employee_code ?? null,
+        id_number: row.id_number ?? null,
+        overtime_rate: Number(row.overtime_rate) || 0,
       })
+      setBankName(row.bank_name ?? '')
+      setBankBranch(row.bank_branch_code ?? '')
+      setBankAccount(row.bank_account ?? '')
       setSalaryInput(monthly > 0 ? String(monthly) : '')
       setUifInput(row.uif_exempt ? '' : shownUif > 0 ? shownUif.toFixed(2) : '')
       setUifTouched(uifFixed > 0)
@@ -557,6 +601,53 @@ export default function PayslipDetailPage() {
     if (error) setErrorMsg(error.message)
   }
 
+  async function saveBank(next: { name: string; branch: string; account: string }) {
+    if (!payment) return
+    const name = next.name.trim()
+    const branch = next.branch.trim()
+    const account = next.account.trim()
+    if (
+      name === (personPay.bank_name ?? '') &&
+      branch === (personPay.bank_branch_code ?? '') &&
+      account === (personPay.bank_account ?? '')
+    ) return
+    setErrorMsg(null)
+    const supabase = createClient()
+    const result = await executeWithStepUp(
+      supabase,
+      payment.company_id,
+      async () => {
+        const { error } = await supabase.rpc('update_employee_banking', {
+          p_company_id: payment.company_id,
+          p_employee_id: payment.employee_id,
+          p_bank_name: name || null,
+          p_bank_branch_code: branch || null,
+          p_bank_account: account || null,
+          p_account_type: personPay.account_type,
+        })
+        if (error) return { ok: false as const, message: error.message }
+        return { ok: true as const, data: undefined }
+      },
+      promptStepUpPassword,
+    )
+    if (!result.ok) {
+      setErrorMsg(result.message)
+      setBankName(personPay.bank_name ?? '')
+      setBankBranch(personPay.bank_branch_code ?? '')
+      setBankAccount(personPay.bank_account ?? '')
+      return
+    }
+    setBankName(name)
+    setBankBranch(branch)
+    setBankAccount(account)
+    setPersonPay(current => ({
+      ...current,
+      bank_name: name || null,
+      bank_branch_code: branch || null,
+      bank_account: account || null,
+    }))
+  }
+
   async function saveLines(next: SlipLines, flags?: { payFull?: boolean; waive?: boolean }) {
     if (!payment || payment.status !== 'pending') return
     setBusy(true)
@@ -591,11 +682,20 @@ export default function PayslipDetailPage() {
       overtime_pay: moneyValue(next.overtime),
       bonus_amount: moneyValue(next.bonus),
     } : current)
-    setPersonPay(current => ({
-      ...current,
-      monthly_salary: moneyValue(next.regular),
-      uif_fixed_amount: moneyValue(next.uif),
-    }))
+    setPersonPay(current => {
+      const regular = moneyValue(next.regular)
+      const days = current.work_days_weekly > 0 ? current.work_days_weekly : 5
+      const hours = current.daily_hours > 0 ? current.daily_hours : 8
+      const daily = regular > 0 ? regular / ((days * 52) / 12) : current.daily_rate
+      const hourly = regular > 0 && hours > 0 ? daily / hours : current.hourly_rate
+      return {
+        ...current,
+        monthly_salary: regular,
+        uif_fixed_amount: moneyValue(next.uif),
+        daily_rate: daily,
+        hourly_rate: hourly,
+      }
+    })
   }
 
   if (loading) {
@@ -630,6 +730,25 @@ export default function PayslipDetailPage() {
   const netNow = Math.max(0, Math.round((grossNow - deductedNow) * 100) / 100)
   const paidTimeOff = leaveBalances.find(item => item.leave_type === 'Annual Leave')?.days_remaining
   const sickTimeOff = leaveBalances.find(item => item.leave_type === 'Sick Leave')?.days_remaining
+  const totalTimeOff = paidTimeOff != null && sickTimeOff != null ? paidTimeOff + sickTimeOff : null
+  const otFactor = personPay.overtime_rate > 0 ? personPay.overtime_rate : otMultiplier
+  const overtimeHourly = Math.round(personPay.hourly_rate * otFactor * 100) / 100
+  const bankField = (value: string, setValue: (next: string) => void, field: 'name' | 'branch' | 'account') => (
+    <input
+      type="text"
+      value={value}
+      onChange={e => setValue(e.target.value)}
+      onBlur={e => {
+        const typed = e.target.value
+        void saveBank({
+          name: field === 'name' ? typed : bankName,
+          branch: field === 'branch' ? typed : bankBranch,
+          account: field === 'account' ? typed : bankAccount,
+        })
+      }}
+      className="h-10 w-full bg-transparent text-[13px] text-text-primary outline-none"
+    />
+  )
   const amountCell = (key: keyof SlipLines) => (
     <td className="px-3 text-right whitespace-nowrap align-middle border-b border-divider">
       {canEdit ? (
@@ -894,15 +1013,13 @@ export default function PayslipDetailPage() {
             <table className="w-full mt-3">
               <tbody>
                 <tr className="border-b border-divider">
-                  <td className="py-2 pr-3 text-[13px] text-text-secondary w-[120px]">Employee</td>
-                  <td className="py-2 text-[14px] font-semibold text-text-primary">{empName}</td>
-                  <td className="py-2 pl-4 text-[13px] text-text-secondary w-[72px]">Date</td>
-                  <td className="py-2 text-right text-[13px] text-text-primary whitespace-nowrap">
-                    {payment.period_start ? fmtDate(payment.period_start) : '—'}
-                  </td>
+                  <td className="py-2 pr-3 text-[13px] text-text-secondary whitespace-nowrap w-[168px]">Employee name</td>
+                  <td className="py-2 pr-6 text-[14px] font-semibold text-text-primary">{empName}</td>
+                  <td className="py-2 pr-3 text-[13px] text-text-secondary whitespace-nowrap w-[168px] border-l border-divider pl-4">Employee number</td>
+                  <td className="py-2 text-[13px] text-text-primary whitespace-nowrap">{personPay.employee_code || '—'}</td>
                 </tr>
-                <tr>
-                  <td className="py-2 pr-3 text-[13px] text-text-secondary align-middle">Address</td>
+                <tr className="border-b border-divider">
+                  <td className="py-2 pr-3 text-[13px] text-text-secondary align-middle">Employee address</td>
                   <td className="py-2" colSpan={3}>
                     <input
                       type="text"
@@ -913,6 +1030,24 @@ export default function PayslipDetailPage() {
                       className="h-10 w-full bg-transparent text-[13px] text-text-primary outline-none"
                     />
                   </td>
+                </tr>
+                <tr className="border-b border-divider">
+                  <td className="py-2 pr-3 text-[13px] text-text-secondary whitespace-nowrap">Employee ID</td>
+                  <td className="py-2 pr-6 text-[13px] text-text-primary">{personPay.id_number || '—'}</td>
+                  <td className="py-2 pr-3 text-[13px] text-text-secondary whitespace-nowrap border-l border-divider pl-4">Employment date</td>
+                  <td className="py-2 text-[13px] text-text-primary whitespace-nowrap">{personPay.employment_date ? fmtDate(personPay.employment_date) : '—'}</td>
+                </tr>
+                <tr className="border-b border-divider">
+                  <td className="py-2 pr-3 text-[13px] text-text-secondary whitespace-nowrap">Pay period begin</td>
+                  <td className="py-2 pr-6 text-[13px] text-text-primary whitespace-nowrap">{payment.period_start ? fmtDate(payment.period_start) : '—'}</td>
+                  <td className="py-2 pr-3 text-[13px] text-text-secondary whitespace-nowrap border-l border-divider pl-4">Pay period end</td>
+                  <td className="py-2 text-[13px] text-text-primary whitespace-nowrap">{payment.period_end ? fmtDate(payment.period_end) : '—'}</td>
+                </tr>
+                <tr>
+                  <td className="py-2 pr-3 text-[13px] text-text-secondary whitespace-nowrap">Rate</td>
+                  <td className="py-2 pr-6 text-[13px] text-text-primary whitespace-nowrap">{fmtR(personPay.hourly_rate)}</td>
+                  <td className="py-2 pr-3 text-[13px] text-text-secondary whitespace-nowrap border-l border-divider pl-4">Overtime rate</td>
+                  <td className="py-2 text-[13px] text-text-primary whitespace-nowrap">{fmtR(overtimeHourly)}</td>
                 </tr>
               </tbody>
             </table>
@@ -973,37 +1108,33 @@ export default function PayslipDetailPage() {
               </tbody>
             </table>
           </div>
-          <div className="grid sm:grid-cols-3 border-t border-divider">
-            <div className="px-4 py-3">
-              <p className="text-[11px] text-text-secondary">Bank Name</p>
-              <p className="text-[13px] text-text-primary">{personPay.bank_name || '—'}</p>
-            </div>
-            <div className="px-4 py-3">
-              <p className="text-[11px] text-text-secondary">Branch Code</p>
-              <p className="text-[13px] text-text-primary">{personPay.bank_branch_code || '—'}</p>
-            </div>
-            <div className="px-4 py-3">
-              <p className="text-[11px] text-text-secondary">Account Number</p>
-              <p className="text-[13px] text-text-primary">{personPay.bank_account || '—'}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="card p-4 space-y-2">
-          <p className="section-label">TIME OFF BALANCE</p>
-          <table className="w-full">
+          <table className="w-full border-t border-divider">
+            <thead>
+              <tr className="bg-primary/10">
+                <th className="text-left px-4 py-2 text-[12px] font-semibold text-text-primary">Payment Information</th>
+                <th className="w-[14rem]" />
+                <th className="text-left px-4 py-2 text-[12px] font-semibold text-text-primary border-l border-divider">Time Off Balance</th>
+                <th className="w-[6rem]" />
+              </tr>
+            </thead>
             <tbody>
-              <tr className="border-b border-divider">
-                <td className="py-2 text-[13px] text-text-primary">Paid time off</td>
-                <td className="py-2 text-right text-[13px]">{paidTimeOff ?? '—'}</td>
+              <tr className="h-11">
+                <td className="px-4 text-[13px] border-b border-divider">Bank Name</td>
+                <td className="px-3 border-b border-divider">{bankField(bankName, setBankName, 'name')}</td>
+                <td className="px-4 text-[13px] border-b border-l border-divider">Paid time off balance</td>
+                <td className="px-4 text-right text-[13px] whitespace-nowrap border-b border-divider">{paidTimeOff ?? '—'}</td>
               </tr>
-              <tr className="border-b border-divider">
-                <td className="py-2 text-[13px] text-text-primary">Sick time</td>
-                <td className="py-2 text-right text-[13px]">{sickTimeOff ?? '—'}</td>
+              <tr className="h-11">
+                <td className="px-4 text-[13px] border-b border-divider">Branch Code</td>
+                <td className="px-3 border-b border-divider">{bankField(bankBranch, setBankBranch, 'branch')}</td>
+                <td className="px-4 text-[13px] border-b border-l border-divider">Sick time off balance</td>
+                <td className="px-4 text-right text-[13px] whitespace-nowrap border-b border-divider">{sickTimeOff ?? '—'}</td>
               </tr>
-              <tr>
-                <td className="py-2 text-[13px] text-text-primary">Total time off</td>
-                <td className="py-2 text-right text-[13px]">{paidTimeOff != null && sickTimeOff != null ? paidTimeOff + sickTimeOff : '—'}</td>
+              <tr className="h-11">
+                <td className="px-4 text-[13px]">Account Number</td>
+                <td className="px-3">{bankField(bankAccount, setBankAccount, 'account')}</td>
+                <td className="px-4 text-[13px] border-l border-divider">Total time off balance</td>
+                <td className="px-4 text-right text-[13px] whitespace-nowrap">{totalTimeOff ?? '—'}</td>
               </tr>
             </tbody>
           </table>
@@ -1066,6 +1197,17 @@ export default function PayslipDetailPage() {
           </div>
         </div>
       </div>
+      <StepUpDialog
+        open={stepUpOpen}
+        busy={stepUpBusy}
+        error={stepUpError}
+        message="Re-enter your password to save these bank details. This opens a 15-minute verification window."
+        onCancel={() => finishStepUpPrompt(null)}
+        onVerify={password => {
+          setStepUpBusy(true)
+          finishStepUpPrompt(password)
+        }}
+      />
     </div>
   )
 }
