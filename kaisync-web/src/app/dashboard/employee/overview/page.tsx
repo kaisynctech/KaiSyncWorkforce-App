@@ -699,7 +699,7 @@ export default function EmployeeOverviewPage() {
     if (mustAllow) setBranchStatus(null)
     setShowClockModal(true)
 
-    if (!mustAllow && !isClockedIn && !coordsRef.current) {
+    if (!coordsRef.current) {
       const read = beginLocationRead()
       void read.then(async result => {
         if (!result.ok) return
@@ -772,8 +772,7 @@ export default function EmployeeOverviewPage() {
   }
 
   async function submitClock() {
-    const enforcedOnOpen = !isClockedIn && employeeMustUseBranchGeofence(dispatchSettingsRef.current, enforceGeofenceRef.current)
-    const locationRead = !isClockedIn && !coordsRef.current ? beginLocationRead() : null
+    const locationRead = !coordsRef.current ? beginLocationRead() : null
     const empId  = empIdRef.current
     const compId = companyIdRef.current
     if (!empId || !compId) return
@@ -799,20 +798,20 @@ export default function EmployeeOverviewPage() {
     // Branch geofence hard-block on clock-IN
     let punchLat = coordsRef.current?.latitude ?? geoLat
     let punchLng = coordsRef.current?.longitude ?? geoLng
+    if ((punchLat == null || punchLng == null) && locationRead) {
+      const located = await locationRead
+      if (located.ok) {
+        punchLat = located.latitude
+        punchLng = located.longitude
+      } else if (!isClockedIn && employeeMustUseBranchGeofence(dispatchSettingsRef.current, enforceGeofenceRef.current)) {
+        setClockError(deviceLocationFailureMessage(located.reason))
+        setClockLoading(false)
+        clockInFlightRef.current = false
+        return
+      }
+    }
     if (!isClockedIn) {
       const enforced = employeeMustUseBranchGeofence(dispatchSettingsRef.current, enforceGeofenceRef.current)
-      if ((punchLat == null || punchLng == null) && locationRead) {
-        const located = await locationRead
-        if (located.ok) {
-          punchLat = located.latitude
-          punchLng = located.longitude
-        } else if (enforced) {
-          setClockError(deviceLocationFailureMessage(located.reason))
-          setClockLoading(false)
-          clockInFlightRef.current = false
-          return
-        }
-      }
       const branchResult = validateBranchClockIn({
         enforce: enforced,
         employeeBranch: employeeBranchRef.current,
