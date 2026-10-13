@@ -6,12 +6,13 @@ type Props = {
   open: boolean
   busy?: boolean
   error?: string | null
+  message?: string
   onCancel: () => void
   onVerify: (password: string) => void
 }
 
 /** Password re-entry modal for payroll (and other) step-up gates */
-export function StepUpDialog({ open, busy, error, onCancel, onVerify }: Props) {
+export function StepUpDialog({ open, busy, error, message, onCancel, onVerify }: Props) {
   const [password, setPassword] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -37,7 +38,7 @@ export function StepUpDialog({ open, busy, error, onCancel, onVerify }: Props) {
             Security verification
           </h2>
           <p className="text-[13px] text-text-secondary mt-1">
-            Re-enter your password to approve payments. This opens a 15-minute verification window.
+            {message ?? 'Re-enter your password to approve payments. This opens a 15-minute verification window.'}
           </p>
         </div>
 
