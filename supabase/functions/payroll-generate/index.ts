@@ -53,10 +53,11 @@ type EmployeeRow = EngineEmployee & {
 
 type RequestBody = {
   company_id: string
-  action: 'generate' | 'recalculate'
+  action: 'generate' | 'recalculate' | 'save_lines'
   period_start: string
   period_end: string
   payment_id?: string
+  lines?: Record<string, unknown>
   overrides?: {
     payFullBaseSalary?: boolean
     waivePenalties?: boolean
@@ -66,6 +67,43 @@ type RequestBody = {
     bonusAmount?: number | null
     bonusNote?: string | null
   }
+}
+
+function lineAmount(value: unknown): number {
+  const n = Number(value)
+  if (!Number.isFinite(n) || n < 0) return 0
+  return Math.round(n * 100) / 100
+}
+
+function totalsFromLines(raw: Record<string, unknown>) {
+  const regular = lineAmount(raw.regular)
+  const overtime = lineAmount(raw.overtime)
+  const bonus = lineAmount(raw.bonus)
+  const incentive = lineAmount(raw.incentive)
+  const refund = lineAmount(raw.refund)
+  const uif = lineAmount(raw.uif)
+  const paye = lineAmount(raw.paye)
+  const loanDeduction = lineAmount(raw.loanDeduction)
+  const loanBalance = lineAmount(raw.loanBalance)
+  const unpaidLeave = lineAmount(raw.unpaidLeave)
+  const gross = Math.round((regular + overtime + bonus + incentive + refund) * 100) / 100
+  const deductions = Math.round((uif + paye + loanDeduction + unpaidLeave) * 100) / 100
+  const net = Math.round(Math.max(0, gross - deductions) * 100) / 100
+  const saved = { regular, overtime, bonus, incentive, refund, uif, paye, loanDeduction, loanBalance, unpaidLeave }
+  const earnings = [
+    { label: 'Regular Earnings', amount: regular },
+    { label: 'Overtime', amount: overtime },
+    { label: 'Bonus', amount: bonus },
+    { label: 'Incentive Pay', amount: incentive },
+    { label: 'Refund', amount: refund },
+  ].filter(line => line.amount > 0)
+  const deductionLines = [
+    { label: 'UIF', amount: uif },
+    { label: 'PAYE', amount: paye },
+    { label: 'Loan Deduction', amount: loanDeduction },
+    { label: 'Unpaid Leave', amount: unpaidLeave },
+  ].filter(line => line.amount > 0)
+  return { saved, gross, deductions, net, regular, overtime, bonus, paye, loanDeduction, earnings, deductionLines }
 }
 
 function hasPayRate(emp: EmployeeRow): boolean {
@@ -310,7 +348,7 @@ async function handleGenerate(
     admin.from('employees').select(EMP_SELECT).eq('company_id', companyId).eq('is_active', true),
     admin
       .from('payment_approvals')
-      .select('id, employee_id, status, pay_full_base_salary, waive_penalties, manual_paye_override, manual_adjustment, adjustment_note, bonus_amount, bonus_note, audit_log')
+      .select('id, employee_id, status, pay_full_base_salary, waive_penalties, manual_paye_override, manual_adjustment, adjustment_note, bonus_amount, bonus_note, payslip_lines, audit_log')
       .eq('company_id', companyId)
       .gte('period_start', periodStart)
       .lte('period_start', periodEnd)
@@ -339,6 +377,7 @@ async function handleGenerate(
     adjustment_note: string | null
     bonus_amount: number | null
     bonus_note: string | null
+    payslip_lines: Record<string, unknown> | null
     audit_log: unknown
   }
   const existingByEmployee = new Map<string, ExistingPay>()
@@ -432,8 +471,27 @@ async function handleGenerate(
 
     if (existingPay) {
       const priorAudit = Array.isArray(existingPay.audit_log) ? existingPay.audit_log : []
+      const typed = existingPay.payslip_lines && typeof existingPay.payslip_lines === 'object'
+        ? totalsFromLines(existingPay.payslip_lines)
+        : null
       const { error: updateErr } = await admin.from('payment_approvals').update({
         ...figures,
+        ...(typed
+          ? {
+              regular_pay: typed.regular,
+              overtime_pay: typed.overtime,
+              base_salary: typed.regular,
+              gross_pay: typed.gross,
+              deductions: typed.deductions,
+              net_pay: typed.net,
+              bonus_amount: typed.bonus,
+              manual_adjustment: typed.loanDeduction,
+              manual_paye_override: typed.paye,
+              earnings_breakdown: typed.earnings,
+              deductions_breakdown: typed.deductionLines,
+              payslip_lines: typed.saved,
+            }
+          : {}),
         audit_log: [
           ...priorAudit,
           { action: 'refreshed', detail: `Month ${periodStart} to ${periodEnd} by user ${actorUserId}`, at: new Date().toISOString() },
@@ -615,6 +673,112 @@ async function handleRecalculate(
   return json({ ok: true })
 }
 
+async function handleSaveLines(
+  admin: SupabaseClient,
+  body: RequestBody,
+  actorUserId: string
+) {
+  const { company_id: companyId, payment_id: paymentId } = body
+  if (!paymentId) return json({ ok: false, error: 'Missing payment_id.' }, 400)
+  if (!body.lines || typeof body.lines !== 'object') return json({ ok: false, error: 'Missing payslip amounts.' }, 400)
+
+  const { data: payment, error: payErr } = await admin
+    .from('payment_approvals')
+    .select('id, employee_id, company_id, status, period_start, period_end, audit_log')
+    .eq('id', paymentId)
+    .eq('company_id', companyId)
+    .maybeSingle()
+  if (payErr) return json({ ok: false, error: payErr.message }, 500)
+  if (!payment) return json({ ok: false, error: 'Payslip not found.' }, 404)
+  if (payment.status !== 'pending') return json({ ok: false, error: 'Only a pending payslip can be edited.' }, 400)
+
+  const { data: lockRow, error: lockErr } = await admin
+    .from('payroll_period_locks')
+    .select('company_id')
+    .eq('company_id', companyId)
+    .eq('period_start', payment.period_start)
+    .eq('period_end', payment.period_end)
+    .maybeSingle()
+  if (lockErr) return json({ ok: false, error: lockErr.message }, 500)
+  if (lockRow) return json({ ok: false, error: 'This payroll period is locked.' }, 409)
+
+  const totals = totalsFromLines(body.lines)
+  const { data: emp, error: empErr } = await admin
+    .from('employees')
+    .select('work_days_weekly, daily_hours, daily_rate, hourly_rate')
+    .eq('id', payment.employee_id)
+    .eq('company_id', companyId)
+    .maybeSingle()
+  if (empErr) return json({ ok: false, error: empErr.message }, 500)
+
+  const days = Number(emp?.work_days_weekly) || 5
+  const hours = Number(emp?.daily_hours) || 8
+  const daily = totals.regular > 0 ? totals.regular / ((days * 52) / 12) : Number(emp?.daily_rate) || 0
+  const hourly = totals.regular > 0 && hours > 0 ? daily / hours : Number(emp?.hourly_rate) || 0
+  const employeeUpdate = totals.regular > 0
+    ? { monthly_salary: totals.regular, daily_rate: daily, hourly_rate: hourly, uif_fixed_amount: lineAmount(body.lines.uif) }
+    : { monthly_salary: totals.regular, uif_fixed_amount: lineAmount(body.lines.uif) }
+  const { error: salaryErr } = await admin
+    .from('employees')
+    .update(employeeUpdate)
+    .eq('id', payment.employee_id)
+    .eq('company_id', companyId)
+  if (salaryErr) return json({ ok: false, error: salaryErr.message }, 500)
+
+  const history = await loadSalaryHistory(admin, companyId, payment.employee_id)
+  const historyErr = await recordSalaryChange(
+    admin,
+    companyId,
+    payment.employee_id,
+    totals.regular,
+    hourly,
+    daily,
+    payment.period_end,
+    history
+  )
+  if (historyErr) return json({ ok: false, error: historyErr }, 500)
+
+  const priorAudit = Array.isArray(payment.audit_log) ? payment.audit_log : []
+  const { error: updErr } = await admin
+    .from('payment_approvals')
+    .update({
+      regular_pay: totals.regular,
+      overtime_pay: totals.overtime,
+      base_salary: totals.regular,
+      gross_pay: totals.gross,
+      deductions: totals.deductions,
+      net_pay: totals.net,
+      bonus_amount: totals.bonus,
+      bonus_note: totals.bonus > 0 ? 'Bonus' : null,
+      manual_adjustment: totals.loanDeduction,
+      adjustment_note: totals.loanDeduction > 0 ? 'Loan Deduction' : null,
+      manual_paye_override: totals.paye,
+      earnings_breakdown: totals.earnings,
+      deductions_breakdown: totals.deductionLines,
+      payslip_lines: totals.saved,
+      pay_full_base_salary: body.overrides?.payFullBaseSalary ?? false,
+      waive_penalties: body.overrides?.waivePenalties ?? false,
+      audit_log: [
+        ...priorAudit,
+        {
+          action: 'amounts updated',
+          detail: `Payslip amounts edited by user ${actorUserId}. absence pay ${body.overrides?.waivePenalties ? 'on' : 'off'}`,
+          at: new Date().toISOString(),
+        },
+      ],
+    })
+    .eq('id', paymentId)
+    .eq('company_id', companyId)
+  if (updErr) return json({ ok: false, error: updErr.message }, 500)
+
+  return json({
+    ok: true,
+    gross_pay: totals.gross,
+    deductions: totals.deductions,
+    net_pay: totals.net,
+  })
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
@@ -640,8 +804,8 @@ Deno.serve(async (req: Request) => {
     if (!body.company_id || !body.action) {
       return json({ error: 'Missing company_id or action' }, 400)
     }
-    if (body.action !== 'generate' && body.action !== 'recalculate') {
-      return json({ error: 'action must be "generate" or "recalculate"' }, 400)
+    if (body.action !== 'generate' && body.action !== 'recalculate' && body.action !== 'save_lines') {
+      return json({ error: 'action must be "generate", "recalculate", or "save_lines"' }, 400)
     }
     if (body.action === 'generate' && (!body.period_start || !body.period_end)) {
       return json({ error: 'Missing period_start or period_end' }, 400)
@@ -665,6 +829,9 @@ Deno.serve(async (req: Request) => {
 
     if (body.action === 'generate') {
       return await handleGenerate(admin, userClient, body, user.id)
+    }
+    if (body.action === 'save_lines') {
+      return await handleSaveLines(admin, body, user.id)
     }
     return await handleRecalculate(admin, userClient, body, user.id)
   } catch (err) {

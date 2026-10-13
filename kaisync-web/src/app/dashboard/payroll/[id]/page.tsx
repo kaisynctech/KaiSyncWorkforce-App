@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { Toggle } from '@/components/Toggle'
-import { recalculatePayslip } from '@/lib/payroll'
+import { savePayslipLines, type PayslipLineAmounts } from '@/lib/payroll'
 import { isUnpaidLeave } from '@/lib/payroll/leave-days'
 import { computeLeaveSummary, type LeaveSummary } from '@/lib/leave-policy'
 import { loadPayrollSettings } from '@/lib/payroll-settings'
@@ -98,6 +98,43 @@ type PersonPay = {
   bank_account: string | null
 }
 
+type SlipLines = {
+  regular: string
+  overtime: string
+  bonus: string
+  incentive: string
+  refund: string
+  uif: string
+  paye: string
+  loanDeduction: string
+  loanBalance: string
+  unpaidLeave: string
+}
+
+function moneyText(value: number): string {
+  const n = Number.isFinite(value) ? Math.max(0, value) : 0
+  return n.toFixed(2)
+}
+
+function moneyValue(value: string): number {
+  const n = Number(value)
+  if (!Number.isFinite(n) || n < 0) return 0
+  return Math.round(n * 100) / 100
+}
+
+const EMPTY_LINES: SlipLines = {
+  regular: '0.00',
+  overtime: '0.00',
+  bonus: '0.00',
+  incentive: '0.00',
+  refund: '0.00',
+  uif: '0.00',
+  paye: '0.00',
+  loanDeduction: '0.00',
+  loanBalance: '0.00',
+  unpaidLeave: '0.00',
+}
+
 const EMPTY_PERSON_PAY: PersonPay = {
   monthly_salary: 0,
   hourly_rate: 0,
@@ -120,21 +157,8 @@ function inPayPeriod(date: string | null, start?: string | null, end?: string | 
   return date >= start && date <= end
 }
 
-function ratesFromSalary(salary: number, daysPerWeek: number, dailyHours: number): { daily: number; hourly: number } {
-  const days = daysPerWeek > 0 ? daysPerWeek : 5
-  const hours = dailyHours > 0 ? dailyHours : 8
-  const daily = salary / ((days * 52) / 12)
-  return { daily, hourly: daily / hours }
-}
-
 function absencePayWasChosen(audit: PayrollAuditEntry[] | null | undefined): boolean {
   return (audit ?? []).some(entry => (entry.detail ?? '').includes('absence pay'))
-}
-
-function lineAmount(lines: PayrollLineItem[], label: string): number {
-  const wanted = label.toLowerCase()
-  const found = lines.find(line => line.label.trim().toLowerCase() === wanted || line.label.trim().toLowerCase().startsWith(wanted))
-  return found?.amount ?? 0
 }
 
 function SessionTable({ rows }: { rows: PunchSessionRow[] }) {
@@ -237,6 +261,7 @@ export default function PayslipDetailPage() {
   const [uifCeiling, setUifCeiling] = useState(17712)
   const [addingExtra, setAddingExtra] = useState(false)
   const [leaveBalances, setLeaveBalances] = useState<LeaveSummary[]>([])
+  const [lines, setLines] = useState<SlipLines>(EMPTY_LINES)
   const [personPay, setPersonPay] = useState<PersonPay>(EMPTY_PERSON_PAY)
   const [leaveLines, setLeaveLines] = useState<{ start: string; end: string; type: string; unpaid: boolean }[]>([])
 
@@ -480,90 +505,68 @@ export default function PayslipDetailPage() {
       setUifTouched(uifFixed > 0)
     }
 
+    const savedLines = (p as EmployeePayment & { payslip_lines?: Partial<PayslipLineAmounts> | null }).payslip_lines
+    const uifLine = (p.deductions_breakdown ?? []).find(line => line.label.trim().toLowerCase() === 'uif')?.amount ?? 0
+    const payeLine = (p.deductions_breakdown ?? []).find(line => line.label.trim().toLowerCase() === 'paye')?.amount ?? 0
+    const unpaidLine = (p.deductions_breakdown ?? []).find(line => line.label.trim().toLowerCase().startsWith('unpaid leave'))?.amount ?? 0
+    const picked = (saved: number | undefined, fallback: number) => moneyText(saved ?? fallback)
+    const monthlySalary = person ? Number((person as PersonPay).monthly_salary) || 0 : 0
+    const uifFixedAmount = person ? Number((person as PersonPay).uif_fixed_amount) || 0 : 0
+    setLines({
+      regular: picked(savedLines?.regular, Number(p.regular_pay) || monthlySalary),
+      overtime: picked(savedLines?.overtime, Number(p.overtime_pay) || 0),
+      bonus: picked(savedLines?.bonus, Number(p.bonus_amount) || 0),
+      incentive: picked(savedLines?.incentive, 0),
+      refund: picked(savedLines?.refund, 0),
+      uif: picked(savedLines?.uif, uifFixedAmount > 0 ? uifFixedAmount : uifLine),
+      paye: picked(savedLines?.paye, p.manual_paye_override ?? payeLine),
+      loanDeduction: picked(savedLines?.loanDeduction, Number(p.manual_adjustment) || 0),
+      loanBalance: picked(savedLines?.loanBalance, 0),
+      unpaidLeave: picked(savedLines?.unpaidLeave, unpaidLine),
+    })
+
     setLoading(false)
   }
 
-  async function applyPayslip() {
-    if (!payment || payment.status !== 'pending' || !payment.period_start || !payment.period_end) return
+  async function saveLines(next: SlipLines, flags?: { payFull?: boolean; waive?: boolean }) {
+    if (!payment || payment.status !== 'pending') return
     setBusy(true)
     setErrorMsg(null)
     const supabase = createClient()
-
-    const salary = salaryInput.trim() === '' ? 0 : Number(salaryInput)
-    const typedUif = uifInput.trim() === '' ? 0 : Number(uifInput)
-    const saveFixedUif = personPay.uif_exempt ? 0 : (uifTouched || personPay.uif_fixed_amount > 0 ? typedUif : 0)
-    if (!Number.isFinite(salary) || salary < 0) {
-      setBusy(false)
-      setErrorMsg('Enter a full month salary of zero or more.')
-      return
-    }
-    if (!Number.isFinite(typedUif) || typedUif < 0) {
-      setBusy(false)
-      setErrorMsg('Enter a UIF amount of zero or more.')
-      return
-    }
-
-    const rates = salary > 0
-      ? ratesFromSalary(salary, personPay.work_days_weekly, personPay.daily_hours)
-      : { daily: personPay.daily_rate, hourly: personPay.hourly_rate }
-    const employeeUpdate = salary > 0
-      ? { monthly_salary: salary, daily_rate: rates.daily, hourly_rate: rates.hourly, uif_fixed_amount: saveFixedUif }
-      : { monthly_salary: salary, uif_fixed_amount: saveFixedUif }
-    const { error: empErr } = await supabase
-      .from('employees')
-      .update(employeeUpdate)
-      .eq('id', payment.employee_id)
-      .eq('company_id', payment.company_id)
-    if (empErr) {
-      setBusy(false)
-      setErrorMsg(empErr.message)
-      return
-    }
-
-    const { data: lockRow, error: lockErr } = await supabase
-      .from('payroll_period_locks')
-      .select('company_id')
-      .eq('company_id', payment.company_id)
-      .eq('period_start', payment.period_start)
-      .eq('period_end', payment.period_end)
-      .maybeSingle()
-    if (lockErr) {
-      setBusy(false)
-      setErrorMsg(lockErr.message)
-      return
-    }
-    if (lockRow) {
-      setBusy(false)
-      setErrorMsg('This payroll period is locked and cannot be recalculated.')
-      return
-    }
-
-    const result = await recalculatePayslip(supabase, payment.company_id, paymentId, {
-      payFullBaseSalary: payFullSalary,
-      waivePenalties,
-      manualPayeOverride: manualPaye ? parseFloat(manualPaye) : null,
-      manualAdjustment: extraDeduction ? parseFloat(extraDeduction) : null,
-      adjustmentNote: adjustmentNote.trim() || null,
-      bonusAmount: bonusAmount ? parseFloat(bonusAmount) : null,
-      bonusNote: bonusAmount ? (bonusNote.trim() || 'Bonus') : null,
+    const result = await savePayslipLines(supabase, payment.company_id, paymentId, {
+      regular: moneyValue(next.regular),
+      overtime: moneyValue(next.overtime),
+      bonus: moneyValue(next.bonus),
+      incentive: moneyValue(next.incentive),
+      refund: moneyValue(next.refund),
+      uif: moneyValue(next.uif),
+      paye: moneyValue(next.paye),
+      loanDeduction: moneyValue(next.loanDeduction),
+      loanBalance: moneyValue(next.loanBalance),
+      unpaidLeave: moneyValue(next.unpaidLeave),
+    }, {
+      payFullBaseSalary: flags?.payFull ?? payFullSalary,
+      waivePenalties: flags?.waive ?? waivePenalties,
     })
-    // Persist note fields separately (engine doesn't write notes)
-    const { error: noteErr } = await supabase.from('payment_approvals').update({
-      adjustment_note: adjustmentNote || null,
-      bonus_note: bonusAmount ? (bonusNote.trim() || 'Bonus') : null,
-    }).eq('id', paymentId)
-
     setBusy(false)
     if (!result.ok) {
       setErrorMsg(result.message)
       return
     }
-    if (noteErr) {
-      setErrorMsg(`Recalculated, but notes failed to save: ${noteErr.message}`)
-      await load()
-      return
-    }
-    await load()
+    setPayment(current => current ? {
+      ...current,
+      gross_pay: result.data.gross_pay,
+      net_pay: result.data.net_pay,
+      deductions: result.data.deductions,
+      regular_pay: moneyValue(next.regular),
+      overtime_pay: moneyValue(next.overtime),
+      bonus_amount: moneyValue(next.bonus),
+    } : current)
+    setPersonPay(current => ({
+      ...current,
+      monthly_salary: moneyValue(next.regular),
+      uif_fixed_amount: moneyValue(next.uif),
+    }))
   }
 
   if (loading) {
@@ -590,16 +593,38 @@ export default function PayslipDetailPage() {
   const joinedThisMonth = inPayPeriod(personPay.employment_date, payment.period_start, payment.period_end)
   const leftThisMonth = inPayPeriod(personPay.termination_date, payment.period_start, payment.period_end)
   const paysFullMonth = payFullSalary || personPay.pay_full_monthly_salary
-  const uifOnSlip = deductionLines.find(line => line.label.trim().toLowerCase() === 'uif')
-  const payeOnSlip = lineAmount(deductionLines, 'paye')
-  const unpaidOnSlip = lineAmount(deductionLines, 'unpaid leave')
   const overtimeRows = days.filter(day => !day.isAbsentDay && !day.isLeaveDay && day.overtimeHours > 0)
   const absentRows = days.filter(day => day.isAbsentDay)
   const leaveDayRows = days.filter(day => day.isLeaveDay)
-  const extraOpen = addingExtra || Boolean(adjustmentNote.trim()) || Boolean(extraDeduction)
+  const grossNow = moneyValue(lines.regular) + moneyValue(lines.overtime) + moneyValue(lines.bonus) + moneyValue(lines.incentive) + moneyValue(lines.refund)
+  const deductedNow = moneyValue(lines.uif) + moneyValue(lines.paye) + moneyValue(lines.loanDeduction) + moneyValue(lines.unpaidLeave)
+  const netNow = Math.max(0, Math.round((grossNow - deductedNow) * 100) / 100)
   const paidTimeOff = leaveBalances.find(item => item.leave_type === 'Annual Leave')?.days_remaining
   const sickTimeOff = leaveBalances.find(item => item.leave_type === 'Sick Leave')?.days_remaining
-  const inputClass = 'dark-entry w-full h-9 px-2 text-[13px]'
+  const amountCell = (key: keyof SlipLines) => (
+    <td className="px-3 text-right whitespace-nowrap align-middle border-b border-divider">
+      {canEdit ? (
+        <span className="inline-flex items-center justify-end gap-1">
+          <span className="text-[13px] text-text-secondary">R</span>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={lines[key]}
+            onChange={e => setLines(current => ({ ...current, [key]: e.target.value }))}
+            onBlur={e => {
+              const next = { ...lines, [key]: moneyText(moneyValue(e.target.value)) }
+              setLines(next)
+              void saveLines(next)
+            }}
+            className="h-10 w-[7rem] bg-transparent text-right text-[13px] text-text-primary outline-none"
+          />
+        </span>
+      ) : (
+        <span className="text-[13px]">{fmtR(moneyValue(lines[key]))}</span>
+      )}
+    </td>
+  )
 
   return (
     <div className="h-full flex flex-col">
@@ -711,112 +736,6 @@ export default function PayslipDetailPage() {
           </table>
         </div>
 
-        <div className="card p-4 space-y-4">
-          <div>
-            <p className="section-label">SALARY AND DEDUCTIONS</p>
-            <p className="text-[12px] text-text-secondary mt-1">Full salary and UIF are saved on the person. A bonus or extra deduction applies to this payslip.</p>
-          </div>
-          {canEdit ? (
-            <div className="space-y-3">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="block">
-                  <span className="text-[12px] text-text-secondary">Full salary</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={salaryInput}
-                    onChange={e => {
-                      const next = e.target.value
-                      setSalaryInput(next)
-                      if (!uifTouched && !personPay.uif_exempt) {
-                        const salary = Number(next)
-                        const rate = personPay.uif_rate_percent > 0 ? personPay.uif_rate_percent : uifRate
-                        if (Number.isFinite(salary) && salary > 0 && rate > 0) {
-                          const base = Math.min(salary, uifCeiling)
-                          setUifInput(((base * rate) / 100).toFixed(2))
-                        }
-                      }
-                    }}
-                    className={`${inputClass} mt-1`}
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-[12px] text-text-secondary">UIF amount</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={personPay.uif_exempt ? '' : uifInput}
-                    placeholder={personPay.uif_exempt ? 'Exempt' : ''}
-                    disabled={personPay.uif_exempt}
-                    onChange={e => { setUifTouched(true); setUifInput(e.target.value) }}
-                    className={`${inputClass} mt-1`}
-                  />
-                </label>
-              </div>
-              <label className="block sm:max-w-xs">
-                <span className="text-[12px] text-text-secondary">Bonus</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={bonusAmount}
-                  onChange={e => setBonusAmount(e.target.value)}
-                  className={`${inputClass} mt-1`}
-                />
-              </label>
-              {extraOpen ? (
-                <div className="grid gap-3 sm:grid-cols-[1fr_180px_auto] sm:items-end">
-                  <label className="block">
-                    <span className="text-[12px] text-text-secondary">Deduction name</span>
-                    <input type="text" value={adjustmentNote} onChange={e => setAdjustmentNote(e.target.value)} placeholder="Loan deduction" className={`${inputClass} mt-1`} />
-                  </label>
-                  <label className="block">
-                    <span className="text-[12px] text-text-secondary">Amount</span>
-                    <input type="number" min="0" step="0.01" value={extraDeduction} onChange={e => setExtraDeduction(e.target.value)} className={`${inputClass} mt-1`} />
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => { setAddingExtra(false); setAdjustmentNote(''); setExtraDeduction('') }}
-                    className="h-9 px-3 text-[12px] text-text-secondary"
-                  >
-                    Remove
-                  </button>
-                </div>
-              ) : (
-                <button type="button" onClick={() => setAddingExtra(true)} className="inline-flex items-center gap-1 h-9 px-2 text-[13px] text-primary font-medium">
-                  <span className="material-icons text-[18px]">add</span>
-                  Add extra deduction
-                </button>
-              )}
-            </div>
-          ) : (
-            <table className="w-full">
-              <tbody>
-                <tr className="border-b border-divider">
-                  <td className="py-2 text-[13px] text-text-primary">Full salary</td>
-                  <td className="py-2 text-right text-[13px]">{fmtR(personPay.monthly_salary)}</td>
-                </tr>
-                <tr className="border-b border-divider">
-                  <td className="py-2 text-[13px] text-text-primary">UIF amount</td>
-                  <td className="py-2 text-right text-[13px]">{personPay.uif_exempt ? 'Exempt' : uifInput ? fmtR(Number(uifInput)) : ''}</td>
-                </tr>
-                <tr className="border-b border-divider">
-                  <td className="py-2 text-[13px] text-text-primary">Bonus</td>
-                  <td className="py-2 text-right text-[13px]">{bonusAmount ? fmtR(Number(bonusAmount)) : ''}</td>
-                </tr>
-                {(adjustmentNote || extraDeduction) && (
-                  <tr>
-                    <td className="py-2 text-[13px] text-text-primary">{adjustmentNote || 'Extra deduction'}</td>
-                    <td className="py-2 text-right text-[13px]">{extraDeduction ? fmtR(Number(extraDeduction)) : ''}</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          )}
-        </div>
-
         <div className="card p-4 space-y-3">
           <div>
             <p className="section-label">OVERTIME</p>
@@ -837,7 +756,7 @@ export default function PayslipDetailPage() {
             </div>
             <div className="flex items-center gap-2 shrink-0">
               <span className="text-[13px] text-text-primary">Pay these absent days</span>
-              <Toggle checked={waivePenalties} onChange={setWaivePenalties} disabled={!canEdit} />
+              <Toggle checked={waivePenalties} onChange={v => { setWaivePenalties(v); void saveLines(lines, { waive: v }) }} disabled={!canEdit} />
             </div>
           </div>
           {!daysLoading && <SessionTable rows={absentRows} />}
@@ -899,13 +818,8 @@ export default function PayslipDetailPage() {
                   : 'Use this when they joined or left mid-month and should still receive the full salary.'}
               </p>
             </div>
-            <Toggle checked={payFullSalary || personPay.pay_full_monthly_salary} onChange={setPayFullSalary} disabled={!canEdit || personPay.pay_full_monthly_salary} />
+            <Toggle checked={payFullSalary || personPay.pay_full_monthly_salary} onChange={v => { setPayFullSalary(v); void saveLines(lines, { payFull: v }) }} disabled={!canEdit || personPay.pay_full_monthly_salary} />
           </div>
-          {canEdit && (
-            <button onClick={applyPayslip} disabled={busy} className="btn-primary w-full h-11 text-[14px]">
-              {busy ? 'Updating…' : 'Update payslip'}
-            </button>
-          )}
         </div>
         </div>
 
@@ -943,124 +857,96 @@ export default function PayslipDetailPage() {
           <div className="px-4 pt-4 pb-2">
             <p className="section-label">PAYSLIP</p>
           </div>
-          <div className="grid md:grid-cols-2">
-            <table className="w-full">
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse" style={{ minWidth: 720 }}>
               <thead>
                 <tr className="bg-primary/10">
                   <th className="text-left px-4 py-2 text-[12px] font-semibold text-text-primary">Earnings</th>
-                  <th className="w-8" />
+                  <th className="text-right px-4 py-2 text-[12px] font-semibold text-text-primary w-[9.5rem]" />
+                  <th className="text-left px-4 py-2 text-[12px] font-semibold text-text-primary border-l border-divider">Deductions</th>
+                  <th className="text-right px-4 py-2 text-[12px] font-semibold text-text-primary w-[9.5rem]" />
                 </tr>
               </thead>
               <tbody>
-                <tr className="border-b border-divider">
-                  <td className="px-4 py-2 text-[13px]">Regular Earnings</td>
-                  <td className="px-4 py-2 text-right text-[13px]">{fmtR(payment.regular_pay ?? 0)}</td>
+                <tr className="h-11">
+                  <td className="px-4 text-[13px] border-b border-divider">Regular Earnings</td>
+                  {amountCell('regular')}
+                  <td className="px-4 text-[13px] border-b border-l border-divider">UIF</td>
+                  {amountCell('uif')}
                 </tr>
-                <tr className="border-b border-divider">
-                  <td className="px-4 py-2 text-[13px]">Overtime{(payment.overtime_hours ?? 0) > 0 ? ` (${payment.overtime_hours} hours)` : ''}</td>
-                  <td className="px-4 py-2 text-right text-[13px]">{(payment.overtime_pay ?? 0) > 0 ? fmtR(payment.overtime_pay ?? 0) : ''}</td>
+                <tr className="h-11">
+                  <td className="px-4 text-[13px] border-b border-divider">Overtime</td>
+                  {amountCell('overtime')}
+                  <td className="px-4 text-[13px] border-b border-l border-divider">PAYE</td>
+                  {amountCell('paye')}
                 </tr>
-                <tr className="border-b border-divider">
-                  <td className="px-4 py-2 text-[13px]">Bonus</td>
-                  <td className="px-4 py-2 text-right text-[13px]">{(payment.bonus_amount ?? 0) > 0 ? fmtR(payment.bonus_amount ?? 0) : ''}</td>
+                <tr className="h-11">
+                  <td className="px-4 text-[13px] border-b border-divider">Bonus</td>
+                  {amountCell('bonus')}
+                  <td className="px-4 text-[13px] border-b border-l border-divider">Loan Deduction</td>
+                  {amountCell('loanDeduction')}
                 </tr>
-                <tr className="border-b border-divider">
-                  <td className="px-4 py-2 text-[13px]">Incentive Pay</td>
-                  <td className="px-4 py-2 text-right text-[13px]" />
+                <tr className="h-11">
+                  <td className="px-4 text-[13px] border-b border-divider">Incentive Pay</td>
+                  {amountCell('incentive')}
+                  <td className="px-4 text-[13px] border-b border-l border-divider">Loan Balance</td>
+                  {amountCell('loanBalance')}
                 </tr>
-                <tr className="border-b border-divider">
-                  <td className="px-4 py-2 text-[13px]">Refund</td>
-                  <td className="px-4 py-2 text-right text-[13px]" />
+                <tr className="h-11">
+                  <td className="px-4 text-[13px] border-b border-divider">Refund</td>
+                  {amountCell('refund')}
+                  <td className="px-4 text-[13px] border-b border-l border-divider">Unpaid Leave</td>
+                  {amountCell('unpaidLeave')}
                 </tr>
-                <tr className="border-b border-divider font-semibold">
-                  <td className="px-4 py-2 text-[13px]">Gross Salary</td>
-                  <td className="px-4 py-2 text-right text-[13px]">{fmtR(payment.gross_pay)}</td>
+                <tr className="h-11 font-semibold">
+                  <td className="px-4 text-[13px] border-b border-divider">Gross Salary</td>
+                  <td className="px-4 text-right text-[13px] whitespace-nowrap border-b border-divider">{fmtR(grossNow)}</td>
+                  <td className="px-4 text-[13px] border-b border-l border-divider">Total Deduction</td>
+                  <td className="px-4 text-right text-[13px] whitespace-nowrap border-b border-divider">{fmtR(deductedNow)}</td>
                 </tr>
-                <tr className="font-semibold">
-                  <td className="px-4 py-2 text-[13px]">Current NET Salary</td>
-                  <td className="px-4 py-2 text-right text-[13px]">{fmtR(payment.net_pay)}</td>
-                </tr>
-              </tbody>
-            </table>
-            <table className="w-full border-t md:border-t-0 md:border-l border-divider">
-              <thead>
-                <tr className="bg-primary/10">
-                  <th className="text-left px-4 py-2 text-[12px] font-semibold text-text-primary">Deductions</th>
-                  <th className="w-8" />
-                </tr>
-              </thead>
-              <tbody>
-                <tr className="border-b border-divider">
-                  <td className="px-4 py-2 text-[13px]">UIF</td>
-                  <td className="px-4 py-2 text-right text-[13px]">{uifOnSlip && uifOnSlip.amount > 0 ? fmtR(uifOnSlip.amount) : ''}</td>
-                </tr>
-                <tr className="border-b border-divider">
-                  <td className="px-4 py-2 text-[13px]">PAYE</td>
-                  <td className="px-4 py-2 text-right text-[13px]">{payeOnSlip > 0 ? fmtR(payeOnSlip) : ''}</td>
-                </tr>
-                <tr className="border-b border-divider">
-                  <td className="px-4 py-2 text-[13px]">{adjustmentNote.trim() || 'Loan Deduction'}</td>
-                  <td className="px-4 py-2 text-right text-[13px]">{(payment.manual_adjustment ?? 0) > 0 ? fmtR(payment.manual_adjustment ?? 0) : ''}</td>
-                </tr>
-                <tr className="border-b border-divider">
-                  <td className="px-4 py-2 text-[13px]">Loan Balance</td>
-                  <td className="px-4 py-2 text-right text-[13px]" />
-                </tr>
-                <tr className="border-b border-divider">
-                  <td className="px-4 py-2 text-[13px]">Unpaid Leave</td>
-                  <td className="px-4 py-2 text-right text-[13px]">{unpaidOnSlip > 0 ? fmtR(unpaidOnSlip) : ''}</td>
-                </tr>
-                <tr className="font-semibold">
-                  <td className="px-4 py-2 text-[13px]">Total Deduction</td>
-                  <td className="px-4 py-2 text-right text-[13px]">{fmtR(payment.deductions ?? 0)}</td>
+                <tr className="h-11 font-semibold">
+                  <td className="px-4 text-[13px]">Current NET Salary</td>
+                  <td className="px-4 text-right text-[13px] whitespace-nowrap">{fmtR(netNow)}</td>
+                  <td className="border-l border-divider" />
+                  <td />
                 </tr>
               </tbody>
             </table>
           </div>
-          <div className="grid md:grid-cols-2 border-t border-divider">
-            <table className="w-full">
-              <thead>
-                <tr className="bg-primary/10">
-                  <th className="text-left px-4 py-2 text-[12px] font-semibold text-text-primary" colSpan={2}>Payment Information</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr className="border-b border-divider">
-                  <td className="px-4 py-2 text-[13px] text-text-secondary">Bank Name</td>
-                  <td className="px-4 py-2 text-right text-[13px]">{personPay.bank_name || ''}</td>
-                </tr>
-                <tr className="border-b border-divider">
-                  <td className="px-4 py-2 text-[13px] text-text-secondary">Branch Code</td>
-                  <td className="px-4 py-2 text-right text-[13px]">{personPay.bank_branch_code || ''}</td>
-                </tr>
-                <tr>
-                  <td className="px-4 py-2 text-[13px] text-text-secondary">Account Number</td>
-                  <td className="px-4 py-2 text-right text-[13px]">{personPay.bank_account || ''}</td>
-                </tr>
-              </tbody>
-            </table>
-            <table className="w-full border-t md:border-t-0 md:border-l border-divider">
-              <thead>
-                <tr className="bg-primary/10">
-                  <th className="text-left px-4 py-2 text-[12px] font-semibold text-text-primary" colSpan={2}>Time Off Balance</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr className="border-b border-divider">
-                  <td className="px-4 py-2 text-[13px] text-text-secondary">Paid Time Off Balance</td>
-                  <td className="px-4 py-2 text-right text-[13px]">{paidTimeOff ?? ''}</td>
-                </tr>
-                <tr className="border-b border-divider">
-                  <td className="px-4 py-2 text-[13px] text-text-secondary">Sick Time Balance</td>
-                  <td className="px-4 py-2 text-right text-[13px]">{sickTimeOff ?? ''}</td>
-                </tr>
-                <tr>
-                  <td className="px-4 py-2 text-[13px] text-text-secondary">Total Time Off Balance</td>
-                  <td className="px-4 py-2 text-right text-[13px]">{paidTimeOff != null && sickTimeOff != null ? paidTimeOff + sickTimeOff : ''}</td>
-                </tr>
-              </tbody>
-            </table>
+          <div className="grid sm:grid-cols-3 border-t border-divider">
+            <div className="px-4 py-3">
+              <p className="text-[11px] text-text-secondary">Bank Name</p>
+              <p className="text-[13px] text-text-primary">{personPay.bank_name || '—'}</p>
+            </div>
+            <div className="px-4 py-3">
+              <p className="text-[11px] text-text-secondary">Branch Code</p>
+              <p className="text-[13px] text-text-primary">{personPay.bank_branch_code || '—'}</p>
+            </div>
+            <div className="px-4 py-3">
+              <p className="text-[11px] text-text-secondary">Account Number</p>
+              <p className="text-[13px] text-text-primary">{personPay.bank_account || '—'}</p>
+            </div>
           </div>
+        </div>
+
+        <div className="card p-4 space-y-2">
+          <p className="section-label">TIME OFF BALANCE</p>
+          <table className="w-full">
+            <tbody>
+              <tr className="border-b border-divider">
+                <td className="py-2 text-[13px] text-text-primary">Paid time off</td>
+                <td className="py-2 text-right text-[13px]">{paidTimeOff ?? '—'}</td>
+              </tr>
+              <tr className="border-b border-divider">
+                <td className="py-2 text-[13px] text-text-primary">Sick time</td>
+                <td className="py-2 text-right text-[13px]">{sickTimeOff ?? '—'}</td>
+              </tr>
+              <tr>
+                <td className="py-2 text-[13px] text-text-primary">Total time off</td>
+                <td className="py-2 text-right text-[13px]">{paidTimeOff != null && sickTimeOff != null ? paidTimeOff + sickTimeOff : '—'}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
 
         {/* Audit Trail */}
