@@ -196,7 +196,9 @@ type PayrollGenerateFunctionBody = {
     waivePenalties?: boolean
     manualPayeOverride?: number | null
     manualAdjustment?: number | null
+    adjustmentNote?: string | null
     bonusAmount?: number | null
+    bonusNote?: string | null
   }
 }
 
@@ -287,7 +289,9 @@ export async function recalculatePayslip(
           waivePenalties: overrides.waivePenalties,
           manualPayeOverride: overrides.manualPayeOverride,
           manualAdjustment: overrides.manualAdjustment,
+          adjustmentNote: overrides.adjustmentNote,
           bonusAmount: overrides.bonusAmount,
+          bonusNote: overrides.bonusNote,
         }
       : undefined,
   })
