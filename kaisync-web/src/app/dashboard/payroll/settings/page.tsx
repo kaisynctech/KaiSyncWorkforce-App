@@ -162,14 +162,12 @@ export default function PayrollSettingsPage() {
         <div className="card p-4">
           <p className="section-label">TIME &amp; ATTENDANCE</p>
           <p className="text-xs text-text-secondary mt-1 mb-3">
-            Used when building sessions and calculating late/OT for payroll.
+            Used when building sessions and calculating late time for payroll.
+            Overtime starts at the time set on the time template.
             Anyone without their own time template uses the company default template.
           </p>
           <Row label="Sign-in grace period (minutes)">
             <NumInput value={s.late_threshold_minutes} onChange={v => set('late_threshold_minutes', v)} />
-          </Row>
-          <Row label="OT starts after (minutes past shift end)">
-            <NumInput value={s.ot_start_after_minutes} onChange={v => set('ot_start_after_minutes', v)} />
           </Row>
           <Row label="Deduct absent days from pay">
             <Sw checked={s.deduct_absent_from_pay} onChange={v => set('deduct_absent_from_pay', v)} />
