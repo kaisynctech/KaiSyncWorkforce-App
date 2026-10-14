@@ -86,10 +86,13 @@ function totalsFromLines(raw: Record<string, unknown>) {
   const loanDeduction = lineAmount(raw.loanDeduction)
   const loanBalance = lineAmount(raw.loanBalance)
   const unpaidLeave = lineAmount(raw.unpaidLeave)
+  const unpaidAbsenceDates = Array.isArray(raw.unpaidAbsenceDates)
+    ? raw.unpaidAbsenceDates.filter((day): day is string => typeof day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(day))
+    : []
   const gross = Math.round((regular + overtime + bonus + incentive + refund) * 100) / 100
   const deductions = Math.round((uif + paye + loanDeduction + unpaidLeave) * 100) / 100
   const net = Math.round(Math.max(0, gross - deductions) * 100) / 100
-  const saved = { regular, overtime, bonus, incentive, refund, uif, paye, loanDeduction, loanBalance, unpaidLeave }
+  const saved = { regular, overtime, bonus, incentive, refund, uif, paye, loanDeduction, loanBalance, unpaidLeave, unpaidAbsenceDates }
   const earnings = [
     { label: 'Regular Earnings', amount: regular },
     { label: 'Overtime', amount: overtime },
@@ -530,7 +533,7 @@ async function handleGenerate(
             manual_paye_override: carried.paye,
             earnings_breakdown: carried.earnings,
             deductions_breakdown: carried.deductionLines,
-            payslip_lines: carried.saved,
+            payslip_lines: { ...carried.saved, unpaidAbsenceDates: [] },
             pay_full_base_salary: priorSlip?.pay_full_base_salary ?? false,
             waive_penalties: priorSlip?.waive_penalties ?? false,
           }

@@ -1,24 +1,24 @@
 /**
- * Ports KaiFlow.Payroll/SarsPayeCalculator.cs.
- * Simplified SA PAYE for 2025/2026 tax year (annual brackets, monthly conversion).
- * Use when policy.statutory.useSarsTaxTables is true.
+ * SARS PAYE for the 2026/2027 tax year (1 March 2026 to 28 February 2027).
+ * Source: SARS Budget tax guide 2026 and the employer employees' tax guide.
+ * Annual brackets, then the age rebate, then a monthly amount.
  */
 
 type Bracket = { limit: number; base: number; rate: number }
 
 const ANNUAL_BRACKETS: Bracket[] = [
-  { limit: 237_100, base: 0, rate: 0.18 },
-  { limit: 370_500, base: 42_678, rate: 0.26 },
-  { limit: 512_800, base: 77_362, rate: 0.31 },
-  { limit: 673_000, base: 121_475, rate: 0.36 },
-  { limit: 857_900, base: 179_147, rate: 0.39 },
-  { limit: 1_817_000, base: 563_562, rate: 0.41 },
-  { limit: Infinity, base: 956_793, rate: 0.45 },
+  { limit: 245_100, base: 0, rate: 0.18 },
+  { limit: 383_100, base: 44_118, rate: 0.26 },
+  { limit: 530_200, base: 79_998, rate: 0.31 },
+  { limit: 695_800, base: 125_599, rate: 0.36 },
+  { limit: 887_000, base: 185_215, rate: 0.39 },
+  { limit: 1_878_600, base: 259_783, rate: 0.41 },
+  { limit: Infinity, base: 666_339, rate: 0.45 },
 ]
 
-const PRIMARY_REBATE_ANNUAL = 17_235
-const SECONDARY_REBATE_ANNUAL = 9_444 // 65+
-const TERTIARY_REBATE_ANNUAL = 3_145 // 75+
+const PRIMARY_REBATE_ANNUAL = 17_820
+const SECONDARY_REBATE_ANNUAL = 9_765 // 65+
+const TERTIARY_REBATE_ANNUAL = 3_249 // 75+
 
 function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100
@@ -34,7 +34,7 @@ export function calculateAnnualTax(annualTaxable: number): number {
   }
 
   const last = ANNUAL_BRACKETS[ANNUAL_BRACKETS.length - 1]
-  return last.base + (annualTaxable - 1_817_000) * last.rate
+  return last.base + (annualTaxable - 1_878_600) * last.rate
 }
 
 function rebatesFor(dateOfBirth?: string | null): number {
@@ -47,7 +47,7 @@ function rebatesFor(dateOfBirth?: string | null): number {
   return PRIMARY_REBATE_ANNUAL
 }
 
-/** Annual income at which PAYE becomes payable (rebate ÷ first-bracket rate). 2025/26. */
+/** Annual income at which PAYE becomes payable (rebate ÷ first-bracket rate). 2026/27. */
 export function annualTaxThreshold(dateOfBirth?: string | null): number {
   return Math.round((rebatesFor(dateOfBirth) / 0.18) * 100) / 100
 }

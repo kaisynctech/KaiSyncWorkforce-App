@@ -2,9 +2,9 @@
  * Ports KaiFlow.Payroll/PayrollCalculator.cs — the full calculation pipeline.
  *
  * Deviations from the C# reference (documented in docs/modules/payroll-web-program.md):
- * - UIF/PAYE fall back to company-level `policy.statutory` rate/enabled flags when no
+ * - UIF falls back to company-level `policy.statutory` rate/enabled flags when no
  *   employee-level rate is set, since most companies don't set per-employee statutory rates.
- * - PAYE has an additional final fallback to `policy.statutory.defaultPayeRatePercent`.
+ * - PAYE uses the SARS 2026/27 tables whenever PAYE is enabled. A fixed amount or tax directive still overrides.
  * - `leaveOverride` / `absentDaysOverride` let callers that only have aggregate day counts
  *   (not per-day leave/absence records) still drive the pipeline — used by the
  *   `payroll-engine.ts` adapter for backward compatibility with existing callers.
@@ -23,7 +23,7 @@ import {
 } from './period'
 import { countDaysInPeriod, isUnpaidLeave } from './leave-days'
 import { resolveAsOf, type SalaryHistoryEntry } from './salary-resolver'
-import { calculateMonthlyPaye, isBelowAnnualTaxThreshold } from './sars-paye'
+import { calculateMonthlyPaye } from './sars-paye'
 import { mergeYtd, type YtdTotals } from './irp5'
 
 export type PayBasis = 'monthly_salary' | 'hourly' | 'daily'
@@ -477,14 +477,8 @@ function addStatutoryDeductions(
     } else if (policy.statutory.payeEnabled) {
       if (emp.payeFixedAmount > 0) {
         paye = emp.payeFixedAmount
-      } else if (policy.statutory.useSarsTaxTables) {
-        paye = calculateMonthlyPaye(grossPay, emp.dateOfBirth, emp.taxDirectiveRatePercent ?? emp.payeRatePercent)
-      } else if (isBelowAnnualTaxThreshold(grossPay, emp.dateOfBirth)) {
-        paye = 0
-      } else if (emp.payeRatePercent != null && emp.payeRatePercent > 0) {
-        paye = round2((grossPay * emp.payeRatePercent) / 100)
-      } else if (policy.statutory.defaultPayeRatePercent > 0) {
-        paye = round2((grossPay * policy.statutory.defaultPayeRatePercent) / 100)
+      } else {
+        paye = calculateMonthlyPaye(grossPay, emp.dateOfBirth, emp.taxDirectiveRatePercent)
       }
     }
     if (paye != null && paye > 0) deductions.push({ label: 'PAYE', amount: paye })

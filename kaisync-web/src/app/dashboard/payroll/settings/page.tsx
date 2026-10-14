@@ -230,21 +230,9 @@ export default function PayrollSettingsPage() {
           <Row label="PAYE enabled">
             <Sw checked={s.paye_enabled} onChange={v => set('paye_enabled', v)} />
           </Row>
-          <Row label="Default PAYE rate (%)">
-            <NumInput value={s.default_paye_rate_percent} onChange={v => set('default_paye_rate_percent', v)} step={0.5} />
-          </Row>
-          <Row label="Use SARS PAYE tax tables">
-            <Sw checked={s.use_sars_tax_tables} onChange={v => set('use_sars_tax_tables', v)} />
-          </Row>
-          <p className="text-[12px] text-text-secondary">
-            PAYE is R0 when a full year at this pay is under the SARS tax threshold (R95,750 if under 65). UIF still applies. Turning on the tables uses the full brackets and age rebates.
+          <p className="text-[12px] text-text-secondary px-1 py-2">
+            PAYE always uses the SARS 2026/27 tax tables. Under 65, PAYE is R0 when a full year of this pay is R99,000 or less. A fixed PAYE amount or a tax directive on the person still overrides the tables. UIF is separate. VAT on the payslip does not add 15% and does not change PAYE.
           </p>
-          {s.use_sars_tax_tables && (
-            <p className="text-[12px] text-success px-1 pb-1">
-              SARS 2025/26 tax tables are applied on generate/recalculate (brackets + age rebates).
-              Employee tax directive / fixed PAYE still take precedence. A flat percent is used only when this toggle is off, and still stays at R0 under the tax threshold.
-            </p>
-          )}
         </div>
 
         <div className="card p-4">
