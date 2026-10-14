@@ -278,13 +278,11 @@ export default function PayslipDetailPage() {
   const [templateLabel, setTemplateLabel] = useState<string | null>(null)
   const [slipTab, setSlipTab] = useState<SlipTab>('pay')
   const [daysPerWeek, setDaysPerWeek] = useState(5)
-  const [vatApplies, setVatApplies] = useState(false)
   const [dateOfBirth, setDateOfBirth] = useState<string | null>(null)
   const [companyTimezone, setCompanyTimezone] = useState('Africa/Johannesburg')
   const [unpaidAbsenceDates, setUnpaidAbsenceDates] = useState<string[]>([])
   const autoApplied = useRef<string | null>(null)
   const absenceExplicit = useRef(false)
-  const [vatSaving, setVatSaving] = useState(false)
   const [weekdayHours, setWeekdayHours] = useState<string | null>(null)
   const [weekendHours, setWeekendHours] = useState<string | null>(null)
 
@@ -365,7 +363,7 @@ export default function PayslipDetailPage() {
       const periodStart = payment!.period_start!
       const periodEnd = payment!.period_end!
       const [{ data: empRow, error: empErr }, settingsRes, punchRes, companyRes, leaveRes, absenceRes] = await Promise.all([
-        supabase.from('employees').select('shift_template_id, daily_hours, work_days_weekly, vat_applies').eq('id', payment!.employee_id).maybeSingle(),
+        supabase.from('employees').select('shift_template_id, daily_hours, work_days_weekly').eq('id', payment!.employee_id).maybeSingle(),
         loadPayrollSettings(supabase, payment!.company_id),
         supabase.from('time_punches')
           .select('id, employee_id, type, date_time, latitude, longitude, address, notes')
@@ -477,9 +475,8 @@ export default function PayslipDetailPage() {
         weekend_start_time?: string | null
         weekend_end_time?: string | null
       } | null
-      const person = empRow as { work_days_weekly?: number | null; vat_applies?: boolean | null } | null
+      const person = empRow as { work_days_weekly?: number | null } | null
       setDaysPerWeek(Number(person?.work_days_weekly) || 5)
-      setVatApplies(Boolean(person?.vat_applies))
       setWeekdayHours(clockRange(times?.start_time, times?.end_time))
       setWeekendHours(clockRange(times?.weekend_start_time, times?.weekend_end_time))
       setDays(rows)
@@ -490,24 +487,6 @@ export default function PayslipDetailPage() {
     void loadDays()
     return () => { cancelled = true }
   }, [payment?.id, payment?.employee_id, payment?.company_id, payment?.period_start, payment?.period_end])
-
-  async function saveVat(next: boolean) {
-    if (!payment) return
-    setVatSaving(true)
-    setErrorMsg(null)
-    const supabase = createClient()
-    const { error } = await supabase
-      .from('employees')
-      .update({ vat_applies: next })
-      .eq('id', payment.employee_id)
-      .eq('company_id', payment.company_id)
-    setVatSaving(false)
-    if (error) {
-      setErrorMsg(error.message)
-      return
-    }
-    setVatApplies(next)
-  }
 
   async function load() {
     setLoading(true)
@@ -1203,22 +1182,9 @@ export default function PayslipDetailPage() {
                 <td className="data-td text-text-primary text-[13px]">Regular hours</td>
                 <td className="data-td text-right text-[13px]">{(payment.regular_hours ?? 0).toFixed(1)}h</td>
               </tr>
-              <tr className="bg-surface-card border-b border-divider">
+              <tr className="bg-surface-card">
                 <td className="data-td text-text-primary text-[13px]">Overtime hours</td>
                 <td className="data-td text-right text-[13px]">{(daysLoading ? (payment.overtime_hours ?? 0) : days.filter(day => !day.isAbsentDay && !day.isLeaveDay && !day.isOpen).reduce((sum, day) => sum + day.overtimeHours, 0)).toFixed(1)}h</td>
-              </tr>
-              <tr className="bg-surface-card">
-                <td className="data-td text-text-primary text-[13px]">
-                  <p>VAT applies</p>
-                  <p className="text-[11px] text-text-secondary mt-0.5">Saved on this person. It does not add VAT to this payslip, and it does not change PAYE or UIF. PAYE uses the SARS tax tables.</p>
-                </td>
-                <td className="data-td text-right">
-                  <span className="hidden print:inline text-[13px]">{vatApplies ? 'Yes' : 'No'}</span>
-                  <span className="print:hidden inline-flex items-center gap-2">
-                    <span className="text-[12px] text-text-secondary">{vatApplies ? 'Yes' : 'No'}</span>
-                    <Toggle checked={vatApplies} onChange={v => { void saveVat(v) }} disabled={vatSaving} />
-                  </span>
-                </td>
               </tr>
             </tbody>
           </table>

@@ -231,7 +231,7 @@ export default function PayrollSettingsPage() {
             <Sw checked={s.paye_enabled} onChange={v => set('paye_enabled', v)} />
           </Row>
           <p className="text-[12px] text-text-secondary px-1 py-2">
-            PAYE always uses the SARS 2026/27 tax tables. Under 65, PAYE is R0 when a full year of this pay is R99,000 or less. A fixed PAYE amount or a tax directive on the person still overrides the tables. UIF is separate. VAT on the payslip does not add 15% and does not change PAYE.
+            PAYE always uses the SARS 2026/27 tax tables. Under 65, PAYE is R0 when a full year of this pay is R99,000 or less. A fixed PAYE amount or a tax directive on the person still overrides the tables. UIF is separate.
           </p>
         </div>
 
