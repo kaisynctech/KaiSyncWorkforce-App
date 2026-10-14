@@ -307,31 +307,11 @@ export default function ClientsPage() {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="px-4 pt-4 pb-0">
-        <input type="search" placeholder="Search by name, code, email, phone…"
-          className="w-full bg-surface border border-border text-text-primary placeholder:text-text-disabled rounded-lg px-3 py-2 text-[14px] focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors"
-          value={search} onChange={e => setSearch(e.target.value)} />
-      </div>
-
-      {!loading && (
-        <div className="mx-4 mt-2 flex items-center gap-1 shrink-0">
-          <span className="inline-flex items-baseline gap-1 rounded px-1.5 py-0.5 bg-[#1E293B]">
-            <span className="text-[13px] font-semibold text-[#94A3B8]">{kpis.total}</span>
-            <span className="text-[10px] text-[#64748B]">Total</span>
-          </span>
-          <span className="inline-flex items-baseline gap-1 rounded px-1.5 py-0.5 bg-[#0F2918]">
-            <span className="text-[13px] font-semibold text-[#22C55E]">{kpis.portalEnabled}</span>
-            <span className="text-[10px] text-[#4ADE80]">Portal</span>
-          </span>
-          <span className="inline-flex items-baseline gap-1 rounded px-1.5 py-0.5 bg-[#1E293B]">
-            <span className="text-[13px] font-semibold text-[#94A3B8]">{kpis.openJobs}</span>
-            <span className="text-[10px] text-[#64748B]">Open jobs</span>
-          </span>
-        </div>
-      )}
-
-      <div className="flex items-center gap-2 mx-4 my-2 flex-wrap shrink-0">
-        <button onClick={() => void load()} className="text-primary text-[12px] h-8 px-2 hover:opacity-70 transition-opacity">Refresh</button>
+      <div className="px-4 pt-3 pb-2 space-y-2 shrink-0">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <h1 className="text-[16px] font-bold text-text-primary">Clients</h1>
+          <div className="flex items-center gap-2 flex-wrap">
+        <button onClick={() => void load()} className="h-8 px-2.5 text-[12px] rounded-lg border border-border text-text-secondary hover:text-text-primary transition-colors">Refresh</button>
         {canEdit && xeroConnected && (
           <button
             onClick={syncAllToXero}
@@ -370,6 +350,32 @@ export default function ClientsPage() {
             + Add Client
           </button>
         )}
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#1E293B]">
+            <span className="text-[14px] font-semibold text-[#94A3B8]">{kpis.total}</span>
+            <span className="text-[11px] text-[#64748B]">Total</span>
+          </span>
+          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#0F2918]">
+            <span className="text-[14px] font-semibold text-[#22C55E]">{kpis.portalEnabled}</span>
+            <span className="text-[11px] text-[#4ADE80]">Portal</span>
+          </span>
+          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#1E293B]">
+            <span className="text-[14px] font-semibold text-[#94A3B8]">{kpis.openJobs}</span>
+            <span className="text-[11px] text-[#64748B]">Open jobs</span>
+          </span>
+        </div>
+        <div className="flex items-center gap-1.5 h-8 px-2 bg-surface border border-border rounded-sm">
+          <span className="material-icons text-text-disabled text-[16px]">search</span>
+          <input
+            type="search"
+            placeholder="Search by name, code, email, phone…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="flex-1 min-w-0 text-[13px] text-text-primary placeholder:text-text-disabled bg-transparent focus:outline-none"
+          />
+        </div>
       </div>
 
       {error && error !== 'not_linked' && <p className="mx-4 text-[12px] text-error">{error}</p>}
