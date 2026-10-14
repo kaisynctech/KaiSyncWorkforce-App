@@ -6,7 +6,15 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { ScheduleFields } from '@/components/time-templates/ScheduleFields'
-import { templateSchedulePayload } from '@/lib/shift-template-schedule'
+import { templateSchedulePayload, type DayScheduleInput } from '@/lib/shift-template-schedule'
+
+const blankDay = (): DayScheduleInput => ({
+  enabled: false,
+  start: '08:00',
+  end: '13:00',
+  otStart: '',
+  earlyOtStart: '',
+})
 
 interface BreakEntry { id: string; label: string; minutes: number }
 
@@ -36,11 +44,8 @@ export default function NewTimeTemplatePage() {
   const [endTime, setEndTime] = useState('17:00')
   const [otStart, setOtStart] = useState('')
   const [earlyOtStart, setEarlyOtStart] = useState('')
-  const [weekendEnabled, setWeekendEnabled] = useState(false)
-  const [weekendStart, setWeekendStart] = useState('08:00')
-  const [weekendEnd, setWeekendEnd] = useState('13:00')
-  const [weekendOtStart, setWeekendOtStart] = useState('')
-  const [weekendEarlyOtStart, setWeekendEarlyOtStart] = useState('')
+  const [saturday, setSaturday] = useState<DayScheduleInput>(blankDay)
+  const [sunday, setSunday] = useState<DayScheduleInput>(blankDay)
   const [breaks, setBreaks] = useState<BreakEntry[]>([])
   const [errorMsg, setErrorMsg] = useState('')
   const [busy, setBusy] = useState(false)
@@ -71,9 +76,7 @@ export default function NewTimeTemplatePage() {
     if (!member) { setError('not_linked'); setBusy(false); return }
 
     const schedule = templateSchedulePayload({
-      startTime,
-      weekendEnabled, weekendStart, weekendEnd, otStart, weekendOtStart,
-      earlyOtStart, weekendEarlyOtStart,
+      startTime, otStart, earlyOtStart, saturday, sunday,
     })
     if (!schedule.ok) { setErrorMsg(schedule.message); setBusy(false); return }
     const breakMins = breaks.reduce((s, b) => s + (b.minutes || 0), 0)
@@ -91,6 +94,10 @@ export default function NewTimeTemplatePage() {
       p_weekend_ot_start_time: schedule.weekendOtStart,
       p_early_ot_start_time: schedule.earlyOtStart,
       p_weekend_early_ot_start_time: schedule.weekendEarlyOtStart,
+      p_sunday_start_time: schedule.sundayStart,
+      p_sunday_end_time: schedule.sundayEnd,
+      p_sunday_ot_start_time: schedule.sundayOtStart,
+      p_sunday_early_ot_start_time: schedule.sundayEarlyOtStart,
     })
 
     if (rpcErr) {
@@ -142,20 +149,14 @@ export default function NewTimeTemplatePage() {
           endTime={endTime}
           otStart={otStart}
           earlyOtStart={earlyOtStart}
-          weekendEnabled={weekendEnabled}
-          weekendStart={weekendStart}
-          weekendEnd={weekendEnd}
-          weekendOtStart={weekendOtStart}
-          weekendEarlyOtStart={weekendEarlyOtStart}
+          saturday={saturday}
+          sunday={sunday}
           onStartTime={setStartTime}
           onEndTime={setEndTime}
           onOtStart={setOtStart}
           onEarlyOtStart={setEarlyOtStart}
-          onWeekendEnabled={setWeekendEnabled}
-          onWeekendStart={setWeekendStart}
-          onWeekendEnd={setWeekendEnd}
-          onWeekendOtStart={setWeekendOtStart}
-          onWeekendEarlyOtStart={setWeekendEarlyOtStart}
+          onSaturday={setSaturday}
+          onSunday={setSunday}
         />
 
         <div className="card p-4 space-y-3">

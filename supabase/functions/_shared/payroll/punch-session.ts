@@ -35,15 +35,20 @@ export type ShiftTemplateLike = {
   end_time?: string | null
   break_minutes?: number | null
   total_break_minutes?: number | null
-  /** Saturday and Sunday. Both must be set to replace the weekday hours. */
+  /** Saturday. Both start and end must be set to replace the weekday hours. */
   weekend_start_time?: string | null
   weekend_end_time?: string | null
+  /** Sunday. Both start and end must be set to replace the weekday hours. */
+  sunday_start_time?: string | null
+  sunday_end_time?: string | null
   /** Clock time afternoon overtime begins. Blank uses the company grace after the day's end. */
   ot_start_time?: string | null
   weekend_ot_start_time?: string | null
+  sunday_ot_start_time?: string | null
   /** Earliest clock that counts as overtime before the shift starts. Blank means that time is not paid. */
   early_ot_start_time?: string | null
   weekend_early_ot_start_time?: string | null
+  sunday_early_ot_start_time?: string | null
 }
 
 export type PunchSessionOptions = {
@@ -98,6 +103,23 @@ function zonedWeekday(instant: Date, timeZone: string): number {
   return new Date(Date.UTC(y, m - 1, d, 12, 0, 0)).getUTCDay()
 }
 
+function hoursForDay(
+  startRaw: string | null | undefined,
+  endRaw: string | null | undefined,
+  otRaw: string | null | undefined,
+  earlyRaw: string | null | undefined,
+) {
+  const start = parseTimeOnly(startRaw)
+  const end = parseTimeOnly(endRaw)
+  if (!start || !end) return null
+  return {
+    start,
+    end,
+    otStart: parseTimeOnly(otRaw),
+    earlyOt: parseTimeOnly(earlyRaw),
+  }
+}
+
 /** Hours that apply to the punch's company-local day. */
 export function scheduleForPunchDay(
   template: ShiftTemplateLike,
@@ -110,16 +132,23 @@ export function scheduleForPunchDay(
   earlyOt: { h: number; m: number } | null
 } {
   const weekday = zonedWeekday(clockIn, timeZone)
-  const weekend = weekday === 0 || weekday === 6
-  const weekendStart = parseTimeOnly(template.weekend_start_time)
-  const weekendEnd = parseTimeOnly(template.weekend_end_time)
-  if (weekend && weekendStart && weekendEnd) {
-    return {
-      start: weekendStart,
-      end: weekendEnd,
-      otStart: parseTimeOnly(template.weekend_ot_start_time),
-      earlyOt: parseTimeOnly(template.weekend_early_ot_start_time),
-    }
+  if (weekday === 6) {
+    const saturday = hoursForDay(
+      template.weekend_start_time,
+      template.weekend_end_time,
+      template.weekend_ot_start_time,
+      template.weekend_early_ot_start_time,
+    )
+    if (saturday) return saturday
+  }
+  if (weekday === 0) {
+    const sunday = hoursForDay(
+      template.sunday_start_time,
+      template.sunday_end_time,
+      template.sunday_ot_start_time,
+      template.sunday_early_ot_start_time,
+    )
+    if (sunday) return sunday
   }
   return {
     start: parseTimeOnly(template.start_time),

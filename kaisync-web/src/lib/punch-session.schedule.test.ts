@@ -44,10 +44,25 @@ describe('template overtime and weekend hours', () => {
     expect(pastGrace.overtimeHours).toBe(0.5)
   })
 
-  it('uses Saturday and Sunday hours', () => {
-    const row = hours(weekdayTemplate, '2026-10-10T06:00:00.000Z', '2026-10-10T12:00:00.000Z')
+  it('uses Saturday hours without applying them to Sunday', () => {
+    const saturday = hours(weekdayTemplate, '2026-10-10T06:00:00.000Z', '2026-10-10T12:00:00.000Z')
+    const sunday = hours(weekdayTemplate, '2026-10-11T06:00:00.000Z', '2026-10-11T12:00:00.000Z')
+    expect(saturday.overtimeHours).toBe(1)
+    expect(saturday.regularHours).toBe(5)
+    expect(sunday.overtimeHours).toBe(0)
+    expect(sunday.regularHours).toBe(6)
+  })
+
+  it('uses Sunday hours only on Sunday', () => {
+    const template = {
+      ...weekdayTemplate,
+      sunday_start_time: '09:00:00',
+      sunday_end_time: '12:00:00',
+      sunday_ot_start_time: '12:00:00',
+    }
+    const row = hours(template, '2026-10-11T07:00:00.000Z', '2026-10-11T11:00:00.000Z')
     expect(row.overtimeHours).toBe(1)
-    expect(row.regularHours).toBe(5)
+    expect(row.regularHours).toBe(3)
   })
 
   it('pays early overtime from the early clock until the shift start', () => {
@@ -77,16 +92,13 @@ describe('template overtime and weekend hours', () => {
 })
 
 describe('templateSchedulePayload', () => {
-  it('requires both weekend times', () => {
+  it('requires both Saturday times', () => {
     const result = templateSchedulePayload({
       startTime: '08:00',
-      weekendEnabled: true,
-      weekendStart: '08:00',
-      weekendEnd: '',
       otStart: '',
-      weekendOtStart: '',
       earlyOtStart: '',
-      weekendEarlyOtStart: '',
+      saturday: { enabled: true, start: '08:00', end: '', otStart: '', earlyOtStart: '' },
+      sunday: { enabled: false, start: '', end: '', otStart: '', earlyOtStart: '' },
     })
     expect(result.ok).toBe(false)
   })
@@ -94,13 +106,10 @@ describe('templateSchedulePayload', () => {
   it('rejects an early overtime clock that is not before the start', () => {
     const result = templateSchedulePayload({
       startTime: '07:00',
-      weekendEnabled: false,
-      weekendStart: '',
-      weekendEnd: '',
       otStart: '',
-      weekendOtStart: '',
       earlyOtStart: '07:00',
-      weekendEarlyOtStart: '',
+      saturday: { enabled: false, start: '', end: '', otStart: '', earlyOtStart: '' },
+      sunday: { enabled: false, start: '', end: '', otStart: '', earlyOtStart: '' },
     })
     expect(result.ok).toBe(false)
   })
