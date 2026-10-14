@@ -96,7 +96,7 @@ export default function ClientsPage() {
     if (searchDebounced) {
       const q = escapeIlike(searchDebounced)
       query = query.or(
-        `name.ilike.%${q}%,email.ilike.%${q}%,client_code.ilike.%${q}%,phone.ilike.%${q}%,contact_person.ilike.%${q}%`,
+        `name.ilike.%${q}%,email.ilike.%${q}%,client_code.ilike.%${q}%,phone.ilike.%${q}%,contact_person.ilike.%${q}%,account_number.ilike.%${q}%,legal_name.ilike.%${q}%,mobile.ilike.%${q}%`,
       )
     }
 
@@ -162,30 +162,67 @@ export default function ClientsPage() {
     const supabase = createClient()
     let query = supabase
       .from('clients')
-      .select('name, client_code, type, contact_person, phone, email, address, notes, portal_enabled')
+      .select('id, name, client_code, type, contact_person, phone, mobile, direct_line, fax, email, address, notes, portal_enabled, account_number, legal_name, company_number, website')
       .eq('company_id', companyId)
       .order('name')
       .limit(5000)
 
     if (searchDebounced) {
       const q = escapeIlike(searchDebounced)
-      query = query.or(`name.ilike.%${q}%,client_code.ilike.%${q}%,email.ilike.%${q}%,phone.ilike.%${q}%`)
+      query = query.or(`name.ilike.%${q}%,client_code.ilike.%${q}%,email.ilike.%${q}%,phone.ilike.%${q}%,account_number.ilike.%${q}%,legal_name.ilike.%${q}%`)
     }
 
-    const { data, error: qErr } = await query
-    if (qErr) { setError(qErr.message); return }
+    const [{ data, error: qErr }, { data: people, error: peopleErr }] = await Promise.all([
+      query,
+      supabase
+        .from('client_contacts')
+        .select('client_id, name, email, include_in_emails, sort_order')
+        .eq('company_id', companyId)
+        .order('sort_order'),
+    ])
+    if (qErr || peopleErr) { setError(qErr?.message ?? peopleErr?.message ?? 'Export failed.'); return }
 
-    const rows = (data ?? []).map(c => ({
-      Name: c.name,
-      Code: c.client_code ?? '',
-      Type: CLIENT_TYPE_LABELS[(c.type as keyof typeof CLIENT_TYPE_LABELS)] ?? c.type ?? '',
-      'Contact Person': c.contact_person ?? '',
-      Phone: c.phone ?? '',
-      Email: c.email ?? '',
-      Address: c.address ?? '',
-      Notes: c.notes ?? '',
-      'Portal Enabled': c.portal_enabled ? 'Yes' : 'No',
-    }))
+    const peopleByClient = new Map<string, { name: string; email: string | null; include_in_emails: boolean }[]>()
+    for (const person of people ?? []) {
+      const clientId = person.client_id as string
+      const list = peopleByClient.get(clientId) ?? []
+      list.push({
+        name: person.name as string,
+        email: (person.email as string | null) ?? null,
+        include_in_emails: Boolean(person.include_in_emails),
+      })
+      peopleByClient.set(clientId, list)
+    }
+    const extraSlots = Math.min(5, Math.max(0, ...[...peopleByClient.values()].map(list => list.length), 0))
+
+    const rows = (data ?? []).map(c => {
+      const row: Record<string, string> = {
+        Name: c.name,
+        Code: c.client_code ?? '',
+        Type: CLIENT_TYPE_LABELS[(c.type as keyof typeof CLIENT_TYPE_LABELS)] ?? c.type ?? '',
+        'Contact Person': c.contact_person ?? '',
+        Phone: c.phone ?? '',
+        Mobile: c.mobile ?? '',
+        'Direct Line': c.direct_line ?? '',
+        Fax: c.fax ?? '',
+        Email: c.email ?? '',
+        Address: c.address ?? '',
+        Notes: c.notes ?? '',
+        'Account Number': c.account_number ?? '',
+        'Legal Name': c.legal_name ?? '',
+        'Company Number': c.company_number ?? '',
+        Website: c.website ?? '',
+        'Portal Enabled': c.portal_enabled ? 'Yes' : 'No',
+      }
+      const extras = peopleByClient.get(c.id as string) ?? []
+      for (let n = 1; n <= extraSlots; n++) {
+        const person = extras[n - 1]
+        row[`Extra Contact ${n} Name`] = person?.name ?? ''
+        row[`Extra Contact ${n} Email`] = person?.email ?? ''
+        row[`Extra Contact ${n} Include`] = person ? (person.include_in_emails ? 'Yes' : 'No') : ''
+      }
+      return row
+    })
 
     const ws = XLSX.utils.json_to_sheet(rows)
     const wb = XLSX.utils.book_new()
@@ -370,7 +407,7 @@ export default function ClientsPage() {
           <span className="material-icons text-text-disabled text-[16px]">search</span>
           <input
             type="search"
-            placeholder="Search by name, code, email, phone…"
+            placeholder="Search by name, code, account, email, phone…"
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="flex-1 min-w-0 text-[13px] text-text-primary placeholder:text-text-disabled bg-transparent focus:outline-none"

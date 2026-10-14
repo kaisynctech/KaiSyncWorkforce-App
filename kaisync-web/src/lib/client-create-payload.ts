@@ -52,6 +52,13 @@ export type ClientCreateInput = {
   notes?: string | null
   clientCode?: string | null
   portalEnabled?: boolean
+  accountNumber?: string | null
+  legalName?: string | null
+  companyNumber?: string | null
+  website?: string | null
+  mobile?: string | null
+  directLine?: string | null
+  fax?: string | null
 }
 
 function emptyToNull(value: string | null | undefined): string | null {
@@ -73,6 +80,13 @@ export function buildClientCreatePayload(input: ClientCreateInput): Record<strin
     email: emptyToNull(input.email),
     address: emptyToNull(input.address),
     notes: emptyToNull(input.notes),
+    account_number: emptyToNull(input.accountNumber),
+    legal_name: emptyToNull(input.legalName),
+    company_number: emptyToNull(input.companyNumber),
+    website: emptyToNull(input.website),
+    mobile: emptyToNull(input.mobile),
+    direct_line: emptyToNull(input.directLine),
+    fax: emptyToNull(input.fax),
     client_code: emptyToNull(input.clientCode),
     portal_enabled: Boolean(input.portalEnabled),
     client_code_expires_at: null,
