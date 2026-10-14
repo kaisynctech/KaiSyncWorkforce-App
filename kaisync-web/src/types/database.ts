@@ -175,6 +175,17 @@ export interface ClientContact {
   created_at: string
 }
 
+export interface ClientBankDetails {
+  id: string
+  company_id: string
+  client_id: string
+  account_holder: string | null
+  bank_name: string | null
+  account_number: string | null
+  branch_code: string | null
+  updated_at: string
+}
+
 export interface ClientDocument {
   id: string
   company_id: string

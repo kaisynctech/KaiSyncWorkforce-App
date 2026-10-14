@@ -11,7 +11,7 @@ import {
   normalizeClientType,
   nextClientCode,
 } from '@/lib/client-create-payload'
-import { createClientRecord, replaceClientContacts } from '@/lib/clients'
+import { createClientRecord, replaceClientContacts, saveClientBankDetails } from '@/lib/clients'
 import { logClientEvent } from '@/lib/client-events'
 import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
 import { Toggle } from '@/components/Toggle'
@@ -200,6 +200,11 @@ function ClientDetailInner() {
   const [mobile, setMobile] = useState('')
   const [directLine, setDirectLine] = useState('')
   const [fax, setFax] = useState('')
+  const [bankHolder, setBankHolder] = useState('')
+  const [bankName, setBankName] = useState('')
+  const [bankAccount, setBankAccount] = useState('')
+  const [bankBranch, setBankBranch] = useState('')
+  const [bankBaseline, setBankBaseline] = useState({ holder: '', name: '', account: '', branch: '' })
   const [extraPeople, setExtraPeople] = useState<ExtraPersonDraft[]>([])
   const [portalEnabled, setPortalEnabled] = useState(false)
 
@@ -486,6 +491,11 @@ function ClientDetailInner() {
       setMobile('')
       setDirectLine('')
       setFax('')
+      setBankHolder('')
+      setBankName('')
+      setBankAccount('')
+      setBankBranch('')
+      setBankBaseline({ holder: '', name: '', account: '', branch: '' })
       setExtraPeople([])
       setLoading(false)
       return
@@ -521,6 +531,25 @@ function ClientDetailInner() {
     setDirectLine(c.direct_line ?? '')
     setFax(c.fax ?? '')
     setPortalEnabled(c.portal_enabled ?? false)
+
+    const { data: bank, error: bankError } = await supabase
+      .from('client_bank_details')
+      .select('account_holder, bank_name, account_number, branch_code')
+      .eq('company_id', c.company_id)
+      .eq('client_id', clientId)
+      .maybeSingle()
+    if (bankError) setError(bankError.message)
+    const loadedBank = {
+      holder: (bank?.account_holder as string | null) ?? '',
+      name: (bank?.bank_name as string | null) ?? '',
+      account: (bank?.account_number as string | null) ?? '',
+      branch: (bank?.branch_code as string | null) ?? '',
+    }
+    setBankHolder(loadedBank.holder)
+    setBankName(loadedBank.name)
+    setBankAccount(loadedBank.account)
+    setBankBranch(loadedBank.branch)
+    setBankBaseline(loadedBank)
 
     const { data: people, error: peopleError } = await supabase
       .from('client_contacts')
@@ -620,6 +649,16 @@ function ClientDetailInner() {
       directLine,
       fax,
     }
+    const nextBank = {
+      holder: bankHolder.trim(),
+      name: bankName.trim(),
+      account: bankAccount.trim(),
+      branch: bankBranch.trim(),
+    }
+    const bankDirty = nextBank.holder !== bankBaseline.holder.trim()
+      || nextBank.name !== bankBaseline.name.trim()
+      || nextBank.account !== bankBaseline.account.trim()
+      || nextBank.branch !== bankBaseline.branch.trim()
 
     if (isNew) {
       const member = await resolveCurrentMember(supabase)
@@ -644,6 +683,19 @@ function ClientDetailInner() {
         contacts: extraPeople,
       })
       if (!people.ok) sessionStorage.setItem('kaisync-client-save-error', people.message)
+      if (bankDirty) {
+        const bank = await saveClientBankDetails(supabase, {
+          companyId: member.companyId,
+          clientId: created.data.id,
+          bank: {
+            accountHolder: nextBank.holder,
+            bankName: nextBank.name,
+            accountNumber: nextBank.account,
+            branchCode: nextBank.branch,
+          },
+        })
+        if (!bank.ok) sessionStorage.setItem('kaisync-client-save-error', bank.message)
+      }
       router.push(`/dashboard/clients/${created.data.id}`)
     } else {
       const payload: Record<string, unknown> = {
@@ -706,6 +758,20 @@ function ClientDetailInner() {
             email: (person.email as string | null) ?? '',
             includeInEmails: Boolean(person.include_in_emails),
           })))
+          if (bankDirty) {
+            const bank = await saveClientBankDetails(supabase, {
+              companyId: client.company_id,
+              clientId,
+              bank: {
+                accountHolder: nextBank.holder,
+                bankName: nextBank.name,
+                accountNumber: nextBank.account,
+                branchCode: nextBank.branch,
+              },
+            })
+            if (!bank.ok) setError(bank.message)
+            else setBankBaseline(nextBank)
+          }
         }
       }
     }
@@ -1177,7 +1243,7 @@ function ClientDetailInner() {
 
             <div className="card p-4 space-y-3">
               <p className="section-label">ACCOUNT</p>
-              <input placeholder="Account number" value={accountNumber} onChange={e => setAccountNumber(e.target.value)}
+              <input placeholder="Customer account number" value={accountNumber} onChange={e => setAccountNumber(e.target.value)}
                 disabled={!canEdit} className="dark-entry" />
               <input placeholder="Legal name" value={legalName} onChange={e => setLegalName(e.target.value)}
                 disabled={!canEdit} className="dark-entry" />
@@ -1187,6 +1253,31 @@ function ClientDetailInner() {
                 <input placeholder="Website" value={website} onChange={e => setWebsite(e.target.value)}
                   disabled={!canEdit} className="dark-entry" />
               </div>
+            </div>
+
+            <div className="card p-4 space-y-3">
+              <p className="section-label">BANK DETAILS</p>
+              {canEdit ? (
+                <>
+                  <p className="text-[12px] text-text-secondary">
+                    Used when a refund has to be paid to this client. The client list does not show these details.
+                  </p>
+                  <input placeholder="Account holder" value={bankHolder} onChange={e => setBankHolder(e.target.value)}
+                    className="dark-entry" autoComplete="off" />
+                  <input placeholder="Bank name" value={bankName} onChange={e => setBankName(e.target.value)}
+                    className="dark-entry" autoComplete="off" />
+                  <div className="grid grid-cols-2 gap-3">
+                    <input placeholder="Account number" value={bankAccount} onChange={e => setBankAccount(e.target.value)}
+                      className="dark-entry" autoComplete="off" />
+                    <input placeholder="Branch code" value={bankBranch} onChange={e => setBankBranch(e.target.value)}
+                      className="dark-entry" autoComplete="off" />
+                  </div>
+                </>
+              ) : (
+                <p className="text-[13px] text-text-secondary">
+                  Bank details for refunds are visible to people who can edit clients.
+                </p>
+              )}
             </div>
 
             <div className="card p-4 space-y-3">

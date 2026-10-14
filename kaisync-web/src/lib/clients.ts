@@ -182,3 +182,69 @@ export async function replaceClientContacts(
   })
   return { ok: true, data: { count: prepared.length } }
 }
+
+export type ClientBankDraft = {
+  accountHolder?: string | null
+  bankName?: string | null
+  accountNumber?: string | null
+  branchCode?: string | null
+}
+
+function blankToNull(value: string | null | undefined): string | null {
+  const trimmed = value?.trim()
+  return trimmed ? trimmed : null
+}
+
+function accountLast4(value: string | null): string | null {
+  const compact = (value ?? '').replace(/\s+/g, '')
+  if (compact.length < 4) return null
+  return compact.slice(-4)
+}
+
+/** Saves the refund bank account. The activity log stores only the last four digits. */
+export async function saveClientBankDetails(
+  supabase: SupabaseClient,
+  input: {
+    companyId: string
+    clientId: string
+    bank: ClientBankDraft
+  },
+): Promise<ClientResult<{ saved: boolean }>> {
+  const accountHolder = blankToNull(input.bank.accountHolder)
+  const bankName = blankToNull(input.bank.bankName)
+  const accountNumber = blankToNull(input.bank.accountNumber)
+  const branchCode = blankToNull(input.bank.branchCode)
+  const hasDetail = Boolean(accountHolder || bankName || accountNumber || branchCode)
+
+  if (!hasDetail) {
+    const { error } = await supabase
+      .from('client_bank_details')
+      .delete()
+      .eq('company_id', input.companyId)
+      .eq('client_id', input.clientId)
+    if (error) return { ok: false, message: error.message }
+  } else {
+    const { error } = await supabase.from('client_bank_details').upsert({
+      company_id: input.companyId,
+      client_id: input.clientId,
+      account_holder: accountHolder,
+      bank_name: bankName,
+      account_number: accountNumber,
+      branch_code: branchCode,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'client_id' })
+    if (error) return { ok: false, message: error.message }
+  }
+
+  await logClientEvent(supabase, {
+    companyId: input.companyId,
+    screen: 'HrClientDetails',
+    action: 'client_banking_saved',
+    meta: {
+      client_id: input.clientId,
+      saved: hasDetail,
+      account_last4: accountLast4(accountNumber),
+    },
+  })
+  return { ok: true, data: { saved: hasDetail } }
+}

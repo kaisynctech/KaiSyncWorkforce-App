@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { normalizeClientType } from '@/lib/client-create-payload'
-import { createClientRecord, replaceClientContacts } from '@/lib/clients'
+import { createClientRecord, replaceClientContacts, saveClientBankDetails } from '@/lib/clients'
 import { can, loadPermissions, PERM } from '@/lib/permissions'
 import * as XLSX from 'xlsx'
 
@@ -42,6 +42,10 @@ const TEMPLATE_HEADERS = [
   'Extra Contact 3 Name',
   'Extra Contact 3 Email',
   'Extra Contact 3 Include',
+  'Bank Account Holder',
+  'Bank Name',
+  'Bank Account Number',
+  'Branch Code',
 ]
 
 function included(value: string | null): boolean {
@@ -257,7 +261,28 @@ export default function ImportClientsPage() {
           contacts: extraContactsFromRow(row.raw),
         })
         if (!people.ok) errs.push(`${name}: ${people.message}`)
-        else imported++
+        else {
+          const bankHolder = cell(row.raw, 'Bank Account Holder', 'BankAccountName')
+          const bankName = cell(row.raw, 'Bank Name', 'BankName')
+          const bankAccount = cell(row.raw, 'Bank Account Number', 'BankAccountNumber')
+          const bankBranch = cell(row.raw, 'Branch Code', 'Bank Branch Code', 'BranchCode')
+          if (bankHolder || bankName || bankAccount || bankBranch) {
+            const bank = await saveClientBankDetails(supabase, {
+              companyId: member.companyId,
+              clientId: created.data.id,
+              bank: {
+                accountHolder: bankHolder,
+                bankName,
+                accountNumber: bankAccount,
+                branchCode: bankBranch,
+              },
+            })
+            if (!bank.ok) errs.push(`${name}: ${bank.message}`)
+            else imported++
+          } else {
+            imported++
+          }
+        }
       }
     }
 
