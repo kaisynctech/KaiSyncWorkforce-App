@@ -393,9 +393,28 @@ export default function JobDetailPage() {
   async function handleDeleteJob() {
     if (!window.confirm('Delete this job? This cannot be undone.')) return
     setDeleting(true)
+    setError(null)
     const supabase = createClient()
+    const labor = await supabase.from('labor_entries').delete().eq('job_id', jobId)
+    if (labor.error) { setError(labor.error.message); setDeleting(false); return }
     const { error: e } = await supabase.from('jobs').delete().eq('id', jobId)
-    if (e) { setError(e.message); setDeleting(false); return }
+    if (e) {
+      const raw = e.message
+      const message = raw.includes('inventory_usage_job_id_fkey')
+        ? 'This job still has inventory on it, so it was not deleted.'
+        : raw.includes('time_punches_job_id_fkey')
+          ? 'This job is linked to time punches, so it was not deleted.'
+          : raw.includes('incident_reports_job_id_fkey')
+            ? 'This job is linked to an incident, so it was not deleted.'
+            : raw.includes('calendar_events_linked_job_id_fkey')
+              ? 'This job is linked to a calendar event, so it was not deleted.'
+              : raw.includes('workflow_form_submissions_job_id_fkey')
+                ? 'This job is linked to a form submission, so it was not deleted.'
+                : raw
+      setError(message)
+      setDeleting(false)
+      return
+    }
     router.push('/dashboard/jobs')
   }
 
