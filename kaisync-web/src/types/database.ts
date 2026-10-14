@@ -155,6 +155,24 @@ export interface Client {
   payment_terms_days?: number | null
   credit_limit?: number | null
   tax_exempt?: boolean | null
+  account_number?: string | null
+  legal_name?: string | null
+  company_number?: string | null
+  website?: string | null
+  mobile?: string | null
+  direct_line?: string | null
+  fax?: string | null
+}
+
+export interface ClientContact {
+  id: string
+  company_id: string
+  client_id: string
+  name: string
+  email: string | null
+  include_in_emails: boolean
+  sort_order: number
+  created_at: string
 }
 
 export interface ClientDocument {

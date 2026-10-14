@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { normalizeClientType } from '@/lib/client-create-payload'
-import { createClientRecord } from '@/lib/clients'
+import { createClientRecord, replaceClientContacts } from '@/lib/clients'
 import { can, loadPermissions, PERM } from '@/lib/permissions'
 import * as XLSX from 'xlsx'
 
@@ -23,10 +23,44 @@ const TEMPLATE_HEADERS = [
   'Type',
   'Contact Person',
   'Phone',
+  'Mobile',
+  'Direct Line',
+  'Fax',
   'Email',
   'Address',
   'Notes',
+  'Account Number',
+  'Legal Name',
+  'Company Number',
+  'Website',
+  'Extra Contact 1 Name',
+  'Extra Contact 1 Email',
+  'Extra Contact 1 Include',
+  'Extra Contact 2 Name',
+  'Extra Contact 2 Email',
+  'Extra Contact 2 Include',
+  'Extra Contact 3 Name',
+  'Extra Contact 3 Email',
+  'Extra Contact 3 Include',
 ]
+
+function included(value: string | null): boolean {
+  const flag = (value ?? '').trim().toLowerCase()
+  return flag === 'yes' || flag === 'true' || flag === 'y' || flag === '1'
+}
+
+function extraContactsFromRow(row: Record<string, unknown>) {
+  const people: { name: string; email: string | null; includeInEmails: boolean }[] = []
+  for (let n = 1; n <= 5; n++) {
+    const combined = [cell(row, `Person${n}FirstName`), cell(row, `Person${n}LastName`)].filter(Boolean).join(' ')
+    const name = cell(row, `Extra Contact ${n} Name`) ?? (combined || null)
+    const email = cell(row, `Extra Contact ${n} Email`, `Person${n}Email`)
+    const includeInEmails = included(cell(row, `Extra Contact ${n} Include`, `Person${n}IncludeInEmail`))
+    if (!name && !email) continue
+    people.push({ name: name ?? '', email, includeInEmails })
+  }
+  return people
+}
 
 function cell(row: Record<string, unknown>, ...keys: string[]): string | null {
   for (const k of keys) {
@@ -198,10 +232,17 @@ export default function ImportClientsPage() {
         name,
         type: normalizeClientType(cell(row.raw, 'Type', 'Client Type', 'ClientType')),
         contactPerson: cell(row.raw, 'Contact Person', 'ContactPerson', 'Contact'),
-        phone: cell(row.raw, 'Phone', 'Mobile', 'Telephone'),
+        phone: cell(row.raw, 'Phone', 'Telephone', 'Phone Number'),
         email: cell(row.raw, 'Email', 'Email Address'),
         address: cell(row.raw, 'Address'),
         notes: cell(row.raw, 'Notes', 'Note', 'Comments'),
+        accountNumber: cell(row.raw, 'Account Number', 'AccountNumber'),
+        legalName: cell(row.raw, 'Legal Name', 'LegalName'),
+        companyNumber: cell(row.raw, 'Company Number', 'CompanyNumber'),
+        website: cell(row.raw, 'Website'),
+        mobile: cell(row.raw, 'Mobile', 'Mobile Number', 'MobileNumber'),
+        directLine: cell(row.raw, 'Direct Line', 'DirectLine', 'DDI', 'DDINumber'),
+        fax: cell(row.raw, 'Fax', 'Fax Number', 'FaxNumber'),
         assignCode: true,
         existingCodes,
         companyCode,
@@ -210,7 +251,13 @@ export default function ImportClientsPage() {
       if (!created.ok) {
         errs.push(`${name}: ${created.message}`)
       } else {
-        imported++
+        const people = await replaceClientContacts(supabase, {
+          companyId: member.companyId,
+          clientId: created.data.id,
+          contacts: extraContactsFromRow(row.raw),
+        })
+        if (!people.ok) errs.push(`${name}: ${people.message}`)
+        else imported++
       }
     }
 

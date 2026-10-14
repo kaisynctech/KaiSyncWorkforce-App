@@ -95,3 +95,90 @@ export async function createClientRecord(
     return { ok: false, message: e instanceof Error ? e.message : String(e) }
   }
 }
+
+export type ClientContactDraft = {
+  id?: string | null
+  name: string
+  email?: string | null
+  includeInEmails?: boolean
+}
+
+/** Replaces the extra people on a client. The primary contact stays on the client row. */
+export async function replaceClientContacts(
+  supabase: SupabaseClient,
+  input: {
+    companyId: string
+    clientId: string
+    contacts: ClientContactDraft[]
+  },
+): Promise<ClientResult<{ count: number }>> {
+  const prepared = input.contacts
+    .map(contact => ({
+      id: contact.id?.trim() || null,
+      name: contact.name.trim(),
+      email: contact.email?.trim() || null,
+      includeInEmails: Boolean(contact.includeInEmails),
+    }))
+    .filter(contact => contact.name || contact.email || contact.includeInEmails)
+
+  if (prepared.some(contact => !contact.name)) {
+    return { ok: false, message: 'Each extra person needs a name.' }
+  }
+
+  const keepIds = prepared.flatMap(contact => contact.id ? [contact.id] : [])
+  const { data: existing, error: listError } = await supabase
+    .from('client_contacts')
+    .select('id')
+    .eq('company_id', input.companyId)
+    .eq('client_id', input.clientId)
+  if (listError) return { ok: false, message: listError.message }
+
+  const removeIds = (existing ?? [])
+    .map(row => (row as { id: string }).id)
+    .filter(id => !keepIds.includes(id))
+  if (prepared.length === 0 && removeIds.length === 0) {
+    return { ok: true, data: { count: 0 } }
+  }
+  if (removeIds.length > 0) {
+    const { error: deleteError } = await supabase
+      .from('client_contacts')
+      .delete()
+      .eq('company_id', input.companyId)
+      .in('id', removeIds)
+    if (deleteError) return { ok: false, message: deleteError.message }
+  }
+
+  for (let index = 0; index < prepared.length; index++) {
+    const contact = prepared[index]
+    const payload = {
+      name: contact.name,
+      email: contact.email,
+      include_in_emails: contact.includeInEmails,
+      sort_order: index,
+    }
+    if (contact.id) {
+      const { error } = await supabase
+        .from('client_contacts')
+        .update(payload)
+        .eq('id', contact.id)
+        .eq('client_id', input.clientId)
+        .eq('company_id', input.companyId)
+      if (error) return { ok: false, message: error.message }
+    } else {
+      const { error } = await supabase.from('client_contacts').insert({
+        ...payload,
+        company_id: input.companyId,
+        client_id: input.clientId,
+      })
+      if (error) return { ok: false, message: error.message }
+    }
+  }
+
+  await logClientEvent(supabase, {
+    companyId: input.companyId,
+    screen: 'HrClientDetails',
+    action: 'client_contacts_saved',
+    meta: { client_id: input.clientId, count: prepared.length },
+  })
+  return { ok: true, data: { count: prepared.length } }
+}

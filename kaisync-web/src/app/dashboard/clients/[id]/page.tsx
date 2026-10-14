@@ -11,7 +11,7 @@ import {
   normalizeClientType,
   nextClientCode,
 } from '@/lib/client-create-payload'
-import { createClientRecord } from '@/lib/clients'
+import { createClientRecord, replaceClientContacts } from '@/lib/clients'
 import { logClientEvent } from '@/lib/client-events'
 import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
 import { Toggle } from '@/components/Toggle'
@@ -48,6 +48,14 @@ const DOC_TYPES = [
 
 function docTypeLabel(value: string): string {
   return DOC_TYPES.find(t => t.value === value)?.label ?? value
+}
+
+type ExtraPersonDraft = {
+  key: string
+  id: string | null
+  name: string
+  email: string
+  includeInEmails: boolean
 }
 
 type ClientJob = {
@@ -185,6 +193,14 @@ function ClientDetailInner() {
   const [email, setEmail] = useState('')
   const [address, setAddress] = useState('')
   const [notes, setNotes] = useState('')
+  const [accountNumber, setAccountNumber] = useState('')
+  const [legalName, setLegalName] = useState('')
+  const [companyNumber, setCompanyNumber] = useState('')
+  const [website, setWebsite] = useState('')
+  const [mobile, setMobile] = useState('')
+  const [directLine, setDirectLine] = useState('')
+  const [fax, setFax] = useState('')
+  const [extraPeople, setExtraPeople] = useState<ExtraPersonDraft[]>([])
   const [portalEnabled, setPortalEnabled] = useState(false)
 
   const canEdit = can(perms, PERM.clientsEdit)
@@ -463,6 +479,14 @@ function ClientDetailInner() {
 
     if (isNew) {
       setClientType('individual')
+      setAccountNumber('')
+      setLegalName('')
+      setCompanyNumber('')
+      setWebsite('')
+      setMobile('')
+      setDirectLine('')
+      setFax('')
+      setExtraPeople([])
       setLoading(false)
       return
     }
@@ -489,7 +513,29 @@ function ClientDetailInner() {
     setEmail(c.email ?? '')
     setAddress(c.address ?? '')
     setNotes(c.notes ?? '')
+    setAccountNumber(c.account_number ?? '')
+    setLegalName(c.legal_name ?? '')
+    setCompanyNumber(c.company_number ?? '')
+    setWebsite(c.website ?? '')
+    setMobile(c.mobile ?? '')
+    setDirectLine(c.direct_line ?? '')
+    setFax(c.fax ?? '')
     setPortalEnabled(c.portal_enabled ?? false)
+
+    const { data: people, error: peopleError } = await supabase
+      .from('client_contacts')
+      .select('id, name, email, include_in_emails, sort_order')
+      .eq('company_id', c.company_id)
+      .eq('client_id', clientId)
+      .order('sort_order')
+    if (peopleError) setError(peopleError.message)
+    setExtraPeople((people ?? []).map(person => ({
+      key: person.id as string,
+      id: person.id as string,
+      name: (person.name as string) ?? '',
+      email: (person.email as string | null) ?? '',
+      includeInEmails: Boolean(person.include_in_emails),
+    })))
 
     const projectRows = (pRes.data ?? []) as Project[]
     setSites((sRes.data ?? []) as Site[])
@@ -518,6 +564,11 @@ function ClientDetailInner() {
     }
     const { data: { session } } = await supabase.auth.getSession()
     setXeroSessionToken(session?.access_token ?? null)
+    const pendingError = sessionStorage.getItem('kaisync-client-save-error')
+    if (pendingError) {
+      sessionStorage.removeItem('kaisync-client-save-error')
+      if (!peopleError) setError(pendingError)
+    }
     setLoading(false)
   }
 
@@ -551,11 +602,24 @@ function ClientDetailInner() {
   async function save() {
     if (!canEdit) { setError('You do not have permission to edit clients.'); return }
     if (!name.trim()) { setError('Client name is required.'); return }
+    if (extraPeople.some(person => !person.name.trim() && (person.email.trim() || person.includeInEmails))) {
+      setError('Each extra person needs a name.')
+      return
+    }
     setSaving(true)
     setError(null)
     const supabase = createClient()
     const type = normalizeClientType(clientType)
     const prevPortal = client?.portal_enabled ?? false
+    const identity = {
+      accountNumber,
+      legalName,
+      companyNumber,
+      website,
+      mobile,
+      directLine,
+      fax,
+    }
 
     if (isNew) {
       const member = await resolveCurrentMember(supabase)
@@ -571,8 +635,15 @@ function ClientDetailInner() {
         notes,
         portalEnabled,
         assignCode: portalEnabled,
+        ...identity,
       })
       if (!created.ok) { setError(created.message); setSaving(false); return }
+      const people = await replaceClientContacts(supabase, {
+        companyId: member.companyId,
+        clientId: created.data.id,
+        contacts: extraPeople,
+      })
+      if (!people.ok) sessionStorage.setItem('kaisync-client-save-error', people.message)
       router.push(`/dashboard/clients/${created.data.id}`)
     } else {
       const payload: Record<string, unknown> = {
@@ -583,22 +654,36 @@ function ClientDetailInner() {
         email: email.trim() || null,
         address: address.trim() || null,
         notes: notes.trim() || null,
+        account_number: accountNumber.trim() || null,
+        legal_name: legalName.trim() || null,
+        company_number: companyNumber.trim() || null,
+        website: website.trim() || null,
+        mobile: mobile.trim() || null,
+        direct_line: directLine.trim() || null,
+        fax: fax.trim() || null,
         portal_enabled: portalEnabled,
       }
 
       const { error: e } = await supabase.from('clients').update(payload).eq('id', clientId)
       if (e) {
         setError(e.message)
-      } else {
-        setClient(prev => prev
-          ? { ...prev, ...payload, type, portal_enabled: portalEnabled } as Client
-          : prev)
-        if (client?.company_id) {
+      } else if (client?.company_id) {
+        const people = await replaceClientContacts(supabase, {
+          companyId: client.company_id,
+          clientId,
+          contacts: extraPeople,
+        })
+        if (!people.ok) {
+          setError(people.message)
+        } else {
+          setClient(prev => prev
+            ? { ...prev, ...payload, type, portal_enabled: portalEnabled } as Client
+            : prev)
           await logClientEvent(supabase, {
             companyId: client.company_id,
             screen: 'HrClientDetails',
             action: 'client_profile_updated',
-            meta: { client_id: clientId, name: name.trim() },
+            meta: { client_id: clientId, name: name.trim(), extra_people: people.data.count },
           })
           if (prevPortal !== portalEnabled) {
             await logClientEvent(supabase, {
@@ -608,6 +693,19 @@ function ClientDetailInner() {
               meta: { client_id: clientId },
             })
           }
+          const { data: savedPeople } = await supabase
+            .from('client_contacts')
+            .select('id, name, email, include_in_emails, sort_order')
+            .eq('company_id', client.company_id)
+            .eq('client_id', clientId)
+            .order('sort_order')
+          setExtraPeople((savedPeople ?? []).map(person => ({
+            key: person.id as string,
+            id: person.id as string,
+            name: (person.name as string) ?? '',
+            email: (person.email as string | null) ?? '',
+            includeInEmails: Boolean(person.include_in_emails),
+          })))
         }
       }
     }
@@ -1061,14 +1159,101 @@ function ClientDetailInner() {
               <div className="grid grid-cols-2 gap-3">
                 <input type="tel" placeholder="Phone" value={phone} onChange={e => setPhone(e.target.value)}
                   disabled={!canEdit} className="dark-entry" />
-                <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)}
+                <input type="tel" placeholder="Mobile" value={mobile} onChange={e => setMobile(e.target.value)}
+                  disabled={!canEdit} className="dark-entry" />
+                <input type="tel" placeholder="Direct line" value={directLine} onChange={e => setDirectLine(e.target.value)}
+                  disabled={!canEdit} className="dark-entry" />
+                <input type="tel" placeholder="Fax" value={fax} onChange={e => setFax(e.target.value)}
                   disabled={!canEdit} className="dark-entry" />
               </div>
+              <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)}
+                disabled={!canEdit} className="dark-entry" />
               <input placeholder="Address" value={address} onChange={e => setAddress(e.target.value)}
                 disabled={!canEdit} className="dark-entry" />
               <textarea placeholder="Notes" value={notes} onChange={e => setNotes(e.target.value)}
                 disabled={!canEdit}
                 rows={3} className="dark-entry min-h-[72px] py-3 resize-none" />
+            </div>
+
+            <div className="card p-4 space-y-3">
+              <p className="section-label">ACCOUNT</p>
+              <input placeholder="Account number" value={accountNumber} onChange={e => setAccountNumber(e.target.value)}
+                disabled={!canEdit} className="dark-entry" />
+              <input placeholder="Legal name" value={legalName} onChange={e => setLegalName(e.target.value)}
+                disabled={!canEdit} className="dark-entry" />
+              <div className="grid grid-cols-2 gap-3">
+                <input placeholder="Company number" value={companyNumber} onChange={e => setCompanyNumber(e.target.value)}
+                  disabled={!canEdit} className="dark-entry" />
+                <input placeholder="Website" value={website} onChange={e => setWebsite(e.target.value)}
+                  disabled={!canEdit} className="dark-entry" />
+              </div>
+            </div>
+
+            <div className="card p-4 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="section-label">EXTRA PEOPLE</p>
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => setExtraPeople(prev => [...prev, {
+                      key: crypto.randomUUID(),
+                      id: null,
+                      name: '',
+                      email: '',
+                      includeInEmails: false,
+                    }])}
+                    className="text-primary text-[13px] px-2 hover:opacity-70 transition-opacity"
+                  >
+                    + Person
+                  </button>
+                )}
+              </div>
+              <p className="text-[12px] text-text-secondary">
+                People besides the primary contact. Save the client to keep them.
+              </p>
+              {extraPeople.length === 0 ? (
+                <p className="text-text-secondary text-[13px]">No extra people.</p>
+              ) : (
+                <div className="space-y-3">
+                  {extraPeople.map(person => (
+                    <div key={person.key} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto_auto] gap-2 items-center">
+                      <input
+                        placeholder="Name"
+                        value={person.name}
+                        disabled={!canEdit}
+                        onChange={e => setExtraPeople(prev => prev.map(row => row.key === person.key ? { ...row, name: e.target.value } : row))}
+                        className="dark-entry"
+                      />
+                      <input
+                        type="email"
+                        placeholder="Email"
+                        value={person.email}
+                        disabled={!canEdit}
+                        onChange={e => setExtraPeople(prev => prev.map(row => row.key === person.key ? { ...row, email: e.target.value } : row))}
+                        className="dark-entry"
+                      />
+                      <label className="flex items-center gap-2 text-[12px] text-text-secondary whitespace-nowrap">
+                        <input
+                          type="checkbox"
+                          checked={person.includeInEmails}
+                          disabled={!canEdit}
+                          onChange={e => setExtraPeople(prev => prev.map(row => row.key === person.key ? { ...row, includeInEmails: e.target.checked } : row))}
+                        />
+                        Include in emails
+                      </label>
+                      {canEdit && (
+                        <button
+                          type="button"
+                          onClick={() => setExtraPeople(prev => prev.filter(row => row.key !== person.key))}
+                          className="text-error text-[12px] font-medium hover:opacity-70"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="card p-4 space-y-3">
