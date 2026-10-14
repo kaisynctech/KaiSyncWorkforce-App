@@ -391,7 +391,16 @@ export default function EmployeeDetailPage() {
   }
 
   if (loading) {
-    return <div className="flex items-center justify-center h-64 text-[14px] text-text-secondary">Loading…</div>
+    return (
+      <div className="h-full flex flex-col">
+        <div className="bg-surface border-b border-divider px-4 py-3 shrink-0">
+          <Link href="/dashboard/employees" aria-label="Back to employees" className="text-text-secondary hover:text-text-primary transition-colors">
+            <span className="material-icons text-[20px]">arrow_back</span>
+          </Link>
+        </div>
+        <div className="flex items-center justify-center flex-1 text-[14px] text-text-secondary">Loading…</div>
+      </div>
+    )
   }
 
   if (error === 'not_linked') return (
@@ -425,8 +434,17 @@ export default function EmployeeDetailPage() {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* Sticky tab bar */}
-      <div className="bg-surface border-b border-divider px-4 pt-8 pb-3 shrink-0">
+      <div className="bg-surface border-b border-divider px-4 pt-3 pb-3 shrink-0">
+        <div className="flex items-center gap-3 mb-3">
+          <Link
+            href="/dashboard/employees"
+            aria-label="Back to employees"
+            className="text-text-secondary hover:text-text-primary transition-colors shrink-0"
+          >
+            <span className="material-icons text-[20px]">arrow_back</span>
+          </Link>
+          <h1 className="text-[18px] font-semibold text-text-primary truncate">{fullName}</h1>
+        </div>
         <div className="flex gap-[6px] overflow-x-auto">
           {EMPLOYEE_TABS.map(t => (
             <button
