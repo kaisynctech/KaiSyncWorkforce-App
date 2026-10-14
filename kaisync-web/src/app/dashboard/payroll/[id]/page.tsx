@@ -14,6 +14,7 @@ import { isUnpaidLeave } from '@/lib/payroll/leave-days'
 import { calculateMonthlyPaye } from '@/lib/payroll/sars-paye'
 import { computeLeaveSummary, type LeaveSummary } from '@/lib/leave-policy'
 import { loadPayrollSettings } from '@/lib/payroll-settings'
+import { SHIFT_TEMPLATE_NAMED_SELECT } from '@/lib/shift-template-schedule'
 import { AttendanceNote } from '@/components/attendance/AttendanceNote'
 import { enrichSessionsWithPlaceNames } from '@/lib/punch-address-enrich'
 import {
@@ -67,7 +68,7 @@ const PAYSLIP_COLORS: Record<string, { bg: string; fg: string }> = {
   rejected: { bg: '#FEE2E2', fg: '#991B1B' },
   pending:  { bg: '#FEF9C3', fg: '#854D0E' },
 }
-const PAYSLIP_TEMPLATE_SELECT = 'id, name, start_time, end_time, break_minutes, weekend_start_time, weekend_end_time, ot_start_time, weekend_ot_start_time, early_ot_start_time, weekend_early_ot_start_time'
+const PAYSLIP_TEMPLATE_SELECT = SHIFT_TEMPLATE_NAMED_SELECT
 
 type SlipTab = 'pay' | 'timesheet' | 'schedule'
 
@@ -299,7 +300,12 @@ export default function PayslipDetailPage() {
   const autoApplied = useRef<string | null>(null)
   const absenceExplicit = useRef(false)
   const [weekdayHours, setWeekdayHours] = useState<string | null>(null)
-  const [weekendHours, setWeekendHours] = useState<string | null>(null)
+  const [saturdayHours, setSaturdayHours] = useState<string | null>(null)
+  const [sundayHours, setSundayHours] = useState<string | null>(null)
+  const [templateOptions, setTemplateOptions] = useState<{ id: string; name: string }[]>([])
+  const [selectedTemplateId, setSelectedTemplateId] = useState('')
+  const [templateBusy, setTemplateBusy] = useState(false)
+  const [templateTick, setTemplateTick] = useState(0)
 
   // Override fields
   const [payFullSalary, setPayFullSalary] = useState(false)
@@ -377,7 +383,7 @@ export default function PayslipDetailPage() {
       const supabase = createClient()
       const periodStart = payment!.period_start!
       const periodEnd = payment!.period_end!
-      const [{ data: empRow, error: empErr }, settingsRes, punchRes, companyRes, leaveRes, absenceRes] = await Promise.all([
+      const [{ data: empRow, error: empErr }, settingsRes, punchRes, companyRes, leaveRes, absenceRes, templateListRes] = await Promise.all([
         supabase.from('employees').select('shift_template_id, daily_hours, work_days_weekly').eq('id', payment!.employee_id).maybeSingle(),
         loadPayrollSettings(supabase, payment!.company_id),
         supabase.from('time_punches')
@@ -401,6 +407,10 @@ export default function PayslipDetailPage() {
           .eq('employee_id', payment!.employee_id)
           .gte('date', periodStart)
           .lte('date', periodEnd),
+        supabase.from('employee_shift_templates')
+          .select('id, name')
+          .eq('company_id', payment!.company_id)
+          .order('name', { ascending: true }),
       ])
       if (cancelled) return
       const loadError = empErr?.message
@@ -408,6 +418,7 @@ export default function PayslipDetailPage() {
         ?? companyRes.error?.message
         ?? leaveRes.error?.message
         ?? absenceRes.error?.message
+        ?? templateListRes.error?.message
         ?? (!settingsRes.ok ? settingsRes.message : null)
       if (loadError) {
         setDaysError(loadError)
@@ -422,7 +433,12 @@ export default function PayslipDetailPage() {
         unpaid: isUnpaidLeave(row.leave_type || ''),
       })))
 
+      setTemplateOptions(((templateListRes.data ?? []) as { id: string; name: string }[]).map(row => ({
+        id: row.id,
+        name: row.name,
+      })))
       const personalId = (empRow as { shift_template_id?: string | null } | null)?.shift_template_id ?? null
+      setSelectedTemplateId(personalId ?? '')
       const templateSelect = () => supabase.from('employee_shift_templates').select(PAYSLIP_TEMPLATE_SELECT).eq('company_id', payment!.company_id)
       let template = null as (ShiftTemplateLike & { name?: string | null }) | null
       let usedPersonal = false
@@ -489,11 +505,14 @@ export default function PayslipDetailPage() {
         end_time?: string | null
         weekend_start_time?: string | null
         weekend_end_time?: string | null
+        sunday_start_time?: string | null
+        sunday_end_time?: string | null
       } | null
       const person = empRow as { work_days_weekly?: number | null } | null
       setDaysPerWeek(Number(person?.work_days_weekly) || 5)
       setWeekdayHours(clockRange(times?.start_time, times?.end_time))
-      setWeekendHours(clockRange(times?.weekend_start_time, times?.weekend_end_time))
+      setSaturdayHours(clockRange(times?.weekend_start_time, times?.weekend_end_time))
+      setSundayHours(clockRange(times?.sunday_start_time, times?.sunday_end_time))
       setDays(rows)
       setDaysLoading(false)
       const named = await enrichSessionsWithPlaceNames(supabase, payment!.company_id, rows)
@@ -501,7 +520,26 @@ export default function PayslipDetailPage() {
     }
     void loadDays()
     return () => { cancelled = true }
-  }, [payment?.id, payment?.employee_id, payment?.company_id, payment?.period_start, payment?.period_end])
+  }, [payment?.id, payment?.employee_id, payment?.company_id, payment?.period_start, payment?.period_end, templateTick])
+
+  async function saveTimeTemplate(nextId: string) {
+    if (!payment || templateBusy) return
+    setTemplateBusy(true)
+    setDaysError(null)
+    const supabase = createClient()
+    const { error } = await supabase
+      .from('employees')
+      .update({ shift_template_id: nextId || null })
+      .eq('id', payment.employee_id)
+      .eq('company_id', payment.company_id)
+    setTemplateBusy(false)
+    if (error) {
+      setDaysError(error.message)
+      return
+    }
+    setSelectedTemplateId(nextId)
+    setTemplateTick(tick => tick + 1)
+  }
 
   async function load() {
     setLoading(true)
@@ -1347,6 +1385,27 @@ export default function PayslipDetailPage() {
 
         <div className={slipTab === 'timesheet' ? 'space-y-4' : 'hidden print:block print:space-y-4'}>
         <div className="card p-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <p className="section-label">TIME TEMPLATE</p>
+          </div>
+          <select
+            value={selectedTemplateId}
+            disabled={templateBusy || daysLoading}
+            onChange={e => { void saveTimeTemplate(e.target.value) }}
+            className="dark-entry w-full max-w-md"
+          >
+            <option value="">Company default</option>
+            {templateOptions.map(option => (
+              <option key={option.id} value={option.id}>{option.name}</option>
+            ))}
+          </select>
+          <p className="text-[12px] text-text-secondary">
+            {templateLabel
+              ? `Late and hours follow ${templateLabel}. Changing this updates the employee profile and this timesheet.`
+              : 'No time template is applied. Choose one to set late and overtime clocks, and to save it on the employee profile.'}
+          </p>
+        </div>
+        <div className="card p-4 space-y-3">
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="section-label">DAYS ATTENDED</p>
@@ -1354,7 +1413,7 @@ export default function PayslipDetailPage() {
                 {daysLoading
                   ? 'Loading this pay period…'
                   : `${days.filter(day => !day.isOpen && !day.isAbsentDay && !day.isLeaveDay).length} finished days in this pay period.`}
-                {templateLabel ? ` Late and hours follow ${templateLabel}.` : ' No time template is applied, so late and overtime clocks are not used.'}
+                {templateLabel ? ` Hours follow ${templateLabel}.` : ''}
               </p>
             </div>
             {payment.period_start && payment.period_end && (
@@ -1597,8 +1656,12 @@ export default function PayslipDetailPage() {
                   <td className="data-td text-right text-[13px]">{weekdayHours ?? '—'}</td>
                 </tr>
                 <tr className="border-b border-divider">
-                  <td className="data-td text-text-secondary text-[13px]">Expected weekend times</td>
-                  <td className="data-td text-right text-[13px]">{weekendHours ?? 'Not set'}</td>
+                  <td className="data-td text-text-secondary text-[13px]">Expected Saturday times</td>
+                  <td className="data-td text-right text-[13px]">{saturdayHours ?? 'Monday to Friday hours'}</td>
+                </tr>
+                <tr className="border-b border-divider">
+                  <td className="data-td text-text-secondary text-[13px]">Expected Sunday times</td>
+                  <td className="data-td text-right text-[13px]">{sundayHours ?? 'Monday to Friday hours'}</td>
                 </tr>
                 <tr className="border-b border-divider">
                   <td className="data-td text-text-secondary text-[13px]">Days a week</td>

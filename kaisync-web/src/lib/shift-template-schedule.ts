@@ -1,14 +1,32 @@
-/** Time-template weekday, weekend, and overtime clock fields. */
+/** Time-template weekday, Saturday, Sunday, and overtime clock fields. */
+
+const SHIFT_TEMPLATE_CLOCK_COLUMNS =
+  'start_time, end_time, break_minutes, weekend_start_time, weekend_end_time, ot_start_time, weekend_ot_start_time, early_ot_start_time, weekend_early_ot_start_time, sunday_start_time, sunday_end_time, sunday_ot_start_time, sunday_early_ot_start_time' as const
+
+export const SHIFT_TEMPLATE_SELECT = `id, ${SHIFT_TEMPLATE_CLOCK_COLUMNS}` as const
+export const SHIFT_TEMPLATE_NAMED_SELECT = `id, name, ${SHIFT_TEMPLATE_CLOCK_COLUMNS}` as const
+
+export type DayScheduleInput = {
+  enabled: boolean
+  start: string
+  end: string
+  otStart: string
+  earlyOtStart: string
+}
 
 export type TemplateScheduleInput = {
   startTime: string
-  weekendEnabled: boolean
-  weekendStart: string
-  weekendEnd: string
   otStart: string
-  weekendOtStart: string
   earlyOtStart: string
-  weekendEarlyOtStart: string
+  saturday: DayScheduleInput
+  sunday: DayScheduleInput
+}
+
+export type SavedDayClocks = {
+  start: string | null
+  end: string | null
+  otStart: string | null
+  earlyOtStart: string | null
 }
 
 function toTimeSql(t: string): string | null {
@@ -32,6 +50,28 @@ function earlierThan(early: string, start: string, label: string): string | null
   return null
 }
 
+function saveDay(day: DayScheduleInput, label: string):
+  | { ok: true; clocks: SavedDayClocks }
+  | { ok: false; message: string } {
+  if (!day.enabled) {
+    return { ok: true, clocks: { start: null, end: null, otStart: null, earlyOtStart: null } }
+  }
+  if (!day.start || !day.end) {
+    return { ok: false, message: `${label} needs both a start time and an end time.` }
+  }
+  const early = earlierThan(day.earlyOtStart, day.start, `${label} early overtime`)
+  if (early) return { ok: false, message: early }
+  return {
+    ok: true,
+    clocks: {
+      start: toTimeSql(day.start),
+      end: toTimeSql(day.end),
+      otStart: toTimeSql(day.otStart),
+      earlyOtStart: toTimeSql(day.earlyOtStart),
+    },
+  }
+}
+
 export function templateSchedulePayload(input: TemplateScheduleInput):
   | {
       ok: true
@@ -41,25 +81,30 @@ export function templateSchedulePayload(input: TemplateScheduleInput):
       weekendOtStart: string | null
       earlyOtStart: string | null
       weekendEarlyOtStart: string | null
+      sundayStart: string | null
+      sundayEnd: string | null
+      sundayOtStart: string | null
+      sundayEarlyOtStart: string | null
     }
   | { ok: false; message: string } {
-  if (input.weekendEnabled && (!input.weekendStart || !input.weekendEnd)) {
-    return { ok: false, message: 'Saturday and Sunday need both a start time and an end time.' }
-  }
   const weekdayEarly = earlierThan(input.earlyOtStart, input.startTime, 'Early overtime')
   if (weekdayEarly) return { ok: false, message: weekdayEarly }
-  if (input.weekendEnabled) {
-    const weekendEarly = earlierThan(input.weekendEarlyOtStart, input.weekendStart, 'Weekend early overtime')
-    if (weekendEarly) return { ok: false, message: weekendEarly }
-  }
+  const saturday = saveDay(input.saturday, 'Saturday')
+  if (!saturday.ok) return saturday
+  const sunday = saveDay(input.sunday, 'Sunday')
+  if (!sunday.ok) return sunday
   return {
     ok: true,
-    weekendStart: input.weekendEnabled ? toTimeSql(input.weekendStart) : null,
-    weekendEnd: input.weekendEnabled ? toTimeSql(input.weekendEnd) : null,
+    weekendStart: saturday.clocks.start,
+    weekendEnd: saturday.clocks.end,
     otStart: toTimeSql(input.otStart),
-    weekendOtStart: input.weekendEnabled ? toTimeSql(input.weekendOtStart) : null,
+    weekendOtStart: saturday.clocks.otStart,
     earlyOtStart: toTimeSql(input.earlyOtStart),
-    weekendEarlyOtStart: input.weekendEnabled ? toTimeSql(input.weekendEarlyOtStart) : null,
+    weekendEarlyOtStart: saturday.clocks.earlyOtStart,
+    sundayStart: sunday.clocks.start,
+    sundayEnd: sunday.clocks.end,
+    sundayOtStart: sunday.clocks.otStart,
+    sundayEarlyOtStart: sunday.clocks.earlyOtStart,
   }
 }
 
@@ -68,6 +113,17 @@ function hhmm(raw: string | null | undefined): string {
   const match = raw.match(/^(\d{1,2}):(\d{2})/)
   if (!match) return ''
   return `${match[1].padStart(2, '0')}:${match[2]}`
+}
+
+function daySummary(label: string, start?: string | null, end?: string | null, early?: string | null, ot?: string | null): string | null {
+  const from = hhmm(start)
+  const to = hhmm(end)
+  if (!from || !to) return null
+  const bits = [
+    hhmm(early) ? `early OT ${hhmm(early)}` : '',
+    hhmm(ot) ? `OT ${hhmm(ot)}` : '',
+  ].filter(Boolean).join(', ')
+  return `${label} ${from}–${to}${bits ? ` · ${bits}` : ''}`
 }
 
 export function templateHoursSummary(template: {
@@ -79,6 +135,10 @@ export function templateHoursSummary(template: {
   weekend_ot_start_time?: string | null
   early_ot_start_time?: string | null
   weekend_early_ot_start_time?: string | null
+  sunday_start_time?: string | null
+  sunday_end_time?: string | null
+  sunday_ot_start_time?: string | null
+  sunday_early_ot_start_time?: string | null
 }): string {
   const weekday = `${hhmm(template.start_time)}–${hhmm(template.end_time)}`
   const early = hhmm(template.early_ot_start_time)
@@ -88,16 +148,9 @@ export function templateHoursSummary(template: {
     weekdayOt ? `OT ${weekdayOt}` : '',
   ].filter(Boolean).join(', ')
   const lines = [`Mon–Fri ${weekday}${otBits ? ` · ${otBits}` : ''}`]
-  const weekendStart = hhmm(template.weekend_start_time)
-  const weekendEnd = hhmm(template.weekend_end_time)
-  if (weekendStart && weekendEnd) {
-    const weekendEarly = hhmm(template.weekend_early_ot_start_time)
-    const weekendOt = hhmm(template.weekend_ot_start_time)
-    const weekendBits = [
-      weekendEarly ? `early OT ${weekendEarly}` : '',
-      weekendOt ? `OT ${weekendOt}` : '',
-    ].filter(Boolean).join(', ')
-    lines.push(`Sat–Sun ${weekendStart}–${weekendEnd}${weekendBits ? ` · ${weekendBits}` : ''}`)
-  }
+  const saturday = daySummary('Sat', template.weekend_start_time, template.weekend_end_time, template.weekend_early_ot_start_time, template.weekend_ot_start_time)
+  const sunday = daySummary('Sun', template.sunday_start_time, template.sunday_end_time, template.sunday_early_ot_start_time, template.sunday_ot_start_time)
+  if (saturday) lines.push(saturday)
+  if (sunday) lines.push(sunday)
   return lines.join(' · ')
 }

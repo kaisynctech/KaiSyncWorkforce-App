@@ -1,5 +1,7 @@
 'use client'
 
+import type { DayScheduleInput } from '@/lib/shift-template-schedule'
+
 function TimeField({
   label,
   value,
@@ -27,44 +29,89 @@ function TimeField({
   )
 }
 
+function DayCard({
+  title,
+  dayName,
+  day,
+  onChange,
+}: {
+  title: string
+  dayName: string
+  day: DayScheduleInput
+  onChange: (next: DayScheduleInput) => void
+}) {
+  return (
+    <div className="card p-4 space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="section-label">{title}</p>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={day.enabled}
+          aria-label={`${dayName} hours`}
+          onClick={() => onChange({ ...day, enabled: !day.enabled })}
+          className={`relative rounded-pill transition-colors shrink-0 ${day.enabled ? 'bg-primary' : 'bg-border'}`}
+          style={{ height: '22px', width: '40px' }}
+        >
+          <span
+            className={`absolute top-0.5 left-0.5 rounded-full bg-white shadow transition-transform ${day.enabled ? 'translate-x-[18px]' : 'translate-x-0'}`}
+            style={{ width: '18px', height: '18px' }}
+          />
+        </button>
+      </div>
+      <p className="text-[12px] text-text-secondary">
+        {day.enabled
+          ? `${dayName} uses these hours.`
+          : `${dayName} uses the Monday to Friday hours.`}
+      </p>
+      {day.enabled && (
+        <>
+          <TimeField label="Start time" value={day.start} onChange={start => onChange({ ...day, start })} />
+          <TimeField
+            label="Early overtime starts at"
+            value={day.earlyOtStart}
+            onChange={earlyOtStart => onChange({ ...day, earlyOtStart })}
+            hint={`Leave blank if time before this ${dayName.toLowerCase()} start is not paid.`}
+          />
+          <TimeField label="End time" value={day.end} onChange={end => onChange({ ...day, end })} />
+          <TimeField
+            label="Overtime starts at"
+            value={day.otStart}
+            onChange={otStart => onChange({ ...day, otStart })}
+            hint={`Leave blank to use the company overtime grace after this ${dayName.toLowerCase()} end time.`}
+          />
+        </>
+      )}
+    </div>
+  )
+}
+
 export function ScheduleFields({
   startTime,
   endTime,
   otStart,
   earlyOtStart,
-  weekendEnabled,
-  weekendStart,
-  weekendEnd,
-  weekendOtStart,
-  weekendEarlyOtStart,
+  saturday,
+  sunday,
   onStartTime,
   onEndTime,
   onOtStart,
   onEarlyOtStart,
-  onWeekendEnabled,
-  onWeekendStart,
-  onWeekendEnd,
-  onWeekendOtStart,
-  onWeekendEarlyOtStart,
+  onSaturday,
+  onSunday,
 }: {
   startTime: string
   endTime: string
   otStart: string
   earlyOtStart: string
-  weekendEnabled: boolean
-  weekendStart: string
-  weekendEnd: string
-  weekendOtStart: string
-  weekendEarlyOtStart: string
+  saturday: DayScheduleInput
+  sunday: DayScheduleInput
   onStartTime: (value: string) => void
   onEndTime: (value: string) => void
   onOtStart: (value: string) => void
   onEarlyOtStart: (value: string) => void
-  onWeekendEnabled: (value: boolean) => void
-  onWeekendStart: (value: string) => void
-  onWeekendEnd: (value: string) => void
-  onWeekendOtStart: (value: string) => void
-  onWeekendEarlyOtStart: (value: string) => void
+  onSaturday: (value: DayScheduleInput) => void
+  onSunday: (value: DayScheduleInput) => void
 }) {
   return (
     <>
@@ -82,51 +129,12 @@ export function ScheduleFields({
           label="Overtime starts at"
           value={otStart}
           onChange={onOtStart}
-          hint="Leave blank to use Payroll → Settings: overtime begins a set number of minutes after the shift ends."
+          hint="Leave blank to use the company overtime grace after the shift ends."
         />
       </div>
 
-      <div className="card p-4 space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <p className="section-label">SATURDAY AND SUNDAY</p>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={weekendEnabled}
-            onClick={() => onWeekendEnabled(!weekendEnabled)}
-            className={`relative rounded-pill transition-colors shrink-0 ${weekendEnabled ? 'bg-primary' : 'bg-border'}`}
-            style={{ height: '22px', width: '40px' }}
-          >
-            <span
-              className={`absolute top-0.5 left-0.5 rounded-full bg-white shadow transition-transform ${weekendEnabled ? 'translate-x-[18px]' : 'translate-x-0'}`}
-              style={{ width: '18px', height: '18px' }}
-            />
-          </button>
-        </div>
-        <p className="text-[12px] text-text-secondary">
-          {weekendEnabled
-            ? 'Saturday and Sunday use these hours.'
-            : 'Saturday and Sunday use the Monday to Friday hours.'}
-        </p>
-        {weekendEnabled && (
-          <>
-            <TimeField label="Start time" value={weekendStart} onChange={onWeekendStart} />
-            <TimeField
-              label="Early overtime starts at"
-              value={weekendEarlyOtStart}
-              onChange={onWeekendEarlyOtStart}
-              hint="Leave blank if time before this weekend start is not paid."
-            />
-            <TimeField label="End time" value={weekendEnd} onChange={onWeekendEnd} />
-            <TimeField
-              label="Overtime starts at"
-              value={weekendOtStart}
-              onChange={onWeekendOtStart}
-              hint="Leave blank to use the company overtime grace after this weekend end time."
-            />
-          </>
-        )}
-      </div>
+      <DayCard title="SATURDAY" dayName="Saturday" day={saturday} onChange={onSaturday} />
+      <DayCard title="SUNDAY" dayName="Sunday" day={sunday} onChange={onSunday} />
     </>
   )
 }

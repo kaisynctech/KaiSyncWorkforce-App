@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { loadScopedEmployeeIds } from '@/lib/employee-scope'
+import { SHIFT_TEMPLATE_SELECT } from '@/lib/shift-template-schedule'
 import {
   buildPunchSessions,
   earlyFlag,
@@ -298,7 +299,7 @@ export default function AttendancePage() {
         .lte('date_time', `${to}T23:59:59`)
         .order('date_time', { ascending: true }),
       supabase.from('employee_shift_templates')
-        .select('id, start_time, end_time, break_minutes, weekend_start_time, weekend_end_time, ot_start_time, weekend_ot_start_time, early_ot_start_time, weekend_early_ot_start_time')
+        .select(SHIFT_TEMPLATE_SELECT)
         .eq('company_id', cid),
       supabase.from('companies')
         .select('custom_settings')

@@ -181,6 +181,7 @@ export default function EmployeeDetailPage() {
   const [employee, setEmployee] = useState<Employee | null>(null)
   const [branchName, setBranchName] = useState<string | null>(null)
   const [managerName, setManagerName] = useState<string | null>(null)
+  const [templateName, setTemplateName] = useState<string | null>(null)
   const [myCompanyId, setMyCompanyId] = useState<string | null>(null)
   const [myEmployeeId, setMyEmployeeId] = useState<string | null>(null)
   const [myAccessLevel, setMyAccessLevel] = useState<AccessLevel>('employee')
@@ -281,7 +282,7 @@ export default function EmployeeDetailPage() {
     setMyAccessLevel(((me as { access_level: AccessLevel } | null)?.access_level) ?? 'employee')
 
     if (employeeRow) {
-      const [branchRes, managerRes, extraRes] = await Promise.all([
+      const [branchRes, managerRes, extraRes, templateRes] = await Promise.all([
         employeeRow.branch_id
           ? supabase.from('branches').select('name').eq('id', employeeRow.branch_id).maybeSingle()
           : Promise.resolve({ data: null }),
@@ -289,6 +290,9 @@ export default function EmployeeDetailPage() {
           ? supabase.from('employees').select('name, surname').eq('id', employeeRow.manager_id).maybeSingle()
           : Promise.resolve({ data: null }),
         listExtraBranchIds(supabase, member.companyId, employeeRow.id),
+        employeeRow.shift_template_id
+          ? supabase.from('employee_shift_templates').select('name').eq('id', employeeRow.shift_template_id).eq('company_id', member.companyId).maybeSingle()
+          : supabase.from('employee_shift_templates').select('name').eq('company_id', member.companyId).eq('is_default', true).limit(1).maybeSingle(),
       ])
       const homeName = (branchRes.data as { name: string } | null)?.name ?? employeeRow.branch ?? null
       let extraNames: string[] = []
@@ -306,9 +310,15 @@ export default function EmployeeDetailPage() {
       setBranchName(labels.length > 0 ? labels.join(' · ') : null)
       const mgr = managerRes.data as { name: string; surname: string } | null
       setManagerName(mgr ? `${mgr.name} ${mgr.surname}`.trim() : null)
+      const templateRow = templateRes.data as { name?: string | null } | null
+      const templateLabel = templateRow?.name?.trim() || null
+      setTemplateName(templateLabel
+        ? (employeeRow.shift_template_id ? templateLabel : `${templateLabel} (company default)`)
+        : null)
     } else {
       setBranchName(null)
       setManagerName(null)
+      setTemplateName(null)
     }
     setLoading(false)
   }
@@ -545,6 +555,7 @@ export default function EmployeeDetailPage() {
               <div className="p-4 grid grid-cols-2 gap-3">
                 <InfoCell label="Branch" value={branchName ?? '—'} />
                 <InfoCell label="Position" value={employee.position ?? '—'} />
+                <InfoCell label="Time template" value={templateName ?? '—'} />
                 <InfoCell label="Employee number" value={employee.employee_code ?? '—'} />
                 <InfoCell label="ID number" value={employee.id_number ?? '—'} />
                 <InfoCell label="Income tax number" value={employee.tax_number ?? '—'} />
