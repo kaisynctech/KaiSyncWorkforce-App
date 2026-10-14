@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -11,6 +11,7 @@ import { downloadPayslipTemplatePdf, imageUrlToDataUrl } from '@/lib/payslip-pdf
 import { executeWithStepUp } from '@/lib/step-up'
 import { StepUpDialog } from '@/components/step-up-dialog'
 import { isUnpaidLeave } from '@/lib/payroll/leave-days'
+import { calculateMonthlyPaye } from '@/lib/payroll/sars-paye'
 import { computeLeaveSummary, type LeaveSummary } from '@/lib/leave-policy'
 import { loadPayrollSettings } from '@/lib/payroll-settings'
 import { AttendanceNote } from '@/components/attendance/AttendanceNote'
@@ -192,13 +193,17 @@ function absencePayWasChosen(audit: PayrollAuditEntry[] | null | undefined): boo
   return (audit ?? []).some(entry => (entry.detail ?? '').includes('absence pay'))
 }
 
-function SessionTable({ rows }: { rows: PunchSessionRow[] }) {
+function SessionTable({ rows, payForDate }: {
+  rows: PunchSessionRow[]
+  payForDate?: (row: PunchSessionRow) => ReactNode
+}) {
   if (rows.length === 0) return <p className="text-[13px] text-text-secondary">None in this month.</p>
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-[13px]" style={{ minWidth: 980 }}>
+      <table className="w-full text-[13px]" style={{ minWidth: payForDate ? 1080 : 980 }}>
         <thead>
           <tr className="border-b border-divider bg-surface-elevated">
+            {payForDate && <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Pay</th>}
             <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Date</th>
             <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Time In</th>
             <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">In Location</th>
@@ -218,6 +223,7 @@ function SessionTable({ rows }: { rows: PunchSessionRow[] }) {
             const notes = [late, early, row.notes ?? row.statusNote ?? ''].filter(Boolean).join(' · ')
             return (
               <tr key={`${row.clockInPunchId ?? row.clockIn.toISOString()}-${kind}`} className="border-b border-divider last:border-0">
+                {payForDate && <td className="px-4 py-3 whitespace-nowrap">{payForDate(row)}</td>}
                 <td className="px-4 py-3 text-text-secondary whitespace-nowrap">{fmtSessionDate(row.clockIn)}</td>
                 <td className={`px-4 py-3 font-medium whitespace-nowrap ${
                   row.isAbsentDay ? 'text-error' : row.isLeaveDay ? 'text-warning' : row.isLate ? 'text-error' : 'text-success'
@@ -273,6 +279,11 @@ export default function PayslipDetailPage() {
   const [slipTab, setSlipTab] = useState<SlipTab>('pay')
   const [daysPerWeek, setDaysPerWeek] = useState(5)
   const [vatApplies, setVatApplies] = useState(false)
+  const [dateOfBirth, setDateOfBirth] = useState<string | null>(null)
+  const [companyTimezone, setCompanyTimezone] = useState('Africa/Johannesburg')
+  const [unpaidAbsenceDates, setUnpaidAbsenceDates] = useState<string[]>([])
+  const autoApplied = useRef<string | null>(null)
+  const absenceExplicit = useRef(false)
   const [vatSaving, setVatSaving] = useState(false)
   const [weekdayHours, setWeekdayHours] = useState<string | null>(null)
   const [weekendHours, setWeekendHours] = useState<string | null>(null)
@@ -429,6 +440,7 @@ export default function PayslipDetailPage() {
       }
       if (!settingsRes.ok) return
       const settings = settingsRes.settings
+      setCompanyTimezone(settings.company_timezone || 'Africa/Johannesburg')
       const custom = (companyRes.data?.custom_settings ?? {}) as Record<string, unknown>
       const lateMin = Number(custom.late_threshold_minutes ?? 30) || 30
       const otMin = Number(custom.ot_start_after_minutes ?? 30) || 30
@@ -559,7 +571,7 @@ export default function PayslipDetailPage() {
     const [{ data: person, error: personErr }, { data: company, error: companyErr }] = await Promise.all([
       supabase
         .from('employees')
-        .select('name, surname, monthly_salary, hourly_rate, daily_rate, daily_hours, work_days_weekly, uif_fixed_amount, uif_rate_percent, uif_exempt, employment_date, termination_date, pay_full_monthly_salary, bank_name, bank_branch_code, bank_account, account_type, employee_code, id_number, tax_number, overtime_rate, overtime_hourly_rate, paid_leave_balance, sick_leave_balance, address')
+        .select('name, surname, monthly_salary, hourly_rate, daily_rate, daily_hours, work_days_weekly, uif_fixed_amount, uif_rate_percent, uif_exempt, employment_date, termination_date, date_of_birth, pay_full_monthly_salary, bank_name, bank_branch_code, bank_account, account_type, employee_code, id_number, tax_number, overtime_rate, overtime_hourly_rate, paid_leave_balance, sick_leave_balance, address')
         .eq('id', p.employee_id)
         .eq('company_id', p.company_id)
         .maybeSingle(),
@@ -615,6 +627,7 @@ export default function PayslipDetailPage() {
       setEmployeeNumber(row.employee_code ?? '')
       setEmployeeIdNumber(row.id_number ?? '')
       setIncomeTaxNumber((row as PersonPay & { tax_number?: string | null }).tax_number ?? '')
+      setDateOfBirth((row as { date_of_birth?: string | null }).date_of_birth ?? null)
       setEmploymentDateText(row.employment_date ? fmtDmy(row.employment_date) : '')
       const hourly = Number(row.hourly_rate) || 0
       setHourlyRateText(moneyText(hourly))
@@ -658,6 +671,9 @@ export default function PayslipDetailPage() {
       loanBalance: picked(savedLines?.loanBalance, 0),
       unpaidLeave: picked(savedLines?.unpaidLeave, unpaidLine),
     })
+    const savedDates = (savedLines as { unpaidAbsenceDates?: unknown } | null)?.unpaidAbsenceDates
+    absenceExplicit.current = Array.isArray(savedDates)
+    setUnpaidAbsenceDates(absenceExplicit.current ? (savedDates as unknown[]).filter((day): day is string => typeof day === 'string') : [])
 
     setLoading(false)
   }
@@ -846,7 +862,7 @@ export default function PayslipDetailPage() {
     }))
   }
 
-  async function saveLines(next: SlipLines, flags?: { payFull?: boolean; waive?: boolean }) {
+  async function saveLines(next: SlipLines, flags?: { payFull?: boolean; waive?: boolean; unpaidAbsenceDates?: string[] }) {
     if (!payment || payment.status !== 'pending') return
     setBusy(true)
     setErrorMsg(null)
@@ -862,6 +878,7 @@ export default function PayslipDetailPage() {
       loanDeduction: moneyValue(next.loanDeduction),
       loanBalance: moneyValue(next.loanBalance),
       unpaidLeave: moneyValue(next.unpaidLeave),
+      unpaidAbsenceDates: flags?.unpaidAbsenceDates ?? unpaidAbsenceDates,
     }, {
       payFullBaseSalary: flags?.payFull ?? payFullSalary,
       waivePenalties: flags?.waive ?? waivePenalties,
@@ -886,6 +903,66 @@ export default function PayslipDetailPage() {
       uif_fixed_amount: moneyValue(next.uif),
     }))
   }
+
+  function dayKey(row: PunchSessionRow): string {
+    return toLocalDateStr(row.clockIn, companyTimezone)
+  }
+
+  function dailyRateNow(): number {
+    if (personPay.daily_rate > 0) return personPay.daily_rate
+    const hours = personPay.daily_hours > 0 ? personPay.daily_hours : 8
+    return personPay.hourly_rate * hours
+  }
+
+  function unpaidAmountFor(dates: string[]): string {
+    const leaveDaysUnpaid = Number((payment as { unpaid_leave_days?: number | null } | null)?.unpaid_leave_days ?? 0)
+    return moneyText(Math.round((dates.length + leaveDaysUnpaid) * dailyRateNow() * 100) / 100)
+  }
+
+  function applyAbsenceDates(dates: string[], payAll: boolean) {
+    const nextLines = { ...lines, unpaidLeave: unpaidAmountFor(dates) }
+    setUnpaidAbsenceDates(dates)
+    setWaivePenalties(payAll)
+    setLines(nextLines)
+    void saveLines(nextLines, { waive: payAll, unpaidAbsenceDates: dates })
+  }
+
+  useEffect(() => {
+    if (loading || daysLoading || !payment || payment.status !== 'pending') return
+    if (autoApplied.current === payment.id) return
+    const saved = (payment as EmployeePayment & { payslip_lines?: Partial<PayslipLineAmounts> | null }).payslip_lines
+    const hours = days
+      .filter(day => !day.isAbsentDay && !day.isLeaveDay && !day.isOpen)
+      .reduce((sum, day) => sum + day.overtimeHours, 0)
+    const otAmount = Math.round(hours * moneyValue(overtimeRateText) * 100) / 100
+    let next = { ...lines }
+    let changed = false
+    let dates = unpaidAbsenceDates
+    if (!absenceExplicit.current && !waivePenalties) {
+      dates = days.filter(day => day.isAbsentDay).map(dayKey)
+      if (dates.length > 0) {
+        setUnpaidAbsenceDates(dates)
+        next = { ...next, unpaidLeave: unpaidAmountFor(dates) }
+        changed = true
+      }
+    }
+    if ((saved == null || saved.overtime == null) && otAmount > 0 && moneyValue(next.overtime) === 0) {
+      next = { ...next, overtime: moneyText(otAmount) }
+      changed = true
+    }
+    const gross = moneyValue(next.regular) + moneyValue(next.overtime) + moneyValue(next.bonus) + moneyValue(next.incentive) + moneyValue(next.refund)
+    const paye = calculateMonthlyPaye(gross, dateOfBirth)
+    const currentPaye = moneyValue(next.paye)
+    const flatEighteen = Math.round(gross * 0.18 * 100) / 100
+    if ((saved == null || Math.abs(currentPaye - flatEighteen) < 0.01) && Math.abs(paye - currentPaye) >= 0.01) {
+      next = { ...next, paye: moneyText(paye) }
+      changed = true
+    }
+    autoApplied.current = payment.id
+    if (!changed) return
+    setLines(next)
+    void saveLines(next, { unpaidAbsenceDates: dates, waive: dates.length === 0 })
+  }, [loading, daysLoading, days, payment, lines, overtimeRateText, dateOfBirth, unpaidAbsenceDates, waivePenalties])
 
   async function downloadPdf() {
     if (!payment) return
@@ -1128,12 +1205,12 @@ export default function PayslipDetailPage() {
               </tr>
               <tr className="bg-surface-card border-b border-divider">
                 <td className="data-td text-text-primary text-[13px]">Overtime hours</td>
-                <td className="data-td text-right text-[13px]">{(payment.overtime_hours ?? 0).toFixed(1)}h</td>
+                <td className="data-td text-right text-[13px]">{(daysLoading ? (payment.overtime_hours ?? 0) : days.filter(day => !day.isAbsentDay && !day.isLeaveDay && !day.isOpen).reduce((sum, day) => sum + day.overtimeHours, 0)).toFixed(1)}h</td>
               </tr>
               <tr className="bg-surface-card">
                 <td className="data-td text-text-primary text-[13px]">
                   <p>VAT applies</p>
-                  <p className="text-[11px] text-text-secondary mt-0.5">Saved on this person. It does not change PAYE or UIF.</p>
+                  <p className="text-[11px] text-text-secondary mt-0.5">Saved on this person. It does not add VAT to this payslip, and it does not change PAYE or UIF. PAYE uses the SARS tax tables.</p>
                 </td>
                 <td className="data-td text-right">
                   <span className="hidden print:inline text-[13px]">{vatApplies ? 'Yes' : 'No'}</span>
@@ -1162,15 +1239,43 @@ export default function PayslipDetailPage() {
             <div>
               <p className="section-label">ABSENCE</p>
               <p className="text-[12px] text-text-secondary mt-1">
-                {daysLoading ? 'Loading this pay period…' : `${absentRows.length} absent day${absentRows.length === 1 ? '' : 's'}.`}
+                {daysLoading
+                  ? 'Loading this pay period…'
+                  : `${absentRows.length} absent day${absentRows.length === 1 ? '' : 's'}. ${absentRows.length - unpaidAbsenceDates.filter(date => absentRows.some(row => dayKey(row) === date)).length} paid, ${unpaidAbsenceDates.filter(date => absentRows.some(row => dayKey(row) === date)).length} unpaid.`}
               </p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              <span className="text-[13px] text-text-primary">Pay these absent days</span>
-              <Toggle checked={waivePenalties} onChange={v => { setWaivePenalties(v); void saveLines(lines, { waive: v }) }} disabled={!canEdit} />
+              <span className="text-[13px] text-text-primary">Pay every absent day</span>
+              <Toggle
+                checked={unpaidAbsenceDates.length === 0}
+                onChange={payAll => {
+                  const dates = payAll ? [] : absentRows.map(dayKey)
+                  applyAbsenceDates(dates, payAll)
+                }}
+                disabled={!canEdit}
+              />
             </div>
           </div>
-          {!daysLoading && <SessionTable rows={absentRows} />}
+          {!daysLoading && (
+            <SessionTable
+              rows={absentRows}
+              payForDate={row => {
+                const date = dayKey(row)
+                const paid = !unpaidAbsenceDates.includes(date)
+                return (
+                  <span className="inline-flex items-center gap-2">
+                    <span className="text-[12px] text-text-secondary">{paid ? 'Paid' : 'Unpaid'}</span>
+                    <Toggle checked={paid} onChange={next => {
+                      const dates = next
+                        ? unpaidAbsenceDates.filter(item => item !== date)
+                        : [...unpaidAbsenceDates, date]
+                      applyAbsenceDates(dates, dates.length === 0)
+                    }} disabled={!canEdit} />
+                  </span>
+                )
+              }}
+            />
+          )}
         </div>
 
         <div className="card p-4 space-y-3">

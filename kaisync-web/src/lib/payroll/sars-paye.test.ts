@@ -7,11 +7,11 @@ describe('calculateAnnualTax', () => {
   })
 
   it('applies bracket base + marginal rate above the first threshold', () => {
-    expect(calculateAnnualTax(300_000)).toBeCloseTo(42_678 + (300_000 - 237_100) * 0.26, 2)
+    expect(calculateAnnualTax(300_000)).toBeCloseTo(44_118 + (300_000 - 245_100) * 0.26, 2)
   })
 
   it('applies the top marginal rate above the highest bracket', () => {
-    expect(calculateAnnualTax(2_000_000)).toBeCloseTo(956_793 + (2_000_000 - 1_817_000) * 0.45, 2)
+    expect(calculateAnnualTax(2_000_000)).toBeCloseTo(666_339 + (2_000_000 - 1_878_600) * 0.45, 2)
   })
 
   it('returns 0 for non-positive income', () => {
@@ -21,8 +21,8 @@ describe('calculateAnnualTax', () => {
 })
 
 describe('annualTaxThreshold', () => {
-  it('is the 2025/26 under-65 threshold', () => {
-    expect(annualTaxThreshold()).toBe(95_750)
+  it('is the 2026/27 under-65 threshold', () => {
+    expect(annualTaxThreshold()).toBe(99_000)
   })
 
   it('treats R4,000 a month as below the threshold', () => {
@@ -35,7 +35,7 @@ describe('calculateMonthlyPaye', () => {
   it('applies the primary rebate with no date of birth', () => {
     const monthly = 30_000
     const annualTax = calculateAnnualTax(monthly * 12)
-    const expected = Math.round(Math.max(0, annualTax - 17_235) / 12 * 100) / 100
+    const expected = Math.round(Math.max(0, annualTax - 17_820) / 12 * 100) / 100
     expect(calculateMonthlyPaye(monthly)).toBeCloseTo(expected, 2)
   })
 
