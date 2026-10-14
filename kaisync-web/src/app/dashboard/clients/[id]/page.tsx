@@ -1037,7 +1037,7 @@ function ClientDetailInner() {
         </div>
       )}
 
-      <div className={`flex-1 overflow-y-auto p-4 space-y-4 ${tab === 'activity' ? 'max-w-3xl' : 'max-w-2xl'}`}>
+      <div className="flex-1 overflow-y-auto p-4 pr-5 space-y-4 [scrollbar-gutter:stable]">
 
         {(isNew || tab === 'info') && (
           <>
