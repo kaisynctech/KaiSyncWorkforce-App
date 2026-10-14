@@ -104,6 +104,7 @@ export default function PayrollPage() {
 
   // persist company across re-renders without triggering re-fetch
   const companyIdRef = useRef<string | null>(null)
+  const refreshedPeriods = useRef(new Set<string>())
 
   const [payments,     setPayments]     = useState<PayrollRecord[]>([])
   const [loading,      setLoading]      = useState(true)
@@ -181,10 +182,20 @@ export default function PayrollPage() {
       return
     }
 
-    setPayments((paymentsData ?? []) as PayrollRecord[])
-    setIsLocked(
-      (locks ?? []).some(l => l.period_start === from && l.period_end === to)
-    )
+    const rows = (paymentsData ?? []) as PayrollRecord[]
+    const locked = (locks ?? []).some(l => l.period_start === from && l.period_end === to)
+    setIsLocked(locked)
+    const refreshKey = `${cid}|${from}|${to}`
+    if (!locked && rows.some(row => row.status === 'pending') && !refreshedPeriods.current.has(refreshKey)) {
+      refreshedPeriods.current.add(refreshKey)
+      const refreshed = await generatePayrollPeriod(supabase, cid, from, to)
+      if (!refreshed.ok) setError(refreshed.message)
+      else if (refreshed.data.errors.length > 0) setError(refreshed.data.errors[0])
+      await loadPayroll(from, to)
+      return
+    }
+
+    setPayments(rows)
     setLoading(false)
   }
 

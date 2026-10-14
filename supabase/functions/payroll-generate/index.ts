@@ -28,6 +28,7 @@ import {
 import { prefsToSettings, withCompanyTimezone, type PayrollSettings } from '../_shared/payroll/prefs.ts'
 import type { AbsenceSnapshot } from '../_shared/payroll/calculator.ts'
 import { calendarMonthBounds } from '../_shared/payroll/period.ts'
+import { calculateMonthlyPaye } from '../_shared/payroll/sars-paye.ts'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -106,7 +107,37 @@ function totalsFromLines(raw: Record<string, unknown>) {
     { label: 'Loan Deduction', amount: loanDeduction },
     { label: 'Unpaid Leave', amount: unpaidLeave },
   ].filter(line => line.amount > 0)
-  return { saved, gross, deductions, net, regular, overtime, bonus, paye, loanDeduction, earnings, deductionLines }
+  return { saved, gross, deductions, net, regular, overtime, bonus, paye, loanDeduction, earnings, deductionLines, uif, unpaidLeave }
+}
+
+/** A saved PAYE figure that is still 18% of gross is the old flat rate, not the SARS tables. */
+function payeFromCurrentTables(
+  typed: ReturnType<typeof totalsFromLines>,
+  engineOvertime: number,
+  dateOfBirth: string | null
+) {
+  const overtime = typed.overtime > 0 ? typed.overtime : Math.round(Math.max(0, engineOvertime) * 100) / 100
+  const gross = Math.round((typed.regular + overtime + typed.bonus + typed.saved.incentive + typed.saved.refund) * 100) / 100
+  const flatOnSavedGross = Math.round(typed.gross * 18) / 100
+  const sarsPaye = calculateMonthlyPaye(gross, dateOfBirth)
+  const paye = Math.abs(typed.paye - flatOnSavedGross) < 0.05 ? sarsPaye : typed.paye
+  const deductions = Math.round((typed.uif + paye + typed.loanDeduction + typed.unpaidLeave) * 100) / 100
+  const net = Math.round(Math.max(0, gross - deductions) * 100) / 100
+  const saved = { ...typed.saved, overtime, paye }
+  const earnings = [
+    { label: 'Regular Earnings', amount: typed.regular },
+    { label: 'Overtime', amount: overtime },
+    { label: 'Bonus', amount: typed.bonus },
+    { label: 'Incentive Pay', amount: typed.saved.incentive },
+    { label: 'Refund', amount: typed.saved.refund },
+  ].filter(line => line.amount > 0)
+  const deductionLines = [
+    { label: 'UIF', amount: typed.uif },
+    { label: 'PAYE', amount: paye },
+    { label: 'Loan Deduction', amount: typed.loanDeduction },
+    { label: 'Unpaid Leave', amount: typed.unpaidLeave },
+  ].filter(line => line.amount > 0)
+  return { saved, gross, deductions, net, regular: typed.regular, overtime, bonus: typed.bonus, paye, loanDeduction: typed.loanDeduction, earnings, deductionLines }
 }
 
 function hasPayRate(emp: EmployeeRow): boolean {
@@ -475,7 +506,7 @@ async function handleGenerate(
     if (existingPay) {
       const priorAudit = Array.isArray(existingPay.audit_log) ? existingPay.audit_log : []
       const typed = existingPay.payslip_lines && typeof existingPay.payslip_lines === 'object'
-        ? totalsFromLines(existingPay.payslip_lines)
+        ? payeFromCurrentTables(totalsFromLines(existingPay.payslip_lines), slip.overtime_pay, raw.date_of_birth ?? null)
         : null
       const { error: updateErr } = await admin.from('payment_approvals').update({
         ...figures,
