@@ -193,14 +193,18 @@ function absencePayWasChosen(audit: PayrollAuditEntry[] | null | undefined): boo
   return (audit ?? []).some(entry => (entry.detail ?? '').includes('absence pay'))
 }
 
-function SessionTable({ rows, payForDate }: {
+function SessionTable({ rows, payForDate, calculationForRow, totalLabel, totalValue }: {
   rows: PunchSessionRow[]
   payForDate?: (row: PunchSessionRow) => ReactNode
+  calculationForRow?: (row: PunchSessionRow) => string
+  totalLabel?: string
+  totalValue?: string
 }) {
   if (rows.length === 0) return <p className="text-[13px] text-text-secondary">None in this month.</p>
+  const columnCount = 9 + (payForDate ? 1 : 0) + (calculationForRow ? 1 : 0)
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-[13px]" style={{ minWidth: payForDate ? 1080 : 980 }}>
+      <table className="w-full text-[13px]" style={{ minWidth: calculationForRow ? 1180 : payForDate ? 1080 : 980 }}>
         <thead>
           <tr className="border-b border-divider bg-surface-elevated">
             {payForDate && <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Pay</th>}
@@ -212,6 +216,7 @@ function SessionTable({ rows, payForDate }: {
             <th className="text-right px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Reg</th>
             <th className="text-right px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">OT</th>
             <th className="text-right px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Total</th>
+            {calculationForRow && <th className="text-right px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Calculation</th>}
             <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Notes</th>
           </tr>
         </thead>
@@ -249,12 +254,22 @@ function SessionTable({ rows, payForDate }: {
                   {row.overtimeHours > 0 ? row.overtimeHours.toFixed(1) : '—'}
                 </td>
                 <td className="px-4 py-3 text-right font-semibold text-text-primary">{totalHrsDisplay(row)}</td>
+                {calculationForRow && (
+                  <td className="px-4 py-3 text-right text-text-primary whitespace-nowrap">{calculationForRow(row)}</td>
+                )}
                 <td className="px-4 py-3">
                   <AttendanceNote note={notes} context={fmtSessionDate(row.clockIn)} />
                 </td>
               </tr>
             )
           })}
+          {totalLabel && totalValue && (
+            <tr className="border-t border-divider bg-surface-elevated">
+              <td className="px-4 py-3 font-semibold text-text-primary" colSpan={columnCount - (calculationForRow ? 2 : 1)}>{totalLabel}</td>
+              {calculationForRow && <td className="px-4 py-3 text-right font-semibold text-text-primary whitespace-nowrap">{totalValue}</td>}
+              <td className="px-4 py-3" />
+            </tr>
+          )}
         </tbody>
       </table>
     </div>
@@ -908,12 +923,14 @@ export default function PayslipDetailPage() {
 
   useEffect(() => {
     if (loading || daysLoading || !payment || payment.status !== 'pending') return
-    if (autoApplied.current === payment.id) return
-    const saved = (payment as EmployeePayment & { payslip_lines?: Partial<PayslipLineAmounts> | null }).payslip_lines
+    const rate = moneyValue(overtimeRateText)
     const hours = days
       .filter(day => !day.isAbsentDay && !day.isLeaveDay && !day.isOpen)
       .reduce((sum, day) => sum + day.overtimeHours, 0)
-    const otAmount = Math.round(hours * moneyValue(overtimeRateText) * 100) / 100
+    const otAmount = hours > 0 && rate > 0 ? Math.round(hours * rate * 100) / 100 : 0
+    const syncKey = `${payment.id}|${otAmount}`
+    if (autoApplied.current === syncKey) return
+    const saved = (payment as EmployeePayment & { payslip_lines?: Partial<PayslipLineAmounts> | null }).payslip_lines
     let next = { ...lines }
     let changed = false
     let dates = unpaidAbsenceDates
@@ -925,7 +942,7 @@ export default function PayslipDetailPage() {
         changed = true
       }
     }
-    if ((saved == null || saved.overtime == null) && otAmount > 0 && moneyValue(next.overtime) === 0) {
+    if (otAmount > 0 && Math.abs(moneyValue(next.overtime) - otAmount) >= 0.01) {
       next = { ...next, overtime: moneyText(otAmount) }
       changed = true
     }
@@ -933,11 +950,13 @@ export default function PayslipDetailPage() {
     const paye = calculateMonthlyPaye(gross, dateOfBirth)
     const currentPaye = moneyValue(next.paye)
     const flatEighteen = Math.round(gross * 0.18 * 100) / 100
-    if ((saved == null || Math.abs(currentPaye - flatEighteen) < 0.01) && Math.abs(paye - currentPaye) >= 0.01) {
+    const previousGross = gross - moneyValue(next.overtime) + moneyValue(lines.overtime)
+    const previousSars = calculateMonthlyPaye(previousGross, dateOfBirth)
+    if ((saved == null || Math.abs(currentPaye - flatEighteen) < 0.05 || Math.abs(currentPaye - previousSars) < 0.05) && Math.abs(paye - currentPaye) >= 0.01) {
       next = { ...next, paye: moneyText(paye) }
       changed = true
     }
-    autoApplied.current = payment.id
+    autoApplied.current = syncKey
     if (!changed) return
     setLines(next)
     void saveLines(next, { unpaidAbsenceDates: dates, waive: dates.length === 0 })
@@ -1043,6 +1062,18 @@ export default function PayslipDetailPage() {
   const leftThisMonth = inPayPeriod(personPay.termination_date, payment.period_start, payment.period_end)
   const paysFullMonth = payFullSalary || personPay.pay_full_monthly_salary
   const overtimeRows = days.filter(day => !day.isAbsentDay && !day.isLeaveDay && day.overtimeHours > 0)
+  const overtimeFactor = personPay.overtime_rate > 0 ? personPay.overtime_rate : otMultiplier
+  const overtimeHourlyRate = moneyValue(overtimeRateText)
+  const hourlyRateNow = moneyValue(hourlyRateText)
+  const overtimeUsesFactor = Math.abs(overtimeHourlyRate - Math.round(hourlyRateNow * overtimeFactor * 100) / 100) < 0.02
+  const overtimeLinePay = (hours: number) => Math.round(hours * overtimeHourlyRate * 100) / 100
+  const overtimeTotalPay = Math.round(overtimeRows.reduce((sum, row) => sum + overtimeLinePay(row.overtimeHours), 0) * 100) / 100
+  const overtimeCalculation = (hours: number) => {
+    const amount = overtimeLinePay(hours)
+    const hourText = String(Math.round(hours * 100) / 100)
+    if (overtimeUsesFactor) return `${hourText}h × ${overtimeFactor} × ${fmtR(hourlyRateNow)} = ${fmtR(amount)}`
+    return `${hourText}h × ${fmtR(overtimeHourlyRate)} = ${fmtR(amount)}`
+  }
   const absentRows = days.filter(day => day.isAbsentDay)
   const leaveDayRows = days.filter(day => day.isLeaveDay)
   const grossNow = moneyValue(lines.regular) + moneyValue(lines.overtime) + moneyValue(lines.bonus) + moneyValue(lines.incentive) + moneyValue(lines.refund)
@@ -1194,10 +1225,19 @@ export default function PayslipDetailPage() {
           <div>
             <p className="section-label">OVERTIME</p>
             <p className="text-[12px] text-text-secondary mt-1">
-              {daysLoading ? 'Loading this pay period…' : `${overtimeRows.length} day${overtimeRows.length === 1 ? '' : 's'} with overtime.`}
+              {daysLoading
+                ? 'Loading this pay period…'
+                : `${overtimeRows.length} day${overtimeRows.length === 1 ? '' : 's'} with overtime. Rate ${overtimeFactor} · ${fmtR(overtimeHourlyRate)} per hour.`}
             </p>
           </div>
-          {!daysLoading && <SessionTable rows={overtimeRows} />}
+          {!daysLoading && (
+            <SessionTable
+              rows={overtimeRows}
+              calculationForRow={row => overtimeCalculation(row.overtimeHours)}
+              totalLabel="Total overtime"
+              totalValue={fmtR(overtimeTotalPay)}
+            />
+          )}
         </div>
 
         <div className="card p-4 space-y-3">
