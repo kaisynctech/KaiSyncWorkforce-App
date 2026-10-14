@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { filterTeamsByScope, loadScopedEmployeeIds } from '@/lib/employee-scope'
@@ -333,7 +334,9 @@ export default function TeamPunchPage() {
                   </span>
                 </div>
                 <div>
-                  <p className="font-medium text-[14px] text-text-primary">{fullName}</p>
+                  <Link href={`/dashboard/employees/${m.employee_id}`} className="font-medium text-[14px] text-text-primary hover:text-primary hover:underline">
+                    {fullName}
+                  </Link>
                   {emp && emp.position && <p className="text-[11px] text-text-secondary">{emp.position}</p>}
                 </div>
                 <div className="flex flex-col items-end gap-0.5">

@@ -1064,7 +1064,11 @@ export default function EmployeesPage() {
                           const approved = row.status === 'approved'
                           return (
                             <tr key={row.id} className="border-b border-divider last:border-0">
-                              <td className="px-5 py-3 font-medium text-text-primary">{name}</td>
+                              <td className="px-5 py-3">
+                                <Link href={`/dashboard/employees/${row.employee_id}?tab=leave`} className="font-medium text-text-primary hover:text-primary hover:underline">
+                                  {name}
+                                </Link>
+                              </td>
                               <td className="px-5 py-3 text-text-secondary capitalize">
                                 {row.leave_type.replace(/_/g, ' ')}
                               </td>
@@ -1104,7 +1108,9 @@ export default function EmployeesPage() {
                     return (
                       <div key={req.id} className="flex items-center gap-4 px-5 py-3">
                         <div className="flex-1 min-w-0">
-                          <p className="text-[13px] font-medium text-text-primary truncate">{name}</p>
+                          <Link href={`/dashboard/employees/${req.employee_id}?tab=leave`} className="block text-[13px] font-medium text-text-primary truncate hover:text-primary hover:underline">
+                            {name}
+                          </Link>
                           <p className="text-[12px] text-text-secondary capitalize">
                             {req.leave_type.replace(/_/g, ' ')} · {fmtDate(req.start_date)}
                             {req.end_date ? ` – ${fmtDate(req.end_date)}` : ''}
@@ -1182,7 +1188,11 @@ export default function EmployeesPage() {
                       <tbody>
                         {filteredLeave.map((b, i) => (
                           <tr key={i} className="border-b border-divider last:border-0">
-                            <td className="px-5 py-3 font-medium text-text-primary">{b.employeeName}</td>
+                            <td className="px-5 py-3">
+                              <Link href={`/dashboard/employees/${b.employeeId}?tab=leave`} className="font-medium text-text-primary hover:text-primary hover:underline">
+                                {b.employeeName}
+                              </Link>
+                            </td>
                             <td className="px-5 py-3 text-text-secondary capitalize">
                               {b.leaveType.replace(/_/g, ' ')}
                             </td>
