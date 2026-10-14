@@ -335,80 +335,86 @@ export default function JobsPage() {
 
   return (
     <div className="h-full min-h-0 flex flex-col">
-      <div className="px-3 pt-2 pb-2 flex flex-wrap items-center gap-2 shrink-0">
-        <h1 className="text-[16px] font-bold text-text-primary shrink-0">Jobs</h1>
-        <div className="flex items-center gap-1 shrink-0">
-          <span className="inline-flex items-baseline gap-1 rounded px-1.5 py-0.5 bg-[#1E293B]">
-            <span className="text-[13px] font-semibold text-[#94A3B8]">{kpis.total}</span>
-            <span className="text-[10px] text-[#64748B]">Total</span>
-          </span>
-          <span className="inline-flex items-baseline gap-1 rounded px-1.5 py-0.5 bg-[#0F2918]">
-            <span className="text-[13px] font-semibold text-[#22C55E]">{kpis.open}</span>
-            <span className="text-[10px] text-[#4ADE80]">Open</span>
-          </span>
-          <span className="inline-flex items-baseline gap-1 rounded px-1.5 py-0.5 bg-[#1E293B]">
-            <span className="text-[13px] font-semibold text-[#FCD34D]">{kpis.inProgress}</span>
-            <span className="text-[10px] text-[#64748B]">In progress</span>
-          </span>
-          <span className="inline-flex items-baseline gap-1 rounded px-1.5 py-0.5 bg-[#1E293B]">
-            <span className="text-[13px] font-semibold text-[#FCA5A5]">{kpis.unassigned}</span>
-            <span className="text-[10px] text-[#64748B]">Unassigned</span>
-          </span>
-        </div>
-        <div className="flex rounded-md overflow-hidden border border-divider shrink-0">
-          {([
-            { value: 'all' as Scope, label: `All${canViewAll ? ` (${kpis.total})` : ''}`, disabled: !canViewAll },
-            { value: 'mine' as Scope, label: 'Mine', disabled: false },
-          ]).map(({ value, label, disabled }) => (
+      <div className="px-3 pt-3 pb-2 space-y-2 shrink-0">
+        <div className="flex items-center justify-between gap-2">
+          <h1 className="text-[16px] font-bold text-text-primary">Jobs</h1>
+          <div className="flex items-center gap-2">
             <button
-              key={value}
-              onClick={() => !disabled && setScope(value)}
-              disabled={disabled}
-              className={cn(
-                'h-7 px-2.5 text-[12px] font-medium transition-colors disabled:opacity-40',
-                scope === value ? 'bg-primary text-white' : 'bg-surface text-text-secondary hover:text-text-primary'
-              )}
+              onClick={downloadCSV}
+              className="flex items-center gap-1 h-8 px-2.5 rounded-sm bg-surface border border-border text-[12px] text-text-secondary font-medium hover:border-primary hover:text-primary transition-colors"
             >
-              {label}
+              <span className="material-icons text-[16px]">download</span>
+              Export
             </button>
-          ))}
+            {canCreate && (
+              <Link
+                href="/dashboard/jobs/new"
+                className="flex items-center gap-1 h-8 px-2.5 rounded-sm bg-primary text-white text-[12px] font-semibold hover:bg-primary-dark transition-colors"
+              >
+                <span className="material-icons text-[16px]">add</span>
+                New Job
+              </Link>
+            )}
+          </div>
         </div>
-        <div className="flex items-center gap-1.5 h-8 px-2 bg-surface border border-border rounded-sm flex-1 min-w-[180px]">
-          <span className="material-icons text-text-disabled text-[16px]">search</span>
-          <input
-            type="text"
-            placeholder="Search title, code, or client"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="flex-1 min-w-0 text-[13px] text-text-primary placeholder:text-text-disabled bg-transparent focus:outline-none"
-          />
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#1E293B]">
+            <span className="text-[14px] font-semibold text-[#94A3B8]">{kpis.total}</span>
+            <span className="text-[11px] text-[#64748B]">Total</span>
+          </span>
+          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#0F2918]">
+            <span className="text-[14px] font-semibold text-[#22C55E]">{kpis.open}</span>
+            <span className="text-[11px] text-[#4ADE80]">Open</span>
+          </span>
+          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#1E293B]">
+            <span className="text-[14px] font-semibold text-[#FCD34D]">{kpis.inProgress}</span>
+            <span className="text-[11px] text-[#64748B]">In progress</span>
+          </span>
+          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#1E293B]">
+            <span className="text-[14px] font-semibold text-[#FCA5A5]">{kpis.unassigned}</span>
+            <span className="text-[11px] text-[#64748B]">Unassigned</span>
+          </span>
         </div>
-        <button
-          onClick={() => setFilterOpen(v => !v)}
-          className={cn(
-            'h-8 px-2.5 rounded-sm border text-[12px] font-medium flex items-center gap-1 transition-colors shrink-0',
-            filterOpen ? 'bg-primary text-white border-primary' : 'bg-surface border-border text-text-secondary hover:text-text-primary'
-          )}
-        >
-          <span className="material-icons text-[16px]">filter_list</span>
-          Filter
-        </button>
-        <button
-          onClick={downloadCSV}
-          className="flex items-center gap-1 h-8 px-2.5 rounded-sm bg-surface border border-border text-[12px] text-text-secondary font-medium hover:border-primary hover:text-primary transition-colors shrink-0"
-        >
-          <span className="material-icons text-[16px]">download</span>
-          Export
-        </button>
-        {canCreate && (
-          <Link
-            href="/dashboard/jobs/new"
-            className="flex items-center gap-1 h-8 px-2.5 rounded-sm bg-primary text-white text-[12px] font-semibold hover:bg-primary-dark transition-colors shrink-0"
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-md overflow-hidden border border-divider shrink-0">
+            {([
+              { value: 'all' as Scope, label: `All${canViewAll ? ` (${kpis.total})` : ''}`, disabled: !canViewAll },
+              { value: 'mine' as Scope, label: 'Mine', disabled: false },
+            ]).map(({ value, label, disabled }) => (
+              <button
+                key={value}
+                onClick={() => !disabled && setScope(value)}
+                disabled={disabled}
+                className={cn(
+                  'h-8 px-3 text-[12px] font-medium transition-colors disabled:opacity-40',
+                  scope === value ? 'bg-primary text-white' : 'bg-surface text-text-secondary hover:text-text-primary'
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1.5 h-8 px-2 bg-surface border border-border rounded-sm flex-1 min-w-0">
+            <span className="material-icons text-text-disabled text-[16px]">search</span>
+            <input
+              type="text"
+              placeholder="Search title, code, or client"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="flex-1 min-w-0 text-[13px] text-text-primary placeholder:text-text-disabled bg-transparent focus:outline-none"
+            />
+          </div>
+          <button
+            onClick={() => setFilterOpen(v => !v)}
+            className={cn(
+              'h-8 px-2.5 rounded-sm border text-[12px] font-medium flex items-center gap-1 transition-colors shrink-0',
+              filterOpen ? 'bg-primary text-white border-primary' : 'bg-surface border-border text-text-secondary hover:text-text-primary'
+            )}
           >
-            <span className="material-icons text-[16px]">add</span>
-            New Job
-          </Link>
-        )}
+            <span className="material-icons text-[16px]">filter_list</span>
+            Filter
+          </button>
+        </div>
       </div>
 
       {error && error !== 'not_linked' && (
