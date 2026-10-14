@@ -191,6 +191,7 @@ function CreateJobInner() {
         </FormSelect>
         <FormField label="Estimated cost (R)">
           <input type="number" value={estimatedCost} onChange={e => setEstimatedCost(e.target.value)}
+            onWheel={e => e.currentTarget.blur()}
             placeholder="0.00" step="0.01" min="0" className={entryClass} />
         </FormField>
       </SectionCard>
