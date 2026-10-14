@@ -391,10 +391,10 @@ export default function ClientsPage() {
       )}
 
       {/* Action Centre */}
-      <div className="mx-4 mb-3 bg-surface rounded-xl border border-divider overflow-hidden">
-        <div className="flex items-center gap-2 px-3 py-[10px] border-b border-divider">
-          <span className="material-icons text-primary text-[18px]">bolt</span>
-          <span className="font-semibold text-[12px] text-primary uppercase tracking-wider">Action Centre</span>
+      <div className="mx-4 mb-2 bg-surface rounded-lg border border-divider overflow-hidden shrink-0">
+        <div className={`flex items-center gap-2 px-3 py-1.5 ${actionItems.length > 0 ? 'border-b border-divider' : ''}`}>
+          <span className="material-icons text-primary text-[16px]">bolt</span>
+          <span className="font-semibold text-[11px] text-primary uppercase tracking-wider">Action Centre</span>
           <span className="text-text-secondary text-[11px] ml-1">
             {actionItems.length > 0 ? `${actionItems.length} pending` : 'Up to date'}
           </span>
@@ -412,19 +412,17 @@ export default function ClientsPage() {
               </div>
             )
           })()}
-          <button onClick={() => void load()} className="ml-auto text-text-secondary text-[11px] h-8 px-2 hover:text-text-primary transition-colors">
+          <button onClick={() => void load()} className="ml-auto text-text-secondary text-[11px] h-6 px-2 hover:text-text-primary transition-colors">
             ↻ Refresh
           </button>
         </div>
-        <div className="max-h-[140px] overflow-y-auto">
-          {actionItems.length === 0 ? (
-            <p className="text-text-secondary text-[12px] px-3 py-2">✓  No pending client actions</p>
-          ) : (
-            actionItems.map(item => {
+        {actionItems.length > 0 && (
+        <div className="max-h-[88px] overflow-y-auto">
+            {actionItems.map(item => {
               const colors = ACTION_TYPE_COLORS[item.action_type] ?? getDefaultColor()
               return (
                 <div key={`${item.action_type}-${item.ref_id}`}
-                  className="flex flex-col sm:grid sm:items-center gap-2 px-3 py-2.5 border-t border-divider"
+                  className="flex flex-col sm:grid sm:items-center gap-1 px-3 py-1.5 border-t border-divider first:border-t-0"
                   style={{ gridTemplateColumns: '110px 1fr 90px 70px' }}>
                   <span className="rounded-[5px] px-[6px] py-[3px] text-[10px] font-medium w-fit"
                     style={{ backgroundColor: colors.bg, color: colors.fg }}>
@@ -439,16 +437,16 @@ export default function ClientsPage() {
                     <button
                       type="button"
                       onClick={() => openActionItem(item)}
-                      className="text-primary text-[12px] h-10 sm:h-[30px] px-2 sm:text-right hover:opacity-70 transition-opacity"
+                      className="text-primary text-[12px] h-7 sm:h-6 px-2 sm:text-right hover:opacity-70 transition-opacity"
                     >
                       Open →
                     </button>
                   </div>
                 </div>
               )
-            })
-          )}
+            })}
         </div>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto">
@@ -481,7 +479,7 @@ export default function ClientsPage() {
                       <tr key={c.id}
                         onClick={() => router.push(`/dashboard/clients/${c.id}`)}
                         className="bg-surface hover:bg-background cursor-pointer border-b border-divider last:border-0 transition-colors">
-                        <td className="data-td text-text-primary font-medium">
+                        <td className="data-td text-text-primary text-[13px]">
                           <span className="block truncate">{c.name}</span>
                         </td>
                         <td className="data-td text-text-primary font-medium text-[12px]">{c.client_code ?? '—'}</td>
