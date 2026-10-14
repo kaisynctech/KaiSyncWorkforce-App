@@ -62,6 +62,37 @@ function downloadLocalTemplate() {
   XLSX.writeFile(wb, 'client_import_template.xlsx')
 }
 
+function downloadCsvTemplate() {
+  const blob = new Blob([`${TEMPLATE_HEADERS.join(',')}\n`], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'client_import_template.csv'
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+function readWorkbook(file: File): Promise<XLSX.WorkBook> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(reader.error ?? new Error('Could not read the file.'))
+    reader.onload = () => {
+      const buffer = reader.result as ArrayBuffer
+      const name = file.name.toLowerCase()
+      if (name.endsWith('.csv') || file.type === 'text/csv') {
+        const text = new TextDecoder('utf-8').decode(buffer).replace(/^\uFEFF/, '')
+        const header = text.split(/\r?\n/, 1)[0] ?? ''
+        const semicolons = (header.match(/;/g) ?? []).length
+        const commas = (header.match(/,/g) ?? []).length
+        resolve(XLSX.read(text, { type: 'string', FS: semicolons > commas ? ';' : ',' }))
+        return
+      }
+      resolve(XLSX.read(buffer, { type: 'array' }))
+    }
+    reader.readAsArrayBuffer(file)
+  })
+}
+
 export default function ImportClientsPage() {
   const fileRef = useRef<HTMLInputElement>(null)
   const [preview, setPreview] = useState<PreviewClient[]>([])
@@ -89,19 +120,16 @@ export default function ImportClientsPage() {
     })()
   }, [])
 
-  function handleFile(file: File) {
+  async function handleFile(file: File) {
     setErrorMessage(null)
     setParseWarnings([])
     setParseErrors([])
     setShowPreview(false)
 
-    const reader = new FileReader()
-    reader.onload = evt => {
-      try {
-        const data = evt.target?.result
-        const wb = XLSX.read(data, { type: 'binary' })
+    try {
+        const wb = await readWorkbook(file)
         const ws = wb.Sheets[wb.SheetNames[0]]
-        const rows = XLSX.utils.sheet_to_json(ws) as Record<string, unknown>[]
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: '' }) as Record<string, unknown>[]
 
         if (rows.length === 0) {
           setErrorMessage('The file is empty or has no data rows.')
@@ -139,11 +167,9 @@ export default function ImportClientsPage() {
         setParseErrors(errors)
         setPreview(clients)
         setShowPreview(clients.length > 0)
-      } catch {
-        setErrorMessage('Failed to parse file. Make sure it is a valid .xlsx or .csv file.')
-      }
+    } catch {
+      setErrorMessage('Failed to parse file. Make sure it is a valid .xlsx or .csv file.')
     }
-    reader.readAsBinaryString(file)
   }
 
   async function importClients() {
@@ -240,17 +266,26 @@ export default function ImportClientsPage() {
         <div className="card p-4 space-y-3">
           <p className="text-[14px] font-semibold text-text-primary">1. Download template</p>
           <p className="text-[13px] text-text-secondary">
-            Name is required. Type may be individual, company, government, ngo, or property
+            Use the Excel or CSV template. Name is required. Type may be individual, company, government, ngo, or property
             (defaults to individual). Portal access stays off until enabled on each record;
             a permanent client code is assigned on import.
           </p>
-          <button
-            type="button"
-            onClick={downloadLocalTemplate}
-            className="h-10 px-4 rounded-sm bg-primary text-white text-[13px] font-medium hover:bg-primary-dark transition-colors"
-          >
-            Download template
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={downloadLocalTemplate}
+              className="h-10 px-4 rounded-sm bg-primary text-white text-[13px] font-medium hover:bg-primary-dark transition-colors"
+            >
+              Download Excel template
+            </button>
+            <button
+              type="button"
+              onClick={downloadCsvTemplate}
+              className="h-10 px-4 rounded-sm border border-border text-[13px] font-medium text-text-primary hover:bg-surface-elevated transition-colors"
+            >
+              Download CSV template
+            </button>
+          </div>
         </div>
 
         <div className="card p-4 space-y-3">
@@ -262,7 +297,8 @@ export default function ImportClientsPage() {
             className="hidden"
             onChange={e => {
               const f = e.target.files?.[0]
-              if (f) handleFile(f)
+              e.target.value = ''
+              if (f) void handleFile(f)
             }}
           />
           <button
