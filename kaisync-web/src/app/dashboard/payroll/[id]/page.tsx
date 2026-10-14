@@ -74,7 +74,16 @@ type SlipTab = 'pay' | 'timesheet' | 'schedule'
 
 function clockRange(start?: string | null, end?: string | null): string | null {
   if (!start || !end) return null
-  return `${start.slice(0, 5)} – ${end.slice(0, 5)}`
+  return `${start.slice(0, 5)}–${end.slice(0, 5)}`
+}
+
+function writtenWorkingHours(weekday: string | null, saturday: string | null, sunday: string | null): string {
+  if (!weekday && !saturday && !sunday) return 'No working hours set'
+  return [
+    `Mon–Fri ${weekday ?? '—'}`,
+    saturday ? `Sat ${saturday}` : 'Sat same as weekdays',
+    sunday ? `Sun ${sunday}` : 'Sun same as weekdays',
+  ].join(' · ')
 }
 
 function requiredWorkingDays(start: string, end: string, daysPerWeek: number): number {
@@ -1384,25 +1393,24 @@ export default function PayslipDetailPage() {
         </div>
 
         <div className={slipTab === 'timesheet' ? 'space-y-4' : 'hidden print:block print:space-y-4'}>
-        <div className="card p-4 space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <p className="section-label">TIME TEMPLATE</p>
+        <div className="card px-3 py-2 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2 min-w-0">
+            <p className="section-label shrink-0">Time template</p>
+            <select
+              value={selectedTemplateId}
+              disabled={templateBusy || daysLoading}
+              onChange={e => { void saveTimeTemplate(e.target.value) }}
+              aria-label="Time template"
+              className="h-8 max-w-[14rem] rounded-md border border-border bg-surface-elevated px-2 text-[13px] text-text-primary outline-none"
+            >
+              <option value="">Company default</option>
+              {templateOptions.map(option => (
+                <option key={option.id} value={option.id}>{option.name}</option>
+              ))}
+            </select>
           </div>
-          <select
-            value={selectedTemplateId}
-            disabled={templateBusy || daysLoading}
-            onChange={e => { void saveTimeTemplate(e.target.value) }}
-            className="dark-entry w-full max-w-md"
-          >
-            <option value="">Company default</option>
-            {templateOptions.map(option => (
-              <option key={option.id} value={option.id}>{option.name}</option>
-            ))}
-          </select>
-          <p className="text-[12px] text-text-secondary">
-            {templateLabel
-              ? `Late and hours follow ${templateLabel}. Changing this updates the employee profile and this timesheet.`
-              : 'No time template is applied. Choose one to set late and overtime clocks, and to save it on the employee profile.'}
+          <p className="text-[12px] text-text-secondary text-right leading-5">
+            {writtenWorkingHours(weekdayHours, saturdayHours, sundayHours)}
           </p>
         </div>
         <div className="card p-4 space-y-3">
@@ -1413,7 +1421,6 @@ export default function PayslipDetailPage() {
                 {daysLoading
                   ? 'Loading this pay period…'
                   : `${days.filter(day => !day.isOpen && !day.isAbsentDay && !day.isLeaveDay).length} finished days in this pay period.`}
-                {templateLabel ? ` Hours follow ${templateLabel}.` : ''}
               </p>
             </div>
             {payment.period_start && payment.period_end && (
