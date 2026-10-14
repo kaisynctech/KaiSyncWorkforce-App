@@ -150,6 +150,11 @@ export interface Client {
   type: string | null
   notes: string | null
   created_at: string
+  billing_address?: string | null
+  vat_number?: string | null
+  payment_terms_days?: number | null
+  credit_limit?: number | null
+  tax_exempt?: boolean | null
 }
 
 export interface ClientDocument {

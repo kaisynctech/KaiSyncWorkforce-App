@@ -163,7 +163,7 @@ export default function ClientsPage() {
     const supabase = createClient()
     let query = supabase
       .from('clients')
-      .select('name, client_code, type, contact_person, phone, email, address, notes, portal_enabled, is_active')
+      .select('name, client_code, type, contact_person, phone, email, address, notes, portal_enabled')
       .eq('company_id', companyId)
       .order('name')
       .limit(5000)
@@ -186,7 +186,6 @@ export default function ClientsPage() {
       Address: c.address ?? '',
       Notes: c.notes ?? '',
       'Portal Enabled': c.portal_enabled ? 'Yes' : 'No',
-      Active: c.is_active === false ? 'No' : 'Yes',
     }))
 
     const ws = XLSX.utils.json_to_sheet(rows)
@@ -197,7 +196,7 @@ export default function ClientsPage() {
 
   async function openActionItem(item: ClientActionItem) {
     if (item.action_type.startsWith('invoice_')) {
-      router.push(`/dashboard/finance/invoices/${item.ref_id}`)
+      router.push(`/dashboard/money/invoices/${item.ref_id}`)
       return
     }
     if (item.action_type === 'deal_attention') {

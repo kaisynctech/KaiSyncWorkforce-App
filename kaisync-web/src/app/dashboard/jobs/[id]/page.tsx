@@ -495,6 +495,10 @@ export default function JobDetailPage() {
   return (
     <div className="p-4 space-y-4 overflow-y-auto pb-8">
 
+      <Link href="/dashboard/jobs" aria-label="Back to jobs" className="inline-flex text-text-secondary hover:text-text-primary transition-colors">
+        <span className="material-icons text-[20px]">arrow_back</span>
+      </Link>
+
       {/* ── Action bar ── */}
       <div className="flex gap-2 overflow-x-auto pb-1">
         {canEdit && (
