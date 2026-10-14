@@ -524,10 +524,19 @@ export default function MessagesPage() {
 
       <div className={`flex-1 flex flex-col min-w-0 ${!selected ? 'hidden sm:flex' : 'flex'}`}>
         {!selected ? (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center">
-              <span className="material-icons text-[60px] text-text-disabled block mb-3">forum</span>
-              <p className="text-[14px] text-text-secondary">Select a conversation to start messaging</p>
+          <div className="flex-1 flex flex-col min-h-0">
+            {jobBackHref && (
+              <div className="px-4 py-3 border-b border-divider bg-surface shrink-0">
+                <Link href={jobBackHref} aria-label="Back to job" className="inline-flex text-text-secondary hover:text-text-primary transition-colors">
+                  <span className="material-icons text-[20px]">arrow_back</span>
+                </Link>
+              </div>
+            )}
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center">
+                <span className="material-icons text-[60px] text-text-disabled block mb-3">forum</span>
+                <p className="text-[14px] text-text-secondary">Select a conversation to start messaging</p>
+              </div>
             </div>
           </div>
         ) : (
