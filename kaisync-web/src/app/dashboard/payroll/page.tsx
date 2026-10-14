@@ -636,12 +636,12 @@ export default function PayrollPage() {
             <table style={{ minWidth: 980 }} className="w-full">
               <thead className="sticky top-0 z-10">
                 <tr className="bg-surface-elevated border-b border-divider">
-                  <th style={{ width: 150 }} className="data-th cursor-pointer select-none">Employee</th>
+                  <th style={{ width: 150 }} className="data-th">Employee</th>
                   <th style={{ width: 160 }} className="data-th">Period</th>
-                  <th style={{ width: 85 }}  className="data-th text-right cursor-pointer select-none">Gross</th>
+                  <th style={{ width: 85 }}  className="data-th text-right">Gross</th>
                   <th style={{ width: 85 }}  className="data-th text-right">Deduct.</th>
-                  <th style={{ width: 85 }}  className="data-th text-right cursor-pointer select-none">Net</th>
-                  <th style={{ width: 80 }}  className="data-th cursor-pointer select-none">Status</th>
+                  <th style={{ width: 85 }}  className="data-th text-right">Net</th>
+                  <th style={{ width: 80 }}  className="data-th">Status</th>
                   <th style={{ width: 100 }} className="data-th">Visible</th>
                   <th style={{ width: 200 }} className="data-th text-right">Actions</th>
                 </tr>

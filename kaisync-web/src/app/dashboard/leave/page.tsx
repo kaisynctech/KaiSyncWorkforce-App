@@ -22,6 +22,7 @@ type Tab = 'pending' | 'all' | 'upcoming'
 
 type OnLeaveRecord = {
   id: string
+  employee_id: string
   leave_type: string
   end_date: string
   employees: { name: string; surname: string } | null
@@ -296,9 +297,9 @@ export default function LeavePage() {
             <div className="space-y-1">
               {onLeaveToday.map(r => (
                 <div key={r.id} className="flex items-center justify-between text-[13px]">
-                  <span className="font-medium text-text-primary">
+                  <Link href={`/dashboard/employees/${r.employee_id}?tab=leave`} className="font-medium text-text-primary hover:text-primary hover:underline">
                     {r.employees ? `${r.employees.name} ${r.employees.surname}` : 'Unknown'}
-                  </span>
+                  </Link>
                   <span className="text-text-secondary">
                     {r.leave_type} · back {returnToWorkLabel(r.end_date)}
                   </span>
@@ -417,7 +418,11 @@ export default function LeavePage() {
                         const name = row.employees ? `${row.employees.name} ${row.employees.surname}` : 'Unknown'
                         return (
                           <tr key={row.id} className="border-b border-divider last:border-0">
-                            <td className="px-4 py-3 font-medium text-text-primary">{name}</td>
+                            <td className="px-4 py-3">
+                              <Link href={`/dashboard/employees/${row.employee_id}?tab=leave`} className="font-medium text-text-primary hover:text-primary hover:underline">
+                                {name}
+                              </Link>
+                            </td>
                             <td className="px-4 py-3 text-text-primary">{row.leave_type}</td>
                             <td className="px-4 py-3 text-text-secondary whitespace-nowrap">{formatDate(row.start_date)}</td>
                             <td className="px-4 py-3 text-text-secondary whitespace-nowrap">{formatDate(row.end_date)}</td>
@@ -479,7 +484,9 @@ export default function LeavePage() {
                       return (
                         <tr key={req.id} className="border-b border-divider last:border-0 hover:bg-background/60">
                           <td className="px-4 py-3">
-                            <p className="font-medium text-text-primary">{empName}</p>
+                            <Link href={`/dashboard/employees/${req.employee_id}?tab=leave`} className="font-medium text-text-primary hover:text-primary hover:underline">
+                              {empName}
+                            </Link>
                             {req.reason && (
                               <p className="text-[11px] text-text-secondary mt-0.5 truncate max-w-[220px]" title={req.reason}>
                                 {req.reason}
@@ -553,7 +560,11 @@ export default function LeavePage() {
                       <DataCard key={req.id}>
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
-                            <DataCardTitle>{empName}</DataCardTitle>
+                            <DataCardTitle>
+                              <Link href={`/dashboard/employees/${req.employee_id}?tab=leave`} className="hover:underline">
+                                {empName}
+                              </Link>
+                            </DataCardTitle>
                             <DataCardMeta>{req.leave_type} · {req.total_days} day{req.total_days !== 1 ? 's' : ''}</DataCardMeta>
                           </div>
                           <span className={`px-2 py-0.5 rounded-pill text-[11px] font-medium shrink-0 ${badge.cls}`}>

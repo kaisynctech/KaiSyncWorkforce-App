@@ -292,7 +292,9 @@ export default function WorkTeamDetailPage() {
                       return (
                         <tr key={m.employee_id} className="border-b border-divider last:border-0">
                           <td className="px-3 py-2.5">
-                            <p className="font-medium text-text-primary">{fullName}</p>
+                            <Link href={`/dashboard/employees/${m.employee_id}`} className="font-medium text-text-primary hover:text-primary hover:underline">
+                              {fullName}
+                            </Link>
                             {emp?.position && (
                               <p className="text-[11px] text-text-secondary">{emp.position}</p>
                             )}

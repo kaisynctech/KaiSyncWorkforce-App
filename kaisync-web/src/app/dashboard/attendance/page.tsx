@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { loadScopedEmployeeIds } from '@/lib/employee-scope'
@@ -717,7 +718,12 @@ export default function AttendancePage() {
                     return (
                       <tr key={s.key} className="border-b border-divider last:border-0 hover:bg-background transition-colors">
                         <td className="px-4 py-3">
-                          <p className="font-medium text-text-primary whitespace-nowrap">{s.employeeName}</p>
+                          <Link
+                            href={`/dashboard/employees/${s.employeeId}?tab=attendance&from=${from}&to=${to}`}
+                            className="font-medium text-text-primary hover:text-primary hover:underline whitespace-nowrap"
+                          >
+                            {s.employeeName}
+                          </Link>
                           {s.employeeCode && (
                             <p className="text-[11px] text-text-secondary font-mono">{s.employeeCode}</p>
                           )}
@@ -788,7 +794,11 @@ export default function AttendancePage() {
                     <DataCard key={s.key}>
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <DataCardTitle>{s.employeeName}</DataCardTitle>
+                          <DataCardTitle>
+                            <Link href={`/dashboard/employees/${s.employeeId}?tab=attendance&from=${from}&to=${to}`} className="hover:text-primary hover:underline">
+                              {s.employeeName}
+                            </Link>
+                          </DataCardTitle>
                           <DataCardMeta>
                             {fmtSessionDate(r.clockIn)}
                             {s.employeeCode ? ` · ${s.employeeCode}` : ''}
