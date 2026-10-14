@@ -13,7 +13,6 @@ import {
   pageRange,
   totalPages,
 } from '@/lib/list-pagination'
-import { KpiTile } from '@/components/ui/KpiTile'
 import {
   ResponsiveDataView,
   DataCard,
@@ -330,99 +329,96 @@ export default function JobsPage() {
     // keep page chrome; show banner above table
   }
 
+  const rangeLabel = total === 0
+    ? '0 jobs'
+    : `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}`
+
   return (
-    <div className="p-3 flex flex-col gap-3">
-      {/* Top bar */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-[19px] font-bold text-text-primary">Jobs</h1>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={downloadCSV}
-            className="flex items-center gap-1.5 h-9 px-3 rounded-sm bg-surface-elevated border border-border text-[13px] text-text-secondary font-medium hover:border-primary hover:text-primary transition-colors"
-          >
-            <span className="material-icons text-[16px]">download</span>
-            Export
-          </button>
-          {canCreate && (
-            <Link
-              href="/dashboard/jobs/new"
-              className="flex items-center gap-1.5 h-9 px-3 rounded-sm bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark transition-colors"
-            >
-              <span className="material-icons text-[16px]">add</span>
-              New Job
-            </Link>
-          )}
+    <div className="h-full min-h-0 flex flex-col">
+      <div className="px-3 pt-2 pb-2 flex flex-wrap items-center gap-2 shrink-0">
+        <h1 className="text-[16px] font-bold text-text-primary shrink-0">Jobs</h1>
+        <div className="flex items-center gap-1 shrink-0">
+          <span className="inline-flex items-baseline gap-1 rounded px-1.5 py-0.5 bg-[#1E293B]">
+            <span className="text-[13px] font-semibold text-[#94A3B8]">{kpis.total}</span>
+            <span className="text-[10px] text-[#64748B]">Total</span>
+          </span>
+          <span className="inline-flex items-baseline gap-1 rounded px-1.5 py-0.5 bg-[#0F2918]">
+            <span className="text-[13px] font-semibold text-[#22C55E]">{kpis.open}</span>
+            <span className="text-[10px] text-[#4ADE80]">Open</span>
+          </span>
+          <span className="inline-flex items-baseline gap-1 rounded px-1.5 py-0.5 bg-[#1E293B]">
+            <span className="text-[13px] font-semibold text-[#FCD34D]">{kpis.inProgress}</span>
+            <span className="text-[10px] text-[#64748B]">In progress</span>
+          </span>
+          <span className="inline-flex items-baseline gap-1 rounded px-1.5 py-0.5 bg-[#1E293B]">
+            <span className="text-[13px] font-semibold text-[#FCA5A5]">{kpis.unassigned}</span>
+            <span className="text-[10px] text-[#64748B]">Unassigned</span>
+          </span>
         </div>
+        <div className="flex rounded-md overflow-hidden border border-divider shrink-0">
+          {([
+            { value: 'all' as Scope, label: `All${canViewAll ? ` (${kpis.total})` : ''}`, disabled: !canViewAll },
+            { value: 'mine' as Scope, label: 'Mine', disabled: false },
+          ]).map(({ value, label, disabled }) => (
+            <button
+              key={value}
+              onClick={() => !disabled && setScope(value)}
+              disabled={disabled}
+              className={cn(
+                'h-7 px-2.5 text-[12px] font-medium transition-colors disabled:opacity-40',
+                scope === value ? 'bg-primary text-white' : 'bg-surface text-text-secondary hover:text-text-primary'
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-1.5 h-8 px-2 bg-surface border border-border rounded-sm flex-1 min-w-[180px]">
+          <span className="material-icons text-text-disabled text-[16px]">search</span>
+          <input
+            type="text"
+            placeholder="Search title, code, or client"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="flex-1 min-w-0 text-[13px] text-text-primary placeholder:text-text-disabled bg-transparent focus:outline-none"
+          />
+        </div>
+        <button
+          onClick={() => setFilterOpen(v => !v)}
+          className={cn(
+            'h-8 px-2.5 rounded-sm border text-[12px] font-medium flex items-center gap-1 transition-colors shrink-0',
+            filterOpen ? 'bg-primary text-white border-primary' : 'bg-surface border-border text-text-secondary hover:text-text-primary'
+          )}
+        >
+          <span className="material-icons text-[16px]">filter_list</span>
+          Filter
+        </button>
+        <button
+          onClick={downloadCSV}
+          className="flex items-center gap-1 h-8 px-2.5 rounded-sm bg-surface border border-border text-[12px] text-text-secondary font-medium hover:border-primary hover:text-primary transition-colors shrink-0"
+        >
+          <span className="material-icons text-[16px]">download</span>
+          Export
+        </button>
+        {canCreate && (
+          <Link
+            href="/dashboard/jobs/new"
+            className="flex items-center gap-1 h-8 px-2.5 rounded-sm bg-primary text-white text-[12px] font-semibold hover:bg-primary-dark transition-colors shrink-0"
+          >
+            <span className="material-icons text-[16px]">add</span>
+            New Job
+          </Link>
+        )}
       </div>
 
       {error && error !== 'not_linked' && (
-        <div className="rounded-lg border border-error/30 bg-error/5 px-3 py-2 text-[13px] text-error">
+        <div className="mx-3 mb-2 rounded-lg border border-error/30 bg-error/5 px-3 py-2 text-[13px] text-error shrink-0">
           Failed to load jobs: {error}
         </div>
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-        <KpiTile value={kpis.total} label="Total" bg="#1E293B" valueFg="#94A3B8" labelFg="#64748B" />
-        <KpiTile value={kpis.open} label="Open" bg="#0F2918" valueFg="#22C55E" labelFg="#4ADE80" />
-        <KpiTile value={kpis.inProgress} label="In progress" bg="#1E293B" valueFg="#FCD34D" labelFg="#64748B" />
-        <KpiTile value={kpis.unassigned} label="Unassigned" bg="#1E293B" valueFg="#FCA5A5" labelFg="#64748B" />
-      </div>
-
-      {/* Scope toggle */}
-      <div className="grid grid-cols-2 gap-2">
-        {([
-          { value: 'all' as Scope, label: `All Jobs${canViewAll ? ` (${kpis.total})` : ''}`, disabled: !canViewAll },
-          { value: 'mine' as Scope, label: 'My Jobs', disabled: false },
-        ]).map(({ value, label, disabled }) => (
-          <button
-            key={value}
-            onClick={() => !disabled && setScope(value)}
-            disabled={disabled}
-            className={cn(
-              'h-9 rounded-[10px] text-[12px] font-medium transition-colors disabled:opacity-40',
-              scope === value ? 'bg-primary text-white' : 'bg-surface text-text-secondary border border-divider hover:text-text-primary'
-            )}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <p className="text-[12px] text-text-secondary">
-          {total === 0 ? '0 jobs' : `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}`}
-        </p>
-        <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} className="dark-entry h-8 text-[12px] py-0 w-auto">
-          {PAGE_SIZE_OPTIONS.map(n => <option key={n} value={n}>{n}/page</option>)}
-        </select>
-      </div>
-
-      {/* Filter toolbar */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2 h-10 px-3 bg-surface border border-border rounded-sm flex-1">
-            <span className="material-icons text-text-disabled text-[18px]">search</span>
-            <input
-              type="text"
-              placeholder="Search title, code, or client"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="flex-1 text-[13px] text-text-primary placeholder:text-text-disabled bg-transparent focus:outline-none"
-            />
-          </div>
-          <button
-            onClick={() => setFilterOpen(v => !v)}
-            className={cn(
-              'h-10 px-3 rounded-sm border text-[13px] font-medium flex items-center gap-1.5 transition-colors',
-              filterOpen ? 'bg-primary text-white border-primary' : 'bg-surface border-border text-text-secondary hover:text-text-primary'
-            )}
-          >
-            <span className="material-icons text-[16px]">filter_list</span>
-            Filter
-          </button>
-        </div>
-
-        {filterOpen && (
+      {filterOpen && (
+        <div className="mx-3 mb-2 shrink-0">
           <div className="bg-surface border border-divider rounded-sm p-3 space-y-3">
             <div className="flex items-center justify-between">
               <p className="text-[13px] font-medium text-text-primary">Date filter</p>
@@ -452,11 +448,10 @@ export default function JobsPage() {
               ))}
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* Jobs table */}
-      <div className="bg-surface border border-divider rounded-lg overflow-hidden">
+      <div className="flex-1 min-h-0 overflow-auto mx-3 mb-1 bg-surface border border-divider rounded-lg">
         {loading ? (
           <div className="py-16 text-center text-[13px] text-text-disabled">Loading…</div>
         ) : filtered.length === 0 ? (
@@ -467,17 +462,17 @@ export default function JobsPage() {
         ) : (
           <ResponsiveDataView
             table={
-              <table className="text-[13px]" style={{ minWidth: 980 }}>
+              <table className="w-full text-[13px]">
                 <thead>
                   <tr className="border-b border-divider bg-surface-elevated">
-                    <th className="text-left px-4 py-3 text-[11px] font-medium text-text-secondary w-[90px]">Code</th>
-                    <th className="text-left px-4 py-3 text-[11px] font-medium text-text-secondary w-[180px]">Title</th>
-                    <th className="text-left px-4 py-3 text-[11px] font-medium text-text-secondary w-[140px]">Client</th>
-                    <th className="text-left px-4 py-3 text-[11px] font-medium text-text-secondary w-[100px]">Status</th>
-                    <th className="text-left px-4 py-3 text-[11px] font-medium text-text-secondary w-[90px]">Priority</th>
-                    <th className="text-left px-4 py-3 text-[11px] font-medium text-text-secondary w-[110px]">Start</th>
-                    <th className="text-left px-4 py-3 text-[11px] font-medium text-text-secondary w-[110px]">End</th>
-                    <th className="text-right px-4 py-3 text-[11px] font-medium text-text-secondary w-[90px]">Cost</th>
+                    <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary w-[100px]">Code</th>
+                    <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary">Title</th>
+                    <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary w-[18%]">Client</th>
+                    <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary w-[110px]">Status</th>
+                    <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary w-[100px]">Priority</th>
+                    <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary w-[110px]">Start</th>
+                    <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary w-[110px]">End</th>
+                    <th className="text-right px-3 py-2 text-[11px] font-medium text-text-secondary w-[100px]">Cost</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -491,32 +486,32 @@ export default function JobsPage() {
                         className="border-b border-divider last:border-0 hover:bg-background transition-colors cursor-pointer"
                         onClick={() => router.push(`/dashboard/jobs/${job.id}`)}
                       >
-                        <td className="px-4 py-3 font-mono text-[11px] text-text-secondary">
+                        <td className="px-3 py-2 font-mono text-[11px] text-text-secondary whitespace-nowrap">
                           {job.job_code ?? job.id.slice(0, 8).toUpperCase()}
                         </td>
-                        <td className="px-4 py-3">
-                          <p className="font-medium text-text-primary truncate max-w-[160px]">{job.title || '—'}</p>
+                        <td className="px-3 py-2">
+                          <p className="font-medium text-text-primary truncate">{job.title || '—'}</p>
                         </td>
-                        <td className="px-4 py-3 text-text-secondary truncate max-w-[130px]">
+                        <td className="px-3 py-2 text-text-secondary truncate">
                           {client?.name ?? '—'}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-2">
                           <span className={`px-2 py-0.5 rounded-pill text-[11px] font-medium ${statusBadge.cls}`}>
                             {statusBadge.label}
                           </span>
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-2">
                           <span className={`px-2 py-0.5 rounded-pill text-[11px] font-medium ${priorityBadge.cls}`}>
                             {priorityBadge.label}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-text-secondary text-[12px]">
+                        <td className="px-3 py-2 text-text-secondary text-[12px] whitespace-nowrap">
                           {job.scheduled_start ? formatDate(job.scheduled_start) : '—'}
                         </td>
-                        <td className="px-4 py-3 text-text-secondary text-[12px]">
+                        <td className="px-3 py-2 text-text-secondary text-[12px] whitespace-nowrap">
                           {job.scheduled_end ? formatDate(job.scheduled_end) : '—'}
                         </td>
-                        <td className="px-4 py-3 text-right font-medium text-text-primary">
+                        <td className="px-3 py-2 text-right font-medium text-text-primary whitespace-nowrap">
                           {job.estimated_cost != null ? formatCurrency(job.estimated_cost) : '—'}
                         </td>
                       </tr>
@@ -570,10 +565,18 @@ export default function JobsPage() {
         )}
       </div>
 
-      <div className="flex items-center justify-between">
-        <button disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} className="btn-outlined h-8 px-3 text-[12px] disabled:opacity-40">Previous</button>
-        <span className="text-[12px] text-text-secondary">Page {page} of {pages}</span>
-        <button disabled={page >= pages} onClick={() => setPage(p => p + 1)} className="btn-outlined h-8 px-3 text-[12px] disabled:opacity-40">Next</button>
+      <div className="shrink-0 px-3 py-2 flex items-center gap-2">
+        <p className="text-[12px] text-text-secondary">{rangeLabel}</p>
+        <select
+          value={pageSize}
+          onChange={e => setPageSize(Number(e.target.value))}
+          aria-label="Rows per page"
+          className="h-7 px-1.5 rounded border border-border bg-surface text-[12px] text-text-secondary"
+        >
+          {PAGE_SIZE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
+        </select>
+        <button disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} className="btn-outlined h-7 px-2.5 text-[12px] disabled:opacity-40">Previous</button>
+        <button disabled={page >= pages} onClick={() => setPage(p => p + 1)} className="btn-outlined h-7 px-2.5 text-[12px] disabled:opacity-40">Next</button>
       </div>
     </div>
   )

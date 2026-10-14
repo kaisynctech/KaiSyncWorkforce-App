@@ -13,7 +13,6 @@ import {
   pageRange,
   totalPages,
 } from '@/lib/list-pagination'
-import { KpiTile } from '@/components/ui/KpiTile'
 import {
   ResponsiveDataView,
   DataCard,
@@ -315,26 +314,29 @@ export default function ClientsPage() {
       </div>
 
       {!loading && (
-        <div className="kpi-grid mx-4 mt-3">
-          <KpiTile value={kpis.total} label="Total clients" bg="#1E293B" valueFg="#94A3B8" labelFg="#64748B" />
-          <KpiTile value={kpis.portalEnabled} label="Portal enabled" bg="#0F2918" valueFg="#22C55E" labelFg="#4ADE80" />
-          <KpiTile value={kpis.openJobs} label="Open jobs" bg="#1E293B" valueFg="#94A3B8" labelFg="#64748B" />
+        <div className="mx-4 mt-2 flex items-center gap-1 shrink-0">
+          <span className="inline-flex items-baseline gap-1 rounded px-1.5 py-0.5 bg-[#1E293B]">
+            <span className="text-[13px] font-semibold text-[#94A3B8]">{kpis.total}</span>
+            <span className="text-[10px] text-[#64748B]">Total</span>
+          </span>
+          <span className="inline-flex items-baseline gap-1 rounded px-1.5 py-0.5 bg-[#0F2918]">
+            <span className="text-[13px] font-semibold text-[#22C55E]">{kpis.portalEnabled}</span>
+            <span className="text-[10px] text-[#4ADE80]">Portal</span>
+          </span>
+          <span className="inline-flex items-baseline gap-1 rounded px-1.5 py-0.5 bg-[#1E293B]">
+            <span className="text-[13px] font-semibold text-[#94A3B8]">{kpis.openJobs}</span>
+            <span className="text-[10px] text-[#64748B]">Open jobs</span>
+          </span>
         </div>
       )}
 
-      <div className="flex items-center gap-2 mx-4 my-2 flex-wrap">
-        <p className="text-text-secondary text-[12px] flex-1">
-          {total === 0 ? '0 clients' : `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}`}
-        </p>
-        <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} className="dark-entry h-8 text-[12px] py-0 w-auto">
-          {PAGE_SIZE_OPTIONS.map(n => <option key={n} value={n}>{n}/page</option>)}
-        </select>
-        <button onClick={() => void load()} className="text-primary text-[13px] px-2 hover:opacity-70 transition-opacity">Refresh</button>
+      <div className="flex items-center gap-2 mx-4 my-2 flex-wrap shrink-0">
+        <button onClick={() => void load()} className="text-primary text-[12px] h-8 px-2 hover:opacity-70 transition-opacity">Refresh</button>
         {canEdit && xeroConnected && (
           <button
             onClick={syncAllToXero}
             disabled={!!xeroPushing}
-            className="h-[42px] px-3 text-[13px] rounded-lg border border-[#13B5EA] text-[#13B5EA] hover:bg-[#13B5EA]/10 disabled:opacity-40 transition-colors whitespace-nowrap"
+            className="h-8 px-2.5 text-[12px] rounded-lg border border-[#13B5EA] text-[#13B5EA] hover:bg-[#13B5EA]/10 disabled:opacity-40 transition-colors whitespace-nowrap"
           >
             {xeroPushing === '__all__' ? 'Syncing…' : 'Sync All to Xero'}
           </button>
@@ -343,28 +345,28 @@ export default function ClientsPage() {
           <button
             onClick={importFromXero}
             disabled={xeroImporting}
-            className="h-[42px] px-3 text-[13px] rounded-lg border border-[#13B5EA] text-[#13B5EA] font-medium hover:bg-[#13B5EA]/10 disabled:opacity-50 transition-colors"
+            className="h-8 px-2.5 text-[12px] rounded-lg border border-[#13B5EA] text-[#13B5EA] font-medium hover:bg-[#13B5EA]/10 disabled:opacity-50 transition-colors"
           >
             {xeroImporting ? 'Importing…' : '↓ Import from Xero'}
           </button>
         )}
         <button
           onClick={() => void exportCsv()}
-          className="h-[42px] px-3 text-[13px] rounded-lg border border-border text-text-primary font-medium hover:bg-surface-elevated transition-colors"
+          className="h-8 px-2.5 text-[12px] rounded-lg border border-border text-text-primary font-medium hover:bg-surface-elevated transition-colors"
         >
           Export
         </button>
         {canEdit && (
           <button
             onClick={() => router.push('/dashboard/clients/import')}
-            className="h-[42px] px-3 text-[13px] rounded-lg border border-border text-text-primary font-medium hover:bg-surface-elevated transition-colors"
+            className="h-8 px-2.5 text-[12px] rounded-lg border border-border text-text-primary font-medium hover:bg-surface-elevated transition-colors"
           >
             Import
           </button>
         )}
         {canEdit && (
           <button onClick={() => router.push('/dashboard/clients/new')}
-            className="btn-primary h-[42px] px-3 text-[13px] whitespace-nowrap">
+            className="btn-primary h-8 px-2.5 text-[12px] whitespace-nowrap">
             + Add Client
           </button>
         )}
@@ -450,7 +452,7 @@ export default function ClientsPage() {
               <table style={{ minWidth: 760 }} className="w-full">
                 <thead>
                   <tr className="bg-surface-elevated border-b border-divider">
-                    <th style={{ width: 180 }} className="data-th">Client</th>
+                    <th className="data-th">Client</th>
                     <th style={{ width:  90 }} className="data-th">Code</th>
                     <th style={{ width: 100 }} className="data-th">Type</th>
                     <th style={{ width: 130 }} className="data-th">Contact</th>
@@ -474,7 +476,7 @@ export default function ClientsPage() {
                         onClick={() => router.push(`/dashboard/clients/${c.id}`)}
                         className="bg-surface hover:bg-background cursor-pointer border-b border-divider last:border-0 transition-colors">
                         <td className="data-td text-text-primary font-medium">
-                          <span className="block truncate" style={{ maxWidth: 180 }}>{c.name}</span>
+                          <span className="block truncate">{c.name}</span>
                         </td>
                         <td className="data-td text-text-primary font-medium text-[12px]">{c.client_code ?? '—'}</td>
                         <td className="data-td text-text-secondary text-[12px]">
@@ -546,10 +548,20 @@ export default function ClientsPage() {
         </div>
       </div>
 
-      <div className="flex items-center justify-between px-4 py-2 border-t border-divider shrink-0">
-        <button disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} className="btn-outlined h-10 px-3 text-[12px] disabled:opacity-40">Previous</button>
-        <span className="text-[12px] text-text-secondary">Page {page} of {pages}</span>
-        <button disabled={page >= pages} onClick={() => setPage(p => p + 1)} className="btn-outlined h-10 px-3 text-[12px] disabled:opacity-40">Next</button>
+      <div className="shrink-0 px-4 py-2 flex items-center gap-2 border-t border-divider">
+        <p className="text-[12px] text-text-secondary">
+          {total === 0 ? '0 clients' : `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}`}
+        </p>
+        <select
+          value={pageSize}
+          onChange={e => setPageSize(Number(e.target.value))}
+          aria-label="Rows per page"
+          className="h-7 px-1.5 rounded border border-border bg-surface text-[12px] text-text-secondary"
+        >
+          {PAGE_SIZE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
+        </select>
+        <button disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} className="btn-outlined h-7 px-2.5 text-[12px] disabled:opacity-40">Previous</button>
+        <button disabled={page >= pages} onClick={() => setPage(p => p + 1)} className="btn-outlined h-7 px-2.5 text-[12px] disabled:opacity-40">Next</button>
       </div>
     </div>
   )
