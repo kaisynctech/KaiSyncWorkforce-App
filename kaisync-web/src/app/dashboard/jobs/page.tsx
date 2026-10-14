@@ -182,38 +182,57 @@ export default function JobsPage() {
     }
 
     const { from, to } = pageRange(page, pageSize)
-    const countOf = () =>
+    const scopeFilters: JobListFilters = {
+      ...filters,
+      statusFilter: 'all',
+      search: '',
+      dateFilter: false,
+      dateFrom: '',
+      dateTo: '',
+      clientIds: [],
+    }
+    const scopeCount = () =>
       withJobFilters(
         supabase.from('jobs').select('id', { count: 'exact', head: true }),
-        filters,
+        scopeFilters,
       )
 
-    const [pageRes, openRes, inProgRes, unassignedRes] = await Promise.all([
+    const [pageRes, scopeRes, openRes, inProgRes, unassignedRes] = await Promise.all([
       withJobFilters(
         supabase.from('jobs').select('*, clients(name, client_code)', { count: 'exact' }),
         filters,
       ).order('created_at', { ascending: false }).range(from, to),
-      countOf().in('status', ['open', 'scheduled', 'in_progress']),
-      countOf().eq('status', 'in_progress'),
-      countOf().is('assignee_employee_id', null).neq('status', 'completed').neq('status', 'cancelled'),
+      scopeCount(),
+      scopeCount().eq('status', 'open'),
+      scopeCount().eq('status', 'in_progress'),
+      scopeCount()
+        .is('assignee_employee_id', null)
+        .or('assigned_employee_ids.is.null,assigned_employee_ids.eq.{}')
+        .neq('status', 'completed')
+        .neq('status', 'cancelled'),
     ])
 
-    if (pageRes.error) {
-      setError(pageRes.error.message)
-      setJobs([])
-      setTotal(0)
-      setKpis({ total: 0, open: 0, inProgress: 0, unassigned: 0 })
-    } else {
-      setError(null)
+    const kpiError = scopeRes.error ?? openRes.error ?? inProgRes.error ?? unassignedRes.error
+    if (pageRes.error || kpiError) {
+      setError(pageRes.error?.message ?? kpiError?.message ?? 'Could not load jobs.')
+      if (pageRes.error) {
+        setJobs([])
+        setTotal(0)
+        setKpis({ total: 0, open: 0, inProgress: 0, unassigned: 0 })
+      }
+    }
+    if (!pageRes.error) {
+      if (!kpiError) setError(null)
       setJobs((pageRes.data ?? []) as Job[])
-      const matched = pageRes.count ?? 0
-      setTotal(matched)
-      setKpis({
-        total: matched,
-        open: openRes.count ?? 0,
-        inProgress: inProgRes.count ?? 0,
-        unassigned: unassignedRes.count ?? 0,
-      })
+      setTotal(pageRes.count ?? 0)
+      if (!kpiError) {
+        setKpis({
+          total: scopeRes.count ?? 0,
+          open: openRes.count ?? 0,
+          inProgress: inProgRes.count ?? 0,
+          unassigned: unassignedRes.count ?? 0,
+        })
+      }
     }
     setLoading(false)
   }, [scope, page, pageSize, searchDebounced, statusFilter, dateFilter, dateFrom, dateTo])

@@ -125,33 +125,44 @@ function CreateJobInner() {
   }
 
   if (error === 'not_linked') return (
-    <div className="flex items-center justify-center h-full">
-      <div className="text-center space-y-2">
-        <span className="material-icons text-[48px] text-text-disabled">person_off</span>
-        <p className="text-[14px] font-semibold text-text-primary">Account not linked</p>
-        <p className="text-[13px] text-text-secondary">
-          Your account is not linked to an active employee record.<br/>
-          Please contact your administrator.
-        </p>
+    <div className="h-full flex flex-col">
+      <div className="px-4 py-3">
+        <Link href="/dashboard/jobs" aria-label="Back to jobs" className="inline-flex text-text-secondary hover:text-text-primary transition-colors">
+          <span className="material-icons text-[20px]">arrow_back</span>
+        </Link>
+      </div>
+      <div className="flex-1 flex items-center justify-center">
+        <div className="text-center space-y-2">
+          <span className="material-icons text-[48px] text-text-disabled">person_off</span>
+          <p className="text-[14px] font-semibold text-text-primary">Account not linked</p>
+          <p className="text-[13px] text-text-secondary">
+            Your account is not linked to an active employee record.<br/>
+            Please contact your administrator.
+          </p>
+        </div>
       </div>
     </div>
   )
 
   if (perms && !canCreate) {
     return (
-      <div className="flex items-center justify-center h-full p-6">
-        <div className="text-center space-y-3 max-w-md">
+      <div className="h-full flex flex-col p-6">
+        <Link href="/dashboard/jobs" aria-label="Back to jobs" className="inline-flex text-text-secondary hover:text-text-primary transition-colors">
+          <span className="material-icons text-[20px]">arrow_back</span>
+        </Link>
+        <div className="flex-1 flex items-center justify-center">
+        <div className="text-center space-y-3">
           <span className="material-icons text-[48px] text-text-disabled">lock</span>
           <p className="text-[16px] font-semibold text-text-primary">Permission required</p>
           <p className="text-[13px] text-text-secondary">You do not have permission to create jobs.</p>
-          <Link href="/dashboard/jobs" className="text-primary text-[13px]">Back to jobs</Link>
+        </div>
         </div>
       </div>
     )
   }
 
   return (
-    <form onSubmit={handleSubmit} className="p-4 space-y-4 max-w-2xl mx-auto pb-8">
+    <form onSubmit={handleSubmit} className="p-4 space-y-4 pb-8">
       <div className="flex items-center gap-2 mb-1">
         <Link href="/dashboard/jobs" className="text-text-secondary hover:text-text-primary transition-colors">
           <span className="material-icons text-[20px]">arrow_back</span>
