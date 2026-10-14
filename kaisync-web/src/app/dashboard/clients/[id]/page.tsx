@@ -103,6 +103,18 @@ function empName(e: { name?: string; surname?: string } | null | undefined): str
   return `${e.name ?? ''} ${e.surname ?? ''}`.trim() || '—'
 }
 
+function mediaPath(fileUrl: string | null | undefined, storagePath?: string | null): string | null {
+  const stored = storagePath?.trim()
+  if (stored) return stored
+  const raw = fileUrl?.trim()
+  if (!raw) return null
+  const marker = '/workforce-media/'
+  const at = raw.indexOf(marker)
+  if (at >= 0) return decodeURIComponent(raw.slice(at + marker.length).split('?')[0])
+  if (!/^https?:\/\//i.test(raw)) return raw
+  return null
+}
+
 export default function ClientDetailPage() {
   return (
     <Suspense fallback={
@@ -152,12 +164,18 @@ function ClientDetailInner() {
   const [addingSite, setAddingSite] = useState(false)
   const [siteName, setSiteName] = useState('')
   const [siteAddress, setSiteAddress] = useState('')
+  const [editingSiteId, setEditingSiteId] = useState<string | null>(null)
+  const [editSiteName, setEditSiteName] = useState('')
+  const [editSiteAddress, setEditSiteAddress] = useState('')
   const [commercialData, setCommercialData] = useState<{
     quotes: Array<{ id: string; quote_number: string | null; title: string; status: string; total_amount: number; created_at: string }>
     invoices: Array<{ id: string; invoice_number: string | null; status: string; total_amount: number; balance_due: number; issue_date: string }>
     ledger: Array<{ id: string; entry_type: string; reference_number: string | null; description: string | null; debit: number; credit: number; entry_date: string }>
+    outstanding: number
   } | null>(null)
   const [commercialLoading, setCommercialLoading] = useState(false)
+  const [commercialSaving, setCommercialSaving] = useState(false)
+  const [commercialMsg, setCommercialMsg] = useState<string | null>(null)
 
   // Form state
   const [name, setName] = useState('')
@@ -194,7 +212,7 @@ function ClientDetailInner() {
 
   async function loadCommercial(clientId: string, companyId: string) {
     const supabase = createClient()
-    const [{ data: quotes }, { data: invoices }, { data: ledger }] = await Promise.all([
+    const [quoteRes, invoiceRes, ledgerRes, balanceRes] = await Promise.all([
       supabase.from('commercial_quotes')
         .select('id, quote_number, title, status, total_amount, created_at')
         .eq('client_id', clientId).eq('company_id', companyId)
@@ -207,17 +225,40 @@ function ClientDetailInner() {
         .select('id, entry_type, reference_number, description, debit, credit, entry_date')
         .eq('client_id', clientId).eq('company_id', companyId)
         .order('entry_date', { ascending: false }).limit(20),
+      supabase.from('customer_ledger_entries')
+        .select('debit, credit')
+        .eq('client_id', clientId).eq('company_id', companyId),
     ])
-    return { quotes: quotes ?? [], invoices: invoices ?? [], ledger: ledger ?? [] }
+    const failed = quoteRes.error ?? invoiceRes.error ?? ledgerRes.error ?? balanceRes.error
+    if (failed) throw new Error(failed.message)
+    const outstanding = (balanceRes.data ?? []).reduce(
+      (sum, row) => sum + Number(row.debit ?? 0) - Number(row.credit ?? 0),
+      0,
+    )
+    return {
+      quotes: quoteRes.data ?? [],
+      invoices: invoiceRes.data ?? [],
+      ledger: ledgerRes.data ?? [],
+      outstanding,
+    }
   }
 
   useEffect(() => {
     if (tab !== 'commercial' || !client || !client.company_id) return
+    let cancelled = false
     setCommercialLoading(true)
     loadCommercial(client.id, client.company_id).then(data => {
+      if (cancelled) return
       setCommercialData(data)
-      setCommercialLoading(false)
+      setCommercialMsg(null)
+    }).catch((e: unknown) => {
+      if (cancelled) return
+      setCommercialData(null)
+      setCommercialMsg(e instanceof Error ? e.message : 'Could not load commercial records.')
+    }).finally(() => {
+      if (!cancelled) setCommercialLoading(false)
     })
+    return () => { cancelled = true }
   }, [tab, client?.id, client?.company_id])
 
   async function loadJobs(
@@ -798,7 +839,8 @@ function ClientDetailInner() {
     const from = p.status ?? 'draft'
     if (from === newStatus) return
     const supabase = createClient()
-    await supabase.from('client_deals').update({ status: newStatus }).eq('id', p.id)
+    const { error: statusErr } = await supabase.from('client_deals').update({ status: newStatus }).eq('id', p.id)
+    if (statusErr) { setError(statusErr.message); return }
     await supabase.from('client_deal_updates').insert({
       deal_id: p.id,
       company_id: p.company_id,
@@ -840,10 +882,92 @@ function ClientDetailInner() {
     }
   }
 
+  async function openMedia(fileUrl: string | null | undefined, storagePath?: string | null) {
+    const path = mediaPath(fileUrl, storagePath)
+    if (!path) { setError('This file has no storage path.'); return }
+    setError(null)
+    const supabase = createClient()
+    const { data, error: e } = await supabase.storage.from('workforce-media').createSignedUrl(path, 300)
+    if (e || !data?.signedUrl) {
+      setError(e?.message ?? 'Could not open the file.')
+      return
+    }
+    window.open(data.signedUrl, '_blank', 'noopener,noreferrer')
+  }
+
+  async function saveSite(site: Site) {
+    if (!canEdit || !client) return
+    if (!editSiteName.trim()) { setError('Site name is required.'); return }
+    setIsBusy(true)
+    setError(null)
+    const supabase = createClient()
+    const address = editSiteAddress.trim() || null
+    const { error: e } = await supabase.from('sites').update({
+      name: editSiteName.trim(),
+      address,
+    }).eq('id', site.id).eq('company_id', client.company_id)
+    if (e) {
+      setError(e.message)
+    } else {
+      setSites(prev => prev.map(s => s.id === site.id ? { ...s, name: editSiteName.trim(), address } : s))
+      setEditingSiteId(null)
+    }
+    setIsBusy(false)
+  }
+
+  async function saveCommercialProfile() {
+    if (!canEdit || !client) return
+    setCommercialSaving(true)
+    setCommercialMsg(null)
+    const supabase = createClient()
+    const payload = {
+      payment_terms_days: client.payment_terms_days ?? 30,
+      credit_limit: client.credit_limit ?? 0,
+      vat_number: client.vat_number?.trim() || null,
+      billing_address: client.billing_address?.trim() || null,
+      tax_exempt: Boolean(client.tax_exempt),
+    }
+    const { error: e } = await supabase.from('clients').update(payload).eq('id', client.id)
+    if (e) {
+      setCommercialMsg(e.message)
+    } else {
+      setClient(prev => prev ? { ...prev, ...payload } : prev)
+      await logClientEvent(supabase, {
+        companyId: client.company_id,
+        screen: 'HrClientDetails',
+        action: 'client_profile_updated',
+        meta: { client_id: client.id, description: 'Commercial profile' },
+      })
+      setCommercialMsg('Commercial profile saved.')
+    }
+    setCommercialSaving(false)
+  }
+
+  async function deleteSite(site: Site) {
+    if (!canEdit || !client) return
+    if (!window.confirm(`Remove site "${site.name}"?`)) return
+    setIsBusy(true)
+    setError(null)
+    const supabase = createClient()
+    const { error: e } = await supabase.from('sites').delete().eq('id', site.id).eq('company_id', client.company_id)
+    if (e) {
+      setError(e.message)
+    } else {
+      setSites(prev => prev.filter(s => s.id !== site.id))
+      if (editingSiteId === site.id) setEditingSiteId(null)
+    }
+    setIsBusy(false)
+  }
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <span className="text-text-secondary text-[13px]">Loading…</span>
+      <div className="h-full flex flex-col">
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-divider bg-surface">
+          <Link href="/dashboard/clients" aria-label="Back to clients" className="text-text-secondary hover:text-text-primary transition-colors">
+            <span className="material-icons text-[20px]">arrow_back</span>
+          </Link>
+          <span className="text-text-secondary text-[13px]">Loading…</span>
+        </div>
       </div>
     )
   }
@@ -852,7 +976,7 @@ function ClientDetailInner() {
     <div className="h-full flex flex-col">
       <div className="flex items-center justify-between px-4 py-3 border-b border-divider shrink-0 bg-surface">
         <div className="flex items-center gap-3">
-          <Link href="/dashboard/clients" className="text-text-secondary hover:text-text-primary transition-colors">
+          <Link href="/dashboard/clients" aria-label="Back to clients" className="text-text-secondary hover:text-text-primary transition-colors">
             <span className="material-icons text-[20px]">arrow_back</span>
           </Link>
           <div>
@@ -906,8 +1030,7 @@ function ClientDetailInner() {
         <div className="flex flex-wrap gap-2 mx-4 my-2 shrink-0 overflow-x-auto">
           {CLIENT_TABS.map(t => (
             <button key={t} onClick={() => selectTab(t)}
-              className="h-[38px] px-3 rounded-[10px] text-[12px] font-medium transition-colors whitespace-nowrap shrink-0"
-              style={{ backgroundColor: tab === t ? '#3B82F6' : '#FFFFFF', color: tab === t ? '#FFFFFF' : '#6B7280' }}>
+              className={`h-[38px] px-3 rounded-[10px] text-[12px] font-medium transition-colors whitespace-nowrap shrink-0 border ${tab === t ? 'bg-primary text-white border-primary' : 'bg-surface text-text-secondary border-border hover:text-text-primary'}`}>
               {TAB_LABELS[t]}
             </button>
           ))}
@@ -1032,7 +1155,7 @@ function ClientDetailInner() {
                     </button>
                   </div>
                 )}
-                <div className="card overflow-hidden" style={{ maxHeight: 160, overflowY: 'auto' }}>
+                <div className="card overflow-hidden" style={{ maxHeight: 280, overflowY: 'auto' }}>
                   {sites.length === 0 ? (
                     <p className="text-text-secondary text-[13px] p-4">No sites.</p>
                   ) : (
@@ -1040,8 +1163,33 @@ function ClientDetailInner() {
                       <tbody>
                         {sites.map(s => (
                           <tr key={s.id} className="border-b border-divider last:border-0">
-                            <td className="data-td text-text-primary text-[13px]">{s.name}</td>
-                            <td className="data-td text-text-secondary text-[12px] truncate">{s.address ?? '—'}</td>
+                            {editingSiteId === s.id ? (
+                              <td className="data-td" colSpan={2}>
+                                <div className="space-y-2 py-1">
+                                  <input value={editSiteName} onChange={e => setEditSiteName(e.target.value)} className="dark-entry" />
+                                  <input value={editSiteAddress} onChange={e => setEditSiteAddress(e.target.value)} placeholder="Address" className="dark-entry" />
+                                  <div className="flex gap-2">
+                                    <button type="button" disabled={isBusy || !editSiteName.trim()} onClick={() => void saveSite(s)} className="h-8 px-3 rounded-lg bg-primary text-white text-[12px] disabled:opacity-50">Save</button>
+                                    <button type="button" onClick={() => setEditingSiteId(null)} className="h-8 px-3 text-[12px] text-text-secondary">Cancel</button>
+                                  </div>
+                                </div>
+                              </td>
+                            ) : (
+                              <>
+                                <td className="data-td text-text-primary text-[13px]">{s.name}</td>
+                                <td className="data-td text-text-secondary text-[12px]">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="truncate">{s.address ?? '—'}</span>
+                                    {canEdit && (
+                                      <span className="shrink-0 flex gap-3">
+                                        <button type="button" className="text-primary text-[11px] font-medium" onClick={() => { setEditingSiteId(s.id); setEditSiteName(s.name); setEditSiteAddress(s.address ?? '') }}>Edit</button>
+                                        <button type="button" className="text-error text-[11px] font-medium" onClick={() => void deleteSite(s)}>Remove</button>
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                              </>
+                            )}
                           </tr>
                         ))}
                       </tbody>
@@ -1065,8 +1213,7 @@ function ClientDetailInner() {
             <div className="flex gap-2">
               {(['table', 'board'] as const).map(v => (
                 <button key={v} onClick={() => setProjectView(v)}
-                  className="rounded-lg h-8 px-[10px] text-[11px] transition-colors"
-                  style={{ backgroundColor: projectView === v ? '#3B82F6' : '#FFFFFF', color: projectView === v ? '#FFFFFF' : '#6B7280' }}>
+                  className={`rounded-lg h-8 px-[10px] text-[11px] transition-colors border ${projectView === v ? 'bg-primary text-white border-primary' : 'bg-surface text-text-secondary border-border'}`}>
                   {v === 'table' ? 'Table' : 'Board'}
                 </button>
               ))}
@@ -1243,7 +1390,7 @@ function ClientDetailInner() {
             <div className="flex items-center justify-between">
               <p className="section-label">INVOICES</p>
               {canEdit && (
-                <button onClick={() => router.push(`/dashboard/finance/invoices/new?clientId=${clientId}`)}
+                <button onClick={() => router.push(`/dashboard/money/invoices/new?clientId=${clientId}`)}
                   className="btn-primary h-9 px-[14px] text-[13px]">+ Invoice</button>
               )}
             </div>
@@ -1269,7 +1416,7 @@ function ClientDetailInner() {
                         <tr
                           key={inv.id}
                           id={`client-invoice-${inv.id}`}
-                          onClick={() => router.push(`/dashboard/finance/invoices/${inv.id}`)}
+                          onClick={() => router.push(`/dashboard/money/invoices/${inv.id}`)}
                           className={`bg-surface hover:bg-background cursor-pointer border-b border-divider last:border-0 ${focusId === inv.id ? 'ring-2 ring-inset ring-primary' : ''}`}
                         >
                           <td className="data-td text-text-primary text-[13px] font-medium">{inv.invoice_number || '(draft)'}</td>
@@ -1353,11 +1500,11 @@ function ClientDetailInner() {
                             {d.created_at ? new Date(d.created_at).toLocaleDateString('en-ZA') : '—'}
                           </td>
                           <td className="data-td">
-                            {d.file_url ? (
-                              <a href={d.file_url} target="_blank" rel="noopener noreferrer"
+                            {d.file_url || d.storage_path ? (
+                              <button type="button" onClick={() => void openMedia(d.file_url, d.storage_path)}
                                 className="text-primary text-[11px] font-medium h-[30px] inline-flex items-center">
                                 Open →
-                              </a>
+                              </button>
                             ) : (
                               <span className="text-text-disabled text-[11px]">—</span>
                             )}
@@ -1408,10 +1555,10 @@ function ClientDetailInner() {
                           <td className="data-td text-text-secondary text-[12px] truncate">{d.project_title ?? '—'}</td>
                           <td className="data-td">
                             {d.file_url ? (
-                              <a href={d.file_url} target="_blank" rel="noopener noreferrer"
+                              <button type="button" onClick={() => void openMedia(d.file_url)}
                                 className="text-primary text-[11px] font-medium h-[30px] inline-flex items-center">
                                 Open →
-                              </a>
+                              </button>
                             ) : (
                               <span className="text-text-disabled text-[11px]">—</span>
                             )}
@@ -1480,7 +1627,7 @@ function ClientDetailInner() {
           <ClientActivityTab companyId={client.company_id} clientId={clientId} />
         )}
 
-        {showRelatedTabs && tab === 'commercial' && (
+        {showRelatedTabs && tab === 'commercial' && client && (
           <div className="space-y-6 p-4">
             {/* Commercial Profile card */}
             <div className="bg-surface rounded-xl border border-divider p-4 space-y-3">
@@ -1488,50 +1635,45 @@ function ClientDetailInner() {
               <div className="grid grid-cols-2 gap-3">
                 <label className="space-y-1">
                   <span className="text-[12px] text-text-secondary">Payment Terms (days)</span>
-                  <input type="number" value={(client as any).payment_terms_days ?? 30}
-                    onChange={e => setClient(prev => prev ? { ...prev, payment_terms_days: Number(e.target.value) } as any : prev)}
+                  <input type="number" value={client.payment_terms_days ?? 30}
+                    onChange={e => setClient(prev => prev ? { ...prev, payment_terms_days: Number(e.target.value) } : prev)}
                     className="w-full h-9 px-3 border border-border rounded-md text-[13px] bg-background" />
                 </label>
                 <label className="space-y-1">
                   <span className="text-[12px] text-text-secondary">Credit Limit (R)</span>
-                  <input type="number" value={(client as any).credit_limit ?? 0}
-                    onChange={e => setClient(prev => prev ? { ...prev, credit_limit: Number(e.target.value) } as any : prev)}
+                  <input type="number" value={client.credit_limit ?? 0}
+                    onChange={e => setClient(prev => prev ? { ...prev, credit_limit: Number(e.target.value) } : prev)}
                     className="w-full h-9 px-3 border border-border rounded-md text-[13px] bg-background" />
                 </label>
                 <label className="space-y-1">
                   <span className="text-[12px] text-text-secondary">VAT Number</span>
-                  <input type="text" value={(client as any).vat_number ?? ''}
-                    onChange={e => setClient(prev => prev ? { ...prev, vat_number: e.target.value } as any : prev)}
+                  <input type="text" value={client.vat_number ?? ''}
+                    onChange={e => setClient(prev => prev ? { ...prev, vat_number: e.target.value } : prev)}
                     className="w-full h-9 px-3 border border-border rounded-md text-[13px] bg-background" />
                 </label>
                 <label className="space-y-1">
                   <span className="text-[12px] text-text-secondary">Billing Address</span>
-                  <input type="text" value={(client as any).billing_address ?? ''}
-                    onChange={e => setClient(prev => prev ? { ...prev, billing_address: e.target.value } as any : prev)}
+                  <input type="text" value={client.billing_address ?? ''}
+                    onChange={e => setClient(prev => prev ? { ...prev, billing_address: e.target.value } : prev)}
                     className="w-full h-9 px-3 border border-border rounded-md text-[13px] bg-background" />
                 </label>
               </div>
               <label className="flex items-center gap-2 text-[13px]">
-                <input type="checkbox" checked={(client as any).tax_exempt ?? false}
-                  onChange={e => setClient(prev => prev ? { ...prev, tax_exempt: e.target.checked } as any : prev)} />
+                <input type="checkbox" checked={client.tax_exempt ?? false}
+                  onChange={e => setClient(prev => prev ? { ...prev, tax_exempt: e.target.checked } : prev)} />
                 Tax Exempt
               </label>
               <button
-                onClick={async () => {
-                  if (!client) return
-                  const supabase = createClient()
-                  await supabase.from('clients').update({
-                    payment_terms_days: (client as any).payment_terms_days,
-                    credit_limit: (client as any).credit_limit,
-                    vat_number: (client as any).vat_number,
-                    billing_address: (client as any).billing_address,
-                    tax_exempt: (client as any).tax_exempt,
-                  }).eq('id', client.id)
-                }}
-                className="btn-primary h-9 px-4 text-[13px]"
+                type="button"
+                disabled={!canEdit || commercialSaving}
+                onClick={() => void saveCommercialProfile()}
+                className="btn-primary h-9 px-4 text-[13px] disabled:opacity-50"
               >
-                Save Commercial Profile
+                {commercialSaving ? 'Saving…' : 'Save Commercial Profile'}
               </button>
+              {commercialMsg && (
+                <p className={`text-[12px] ${commercialMsg === 'Commercial profile saved.' ? 'text-green-400' : 'text-error'}`}>{commercialMsg}</p>
+              )}
             </div>
 
             {commercialLoading && <p className="text-[13px] text-text-secondary">Loading…</p>}
@@ -1609,9 +1751,7 @@ function ClientDetailInner() {
                   <div className="px-4 py-3 border-b border-divider flex items-center justify-between">
                     <h3 className="text-[14px] font-semibold text-text-primary">Customer Ledger</h3>
                     <span className="text-[13px] font-medium text-text-primary">
-                      Outstanding: {fmtMoney(
-                        commercialData.ledger.reduce((s, e) => s + e.debit - e.credit, 0)
-                      )}
+                      Outstanding: {fmtMoney(commercialData.outstanding)}
                     </span>
                   </div>
                   <table className="w-full">
