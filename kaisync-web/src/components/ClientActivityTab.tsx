@@ -31,7 +31,7 @@ function eventLabel(action: string): string {
     client_site_added: 'Site Added',
     client_document_uploaded: 'Document Uploaded',
     client_document_deleted: 'Document Deleted',
-    client_note_added: 'Note Added',
+    client_banking_saved: 'Bank Details Saved',
   }
   if (map[action]) return map[action]
   const s = action.replace(/^client_/, '').replace(/_/g, ' ')
