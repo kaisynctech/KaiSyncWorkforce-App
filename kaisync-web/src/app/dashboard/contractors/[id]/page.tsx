@@ -1552,7 +1552,7 @@ function ContractorDetailInner() {
                                 {j?.id ? (
                                   <button
                                     type="button"
-                                    onClick={() => router.push(`/dashboard/jobs/${j.id}/contractor-docs`)}
+                                    onClick={() => router.push(`/dashboard/jobs/${j.id}/contractor-docs?contractorId=${contractorId}`)}
                                     className="rounded w-[34px] h-7 text-[11px]"
                                     style={{ backgroundColor: '#1A2A1A', color: '#4ADE80' }}
                                     title="Contractor documents"

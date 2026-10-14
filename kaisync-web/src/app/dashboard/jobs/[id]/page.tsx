@@ -69,10 +69,15 @@ export default function JobDetailPage() {
   const [job,            setJob]            = useState<JobDetail | null>(null)
   const [companyId,      setCompanyId]      = useState<string | null>(null)
   const [myEmployeeId,   setMyEmployeeId]   = useState<string | null>(null)
-  const [employees,      setEmployees]      = useState<Pick<Employee, 'id' | 'name' | 'surname'>[]>([])
+  const [employees,      setEmployees]      = useState<Pick<Employee, 'id' | 'name' | 'surname' | 'hourly_rate'>[]>([])
   const [assignedIds,    setAssignedIds]    = useState<Set<string>>(new Set())
   const [jobContractors, setJobContractors] = useState<JobContractor[]>([])
   const [laborEntries,   setLaborEntries]   = useState<LaborEntry[]>([])
+  const [laborEmployeeId, setLaborEmployeeId] = useState('')
+  const [laborDate, setLaborDate] = useState(() => new Date().toLocaleDateString('en-CA'))
+  const [laborHours, setLaborHours] = useState('')
+  const [laborBusy, setLaborBusy] = useState(false)
+  const [laborError, setLaborError] = useState('')
   const [inventory,      setInventory]      = useState<JobInventoryItem[]>([])
   const [photos,         setPhotos]         = useState<JobPhoto[]>([])
   const [moneyQuotes,    setMoneyQuotes]    = useState<Array<{ id: string; quote_number: string | null; title: string; status: string; total_amount: number | null }>>([])
@@ -132,9 +137,9 @@ export default function JobDetailPage() {
     const [jobRes, empRes, jcRes, leRes, invRes, clientRes, dealRes, contractorRes, invItemsRes, meRes, quoteRes, invMoneyRes] =
       await Promise.all([
         supabase.from('jobs').select('*, clients(*), sites(*), client_deals:deal_id(id, title, project_code)').eq('id', jobId).single(),
-        supabase.from('employees').select('id, name, surname').eq('company_id', member.companyId).eq('is_active', true).order('name'),
+        supabase.from('employees').select('id, name, surname, hourly_rate').eq('company_id', member.companyId).eq('is_active', true).order('name'),
         supabase.from('job_contractors').select('*, contractors(name, contractor_code)').eq('job_id', jobId),
-        supabase.from('labor_entries').select('*').eq('job_id', jobId).order('work_date'),
+        supabase.from('labor_entries').select('id, job_id, employee_id, work_date, hours, hourly_rate').eq('job_id', jobId).order('work_date'),
         supabase.from('inventory_usage').select('id, job_id, inventory_item_id, quantity_used, unit_cost_at_use, inventory_items(name, supplier)').eq('job_id', jobId),
         supabase.from('clients').select('id, name').eq('company_id', member.companyId).order('name'),
         supabase.from('client_deals').select('id, title, project_code, client_id').eq('company_id', member.companyId).order('title'),
@@ -177,9 +182,31 @@ export default function JobDetailPage() {
       if (row.assignee_employee_id) team.add(row.assignee_employee_id)
       setAssignedIds(team)
     }
-    setEmployees((empRes.data     ?? []) as Pick<Employee, 'id' | 'name' | 'surname'>[])
+    const staff = (empRes.data ?? []) as Pick<Employee, 'id' | 'name' | 'surname' | 'hourly_rate'>[]
+    setEmployees(staff)
     setJobContractors((jcRes.data  ?? []) as JobContractor[])
-    setLaborEntries((leRes.data    ?? []) as LaborEntry[])
+    const staffById = new Map(staff.map(emp => [emp.id, emp]))
+    const laborRows = (leRes.data ?? []) as Array<{
+      id: string
+      job_id: string | null
+      employee_id: string
+      work_date: string
+      hours: number
+      hourly_rate: number
+    }>
+    setLaborEntries(laborRows.map(row => {
+      const emp = staffById.get(row.employee_id)
+      return {
+        id: row.id,
+        job_id: row.job_id ?? jobId,
+        employee_id: row.employee_id,
+        work_date: row.work_date,
+        hours: Number(row.hours),
+        total_cost: Number(row.hours) * Number(row.hourly_rate),
+        employees: emp ? { name: emp.name, surname: emp.surname } : undefined,
+      }
+    }))
+    if (leRes.error) setLaborError(leRes.error.message)
     {
       const usageRows = (invRes.data ?? []) as {
         id: string
@@ -440,27 +467,91 @@ export default function JobDetailPage() {
     const result = await openJobTeamThread(supabase, { companyId, jobId })
     setChatBusy(false)
     if (!result.ok) { setError(result.message); return }
-    router.push(`/dashboard/messages?threadId=${result.data}`)
+    router.push(`/dashboard/messages?threadId=${result.data}&jobId=${jobId}`)
   }
 
   async function handleRemoveContractor(jcId: string) {
     const supabase = createClient()
-    await supabase.from('job_contractors').delete().eq('id', jcId)
+    const { error: removeError } = await supabase.from('job_contractors').delete().eq('id', jcId)
+    if (removeError) { setError(removeError.message); return }
     setJobContractors(prev => prev.filter(c => c.id !== jcId))
+  }
+
+  async function saveLabor() {
+    if (!companyId) return
+    const hours = Number(laborHours)
+    if (!laborEmployeeId || !laborDate || !Number.isFinite(hours) || hours <= 0) {
+      setLaborError('Choose an employee, a date, and hours greater than zero.')
+      return
+    }
+    setLaborBusy(true)
+    setLaborError('')
+    const rate = Number(employees.find(emp => emp.id === laborEmployeeId)?.hourly_rate ?? 0)
+    const supabase = createClient()
+    const { data, error: insertError } = await supabase
+      .from('labor_entries')
+      .insert({
+        company_id: companyId,
+        employee_id: laborEmployeeId,
+        job_id: jobId,
+        work_date: laborDate,
+        hours,
+        hourly_rate: rate,
+        source_type: 'manual',
+      })
+      .select('id, job_id, employee_id, work_date, hours, hourly_rate')
+      .single()
+    setLaborBusy(false)
+    if (insertError || !data) {
+      setLaborError(insertError?.message ?? 'Could not save the labor entry.')
+      return
+    }
+    const row = data as {
+      id: string
+      job_id: string | null
+      employee_id: string
+      work_date: string
+      hours: number
+      hourly_rate: number
+    }
+    const emp = employees.find(item => item.id === row.employee_id)
+    setLaborEntries(prev => [...prev, {
+      id: row.id,
+      job_id: row.job_id ?? jobId,
+      employee_id: row.employee_id,
+      work_date: row.work_date,
+      hours: Number(row.hours),
+      total_cost: Number(row.hours) * Number(row.hourly_rate),
+      employees: emp ? { name: emp.name, surname: emp.surname } : undefined,
+    }].sort((a, b) => a.work_date.localeCompare(b.work_date)))
+    setLaborHours('')
   }
 
   // ── Guards ────────────────────────────────────────────────────────────────
 
   if (!job) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <span className="text-text-secondary text-[13px]">Loading…</span>
+      <div className="h-full flex flex-col">
+        <div className="px-4 py-3">
+          <Link href="/dashboard/jobs" aria-label="Back to jobs" className="inline-flex text-text-secondary hover:text-text-primary transition-colors">
+            <span className="material-icons text-[20px]">arrow_back</span>
+          </Link>
+        </div>
+        <div className="flex-1 flex items-center justify-center">
+          <span className="text-text-secondary text-[13px]">Loading…</span>
+        </div>
       </div>
     )
   }
 
   if (error === 'not_linked') return (
-    <div className="flex items-center justify-center h-full">
+    <div className="h-full flex flex-col">
+      <div className="px-4 py-3">
+        <Link href="/dashboard/jobs" aria-label="Back to jobs" className="inline-flex text-text-secondary hover:text-text-primary transition-colors">
+          <span className="material-icons text-[20px]">arrow_back</span>
+        </Link>
+      </div>
+      <div className="flex-1 flex items-center justify-center">
       <div className="text-center space-y-2">
         <span className="material-icons text-[48px] text-text-disabled">person_off</span>
         <p className="text-[14px] font-semibold text-text-primary">Account not linked</p>
@@ -468,6 +559,7 @@ export default function JobDetailPage() {
           Your account is not linked to an active employee record.<br/>
           Please contact your administrator.
         </p>
+      </div>
       </div>
     </div>
   )
@@ -684,7 +776,13 @@ export default function JobDetailPage() {
                 </span>
 
                 <span className="text-[12px] text-text-secondary">Client</span>
-                <span className="text-[13px] text-text-primary">{job.clients?.name ?? '—'}</span>
+                {job.client_id && job.clients?.name ? (
+                  <Link href={`/dashboard/clients/${job.client_id}`} className="text-[13px] text-primary hover:underline w-fit">
+                    {job.clients.name}
+                  </Link>
+                ) : (
+                  <span className="text-[13px] text-text-primary">—</span>
+                )}
 
                 <span className="text-[12px] text-text-secondary">Site</span>
                 <span className="text-[13px] text-text-primary">{job.sites?.address ?? job.address ?? '—'}</span>
@@ -775,16 +873,19 @@ export default function JobDetailPage() {
               <p className="text-text-disabled text-[12px] px-1 py-1">No employees in company.</p>
             )}
             {employees.map(emp => (
-              <label key={emp.id} className="flex items-center gap-2 px-1 py-1.5 rounded cursor-pointer hover:bg-background transition-colors">
+              <div key={emp.id} className="flex items-center gap-2 px-1 py-1.5 rounded hover:bg-background transition-colors">
                 <input
                   type="checkbox"
                   checked={assignedIds.has(emp.id)}
                   onChange={() => toggleEmployee(emp.id)}
                   disabled={!canEdit}
+                  aria-label={`Assign ${emp.name} ${emp.surname}`}
                   className="rounded border-border accent-primary"
                 />
-                <span className="text-[13px] text-text-primary">{emp.name} {emp.surname}</span>
-              </label>
+                <Link href={`/dashboard/employees/${emp.id}`} className="text-[13px] text-text-primary hover:text-primary hover:underline">
+                  {emp.name} {emp.surname}
+                </Link>
+              </div>
             ))}
           </div>
 
@@ -816,14 +917,22 @@ export default function JobDetailPage() {
                           {jc.agreed_amount != null ? `R${jc.agreed_amount.toFixed(2)}` : '—'}
                         </td>
                         <td className="py-2">
-                          {canEdit && (
-                            <button
-                              onClick={() => handleRemoveContractor(jc.id)}
-                              className="text-text-secondary hover:text-error w-9 h-8 text-[13px] transition-colors"
+                          <div className="flex items-center justify-end gap-1">
+                            <Link
+                              href={`/dashboard/jobs/${jobId}/contractor-docs?contractorId=${jc.contractor_id}`}
+                              className="text-[12px] text-primary hover:underline px-1"
                             >
-                              ✕
-                            </button>
-                          )}
+                              Docs
+                            </Link>
+                            {canEdit && (
+                              <button
+                                onClick={() => handleRemoveContractor(jc.id)}
+                                className="text-text-secondary hover:text-error w-9 h-8 text-[13px] transition-colors"
+                              >
+                                ✕
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -979,13 +1088,55 @@ export default function JobDetailPage() {
       </div>
 
       {/* ── Labor entries ── */}
-      <div className="bg-surface rounded-xl p-4 border border-divider space-y-2">
-        <p className="text-[11px] font-semibold text-text-secondary tracking-wider uppercase mb-1">Labor Entries</p>
+      <div className="bg-surface rounded-xl p-4 border border-divider space-y-3">
+        <p className="text-[11px] font-semibold text-text-secondary tracking-wider uppercase">Labor Entries</p>
+        {canEdit && (
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_160px_120px_auto] gap-2 items-end">
+            <FormSelect label="Employee" value={laborEmployeeId} onChange={e => setLaborEmployeeId(e.target.value)}>
+              <option value="">Select employee</option>
+              {employees.map(emp => (
+                <option key={emp.id} value={emp.id}>{emp.name} {emp.surname}</option>
+              ))}
+            </FormSelect>
+            <label className="block space-y-1">
+              <span className="text-[12px] text-text-secondary">Date</span>
+              <input
+                type="date"
+                value={laborDate}
+                onChange={e => setLaborDate(e.target.value)}
+                className="w-full h-12 px-3 rounded-sm bg-surface-elevated border border-border text-[14px] text-text-primary"
+              />
+            </label>
+            <label className="block space-y-1">
+              <span className="text-[12px] text-text-secondary">Hours</span>
+              <input
+                type="number"
+                min="0.25"
+                step="0.25"
+                value={laborHours}
+                onChange={e => setLaborHours(e.target.value)}
+                className="w-full h-12 px-3 rounded-sm bg-surface-elevated border border-border text-[14px] text-text-primary"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => void saveLabor()}
+              disabled={laborBusy}
+              className="h-12 px-4 text-[13px] rounded-lg bg-primary text-white font-semibold hover:bg-primary-dark disabled:opacity-50"
+            >
+              {laborBusy ? 'Saving…' : 'Add'}
+            </button>
+          </div>
+        )}
+        {laborError && <p className="text-[12px] text-error">{laborError}</p>}
         {laborEntries.length === 0 ? (
           <p className="text-text-secondary text-[12px]">No labor entries.</p>
         ) : (
           laborEntries.map(le => (
-            <div key={le.id} className="grid grid-cols-[1fr_auto_auto] gap-x-2 py-1 border-b border-divider last:border-0">
+            <div key={le.id} className="grid grid-cols-[1fr_auto_auto_auto] gap-x-3 py-1 border-b border-divider last:border-0">
+              <span className="text-[13px] text-text-primary truncate">
+                {le.employees ? `${le.employees.name} ${le.employees.surname}`.trim() : 'Employee'}
+              </span>
               <span className="text-[13px] text-text-primary">{fmtDate(le.work_date)}</span>
               <span className="text-[13px] text-text-secondary">{le.hours}h</span>
               <span className="text-[13px] text-primary">R{le.total_cost.toFixed(2)}</span>

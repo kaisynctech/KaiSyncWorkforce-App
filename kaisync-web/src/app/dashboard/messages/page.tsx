@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
@@ -61,6 +62,10 @@ export default function MessagesPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const deepThreadId = searchParams.get('threadId')
+  const jobBackId = searchParams.get('jobId')
+  const jobBackHref = jobBackId && /^[0-9a-f-]{36}$/i.test(jobBackId)
+    ? `/dashboard/jobs/${jobBackId}`
+    : null
 
   const [threads, setThreads] = useState<MessageThread[]>([])
   const [selected, setSelected] = useState<MessageThread | null>(null)
@@ -528,12 +533,19 @@ export default function MessagesPage() {
         ) : (
           <>
             <div className="flex items-center gap-3 px-4 py-3 border-b border-divider bg-surface shrink-0">
-              <button
-                onClick={() => setSelected(null)}
-                className="sm:hidden text-text-secondary hover:text-text-primary transition-colors"
-              >
-                <span className="material-icons text-[20px]">arrow_back</span>
-              </button>
+              {jobBackHref ? (
+                <Link href={jobBackHref} aria-label="Back to job" className="text-text-secondary hover:text-text-primary transition-colors">
+                  <span className="material-icons text-[20px]">arrow_back</span>
+                </Link>
+              ) : (
+                <button
+                  onClick={() => setSelected(null)}
+                  className="sm:hidden text-text-secondary hover:text-text-primary transition-colors"
+                  aria-label="Back to conversations"
+                >
+                  <span className="material-icons text-[20px]">arrow_back</span>
+                </button>
+              )}
               <div className="flex-1 min-w-0">
                 <p className="text-[14px] font-semibold text-text-primary truncate">
                   {displayThreadSubject(selected, jobTitles)}
