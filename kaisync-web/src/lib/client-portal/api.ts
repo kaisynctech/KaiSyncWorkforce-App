@@ -387,6 +387,46 @@ export async function getProject(
   return project.id ? project : null
 }
 
+/** Object path inside workforce-media, whether the stored value is a path or a public URL. */
+export function portalStorageObjectName(value: string): string | null {
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  const noQuery = trimmed.split('?')[0]
+  if (/^(job_photos|project_documents|job_documents|client_documents)\//.test(noQuery)) return noQuery
+  const marker = '/workforce-media/'
+  const at = noQuery.indexOf(marker)
+  if (at === -1) return null
+  const raw = noQuery.slice(at + marker.length)
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    return raw
+  }
+}
+
+/**
+ * Photos are stored as public links on a private bucket, so the browser cannot load them.
+ * Mint a short-lived signed link for each file the portal already returned.
+ */
+export async function signPortalMedia(values: string[]): Promise<Record<string, string>> {
+  const unique = [...new Set(values.map(value => value.trim()).filter(Boolean))]
+  const supabase = createClient()
+  const signedByPath = new Map<string, string>()
+  await Promise.all(unique.map(async (original) => {
+    const name = portalStorageObjectName(original)
+    if (!name) return
+    const { data } = await supabase.storage.from('workforce-media').createSignedUrl(name, 3600)
+    if (data?.signedUrl) signedByPath.set(name, data.signedUrl)
+  }))
+  const out: Record<string, string> = {}
+  for (const original of unique) {
+    const name = portalStorageObjectName(original)
+    if (name && signedByPath.has(name)) out[original] = signedByPath.get(name) as string
+    else if (!name && /^https?:\/\//i.test(original)) out[original] = original
+  }
+  return out
+}
+
 export async function sendMessage(
   companyCode: string,
   clientCode: string,

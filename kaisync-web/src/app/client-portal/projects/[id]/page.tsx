@@ -4,12 +4,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { ClientPortalShell } from '@/components/ClientPortalShell'
+import { PortalTabs } from '@/components/PortalTabs'
 import { useRequireClientPortalSession } from '@/lib/client-portal/use-session'
 import {
   addDocumentLink,
   getProject,
   listJobs,
   sendMessage,
+  signPortalMedia,
   uploadDocument,
 } from '@/lib/client-portal/api'
 import { markDealMessagesRead } from '@/lib/client-portal/session'
@@ -22,6 +24,16 @@ import {
 } from '@/lib/client-portal/quotation'
 import type { ClientPortalJob, ClientPortalProject, ProjectDocument } from '@/lib/client-portal/types'
 
+const PROJECT_TABS = [
+  { id: 'details', label: 'Details' },
+  { id: 'jobs', label: 'Jobs' },
+  { id: 'photos', label: 'Photos' },
+  { id: 'money', label: 'Money' },
+  { id: 'documents', label: 'Documents' },
+  { id: 'messages', label: 'Messages' },
+] as const
+type ProjectTab = typeof PROJECT_TABS[number]['id']
+
 export default function ClientPortalProjectDetailPage() {
   const { session, ready } = useRequireClientPortalSession()
   const params = useParams()
@@ -32,6 +44,8 @@ export default function ClientPortalProjectDetailPage() {
 
   const [project, setProject] = useState<ClientPortalProject | null>(null)
   const [projectJobs, setProjectJobs] = useState<ClientPortalJob[]>([])
+  const [tab, setTab] = useState<ProjectTab>(openMessages ? 'messages' : 'details')
+  const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [msgText, setMsgText] = useState('')
@@ -53,8 +67,22 @@ export default function ClientPortalProjectDetailPage() {
 
   useEffect(() => {
     if (!openMessages || !project || loading) return
+    setTab('messages')
     messagesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [openMessages, project, loading])
+
+  useEffect(() => {
+    if (!project) return
+    const values = [
+      ...project.progress_photos.map(photo => photo.url),
+      ...project.documents.map(doc => doc.file_url),
+    ]
+    let cancelled = false
+    void signPortalMedia(values).then(signed => {
+      if (!cancelled) setMediaUrls(signed)
+    })
+    return () => { cancelled = true }
+  }, [project])
 
   async function load() {
     if (!session) return
@@ -217,6 +245,9 @@ export default function ClientPortalProjectDetailPage() {
           </div>
         ) : (
           <>
+            <PortalTabs tabs={[...PROJECT_TABS]} tab={tab} onChange={setTab} />
+
+            {tab === 'details' && (<>
             <Section title="Overview">
               <InfoRow label="Status" value={projectStatusLabel(project.status)} />
               <InfoRow label="Progress" value={`${project.progress_percent}%`} />
@@ -232,7 +263,9 @@ export default function ClientPortalProjectDetailPage() {
                 {project.last_update_note?.trim() || 'No project updates yet.'}
               </p>
             </Section>
+            </>)}
 
+            {tab === 'jobs' && (
             <Section title="Jobs on this project">
               {projectJobs.length === 0 ? (
                 <p className="text-[13px] text-text-secondary">No jobs on this project yet.</p>
@@ -256,7 +289,9 @@ export default function ClientPortalProjectDetailPage() {
                 </div>
               )}
             </Section>
+            )}
 
+            {tab === 'details' && (<>
             {(isDateSet(project.site_start_date) || isDateSet(project.expected_completion_date)
               || isDateSet(project.next_visit_date) || isDateSet(project.expected_close_date)) && (
               <Section title="Key dates">
@@ -266,7 +301,9 @@ export default function ClientPortalProjectDetailPage() {
                 {isDateSet(project.expected_close_date) && <InfoRow label="Expected close" value={fmtDate(project.expected_close_date)} />}
               </Section>
             )}
+            </>)}
 
+            {tab === 'money' && (<>
             <Section title="Payments">
               <InfoRow label="Agreed offer" value={moneyZAR(project.offer_amount)} />
               <InfoRow label="Deposit required" value={moneyZAR(project.deposit_required)} />
@@ -329,7 +366,9 @@ export default function ClientPortalProjectDetailPage() {
                 </>
               )}
             </Section>
+            </>)}
 
+            {tab === 'details' && (
             <Section title="Agreement">
               <p className="text-[13px] text-text-primary leading-relaxed whitespace-pre-wrap">
                 {project.agreement_notes?.trim()
@@ -337,7 +376,9 @@ export default function ClientPortalProjectDetailPage() {
                   || 'No agreement or contract notes have been shared yet. Your project manager can add these from the HR project screen.'}
               </p>
             </Section>
+            )}
 
+            {tab === 'documents' && (
             <Section title="Documentation">
               <div className="flex flex-wrap gap-2 mb-3">
                 <button
@@ -419,10 +460,10 @@ export default function ClientPortalProjectDetailPage() {
                   {project.documents.map(doc => (
                     <a
                       key={doc.id || doc.file_url}
-                      href={doc.file_url}
+                      href={mediaUrls[doc.file_url] || doc.file_url}
                       target="_blank"
                       rel="noreferrer"
-                      className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-white/[0.04]"
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-surface-elevated"
                     >
                       <span className="material-icons text-primary text-[18px]">description</span>
                       <div className="min-w-0 flex-1">
@@ -435,31 +476,40 @@ export default function ClientPortalProjectDetailPage() {
                 </div>
               )}
             </Section>
+            )}
 
-            {project.progress_photos.length > 0 && (
-              <Section title="Progress photos">
+            {tab === 'photos' && (
+              <Section title="Photos">
+                {project.progress_photos.length === 0 ? (
+                  <p className="text-[13px] text-text-secondary">No photos on this project yet. Photos from the jobs show here.</p>
+                ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {project.progress_photos.map((photo, i) => (
+                  {project.progress_photos.map((photo, i) => {
+                    const src = mediaUrls[photo.url]
+                    return src ? (
                     <a
                       key={`${photo.url}-${i}`}
-                      href={photo.url}
+                      href={src}
                       target="_blank"
                       rel="noreferrer"
                       className="border-divider bg-surface rounded-lg overflow-hidden border"
-                     
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={photo.url} alt={photo.job_title || photo.phase} className="w-full h-28 object-cover" />
+                      <img src={src} alt={photo.job_title || photo.phase} className="w-full h-28 object-cover" />
                       <p className="text-[11px] text-text-secondary px-2 py-1 truncate capitalize">
                         {photo.phase}{photo.job_title ? ` · ${photo.job_title}` : ''}
                       </p>
                     </a>
-                  ))}
+                    ) : (
+                      <div key={`${photo.url}-${i}`} className="border-divider rounded-lg border bg-surface-elevated h-28" />
+                    )
+                  })}
                 </div>
+                )}
               </Section>
             )}
 
-            {project.activity_updates.length > 0 && (
+            {tab === 'details' && project.activity_updates.length > 0 && (
               <Section title="Project updates">
                 <div className="space-y-3">
                   {project.activity_updates.map((a, i) => (
@@ -478,6 +528,7 @@ export default function ClientPortalProjectDetailPage() {
             )}
 
             <div ref={messagesRef}>
+              {tab === 'messages' && (
               <Section title="Ask a question">
                 <div className="space-y-3 mb-3 max-h-80 overflow-y-auto">
                   {project.messages.length === 0 ? (
@@ -516,6 +567,7 @@ export default function ClientPortalProjectDetailPage() {
                   </button>
                 </div>
               </Section>
+              )}
             </div>
           </>
         )}
