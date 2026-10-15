@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { ClientPortalShell } from '@/components/ClientPortalShell'
 import { useRequireClientPortalSession } from '@/lib/client-portal/use-session'
 import { listInvoices, listJobs, listMessageInbox, listProjects } from '@/lib/client-portal/api'
@@ -12,9 +13,34 @@ import { isInvoiceOutstanding, type ClientPortalJob, type ClientPortalProject, t
 
 type Tab = 'projects' | 'jobs' | 'messages' | 'invoices'
 
+const TAB_TITLES: Record<Tab, string> = {
+  projects: 'Projects',
+  jobs: 'Jobs',
+  messages: 'Messages',
+  invoices: 'Invoices',
+}
+
+function parseTab(raw: string | null): Tab {
+  if (raw === 'jobs' || raw === 'messages' || raw === 'invoices' || raw === 'projects') return raw
+  return 'projects'
+}
+
 export default function ClientPortalHomePage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-background text-text-secondary text-[14px]">
+        Loading…
+      </div>
+    }>
+      <ClientPortalHomeInner />
+    </Suspense>
+  )
+}
+
+function ClientPortalHomeInner() {
   const { session, ready } = useRequireClientPortalSession()
-  const [tab, setTab] = useState<Tab>('projects')
+  const searchParams = useSearchParams()
+  const tab = parseTab(searchParams.get('tab'))
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [projects, setProjects] = useState<ClientPortalProject[]>([])
@@ -65,7 +91,7 @@ export default function ClientPortalHomePage() {
 
   if (!ready || !session) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#0f172a] text-slate-400 text-[14px]">
+      <div className="min-h-screen flex items-center justify-center bg-background text-text-secondary text-[14px]">
         Loading…
       </div>
     )
@@ -73,41 +99,24 @@ export default function ClientPortalHomePage() {
 
   return (
     <ClientPortalShell session={session}>
-      <div className="max-w-5xl mx-auto px-4 py-4 space-y-4">
+      <div className="px-4 py-4 md:px-6 md:py-5 space-y-4">
         <div>
-          <h1 className="text-white text-[20px] font-bold">Welcome, {session.client_name}</h1>
-          <p className="text-slate-400 text-[13px] mt-0.5">Your projects, jobs, messages, and invoices</p>
-        </div>
-
-        <div className="flex gap-1 p-1 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)' }}>
-          {([
-            ['projects', 'Projects'],
-            ['jobs', 'Jobs'],
-            ['messages', unreadCount > 0 ? `Messages (${unreadCount})` : 'Messages'],
-            ['invoices', 'Invoices'],
-          ] as [Tab, string][]).map(([key, label]) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setTab(key)}
-              className={`flex-1 text-[13px] font-semibold py-2 rounded-lg transition-colors ${
-                tab === key ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
+          <h1 className="text-text-primary text-[20px] font-bold">{TAB_TITLES[tab]}</h1>
+          <p className="text-text-secondary text-[13px] mt-0.5">
+            {session.client_name}
+            {tab === 'messages' && unreadCount > 0 ? ` · ${unreadCount} unread` : ''}
+          </p>
         </div>
 
         {error && (
-          <div className="rounded-xl px-4 py-3" style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.25)' }}>
-            <p className="text-[13px] text-red-400 font-semibold">{error}</p>
-            <button type="button" onClick={() => void load()} className="text-[12px] text-blue-400 mt-1 hover:underline">Retry</button>
+          <div className="bg-error/10 border border-error/25 rounded-xl px-4 py-3">
+            <p className="text-[13px] text-error font-semibold">{error}</p>
+            <button type="button" onClick={() => void load()} className="text-[12px] text-primary mt-1 hover:underline">Retry</button>
           </div>
         )}
 
         {loading ? (
-          <div className="py-16 text-center text-slate-400 text-[14px]">Loading…</div>
+          <div className="py-16 text-center text-text-secondary text-[14px]">Loading…</div>
         ) : tab === 'projects' ? (
           <ProjectsTab projects={projects} />
         ) : tab === 'jobs' ? (
@@ -129,10 +138,10 @@ function ProjectsTab({ projects }: { projects: ClientPortalProject[] }) {
     )
   }
   return (
-    <div className="overflow-x-auto rounded-xl border" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
+    <div className="border-divider bg-surface overflow-x-auto rounded-xl border">
       <table className="w-full text-[13px]">
         <thead>
-          <tr style={{ background: 'rgba(255,255,255,0.04)' }}>
+          <tr className="bg-surface-elevated">
             <Th>Code</Th>
             <Th>Project</Th>
             <Th>Status</Th>
@@ -143,17 +152,17 @@ function ProjectsTab({ projects }: { projects: ClientPortalProject[] }) {
         </thead>
         <tbody>
           {projects.map(p => (
-            <tr key={p.id} className="border-t hover:bg-white/[0.03]" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
-              <td className="px-3 py-3 text-slate-400 whitespace-nowrap">{p.project_code || '—'}</td>
+            <tr key={p.id} className="border-divider border-t hover:bg-surface-elevated">
+              <td className="px-3 py-3 text-text-secondary whitespace-nowrap">{p.project_code || '—'}</td>
               <td className="px-3 py-3">
-                <Link href={`/client-portal/projects/${p.id}`} className="text-white font-semibold hover:text-blue-300">
+                <Link href={`/client-portal/projects/${p.id}`} className="text-text-primary font-semibold hover:text-primary">
                   {p.title}
                 </Link>
               </td>
-              <td className="px-3 py-3 text-slate-300 whitespace-nowrap">{projectStatusLabel(p.status)}</td>
-              <td className="px-3 py-3 text-slate-300 whitespace-nowrap">{p.progress_percent}%</td>
-              <td className="px-3 py-3 text-slate-300 whitespace-nowrap">{moneyZAR(p.offer_amount)}</td>
-              <td className="px-3 py-3 text-slate-500 whitespace-nowrap">{fmtDate(p.last_update_at ?? p.updated_at)}</td>
+              <td className="px-3 py-3 text-text-primary whitespace-nowrap">{projectStatusLabel(p.status)}</td>
+              <td className="px-3 py-3 text-text-primary whitespace-nowrap">{p.progress_percent}%</td>
+              <td className="px-3 py-3 text-text-primary whitespace-nowrap">{moneyZAR(p.offer_amount)}</td>
+              <td className="px-3 py-3 text-text-secondary whitespace-nowrap">{fmtDate(p.last_update_at ?? p.updated_at)}</td>
             </tr>
           ))}
         </tbody>
@@ -169,10 +178,10 @@ function JobsTab({ jobs }: { jobs: ClientPortalJob[] }) {
     )
   }
   return (
-    <div className="overflow-x-auto rounded-xl border" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
+    <div className="border-divider bg-surface overflow-x-auto rounded-xl border">
       <table className="w-full text-[13px]">
         <thead>
-          <tr style={{ background: 'rgba(255,255,255,0.04)' }}>
+          <tr className="bg-surface-elevated">
             <Th>Code</Th>
             <Th>Job</Th>
             <Th>Status</Th>
@@ -183,22 +192,22 @@ function JobsTab({ jobs }: { jobs: ClientPortalJob[] }) {
         </thead>
         <tbody>
           {jobs.map(job => (
-            <tr key={job.id} className="border-t" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
-              <td className="px-3 py-3 text-slate-400 whitespace-nowrap">{job.job_code || '—'}</td>
-              <td className="px-3 py-3 text-white font-semibold">{job.title || '—'}</td>
-              <td className="px-3 py-3 text-slate-300 whitespace-nowrap">{projectStatusLabel(job.status)}</td>
+            <tr key={job.id} className="border-divider border-t">
+              <td className="px-3 py-3 text-text-secondary whitespace-nowrap">{job.job_code || '—'}</td>
+              <td className="px-3 py-3 text-text-primary font-semibold">{job.title || '—'}</td>
+              <td className="px-3 py-3 text-text-primary whitespace-nowrap">{projectStatusLabel(job.status)}</td>
               <td className="px-3 py-3 whitespace-nowrap">
                 {job.deal_id && job.project_title ? (
-                  <Link href={`/client-portal/projects/${job.deal_id}`} className="text-blue-300 hover:text-blue-200 font-semibold">
+                  <Link href={`/client-portal/projects/${job.deal_id}`} className="text-primary hover:text-primary font-semibold">
                     {job.project_title}
-                    {job.project_code ? <span className="text-slate-500 font-normal"> · {job.project_code}</span> : null}
+                    {job.project_code ? <span className="text-text-secondary font-normal"> · {job.project_code}</span> : null}
                   </Link>
                 ) : (
-                  <span className="text-slate-500">—</span>
+                  <span className="text-text-secondary">—</span>
                 )}
               </td>
-              <td className="px-3 py-3 text-slate-500 whitespace-nowrap">{fmtDate(job.scheduled_start)}</td>
-              <td className="px-3 py-3 text-slate-500 whitespace-nowrap">{fmtDate(job.scheduled_end)}</td>
+              <td className="px-3 py-3 text-text-secondary whitespace-nowrap">{fmtDate(job.scheduled_start)}</td>
+              <td className="px-3 py-3 text-text-secondary whitespace-nowrap">{fmtDate(job.scheduled_end)}</td>
             </tr>
           ))}
         </tbody>
@@ -214,31 +223,31 @@ function MessagesTab({ inbox }: { inbox: MessageInboxItem[] }) {
     )
   }
   return (
-    <div className="divide-y rounded-xl border overflow-hidden" style={{ borderColor: 'rgba(255,255,255,0.08)', borderTopColor: 'rgba(255,255,255,0.08)' }}>
+    <div className="border-divider bg-surface divide-y rounded-xl border overflow-hidden">
       {inbox.map(item => (
         <Link
           key={item.deal_id}
           href={`/client-portal/projects/${item.deal_id}?messages=1`}
-          className="flex items-start gap-3 px-4 py-3 hover:bg-white/[0.03] transition-colors"
-          style={{ borderColor: 'rgba(255,255,255,0.06)' }}
+          className="border-divider flex items-start gap-3 px-4 py-3 hover:bg-surface-elevated transition-colors"
+         
         >
-          <span className={`material-icons text-[22px] mt-0.5 ${item.has_unread ? 'text-blue-400' : 'text-slate-500'}`}>
+          <span className={`material-icons text-[22px] mt-0.5 ${item.has_unread ? 'text-primary' : 'text-text-secondary'}`}>
             {item.has_unread ? 'mark_email_unread' : 'chat'}
           </span>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <p className={`text-[14px] truncate ${item.has_unread ? 'text-white font-bold' : 'text-white font-semibold'}`}>
+              <p className={`text-[14px] truncate ${item.has_unread ? 'text-text-primary font-bold' : 'text-text-primary font-semibold'}`}>
                 {item.project_title}
               </p>
               {item.has_unread && (
-                <span className="text-[10px] font-bold uppercase text-blue-300 bg-blue-500/20 px-1.5 py-0.5 rounded">New</span>
+                <span className="text-[10px] font-bold uppercase text-primary bg-primary/15 px-1.5 py-0.5 rounded">New</span>
               )}
             </div>
-            {item.project_code && <p className="text-[11px] text-slate-500">{item.project_code}</p>}
-            <p className="text-[12px] text-slate-400 mt-0.5 line-clamp-2">{item.last_message_preview || 'No messages yet'}</p>
-            <p className="text-[11px] text-slate-600 mt-1">{fmtDateTime(item.last_message_at)}</p>
+            {item.project_code && <p className="text-[11px] text-text-secondary">{item.project_code}</p>}
+            <p className="text-[12px] text-text-secondary mt-0.5 line-clamp-2">{item.last_message_preview || 'No messages yet'}</p>
+            <p className="text-[11px] text-text-secondary mt-1">{fmtDateTime(item.last_message_at)}</p>
           </div>
-          <span className="material-icons text-slate-600 text-[18px]">chevron_right</span>
+          <span className="material-icons text-text-secondary text-[18px]">chevron_right</span>
         </Link>
       ))}
     </div>
@@ -248,17 +257,17 @@ function MessagesTab({ inbox }: { inbox: MessageInboxItem[] }) {
 function InvoicesTab({ invoices, outstanding }: { invoices: PortalInvoice[]; outstanding: number }) {
   return (
     <div className="space-y-3">
-      <div className="rounded-xl px-4 py-3 flex items-center justify-between" style={{ background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.25)' }}>
-        <p className="text-[12px] font-semibold text-blue-300 uppercase tracking-wide">Outstanding</p>
-        <p className="text-[18px] font-bold text-white">{moneyZAR(outstanding)}</p>
+      <div className="bg-primary/10 border border-primary/25 rounded-xl px-4 py-3 flex items-center justify-between">
+        <p className="text-[12px] font-semibold text-primary uppercase tracking-wide">Outstanding</p>
+        <p className="text-[18px] font-bold text-text-primary">{moneyZAR(outstanding)}</p>
       </div>
       {invoices.length === 0 ? (
         <Empty icon="receipt_long" title="No invoices" sub="Invoices issued to you will appear here." />
       ) : (
-        <div className="overflow-x-auto rounded-xl border" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
+        <div className="border-divider bg-surface overflow-x-auto rounded-xl border">
           <table className="w-full text-[13px]">
             <thead>
-              <tr style={{ background: 'rgba(255,255,255,0.04)' }}>
+              <tr className="bg-surface-elevated">
                 <Th>Number</Th>
                 <Th>Status</Th>
                 <Th>Total</Th>
@@ -269,15 +278,15 @@ function InvoicesTab({ invoices, outstanding }: { invoices: PortalInvoice[]; out
             </thead>
             <tbody>
               {invoices.map(inv => (
-                <tr key={inv.id} className="border-t" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
-                  <td className="px-3 py-3 text-white font-medium whitespace-nowrap">{inv.invoice_number || '—'}</td>
-                  <td className="px-3 py-3 text-slate-300 capitalize whitespace-nowrap">{inv.status.replace(/_/g, ' ')}</td>
-                  <td className="px-3 py-3 text-slate-300 whitespace-nowrap">{moneyZAR(inv.total_amount)}</td>
-                  <td className={`px-3 py-3 whitespace-nowrap font-semibold ${isInvoiceOutstanding(inv.status) ? 'text-amber-300' : 'text-slate-400'}`}>
+                <tr key={inv.id} className="border-divider border-t">
+                  <td className="px-3 py-3 text-text-primary font-medium whitespace-nowrap">{inv.invoice_number || '—'}</td>
+                  <td className="px-3 py-3 text-text-primary capitalize whitespace-nowrap">{inv.status.replace(/_/g, ' ')}</td>
+                  <td className="px-3 py-3 text-text-primary whitespace-nowrap">{moneyZAR(inv.total_amount)}</td>
+                  <td className={`px-3 py-3 whitespace-nowrap font-semibold ${isInvoiceOutstanding(inv.status) ? 'text-warning' : 'text-text-secondary'}`}>
                     {moneyZAR(inv.balance_due)}
                   </td>
-                  <td className="px-3 py-3 text-slate-500 whitespace-nowrap">{fmtDate(inv.issue_date)}</td>
-                  <td className="px-3 py-3 text-slate-500 whitespace-nowrap">{fmtDate(inv.due_date)}</td>
+                  <td className="px-3 py-3 text-text-secondary whitespace-nowrap">{fmtDate(inv.issue_date)}</td>
+                  <td className="px-3 py-3 text-text-secondary whitespace-nowrap">{fmtDate(inv.due_date)}</td>
                 </tr>
               ))}
             </tbody>
@@ -290,7 +299,7 @@ function InvoicesTab({ invoices, outstanding }: { invoices: PortalInvoice[]; out
 
 function Th({ children }: { children: React.ReactNode }) {
   return (
-    <th className="text-left px-3 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+    <th className="text-left px-3 py-2.5 text-[11px] font-semibold text-text-secondary uppercase tracking-wide">
       {children}
     </th>
   )
@@ -299,9 +308,9 @@ function Th({ children }: { children: React.ReactNode }) {
 function Empty({ icon, title, sub }: { icon: string; title: string; sub: string }) {
   return (
     <div className="flex flex-col items-center justify-center py-16 gap-2 text-center">
-      <span className="material-icons text-[48px] text-slate-600">{icon}</span>
-      <p className="text-[15px] font-semibold text-white">{title}</p>
-      <p className="text-[13px] text-slate-500 max-w-sm">{sub}</p>
+      <span className="material-icons text-[48px] text-text-secondary">{icon}</span>
+      <p className="text-[15px] font-semibold text-text-primary">{title}</p>
+      <p className="text-[13px] text-text-secondary max-w-sm">{sub}</p>
     </div>
   )
 }

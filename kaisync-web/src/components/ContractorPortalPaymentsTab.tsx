@@ -108,19 +108,19 @@ export function ContractorPortalPaymentsTab({
     <div className="space-y-4">
       <div className="flex items-end justify-between gap-3">
         <div>
-          <h2 className="text-white text-[18px] font-bold">Payments</h2>
-          <p className="text-[12px] text-slate-500 mt-0.5">Outstanding: {moneyZAR(outstanding)}</p>
+          <h2 className="text-text-primary text-[18px] font-bold">Payments</h2>
+          <p className="text-[12px] text-text-secondary mt-0.5">Outstanding: {moneyZAR(outstanding)}</p>
         </div>
       </div>
 
-      <div className="flex gap-1 overflow-x-auto p-1 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)' }}>
+      <div className="bg-surface-elevated flex gap-1 overflow-x-auto p-1 rounded-xl">
         {FILTERS.map(f => (
           <button
             key={f}
             type="button"
             onClick={() => setFilter(f)}
             className={`shrink-0 text-[12px] font-semibold px-3 py-1.5 rounded-lg ${
-              filter === f ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+              filter === f ? 'bg-primary text-white' : 'text-text-secondary hover:text-text-primary'
             }`}
           >
             {f}
@@ -129,15 +129,15 @@ export function ContractorPortalPaymentsTab({
       </div>
 
       {revise && (
-        <section className="rounded-xl border px-4 py-3 space-y-3" style={{ borderColor: 'rgba(245,158,11,0.35)', background: 'rgba(245,158,11,0.08)' }}>
+        <section className="border-warning/40 bg-warning-dark rounded-xl border px-4 py-3 space-y-3">
           <div className="flex items-center justify-between gap-2">
-            <p className="text-[13px] font-semibold text-amber-300">Revise rejected invoice</p>
-            <button type="button" onClick={cancelRevise} className="text-[12px] text-slate-400">Cancel</button>
+            <p className="text-[13px] font-semibold text-warning">Revise rejected invoice</p>
+            <button type="button" onClick={cancelRevise} className="text-[12px] text-text-secondary">Cancel</button>
           </div>
-          <p className="text-[12px] text-slate-400">Job: {payoutJobDisplay(revise)}</p>
-          <p className="text-[12px] text-slate-400">Previous ref: {payoutInvoiceReference(revise)}</p>
+          <p className="text-[12px] text-text-secondary">Job: {payoutJobDisplay(revise)}</p>
+          <p className="text-[12px] text-text-secondary">Previous ref: {payoutInvoiceReference(revise)}</p>
           {revise.rejection_reason && (
-            <p className="text-[12px] text-red-300">Reason: {revise.rejection_reason}</p>
+            <p className="text-[12px] text-error">Reason: {revise.rejection_reason}</p>
           )}
           <Field label="Amount (ZAR) *" value={amount} onChange={setAmount} inputMode="decimal" />
           <Field label="Invoice reference" value={invoiceRef} onChange={setInvoiceRef} />
@@ -146,7 +146,7 @@ export function ContractorPortalPaymentsTab({
             type="button"
             disabled={busy}
             onClick={() => void submitRevise()}
-            className="h-10 px-4 rounded-xl bg-blue-600 text-white text-[13px] font-semibold disabled:opacity-50"
+            className="h-10 px-4 rounded-xl bg-primary text-white text-[13px] font-semibold disabled:opacity-50"
           >
             {busy ? 'Submitting…' : 'Submit revised invoice'}
           </button>
@@ -154,23 +154,23 @@ export function ContractorPortalPaymentsTab({
       )}
 
       {filtered.length === 0 ? (
-        <div className="py-16 text-center text-slate-500 text-[13px]">No payouts in this filter.</div>
+        <div className="py-16 text-center text-text-secondary text-[13px]">No payouts in this filter.</div>
       ) : (
         <div className="space-y-2">
           {filtered.map(p => (
             <article
               key={p.id}
-              className="rounded-xl border px-4 py-3 space-y-2"
-              style={{ borderColor: 'rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.02)' }}
+              className="border-divider bg-surface rounded-xl border px-4 py-3 space-y-2"
+             
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-[14px] font-semibold text-white truncate">{payoutJobDisplay(p)}</p>
-                  <p className="text-[12px] text-slate-500 mt-0.5">{fmtDate(p.created_at)}</p>
+                  <p className="text-[14px] font-semibold text-text-primary truncate">{payoutJobDisplay(p)}</p>
+                  <p className="text-[12px] text-text-secondary mt-0.5">{fmtDate(p.created_at)}</p>
                 </div>
                 <div className="text-right shrink-0">
-                  <p className="text-[15px] font-bold text-white">{moneyZAR(payoutNetPayable(p))}</p>
-                  <span className="inline-block mt-1 text-[10px] font-semibold px-2 py-0.5 rounded" style={{ background: 'rgba(255,255,255,0.06)' }}>
+                  <p className="text-[15px] font-bold text-text-primary">{moneyZAR(payoutNetPayable(p))}</p>
+                  <span className="bg-surface-elevated inline-block mt-1 text-[10px] font-semibold px-2 py-0.5 rounded">
                     {payoutStatusLabel(p)}
                   </span>
                 </div>
@@ -184,12 +184,12 @@ export function ContractorPortalPaymentsTab({
               {payoutIsRejected(p) && (
                 <div className="pt-1">
                   {p.rejection_reason && (
-                    <p className="text-[12px] text-red-300 mb-2">Rejected: {p.rejection_reason}</p>
+                    <p className="text-[12px] text-error mb-2">Rejected: {p.rejection_reason}</p>
                   )}
                   <button
                     type="button"
                     onClick={() => startRevise(p)}
-                    className="text-[12px] font-semibold text-amber-300 hover:underline"
+                    className="text-[12px] font-semibold text-warning hover:underline"
                   >
                     Revise & resubmit
                   </button>
@@ -200,7 +200,7 @@ export function ContractorPortalPaymentsTab({
         </div>
       )}
 
-      <p className="text-[12px] text-slate-500">
+      <p className="text-[12px] text-text-secondary">
         Submit new invoices from a job detail page.
       </p>
     </div>
@@ -210,8 +210,8 @@ export function ContractorPortalPaymentsTab({
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between gap-2">
-      <span className="text-slate-500">{label}</span>
-      <span className="text-slate-300 text-right truncate">{value}</span>
+      <span className="text-text-secondary">{label}</span>
+      <span className="text-text-primary text-right truncate">{value}</span>
     </div>
   )
 }
@@ -226,10 +226,10 @@ function Field({
 }) {
   return (
     <div className="space-y-1">
-      <label className="text-[11px] font-semibold text-slate-500 uppercase">{label}</label>
+      <label className="text-[11px] font-semibold text-text-secondary uppercase">{label}</label>
       <input
-        className="w-full h-10 px-3 rounded-lg text-[13px] text-white"
-        style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+        className="bg-surface border border-divider text-text-primary w-full h-10 px-3 rounded-lg text-[13px] text-text-primary"
+       
         value={value}
         inputMode={inputMode}
         onChange={e => onChange(e.target.value)}

@@ -264,7 +264,7 @@ export default function ContractorJobDetailPage() {
 
   if (!ready || !session) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#0f172a] text-slate-400 text-[14px]">
+      <div className="min-h-screen flex items-center justify-center bg-background text-text-secondary text-[14px]">
         Loading…
       </div>
     )
@@ -272,33 +272,33 @@ export default function ContractorJobDetailPage() {
 
   return (
     <ContractorPortalShell session={session}>
-      <div className="max-w-3xl mx-auto px-4 py-4 space-y-4 pb-16">
+      <div className="px-4 py-4 md:px-6 md:py-5 space-y-4 pb-16">
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={() => router.push('/contractor-portal/home?tab=jobs')}
-            className="text-slate-400 hover:text-white transition-colors"
+            className="text-text-secondary hover:text-text-primary transition-colors"
           >
             <span className="material-icons">arrow_back</span>
           </button>
           <div className="min-w-0">
-            <h1 className="text-white text-[18px] font-bold truncate">{job?.title ?? 'Job'}</h1>
-            {job?.job_code && <p className="text-[12px] text-slate-500">{job.job_code}</p>}
+            <h1 className="text-text-primary text-[18px] font-bold truncate">{job?.title ?? 'Job'}</h1>
+            {job?.job_code && <p className="text-[12px] text-text-secondary">{job.job_code}</p>}
           </div>
         </div>
 
         {error && (
-          <div className="rounded-xl px-4 py-3" style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.25)' }}>
-            <p className="text-[13px] text-red-400 font-semibold">{error}</p>
+          <div className="bg-error/10 border border-error/25 rounded-xl px-4 py-3">
+            <p className="text-[13px] text-error font-semibold">{error}</p>
           </div>
         )}
 
         {loading ? (
-          <div className="py-16 text-center text-slate-400 text-[14px]">Loading…</div>
+          <div className="py-16 text-center text-text-secondary text-[14px]">Loading…</div>
         ) : !job ? (
           <div className="py-16 text-center space-y-3">
-            <p className="text-slate-400 text-[14px]">Job not found.</p>
-            <button type="button" onClick={() => router.push('/contractor-portal/home?tab=jobs')} className="text-blue-400 text-[13px] hover:underline">
+            <p className="text-text-secondary text-[14px]">Job not found.</p>
+            <button type="button" onClick={() => router.push('/contractor-portal/home?tab=jobs')} className="text-primary text-[13px] hover:underline">
               Back to jobs
             </button>
           </div>
@@ -311,10 +311,10 @@ export default function ContractorJobDetailPage() {
             </Section>
 
             <Section title="Site sign-in">
-              <p className="text-[14px] text-white font-medium">{siteStatus}</p>
-              <p className="text-[12px] text-slate-500 mt-1">{hoursLabel}</p>
+              <p className="text-[14px] text-text-primary font-medium">{siteStatus}</p>
+              <p className="text-[12px] text-text-secondary mt-1">{hoursLabel}</p>
               {siteHint && (
-                <p className="text-[12px] text-blue-300 mt-2">{siteHint}</p>
+                <p className="text-[12px] text-primary mt-2">{siteHint}</p>
               )}
               <div className="flex flex-wrap gap-2 mt-3">
                 {!isOnThisJob && (
@@ -322,7 +322,7 @@ export default function ContractorJobDetailPage() {
                     type="button"
                     onClick={() => void onSignIn()}
                     disabled={siteBusy}
-                    className="h-10 px-4 rounded-xl bg-blue-600 text-white font-semibold text-[13px] disabled:opacity-50"
+                    className="h-10 px-4 rounded-xl bg-primary text-white font-semibold text-[13px] disabled:opacity-50"
                   >
                     {siteBusy ? 'Working…' : 'Sign in on site'}
                   </button>
@@ -332,15 +332,15 @@ export default function ContractorJobDetailPage() {
                     type="button"
                     onClick={() => void onSignOut()}
                     disabled={siteBusy}
-                    className="h-10 px-4 rounded-xl font-semibold text-[13px] text-white disabled:opacity-50"
-                    style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)' }}
+                    className="bg-surface border border-divider text-text-primary h-10 px-4 rounded-xl font-semibold text-[13px] text-text-primary disabled:opacity-50"
+                   
                   >
                     {siteBusy ? 'Working…' : 'Sign out'}
                   </button>
                 )}
               </div>
               {openVisit?.job_id && !isOnThisJob && (
-                <p className="text-[12px] text-amber-300/90 mt-2">
+                <p className="text-[12px] text-warning/90 mt-2">
                   Signed in on another job{openVisit.job_title ? `: ${openVisit.job_title}` : ''}. Sign out there before signing in here.
                 </p>
               )}
@@ -348,19 +348,19 @@ export default function ContractorJobDetailPage() {
 
             <Section title="Visit history">
               {sessions.length === 0 ? (
-                <p className="text-[13px] text-slate-500">No visits recorded yet.</p>
+                <p className="text-[13px] text-text-secondary">No visits recorded yet.</p>
               ) : (
                 <div className="space-y-2">
                   {sessions.map((s, i) => (
                     <div
                       key={`${s.sign_in_at}-${i}`}
-                      className="flex justify-between gap-3 text-[13px] rounded-lg px-3 py-2"
-                      style={{ background: 'rgba(255,255,255,0.04)' }}
+                      className="bg-surface-elevated flex justify-between gap-3 text-[13px] rounded-lg px-3 py-2"
+                     
                     >
                       <div>
-                        <p className="text-slate-200">{fmtDT(s.sign_in_at)} → {s.is_open ? 'On site' : fmtDT(s.sign_out_at)}</p>
+                        <p className="text-text-primary">{fmtDT(s.sign_in_at)} → {s.is_open ? 'On site' : fmtDT(s.sign_out_at)}</p>
                       </div>
-                      <p className={`font-semibold whitespace-nowrap ${s.is_open ? 'text-green-300' : 'text-slate-300'}`}>
+                      <p className={`font-semibold whitespace-nowrap ${s.is_open ? 'text-success' : 'text-text-primary'}`}>
                         {s.hours_display}
                       </p>
                     </div>
@@ -374,7 +374,7 @@ export default function ContractorJobDetailPage() {
               <PhotoGrid label="After" urls={job.photo_urls_after ?? []} />
               <div className="grid grid-cols-2 gap-2 mt-3">
                 <label className={`h-10 rounded-xl flex items-center justify-center text-[13px] font-semibold cursor-pointer ${
-                  photoBusy === 'before' ? 'opacity-50' : 'bg-blue-600 text-white'
+                  photoBusy === 'before' ? 'opacity-50' : 'bg-primary text-white'
                 }`}>
                   {photoBusy === 'before' ? 'Uploading…' : 'Add before'}
                   <input
@@ -386,9 +386,9 @@ export default function ContractorJobDetailPage() {
                     onChange={e => void onPhotoSelected('before', e.target.files?.[0] ?? null)}
                   />
                 </label>
-                <label className={`h-10 rounded-xl flex items-center justify-center text-[13px] font-semibold cursor-pointer ${
+                <label className={`h-10 rounded-xl flex items-center justify-center text-[13px] font-semibold cursor-pointer border border-divider bg-surface text-text-primary ${
                   photoBusy === 'after' ? 'opacity-50' : ''
-                }`} style={photoBusy === 'after' ? undefined : { background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)', color: '#fff' }}>
+                }`}>
                   {photoBusy === 'after' ? 'Uploading…' : 'Add after'}
                   <input
                     ref={afterRef}
@@ -405,26 +405,25 @@ export default function ContractorJobDetailPage() {
             <Section title="Message manager">
               <div className="space-y-2 max-h-64 overflow-y-auto mb-3">
                 {messages.length === 0 ? (
-                  <p className="text-[13px] text-slate-500">No messages yet.</p>
+                  <p className="text-[13px] text-text-secondary">No messages yet.</p>
                 ) : (
                   messages.map(m => (
                     <div
                       key={m.id || `${m.created_at}-${m.body.slice(0, 8)}`}
-                      className={`rounded-xl px-3 py-2 max-w-[90%] ${m.is_contractor ? 'ml-auto bg-blue-600/30' : 'mr-auto'}`}
-                      style={!m.is_contractor ? { background: 'rgba(255,255,255,0.06)' } : undefined}
+                      className={`rounded-xl px-3 py-2 max-w-[90%] ${m.is_contractor ? 'ml-auto bg-primary/15' : 'mr-auto bg-surface-elevated border border-divider'}`}
                     >
-                      <p className="text-[11px] font-semibold text-slate-400 mb-0.5">
+                      <p className="text-[11px] font-semibold text-text-secondary mb-0.5">
                         {m.is_contractor ? 'You' : (m.sender_display_name || 'Manager')} · {fmtDT(m.created_at)}
                       </p>
-                      <p className="text-[13px] text-white whitespace-pre-wrap">{m.body}</p>
+                      <p className="text-[13px] text-text-primary whitespace-pre-wrap">{m.body}</p>
                     </div>
                   ))
                 )}
               </div>
               <div className="flex gap-2">
                 <textarea
-                  className="flex-1 min-h-[44px] max-h-28 px-3 py-2 rounded-xl text-[13px] text-white resize-y"
-                  style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                  className="bg-surface border border-divider text-text-primary flex-1 min-h-[44px] max-h-28 px-3 py-2 rounded-xl text-[13px] text-text-primary resize-y"
+                 
                   placeholder="Type a message…"
                   value={msgText}
                   onChange={e => setMsgText(e.target.value)}
@@ -433,7 +432,7 @@ export default function ContractorJobDetailPage() {
                   type="button"
                   onClick={() => void onSend()}
                   disabled={sending || !msgText.trim()}
-                  className="h-11 px-4 rounded-xl bg-blue-600 text-white font-semibold text-[13px] disabled:opacity-50 shrink-0"
+                  className="h-11 px-4 rounded-xl bg-primary text-white font-semibold text-[13px] disabled:opacity-50 shrink-0"
                 >
                   {sending ? '…' : 'Send'}
                 </button>
@@ -442,8 +441,8 @@ export default function ContractorJobDetailPage() {
 
             <Section title="Incident">
               <textarea
-                className="w-full min-h-[80px] px-3 py-2 rounded-xl text-[13px] text-white resize-y"
-                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                className="bg-surface border border-divider text-text-primary w-full min-h-[80px] px-3 py-2 rounded-xl text-[13px] text-text-primary resize-y"
+               
                 placeholder="Describe issue…"
                 value={incidentText}
                 onChange={e => { setIncidentText(e.target.value); setIncidentDone(false) }}
@@ -452,26 +451,26 @@ export default function ContractorJobDetailPage() {
                 type="button"
                 onClick={() => void onReportIncident()}
                 disabled={incidentBusy || !incidentText.trim()}
-                className="h-10 px-4 rounded-xl font-semibold text-[13px] text-white disabled:opacity-50"
-                style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)' }}
+                className="bg-surface border border-divider text-text-primary h-10 px-4 rounded-xl font-semibold text-[13px] text-text-primary disabled:opacity-50"
+               
               >
                 {incidentBusy ? 'Reporting…' : 'Report incident'}
               </button>
               {incidentDone && (
-                <p className="text-[12px] text-green-300">Incident sent to the manager.</p>
+                <p className="text-[12px] text-success">Incident sent to the manager.</p>
               )}
             </Section>
 
             <Section title="Submit invoice">
-              <p className="text-[12px] text-slate-500">
+              <p className="text-[12px] text-text-secondary">
                 Creates a pending payout for HR review. Use your agreed rate for this job.
               </p>
               <div className="space-y-3">
                 <div className="space-y-1">
-                  <label className="text-[11px] font-semibold text-slate-500 uppercase">Amount (ZAR) *</label>
+                  <label className="text-[11px] font-semibold text-text-secondary uppercase">Amount (ZAR) *</label>
                   <input
-                    className="w-full h-10 px-3 rounded-lg text-[13px] text-white"
-                    style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                    className="bg-surface border border-divider text-text-primary w-full h-10 px-3 rounded-lg text-[13px] text-text-primary"
+                   
                     inputMode="decimal"
                     value={invoiceAmount}
                     onChange={e => { setInvoiceAmount(e.target.value); setInvoiceDone(false) }}
@@ -479,20 +478,20 @@ export default function ContractorJobDetailPage() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[11px] font-semibold text-slate-500 uppercase">Invoice reference</label>
+                  <label className="text-[11px] font-semibold text-text-secondary uppercase">Invoice reference</label>
                   <input
-                    className="w-full h-10 px-3 rounded-lg text-[13px] text-white"
-                    style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                    className="bg-surface border border-divider text-text-primary w-full h-10 px-3 rounded-lg text-[13px] text-text-primary"
+                   
                     value={invoiceRef}
                     onChange={e => setInvoiceRef(e.target.value)}
                     placeholder="INV-001"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[11px] font-semibold text-slate-500 uppercase">Notes</label>
+                  <label className="text-[11px] font-semibold text-text-secondary uppercase">Notes</label>
                   <textarea
-                    className="w-full min-h-[60px] px-3 py-2 rounded-xl text-[13px] text-white resize-y"
-                    style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                    className="bg-surface border border-divider text-text-primary w-full min-h-[60px] px-3 py-2 rounded-xl text-[13px] text-text-primary resize-y"
+                   
                     value={invoiceNotes}
                     onChange={e => setInvoiceNotes(e.target.value)}
                   />
@@ -501,12 +500,12 @@ export default function ContractorJobDetailPage() {
                   type="button"
                   onClick={() => void onSubmitInvoice()}
                   disabled={invoiceBusy}
-                  className="h-10 px-4 rounded-xl bg-blue-600 text-white font-semibold text-[13px] disabled:opacity-50"
+                  className="h-10 px-4 rounded-xl bg-primary text-white font-semibold text-[13px] disabled:opacity-50"
                 >
                   {invoiceBusy ? 'Submitting…' : 'Submit invoice'}
                 </button>
                 {invoiceDone && (
-                  <p className="text-[12px] text-green-300">
+                  <p className="text-[12px] text-success">
                     Invoice submitted for HR review. Track it under Payments.
                   </p>
                 )}
@@ -521,9 +520,9 @@ export default function ContractorJobDetailPage() {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-xl border overflow-hidden" style={{ borderColor: 'rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.02)' }}>
-      <div className="px-4 py-2.5 border-b" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
-        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">{title}</p>
+    <section className="border-divider bg-surface rounded-xl border overflow-hidden">
+      <div className="border-divider px-4 py-2.5 border-b">
+        <p className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide">{title}</p>
       </div>
       <div className="px-4 py-3 space-y-2">{children}</div>
     </section>
@@ -533,8 +532,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between gap-3 text-[13px]">
-      <span className="text-slate-500">{label}</span>
-      <span className="text-slate-200 text-right">{value}</span>
+      <span className="text-text-secondary">{label}</span>
+      <span className="text-text-primary text-right">{value}</span>
     </div>
   )
 }
@@ -542,13 +541,13 @@ function Row({ label, value }: { label: string; value: string }) {
 function PhotoGrid({ label, urls }: { label: string; urls: string[] }) {
   return (
     <div className="mb-3">
-      <p className="text-[12px] font-semibold text-slate-400 mb-1.5">{label}</p>
+      <p className="text-[12px] font-semibold text-text-secondary mb-1.5">{label}</p>
       {urls.length === 0 ? (
-        <p className="text-[12px] text-slate-600">None</p>
+        <p className="text-[12px] text-text-secondary">None</p>
       ) : (
         <div className="grid grid-cols-3 gap-2">
           {urls.map((url, i) => (
-            <a key={`${url}-${i}`} href={url} target="_blank" rel="noreferrer" className="rounded-lg overflow-hidden border" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
+            <a key={`${url}-${i}`} href={url} target="_blank" rel="noreferrer" className="border-divider bg-surface rounded-lg overflow-hidden border">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={url} alt={`${label} ${i + 1}`} className="w-full h-20 object-cover" />
             </a>

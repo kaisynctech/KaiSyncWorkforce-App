@@ -338,7 +338,7 @@ export function ContractorPortalQuotesTab({
   }
 
   if (loading && view === 'list') {
-    return <div className="py-16 text-center text-slate-400 text-[14px]">Loading quotes…</div>
+    return <div className="py-16 text-center text-text-secondary text-[14px]">Loading quotes…</div>
   }
 
   if (view === 'create') {
@@ -379,7 +379,7 @@ export function ContractorPortalQuotesTab({
           <input
             type="file"
             accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,application/pdf,image/*"
-            className="w-full text-[12px] text-slate-300"
+            className="w-full text-[12px] text-text-primary"
             onChange={e => setUploadFile(e.target.files?.[0] ?? null)}
           />
         </Section>
@@ -387,7 +387,7 @@ export function ContractorPortalQuotesTab({
           type="button"
           disabled={busy}
           onClick={() => void onUploadSubmit()}
-          className="h-11 px-4 rounded-xl bg-blue-600 text-white font-semibold text-[13px] disabled:opacity-50"
+          className="h-11 px-4 rounded-xl bg-primary text-white font-semibold text-[13px] disabled:opacity-50"
         >
           {busy ? 'Submitting…' : 'Submit uploaded quote'}
         </button>
@@ -401,16 +401,16 @@ export function ContractorPortalQuotesTab({
         <Header title={selected.title || 'Quote'} onBack={() => void backToList()} />
         <div className="flex flex-wrap gap-2 items-center">
           <Badge>{quoteStatusLabel(selected.status)}</Badge>
-          {selected.quote_number && <span className="text-[12px] text-slate-400">{selected.quote_number}</span>}
-          <span className="text-[12px] text-slate-500 ml-auto">{fmtMoney(selected.total_amount)}</span>
+          {selected.quote_number && <span className="text-[12px] text-text-secondary">{selected.quote_number}</span>}
+          <span className="text-[12px] text-text-secondary ml-auto">{fmtMoney(selected.total_amount)}</span>
         </div>
 
         {selected.status === 'revision_requested' && (
           <Banner tone="amber" title="Revision requested">
             {selected.revision_comments || 'HR requested changes to this quote.'}
             <div className="flex gap-2 mt-2">
-              <button type="button" onClick={() => openEdit(selected)} className="text-[12px] font-semibold text-amber-200 underline">Edit</button>
-              <button type="button" onClick={() => void onResubmit(selected)} className="text-[12px] font-semibold text-amber-200 underline">Resubmit</button>
+              <button type="button" onClick={() => openEdit(selected)} className="text-[12px] font-semibold text-warning underline">Edit</button>
+              <button type="button" onClick={() => void onResubmit(selected)} className="text-[12px] font-semibold text-warning underline">Resubmit</button>
             </div>
           </Banner>
         )}
@@ -429,10 +429,10 @@ export function ContractorPortalQuotesTab({
         {selected.source_mode === 'upload' ? (
           <Section title="Attachment">
             {selected.attachments.length === 0 ? (
-              <p className="text-[13px] text-slate-500">No attachment on file.</p>
+              <p className="text-[13px] text-text-secondary">No attachment on file.</p>
             ) : (
               selected.attachments.map(a => (
-                <a key={a.id} href={a.file_url} target="_blank" rel="noreferrer" className="block text-blue-400 text-[13px] hover:underline">
+                <a key={a.id} href={a.file_url} target="_blank" rel="noreferrer" className="block text-primary text-[13px] hover:underline">
                   {a.file_name || 'Open document'}
                 </a>
               ))
@@ -441,16 +441,16 @@ export function ContractorPortalQuotesTab({
         ) : (
           <Section title="Line items">
             {selected.items.length === 0 ? (
-              <p className="text-[13px] text-slate-500">No line items.</p>
+              <p className="text-[13px] text-text-secondary">No line items.</p>
             ) : (
               <div className="space-y-2">
                 {selected.items.map(i => (
                   <div key={i.id || `${i.line_no}-${i.description}`} className="flex justify-between gap-3 text-[13px]">
                     <div className="min-w-0">
-                      <p className="text-white truncate">{i.description}</p>
-                      <p className="text-[11px] text-slate-500">{i.quantity} × {fmtMoney(i.unit_price)}</p>
+                      <p className="text-text-primary truncate">{i.description}</p>
+                      <p className="text-[11px] text-text-secondary">{i.quantity} × {fmtMoney(i.unit_price)}</p>
                     </div>
-                    <p className="text-slate-200 whitespace-nowrap">{fmtMoney(i.line_total || i.subtotal)}</p>
+                    <p className="text-text-primary whitespace-nowrap">{fmtMoney(i.line_total || i.subtotal)}</p>
                   </div>
                 ))}
               </div>
@@ -471,16 +471,16 @@ export function ContractorPortalQuotesTab({
 
         <div className="flex flex-wrap gap-2">
           {quoteCanEdit(selected) && (
-            <button type="button" onClick={() => openEdit(selected)} className="h-10 px-4 rounded-xl bg-blue-600 text-white text-[13px] font-semibold">Edit</button>
+            <button type="button" onClick={() => openEdit(selected)} className="h-10 px-4 rounded-xl bg-primary text-white text-[13px] font-semibold">Edit</button>
           )}
           {quoteIsDraft(selected) && (
             <>
-              <button type="button" onClick={() => void onSubmitDraft(selected)} disabled={busy} className="h-10 px-4 rounded-xl text-white text-[13px] font-semibold disabled:opacity-50" style={{ background: 'rgba(255,255,255,0.1)' }}>Submit</button>
-              <button type="button" onClick={() => void onDelete(selected)} disabled={busy} className="h-10 px-4 rounded-xl text-red-300 text-[13px] font-semibold disabled:opacity-50">Delete</button>
+              <button type="button" onClick={() => void onSubmitDraft(selected)} disabled={busy} className="bg-primary h-10 px-4 rounded-xl text-white text-[13px] font-semibold disabled:opacity-50">Submit</button>
+              <button type="button" onClick={() => void onDelete(selected)} disabled={busy} className="h-10 px-4 rounded-xl border border-divider text-error text-[13px] font-semibold disabled:opacity-50">Delete</button>
             </>
           )}
           {quoteCanResubmit(selected) && (
-            <button type="button" onClick={() => void onResubmit(selected)} disabled={busy} className="h-10 px-4 rounded-xl bg-blue-600 text-white text-[13px] font-semibold disabled:opacity-50">Resubmit</button>
+            <button type="button" onClick={() => void onResubmit(selected)} disabled={busy} className="h-10 px-4 rounded-xl bg-primary text-white text-[13px] font-semibold disabled:opacity-50">Resubmit</button>
           )}
         </div>
       </div>
@@ -490,21 +490,21 @@ export function ContractorPortalQuotesTab({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-white text-[18px] font-bold">Quotes</h2>
+        <h2 className="text-text-primary text-[18px] font-bold">Quotes</h2>
         <div className="flex gap-2">
-          <button type="button" onClick={openCreate} className="h-9 px-3 rounded-lg bg-blue-600 text-white text-[12px] font-semibold">+ Create</button>
-          <button type="button" onClick={openUpload} className="h-9 px-3 rounded-lg text-white text-[12px] font-semibold" style={{ background: 'rgba(255,255,255,0.08)' }}>+ Upload</button>
+          <button type="button" onClick={openCreate} className="h-9 px-3 rounded-lg bg-primary text-white text-[12px] font-semibold">+ Create</button>
+          <button type="button" onClick={openUpload} className="bg-surface border border-divider h-9 px-3 rounded-lg text-text-primary text-[12px] font-semibold">+ Upload</button>
         </div>
       </div>
 
-      <div className="flex gap-1 overflow-x-auto p-1 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)' }}>
+      <div className="bg-surface-elevated flex gap-1 overflow-x-auto p-1 rounded-xl">
         {QUOTE_FILTERS.map(f => (
           <button
             key={f}
             type="button"
             onClick={() => setFilter(f)}
             className={`shrink-0 text-[12px] font-semibold px-3 py-1.5 rounded-lg ${
-              filter === f ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+              filter === f ? 'bg-primary text-white' : 'text-text-secondary hover:text-text-primary'
             }`}
           >
             {f}
@@ -513,47 +513,47 @@ export function ContractorPortalQuotesTab({
       </div>
 
       {filtered.length === 0 ? (
-        <div className="py-16 text-center text-slate-500 text-[13px]">No quotes in this filter.</div>
+        <div className="py-16 text-center text-text-secondary text-[13px]">No quotes in this filter.</div>
       ) : (
         <div className="space-y-2">
           {filtered.map(q => (
             <article
               key={q.id}
-              className="rounded-xl border px-4 py-3 space-y-2"
-              style={{ borderColor: 'rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.02)' }}
+              className="border-divider bg-surface rounded-xl border px-4 py-3 space-y-2"
+             
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <button type="button" onClick={() => void openDetail(q)} className="text-[14px] font-semibold text-white text-left hover:text-blue-300 truncate block max-w-full">
+                  <button type="button" onClick={() => void openDetail(q)} className="text-[14px] font-semibold text-text-primary text-left hover:text-primary truncate block max-w-full">
                     {q.title || 'Untitled quote'}
                   </button>
-                  <p className="text-[12px] text-slate-500 mt-0.5">
+                  <p className="text-[12px] text-text-secondary mt-0.5">
                     {q.quote_number || 'No number'} · {fmtQuoteDate(q.created_at)} · {q.source_mode === 'upload' ? 'Upload' : 'Manual'}
                   </p>
                 </div>
                 <div className="text-right shrink-0">
-                  <p className="text-[14px] font-bold text-white">{fmtMoney(q.total_amount)}</p>
+                  <p className="text-[14px] font-bold text-text-primary">{fmtMoney(q.total_amount)}</p>
                   <Badge>{quoteStatusLabel(q.status)}</Badge>
                 </div>
               </div>
               <div className="flex flex-wrap gap-2 text-[12px]">
-                <button type="button" onClick={() => void openDetail(q)} className="text-blue-400 hover:underline">View</button>
-                {quoteCanEdit(q) && <button type="button" onClick={() => openEdit(q)} className="text-slate-300 hover:underline">Edit</button>}
+                <button type="button" onClick={() => void openDetail(q)} className="text-primary hover:underline">View</button>
+                {quoteCanEdit(q) && <button type="button" onClick={() => openEdit(q)} className="text-text-primary hover:underline">Edit</button>}
                 {quoteIsDraft(q) && (
                   <>
-                    <button type="button" onClick={() => void onSubmitDraft(q)} className="text-slate-300 hover:underline">Submit</button>
-                    <button type="button" onClick={() => void onDelete(q)} className="text-red-300 hover:underline">Delete</button>
+                    <button type="button" onClick={() => void onSubmitDraft(q)} className="text-text-primary hover:underline">Submit</button>
+                    <button type="button" onClick={() => void onDelete(q)} className="text-error hover:underline">Delete</button>
                   </>
                 )}
                 {quoteCanResubmit(q) && (
-                  <button type="button" onClick={() => void onResubmit(q)} className="text-amber-300 hover:underline">Resubmit</button>
+                  <button type="button" onClick={() => void onResubmit(q)} className="text-warning hover:underline">Resubmit</button>
                 )}
               </div>
             </article>
           ))}
         </div>
       )}
-      {busy && <p className="text-[12px] text-slate-500">Working…</p>}
+      {busy && <p className="text-[12px] text-text-secondary">Working…</p>}
     </div>
   )
 }
@@ -575,10 +575,10 @@ function QuoteEditor({
     <div className="space-y-4">
       <Header title={title} onBack={onBack} />
       <div className="flex flex-wrap gap-2">
-        <button type="button" disabled={busy} onClick={onSave} className="h-10 px-4 rounded-xl text-white text-[13px] font-semibold disabled:opacity-50" style={{ background: 'rgba(255,255,255,0.1)' }}>
+        <button type="button" disabled={busy} onClick={onSave} className="bg-primary h-10 px-4 rounded-xl text-white text-[13px] font-semibold disabled:opacity-50">
           {busy ? '…' : 'Save draft'}
         </button>
-        <button type="button" disabled={busy} onClick={onSubmit} className="h-10 px-4 rounded-xl bg-blue-600 text-white text-[13px] font-semibold disabled:opacity-50">
+        <button type="button" disabled={busy} onClick={onSubmit} className="h-10 px-4 rounded-xl bg-primary text-white text-[13px] font-semibold disabled:opacity-50">
           {busy ? '…' : submitLabel}
         </button>
       </div>
@@ -595,7 +595,7 @@ function QuoteEditor({
       <Section title="Line items">
         <div className="space-y-3">
           {form.lines.map((line, idx) => (
-            <div key={idx} className="rounded-lg p-3 space-y-2" style={{ background: 'rgba(255,255,255,0.04)' }}>
+            <div key={idx} className="bg-surface-elevated rounded-lg p-3 space-y-2">
               <Field
                 label="Description"
                 value={line.description}
@@ -635,11 +635,11 @@ function QuoteEditor({
                 />
               </div>
               <div className="flex justify-between items-center">
-                <p className="text-[12px] text-slate-400">Line: {fmtMoney(lineSubtotal(line))}</p>
+                <p className="text-[12px] text-text-secondary">Line: {fmtMoney(lineSubtotal(line))}</p>
                 {form.lines.length > 1 && (
                   <button
                     type="button"
-                    className="text-[11px] text-red-300"
+                    className="text-[11px] text-error"
                     onClick={() => setForm({ ...form, lines: form.lines.filter((_, i) => i !== idx) })}
                   >
                     Remove
@@ -651,7 +651,7 @@ function QuoteEditor({
           <button
             type="button"
             onClick={() => setForm({ ...form, lines: [...form.lines, emptyLine()] })}
-            className="text-[12px] font-semibold text-blue-400"
+            className="text-[12px] font-semibold text-primary"
           >
             + Add line
           </button>
@@ -670,15 +670,15 @@ function VatChargesForm({ form, setForm }: { form: FormState; setForm: (f: FormS
   return (
     <Section title="VAT & adjustments">
       <div className="space-y-1">
-        <label className="text-[11px] font-semibold text-slate-500 uppercase">VAT mode</label>
+        <label className="text-[11px] font-semibold text-text-secondary uppercase">VAT mode</label>
         <select
-          className="w-full h-10 px-3 rounded-lg text-[13px] text-white"
-          style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+          className="bg-surface border border-divider text-text-primary w-full h-10 px-3 rounded-lg text-[13px] text-text-primary"
+         
           value={form.vatMode}
           onChange={e => setForm({ ...form, vatMode: e.target.value as QuoteVatMode })}
         >
           {VAT_MODE_OPTIONS.map(o => (
-            <option key={o.value} value={o.value} className="bg-slate-900">{o.label}</option>
+            <option key={o.value} value={o.value} className="bg-surface">{o.label}</option>
           ))}
         </select>
       </div>
@@ -711,19 +711,19 @@ function TotalsPanel({ totals, vatMode }: { totals: ReturnType<typeof computeQuo
 function Header({ title, onBack }: { title: string; onBack: () => void }) {
   return (
     <div className="flex items-center gap-2">
-      <button type="button" onClick={onBack} className="text-slate-400 hover:text-white">
+      <button type="button" onClick={onBack} className="text-text-secondary hover:text-text-primary">
         <span className="material-icons">arrow_back</span>
       </button>
-      <h2 className="text-white text-[18px] font-bold">{title}</h2>
+      <h2 className="text-text-primary text-[18px] font-bold">{title}</h2>
     </div>
   )
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-xl border overflow-hidden" style={{ borderColor: 'rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.02)' }}>
-      <div className="px-4 py-2.5 border-b" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
-        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">{title}</p>
+    <section className="border-divider bg-surface rounded-xl border overflow-hidden">
+      <div className="border-divider px-4 py-2.5 border-b">
+        <p className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide">{title}</p>
       </div>
       <div className="px-4 py-3 space-y-3">{children}</div>
     </section>
@@ -740,11 +740,11 @@ function Field({
 }) {
   return (
     <div className="space-y-1">
-      <label className="text-[11px] font-semibold text-slate-500 uppercase">{label}</label>
+      <label className="text-[11px] font-semibold text-text-secondary uppercase">{label}</label>
       <input
         type={type || 'text'}
-        className="w-full h-10 px-3 rounded-lg text-[13px] text-white"
-        style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+        className="bg-surface border border-divider text-text-primary w-full h-10 px-3 rounded-lg text-[13px] text-text-primary"
+       
         value={value}
         onChange={e => onChange(e.target.value)}
       />
@@ -755,30 +755,31 @@ function Field({
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between gap-3 text-[13px]">
-      <span className="text-slate-500">{label}</span>
-      <span className="text-slate-200 text-right">{value}</span>
+      <span className="text-text-secondary">{label}</span>
+      <span className="text-text-primary text-right">{value}</span>
     </div>
   )
 }
 
 function Badge({ children }: { children: React.ReactNode }) {
   return (
-    <span className="inline-block text-[10px] font-semibold px-2 py-0.5 rounded text-slate-300" style={{ background: 'rgba(255,255,255,0.06)' }}>
+    <span className="bg-surface-elevated inline-block text-[10px] font-semibold px-2 py-0.5 rounded text-text-primary">
       {children}
     </span>
   )
 }
 
 function Banner({ tone, title, children }: { tone: 'amber' | 'red' | 'green'; title: string; children: React.ReactNode }) {
-  const colors = tone === 'amber'
-    ? { bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.3)', text: 'text-amber-300' }
+  const box = tone === 'amber'
+    ? 'bg-warning-dark border border-warning/30'
     : tone === 'green'
-      ? { bg: 'rgba(34,197,94,0.12)', border: 'rgba(34,197,94,0.3)', text: 'text-green-300' }
-      : { bg: 'rgba(239,68,68,0.12)', border: 'rgba(239,68,68,0.3)', text: 'text-red-300' }
+      ? 'bg-success-dark border border-success/30'
+      : 'bg-error-dark border border-error/30'
+  const text = tone === 'amber' ? 'text-warning' : tone === 'green' ? 'text-success' : 'text-error'
   return (
-    <div className="rounded-xl px-4 py-3" style={{ background: colors.bg, border: `1px solid ${colors.border}` }}>
-      <p className={`text-[13px] font-semibold ${colors.text}`}>{title}</p>
-      <div className="text-[12px] text-slate-300 mt-1">{children}</div>
+    <div className={`rounded-xl px-4 py-3 ${box}`}>
+      <p className={`text-[13px] font-semibold ${text}`}>{title}</p>
+      <div className="text-[12px] text-text-primary mt-1">{children}</div>
     </div>
   )
 }

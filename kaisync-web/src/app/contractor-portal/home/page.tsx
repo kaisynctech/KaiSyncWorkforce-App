@@ -56,7 +56,7 @@ function parseTab(raw: string | null): Tab {
 export default function ContractorPortalHomePage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center bg-[#0f172a] text-slate-400 text-[14px]">
+      <div className="min-h-screen flex items-center justify-center bg-background text-text-secondary text-[14px]">
         Loading…
       </div>
     }>
@@ -195,7 +195,7 @@ function ContractorPortalHomeInner() {
 
   if (!ready || !session) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#0f172a] text-slate-400 text-[14px]">
+      <div className="min-h-screen flex items-center justify-center bg-background text-text-secondary text-[14px]">
         Loading…
       </div>
     )
@@ -203,30 +203,15 @@ function ContractorPortalHomeInner() {
 
   return (
     <ContractorPortalShell session={session}>
-      <div className="max-w-5xl mx-auto px-4 py-4 space-y-4">
-        <div className="flex gap-1 p-1 rounded-xl overflow-x-auto" style={{ background: 'rgba(255,255,255,0.04)' }}>
-          {TABS.map(t => (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => selectTab(t.key)}
-              className={`shrink-0 text-[12px] font-semibold px-3 py-2 rounded-lg transition-colors ${
-                tab === t.key ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-
+      <div className="px-4 py-4 md:px-6 md:py-5 space-y-4">
         {error && (
-          <div className="rounded-xl px-4 py-3" style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.25)' }}>
-            <p className="text-[13px] text-red-400 font-semibold">{error}</p>
+          <div className="bg-error/10 border border-error/25 rounded-xl px-4 py-3">
+            <p className="text-[13px] text-error font-semibold">{error}</p>
           </div>
         )}
 
         {loading ? (
-          <div className="py-16 text-center text-slate-400 text-[14px]">Loading…</div>
+          <div className="py-16 text-center text-text-secondary text-[14px]">Loading…</div>
         ) : tab === 'home' ? (
           <HomeTab
             name={session.contractor_name}
@@ -295,8 +280,8 @@ function HomeTab({
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-white text-[20px] font-bold">Welcome, {name}</h1>
-        <p className="text-slate-400 text-[13px] mt-0.5">Your contractor workspace</p>
+        <h1 className="text-text-primary text-[20px] font-bold">Welcome, {name}</h1>
+        <p className="text-text-secondary text-[13px] mt-0.5">Your contractor workspace</p>
       </div>
 
       {(profile?.payment_hold || profile?.compliance_hold) && (
@@ -311,8 +296,8 @@ function HomeTab({
       )}
 
       {openVisit?.sign_in_at && (
-        <div className="rounded-xl px-4 py-3" style={{ background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.3)' }}>
-          <p className="text-[13px] font-semibold text-green-300">
+        <div className="bg-success/10 border border-success/30 rounded-xl px-4 py-3">
+          <p className="text-[13px] font-semibold text-success">
             On site · since {new Date(openVisit.sign_in_at).toLocaleTimeString('en-ZA', { hour: 'numeric', minute: '2-digit' })}
             {openVisit.job_title ? ` · ${openVisit.job_title}` : ''}
           </p>
@@ -324,7 +309,7 @@ function HomeTab({
         <Kpi label="Outstanding" value={moneyZAR(outstanding)} onClick={onGoPayments} />
       </div>
 
-      <div className="rounded-xl border divide-y overflow-hidden" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
+      <div className="border-divider bg-surface rounded-xl border divide-y overflow-hidden">
         <QuickLink label="My information" sub="View and edit your profile" onClick={onGoInfo} />
         <QuickLink label="Jobs" sub="Assigned jobs and site visits" onClick={onGoJobs} />
         <QuickLink label="Banking" sub="Masked details and HR update requests" onClick={onGoBanking} />
@@ -339,36 +324,36 @@ function JobsTab({ jobs }: { jobs: ContractorJob[] }) {
   if (jobs.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 gap-2 text-center">
-        <span className="material-icons text-[48px] text-slate-600">work_off</span>
-        <p className="text-[15px] font-semibold text-white">No jobs assigned</p>
-        <p className="text-[13px] text-slate-500">Jobs assigned to you will appear here.</p>
+        <span className="material-icons text-[48px] text-text-secondary">work_off</span>
+        <p className="text-[15px] font-semibold text-text-primary">No jobs assigned</p>
+        <p className="text-[13px] text-text-secondary">Jobs assigned to you will appear here.</p>
       </div>
     )
   }
   return (
     <div className="space-y-3">
-      <h2 className="text-white text-[18px] font-bold">Jobs</h2>
-      <div className="overflow-x-auto rounded-xl border" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
+      <h2 className="text-text-primary text-[18px] font-bold">Jobs</h2>
+      <div className="border-divider bg-surface overflow-x-auto rounded-xl border">
         <table className="w-full text-[13px]">
           <thead>
-            <tr style={{ background: 'rgba(255,255,255,0.04)' }}>
-              <th className="text-left px-3 py-2.5 text-[11px] font-semibold text-slate-500 uppercase">Code</th>
-              <th className="text-left px-3 py-2.5 text-[11px] font-semibold text-slate-500 uppercase">Job</th>
-              <th className="text-left px-3 py-2.5 text-[11px] font-semibold text-slate-500 uppercase">Status</th>
-              <th className="text-left px-3 py-2.5 text-[11px] font-semibold text-slate-500 uppercase">Cost</th>
+            <tr className="bg-surface-elevated">
+              <th className="text-left px-3 py-2.5 text-[11px] font-semibold text-text-secondary uppercase">Code</th>
+              <th className="text-left px-3 py-2.5 text-[11px] font-semibold text-text-secondary uppercase">Job</th>
+              <th className="text-left px-3 py-2.5 text-[11px] font-semibold text-text-secondary uppercase">Status</th>
+              <th className="text-left px-3 py-2.5 text-[11px] font-semibold text-text-secondary uppercase">Cost</th>
             </tr>
           </thead>
           <tbody>
             {jobs.map(j => (
-              <tr key={j.id} className="border-t hover:bg-white/[0.03]" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
-                <td className="px-3 py-3 text-slate-400 whitespace-nowrap">{j.job_code || '—'}</td>
+              <tr key={j.id} className="border-divider border-t hover:bg-surface-elevated">
+                <td className="px-3 py-3 text-text-secondary whitespace-nowrap">{j.job_code || '—'}</td>
                 <td className="px-3 py-3">
-                  <Link href={`/contractor-portal/jobs/${j.id}`} className="text-white font-semibold hover:text-blue-300">
+                  <Link href={`/contractor-portal/jobs/${j.id}`} className="text-text-primary font-semibold hover:text-primary">
                     {j.title}
                   </Link>
                 </td>
-                <td className="px-3 py-3 text-slate-300 whitespace-nowrap">{jobStatusLabel(j.status)}</td>
-                <td className="px-3 py-3 text-slate-300 whitespace-nowrap">{moneyZAR(j.contractor_cost)}</td>
+                <td className="px-3 py-3 text-text-primary whitespace-nowrap">{jobStatusLabel(j.status)}</td>
+                <td className="px-3 py-3 text-text-primary whitespace-nowrap">{moneyZAR(j.contractor_cost)}</td>
               </tr>
             ))}
           </tbody>
@@ -477,7 +462,7 @@ function BankingTab({
   }
 
   if (loading) {
-    return <div className="py-16 text-center text-slate-400 text-[14px]">Loading banking…</div>
+    return <div className="py-16 text-center text-text-secondary text-[14px]">Loading banking…</div>
   }
 
   const pending = decision?.status === 'pending'
@@ -486,7 +471,7 @@ function BankingTab({
 
   return (
     <div className="space-y-4">
-      <h2 className="text-white text-[18px] font-bold">Banking</h2>
+      <h2 className="text-text-primary text-[18px] font-bold">Banking</h2>
 
       <Section title="Current banking">
         <div className="flex flex-wrap gap-2 mb-2">
@@ -527,7 +512,7 @@ function BankingTab({
       )}
 
       <Section title="Submit banking update">
-        <p className="text-[12px] text-slate-500 mb-3">
+        <p className="text-[12px] text-text-secondary mb-3">
           Banking changes require HR approval and will not take effect until reviewed.
         </p>
         <div className="space-y-3">
@@ -552,15 +537,15 @@ function BankingTab({
             onChange={v => setForm({ ...form, branchCode: v })}
           />
           <div className="space-y-1">
-            <label className="text-[11px] font-semibold text-slate-500 uppercase">Account type</label>
+            <label className="text-[11px] font-semibold text-text-secondary uppercase">Account type</label>
             <select
-              className="w-full h-10 px-3 rounded-lg text-[13px] text-white"
-              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+              className="bg-surface border border-divider text-text-primary w-full h-10 px-3 rounded-lg text-[13px] text-text-primary"
+             
               value={form.accountType}
               onChange={e => setForm({ ...form, accountType: e.target.value })}
             >
               {BANK_ACCOUNT_TYPE_OPTIONS.map(o => (
-                <option key={o.value} value={o.value} className="bg-slate-900">{o.label}</option>
+                <option key={o.value} value={o.value} className="bg-surface">{o.label}</option>
               ))}
             </select>
           </div>
@@ -573,7 +558,7 @@ function BankingTab({
             type="button"
             onClick={() => void onSubmit()}
             disabled={submitting}
-            className="h-10 px-4 rounded-xl bg-blue-600 text-white font-semibold text-[13px] disabled:opacity-50"
+            className="h-10 px-4 rounded-xl bg-primary text-white font-semibold text-[13px] disabled:opacity-50"
           >
             {submitting ? 'Submitting…' : 'Submit for HR review'}
           </button>
@@ -587,9 +572,8 @@ function Badge({ ok, okLabel, badLabel }: { ok: boolean; okLabel: string; badLab
   return (
     <span
       className={`inline-flex text-[11px] font-semibold px-2 py-1 rounded-md ${
-        ok ? 'text-green-300' : 'text-slate-400'
+        ok ? 'text-success bg-success-dark' : 'text-text-secondary bg-surface-elevated'
       }`}
-      style={{ background: ok ? 'rgba(34,197,94,0.15)' : 'rgba(255,255,255,0.06)' }}
     >
       {ok ? okLabel : badLabel}
     </span>
@@ -607,15 +591,16 @@ function DecisionBanner({
   decision: ContractorBankingDecision
   note?: string
 }) {
-  const colors = tone === 'pending'
-    ? { bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.3)', text: 'text-amber-300' }
+  const box = tone === 'pending'
+    ? 'bg-warning-dark border border-warning/30'
     : tone === 'approved'
-      ? { bg: 'rgba(34,197,94,0.12)', border: 'rgba(34,197,94,0.3)', text: 'text-green-300' }
-      : { bg: 'rgba(239,68,68,0.12)', border: 'rgba(239,68,68,0.3)', text: 'text-red-300' }
+      ? 'bg-success-dark border border-success/30'
+      : 'bg-error-dark border border-error/30'
+  const text = tone === 'pending' ? 'text-warning' : tone === 'approved' ? 'text-success' : 'text-error'
 
   return (
-    <div className="rounded-xl px-4 py-3 space-y-2" style={{ background: colors.bg, border: `1px solid ${colors.border}` }}>
-      <p className={`text-[13px] font-semibold ${colors.text}`}>{title}</p>
+    <div className={`rounded-xl px-4 py-3 space-y-2 ${box}`}>
+      <p className={`text-[13px] font-semibold ${text}`}>{title}</p>
       <div className="space-y-1">
         <Row label="Submitted" value={fmtBankDate(decision.submitted_at)} />
         {decision.reviewed_at && <Row label="Reviewed" value={fmtBankDate(decision.reviewed_at)} />}
@@ -628,7 +613,7 @@ function DecisionBanner({
           <Row label="Reason" value={decision.rejection_reason} />
         )}
       </div>
-      {note && <p className="text-[12px] text-slate-400">{note}</p>}
+      {note && <p className="text-[12px] text-text-secondary">{note}</p>}
     </div>
   )
 }
@@ -656,27 +641,27 @@ function InformationTab({
   onSave: () => void
 }) {
   if (!profile) {
-    return <p className="text-slate-400 text-[14px] py-8 text-center">Profile could not be loaded.</p>
+    return <p className="text-text-secondary text-[14px] py-8 text-center">Profile could not be loaded.</p>
   }
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-white text-[18px] font-bold">Information</h2>
+        <h2 className="text-text-primary text-[18px] font-bold">Information</h2>
         {!editing ? (
-          <button type="button" onClick={onEdit} className="text-[12px] font-semibold text-blue-400 hover:underline">
+          <button type="button" onClick={onEdit} className="text-[12px] font-semibold text-primary hover:underline">
             Edit
           </button>
         ) : (
           <div className="flex gap-2">
-            <button type="button" onClick={onCancel} className="text-[12px] font-semibold text-slate-400 px-3 py-1.5">
+            <button type="button" onClick={onCancel} className="text-[12px] font-semibold text-text-secondary px-3 py-1.5">
               Cancel
             </button>
             <button
               type="button"
               onClick={onSave}
               disabled={saving}
-              className="text-[12px] font-semibold bg-blue-600 text-white px-3 py-1.5 rounded-lg disabled:opacity-50"
+              className="text-[12px] font-semibold bg-primary text-white px-3 py-1.5 rounded-lg disabled:opacity-50"
             >
               {saving ? 'Saving…' : 'Save'}
             </button>
@@ -690,7 +675,7 @@ function InformationTab({
             <Field label="Trading name *" value={edit.name} onChange={v => setEdit({ ...edit, name: v })} />
             <Field label="Registration number" value={edit.registration_number} onChange={v => setEdit({ ...edit, registration_number: v })} />
             <Field label="Tax number" value={edit.tax_number} onChange={v => setEdit({ ...edit, tax_number: v })} />
-            <label className="flex items-center gap-2 text-[13px] text-slate-300">
+            <label className="flex items-center gap-2 text-[13px] text-text-primary">
               <input
                 type="checkbox"
                 checked={edit.is_vat_registered}
@@ -754,9 +739,9 @@ function InformationTab({
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-xl border overflow-hidden" style={{ borderColor: 'rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.02)' }}>
-      <div className="px-4 py-2.5 border-b" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
-        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">{title}</p>
+    <section className="border-divider bg-surface rounded-xl border overflow-hidden">
+      <div className="border-divider px-4 py-2.5 border-b">
+        <p className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide">{title}</p>
       </div>
       <div className="px-4 py-3 space-y-2">{children}</div>
     </section>
@@ -766,8 +751,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between gap-3 text-[13px]">
-      <span className="text-slate-500">{label}</span>
-      <span className="text-slate-200 text-right">{value}</span>
+      <span className="text-text-secondary">{label}</span>
+      <span className="text-text-primary text-right">{value}</span>
     </div>
   )
 }
@@ -775,10 +760,10 @@ function Row({ label, value }: { label: string; value: string }) {
 function Field({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
     <div className="space-y-1">
-      <label className="text-[11px] font-semibold text-slate-500 uppercase">{label}</label>
+      <label className="text-[11px] font-semibold text-text-secondary uppercase">{label}</label>
       <input
-        className="w-full h-10 px-3 rounded-lg text-[13px] text-white"
-        style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+        className="bg-surface border border-divider text-text-primary w-full h-10 px-3 rounded-lg text-[13px] text-text-primary"
+       
         value={value}
         onChange={e => onChange(e.target.value)}
       />
@@ -791,38 +776,39 @@ function Kpi({ label, value, onClick }: { label: string; value: string; onClick:
     <button
       type="button"
       onClick={onClick}
-      className="rounded-xl px-4 py-3 text-left border hover:border-blue-500/50 transition-colors"
-      style={{ borderColor: 'rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.03)' }}
+      className="border-divider bg-surface rounded-xl px-4 py-3 text-left border hover:border-primary/50 transition-colors"
+     
     >
-      <p className="text-[11px] font-semibold text-slate-500 uppercase">{label}</p>
-      <p className="text-[20px] font-bold text-white mt-1">{value}</p>
+      <p className="text-[11px] font-semibold text-text-secondary uppercase">{label}</p>
+      <p className="text-[20px] font-bold text-text-primary mt-1">{value}</p>
     </button>
   )
 }
 
 function QuickLink({ label, sub, onClick, soon }: { label: string; sub: string; onClick: () => void; soon?: boolean }) {
   return (
-    <button type="button" onClick={onClick} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-white/[0.03]">
+    <button type="button" onClick={onClick} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-surface-elevated">
       <div className="flex-1 min-w-0">
-        <p className="text-[14px] font-semibold text-white">
+        <p className="text-[14px] font-semibold text-text-primary">
           {label}
-          {soon && <span className="ml-2 text-[10px] text-slate-500 font-bold uppercase">Soon</span>}
+          {soon && <span className="ml-2 text-[10px] text-text-secondary font-bold uppercase">Soon</span>}
         </p>
-        <p className="text-[12px] text-slate-500">{sub}</p>
+        <p className="text-[12px] text-text-secondary">{sub}</p>
       </div>
-      <span className="material-icons text-slate-600 text-[18px]">chevron_right</span>
+      <span className="material-icons text-text-secondary text-[18px]">chevron_right</span>
     </button>
   )
 }
 
 function Alert({ tone, title, body }: { tone: 'error' | 'warning'; title: string; body: string }) {
-  const colors = tone === 'error'
-    ? { bg: 'rgba(239,68,68,0.12)', border: 'rgba(239,68,68,0.3)', text: 'text-red-300' }
-    : { bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.3)', text: 'text-amber-300' }
+  const box = tone === 'error'
+    ? 'bg-error-dark border border-error/30'
+    : 'bg-warning-dark border border-warning/30'
+  const text = tone === 'error' ? 'text-error' : 'text-warning'
   return (
-    <div className="rounded-xl px-4 py-3" style={{ background: colors.bg, border: `1px solid ${colors.border}` }}>
-      <p className={`text-[13px] font-semibold ${colors.text}`}>{title}</p>
-      <p className="text-[12px] text-slate-400 mt-0.5">{body}</p>
+    <div className={`rounded-xl px-4 py-3 ${box}`}>
+      <p className={`text-[13px] font-semibold ${text}`}>{title}</p>
+      <p className="text-[12px] text-text-secondary mt-0.5">{body}</p>
     </div>
   )
 }
@@ -830,9 +816,9 @@ function Alert({ tone, title, body }: { tone: 'error' | 'warning'; title: string
 function ComingSoon({ tab }: { tab: string }) {
   return (
     <div className="flex flex-col items-center justify-center py-20 gap-2 text-center">
-      <span className="material-icons text-[48px] text-slate-600">construction</span>
-      <p className="text-[15px] font-semibold text-white">{tab}</p>
-      <p className="text-[13px] text-slate-500 max-w-sm">This section is next in the contractor portal rollout.</p>
+      <span className="material-icons text-[48px] text-text-secondary">construction</span>
+      <p className="text-[15px] font-semibold text-text-primary">{tab}</p>
+      <p className="text-[13px] text-text-secondary max-w-sm">This section is next in the contractor portal rollout.</p>
     </div>
   )
 }
