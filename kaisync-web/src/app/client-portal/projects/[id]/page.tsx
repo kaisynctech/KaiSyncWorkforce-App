@@ -8,6 +8,7 @@ import { useRequireClientPortalSession } from '@/lib/client-portal/use-session'
 import {
   addDocumentLink,
   getProject,
+  listJobs,
   sendMessage,
   uploadDocument,
 } from '@/lib/client-portal/api'
@@ -19,7 +20,7 @@ import {
   lineTotal,
   moneyZAR,
 } from '@/lib/client-portal/quotation'
-import type { ClientPortalProject, ProjectDocument } from '@/lib/client-portal/types'
+import type { ClientPortalJob, ClientPortalProject, ProjectDocument } from '@/lib/client-portal/types'
 
 export default function ClientPortalProjectDetailPage() {
   const { session, ready } = useRequireClientPortalSession()
@@ -30,6 +31,7 @@ export default function ClientPortalProjectDetailPage() {
   const openMessages = searchParams.get('messages') === '1'
 
   const [project, setProject] = useState<ClientPortalProject | null>(null)
+  const [projectJobs, setProjectJobs] = useState<ClientPortalJob[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [msgText, setMsgText] = useState('')
@@ -59,14 +61,19 @@ export default function ClientPortalProjectDetailPage() {
     setLoading(true)
     setError(null)
     try {
-      const deal = await getProject(session.company_code, session.client_code, dealId)
+      const [deal, jobs] = await Promise.all([
+        getProject(session.company_code, session.client_code, dealId),
+        listJobs(session.company_code, session.client_code),
+      ])
       if (!deal) {
         setError('This project is not available or may be private.')
         setProject(null)
+        setProjectJobs([])
         setLoading(false)
         return
       }
       setProject(deal)
+      setProjectJobs(jobs.filter(job => job.deal_id === deal.id))
       const lastHr = [...deal.messages]
         .filter(m => m.author === 'hr')
         .sort((a, b) => b.created_at.localeCompare(a.created_at))[0]
@@ -224,6 +231,30 @@ export default function ClientPortalProjectDetailPage() {
               <p className="text-[13px] text-text-primary mt-2 leading-relaxed">
                 {project.last_update_note?.trim() || 'No project updates yet.'}
               </p>
+            </Section>
+
+            <Section title="Jobs on this project">
+              {projectJobs.length === 0 ? (
+                <p className="text-[13px] text-text-secondary">No jobs on this project yet.</p>
+              ) : (
+                <div className="divide-y divide-divider -mx-4">
+                  {projectJobs.map(job => (
+                    <Link
+                      key={job.id}
+                      href={`/client-portal/jobs/${job.id}?from=project`}
+                      className="flex items-center gap-3 px-4 py-3 hover:bg-surface-elevated"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[14px] font-semibold text-text-primary truncate">{job.title || 'Job'}</p>
+                        <p className="text-[12px] text-text-secondary mt-0.5">
+                          {[job.job_code, projectStatusLabel(job.status), fmtDate(job.scheduled_start)].filter(Boolean).join(' · ')}
+                        </p>
+                      </div>
+                      <span className="material-icons text-text-secondary text-[18px]">chevron_right</span>
+                    </Link>
+                  ))}
+                </div>
+              )}
             </Section>
 
             {(isDateSet(project.site_start_date) || isDateSet(project.expected_completion_date)

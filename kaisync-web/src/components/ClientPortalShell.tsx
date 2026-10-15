@@ -7,7 +7,7 @@ import { signOutClientPortal, type ClientPortalSession } from '@/lib/client-port
 
 const NAV: PortalNavItem[] = [
   { label: 'Projects', href: '/client-portal/home?tab=projects', icon: 'folder', activePrefix: '/client-portal/projects' },
-  { label: 'Jobs', href: '/client-portal/home?tab=jobs', icon: 'work' },
+  { label: 'Jobs', href: '/client-portal/home?tab=jobs', icon: 'work', activePrefix: '/client-portal/jobs' },
   { label: 'Messages', href: '/client-portal/home?tab=messages', icon: 'chat' },
   { label: 'Invoices', href: '/client-portal/home?tab=invoices', icon: 'receipt_long' },
   { label: 'Main menu', href: '/auth/id-entry', icon: 'apps' },

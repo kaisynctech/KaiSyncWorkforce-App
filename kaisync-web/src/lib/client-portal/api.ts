@@ -5,8 +5,13 @@
 import { createClient } from '@/lib/supabase/client'
 import type {
   ActivityUpdate,
+  ClientJobChecklistItem,
+  ClientJobContractor,
+  ClientJobDocument,
+  ClientJobVisit,
   ClientPayment,
   ClientPortalJob,
+  ClientPortalJobDetail,
   ClientPortalLogin,
   ClientPortalProject,
   DealMessage,
@@ -222,6 +227,108 @@ export async function listJobs(companyCode: string, clientCode: string): Promise
       project_title: strN(row.project_title),
     }))
     .filter(job => job.id)
+}
+
+function parseStringList(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  return raw.map(item => str(item).trim()).filter(Boolean)
+}
+
+function parseJobContractors(raw: unknown): ClientJobContractor[] {
+  if (!Array.isArray(raw)) return []
+  return raw.map(item => {
+    const r = item as Record<string, unknown>
+    return {
+      name: str(r.name),
+      role: str(r.role),
+      status: str(r.status),
+      scope_notes: strN(r.scope_notes),
+      assigned_at: strN(r.assigned_at),
+      completed_at: strN(r.completed_at),
+    }
+  }).filter(row => row.name)
+}
+
+function parseChecklist(raw: unknown): ClientJobChecklistItem[] {
+  if (!Array.isArray(raw)) return []
+  return raw.map(item => {
+    const r = item as Record<string, unknown>
+    return {
+      description: str(r.description),
+      is_checked: r.is_checked === true,
+      sort_order: Math.round(num(r.sort_order)),
+    }
+  }).filter(row => row.description)
+}
+
+function parseVisits(raw: unknown): ClientJobVisit[] {
+  if (!Array.isArray(raw)) return []
+  return raw.map(item => {
+    const r = item as Record<string, unknown>
+    return {
+      sign_in_at: str(r.sign_in_at),
+      sign_out_at: strN(r.sign_out_at),
+      sign_in_address: strN(r.sign_in_address),
+      sign_out_address: strN(r.sign_out_address),
+      reported_by_name: strN(r.reported_by_name),
+      notes: strN(r.notes),
+      party_type: str(r.party_type) || 'contractor',
+    }
+  }).filter(row => row.sign_in_at)
+}
+
+function parseJobDocuments(raw: unknown): ClientJobDocument[] {
+  if (!Array.isArray(raw)) return []
+  return raw.map(item => {
+    const r = item as Record<string, unknown>
+    return {
+      id: str(r.id),
+      document_name: str(r.document_name),
+      document_type: str(r.document_type) || 'other',
+      file_url: str(r.file_url),
+      created_at: str(r.created_at) || new Date().toISOString(),
+    }
+  }).filter(row => row.id && row.file_url)
+}
+
+export async function getJob(
+  companyCode: string,
+  clientCode: string,
+  jobId: string,
+): Promise<ClientPortalJobDetail | null> {
+  const data = await rpc('client_portal_get_job', {
+    ...codes(companyCode, clientCode),
+    p_job_id: jobId,
+  })
+  if (data == null) return null
+  const row = asArray(data)[0]
+  if (!row?.id) return null
+  return {
+    id: str(row.id),
+    job_code: strN(row.job_code),
+    title: str(row.title),
+    description: strN(row.description),
+    status: str(row.status),
+    priority: strN(row.priority),
+    address: strN(row.address),
+    site_name: strN(row.site_name),
+    site_address: strN(row.site_address),
+    scheduled_start: strN(row.scheduled_start),
+    scheduled_end: strN(row.scheduled_end),
+    opened_at: strN(row.opened_at),
+    closed_at: strN(row.closed_at),
+    updated_at: strN(row.updated_at),
+    deal_id: strN(row.deal_id),
+    project_code: strN(row.project_code),
+    project_title: strN(row.project_title),
+    photos_before: parseStringList(row.photos_before),
+    photos_after: parseStringList(row.photos_after),
+    photos: parseStringList(row.photos),
+    contractors: parseJobContractors(row.contractors),
+    checklist: parseChecklist(row.checklist),
+    visits: parseVisits(row.visits),
+    documents: parseJobDocuments(row.documents),
+  }
 }
 
 export async function listProjects(companyCode: string, clientCode: string): Promise<ClientPortalProject[]> {
