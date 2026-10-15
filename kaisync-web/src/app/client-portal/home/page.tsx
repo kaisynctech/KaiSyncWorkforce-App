@@ -194,7 +194,11 @@ function JobsTab({ jobs }: { jobs: ClientPortalJob[] }) {
           {jobs.map(job => (
             <tr key={job.id} className="border-divider border-t">
               <td className="px-3 py-3 text-text-secondary whitespace-nowrap">{job.job_code || '—'}</td>
-              <td className="px-3 py-3 text-text-primary font-semibold">{job.title || '—'}</td>
+              <td className="px-3 py-3">
+                <Link href={`/client-portal/jobs/${job.id}`} className="text-text-primary font-semibold hover:text-primary">
+                  {job.title || '—'}
+                </Link>
+              </td>
               <td className="px-3 py-3 text-text-primary whitespace-nowrap">{projectStatusLabel(job.status)}</td>
               <td className="px-3 py-3 whitespace-nowrap">
                 {job.deal_id && job.project_title ? (

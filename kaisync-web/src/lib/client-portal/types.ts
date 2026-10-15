@@ -22,6 +22,66 @@ export type ClientPortalJob = {
   project_title: string | null
 }
 
+export type ClientJobContractor = {
+  name: string
+  role: string
+  status: string
+  scope_notes: string | null
+  assigned_at: string | null
+  completed_at: string | null
+}
+
+export type ClientJobChecklistItem = {
+  description: string
+  is_checked: boolean
+  sort_order: number
+}
+
+export type ClientJobVisit = {
+  sign_in_at: string
+  sign_out_at: string | null
+  sign_in_address: string | null
+  sign_out_address: string | null
+  reported_by_name: string | null
+  notes: string | null
+  party_type: string
+}
+
+export type ClientJobDocument = {
+  id: string
+  document_name: string
+  document_type: string
+  file_url: string
+  created_at: string
+}
+
+export type ClientPortalJobDetail = {
+  id: string
+  job_code: string | null
+  title: string
+  description: string | null
+  status: string
+  priority: string | null
+  address: string | null
+  site_name: string | null
+  site_address: string | null
+  scheduled_start: string | null
+  scheduled_end: string | null
+  opened_at: string | null
+  closed_at: string | null
+  updated_at: string | null
+  deal_id: string | null
+  project_code: string | null
+  project_title: string | null
+  photos_before: string[]
+  photos_after: string[]
+  photos: string[]
+  contractors: ClientJobContractor[]
+  checklist: ClientJobChecklistItem[]
+  visits: ClientJobVisit[]
+  documents: ClientJobDocument[]
+}
+
 export type ClientPortalProject = {
   id: string
   company_id: string
