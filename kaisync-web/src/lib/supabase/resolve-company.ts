@@ -38,7 +38,13 @@ export async function resolveCurrentMember(
   // Fall back to code session (kf_cs) when no Supabase user.
   // When ctx is set but the row lookup fails, still prefer ctx.company_id over
   // an arbitrary limit(1) employee (multi-company owners otherwise get the wrong tenant).
-  const { data: { user } } = await supabase.auth.getUser()
+  let user: { id: string } | null = null
+  try {
+    const res = await supabase.auth.getUser()
+    user = res.data.user
+  } catch {
+    user = null
+  }
   const ctx = typeof window !== 'undefined' ? getEmpContext() : null
   const cacheKey = memberCacheKey(
     user?.id ?? null,

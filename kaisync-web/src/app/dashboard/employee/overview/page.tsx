@@ -37,6 +37,8 @@ import {
   type DeviceLocationResult,
 } from '@/lib/geo-location'
 import { PwaInstallButton } from '@/components/PwaInstallButton'
+import { loadClockPack, saveClockPack } from '@/lib/offline/clock-pack'
+import { networkLooksDown } from '@/lib/offline/meta'
 import { localISODate } from '@/lib/utils'
 import { toLocalDateStr } from '@/lib/punch-session'
 
@@ -185,6 +187,8 @@ export default function EmployeeOverviewPage() {
 
   const [loading, setLoading]           = useState(true)
   const [initError, setInitError]       = useState(false)
+  const [workingOffline, setWorkingOffline] = useState(false)
+  const [offlineNeedsVisit, setOfflineNeedsVisit] = useState(false)
   const [hasMissedSignOut, setHasMissedSignOut] = useState(false)
 
   const [companyWs, setCompanyWs]   = useState<CompanyWorkspace | null>(null)
@@ -257,6 +261,7 @@ export default function EmployeeOverviewPage() {
   const locationReadRef = useRef<Promise<DeviceLocationResult> | null>(null)
   const realtimeCleanupRef = useRef<(() => void) | null>(null)
   const isPendingRef = useRef(false)
+  const attendanceRef = useRef(true)
 
   useEffect(() => {
     void init()
@@ -301,6 +306,7 @@ export default function EmployeeOverviewPage() {
       setElapsedMs(0)
       setHasMissedSignOut(false)
     }
+    if (!isPendingRef.current) writeClockPack(lp)
   }
 
   async function reloadLastPunch() {
@@ -418,6 +424,70 @@ export default function EmployeeOverviewPage() {
     employeeBranchIdsRef.current = ids
   }
 
+  function writeClockPack(last: LastPunch | null) {
+    const empId = empIdRef.current
+    const compId = companyIdRef.current
+    if (!empId || !compId) return
+    saveClockPack({
+      employeeId: empId,
+      companyId: compId,
+      attendance: attendanceRef.current,
+      enforceGeofence: enforceGeofenceRef.current,
+      branchName: employeeBranchRef.current,
+      branchId: employeeBranchIdRef.current,
+      branchIds: employeeBranchIdsRef.current,
+      branches: branchesRef.current,
+      dispatchSettings: dispatchSettingsRef.current ?? {},
+      lastPunch: last,
+    })
+  }
+
+  function punchFromQueue(employeeId: string, cached: LastPunch | null): LastPunch | null {
+    const queued = getQueue()
+      .filter(p => p.employee_id === employeeId)
+      .sort((a, b) => b.date_time.localeCompare(a.date_time))[0]
+    if (!queued) return cached
+    if (cached?.date_time && cached.date_time >= queued.date_time) return cached
+    return {
+      id: `queued-${queued.idempotency_key}`,
+      type: queued.type,
+      date_time: queued.date_time,
+      job_id: queued.job_id,
+      notes: queued.notes,
+    }
+  }
+
+  function restoreOfflineClock(employeeId: string, companyId: string): boolean {
+    const pack = loadClockPack(employeeId, companyId)
+    if (!pack?.attendance) return false
+    enforceGeofenceRef.current = pack.enforceGeofence
+    employeeBranchRef.current = pack.branchName
+    employeeBranchIdRef.current = pack.branchId
+    employeeBranchIdsRef.current = pack.branchIds
+    branchesRef.current = pack.branches
+    dispatchSettingsRef.current = pack.dispatchSettings ?? {}
+    attendanceRef.current = true
+    setModules({
+      attendance: true,
+      leave: false,
+      jobs: false,
+      scheduling: false,
+      incidents: false,
+      myPa: false,
+      paperless: false,
+      payroll: false,
+      contractors: false,
+      messaging: false,
+    })
+    isPendingRef.current = false
+    setIsPending(false)
+    applyLastPunch(punchFromQueue(employeeId, pack.lastPunch), localISODate())
+    setWorkingOffline(true)
+    setOfflineNeedsVisit(false)
+    setInitError(false)
+    return true
+  }
+
   function refreshBranchStatus(lat: number | null, lng: number | null) {
     const status = getBranchGeofenceStatus({
       enforce: employeeMustUseBranchGeofence(dispatchSettingsRef.current, enforceGeofenceRef.current),
@@ -533,6 +603,7 @@ export default function EmployeeOverviewPage() {
       }
       setCompanyWs(company)
       const flags = moduleFlagsForCompany(company)
+      attendanceRef.current = flags.attendance
       setModules(flags)
       employeeBranchRef.current = emp?.branch ?? null
       enforceGeofenceRef.current = emp?.enforce_branch_geofence !== false
@@ -592,7 +663,9 @@ export default function EmployeeOverviewPage() {
         }
         setCompanyWs(fromBundle)
         dispatchSettingsRef.current = fromBundle.dispatch_settings ?? {}
-        setModules(moduleFlagsForCompany(fromBundle))
+        const bundleFlags = moduleFlagsForCompany(fromBundle)
+        attendanceRef.current = bundleFlags.attendance
+        setModules(bundleFlags)
       }
       if (bundle.employee) {
         employeeBranchRef.current = bundle.employee.branch ?? null
@@ -606,7 +679,13 @@ export default function EmployeeOverviewPage() {
         refreshBranchStatus(coordsRef.current.latitude, coordsRef.current.longitude)
       }
 
-      applyLastPunch((bundle.last_punch as LastPunch | null) ?? null, todayStr)
+      const shownLast = punchFromQueue(
+        member.employeeId,
+        (bundle.last_punch as LastPunch | null) ?? null,
+      )
+      applyLastPunch(shownLast, todayStr)
+      setWorkingOffline(false)
+      setOfflineNeedsVisit(false)
       setJobs(asRpcArray<Job>(bundle.jobs))
       setLeaveRequests(asRpcArray<LeaveRequest>(bundle.leave_requests))
       setIsOnLeave(bundle.is_on_leave === true)
@@ -647,6 +726,15 @@ export default function EmployeeOverviewPage() {
       setMyTeams(teams)
     } catch (e) {
       console.error('[Dashboard] init failed:', e)
+      const message = e instanceof Error
+        ? e.message
+        : (e && typeof e === 'object' && 'message' in e ? String((e as { message: unknown }).message) : '')
+      const empId = empIdRef.current
+      const compId = companyIdRef.current
+      if (networkLooksDown(message) && empId && compId && restoreOfflineClock(empId, compId)) {
+        return
+      }
+      setOfflineNeedsVisit(networkLooksDown(message))
       setInitError(true)
     } finally {
       setLoading(false)
@@ -1048,9 +1136,13 @@ export default function EmployeeOverviewPage() {
   )
 
   if (initError) return (
-    <div className="flex flex-col items-center justify-center h-64 gap-3">
+    <div className="flex flex-col items-center justify-center h-64 gap-3 px-6 text-center">
       <span className="material-icons text-[48px] text-text-disabled">error_outline</span>
-      <p className="text-[14px] text-text-secondary">Failed to load dashboard. Please refresh.</p>
+      <p className="text-[14px] text-text-secondary">
+        {offlineNeedsVisit
+          ? 'Open KaiSync once while this phone has signal. After that, clock-in and clock-out work on site with no internet, and the office sees them when the phone gets signal again.'
+          : 'Failed to load dashboard. Please refresh.'}
+      </p>
       <button
         onClick={() => init()}
         className="text-[13px] font-semibold text-primary hover:underline"
@@ -1150,6 +1242,15 @@ export default function EmployeeOverviewPage() {
           <div className="flex items-center gap-3 bg-warning/10 border border-warning/30 rounded-xl px-4 py-3">
             <span className="material-icons text-warning text-[20px]">my_location</span>
             <p className="text-[13px] text-warning font-medium">{branchStatus?.displayMessage}</p>
+          </div>
+        )}
+
+        {workingOffline && showClockCard && (
+          <div className="flex items-center gap-3 bg-warning/10 border border-warning/30 rounded-xl px-4 py-3">
+            <span className="material-icons text-warning text-[20px]">cloud_off</span>
+            <p className="text-[13px] text-warning font-medium">
+              No signal. This clock stays on the phone, with the place, until the phone gets internet. The office then sees who clocked in.
+            </p>
           </div>
         )}
 

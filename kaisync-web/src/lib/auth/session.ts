@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { networkLooksDown } from '@/lib/offline/meta'
 import {
   clearCodeSession,
   getCodeSession,
@@ -85,20 +86,26 @@ export async function signInWithCode(
   return session
 }
 
+function keepCachedCodeSession(reason: string | null | undefined, existing: CodeSession): CodeSession | null {
+  if (networkLooksDown(reason)) return existing
+  clearCodeSession()
+  return null
+}
+
 /** Mirrors RefreshCodeSessionAsync + ValidateCodeSessionAsync. */
 export async function refreshCodeSession(
   supabase: SupabaseClient,
 ): Promise<CodeSession | null> {
   const existing = getCodeSession()
   if (!existing?.session_token) return null
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return existing
 
   try {
     const { data, error } = await supabase.rpc('employee_refresh_code_session', {
       p_session_token: existing.session_token,
     })
     if (error || !data) {
-      clearCodeSession()
-      return null
+      return keepCachedCodeSession(error?.message, existing)
     }
 
     const parsed = data as CodeLoginRpcResult
@@ -116,8 +123,7 @@ export async function refreshCodeSession(
       p_session_token: token,
     })
     if (validErr || valid !== true) {
-      clearCodeSession()
-      return null
+      return keepCachedCodeSession(validErr?.message, existing)
     }
 
     const refreshed = saveCodeSession(
@@ -130,9 +136,8 @@ export async function refreshCodeSession(
       return null
     }
     return refreshed
-  } catch {
-    clearCodeSession()
-    return null
+  } catch (e) {
+    return keepCachedCodeSession(e instanceof Error ? e.message : '', existing)
   }
 }
 
