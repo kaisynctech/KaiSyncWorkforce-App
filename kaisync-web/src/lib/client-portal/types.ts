@@ -22,15 +22,6 @@ export type ClientPortalJob = {
   project_title: string | null
 }
 
-export type ClientJobContractor = {
-  name: string
-  role: string
-  status: string
-  scope_notes: string | null
-  assigned_at: string | null
-  completed_at: string | null
-}
-
 export type ClientJobChecklistItem = {
   description: string
   is_checked: boolean
@@ -42,9 +33,7 @@ export type ClientJobVisit = {
   sign_out_at: string | null
   sign_in_address: string | null
   sign_out_address: string | null
-  reported_by_name: string | null
   notes: string | null
-  party_type: string
 }
 
 export type ClientJobDocument = {
@@ -76,7 +65,6 @@ export type ClientPortalJobDetail = {
   photos_before: string[]
   photos_after: string[]
   photos: string[]
-  contractors: ClientJobContractor[]
   checklist: ClientJobChecklistItem[]
   visits: ClientJobVisit[]
   documents: ClientJobDocument[]

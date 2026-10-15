@@ -6,7 +6,6 @@ import { createClient } from '@/lib/supabase/client'
 import type {
   ActivityUpdate,
   ClientJobChecklistItem,
-  ClientJobContractor,
   ClientJobDocument,
   ClientJobVisit,
   ClientPayment,
@@ -234,21 +233,6 @@ function parseStringList(raw: unknown): string[] {
   return raw.map(item => str(item).trim()).filter(Boolean)
 }
 
-function parseJobContractors(raw: unknown): ClientJobContractor[] {
-  if (!Array.isArray(raw)) return []
-  return raw.map(item => {
-    const r = item as Record<string, unknown>
-    return {
-      name: str(r.name),
-      role: str(r.role),
-      status: str(r.status),
-      scope_notes: strN(r.scope_notes),
-      assigned_at: strN(r.assigned_at),
-      completed_at: strN(r.completed_at),
-    }
-  }).filter(row => row.name)
-}
-
 function parseChecklist(raw: unknown): ClientJobChecklistItem[] {
   if (!Array.isArray(raw)) return []
   return raw.map(item => {
@@ -270,9 +254,7 @@ function parseVisits(raw: unknown): ClientJobVisit[] {
       sign_out_at: strN(r.sign_out_at),
       sign_in_address: strN(r.sign_in_address),
       sign_out_address: strN(r.sign_out_address),
-      reported_by_name: strN(r.reported_by_name),
       notes: strN(r.notes),
-      party_type: str(r.party_type) || 'contractor',
     }
   }).filter(row => row.sign_in_at)
 }
@@ -324,7 +306,6 @@ export async function getJob(
     photos_before: parseStringList(row.photos_before),
     photos_after: parseStringList(row.photos_after),
     photos: parseStringList(row.photos),
-    contractors: parseJobContractors(row.contractors),
     checklist: parseChecklist(row.checklist),
     visits: parseVisits(row.visits),
     documents: parseJobDocuments(row.documents),
