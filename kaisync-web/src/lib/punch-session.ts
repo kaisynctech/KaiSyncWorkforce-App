@@ -475,11 +475,15 @@ export function totalHrsDisplay(s: PunchSessionRow): string {
 
 export function locationDisplay(address: string | null, lat: number | null, lng: number | null): string {
   const trimmed = address?.trim() || null
-  if (trimmed && !/^-?\d{1,3}\.\d+\s*,\s*-?\d{1,3}\.\d+$/.test(trimmed)) {
+  if (
+    trimmed
+    && trimmed !== 'No signal'
+    && !/^-?\d{1,3}\.\d+\s*,\s*-?\d{1,3}\.\d+$/.test(trimmed)
+  ) {
     return trimmed
   }
-  // GPS existed but place name not resolved yet — never show raw coords.
-  // Callers should run resolveMissingPunchAddresses to replace this quickly.
-  if (lat != null && lng != null) return 'Resolving address…'
-  return '—'
+  if (lat != null && lng != null) {
+    return `${lat.toFixed(5)}, ${lng.toFixed(5)} — No signal`
+  }
+  return 'No signal'
 }
