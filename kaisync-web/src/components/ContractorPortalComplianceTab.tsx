@@ -132,38 +132,38 @@ export function ContractorPortalComplianceTab({
   }
 
   if (loading) {
-    return <div className="py-16 text-center text-slate-400 text-[14px]">Loading compliance…</div>
+    return <div className="py-16 text-center text-text-secondary text-[14px]">Loading compliance…</div>
   }
 
   const scoreColor = view.required_count === 0
-    ? 'text-slate-400'
+    ? 'text-text-secondary'
     : view.score_percent >= 80
-      ? 'text-green-400'
+      ? 'text-success'
       : view.score_percent >= 50
-        ? 'text-amber-300'
-        : 'text-red-400'
+        ? 'text-warning'
+        : 'text-error'
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-white text-[18px] font-bold">Compliance</h2>
+        <h2 className="text-text-primary text-[18px] font-bold">Compliance</h2>
         <button
           type="button"
           onClick={() => openUpload({ mode: 'additional' })}
-          className="h-9 px-3 rounded-lg bg-blue-600 text-white text-[12px] font-semibold"
+          className="h-9 px-3 rounded-lg bg-primary text-white text-[12px] font-semibold"
         >
           + Upload document
         </button>
       </div>
 
       {/* Score card */}
-      <section className="rounded-xl border px-4 py-4 space-y-3" style={{ borderColor: 'rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.02)' }}>
+      <section className="border-divider bg-surface rounded-xl border px-4 py-4 space-y-3">
         <div className="flex items-center gap-4">
           <div>
             <p className={`text-[32px] font-bold leading-none ${scoreColor}`}>{view.score_percent}%</p>
-            <p className="text-[10px] text-slate-500 mt-1">Compliance score</p>
+            <p className="text-[10px] text-text-secondary mt-1">Compliance score</p>
           </div>
-          <div className="flex-1 h-2.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
+          <div className="bg-surface-elevated flex-1 h-2.5 rounded-full overflow-hidden">
             <div
               className="h-full rounded-full transition-all"
               style={{
@@ -172,7 +172,7 @@ export function ContractorPortalComplianceTab({
               }}
             />
           </div>
-          <span className="text-[12px] font-semibold px-2.5 py-1 rounded-md text-slate-300" style={{ background: 'rgba(255,255,255,0.06)' }}>
+          <span className="bg-surface-elevated text-[12px] font-semibold px-2.5 py-1 rounded-md text-text-primary">
             {view.status_label}
           </span>
         </div>
@@ -184,24 +184,24 @@ export function ContractorPortalComplianceTab({
           <Stat label="Required" value={view.required_count} tone="slate" />
         </div>
         {!view.has_pack && (
-          <p className="text-[12px] text-slate-500">No compliance pack assigned. Uploaded documents still appear below.</p>
+          <p className="text-[12px] text-text-secondary">No compliance pack assigned. Uploaded documents still appear below.</p>
         )}
       </section>
 
       {view.missing_rows.length > 0 && (
         <Section title="Missing required documents">
-          <p className="text-[12px] text-slate-500 mb-2">
+          <p className="text-[12px] text-text-secondary mb-2">
             Required by your compliance pack. Upload for HR review.
           </p>
           <div className="space-y-1">
             {view.missing_rows.map(row => (
-              <div key={`${row.document_type}-${row.status}`} className="flex items-center gap-2 py-2 border-b last:border-0" style={{ borderColor: 'rgba(255,255,255,0.05)' }}>
+              <div key={`${row.document_type}-${row.status}`} className="border-divider flex items-center gap-2 py-2 border-b last:border-0">
                 <ReqBadge required={row.is_required} />
-                <p className="flex-1 text-[13px] text-white truncate">{row.type_label}</p>
+                <p className="flex-1 text-[13px] text-text-primary truncate">{row.type_label}</p>
                 <button
                   type="button"
                   onClick={() => openUpload({ mode: 'missing', documentType: row.document_type, typeLabel: row.type_label })}
-                  className="text-[11px] font-semibold px-2.5 py-1.5 rounded-md bg-blue-600 text-white"
+                  className="text-[11px] font-semibold px-2.5 py-1.5 rounded-md bg-primary text-white"
                 >
                   Upload
                 </button>
@@ -226,18 +226,18 @@ export function ContractorPortalComplianceTab({
         <Section title="Rejected documents">
           <div className="space-y-2">
             {view.rejected_docs.map(doc => (
-              <div key={doc.id} className="flex items-start gap-2 py-2 border-b last:border-0" style={{ borderColor: 'rgba(255,255,255,0.05)' }}>
+              <div key={doc.id} className="border-divider flex items-start gap-2 py-2 border-b last:border-0">
                 <div className="flex-1 min-w-0">
-                  <p className="text-[13px] text-white truncate">{doc.document_name}</p>
+                  <p className="text-[13px] text-text-primary truncate">{doc.document_name}</p>
                   {doc.rejected_reason && (
-                    <p className="text-[11px] text-red-300 mt-0.5">Reason: {doc.rejected_reason}</p>
+                    <p className="text-[11px] text-error mt-0.5">Reason: {doc.rejected_reason}</p>
                   )}
                 </div>
                 <button
                   type="button"
                   onClick={() => openUpload({ mode: 'replace', doc })}
-                  className="text-[11px] font-semibold px-2.5 py-1.5 rounded-md text-red-200 shrink-0"
-                  style={{ background: 'rgba(127,29,29,0.5)' }}
+                  className="bg-error-dark text-[11px] font-semibold px-2.5 py-1.5 rounded-md text-red-200 shrink-0"
+                 
                 >
                   Re-upload
                 </button>
@@ -249,12 +249,12 @@ export function ContractorPortalComplianceTab({
 
       <Section title="Submitted documents">
         {docs.length === 0 ? (
-          <p className="text-[13px] text-slate-500">No documents submitted yet.</p>
+          <p className="text-[13px] text-text-secondary">No documents submitted yet.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-[12px] min-w-[640px]">
               <thead>
-                <tr className="text-[11px] uppercase text-slate-500 border-b" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
+                <tr className="border-divider text-[11px] uppercase text-text-secondary border-b">
                   <th className="text-left py-2 pr-2 font-semibold">Type</th>
                   <th className="text-left py-2 pr-2 font-semibold">Document</th>
                   <th className="text-left py-2 pr-2 font-semibold">Status</th>
@@ -265,26 +265,26 @@ export function ContractorPortalComplianceTab({
               </thead>
               <tbody>
                 {docs.map(doc => (
-                  <tr key={doc.id} className="border-b last:border-0" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
-                    <td className="py-2.5 pr-2 text-slate-300 whitespace-nowrap">{documentTypeLabel(doc.document_type)}</td>
-                    <td className="py-2.5 pr-2 text-white">{doc.document_name}</td>
+                  <tr key={doc.id} className="border-divider border-b last:border-0">
+                    <td className="py-2.5 pr-2 text-text-primary whitespace-nowrap">{documentTypeLabel(doc.document_type)}</td>
+                    <td className="py-2.5 pr-2 text-text-primary">{doc.document_name}</td>
                     <td className="py-2.5 pr-2">
-                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded" style={{ background: 'rgba(255,255,255,0.06)' }}>
+                      <span className="bg-surface-elevated text-[11px] font-semibold px-2 py-0.5 rounded">
                         {statusTableLabel(doc)}
                       </span>
                     </td>
-                    <td className="py-2.5 pr-2 text-slate-400 whitespace-nowrap">{uploadedDisplay(doc.created_at)}</td>
-                    <td className="py-2.5 pr-2 text-slate-400 whitespace-nowrap">{expiryDisplay(doc)}</td>
+                    <td className="py-2.5 pr-2 text-text-secondary whitespace-nowrap">{uploadedDisplay(doc.created_at)}</td>
+                    <td className="py-2.5 pr-2 text-text-secondary whitespace-nowrap">{expiryDisplay(doc)}</td>
                     <td className="py-2.5 text-right whitespace-nowrap">
                       {doc.file_url && (
-                        <a href={doc.file_url} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline mr-2">
+                        <a href={doc.file_url} target="_blank" rel="noreferrer" className="text-primary hover:underline mr-2">
                           View
                         </a>
                       )}
                       <button
                         type="button"
                         onClick={() => openUpload({ mode: 'replace', doc })}
-                        className="text-slate-400 hover:text-white"
+                        className="text-text-secondary hover:text-text-primary"
                       >
                         Replace
                       </button>
@@ -301,13 +301,13 @@ export function ContractorPortalComplianceTab({
         <Section title="Compliance progress">
           <div className="space-y-1">
             {view.checklist.map((row: PackChecklistRow) => (
-              <div key={row.document_type} className="flex items-center gap-2 py-2 border-b last:border-0" style={{ borderColor: 'rgba(255,255,255,0.05)' }}>
+              <div key={row.document_type} className="border-divider flex items-center gap-2 py-2 border-b last:border-0">
                 <ReqBadge required={row.is_required} />
-                <p className="flex-1 text-[13px] text-white truncate">{row.type_label}</p>
+                <p className="flex-1 text-[13px] text-text-primary truncate">{row.type_label}</p>
                 {row.expiry_display && (
-                  <p className="text-[11px] text-slate-500 whitespace-nowrap">{row.expiry_display}</p>
+                  <p className="text-[11px] text-text-secondary whitespace-nowrap">{row.expiry_display}</p>
                 )}
-                <span className="text-[11px] font-semibold px-2 py-0.5 rounded text-slate-300" style={{ background: 'rgba(255,255,255,0.06)' }}>
+                <span className="bg-surface-elevated text-[11px] font-semibold px-2 py-0.5 rounded text-text-primary">
                   {checklistStatusLabel(row.status)}
                 </span>
               </div>
@@ -317,40 +317,40 @@ export function ContractorPortalComplianceTab({
       )}
 
       {uploadTarget && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.65)' }}>
-          <div className="w-full max-w-md rounded-2xl border p-4 space-y-3" style={{ background: '#0f172a', borderColor: 'rgba(255,255,255,0.12)' }}>
+        <div className="bg-black/60 fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
+          <div className="bg-surface border-divider w-full max-w-md rounded-2xl border p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-white text-[15px] font-bold">
+              <h3 className="text-text-primary text-[15px] font-bold">
                 {uploadTarget.mode === 'replace' ? 'Replace document' : 'Upload document'}
               </h3>
-              <button type="button" onClick={closeUpload} className="text-slate-400 hover:text-white text-[13px]">Cancel</button>
+              <button type="button" onClick={closeUpload} className="text-text-secondary hover:text-text-primary text-[13px]">Cancel</button>
             </div>
 
             {uploadTarget.mode === 'additional' ? (
               <div className="space-y-1">
-                <label className="text-[11px] font-semibold text-slate-500 uppercase">Document type</label>
+                <label className="text-[11px] font-semibold text-text-secondary uppercase">Document type</label>
                 <select
-                  className="w-full h-10 px-3 rounded-lg text-[13px] text-white"
-                  style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                  className="bg-surface border border-divider text-text-primary w-full h-10 px-3 rounded-lg text-[13px] text-text-primary"
+                 
                   value={docType}
                   onChange={e => setDocType(e.target.value)}
                 >
                   {CONTRACTOR_DOC_TYPES.map(t => (
-                    <option key={t.value} value={t.value} className="bg-slate-900">{t.label}</option>
+                    <option key={t.value} value={t.value} className="bg-surface">{t.label}</option>
                   ))}
                 </select>
               </div>
             ) : (
-              <p className="text-[12px] text-slate-400">
-                Type: <span className="text-slate-200">{documentTypeLabel(docType)}</span>
+              <p className="text-[12px] text-text-secondary">
+                Type: <span className="text-text-primary">{documentTypeLabel(docType)}</span>
               </p>
             )}
 
             <div className="space-y-1">
-              <label className="text-[11px] font-semibold text-slate-500 uppercase">Document name *</label>
+              <label className="text-[11px] font-semibold text-text-secondary uppercase">Document name *</label>
               <input
-                className="w-full h-10 px-3 rounded-lg text-[13px] text-white"
-                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                className="bg-surface border border-divider text-text-primary w-full h-10 px-3 rounded-lg text-[13px] text-text-primary"
+               
                 value={docName}
                 onChange={e => setDocName(e.target.value)}
                 placeholder="e.g. SARS TCS Certificate 2026"
@@ -358,23 +358,23 @@ export function ContractorPortalComplianceTab({
             </div>
 
             <div className="space-y-1">
-              <label className="text-[11px] font-semibold text-slate-500 uppercase">Expiry date (optional)</label>
+              <label className="text-[11px] font-semibold text-text-secondary uppercase">Expiry date (optional)</label>
               <input
                 type="date"
-                className="w-full h-10 px-3 rounded-lg text-[13px] text-white"
-                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                className="bg-surface border border-divider text-text-primary w-full h-10 px-3 rounded-lg text-[13px] text-text-primary"
+               
                 value={expiryDate}
                 onChange={e => setExpiryDate(e.target.value)}
               />
             </div>
 
             <div className="space-y-1">
-              <label className="text-[11px] font-semibold text-slate-500 uppercase">File *</label>
+              <label className="text-[11px] font-semibold text-text-secondary uppercase">File *</label>
               <input
                 ref={fileRef}
                 type="file"
                 accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,application/pdf,image/*"
-                className="w-full text-[12px] text-slate-300"
+                className="w-full text-[12px] text-text-primary"
                 onChange={e => setFile(e.target.files?.[0] ?? null)}
               />
             </div>
@@ -383,7 +383,7 @@ export function ContractorPortalComplianceTab({
               type="button"
               disabled={busy}
               onClick={() => void submitUpload()}
-              className="w-full h-11 rounded-xl bg-blue-600 text-white font-semibold text-[13px] disabled:opacity-50"
+              className="w-full h-11 rounded-xl bg-primary text-white font-semibold text-[13px] disabled:opacity-50"
             >
               {busy ? 'Uploading…' : 'Upload for HR review'}
             </button>
@@ -396,9 +396,9 @@ export function ContractorPortalComplianceTab({
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-xl border overflow-hidden" style={{ borderColor: 'rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.02)' }}>
-      <div className="px-4 py-2.5 border-b" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
-        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">{title}</p>
+    <section className="border-divider bg-surface rounded-xl border overflow-hidden">
+      <div className="border-divider px-4 py-2.5 border-b">
+        <p className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide">{title}</p>
       </div>
       <div className="px-4 py-3">{children}</div>
     </section>
@@ -407,15 +407,15 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function Stat({ label, value, tone }: { label: string; value: number; tone: 'green' | 'red' | 'amber' | 'slate' }) {
   const colors = {
-    green: 'text-green-400',
-    red: 'text-red-300',
-    amber: 'text-amber-300',
-    slate: 'text-slate-400',
+    green: 'text-success',
+    red: 'text-error',
+    amber: 'text-warning',
+    slate: 'text-text-secondary',
   }
   return (
-    <div className="rounded-lg px-1 py-2 text-center" style={{ background: 'rgba(255,255,255,0.04)' }}>
+    <div className="bg-surface-elevated rounded-lg px-1 py-2 text-center">
       <p className={`text-[16px] font-bold ${colors[tone]}`}>{value}</p>
-      <p className="text-[9px] text-slate-500 uppercase">{label}</p>
+      <p className="text-[9px] text-text-secondary uppercase">{label}</p>
     </div>
   )
 }
@@ -423,8 +423,7 @@ function Stat({ label, value, tone }: { label: string; value: number; tone: 'gre
 function ReqBadge({ required }: { required: boolean }) {
   return (
     <span
-      className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${required ? 'text-red-300' : 'text-slate-500'}`}
-      style={{ background: required ? 'rgba(127,29,29,0.5)' : 'rgba(255,255,255,0.06)' }}
+      className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${required ? 'text-error bg-error-dark' : 'text-text-secondary bg-surface-elevated'}`}
     >
       {required ? 'Req.' : 'Opt.'}
     </span>
@@ -445,19 +444,19 @@ function DocActionList({
   return (
     <div className="space-y-1">
       {docs.map(doc => (
-        <div key={doc.id} className="flex items-center gap-2 py-2 border-b last:border-0" style={{ borderColor: 'rgba(255,255,255,0.05)' }}>
+        <div key={doc.id} className="border-divider flex items-center gap-2 py-2 border-b last:border-0">
           <div className="flex-1 min-w-0">
-            <p className="text-[13px] text-white truncate">{doc.document_name}</p>
-            <p className="text-[11px] text-slate-500">{documentTypeLabel(doc.document_type)}</p>
+            <p className="text-[13px] text-text-primary truncate">{doc.document_name}</p>
+            <p className="text-[11px] text-text-secondary">{documentTypeLabel(doc.document_type)}</p>
           </div>
-          <p className={`text-[12px] font-medium whitespace-nowrap ${actionTone === 'amber' ? 'text-amber-300' : 'text-red-300'}`}>
+          <p className={`text-[12px] font-medium whitespace-nowrap ${actionTone === 'amber' ? 'text-warning' : 'text-error'}`}>
             {expiryDisplay(doc)}
           </p>
           <button
             type="button"
             onClick={() => onAction(doc)}
-            className="text-[11px] font-semibold px-2.5 py-1.5 rounded-md text-amber-200"
-            style={{ background: 'rgba(120,53,15,0.55)' }}
+            className="bg-warning-dark text-[11px] font-semibold px-2.5 py-1.5 rounded-md text-warning"
+           
           >
             {actionLabel}
           </button>

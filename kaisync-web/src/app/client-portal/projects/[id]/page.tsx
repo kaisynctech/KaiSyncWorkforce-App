@@ -168,7 +168,7 @@ export default function ClientPortalProjectDetailPage() {
 
   if (!ready || !session) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#0f172a] text-slate-400 text-[14px]">
+      <div className="min-h-screen flex items-center justify-center bg-background text-text-secondary text-[14px]">
         Loading…
       </div>
     )
@@ -176,52 +176,52 @@ export default function ClientPortalProjectDetailPage() {
 
   return (
     <ClientPortalShell session={session}>
-      <div className="max-w-3xl mx-auto px-4 py-4 space-y-4 pb-16">
+      <div className="px-4 py-4 md:px-6 md:py-5 space-y-4 pb-16">
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={() => router.push('/client-portal/home')}
-            className="text-slate-400 hover:text-white transition-colors"
+            className="text-text-secondary hover:text-text-primary transition-colors"
           >
             <span className="material-icons">arrow_back</span>
           </button>
           <div className="min-w-0">
-            <h1 className="text-white text-[18px] font-bold truncate">
+            <h1 className="text-text-primary text-[18px] font-bold truncate">
               {project?.title ?? 'Project'}
             </h1>
             {project?.project_code && (
-              <p className="text-[12px] text-slate-500">{project.project_code}</p>
+              <p className="text-[12px] text-text-secondary">{project.project_code}</p>
             )}
           </div>
         </div>
 
         {error && (
-          <div className="rounded-xl px-4 py-3" style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.25)' }}>
-            <p className="text-[13px] text-red-400 font-semibold">{error}</p>
+          <div className="bg-error/10 border border-error/25 rounded-xl px-4 py-3">
+            <p className="text-[13px] text-error font-semibold">{error}</p>
           </div>
         )}
 
         {loading ? (
-          <div className="py-16 text-center text-slate-400 text-[14px]">Loading…</div>
+          <div className="py-16 text-center text-text-secondary text-[14px]">Loading…</div>
         ) : !project ? (
           <div className="py-16 text-center space-y-3">
-            <p className="text-slate-400 text-[14px]">Project not found.</p>
-            <Link href="/client-portal/home" className="text-blue-400 text-[13px] hover:underline">Back to portal</Link>
+            <p className="text-text-secondary text-[14px]">Project not found.</p>
+            <Link href="/client-portal/home" className="text-primary text-[13px] hover:underline">Back to portal</Link>
           </div>
         ) : (
           <>
             <Section title="Overview">
               <InfoRow label="Status" value={projectStatusLabel(project.status)} />
               <InfoRow label="Progress" value={`${project.progress_percent}%`} />
-              <div className="mt-2 h-2 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
+              <div className="bg-surface-elevated mt-2 h-2 rounded-full overflow-hidden">
                 <div
-                  className="h-full rounded-full bg-blue-500 transition-all"
+                  className="h-full rounded-full bg-primary transition-all"
                   style={{ width: `${Math.min(100, Math.max(0, project.progress_percent))}%` }}
                 />
               </div>
               <InfoRow label="Work order" value={project.job_id ? 'Work order linked' : 'Not started on site yet'} />
               <InfoRow label="Last update" value={fmtDateTime(project.last_update_at)} />
-              <p className="text-[13px] text-slate-300 mt-2 leading-relaxed">
+              <p className="text-[13px] text-text-primary mt-2 leading-relaxed">
                 {project.last_update_note?.trim() || 'No project updates yet.'}
               </p>
             </Section>
@@ -243,20 +243,20 @@ export default function ClientPortalProjectDetailPage() {
               <InfoRow label="Balance" value={moneyZAR(Math.max(0, project.offer_amount - project.amount_paid))} />
               {project.payments.length > 0 && (
                 <div className="mt-3 space-y-2">
-                  <p className="text-[11px] font-semibold text-slate-500 uppercase">Payment history</p>
+                  <p className="text-[11px] font-semibold text-text-secondary uppercase">Payment history</p>
                   {project.payments.map(pay => (
-                    <div key={pay.id} className="rounded-lg px-3 py-2" style={{ background: 'rgba(255,255,255,0.04)' }}>
+                    <div key={pay.id} className="bg-surface-elevated rounded-lg px-3 py-2">
                       <div className="flex justify-between gap-2">
-                        <p className="text-[13px] text-white font-semibold">{moneyZAR(pay.amount)}</p>
-                        <p className="text-[12px] text-slate-500">{fmtDate(pay.paid_at)}</p>
+                        <p className="text-[13px] text-text-primary font-semibold">{moneyZAR(pay.amount)}</p>
+                        <p className="text-[12px] text-text-secondary">{fmtDate(pay.paid_at)}</p>
                       </div>
                       {(pay.reference || pay.payment_method) && (
-                        <p className="text-[12px] text-slate-400 mt-0.5">
+                        <p className="text-[12px] text-text-secondary mt-0.5">
                           {[pay.payment_method, pay.reference].filter(Boolean).join(' · ')}
                         </p>
                       )}
                       {pay.receipt_url && (
-                        <a href={pay.receipt_url} target="_blank" rel="noreferrer" className="text-[12px] text-blue-400 hover:underline mt-1 inline-block">
+                        <a href={pay.receipt_url} target="_blank" rel="noreferrer" className="text-[12px] text-primary hover:underline mt-1 inline-block">
                           View receipt
                         </a>
                       )}
@@ -268,39 +268,39 @@ export default function ClientPortalProjectDetailPage() {
 
             <Section title="Quotation">
               {project.quotation_notes && (
-                <p className="text-[13px] text-slate-300 mb-3 leading-relaxed">{project.quotation_notes}</p>
+                <p className="text-[13px] text-text-primary mb-3 leading-relaxed">{project.quotation_notes}</p>
               )}
               {quoteLines.length === 0 && !project.offer_amount && !project.quotation_notes ? (
-                <p className="text-[13px] text-slate-500">No quotation shared yet.</p>
+                <p className="text-[13px] text-text-secondary">No quotation shared yet.</p>
               ) : (
                 <>
                   {quoteLines.length > 0 && (
                     <div className="space-y-1.5 mb-3">
                       {quoteLines.map(l => (
                         <div key={`${l.line_no}-${l.description}`} className="flex justify-between gap-3 text-[13px]">
-                          <p className="text-slate-300">
-                            <span className="text-slate-500 mr-1">{l.line_no}.</span>
+                          <p className="text-text-primary">
+                            <span className="text-text-secondary mr-1">{l.line_no}.</span>
                             {l.description}
-                            <span className="text-slate-500 text-[11px] ml-1">×{l.quantity}</span>
+                            <span className="text-text-secondary text-[11px] ml-1">×{l.quantity}</span>
                           </p>
-                          <p className="text-slate-200 whitespace-nowrap">{moneyZAR(lineTotal(l))}</p>
+                          <p className="text-text-primary whitespace-nowrap">{moneyZAR(lineTotal(l))}</p>
                         </div>
                       ))}
                     </div>
                   )}
-                  <div className="flex justify-between items-center pt-2 border-t" style={{ borderColor: 'rgba(255,255,255,0.08)' }}>
-                    <p className="text-[12px] font-semibold text-slate-400 uppercase">Total</p>
-                    <p className="text-[16px] font-bold text-white">{moneyZAR(quoteTotal)}</p>
+                  <div className="border-divider bg-surface flex justify-between items-center pt-2 border-t">
+                    <p className="text-[12px] font-semibold text-text-secondary uppercase">Total</p>
+                    <p className="text-[16px] font-bold text-text-primary">{moneyZAR(quoteTotal)}</p>
                   </div>
                   {isDateSet(project.quotation_valid_until) && (
-                    <p className="text-[12px] text-slate-500 mt-2">Valid until {fmtDate(project.quotation_valid_until)}</p>
+                    <p className="text-[12px] text-text-secondary mt-2">Valid until {fmtDate(project.quotation_valid_until)}</p>
                   )}
                 </>
               )}
             </Section>
 
             <Section title="Agreement">
-              <p className="text-[13px] text-slate-300 leading-relaxed whitespace-pre-wrap">
+              <p className="text-[13px] text-text-primary leading-relaxed whitespace-pre-wrap">
                 {project.agreement_notes?.trim()
                   || project.quotation_notes?.trim()
                   || 'No agreement or contract notes have been shared yet. Your project manager can add these from the HR project screen.'}
@@ -313,15 +313,15 @@ export default function ClientPortalProjectDetailPage() {
                   type="button"
                   onClick={() => fileRef.current?.click()}
                   disabled={docBusy}
-                  className="text-[12px] font-semibold px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50"
+                  className="text-[12px] font-semibold px-3 py-1.5 rounded-lg bg-primary text-white hover:bg-primary-dark disabled:opacity-50"
                 >
                   Upload file
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowLinkForm(v => !v)}
-                  className="text-[12px] font-semibold px-3 py-1.5 rounded-lg text-slate-300 border hover:border-blue-400 hover:text-blue-300"
-                  style={{ borderColor: 'rgba(255,255,255,0.12)' }}
+                  className="border-divider text-[12px] font-semibold px-3 py-1.5 rounded-lg text-text-primary border hover:border-blue-400 hover:text-primary"
+                 
                 >
                   Share link
                 </button>
@@ -339,8 +339,8 @@ export default function ClientPortalProjectDetailPage() {
               {selectedFile && (
                 <div className="flex gap-2 mb-3 items-center">
                   <input
-                    className="flex-1 h-10 px-3 rounded-lg text-[13px] text-white"
-                    style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                    className="bg-surface border border-divider text-text-primary flex-1 h-10 px-3 rounded-lg text-[13px] text-text-primary"
+                   
                     placeholder="Document name"
                     value={uploadName}
                     onChange={e => setUploadName(e.target.value)}
@@ -349,24 +349,24 @@ export default function ClientPortalProjectDetailPage() {
                     type="button"
                     onClick={() => void onUpload()}
                     disabled={docBusy}
-                    className="text-[12px] font-semibold px-3 py-2 rounded-lg bg-blue-600 text-white disabled:opacity-50"
+                    className="text-[12px] font-semibold px-3 py-2 rounded-lg bg-primary text-white disabled:opacity-50"
                   >
                     {docBusy ? '…' : 'Upload'}
                   </button>
                 </div>
               )}
               {showLinkForm && (
-                <div className="space-y-2 mb-3 p-3 rounded-lg" style={{ background: 'rgba(255,255,255,0.04)' }}>
+                <div className="bg-surface-elevated space-y-2 mb-3 p-3 rounded-lg">
                   <input
-                    className="w-full h-10 px-3 rounded-lg text-[13px] text-white"
-                    style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                    className="bg-surface border border-divider text-text-primary w-full h-10 px-3 rounded-lg text-[13px] text-text-primary"
+                   
                     placeholder="Document name"
                     value={linkName}
                     onChange={e => setLinkName(e.target.value)}
                   />
                   <input
-                    className="w-full h-10 px-3 rounded-lg text-[13px] text-white"
-                    style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                    className="bg-surface border border-divider text-text-primary w-full h-10 px-3 rounded-lg text-[13px] text-text-primary"
+                   
                     placeholder="https://…"
                     value={linkUrl}
                     onChange={e => setLinkUrl(e.target.value)}
@@ -375,14 +375,14 @@ export default function ClientPortalProjectDetailPage() {
                     type="button"
                     onClick={() => void onAddLink()}
                     disabled={docBusy}
-                    className="text-[12px] font-semibold px-3 py-2 rounded-lg bg-blue-600 text-white disabled:opacity-50"
+                    className="text-[12px] font-semibold px-3 py-2 rounded-lg bg-primary text-white disabled:opacity-50"
                   >
                     Save link
                   </button>
                 </div>
               )}
               {project.documents.length === 0 ? (
-                <p className="text-[13px] text-slate-500">No documents yet.</p>
+                <p className="text-[13px] text-text-secondary">No documents yet.</p>
               ) : (
                 <div className="space-y-2">
                   {project.documents.map(doc => (
@@ -393,12 +393,12 @@ export default function ClientPortalProjectDetailPage() {
                       rel="noreferrer"
                       className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-white/[0.04]"
                     >
-                      <span className="material-icons text-blue-400 text-[18px]">description</span>
+                      <span className="material-icons text-primary text-[18px]">description</span>
                       <div className="min-w-0 flex-1">
-                        <p className="text-[13px] text-white truncate">{doc.document_name}</p>
-                        <p className="text-[11px] text-slate-500">{fmtDate(doc.created_at)}</p>
+                        <p className="text-[13px] text-text-primary truncate">{doc.document_name}</p>
+                        <p className="text-[11px] text-text-secondary">{fmtDate(doc.created_at)}</p>
                       </div>
-                      <span className="material-icons text-slate-500 text-[16px]">open_in_new</span>
+                      <span className="material-icons text-text-secondary text-[16px]">open_in_new</span>
                     </a>
                   ))}
                 </div>
@@ -414,12 +414,12 @@ export default function ClientPortalProjectDetailPage() {
                       href={photo.url}
                       target="_blank"
                       rel="noreferrer"
-                      className="rounded-lg overflow-hidden border"
-                      style={{ borderColor: 'rgba(255,255,255,0.08)' }}
+                      className="border-divider bg-surface rounded-lg overflow-hidden border"
+                     
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={photo.url} alt={photo.job_title || photo.phase} className="w-full h-28 object-cover" />
-                      <p className="text-[11px] text-slate-400 px-2 py-1 truncate capitalize">
+                      <p className="text-[11px] text-text-secondary px-2 py-1 truncate capitalize">
                         {photo.phase}{photo.job_title ? ` · ${photo.job_title}` : ''}
                       </p>
                     </a>
@@ -432,9 +432,9 @@ export default function ClientPortalProjectDetailPage() {
               <Section title="Project updates">
                 <div className="space-y-3">
                   {project.activity_updates.map((a, i) => (
-                    <div key={`${a.created_at}-${i}`} className="border-l-2 pl-3" style={{ borderColor: 'rgba(59,130,246,0.5)' }}>
-                      <p className="text-[13px] text-slate-200 leading-relaxed">{a.body}</p>
-                      <p className="text-[11px] text-slate-500 mt-1">
+                    <div key={`${a.created_at}-${i}`} className="border-primary border-l-2 pl-3">
+                      <p className="text-[13px] text-text-primary leading-relaxed">{a.body}</p>
+                      <p className="text-[11px] text-text-secondary mt-1">
                         {fmtDateTime(a.created_at)}
                         {(a.status_from || a.status_to) && (
                           <span> · {[a.status_from, a.status_to].filter(Boolean).join(' → ')}</span>
@@ -450,28 +450,27 @@ export default function ClientPortalProjectDetailPage() {
               <Section title="Ask a question">
                 <div className="space-y-3 mb-3 max-h-80 overflow-y-auto">
                   {project.messages.length === 0 ? (
-                    <p className="text-[13px] text-slate-500">No messages yet. Send a question to your project team.</p>
+                    <p className="text-[13px] text-text-secondary">No messages yet. Send a question to your project team.</p>
                   ) : (
                     project.messages.map(m => (
                       <div
                         key={m.id || `${m.created_at}-${m.body.slice(0, 12)}`}
                         className={`rounded-xl px-3 py-2 max-w-[90%] ${
-                          m.author === 'client' ? 'ml-auto bg-blue-600/30' : 'mr-auto'
+                          m.author === 'client' ? 'ml-auto bg-primary/15' : 'mr-auto bg-surface-elevated border border-divider'
                         }`}
-                        style={m.author === 'hr' ? { background: 'rgba(255,255,255,0.06)' } : undefined}
                       >
-                        <p className="text-[11px] font-semibold text-slate-400 mb-0.5">
+                        <p className="text-[11px] font-semibold text-text-secondary mb-0.5">
                           {m.author === 'client' ? 'You' : 'Team'} · {fmtDateTime(m.created_at)}
                         </p>
-                        <p className="text-[13px] text-white whitespace-pre-wrap">{m.body}</p>
+                        <p className="text-[13px] text-text-primary whitespace-pre-wrap">{m.body}</p>
                       </div>
                     ))
                   )}
                 </div>
                 <div className="flex gap-2">
                   <textarea
-                    className="flex-1 min-h-[44px] max-h-32 px-3 py-2 rounded-xl text-[13px] text-white resize-y"
-                    style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                    className="bg-surface border border-divider text-text-primary flex-1 min-h-[44px] max-h-32 px-3 py-2 rounded-xl text-[13px] text-text-primary resize-y"
+                   
                     placeholder="Type your message…"
                     value={msgText}
                     onChange={e => setMsgText(e.target.value)}
@@ -480,7 +479,7 @@ export default function ClientPortalProjectDetailPage() {
                     type="button"
                     onClick={() => void onSendMessage()}
                     disabled={sending || !msgText.trim()}
-                    className="h-11 px-4 rounded-xl bg-blue-600 text-white font-semibold text-[13px] disabled:opacity-50 shrink-0"
+                    className="h-11 px-4 rounded-xl bg-primary text-white font-semibold text-[13px] disabled:opacity-50 shrink-0"
                   >
                     {sending ? '…' : 'Send'}
                   </button>
@@ -497,11 +496,11 @@ export default function ClientPortalProjectDetailPage() {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section
-      className="rounded-xl overflow-hidden border"
-      style={{ borderColor: 'rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.02)' }}
+      className="border-divider bg-surface rounded-xl overflow-hidden border"
+     
     >
-      <div className="px-4 py-2.5 border-b" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
-        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">{title}</p>
+      <div className="border-divider px-4 py-2.5 border-b">
+        <p className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide">{title}</p>
       </div>
       <div className="px-4 py-3 space-y-1.5">{children}</div>
     </section>
@@ -511,8 +510,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between gap-3 text-[13px]">
-      <span className="text-slate-500">{label}</span>
-      <span className="text-slate-200 text-right">{value}</span>
+      <span className="text-text-secondary">{label}</span>
+      <span className="text-text-primary text-right">{value}</span>
     </div>
   )
 }
