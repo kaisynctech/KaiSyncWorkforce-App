@@ -9,6 +9,17 @@ import { timeGreeting } from '@/lib/utils'
 import { EMPLOYEE_SAFE_SELECT } from '@/lib/employee-columns'
 import type { Employee } from '@/types/database'
 import { PwaInstallButton } from '@/components/PwaInstallButton'
+import {
+  applyIfCurrent,
+  errorCommercial,
+  hiddenCommercial,
+  initialCommercial,
+  loadingCommercial,
+  overviewPresentation,
+  readyCommercial,
+  sumOutstanding,
+  type CommercialSnapshot,
+} from '@/lib/overview-loading'
 
 interface TimePunch { id: string; employee_id: string; type: string; date_time: string }
 interface EmpRow {
@@ -73,8 +84,8 @@ export default function OverviewPage() {
   const [markAbsentError, setMarkAbsentError] = useState<string | null>(null)
   const [markAbsentSuccess, setMarkAbsentSuccess] = useState<string | null>(null)
 
-  const [canViewCommercial, setCanViewCommercial] = useState(false)
-  const [commercialKpi, setCommercialKpi] = useState({ openQuotes: 0, outstanding: 0, overdue: 0 })
+  const [commercial, setCommercial] = useState<CommercialSnapshot>(initialCommercial)
+  const loadIdRef = useRef(0)
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -147,9 +158,13 @@ export default function OverviewPage() {
   }, [companyId])
 
   const load = useCallback(async () => {
+    const loadId = ++loadIdRef.current
+    const stillCurrent = () => loadIdRef.current === loadId
     setLoading(true)
+    setCommercial(initialCommercial())
     const supabase = createClient()
     const member = await resolveCurrentMember(supabase)
+    if (!stillCurrent()) return
     if (!member) { setError('not_linked'); setLoading(false); return }
 
     setCompanyId(member.companyId)
@@ -159,6 +174,7 @@ export default function OverviewPage() {
 
     const { data: empData } = await supabase
       .from('employees').select(`${EMPLOYEE_SAFE_SELECT}, companies(name)`).eq('id', member.employeeId).maybeSingle()
+    if (!stillCurrent()) return
     if (!empData) { setLoading(false); return }
     setEmployee(empData as unknown as Employee)
     setCompanyName((empData as unknown as { companies: { name: string } | null }).companies?.name ?? '')
@@ -168,6 +184,7 @@ export default function OverviewPage() {
       .from('time_punches').select('id, employee_id, type, date_time')
       .eq('company_id', member.companyId).gte('date_time', todayStart())
       .order('date_time', { ascending: true })
+    if (!stillCurrent()) return
 
     const punches = (todayPunches ?? []) as TimePunch[]
 
@@ -225,6 +242,7 @@ export default function OverviewPage() {
         .eq('company_id', member.companyId)
         .eq('date', todayDate),
     ])
+    if (!stillCurrent()) return
 
     const employees = (empsRes.data ?? []) as EmpRow[]
     const attendanceEmployees = employees.filter(requiresDailyClockIn)
@@ -272,14 +290,31 @@ export default function OverviewPage() {
       }
     }))
 
-    // Commercial KPIs — gated by permission
-    const cid = member.companyId
-    const { data: canViewQuotes } = await supabase.rpc('user_has_permission', {
-      p_company_id: cid,
-      p_permission_key: 'quotes.view',
-    })
+    // Core attendance and KPI figures are ready. Commercial summaries must not
+    // keep this loading state up, and must not publish numbers without quotes.view.
+    setLoading(false)
 
-    if (canViewQuotes) {
+    const cid = member.companyId
+    let permitted = false
+    try {
+      const { data: canViewQuotes, error: permissionError } = await supabase.rpc('user_has_permission', {
+        p_company_id: cid,
+        p_permission_key: 'quotes.view',
+      })
+      if (!stillCurrent()) return
+      permitted = !permissionError && Boolean(canViewQuotes)
+    } catch {
+      if (stillCurrent()) setCommercial(hiddenCommercial())
+      return
+    }
+
+    if (!permitted) {
+      setCommercial(hiddenCommercial())
+      return
+    }
+
+    setCommercial(loadingCommercial())
+    try {
       const [openQuotesRes, invDataRes, overdueRes] = await Promise.all([
         supabase.from('commercial_quotes')
           .select('*', { count: 'exact', head: true })
@@ -297,21 +332,30 @@ export default function OverviewPage() {
           .gt('balance_due', 0)
           .lt('due_date', new Date().toISOString().split('T')[0]),
       ])
-      const outstanding = (invDataRes.data ?? []).reduce(
-        (s, i) => s + Number(i.balance_due), 0,
-      )
-      setCommercialKpi({
-        openQuotes:  openQuotesRes.count  ?? 0,
-        outstanding: outstanding,
-        overdue:     overdueRes.count ?? 0,
-      })
-      setCanViewCommercial(true)
+      if (!stillCurrent()) return
+      const failed = Boolean(openQuotesRes.error || invDataRes.error || overdueRes.error)
+      setCommercial(current => applyIfCurrent(
+        loadId,
+        loadIdRef.current,
+        failed
+          ? errorCommercial()
+          : readyCommercial(
+              openQuotesRes.count ?? 0,
+              sumOutstanding(invDataRes.data ?? []),
+              overdueRes.count ?? 0,
+            ),
+        current,
+      ))
+    } catch {
+      if (!stillCurrent()) return
+      setCommercial(current => applyIfCurrent(loadId, loadIdRef.current, errorCommercial(), current))
     }
-
-    setLoading(false)
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    void load()
+    return () => { loadIdRef.current += 1 }
+  }, [load])
 
   async function handlePunch() {
     if (!companyId || !employeeId) return
@@ -379,8 +423,9 @@ export default function OverviewPage() {
 
   const greeting = timeGreeting()
   const notSignedInList = allEmployees.filter(e => notClockedInIds.has(e.id))
+  const presentation = overviewPresentation(loading, commercial.phase)
 
-  if (loading) return (
+  if (presentation.showCoreLoading) return (
     <div className="flex items-center justify-center h-64">
       <span className="text-[14px] text-text-secondary">Loading…</span>
     </div>
@@ -461,14 +506,17 @@ export default function OverviewPage() {
           <KpiTile icon="event_available" label="Pending Leave" value={kpi.pendingLeave} href="/dashboard/leave" iconBg="#2e1a05" iconColor="#fbbf24" />
           <KpiTile icon="warning" label="Open Incidents" value={kpi.openIncidents} href="/dashboard/incidents" iconBg="#3b0a0a" iconColor="#f87171" />
           <KpiTile icon="payments" label="Pending Pay" value={kpi.pendingPay} href="/dashboard/payroll" iconBg="#1a1f05" iconColor="#a3e635" />
-          {canViewCommercial && (
+          {presentation.showCommercialFigures && (
             <>
-              <KpiTile icon="request_quote" label="Open Quotes" value={commercialKpi.openQuotes} href="/dashboard/money/quotes" iconBg="#1e1b4b" iconColor="#a78bfa" />
-              <KpiTile icon="receipt_long" label="Outstanding" value={fmtShort(commercialKpi.outstanding)} href="/dashboard/money/invoices" iconBg="#1c1917" iconColor="#fbbf24" />
-              <KpiTile icon="warning_amber" label="Overdue" value={commercialKpi.overdue} href="/dashboard/money/invoices" iconBg="#3b0a0a" iconColor="#f87171" />
+              <KpiTile icon="request_quote" label="Open Quotes" value={commercial.openQuotes} href="/dashboard/money/quotes" iconBg="#1e1b4b" iconColor="#a78bfa" />
+              <KpiTile icon="receipt_long" label="Outstanding" value={fmtShort(commercial.outstanding)} href="/dashboard/money/invoices" iconBg="#1c1917" iconColor="#fbbf24" />
+              <KpiTile icon="warning_amber" label="Overdue" value={commercial.overdue} href="/dashboard/money/invoices" iconBg="#3b0a0a" iconColor="#f87171" />
             </>
           )}
         </div>
+        {presentation.showCommercialError && (
+          <p className="text-[12px] text-text-secondary">Commercial summary could not be loaded.</p>
+        )}
 
         {/* ── Today's Attendance ── */}
         <div className="rounded-2xl overflow-hidden border border-divider" style={{ backgroundColor: 'var(--color-surface-card)' }}>
@@ -607,7 +655,7 @@ export default function OverviewPage() {
               style={{ backgroundColor: '#374151' }}>
               + New Job
             </button>
-            {canViewCommercial && (
+            {presentation.showCommercialActions && (
               <>
                 <button onClick={() => router.push('/dashboard/money/quotes/new')}
                   className="h-10 px-5 rounded-xl text-[13px] font-semibold text-white"
