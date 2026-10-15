@@ -4,6 +4,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { dequeue, getQueue } from '@/lib/punch-queue'
+import { insertQueuedPunch } from '@/lib/punch-replay'
 import { dequeueIncident, getIncidentQueue } from '@/lib/incident-queue'
 import { submitQueuedIncident } from '@/lib/offline/incident-replay'
 import {
@@ -31,24 +32,9 @@ async function flushPunches(
 ): Promise<{ flushed: number; error: string | null }> {
   const queue = getQueue()
   let flushed = 0
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rpc = (fn: string, args: Record<string, unknown>) => (supabase.rpc as any)(fn, args)
   for (const punch of queue) {
-    const { error } = await rpc('employee_insert_punch', {
-      p_company_id: punch.company_id,
-      p_employee_id: punch.employee_id,
-      p_type: punch.type,
-      p_date_time: punch.date_time,
-      p_latitude: punch.latitude,
-      p_longitude: punch.longitude,
-      p_address: punch.address,
-      p_job_id: punch.job_id,
-      p_notes: punch.notes,
-      p_punched_by_manager_id: null,
-      p_idempotency_key: punch.idempotency_key,
-      p_session_token: sessionToken,
-    })
-    if (error) return { flushed, error: error.message }
+    const result = await insertQueuedPunch(supabase, punch, sessionToken)
+    if (!result.ok) return { flushed, error: result.message }
     dequeue(punch.idempotency_key)
     flushed += 1
   }
