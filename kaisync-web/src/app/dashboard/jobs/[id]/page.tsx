@@ -17,10 +17,11 @@ import type { Job, Employee, JobContractor, LaborEntry, JobInventoryItem, JobPho
 
 const STATUS_OPTIONS = ['open', 'scheduled', 'in_progress', 'completed', 'cancelled'] as const
 
-const JOB_TABS = ['details', 'team', 'contractors', 'money', 'labor', 'inventory', 'photos'] as const
+const JOB_TABS = ['details', 'client', 'team', 'contractors', 'money', 'labor', 'inventory', 'photos'] as const
 type JobTab = typeof JOB_TABS[number]
 const JOB_TAB_LABELS: Record<JobTab, string> = {
   details: 'Details',
+  client: 'Client',
   team: 'Team',
   contractors: 'Contractors',
   money: 'Money',
@@ -45,8 +46,34 @@ const PRIORITY_COLORS: Record<string, { bg: string; fg: string }> = {
 
 // ─── Local types ──────────────────────────────────────────────────────────────
 
+type JobClient = {
+  name: string
+  client_code: string | null
+  type: string | null
+  legal_name?: string | null
+  company_number?: string | null
+  account_number?: string | null
+  website?: string | null
+  contact_person: string | null
+  email: string | null
+  phone: string | null
+  mobile?: string | null
+  direct_line?: string | null
+  fax?: string | null
+  address: string | null
+  billing_address?: string | null
+}
+
+type JobClientContact = {
+  id: string
+  name: string
+  email: string | null
+  include_in_emails: boolean
+  sort_order: number
+}
+
 type JobDetail = Job & {
-  clients:  { name: string; client_code: string | null } | null
+  clients: JobClient | null
   sites:    { name: string; address: string | null } | null
   client_deals: { id: string; title: string; project_code: string | null } | null
 }
@@ -69,6 +96,21 @@ const fmtDate = (d: string) =>
   new Intl.DateTimeFormat('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(d))
 
 const inputCls = 'w-full h-10 px-3 bg-background border border-border rounded-lg text-[13px] text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30'
+
+function ClientFactList({ facts }: { facts: Array<[string, string | null | undefined]> }) {
+  const rows = facts.filter(([, value]) => Boolean(value?.trim()))
+  if (rows.length === 0) return null
+  return (
+    <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
+      {rows.map(([label, value]) => (
+        <div key={label} className="contents">
+          <span className="text-[12px] text-text-secondary">{label}</span>
+          <span className="text-[13px] text-text-primary whitespace-pre-wrap">{value}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -118,6 +160,7 @@ export default function JobDetailPage() {
   const [editDealId,      setEditDealId]      = useState<string | null>(null)
   const [editAddress,     setEditAddress]     = useState('')
   const [clients,         setClients]         = useState<ClientRow[]>([])
+  const [clientContacts, setClientContacts]  = useState<JobClientContact[]>([])
   const [deals,           setDeals]           = useState<DealRow[]>([])
 
   // ── Contractor modal ─────────────────────────────────────────────────────
@@ -178,6 +221,16 @@ export default function JobDetailPage() {
       }
       setJob(row)
       setStatusUpdate(row.status)
+      if (row.client_id) {
+        const { data: contactRows } = await supabase
+          .from('client_contacts')
+          .select('id, name, email, include_in_emails, sort_order')
+          .eq('client_id', row.client_id)
+          .order('sort_order')
+        setClientContacts((contactRows ?? []) as JobClientContact[])
+      } else {
+        setClientContacts([])
+      }
       const before = (row.photo_urls_before ?? []).map((url, i) => ({
         id: `before-${i}`,
         job_id: jobId,
@@ -304,6 +357,7 @@ export default function JobDetailPage() {
           : null,
       } : prev)
       setIsEditing(false)
+      void load()
     }
     setSaving(false)
   }
@@ -925,6 +979,59 @@ export default function JobDetailPage() {
       </div>
       )}
       </>)}
+
+      {tab === 'client' && (
+      <div className="bg-surface rounded-xl border border-divider overflow-hidden">
+        <div className="px-4 py-2.5 border-b border-divider bg-surface-elevated flex items-center justify-between gap-2">
+          <p className="text-[11px] font-semibold text-text-secondary tracking-wider uppercase">Client</p>
+          {job.client_id && (
+            <Link href={`/dashboard/clients/${job.client_id}`} className="text-[12px] text-primary hover:underline">
+              Open client
+            </Link>
+          )}
+        </div>
+        <div className="p-4">
+          {!job.client_id || !job.clients ? (
+            <p className="text-[13px] text-text-secondary">This job has no client yet.</p>
+          ) : (
+            <div className="space-y-4">
+              <div>
+                <p className="text-[16px] font-semibold text-text-primary">{job.clients.name}</p>
+                {job.clients.client_code && (
+                  <p className="text-[12px] text-text-secondary mt-0.5">{job.clients.client_code}</p>
+                )}
+              </div>
+              <ClientFactList facts={[
+                ['Type', job.clients.type],
+                ['Legal name', job.clients.legal_name],
+                ['Company number', job.clients.company_number],
+                ['Account number', job.clients.account_number],
+                ['Website', job.clients.website],
+                ['Contact person', job.clients.contact_person],
+                ['Email', job.clients.email],
+                ['Phone', job.clients.phone],
+                ['Mobile', job.clients.mobile],
+                ['Direct line', job.clients.direct_line],
+                ['Fax', job.clients.fax],
+                ['Address', job.clients.address],
+                ['Billing address', job.clients.billing_address],
+              ]} />
+              {clientContacts.length > 0 && (
+                <div className="space-y-2 border-t border-divider pt-3">
+                  <p className="text-[11px] font-semibold text-text-secondary tracking-wider uppercase">Extra people</p>
+                  {clientContacts.map(person => (
+                    <div key={person.id}>
+                      <p className="text-[13px] text-text-primary">{person.name}</p>
+                      {person.email && <p className="text-[12px] text-text-secondary">{person.email}</p>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+      )}
 
       {tab === 'team' && (
       <div className="bg-surface rounded-xl border border-divider overflow-hidden">
