@@ -84,6 +84,8 @@ export default function JobDetailPage() {
   const [myEmployeeId,   setMyEmployeeId]   = useState<string | null>(null)
   const [employees,      setEmployees]      = useState<Pick<Employee, 'id' | 'name' | 'surname' | 'hourly_rate'>[]>([])
   const [assignedIds,    setAssignedIds]    = useState<Set<string>>(new Set())
+  const [teamQuery, setTeamQuery] = useState('')
+  const [teamPickerOpen, setTeamPickerOpen] = useState(false)
   const [jobContractors, setJobContractors] = useState<JobContractor[]>([])
   const [laborEntries,   setLaborEntries]   = useState<LaborEntry[]>([])
   const [laborEmployeeId, setLaborEmployeeId] = useState('')
@@ -361,11 +363,20 @@ export default function JobDetailPage() {
 
   // ── Existing handlers ─────────────────────────────────────────────────────
 
-  function toggleEmployee(empId: string) {
+  function addTeamEmployee(empId: string) {
     setAssignedIds(prev => {
       const next = new Set(prev)
-      if (next.has(empId)) next.delete(empId)
-      else next.add(empId)
+      next.add(empId)
+      return next
+    })
+    setTeamQuery('')
+    setTeamPickerOpen(false)
+  }
+
+  function removeTeamEmployee(empId: string) {
+    setAssignedIds(prev => {
+      const next = new Set(prev)
+      next.delete(empId)
       return next
     })
   }
@@ -607,6 +618,14 @@ export default function JobDetailPage() {
   const inventoryTotal = inventory.reduce((s, i) => s + i.total_cost, 0)
   const totalCost      = (job.labor_cost ?? laborTotal) + (job.inventory_cost ?? inventoryTotal)
   const isOpen         = job.status !== 'completed' && job.status !== 'cancelled'
+
+  const teamQueryText = teamQuery.trim().toLowerCase()
+  const teamMatches = employees.filter(emp => {
+    if (assignedIds.has(emp.id)) return false
+    if (!teamQueryText) return true
+    return `${emp.name} ${emp.surname}`.toLowerCase().includes(teamQueryText)
+  })
+  const selectedTeam = employees.filter(emp => assignedIds.has(emp.id))
 
   const filteredContractors = allContractors.filter(c =>
     c.name.toLowerCase().includes(contractorSearch.toLowerCase())
@@ -913,28 +932,65 @@ export default function JobDetailPage() {
           <p className="text-[11px] font-semibold text-text-secondary tracking-wider uppercase">Team</p>
         </div>
         <div className="p-4 space-y-3">
-          <p className="text-[12px] text-text-secondary">Assign employees for this job.</p>
+          <p className="text-[12px] text-text-secondary">Search for an employee, then select them. Chosen people are listed below.</p>
 
-          {/* Employee checklist */}
-          <div className="max-h-[160px] overflow-y-auto space-y-0.5 rounded-lg border border-divider p-2">
-            {employees.length === 0 && (
-              <p className="text-text-disabled text-[12px] px-1 py-1">No employees in company.</p>
+          {canEdit && (
+            <div className="space-y-1">
+              <input
+                type="search"
+                value={teamQuery}
+                onChange={e => { setTeamQuery(e.target.value); setTeamPickerOpen(true) }}
+                onFocus={() => setTeamPickerOpen(true)}
+                onBlur={() => window.setTimeout(() => setTeamPickerOpen(false), 150)}
+                placeholder="Search employee…"
+                className={inputCls}
+                aria-label="Search employee"
+              />
+              {teamPickerOpen && (
+                <div className="max-h-[200px] overflow-y-auto rounded-lg border border-divider bg-surface">
+                  {teamMatches.length === 0 ? (
+                    <p className="text-[12px] text-text-disabled px-3 py-2">No employees found</p>
+                  ) : (
+                    teamMatches.map(emp => (
+                      <button
+                        key={emp.id}
+                        type="button"
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => addTeamEmployee(emp.id)}
+                        className="w-full text-left px-3 py-2 text-[13px] text-text-primary hover:bg-background"
+                      >
+                        {emp.name} {emp.surname}
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="space-y-1">
+            <p className="text-[11px] font-semibold text-text-secondary tracking-wider uppercase">Selected</p>
+            {selectedTeam.length === 0 ? (
+              <p className="text-text-secondary text-[12px]">No employees selected.</p>
+            ) : (
+              selectedTeam.map(emp => (
+                <div key={emp.id} className="flex items-center justify-between gap-2 py-1.5 border-b border-divider last:border-0">
+                  <Link href={`/dashboard/employees/${emp.id}`} className="text-[13px] text-text-primary hover:text-primary hover:underline">
+                    {emp.name} {emp.surname}
+                  </Link>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      onClick={() => removeTeamEmployee(emp.id)}
+                      className="text-text-secondary hover:text-error w-9 h-8 text-[13px]"
+                      aria-label={`Remove ${emp.name} ${emp.surname}`}
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              ))
             )}
-            {employees.map(emp => (
-              <div key={emp.id} className="flex items-center gap-2 px-1 py-1.5 rounded hover:bg-background transition-colors">
-                <input
-                  type="checkbox"
-                  checked={assignedIds.has(emp.id)}
-                  onChange={() => toggleEmployee(emp.id)}
-                  disabled={!canEdit}
-                  aria-label={`Assign ${emp.name} ${emp.surname}`}
-                  className="rounded border-border accent-primary"
-                />
-                <Link href={`/dashboard/employees/${emp.id}`} className="text-[13px] text-text-primary hover:text-primary hover:underline">
-                  {emp.name} {emp.surname}
-                </Link>
-              </div>
-            ))}
           </div>
 
           {canEdit && (
