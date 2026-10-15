@@ -800,7 +800,7 @@ export default function EmployeeOverviewPage() {
       if (located.ok) {
         punchLat = located.latitude
         punchLng = located.longitude
-      } else if (!isClockedIn) {
+      } else {
         const message = deviceLocationFailureMessage(located.reason)
         setLocationSearching(false)
         setLocationProblem(message)
@@ -810,7 +810,7 @@ export default function EmployeeOverviewPage() {
         return
       }
     }
-    if (!isClockedIn && (punchLat == null || punchLng == null)) {
+    if (punchLat == null || punchLng == null) {
       const message = deviceLocationFailureMessage('timeout')
       setLocationProblem(message)
       setClockError(message)
@@ -1192,7 +1192,7 @@ export default function EmployeeOverviewPage() {
                   <span className="line-clamp-2">
                     {liveLat != null
                       ? (geoAddress && !looksLikeCoordinates(geoAddress) ? geoAddress : 'Location found')
-                      : 'Location is required to clock in'}
+                      : 'Location is saved on clock-in and clock-out'}
                   </span>
                 </p>
               </div>
@@ -1572,10 +1572,10 @@ export default function EmployeeOverviewPage() {
               ) : (
                 <p className="text-[12px] text-text-disabled flex items-center gap-1">
                   <span className="material-icons text-[14px]">location_searching</span>
-                  Location is required to clock in
+                  Location is saved on clock-in and clock-out
                 </p>
               )}
-              {!isClockedIn && locationProblem && !locationSearching && (
+              {locationProblem && !locationSearching && (
                 <button
                   type="button"
                   onClick={allowLocation}
@@ -1651,7 +1651,7 @@ export default function EmployeeOverviewPage() {
                 className="flex-1 h-11 rounded-xl border border-divider text-[14px] font-semibold text-text-secondary hover:bg-surface-elevated transition-colors">
                 Cancel
               </button>
-              <button onClick={submitClock} disabled={clockLoading || locationSearching || (!isClockedIn && !geoLat)}
+              <button onClick={submitClock} disabled={clockLoading || locationSearching || !geoLat}
                 className={`flex-1 h-11 rounded-xl text-white text-[14px] font-bold transition-colors disabled:opacity-60 ${
                   isClockedIn ? 'bg-error hover:bg-error/90' : 'bg-primary hover:bg-primary-dark'
                 }`}>

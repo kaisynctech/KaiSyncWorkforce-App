@@ -255,14 +255,22 @@ export type DeviceLocationResult =
   | { ok: true; latitude: number; longitude: number }
   | { ok: false; reason: DeviceLocationFailure }
 
-export function deviceLocationFailureMessage(reason: DeviceLocationFailure): string {
-  if (reason === 'denied') {
-    return 'KaiSync is not allowed to use location. On the phone, open Settings, find the KaiSync app, set Location to Allow, then tap Try again.'
+/** The home-screen icon is a website. Phones list the browser, not KaiSync, under Location. */
+function browserLocationSteps(): string {
+  if (typeof navigator === 'undefined') {
+    return 'Allow location for the browser that installed KaiSync, then reopen KaiSync and tap Try again.'
   }
+  if (/iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+    return 'KaiSync does not appear in the phone Location list. Open Settings, Privacy & Security, Location Services, Safari Websites, and choose While Using the App. Then reopen KaiSync and tap Try again.'
+  }
+  return 'KaiSync does not appear in the phone Location list. Open Settings, Apps, Chrome, Permissions, Location, and choose Allow. If Samsung Internet installed KaiSync, allow Location for Samsung Internet instead. Then reopen KaiSync and tap Try again.'
+}
+
+export function deviceLocationFailureMessage(reason: DeviceLocationFailure): string {
   if (reason === 'unsupported') {
     return 'This device cannot share location with KaiSync.'
   }
-  return 'KaiSync did not get a position yet. Stay on this screen and tap Try again. If it keeps failing, set the KaiSync app location permission to Allow.'
+  return browserLocationSteps()
 }
 
 function acceptPosition(position: GeolocationPosition): DeviceLocationResult | null {
