@@ -33,14 +33,13 @@ import {
   reverseGeocodeRequired,
   looksLikeCoordinates,
   requestDeviceCoordinatesFromGesture,
-  deviceLocationFailureMessage,
   type DeviceLocationResult,
 } from '@/lib/geo-location'
 import { PwaInstallButton } from '@/components/PwaInstallButton'
 import { loadClockPack, saveClockPack } from '@/lib/offline/clock-pack'
 import { networkLooksDown } from '@/lib/offline/meta'
 import { localISODate } from '@/lib/utils'
-import { toLocalDateStr } from '@/lib/punch-session'
+import { locationDisplay, toLocalDateStr } from '@/lib/punch-session'
 
 // ── Interfaces ─────────────────────────────────────────────────────────────
 interface LastPunch {
@@ -520,14 +519,7 @@ export default function EmployeeOverviewPage() {
     if (result.ok) return
     if (coordsRef.current) {
       refreshBranchStatus(coordsRef.current.latitude, coordsRef.current.longitude)
-      return
     }
-    if (!employeeMustUseBranchGeofence(dispatchSettingsRef.current, enforceGeofenceRef.current)) return
-    setBranchStatus({
-      enforcementActive: true,
-      isWithinRadius: false,
-      displayMessage: deviceLocationFailureMessage(result.reason),
-    })
   }
 
   /** Start from a tap. A second call shares the in-flight read so one failure cannot wipe a fix. */
@@ -564,9 +556,7 @@ export default function EmployeeOverviewPage() {
         setLocationProblem(null)
         return
       }
-      const message = deviceLocationFailureMessage(result.reason)
-      setLocationProblem(message)
-      setClockError(message)
+      setLocationProblem('No signal')
     })
   }
 
@@ -789,9 +779,7 @@ export default function EmployeeOverviewPage() {
       void read.then(async result => {
         setLocationSearching(false)
         if (!result.ok) {
-          const message = deviceLocationFailureMessage(result.reason)
-          setLocationProblem(message)
-          setClockError(message)
+          setLocationProblem('No signal')
           return
         }
         setLocationProblem(null)
@@ -873,24 +861,12 @@ export default function EmployeeOverviewPage() {
         punchLat = located.latitude
         punchLng = located.longitude
       } else {
-        const message = deviceLocationFailureMessage(located.reason)
         setLocationSearching(false)
-        setLocationProblem(message)
-        setClockError(message)
-        setClockLoading(false)
-        clockInFlightRef.current = false
-        return
+        punchLat = null
+        punchLng = null
       }
     }
-    if (punchLat == null || punchLng == null) {
-      const message = deviceLocationFailureMessage('timeout')
-      setLocationProblem(message)
-      setClockError(message)
-      setClockLoading(false)
-      clockInFlightRef.current = false
-      return
-    }
-    if (!isClockedIn) {
+    if (!isClockedIn && punchLat != null && punchLng != null) {
       const enforced = employeeMustUseBranchGeofence(dispatchSettingsRef.current, enforceGeofenceRef.current)
       const branchResult = validateBranchClockIn({
         enforce: enforced,
@@ -1275,9 +1251,11 @@ export default function EmployeeOverviewPage() {
                 <p className="text-[12px] text-text-secondary mt-1 flex items-center gap-1">
                   <span className="material-icons text-[14px]">{liveLat != null ? 'location_on' : 'location_searching'}</span>
                   <span className="line-clamp-2">
-                    {liveLat != null
-                      ? (geoAddress && !looksLikeCoordinates(geoAddress) ? geoAddress : 'Location found')
-                      : 'Location is saved on clock-in and clock-out'}
+                    {locationSearching
+                      ? 'Finding location…'
+                      : (geoAddress && !looksLikeCoordinates(geoAddress)
+                        ? geoAddress
+                        : locationDisplay(null, liveLat, liveLng))}
                   </span>
                 </p>
               </div>
@@ -1647,17 +1625,12 @@ export default function EmployeeOverviewPage() {
                   <span className="material-icons text-[14px]">location_searching</span>
                   Finding location…
                 </p>
-              ) : geoLat ? (
+              ) : (
                 <p className="text-[12px] text-text-secondary flex items-center gap-1">
-                  <span className="material-icons text-[14px] text-success">location_on</span>
+                  <span className={`material-icons text-[14px] ${geoLat != null && geoAddress && !looksLikeCoordinates(geoAddress) ? 'text-success' : 'text-text-secondary'}`}>location_on</span>
                   {geoAddress && !looksLikeCoordinates(geoAddress)
                     ? geoAddress
-                    : 'Location found'}
-                </p>
-              ) : (
-                <p className="text-[12px] text-text-disabled flex items-center gap-1">
-                  <span className="material-icons text-[14px]">location_searching</span>
-                  Location is saved on clock-in and clock-out
+                    : locationDisplay(null, geoLat, geoLng)}
                 </p>
               )}
               {locationProblem && !locationSearching && (
@@ -1736,7 +1709,7 @@ export default function EmployeeOverviewPage() {
                 className="flex-1 h-11 rounded-xl border border-divider text-[14px] font-semibold text-text-secondary hover:bg-surface-elevated transition-colors">
                 Cancel
               </button>
-              <button onClick={submitClock} disabled={clockLoading || locationSearching || !geoLat}
+              <button onClick={submitClock} disabled={clockLoading}
                 className={`flex-1 h-11 rounded-xl text-white text-[14px] font-bold transition-colors disabled:opacity-60 ${
                   isClockedIn ? 'bg-error hover:bg-error/90' : 'bg-primary hover:bg-primary-dark'
                 }`}>

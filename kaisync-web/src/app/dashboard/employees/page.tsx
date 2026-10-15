@@ -645,7 +645,7 @@ export default function EmployeesPage() {
           </div>
 
           <p className="text-[12px] text-text-secondary mb-3">
-            Location is saved on every clock-in and clock-out. Geofence on also requires the person to be inside an assigned branch. Geofence off still saves the place.
+            Every clock-in and clock-out shows on attendance. A missing place shows as No signal, or as coordinates and No signal. Geofence on still requires a map point inside an assigned branch.
           </p>
           {/* Branch filter pills */}
           {branches.length > 0 && (
