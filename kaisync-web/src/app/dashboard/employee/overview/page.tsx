@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { useDashboardBootstrap } from '@/components/DashboardBootstrapContext'
 import { type QueuedPunch, getQueue, enqueue, dequeue, shouldQueuePunchFailure } from '@/lib/punch-queue'
+import { insertQueuedPunch } from '@/lib/punch-replay'
 import {
   loadCompanyWorkspace,
   loadEmployeeWorkspace,
@@ -744,26 +745,9 @@ export default function EmployeeOverviewPage() {
     const queue = getQueue()
     if (queue.length === 0) return
     const supabase = createClient()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rpc = (fn: string, args: Record<string, unknown>) => (supabase.rpc as any)(fn, args)
     for (const punch of queue) {
-      const { error } = await rpc('employee_insert_punch', {
-        p_company_id:            punch.company_id,
-        p_employee_id:           punch.employee_id,
-        p_type:                  punch.type,
-        p_date_time:             punch.date_time,
-        p_latitude:              punch.latitude,
-        p_longitude:             punch.longitude,
-        p_address:               punch.address,
-        p_job_id:                punch.job_id,
-        p_notes:                 punch.notes,
-        p_punched_by_manager_id: null,
-        p_idempotency_key:       punch.idempotency_key,
-        p_session_token:         tokRef.current,
-      })
-      if (!error) {
-        dequeue(punch.idempotency_key)
-      }
+      const result = await insertQueuedPunch(supabase, punch, tokRef.current)
+      if (result.ok) dequeue(punch.idempotency_key)
     }
     setPendingPunches(getQueue())
   }
