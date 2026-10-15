@@ -16,6 +16,7 @@ function visitPlace(visit: ClientJobVisit): string | null {
 
 const JOB_TABS = [
   { id: 'details', label: 'Details' },
+  { id: 'team', label: 'Team' },
   { id: 'progress', label: 'Progress' },
   { id: 'photos', label: 'Photos' },
   { id: 'documents', label: 'Documents' },
@@ -172,6 +173,30 @@ export default function ClientPortalJobPage() {
               <InfoRow label="Ends" value={fmtDateTime(job.scheduled_end)} />
             </Section>
             </>)}
+
+            {tab === 'team' && (
+            <Section title="Team">
+              {job.team.length === 0 ? (
+                <p className="text-[13px] text-text-secondary">No one is assigned to this job yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {job.team.map(person => (
+                    <div key={person.id} className="flex items-start justify-between gap-3 bg-surface-elevated rounded-lg px-3 py-2">
+                      <p className="text-[14px] font-semibold text-text-primary">{person.name}</p>
+                      <div className="text-right">
+                        <p className={`text-[12px] font-semibold ${person.on_site ? 'text-success' : 'text-text-secondary'}`}>
+                          {person.on_site ? 'On site' : 'Not on site'}
+                        </p>
+                        {person.on_site && person.since && (
+                          <p className="text-[11px] text-text-secondary mt-0.5">Since {fmtDateTime(person.since)}</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Section>
+            )}
 
             {tab === 'progress' && (<>
             <Section title={job.checklist.length > 0 ? `Checklist · ${checked} of ${job.checklist.length}` : 'Checklist'}>
