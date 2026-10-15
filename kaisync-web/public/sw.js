@@ -1,6 +1,6 @@
 /* KaiSync PWA — offline shell for employee routes; do not slow HR/dashboard navigations */
-const SHELL = 'kaisync-shell-v4'
-const PAGES = 'kaisync-employee-pages-v4'
+const SHELL = 'kaisync-shell-v5'
+const PAGES = 'kaisync-employee-pages-v5'
 
 const PRECACHE = [
   '/manifest.webmanifest',

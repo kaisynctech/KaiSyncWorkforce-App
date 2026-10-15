@@ -164,7 +164,7 @@ export function validateBranchClockIn(params: {
   if (latitude == null || longitude == null) {
     return {
       allowed: false,
-      message: 'KaiSync did not get a position yet. Allow location for the KaiSync app, then try again.',
+      message: 'KaiSync did not get a position yet. Allow location for the browser that installed KaiSync, then try again.',
       branchName: assigned.map(b => b.name).filter(Boolean).join(', ') || undefined,
     }
   }
