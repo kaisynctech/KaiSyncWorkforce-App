@@ -41,7 +41,6 @@ const TABS = [
   'Information', 'Compliance', 'Payments', 'Team',
   'Jobs', 'Projects', 'Incidents', 'Activity', 'Quotes', 'Invoices',
 ]
-const OPERATIONAL_TABS = new Set(['Jobs', 'Projects', 'Incidents'])
 
 const ACCOUNT_TYPES = [
   { value: 'cheque', label: 'Cheque / Current' },
@@ -910,19 +909,17 @@ function ContractorDetailInner() {
       {error && <p className="px-4 py-2 text-error text-[13px] shrink-0">{error}</p>}
 
       {/* Tab bar */}
-      <div className="flex gap-1.5 px-4 py-2 border-b border-divider overflow-x-auto shrink-0">
+      <div className="flex flex-wrap gap-2 px-4 py-2 overflow-x-auto shrink-0">
         {TABS.map(t => {
           const active = tab === t
-          const isOp   = OPERATIONAL_TABS.has(t)
           return (
             <button
               key={t}
+              type="button"
               onClick={() => setTab(t)}
-              className="rounded-[14px] h-[34px] px-3 text-[12px] font-medium border-0 shrink-0 transition-colors"
-              style={{
-                backgroundColor: active ? (isOp ? '#3B82F6' : '#1E3A5F') : '#E5E7EB',
-                color: active ? '#FFFFFF' : '#6B7280',
-              }}
+              className={`h-[38px] px-3 rounded-[10px] text-[12px] font-medium transition-colors whitespace-nowrap shrink-0 border ${
+                active ? 'bg-primary text-white border-primary' : 'bg-surface text-text-secondary border-border hover:text-text-primary'
+              }`}
             >
               {t}
             </button>
@@ -1148,46 +1145,41 @@ function ContractorDetailInner() {
               </div>
 
               {requiredDocsCount === 0 && (
-                <div className="rounded-lg border px-3 py-[10px] flex items-center gap-2"
-                  style={{ borderColor: '#334155', backgroundColor: '#0F172A' }}>
-                  <span className="material-icons text-[16px]" style={{ color: '#64748B' }}>info</span>
-                  <p className="text-[12px] flex-1" style={{ color: '#64748B' }}>
+                <div className="rounded-lg border border-divider bg-surface-elevated px-3 py-[10px] flex items-center gap-2">
+                  <span className="material-icons text-[16px] text-text-secondary">info</span>
+                  <p className="text-[12px] flex-1 text-text-secondary">
                     No required documents configured. Assign a compliance pack first.
                   </p>
                 </div>
               )}
               {missingRequired > 0 && (
-                <div className="rounded-lg border px-3 py-[10px] flex items-center gap-2"
-                  style={{ borderColor: '#334155', backgroundColor: '#0F172A' }}>
-                  <span className="material-icons text-[16px]" style={{ color: '#94A3B8' }}>description</span>
-                  <p className="text-[12px] flex-1" style={{ color: '#94A3B8' }}>
+                <div className="rounded-lg border border-divider bg-surface-elevated px-3 py-[10px] flex items-center gap-2">
+                  <span className="material-icons text-[16px] text-text-secondary">description</span>
+                  <p className="text-[12px] flex-1 text-text-secondary">
                     {missingRequired} required type{missingRequired > 1 ? 's' : ''} still missing an upload.
                   </p>
                 </div>
               )}
               {expiredRequired > 0 && (
-                <div className="rounded-lg border px-3 py-[10px] flex items-center gap-2"
-                  style={{ borderColor: '#7F1D1D', backgroundColor: '#2D0A0A' }}>
-                  <span className="material-icons text-[16px]" style={{ color: '#FCA5A5' }}>warning</span>
-                  <p className="text-[12px] flex-1" style={{ color: '#FCA5A5' }}>
+                <div className="rounded-lg border border-error/30 bg-error-dark px-3 py-[10px] flex items-center gap-2">
+                  <span className="material-icons text-[16px] text-error">warning</span>
+                  <p className="text-[12px] flex-1 text-error">
                     {expiredRequired} required document{expiredRequired > 1 ? 's' : ''} have expired.
                   </p>
                 </div>
               )}
               {pendingRequired > 0 && (
-                <div className="rounded-lg border px-3 py-[10px] flex items-center gap-2"
-                  style={{ borderColor: '#78350F', backgroundColor: '#292012' }}>
-                  <span className="material-icons text-[16px]" style={{ color: '#FCD34D' }}>info</span>
-                  <p className="text-[12px] flex-1" style={{ color: '#FCD34D' }}>
+                <div className="rounded-lg border border-warning/30 bg-warning-dark px-3 py-[10px] flex items-center gap-2">
+                  <span className="material-icons text-[16px] text-[#92400E]">info</span>
+                  <p className="text-[12px] flex-1 text-[#92400E]">
                     {pendingRequired} required document{pendingRequired > 1 ? 's' : ''} pending review.
                   </p>
                 </div>
               )}
               {rejectedRequired > 0 && (
-                <div className="rounded-lg border px-3 py-[10px] flex items-center gap-2"
-                  style={{ borderColor: '#7F1D1D', backgroundColor: '#2D0F0F' }}>
-                  <span className="material-icons text-[16px]" style={{ color: '#F87171' }}>cancel</span>
-                  <p className="text-[12px] flex-1" style={{ color: '#F87171' }}>
+                <div className="rounded-lg border border-error/30 bg-error-dark px-3 py-[10px] flex items-center gap-2">
+                  <span className="material-icons text-[16px] text-error">cancel</span>
+                  <p className="text-[12px] flex-1 text-error">
                     {rejectedRequired} required document{rejectedRequired > 1 ? 's' : ''} rejected.
                   </p>
                 </div>
