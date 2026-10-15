@@ -208,8 +208,8 @@ export default function EmployeeOverviewPage() {
   const [clockLoading,   setClockLoading]   = useState(false)
   const clockInFlightRef = useRef(false)
   const [clockError,     setClockError]     = useState<string | null>(null)
-  const [locationAsk, setLocationAsk] = useState(false)
   const [locationSearching, setLocationSearching] = useState(false)
+  const [locationProblem, setLocationProblem] = useState<string | null>(null)
 
   // Branch geofence
   const [branchStatus, setBranchStatus] = useState<BranchGeofenceStatus | null>(null)
@@ -438,7 +438,11 @@ export default function EmployeeOverviewPage() {
     setLiveLng(longitude)
     setGeoLat(latitude)
     setGeoLng(longitude)
+    setLocationProblem(null)
     refreshBranchStatus(latitude, longitude)
+    void reverseGeocodeRequired(latitude, longitude, { maxAttempts: 1 }).then(name => {
+      if (name) setGeoAddress(name)
+    })
   }
 
   function noteLocationFailure(result: DeviceLocationResult) {
@@ -481,22 +485,17 @@ export default function EmployeeOverviewPage() {
   function allowLocation() {
     const read = beginLocationRead()
     setLocationSearching(true)
-    setLocationAsk(true)
+    setLocationProblem(null)
     setClockError(null)
     void read.then(async result => {
       setLocationSearching(false)
       if (result.ok) {
-        setLocationAsk(false)
-        try {
-          const name = await reverseGeocodeRequired(result.latitude, result.longitude, { maxAttempts: 1 })
-          setGeoAddress(name)
-        } catch {
-          // address stays null; punch saves GPS and backfills place name after insert
-        }
+        setLocationProblem(null)
         return
       }
-      setLocationAsk(true)
-      setClockError(deviceLocationFailureMessage(result.reason))
+      const message = deviceLocationFailureMessage(result.reason)
+      setLocationProblem(message)
+      setClockError(message)
     })
   }
 
@@ -683,6 +682,7 @@ export default function EmployeeOverviewPage() {
     }
 
     setClockError(null)
+    setLocationProblem(null)
     setClockNote('')
     setClockJobId(null)
     if (!coordsRef.current) {
@@ -691,24 +691,21 @@ export default function EmployeeOverviewPage() {
       setGeoAddress(null)
     }
     setGeofenceData(null)
-    const mustAllow = !isClockedIn
-      && employeeMustUseBranchGeofence(dispatchSettingsRef.current, enforceGeofenceRef.current)
-      && !coordsRef.current
-    setLocationAsk(mustAllow)
-    setLocationSearching(false)
-    if (mustAllow) setBranchStatus(null)
     setShowClockModal(true)
 
     if (!coordsRef.current) {
+      setLocationSearching(true)
+      setBranchStatus(null)
       const read = beginLocationRead()
       void read.then(async result => {
-        if (!result.ok) return
-        try {
-          const name = await reverseGeocodeRequired(result.latitude, result.longitude, { maxAttempts: 1 })
-          setGeoAddress(name)
-        } catch {
-          // address stays null; punch saves GPS and backfills place name after insert
+        setLocationSearching(false)
+        if (!result.ok) {
+          const message = deviceLocationFailureMessage(result.reason)
+          setLocationProblem(message)
+          setClockError(message)
+          return
         }
+        setLocationProblem(null)
       })
     }
   }
@@ -803,12 +800,23 @@ export default function EmployeeOverviewPage() {
       if (located.ok) {
         punchLat = located.latitude
         punchLng = located.longitude
-      } else if (!isClockedIn && employeeMustUseBranchGeofence(dispatchSettingsRef.current, enforceGeofenceRef.current)) {
-        setClockError(deviceLocationFailureMessage(located.reason))
+      } else if (!isClockedIn) {
+        const message = deviceLocationFailureMessage(located.reason)
+        setLocationSearching(false)
+        setLocationProblem(message)
+        setClockError(message)
         setClockLoading(false)
         clockInFlightRef.current = false
         return
       }
+    }
+    if (!isClockedIn && (punchLat == null || punchLng == null)) {
+      const message = deviceLocationFailureMessage('timeout')
+      setLocationProblem(message)
+      setClockError(message)
+      setClockLoading(false)
+      clockInFlightRef.current = false
+      return
     }
     if (!isClockedIn) {
       const enforced = employeeMustUseBranchGeofence(dispatchSettingsRef.current, enforceGeofenceRef.current)
@@ -1179,6 +1187,14 @@ export default function EmployeeOverviewPage() {
                     Last: {fmtTime(lastPunch.date_time)}
                   </p>
                 )}
+                <p className="text-[12px] text-text-secondary mt-1 flex items-center gap-1">
+                  <span className="material-icons text-[14px]">{liveLat != null ? 'location_on' : 'location_searching'}</span>
+                  <span className="line-clamp-2">
+                    {liveLat != null
+                      ? (geoAddress && !looksLikeCoordinates(geoAddress) ? geoAddress : 'Location found')
+                      : 'Location is required to clock in'}
+                  </span>
+                </p>
               </div>
               <button
                 onClick={openClockModal}
@@ -1539,41 +1555,35 @@ export default function EmployeeOverviewPage() {
                 value={clockNote} onChange={e => setClockNote(e.target.value)} />
             </div>
 
-            {/* Location permission — Yes starts the phone prompt and keeps listening after Allow */}
-            {!isClockedIn && locationAsk && (
-              <div className="rounded-xl px-4 py-3 bg-primary/10 border border-primary/30 space-y-3">
-                <p className="text-[14px] font-semibold text-text-primary">Allow location for KaiSync</p>
-                <p className="text-[12px] text-text-secondary">
-                  {locationSearching
-                    ? 'Finding your location… If the phone asks, tap Allow.'
-                    : 'Tap Yes. If the phone then asks for location, tap Allow there too.'}
-                </p>
-                <button
-                  type="button"
-                  onClick={allowLocation}
-                  disabled={locationSearching}
-                  className="w-full h-11 rounded-xl bg-primary text-white text-[14px] font-bold disabled:opacity-60"
-                >
-                  {locationSearching ? 'Finding location…' : 'Yes'}
-                </button>
-              </div>
-            )}
-
             {/* Location feedback */}
-            <div className="mb-3">
-              {geoLat ? (
+            <div className="mb-3 space-y-2">
+              {locationSearching ? (
+                <p className="text-[12px] text-text-secondary flex items-center gap-1">
+                  <span className="material-icons text-[14px]">location_searching</span>
+                  Finding location…
+                </p>
+              ) : geoLat ? (
                 <p className="text-[12px] text-text-secondary flex items-center gap-1">
                   <span className="material-icons text-[14px] text-success">location_on</span>
                   {geoAddress && !looksLikeCoordinates(geoAddress)
                     ? geoAddress
                     : 'Location found'}
                 </p>
-              ) : !locationAsk ? (
+              ) : (
                 <p className="text-[12px] text-text-disabled flex items-center gap-1">
                   <span className="material-icons text-[14px]">location_searching</span>
-                  Getting location…
+                  Location is required to clock in
                 </p>
-              ) : null}
+              )}
+              {!isClockedIn && locationProblem && !locationSearching && (
+                <button
+                  type="button"
+                  onClick={allowLocation}
+                  className="w-full h-11 rounded-xl bg-primary text-white text-[14px] font-bold"
+                >
+                  Try again
+                </button>
+              )}
             </div>
 
             {/* Duplicate shift warning */}
@@ -1602,7 +1612,7 @@ export default function EmployeeOverviewPage() {
             ) : null}
 
             {/* Branch geofence status in modal */}
-            {!isClockedIn && !locationAsk && !locationSearching && branchStatus?.enforcementActive && (
+            {!isClockedIn && !locationSearching && !locationProblem && geoLat != null && branchStatus?.enforcementActive && (
               <div className={`rounded-lg px-3 py-2.5 mb-3 ${
                 branchStatus.isWithinRadius
                   ? 'bg-success/10 border border-success/30'
@@ -1641,7 +1651,7 @@ export default function EmployeeOverviewPage() {
                 className="flex-1 h-11 rounded-xl border border-divider text-[14px] font-semibold text-text-secondary hover:bg-surface-elevated transition-colors">
                 Cancel
               </button>
-              <button onClick={submitClock} disabled={clockLoading || (!isClockedIn && locationAsk)}
+              <button onClick={submitClock} disabled={clockLoading || locationSearching || (!isClockedIn && !geoLat)}
                 className={`flex-1 h-11 rounded-xl text-white text-[14px] font-bold transition-colors disabled:opacity-60 ${
                   isClockedIn ? 'bg-error hover:bg-error/90' : 'bg-primary hover:bg-primary-dark'
                 }`}>
