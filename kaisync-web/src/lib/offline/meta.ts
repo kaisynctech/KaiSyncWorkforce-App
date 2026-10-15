@@ -90,6 +90,8 @@ export function networkLooksDown(errorMessage?: string | null): boolean {
     msg.includes('network')
     || msg.includes('fetch')
     || msg.includes('failed to fetch')
+    || msg.includes('load failed')
+    || msg.includes('internet connection')
     || msg.includes('timeout')
     || msg.includes('offline')
   )
