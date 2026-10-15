@@ -27,12 +27,16 @@ import {
 import { logProjectEvent } from '@/lib/project-events'
 import type { Project, Client, Employee, Job, ProjectDocument, ProjectQuotationLine } from '@/types/database'
 
-const PROJECT_TABS = ['details', 'docs', 'quotation', 'pipeline', 'milestones', 'financials', 'payments', 'activity']
+const PROJECT_TABS = ['details', 'jobs', 'docs', 'quotation', 'pipeline', 'milestones', 'financials', 'payments', 'activity']
 const TAB_LABELS: Record<string, string> = {
-  details: 'Details', docs: 'Docs', quotation: 'Quotation', pipeline: 'Pipeline',
+  details: 'Details', jobs: 'Jobs', docs: 'Docs', quotation: 'Quotation', pipeline: 'Pipeline',
   milestones: 'Milestones', financials: 'Financials',
   payments: 'Payments', activity: 'Activity',
 }
+const TAB_BTN = (active: boolean) =>
+  `h-[38px] px-3 rounded-[10px] text-[12px] font-medium transition-colors whitespace-nowrap shrink-0 border ${
+    active ? 'bg-primary text-white border-primary' : 'bg-surface text-text-secondary border-border hover:text-text-primary'
+  }`
 const STATUS_OPTIONS = ['draft', 'sent', 'negotiation', 'in_progress', 'won', 'lost']
 const DOC_TYPE_OPTIONS = [
   { value: 'contract', label: 'Contract' },
@@ -469,11 +473,9 @@ export default function ProjectDetailPage() {
 
       {/* Tab bar */}
       {!isNew && (
-        <div className="flex gap-1.5 px-4 py-2 border-b border-divider overflow-x-auto shrink-0">
+        <div className="flex flex-wrap gap-2 px-4 py-2 overflow-x-auto shrink-0">
           {PROJECT_TABS.map(t => (
-            <button key={t} onClick={() => setTab(t)}
-              className="rounded-lg h-9 px-3 text-[11px] font-medium shrink-0 transition-colors"
-              style={{ backgroundColor: tab === t ? '#3B82F6' : '#FFFFFF', color: tab === t ? '#FFFFFF' : '#6B7280' }}>
+            <button key={t} type="button" onClick={() => setTab(t)} className={TAB_BTN(tab === t)}>
               {TAB_LABELS[t]}
             </button>
           ))}
@@ -481,7 +483,7 @@ export default function ProjectDetailPage() {
       )}
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 max-w-2xl">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 w-full">
         {isNew && (
           <p className="text-text-secondary text-center py-4 text-[12px]">
             Save the project first to attach documents, record payments, and add jobs.
@@ -543,61 +545,6 @@ export default function ProjectDetailPage() {
               </div>
             </div>
 
-            {/* Linked jobs */}
-            {!isNew && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <p className="section-label">LINKED JOBS</p>
-                  {canEdit && (
-                    <Link
-                      href={`/dashboard/jobs/new?dealId=${projectId}`}
-                      className="btn-primary h-10 px-[14px] text-[12px] inline-flex items-center"
-                    >
-                      + Add job
-                    </Link>
-                  )}
-                </div>
-                {jobs.length > 0 ? (
-                  <div className="card overflow-hidden">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="bg-surface-elevated border-b border-divider">
-                          <th style={{ width: 100 }} className="data-th">Job code</th>
-                          <th className="data-th">Title</th>
-                          <th style={{ width:  88 }} className="data-th text-center">Status</th>
-                          <th style={{ width:  72 }} className="data-th"></th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {jobs.map(j => {
-                          const sc = JOB_STATUS_COLORS[j.status] ?? JOB_STATUS_COLORS.open
-                          return (
-                            <tr key={j.id} className="border-b border-divider last:border-0">
-                              <td className="data-td">
-                                <button onClick={() => router.push(`/dashboard/jobs/${j.id}`)}
-                                  className="text-primary text-[12px] font-medium">#{j.id.slice(0, 6)}</button>
-                              </td>
-                              <td className="data-td text-text-primary text-[13px] truncate">{j.title}</td>
-                              <td className="data-td text-center">
-                                <span className="inline-block rounded-lg px-2 py-[3px] text-[10px] font-medium"
-                                  style={{ backgroundColor: sc.bg, color: sc.fg }}>{j.status}</span>
-                              </td>
-                              <td className="data-td text-right">
-                                <button onClick={() => router.push(`/dashboard/jobs/${j.id}`)}
-                                  className="btn-outlined h-7 px-2 text-[11px]">Open</button>
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <p className="text-text-secondary text-[13px]">No jobs linked to this project.</p>
-                )}
-              </div>
-            )}
-
             {/* Dates & Milestones */}
             <div className="space-y-2">
               <p className="section-label">DATES & MILESTONES</p>
@@ -634,6 +581,60 @@ export default function ProjectDetailPage() {
               </div>
             </div>
           </>
+        )}
+
+        {!isNew && tab === 'jobs' && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="section-label">JOBS ON THIS PROJECT</p>
+              {canEdit && (
+                <Link
+                  href={`/dashboard/jobs/new?dealId=${projectId}`}
+                  className="btn-primary h-10 px-[14px] text-[12px] inline-flex items-center"
+                >
+                  + Add job
+                </Link>
+              )}
+            </div>
+            {jobs.length > 0 ? (
+              <div className="card overflow-hidden">
+                <table className="w-full">
+                  <thead>
+                    <tr className="bg-surface-elevated border-b border-divider">
+                      <th style={{ width: 100 }} className="data-th">Job code</th>
+                      <th className="data-th">Title</th>
+                      <th style={{ width: 88 }} className="data-th text-center">Status</th>
+                      <th style={{ width: 72 }} className="data-th"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {jobs.map(j => {
+                      const sc = JOB_STATUS_COLORS[j.status] ?? JOB_STATUS_COLORS.open
+                      return (
+                        <tr key={j.id} className="border-b border-divider last:border-0">
+                          <td className="data-td">
+                            <button type="button" onClick={() => router.push(`/dashboard/jobs/${j.id}`)}
+                              className="text-primary text-[12px] font-medium">#{j.id.slice(0, 6)}</button>
+                          </td>
+                          <td className="data-td text-text-primary text-[13px] truncate">{j.title}</td>
+                          <td className="data-td text-center">
+                            <span className="inline-block rounded-lg px-2 py-[3px] text-[10px] font-medium"
+                              style={{ backgroundColor: sc.bg, color: sc.fg }}>{j.status}</span>
+                          </td>
+                          <td className="data-td text-right">
+                            <button type="button" onClick={() => router.push(`/dashboard/jobs/${j.id}`)}
+                              className="btn-outlined h-7 px-2 text-[11px]">Open</button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-text-secondary text-[13px]">No jobs linked to this project.</p>
+            )}
+          </div>
         )}
 
         {/* ── DOCS TAB ── */}

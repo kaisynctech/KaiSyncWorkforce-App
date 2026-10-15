@@ -353,16 +353,16 @@ export default function ProjectsPage() {
       {canViewAll && (
         <div className="grid grid-cols-2 gap-2 mx-4 mt-3">
           <button
+            type="button"
             onClick={() => setScope('all')}
-            className="h-[34px] rounded-[10px] text-[12px] font-medium"
-            style={{ backgroundColor: scope === 'all' ? '#3B82F6' : '#FFFFFF', color: scope === 'all' ? '#FFFFFF' : '#6B7280' }}
+            className={`h-[38px] rounded-[10px] text-[12px] font-medium border ${scope === 'all' ? 'bg-primary text-white border-primary' : 'bg-surface text-text-secondary border-border hover:text-text-primary'}`}
           >
             All Projects
           </button>
           <button
+            type="button"
             onClick={() => setScope('mine')}
-            className="h-[34px] rounded-[10px] text-[12px] font-medium"
-            style={{ backgroundColor: scope === 'mine' ? '#3B82F6' : '#FFFFFF', color: scope === 'mine' ? '#FFFFFF' : '#6B7280' }}
+            className={`h-[38px] rounded-[10px] text-[12px] font-medium border ${scope === 'mine' ? 'bg-primary text-white border-primary' : 'bg-surface text-text-secondary border-border hover:text-text-primary'}`}
           >
             My Projects
           </button>
@@ -406,16 +406,16 @@ export default function ProjectsPage() {
         <div className="overflow-x-auto mx-4 my-3 bg-surface rounded-lg border border-divider">
           <table style={{ minWidth: 900 }} className="w-full">
             <thead>
-              <tr className="bg-[#1E293B]">
-                <th style={{ width: 72 }} className="data-th pl-2 text-white/70">Code</th>
-                <th className="data-th text-white/70">Project</th>
-                <th style={{ width: 88 }} className="data-th text-white/70">Client</th>
-                <th style={{ width: 108 }} className="data-th text-white/70">Manager</th>
-                <th style={{ width: 128 }} className="data-th text-white/70">Status</th>
-                <th style={{ width: 92 }} className="data-th text-right text-white/70">Offer</th>
-                <th style={{ width: 84 }} className="data-th text-right text-white/70">Paid</th>
-                <th style={{ width: 56 }} className="data-th text-right text-white/70">%</th>
-                <th style={{ width: 72 }} className="data-th text-center pr-2 text-white/70">Pay</th>
+              <tr className="bg-surface-elevated border-b border-divider">
+                <th style={{ width: 72 }} className="data-th pl-2">Code</th>
+                <th className="data-th">Project</th>
+                <th style={{ width: 88 }} className="data-th">Client</th>
+                <th style={{ width: 108 }} className="data-th">Manager</th>
+                <th style={{ width: 128 }} className="data-th">Status</th>
+                <th style={{ width: 92 }} className="data-th text-right">Offer</th>
+                <th style={{ width: 84 }} className="data-th text-right">Paid</th>
+                <th style={{ width: 56 }} className="data-th text-right">%</th>
+                <th style={{ width: 72 }} className="data-th text-center pr-2">Pay</th>
               </tr>
             </thead>
             <tbody>
