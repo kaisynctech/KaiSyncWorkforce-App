@@ -645,7 +645,7 @@ export default function EmployeesPage() {
           </div>
 
           <p className="text-[12px] text-text-secondary mb-3">
-            Geofence on means clock-in must be at their branch when branch sign-in is enforced in Settings. Off still records where they are.
+            Location is recorded on every clock-in. Geofence on also requires the person to be inside an assigned branch.
           </p>
           {/* Branch filter pills */}
           {branches.length > 0 && (

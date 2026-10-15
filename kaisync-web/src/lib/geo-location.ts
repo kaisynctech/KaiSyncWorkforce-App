@@ -257,12 +257,12 @@ export type DeviceLocationResult =
 
 export function deviceLocationFailureMessage(reason: DeviceLocationFailure): string {
   if (reason === 'denied') {
-    return 'Location is blocked for KaiSync. In the phone settings, set Location for this app to Allow, then tap Yes again.'
+    return 'KaiSync is not allowed to use location. On the phone, open Settings, find the KaiSync app, set Location to Allow, then tap Try again.'
   }
   if (reason === 'unsupported') {
     return 'This device cannot share location with KaiSync.'
   }
-  return 'No position arrived yet. Tap Yes to try again.'
+  return 'KaiSync did not get a position yet. Stay on this screen and tap Try again. If it keeps failing, set the KaiSync app location permission to Allow.'
 }
 
 function acceptPosition(position: GeolocationPosition): DeviceLocationResult | null {
@@ -284,34 +284,46 @@ export function requestDeviceCoordinatesFromGesture(): Promise<DeviceLocationRes
   return new Promise(resolve => {
     let settled = false
     let watchId: number | null = null
-    const timer = window.setTimeout(() => finish({ ok: false, reason: 'timeout' }), 20_000)
+    let best: { result: DeviceLocationResult; accuracy: number } | null = null
+    const started = window.setTimeout(() => {
+      finish(best?.result ?? { ok: false, reason: 'timeout' })
+    }, 25_000)
+    // A rough cell fix is enough to show a place. A tighter fix is preferred for the branch check.
+    const early = window.setTimeout(() => {
+      if (best) finish(best.result)
+    }, 12_000)
 
     function finish(result: DeviceLocationResult) {
       if (settled) return
       settled = true
-      window.clearTimeout(timer)
+      window.clearTimeout(started)
+      window.clearTimeout(early)
       if (watchId != null) navigator.geolocation.clearWatch(watchId)
       resolve(result)
     }
 
-    function accept(position: GeolocationPosition) {
+    function consider(position: GeolocationPosition) {
       const result = acceptPosition(position)
-      if (result) finish(result)
+      if (!result) return
+      const accuracy = position.coords.accuracy
+      const score = Number.isFinite(accuracy) ? accuracy : 10_000
+      if (!best || score < best.accuracy) best = { result, accuracy: score }
+      if (score <= 200) finish(result)
     }
 
     function onError(error: GeolocationPositionError) {
-      if (error.code === POSITION_DENIED) finish({ ok: false, reason: 'denied' })
+      if (error.code === POSITION_DENIED) finish(best?.result ?? { ok: false, reason: 'denied' })
     }
 
-    watchId = navigator.geolocation.watchPosition(
-      accept,
-      onError,
-      { enableHighAccuracy: true, maximumAge: 0, timeout: 20_000 },
-    )
     navigator.geolocation.getCurrentPosition(
-      accept,
+      consider,
       onError,
-      { enableHighAccuracy: false, maximumAge: 60_000, timeout: 12_000 },
+      { enableHighAccuracy: false, maximumAge: 120_000, timeout: 10_000 },
+    )
+    watchId = navigator.geolocation.watchPosition(
+      consider,
+      onError,
+      { enableHighAccuracy: true, maximumAge: 15_000, timeout: 25_000 },
     )
   })
 }
