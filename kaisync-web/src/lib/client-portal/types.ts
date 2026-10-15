@@ -22,6 +22,13 @@ export type ClientPortalJob = {
   project_title: string | null
 }
 
+export type ClientJobTeamMember = {
+  id: string
+  name: string
+  on_site: boolean
+  since: string | null
+}
+
 export type ClientJobChecklistItem = {
   description: string
   is_checked: boolean
@@ -65,6 +72,7 @@ export type ClientPortalJobDetail = {
   photos_before: string[]
   photos_after: string[]
   photos: string[]
+  team: ClientJobTeamMember[]
   checklist: ClientJobChecklistItem[]
   visits: ClientJobVisit[]
   documents: ClientJobDocument[]

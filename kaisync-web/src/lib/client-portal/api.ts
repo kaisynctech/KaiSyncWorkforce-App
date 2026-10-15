@@ -7,6 +7,7 @@ import type {
   ActivityUpdate,
   ClientJobChecklistItem,
   ClientJobDocument,
+  ClientJobTeamMember,
   ClientJobVisit,
   ClientPayment,
   ClientPortalJob,
@@ -233,6 +234,19 @@ function parseStringList(raw: unknown): string[] {
   return raw.map(item => str(item).trim()).filter(Boolean)
 }
 
+function parseTeam(raw: unknown): ClientJobTeamMember[] {
+  if (!Array.isArray(raw)) return []
+  return raw.map(item => {
+    const r = item as Record<string, unknown>
+    return {
+      id: str(r.id),
+      name: str(r.name).trim() || 'Team member',
+      on_site: r.on_site === true,
+      since: strN(r.since),
+    }
+  }).filter(row => row.id)
+}
+
 function parseChecklist(raw: unknown): ClientJobChecklistItem[] {
   if (!Array.isArray(raw)) return []
   return raw.map(item => {
@@ -306,6 +320,7 @@ export async function getJob(
     photos_before: parseStringList(row.photos_before),
     photos_after: parseStringList(row.photos_after),
     photos: parseStringList(row.photos),
+    team: parseTeam(row.team),
     checklist: parseChecklist(row.checklist),
     visits: parseVisits(row.visits),
     documents: parseJobDocuments(row.documents),
