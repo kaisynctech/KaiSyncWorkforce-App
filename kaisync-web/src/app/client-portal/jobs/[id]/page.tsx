@@ -10,20 +10,12 @@ import { getJob, signPortalMedia } from '@/lib/client-portal/api'
 import { fmtDate, fmtDateTime, projectStatusLabel } from '@/lib/client-portal/format'
 import type { ClientJobVisit, ClientPortalJobDetail } from '@/lib/client-portal/types'
 
-function partyLabel(raw: string): string {
-  const key = raw.toLowerCase()
-  if (key === 'contractor') return 'Contractor'
-  if (key === 'employee') return 'Team'
-  return projectStatusLabel(raw)
-}
-
 function visitPlace(visit: ClientJobVisit): string | null {
   return visit.sign_out_address || visit.sign_in_address || null
 }
 
 const JOB_TABS = [
   { id: 'details', label: 'Details' },
-  { id: 'contractors', label: 'Contractors' },
   { id: 'progress', label: 'Progress' },
   { id: 'photos', label: 'Photos' },
   { id: 'documents', label: 'Documents' },
@@ -181,29 +173,6 @@ export default function ClientPortalJobPage() {
             </Section>
             </>)}
 
-            {tab === 'contractors' && (
-            <Section title="Contractors">
-              {job.contractors.length === 0 ? (
-                <p className="text-[13px] text-text-secondary">No contractor assigned yet.</p>
-              ) : (
-                <div className="space-y-3">
-                  {job.contractors.map(person => (
-                    <div key={`${person.name}-${person.assigned_at ?? ''}`} className="bg-surface-elevated rounded-lg px-3 py-2">
-                      <div className="flex items-start justify-between gap-3">
-                        <p className="text-[14px] font-semibold text-text-primary">{person.name}</p>
-                        <p className="text-[12px] text-text-secondary whitespace-nowrap">{projectStatusLabel(person.status)}</p>
-                      </div>
-                      {person.role && <p className="text-[12px] text-text-secondary mt-0.5">{projectStatusLabel(person.role)}</p>}
-                      {person.scope_notes && (
-                        <p className="text-[13px] text-text-primary mt-1 whitespace-pre-wrap">{person.scope_notes}</p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Section>
-            )}
-
             {tab === 'progress' && (<>
             <Section title={job.checklist.length > 0 ? `Checklist · ${checked} of ${job.checklist.length}` : 'Checklist'}>
               {job.checklist.length === 0 ? (
@@ -224,21 +193,16 @@ export default function ClientPortalJobPage() {
 
             <Section title="Site visits">
               {job.visits.length === 0 ? (
-                <p className="text-[13px] text-text-secondary">No one has signed in on this job yet. A contractor sign-in shows here.</p>
+                <p className="text-[13px] text-text-secondary">No site visits on this job yet.</p>
               ) : (
                 <div className="space-y-2">
                   {job.visits.map((visit, index) => {
                     const place = visitPlace(visit)
                     return (
                       <div key={`${visit.sign_in_at}-${index}`} className="bg-surface-elevated rounded-lg px-3 py-2">
-                        <div className="flex items-start justify-between gap-3">
-                          <p className="text-[13px] font-semibold text-text-primary">
-                            {visit.reported_by_name || partyLabel(visit.party_type)}
-                          </p>
-                          <p className="text-[12px] text-text-secondary whitespace-nowrap">
-                            {visit.sign_out_at ? 'Signed out' : 'On site'}
-                          </p>
-                        </div>
+                        <p className="text-[12px] text-text-secondary">
+                          {visit.sign_out_at ? 'Signed out' : 'On site'}
+                        </p>
                         <p className="text-[12px] text-text-secondary mt-0.5">
                           {fmtDateTime(visit.sign_in_at)}
                           {visit.sign_out_at ? ` → ${fmtDateTime(visit.sign_out_at)}` : ''}
@@ -258,7 +222,7 @@ export default function ClientPortalJobPage() {
               <PhotoGrid label="Before" urls={job.photos_before} mediaUrls={mediaUrls} />
               <PhotoGrid label="After" urls={job.photos_after} mediaUrls={mediaUrls} />
               {otherPhotos.length > 0 && <PhotoGrid label="Photos" urls={otherPhotos} mediaUrls={mediaUrls} />}
-              <p className="text-[12px] text-text-secondary">Photos added by the contractor show here after you refresh.</p>
+              <p className="text-[12px] text-text-secondary">New photos show here after you refresh.</p>
             </Section>
             )}
 
