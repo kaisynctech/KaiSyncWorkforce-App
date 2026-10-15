@@ -17,6 +17,18 @@ import type { Job, Employee, JobContractor, LaborEntry, JobInventoryItem, JobPho
 
 const STATUS_OPTIONS = ['open', 'scheduled', 'in_progress', 'completed', 'cancelled'] as const
 
+const JOB_TABS = ['details', 'team', 'contractors', 'money', 'labor', 'inventory', 'photos'] as const
+type JobTab = typeof JOB_TABS[number]
+const JOB_TAB_LABELS: Record<JobTab, string> = {
+  details: 'Details',
+  team: 'Team',
+  contractors: 'Contractors',
+  money: 'Money',
+  labor: 'Labor',
+  inventory: 'Inventory',
+  photos: 'Photos',
+}
+
 const STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
   completed:   { bg: '#DCFCE7', fg: '#166534' },
   in_progress: { bg: '#DBEAFE', fg: '#1e40af' },
@@ -66,6 +78,7 @@ export default function JobDetailPage() {
   const jobId = params.id
 
   // ── Core state ──────────────────────────────────────────────────────────────
+  const [tab, setTab] = useState<JobTab>('details')
   const [job,            setJob]            = useState<JobDetail | null>(null)
   const [companyId,      setCompanyId]      = useState<string | null>(null)
   const [myEmployeeId,   setMyEmployeeId]   = useState<string | null>(null)
@@ -251,6 +264,7 @@ export default function JobDetailPage() {
     setEditClientId(job.client_id ?? null)
     setEditDealId(job.deal_id ?? null)
     setEditAddress(job.address ?? '')
+    setTab('details')
     setIsEditing(true)
   }
 
@@ -664,6 +678,20 @@ export default function JobDetailPage() {
         <p className="font-semibold text-[13px]" style={{ color: '#FCA5A5' }}>{error}</p>
       )}
 
+      <div className="flex flex-wrap gap-2 overflow-x-auto">
+        {JOB_TABS.map(t => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => setTab(t)}
+            className={`h-[38px] px-3 rounded-[10px] text-[12px] font-medium transition-colors whitespace-nowrap shrink-0 border ${tab === t ? 'bg-primary text-white border-primary' : 'bg-surface text-text-secondary border-border hover:text-text-primary'}`}
+          >
+            {JOB_TAB_LABELS[t]}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'details' && (<>
       {/* ── Job header card ── */}
       <div className="bg-surface rounded-xl p-4 border border-divider space-y-3">
         {isEditing ? (
@@ -877,14 +905,15 @@ export default function JobDetailPage() {
         </div>
       </div>
       )}
+      </>)}
 
-      {/* ── Team & Contractor card ── */}
+      {tab === 'team' && (
       <div className="bg-surface rounded-xl border border-divider overflow-hidden">
         <div className="px-4 py-2.5 border-b border-divider bg-surface-elevated">
-          <p className="text-[11px] font-semibold text-text-secondary tracking-wider uppercase">Team & Contractor</p>
+          <p className="text-[11px] font-semibold text-text-secondary tracking-wider uppercase">Team</p>
         </div>
         <div className="p-4 space-y-3">
-          <p className="text-[12px] text-text-secondary">Assign employees and/or a contractor for this job.</p>
+          <p className="text-[12px] text-text-secondary">Assign employees for this job.</p>
 
           {/* Employee checklist */}
           <div className="max-h-[160px] overflow-y-auto space-y-0.5 rounded-lg border border-divider p-2">
@@ -908,9 +937,25 @@ export default function JobDetailPage() {
             ))}
           </div>
 
-          {/* Contractor sub-section */}
-          <div className="border-t border-divider pt-3 space-y-2">
-            <p className="text-[13px] font-semibold text-text-primary">Contractors</p>
+          {canEdit && (
+            <button
+              onClick={handleSaveTeam}
+              disabled={saving}
+              className="w-full h-11 text-[13px] rounded-lg bg-primary text-white font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors"
+            >
+              Save team
+            </button>
+          )}
+        </div>
+      </div>
+      )}
+
+      {tab === 'contractors' && (
+      <div className="bg-surface rounded-xl border border-divider overflow-hidden">
+        <div className="px-4 py-2.5 border-b border-divider bg-surface-elevated">
+          <p className="text-[11px] font-semibold text-text-secondary tracking-wider uppercase">Contractors</p>
+        </div>
+        <div className="p-4 space-y-2">
             <p className="text-[12px] text-text-secondary">Assign one or more contractors to this job.</p>
 
             {jobContractors.length > 0 && (
@@ -972,20 +1017,11 @@ export default function JobDetailPage() {
                 + Assign Contractor
               </button>
             )}
-          </div>
-
-          {canEdit && (
-            <button
-              onClick={handleSaveTeam}
-              disabled={saving}
-              className="w-full h-11 text-[13px] rounded-lg bg-primary text-white font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors"
-            >
-              Save team & contractor
-            </button>
-          )}
         </div>
       </div>
+      )}
 
+      {tab === 'money' && (<>
       {/* ── Money (quotes & invoices) ── */}
       <div className="bg-surface rounded-xl p-4 border border-divider space-y-3">
         <div className="flex items-center justify-between gap-2">
@@ -1105,8 +1141,9 @@ export default function JobDetailPage() {
           <span className="text-[13px] font-semibold text-primary">R{totalCost.toFixed(2)}</span>
         </div>
       </div>
+      </>)}
 
-      {/* ── Labor entries ── */}
+      {tab === 'labor' && (
       <div className="bg-surface rounded-xl p-4 border border-divider space-y-3">
         <p className="text-[11px] font-semibold text-text-secondary tracking-wider uppercase">Labor Entries</p>
         {canEdit && (
@@ -1163,8 +1200,9 @@ export default function JobDetailPage() {
           ))
         )}
       </div>
+      )}
 
-      {/* ── Inventory ── */}
+      {tab === 'inventory' && (
       <div className="bg-surface rounded-xl p-4 border border-divider space-y-2">
         <div className="flex items-center justify-between mb-1">
           <p className="text-[11px] font-semibold text-text-secondary tracking-wider uppercase">Inventory</p>
@@ -1196,8 +1234,9 @@ export default function JobDetailPage() {
           ))
         )}
       </div>
+      )}
 
-      {/* ── Photos ── */}
+      {tab === 'photos' && (
       <div className="bg-surface rounded-xl p-4 border border-divider space-y-3">
         <div className="flex items-center gap-2">
           <p className="text-[11px] font-semibold text-text-secondary tracking-wider uppercase">Job Photos</p>
@@ -1261,6 +1300,7 @@ export default function JobDetailPage() {
           <p className="text-text-secondary text-[12px]">No photos uploaded yet.</p>
         )}
       </div>
+      )}
 
       {/* ══════════════════════════════════════════════════════════════════════ */}
       {/* Assign Contractor Modal                                               */}
