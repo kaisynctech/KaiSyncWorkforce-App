@@ -16,6 +16,7 @@ export const ADJUSTMENT_TYPES: AdjustmentTypeConfig[] = [
   { value: 'internal_use',         label: 'Internal use',           direction: 'out',    colour: 'text-orange-600', icon: 'build' },
   { value: 'transferred_in',       label: 'Transferred in',         direction: 'in',     colour: 'text-teal-600',   icon: 'move_to_inbox' },
   { value: 'transferred_out',      label: 'Transferred out',        direction: 'out',    colour: 'text-teal-600',   icon: 'outbox' },
+  { value: 'sold',                 label: 'Sold',                   direction: 'out',    colour: 'text-gray-600',   icon: 'point_of_sale' },
   { value: 'other',                label: 'Other',                  direction: 'either', colour: 'text-gray-600',   icon: 'tune' },
 ]
 

@@ -1,16 +1,9 @@
 'use client'
 
-/**
- * StockAdjustmentModal — Phase 1 stub
- *
- * A lightweight quick-adjust modal that directly updates qty_on_hand.
- * Mission #3 (Stock Adjustment Log) will replace this with an immutable
- * audit-trail RPC once the stock_adjustments migration is applied.
- */
-
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import type { CatalogueItem } from '@/types/inventory'
+import { ADJUSTMENT_TYPES } from '@/lib/stock'
+import type { AdjustmentType, CatalogueItem } from '@/types/inventory'
 
 interface Props {
   item:      CatalogueItem
@@ -20,9 +13,10 @@ interface Props {
   onSaved:   (newQty: number) => void
 }
 
-export default function StockAdjustmentModal({ item, onClose, onSaved }: Props) {
+export default function StockAdjustmentModal({ item, companyId, employeeId, onClose, onSaved }: Props) {
   const [delta,   setDelta]   = useState('')
   const [reason,  setReason]  = useState('')
+  const [adjustmentType, setAdjustmentType] = useState<AdjustmentType>('count_correction')
   const [saving,  setSaving]  = useState(false)
   const [error,   setError]   = useState<string | null>(null)
 
@@ -36,14 +30,20 @@ export default function StockAdjustmentModal({ item, onClose, onSaved }: Props) 
     }
     setSaving(true)
     setError(null)
-    const newQty = current + d
     const supabase = createClient()
-    const { error: e } = await supabase
-      .from('quote_catalogue_items')
-      .update({ qty_on_hand: newQty })
-      .eq('id', item.id)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, error: e } = await (supabase.rpc as any)('record_stock_adjustment', {
+      p_company_id: companyId,
+      p_catalogue_item_id: item.id,
+      p_adjusted_by: employeeId,
+      p_adjustment_type: adjustmentType,
+      p_qty_change: d,
+      p_notes: reason.trim() || null,
+      p_reference_type: 'manual',
+    })
     if (e) { setError(e.message); setSaving(false); return }
-    onSaved(newQty)
+    const qtyAfter = Number(data?.qty_after)
+    onSaved(Number.isFinite(qtyAfter) ? qtyAfter : current + d)
   }
 
   return (
@@ -89,6 +89,19 @@ export default function StockAdjustmentModal({ item, onClose, onSaved }: Props) 
               </span>
             </p>
           )}
+        </div>
+
+        <div>
+          <label className="block text-[12px] text-text-secondary mb-1">Type</label>
+          <select
+            value={adjustmentType}
+            onChange={e => setAdjustmentType(e.target.value as AdjustmentType)}
+            className="w-full h-9 rounded-lg border border-divider bg-surface px-3 text-[13px] text-text-primary focus:outline-none focus:border-primary"
+          >
+            {ADJUSTMENT_TYPES.map(type => (
+              <option key={type.value} value={type.value}>{type.label}</option>
+            ))}
+          </select>
         </div>
 
         <div>
