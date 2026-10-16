@@ -26,6 +26,7 @@ import {
   type MoneyQuoteLink,
 } from '@/lib/project-money-quote'
 import { logProjectEvent } from '@/lib/project-events'
+import { portalStorageObjectName } from '@/lib/client-portal/api'
 import type { Project, Client, Employee, Job, ProjectDocument, ProjectQuotationLine } from '@/types/database'
 
 const PROJECT_TABS = ['details', 'jobs', 'docs', 'quotation', 'pipeline', 'milestones', 'financials', 'payments', 'activity']
@@ -165,7 +166,7 @@ export default function ProjectDetailPage() {
       supabase.from('client_deals').select('*, clients(id, name), employees:manager_employee_id(id, name, surname)').eq('id', projectId).eq('company_id', member.companyId).single(),
       supabase.from('clients').select('id, name, client_code').eq('company_id', member.companyId).order('name'),
       supabase.from('employees').select('id, name, surname').eq('company_id', member.companyId).eq('is_active', true).order('name'),
-      supabase.from('jobs').select('id, title, status').eq('deal_id', projectId).order('created_at', { ascending: false }),
+      supabase.from('jobs').select('id, job_code, title, status').eq('company_id', member.companyId).eq('deal_id', projectId).order('created_at', { ascending: false }),
       supabase.from('project_documents').select('*').eq('deal_id', projectId).order('created_at', { ascending: false }),
       supabase.from('project_quotation_lines').select('*').eq('deal_id', projectId).order('line_no'),
     ])
@@ -370,7 +371,13 @@ export default function ProjectDetailPage() {
   async function deleteLine(id: string) {
     if (!canEdit || !project) return
     const supabase = createClient()
-    await supabase.from('project_quotation_lines').delete().eq('id', id)
+    const { error: delErr } = await supabase
+      .from('project_quotation_lines')
+      .delete()
+      .eq('id', id)
+      .eq('deal_id', projectId)
+      .eq('company_id', project.company_id)
+    if (delErr) { setError(delErr.message); return }
     const next = lines.filter(l => l.id !== id)
     setLines(next)
     await syncOfferAmount(next)
@@ -417,6 +424,21 @@ export default function ProjectDetailPage() {
     }
     if (fileRef.current) fileRef.current.value = ''
     setDocBusy(false)
+  }
+
+  async function openDoc(doc: ProjectDocument) {
+    const name = portalStorageObjectName(doc.file_url)
+    if (!name) {
+      window.open(doc.file_url, '_blank', 'noopener,noreferrer')
+      return
+    }
+    const supabase = createClient()
+    const { data, error: signErr } = await supabase.storage.from('workforce-media').createSignedUrl(name, 3600)
+    if (signErr || !data?.signedUrl) {
+      setError(signErr?.message ?? 'Could not open the file.')
+      return
+    }
+    window.open(data.signedUrl, '_blank', 'noopener,noreferrer')
   }
 
   async function deleteDoc(doc: ProjectDocument) {
@@ -583,7 +605,7 @@ export default function ProjectDetailPage() {
                         <tr key={j.id} className="border-b border-divider last:border-0">
                           <td className="data-td">
                             <button type="button" onClick={() => router.push(`/dashboard/jobs/${j.id}`)}
-                              className="text-primary text-[12px] font-medium">#{j.id.slice(0, 6)}</button>
+                              className="text-primary text-[12px] font-medium">{j.job_code ?? '—'}</button>
                           </td>
                           <td className="data-td text-text-primary text-[13px] truncate">{j.title}</td>
                           <td className="data-td text-center">
@@ -664,8 +686,8 @@ export default function ProjectDetailPage() {
                           <td className="data-td text-text-secondary text-[12px]">{d.document_type ?? '—'}</td>
                           <td className="data-td text-text-secondary text-[11px] text-center">{fmtDate(d.created_at)}</td>
                           <td className="data-td text-center">
-                            <a href={d.file_url} target="_blank" rel="noreferrer"
-                              className="text-primary text-[11px] font-medium">Open</a>
+                            <button type="button" onClick={() => void openDoc(d)}
+                              className="text-primary text-[11px] font-medium">Open</button>
                           </td>
                           <td className="data-td text-center">
                             {canEdit && (

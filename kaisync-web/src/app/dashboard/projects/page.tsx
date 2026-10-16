@@ -195,9 +195,10 @@ export default function ProjectsPage() {
     if (!companyId || !canEdit) return
     const supabase = createClient()
     const prev = p.status ?? 'draft'
+    const now = new Date().toISOString()
     const { error } = await supabase
       .from('client_deals')
-      .update({ status: newStatus })
+      .update({ status: newStatus, updated_at: now, last_update_at: now })
       .eq('id', p.id)
       .eq('company_id', companyId)
     if (error) {

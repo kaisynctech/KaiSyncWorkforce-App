@@ -118,9 +118,14 @@ export async function updateProject(
     previousStatus?: string | null
   },
 ): Promise<ProjectResult<void>> {
+  const now = new Date().toISOString()
   const { error } = await supabase
     .from('client_deals')
-    .update(opts.payload)
+    .update({
+      ...opts.payload,
+      updated_at: now,
+      last_update_at: now,
+    })
     .eq('id', opts.projectId)
     .eq('company_id', opts.companyId)
   if (error) return { ok: false, message: error.message }
@@ -166,7 +171,7 @@ export async function sendProjectQuotation(
       status: 'sent',
       quotation_sent_at: new Date().toISOString(),
       last_update_at: new Date().toISOString(),
-      last_update_summary: 'Quotation sent',
+      updated_at: new Date().toISOString(),
     })
     .eq('id', opts.projectId)
     .eq('company_id', opts.companyId)
