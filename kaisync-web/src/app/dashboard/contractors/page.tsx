@@ -405,10 +405,10 @@ export default function ContractorsPage() {
       )}
 
       {/* Action Centre */}
-      <div className="mx-4 mb-3 bg-surface rounded-xl border border-divider overflow-hidden">
-        <div className="flex items-center gap-2 px-3 py-[10px] border-b border-divider">
-          <span className="material-icons text-primary text-[18px]">bolt</span>
-          <span className="font-semibold text-[12px] text-primary uppercase tracking-wider">Action Centre</span>
+      <div className="mx-3 mb-2 bg-surface rounded-lg border border-divider overflow-hidden shrink-0">
+        <div className={`flex items-center gap-2 px-3 py-1.5 ${actionItems.length > 0 ? 'border-b border-divider' : ''}`}>
+          <span className="material-icons text-primary text-[16px]">bolt</span>
+          <span className="font-semibold text-[11px] text-primary uppercase tracking-wider">Action Centre</span>
           <span className="text-text-secondary text-[11px] ml-1">
             {actionItems.length > 0 ? `${actionItems.length} pending` : 'Up to date'}
           </span>
@@ -424,53 +424,53 @@ export default function ContractorsPage() {
               </div>
             )
           })()}
-          <button onClick={load} className="ml-auto text-text-secondary text-[11px] h-8 px-2 hover:text-text-primary transition-colors">
+          <button onClick={load} className="ml-auto text-text-secondary text-[11px] h-6 px-2 hover:text-text-primary transition-colors">
             ↻ Refresh
           </button>
         </div>
-        <div className="max-h-[140px] overflow-y-auto">
-          {actionItems.length === 0 ? (
-            <p className="text-text-secondary text-[12px] px-3 py-2">✓  No pending contractor actions</p>
-          ) : (
-            actionItems.map(item => {
+        {actionItems.length > 0 && (
+          <div className="max-h-[88px] overflow-y-auto">
+            {actionItems.map(item => {
               const colors = ACTION_TYPE_COLORS[item.action_type] ?? getDefaultColor()
               return (
                 <div key={`${item.action_type}-${item.ref_id}`}
-                  className="grid items-center gap-x-2 px-3 py-2 border-t border-divider"
+                  className="flex flex-col sm:grid sm:items-center gap-1 px-3 py-1.5 border-t border-divider first:border-t-0"
                   style={{ gridTemplateColumns: '110px 1fr 90px 70px' }}>
                   <span className="rounded-[5px] px-[6px] py-[3px] text-[10px] font-medium w-fit"
                     style={{ backgroundColor: colors.bg, color: colors.fg }}>
                     {item.action_type.replace(/_/g, ' ')}
                   </span>
-                  <div className="overflow-hidden">
+                  <div className="overflow-hidden min-w-0">
                     <p className="text-text-primary text-[12px] font-medium truncate">{item.contractor_name ?? '—'}</p>
                     <p className="text-text-secondary text-[11px] truncate">{item.summary}</p>
                   </div>
-                  <p className="text-text-secondary text-[11px] text-right">{fmtDate(item.created_at)}</p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const tab =
-                        item.action_type === 'banking_pending' ? 'Payments'
-                          : item.action_type.startsWith('document_') ? 'Compliance'
-                            : item.action_type === 'quote_pending' ? 'Quotes'
-                              : 'Information'
-                      const params = new URLSearchParams({
-                        tab,
-                        focus: item.ref_id,
-                        focusType: item.action_type,
-                      })
-                      router.push(`/dashboard/contractors/${item.contractor_id}?${params.toString()}`)
-                    }}
-                    className="text-primary text-[11px] h-[30px] text-right hover:opacity-70 transition-opacity"
-                  >
-                    Open →
-                  </button>
+                  <div className="flex items-center justify-between sm:contents gap-2">
+                    <p className="text-text-secondary text-[11px] sm:text-right">{fmtDate(item.created_at)}</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const tab =
+                          item.action_type === 'banking_pending' ? 'Payments'
+                            : item.action_type.startsWith('document_') ? 'Compliance'
+                              : item.action_type === 'quote_pending' ? 'Quotes'
+                                : 'Information'
+                        const params = new URLSearchParams({
+                          tab,
+                          focus: item.ref_id,
+                          focusType: item.action_type,
+                        })
+                        router.push(`/dashboard/contractors/${item.contractor_id}?${params.toString()}`)
+                      }}
+                      className="text-primary text-[12px] h-7 sm:h-6 px-2 sm:text-right hover:opacity-70 transition-opacity"
+                    >
+                      Open →
+                    </button>
+                  </div>
                 </div>
               )
-            })
-          )}
-        </div>
+            })}
+          </div>
+        )}
       </div>
 
       {/* Contractors table */}
