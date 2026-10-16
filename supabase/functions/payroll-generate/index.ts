@@ -76,36 +76,86 @@ function lineAmount(value: unknown): number {
   return Math.round(n * 100) / 100
 }
 
-function totalsFromLines(raw: Record<string, unknown>) {
+const WINTERSTECH_COMPANY_ID = 'a3453fd7-d217-42a9-b89a-b61fce77b2fd'
+const MEIBC_ADMIN_LEVY_MONTHLY = 9.57
+const MEIBC_DISPUTE_LEVY_MONTHLY = 3.46
+const MEIBC_SICK_PAY_RATE = 0.0009
+
+type ExtraLine = { id: string; label: string; amount: number }
+
+function parseExtraLines(raw: unknown): ExtraLine[] {
+  if (!Array.isArray(raw)) return []
+  const lines: ExtraLine[] = []
+  for (const row of raw) {
+    if (!row || typeof row !== 'object') continue
+    const item = row as Record<string, unknown>
+    const label = String(item.label ?? '').trim()
+    if (!label) continue
+    const id = typeof item.id === 'string' && item.id.trim() ? item.id.trim() : crypto.randomUUID()
+    lines.push({ id, label, amount: lineAmount(item.amount) })
+  }
+  return lines
+}
+
+function sumExtra(lines: ExtraLine[]): number {
+  return Math.round(lines.reduce((sum, line) => sum + line.amount, 0) * 100) / 100
+}
+
+/** Employee MEIBC levies for Winterstech. Employer contributions stay off the payslip. */
+function withWinterstechMeibc(companyId: string | undefined, raw: Record<string, unknown>): Record<string, unknown> {
+  if (companyId !== WINTERSTECH_COMPANY_ID || raw.meibcApplied === true) return raw
   const regular = lineAmount(raw.regular)
-  const overtime = lineAmount(raw.overtime)
-  const bonus = lineAmount(raw.bonus)
-  const incentive = lineAmount(raw.incentive)
-  const refund = lineAmount(raw.refund)
-  const uif = lineAmount(raw.uif)
-  const paye = lineAmount(raw.paye)
-  const loanDeduction = lineAmount(raw.loanDeduction)
-  const loanBalance = lineAmount(raw.loanBalance)
-  const unpaidLeave = lineAmount(raw.unpaidLeave)
-  const unpaidAbsenceDates = Array.isArray(raw.unpaidAbsenceDates)
-    ? raw.unpaidAbsenceDates.filter((day): day is string => typeof day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(day))
+  const sick = Math.round(regular * MEIBC_SICK_PAY_RATE * 100) / 100
+  return {
+    ...raw,
+    meibcApplied: true,
+    extraDeductions: [
+      ...parseExtraLines(raw.extraDeductions),
+      { id: 'meibc-admin', label: 'MEIBC Admin Levy', amount: MEIBC_ADMIN_LEVY_MONTHLY },
+      { id: 'meibc-dispute', label: 'MEIBC Dispute Levy', amount: MEIBC_DISPUTE_LEVY_MONTHLY },
+      { id: 'meibc-sick', label: 'MEIBC Sick Pay Fund', amount: sick },
+    ],
+  }
+}
+
+function totalsFromLines(raw: Record<string, unknown>, companyId?: string) {
+  const source = withWinterstechMeibc(companyId, raw)
+  const regular = lineAmount(source.regular)
+  const overtime = lineAmount(source.overtime)
+  const bonus = lineAmount(source.bonus)
+  const incentive = lineAmount(source.incentive)
+  const refund = lineAmount(source.refund)
+  const uif = lineAmount(source.uif)
+  const paye = lineAmount(source.paye)
+  const loanDeduction = lineAmount(source.loanDeduction)
+  const loanBalance = lineAmount(source.loanBalance)
+  const unpaidLeave = lineAmount(source.unpaidLeave)
+  const extraEarnings = parseExtraLines(source.extraEarnings)
+  const extraDeductions = parseExtraLines(source.extraDeductions)
+  const unpaidAbsenceDates = Array.isArray(source.unpaidAbsenceDates)
+    ? source.unpaidAbsenceDates.filter((day): day is string => typeof day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(day))
     : []
-  const gross = Math.round((regular + overtime + bonus + incentive + refund) * 100) / 100
-  const deductions = Math.round((uif + paye + loanDeduction + unpaidLeave) * 100) / 100
+  const gross = Math.round((regular + overtime + bonus + incentive + refund + sumExtra(extraEarnings)) * 100) / 100
+  const deductions = Math.round((uif + paye + loanDeduction + unpaidLeave + sumExtra(extraDeductions)) * 100) / 100
   const net = Math.round(Math.max(0, gross - deductions) * 100) / 100
-  const saved = { regular, overtime, bonus, incentive, refund, uif, paye, loanDeduction, loanBalance, unpaidLeave, unpaidAbsenceDates }
+  const saved = {
+    regular, overtime, bonus, incentive, refund, uif, paye, loanDeduction, loanBalance, unpaidLeave, unpaidAbsenceDates,
+    extraEarnings, extraDeductions, meibcApplied: source.meibcApplied === true,
+  }
   const earnings = [
     { label: 'Regular Earnings', amount: regular },
     { label: 'Overtime', amount: overtime },
     { label: 'Bonus', amount: bonus },
     { label: 'Incentive Pay', amount: incentive },
     { label: 'Refund', amount: refund },
+    ...extraEarnings.map(line => ({ label: line.label, amount: line.amount })),
   ].filter(line => line.amount > 0)
   const deductionLines = [
     { label: 'UIF', amount: uif },
     { label: 'PAYE', amount: paye },
     { label: 'Loan Deduction', amount: loanDeduction },
     { label: 'Unpaid Leave', amount: unpaidLeave },
+    ...extraDeductions.map(line => ({ label: line.label, amount: line.amount })),
   ].filter(line => line.amount > 0)
   return { saved, gross, deductions, net, regular, overtime, bonus, paye, loanDeduction, earnings, deductionLines, uif, unpaidLeave }
 }
@@ -117,11 +167,13 @@ function payeFromCurrentTables(
   dateOfBirth: string | null
 ) {
   const overtime = typed.overtime > 0 ? typed.overtime : Math.round(Math.max(0, engineOvertime) * 100) / 100
-  const gross = Math.round((typed.regular + overtime + typed.bonus + typed.saved.incentive + typed.saved.refund) * 100) / 100
+  const extraEarnings = typed.saved.extraEarnings ?? []
+  const extraDeductions = typed.saved.extraDeductions ?? []
+  const gross = Math.round((typed.regular + overtime + typed.bonus + typed.saved.incentive + typed.saved.refund + sumExtra(extraEarnings)) * 100) / 100
   const flatOnSavedGross = Math.round(typed.gross * 18) / 100
   const sarsPaye = calculateMonthlyPaye(gross, dateOfBirth)
   const paye = Math.abs(typed.paye - flatOnSavedGross) < 0.05 ? sarsPaye : typed.paye
-  const deductions = Math.round((typed.uif + paye + typed.loanDeduction + typed.unpaidLeave) * 100) / 100
+  const deductions = Math.round((typed.uif + paye + typed.loanDeduction + typed.unpaidLeave + sumExtra(extraDeductions)) * 100) / 100
   const net = Math.round(Math.max(0, gross - deductions) * 100) / 100
   const saved = { ...typed.saved, overtime, paye }
   const earnings = [
@@ -130,12 +182,14 @@ function payeFromCurrentTables(
     { label: 'Bonus', amount: typed.bonus },
     { label: 'Incentive Pay', amount: typed.saved.incentive },
     { label: 'Refund', amount: typed.saved.refund },
+    ...extraEarnings.map(line => ({ label: line.label, amount: line.amount })),
   ].filter(line => line.amount > 0)
   const deductionLines = [
     { label: 'UIF', amount: typed.uif },
     { label: 'PAYE', amount: paye },
     { label: 'Loan Deduction', amount: typed.loanDeduction },
     { label: 'Unpaid Leave', amount: typed.unpaidLeave },
+    ...extraDeductions.map(line => ({ label: line.label, amount: line.amount })),
   ].filter(line => line.amount > 0)
   return { saved, gross, deductions, net, regular: typed.regular, overtime, bonus: typed.bonus, paye, loanDeduction: typed.loanDeduction, earnings, deductionLines }
 }
@@ -510,7 +564,7 @@ async function handleGenerate(
     if (existingPay) {
       const priorAudit = Array.isArray(existingPay.audit_log) ? existingPay.audit_log : []
       const typed = existingPay.payslip_lines && typeof existingPay.payslip_lines === 'object'
-        ? payeFromCurrentTables(totalsFromLines(existingPay.payslip_lines), slip.overtime_pay, raw.date_of_birth ?? null)
+        ? payeFromCurrentTables(totalsFromLines(existingPay.payslip_lines, companyId), slip.overtime_pay, raw.date_of_birth ?? null)
         : null
       const { error: updateErr } = await admin.from('payment_approvals').update({
         ...figures,
@@ -550,7 +604,7 @@ async function handleGenerate(
       .limit(1)
       .maybeSingle()
     const carried = priorSlip?.payslip_lines && typeof priorSlip.payslip_lines === 'object'
-      ? totalsFromLines(priorSlip.payslip_lines as Record<string, unknown>)
+      ? totalsFromLines(priorSlip.payslip_lines as Record<string, unknown>, companyId)
       : null
 
     const { error: insertErr } = await admin.from('payment_approvals').insert({
@@ -771,7 +825,7 @@ async function handleSaveLines(
   if (lockErr) return json({ ok: false, error: lockErr.message }, 500)
   if (lockRow) return json({ ok: false, error: 'This payroll period is locked.' }, 409)
 
-  const totals = totalsFromLines(body.lines)
+  const totals = totalsFromLines(body.lines, companyId)
   const { data: emp, error: empErr } = await admin
     .from('employees')
     .select('work_days_weekly, daily_hours, daily_rate, hourly_rate')

@@ -223,6 +223,8 @@ export type PayslipTemplatePdfInput = {
   loanDeduction: number
   loanBalance: number
   unpaidLeave: number
+  extraEarnings?: { label: string; amount: number }[]
+  extraDeductions?: { label: string; amount: number }[]
   bankName?: string | null
   bankBranch?: string | null
   bankAccount?: string | null
@@ -266,8 +268,10 @@ export function downloadPayslipTemplatePdf(input: PayslipTemplatePdfInput): void
   const right = 196
   const mid = 105
   let y = 16
-  const gross = input.regular + input.overtime + input.bonus + input.incentive + input.refund
-  const deducted = input.uif + input.paye + input.loanDeduction + input.unpaidLeave
+  const extraEarnings = input.extraEarnings ?? []
+  const extraDeductions = input.extraDeductions ?? []
+  const gross = input.regular + input.overtime + input.bonus + input.incentive + input.refund + extraEarnings.reduce((sum, line) => sum + line.amount, 0)
+  const deducted = input.uif + input.paye + input.loanDeduction + input.unpaidLeave + extraDeductions.reduce((sum, line) => sum + line.amount, 0)
   const net = Math.max(0, Math.round((gross - deducted) * 100) / 100)
   const totalLeave = input.paidTimeOff != null && input.sickTimeOff != null
     ? Math.round((input.paidTimeOff + input.sickTimeOff) * 100) / 100
@@ -338,14 +342,27 @@ export function downloadPayslipTemplatePdf(input: PayslipTemplatePdfInput): void
     ['Incentive Pay', input.incentive, 'Loan Balance', input.loanBalance],
     ['Refund', input.refund, 'Unpaid Leave', input.unpaidLeave],
   ]
+  const extraCount = Math.max(extraEarnings.length, extraDeductions.length)
+  for (let index = 0; index < extraCount; index += 1) {
+    moneyRows.push([
+      extraEarnings[index]?.label ?? '',
+      extraEarnings[index]?.amount ?? 0,
+      extraDeductions[index]?.label ?? '',
+      extraDeductions[index]?.amount ?? 0,
+    ])
+  }
   for (const [earnLabel, earnAmount, dedLabel, dedAmount] of moneyRows) {
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(9)
     doc.setTextColor(15, 23, 42)
-    doc.text(earnLabel, left + 2, y)
-    doc.text(money(earnAmount), mid - 4, y, { align: 'right' })
-    doc.text(dedLabel, mid + 2, y)
-    doc.text(money(dedAmount), right - 2, y, { align: 'right' })
+    if (earnLabel) {
+      doc.text(earnLabel, left + 2, y)
+      doc.text(money(earnAmount), mid - 4, y, { align: 'right' })
+    }
+    if (dedLabel) {
+      doc.text(dedLabel, mid + 2, y)
+      doc.text(money(dedAmount), right - 2, y, { align: 'right' })
+    }
     y += 6
   }
   doc.setDrawColor(226, 232, 240)
