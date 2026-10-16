@@ -21,17 +21,18 @@ const ACCOUNT_TYPES = [
   { value: 'transmission', label: 'Transmission' },
 ]
 const PAYMENT_TERMS = [
+  { value: 'immediate', label: 'Immediate' },
   { value: '7_days', label: '7 days' },
   { value: '14_days', label: '14 days' },
   { value: '30_days', label: '30 days' },
   { value: '60_days', label: '60 days' },
-  { value: 'on_completion', label: 'On completion' },
+  { value: '90_days', label: '90 days' },
 ]
 const PAYMENT_METHODS = [
   { value: 'eft', label: 'EFT' },
   { value: 'cheque', label: 'Cheque' },
   { value: 'cash', label: 'Cash' },
-  { value: 'credit_card', label: 'Credit Card' },
+  { value: 'card', label: 'Card' },
 ]
 
 function NewContractorForm() {

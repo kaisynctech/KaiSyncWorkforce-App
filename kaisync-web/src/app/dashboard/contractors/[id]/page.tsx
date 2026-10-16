@@ -48,17 +48,18 @@ const ACCOUNT_TYPES = [
   { value: 'transmission', label: 'Transmission' },
 ]
 const PAYMENT_TERMS_OPTIONS = [
+  { value: 'immediate', label: 'Immediate' },
   { value: '7_days', label: '7 days' },
   { value: '14_days', label: '14 days' },
   { value: '30_days', label: '30 days' },
   { value: '60_days', label: '60 days' },
-  { value: 'on_completion', label: 'On completion' },
+  { value: '90_days', label: '90 days' },
 ]
 const PAYMENT_METHODS = [
   { value: 'eft', label: 'EFT' },
   { value: 'cheque', label: 'Cheque' },
   { value: 'cash', label: 'Cash' },
-  { value: 'credit_card', label: 'Credit Card' },
+  { value: 'card', label: 'Card' },
 ]
 
 const CHECKLIST_STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
@@ -732,6 +733,21 @@ function ContractorDetailInner() {
     }
   }
 
+  async function viewDocument(doc: ComplianceDocument) {
+    const path = doc.storage_path?.trim()
+    if (!path) {
+      if (doc.file_url) window.open(doc.file_url, '_blank', 'noopener,noreferrer')
+      return
+    }
+    const supabase = createClient()
+    const { data, error: signErr } = await supabase.storage.from('workforce-media').createSignedUrl(path, 3600)
+    if (signErr || !data?.signedUrl) {
+      setError(signErr?.message ?? 'Could not open the file.')
+      return
+    }
+    window.open(data.signedUrl, '_blank', 'noopener,noreferrer')
+  }
+
   async function copyPortalCode() {
     const code = contractor?.contractor_code
     if (!code) return
@@ -1318,7 +1334,7 @@ function ContractorDetailInner() {
                               {fmtDate(doc.created_at)}
                             </td>
                             <td className="data-td text-right">
-                              <a href={doc.file_url} target="_blank" rel="noreferrer" className="text-primary text-[11px] font-medium px-[5px] h-[30px] inline-flex items-center">View</a>
+                              <button type="button" onClick={() => void viewDocument(doc)} className="text-primary text-[11px] font-medium px-[5px] h-[30px]">View</button>
                               {doc.approval_status !== 'approved' && (
                                 <button onClick={() => approveDocument(doc)} className="text-[11px] font-medium px-[5px] h-[30px]" style={{ color: '#22C55E' }}>Approve</button>
                               )}

@@ -11,7 +11,7 @@ type QuoteRow = {
   quote_number: string | null
   status: string
   total_amount: number | null
-  quote_type: string | null
+  source_mode: string | null
   submitted_at: string | null
   created_at: string
   revision_comments: string | null
@@ -77,7 +77,7 @@ export function ContractorQuotesTab({
 
     const { data, error: qErr } = await supabase
       .from('contractor_quotes')
-      .select('id, title, quote_number, status, total_amount, quote_type, submitted_at, created_at, revision_comments, hr_notes, description')
+      .select('id, title, quote_number, status, total_amount, source_mode, submitted_at, created_at, revision_comments, hr_notes, description')
       .eq('company_id', companyId)
       .eq('contractor_id', contractorId)
       .order('created_at', { ascending: false })
@@ -183,7 +183,7 @@ export function ContractorQuotesTab({
               <h3 className="text-[16px] font-semibold text-text-primary">
                 {selected.title || 'Quote'} {selected.quote_number ? `(${selected.quote_number})` : ''}
               </h3>
-              <p className="text-[12px] text-text-secondary capitalize">{quoteStatusLabel(selected.status)} · {selected.quote_type || 'manual'}</p>
+              <p className="text-[12px] text-text-secondary capitalize">{quoteStatusLabel(selected.status)} · {selected.source_mode === 'upload' ? 'Upload' : 'Manual'}</p>
             </div>
             <p className="text-[16px] font-bold text-text-primary">{fmtMoney(selected.total_amount)}</p>
           </div>
@@ -304,7 +304,7 @@ export function ContractorQuotesTab({
                   <td className="data-td text-primary font-medium">
                     {q.title || 'Untitled'}{q.quote_number ? ` · ${q.quote_number}` : ''}
                   </td>
-                  <td className="data-td capitalize">{q.quote_type || '—'}</td>
+                  <td className="data-td capitalize">{q.source_mode === 'upload' ? 'Upload' : 'Manual'}</td>
                   <td className="data-td text-right">{fmtMoney(q.total_amount)}</td>
                   <td className="data-td text-text-secondary">
                     {q.submitted_at ? new Date(q.submitted_at).toLocaleDateString('en-ZA') : '—'}
