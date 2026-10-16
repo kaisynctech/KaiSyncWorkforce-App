@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import {
   ASSET_STATUSES,
+  appendAssetServiceNote,
   assetStatusLabel,
   extendWarrantyDate,
   isWarrantyExpired,
@@ -334,7 +335,13 @@ export default function AssetsPage() {
     }
 
     if (isNew) {
-      const created = await createAsset(supabase, { companyId, ...input })
+      const created = await createAsset(supabase, {
+        companyId,
+        ...input,
+        notes: editing.serviceNote.trim()
+          ? appendAssetServiceNote(editing.notes, editing.serviceNote, actorName)
+          : editing.notes,
+      })
       if (!created.ok) { setError(created.message); setBusy(false); return }
       setEditing(null)
       setBusy(false)
@@ -524,8 +531,8 @@ export default function AssetsPage() {
               <tr><td colSpan={6} className="data-td text-center text-text-secondary py-10">No assets found.</td></tr>
             ) : filtered.map(asset => {
               const st = statusStyle(asset.status)
-              const expired = isWarrantyExpired(asset.warranty_expires)
-              const expiring = isWarrantyExpiringSoon(asset.warranty_expires)
+              const expired = asset.status !== 'retired' && isWarrantyExpired(asset.warranty_expires)
+              const expiring = asset.status !== 'retired' && isWarrantyExpiringSoon(asset.warranty_expires)
               return (
                 <tr
                   key={asset.id}
