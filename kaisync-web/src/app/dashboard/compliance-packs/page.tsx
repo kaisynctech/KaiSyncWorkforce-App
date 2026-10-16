@@ -31,6 +31,7 @@ interface CompliancePack {
 export default function CompliancePacksPage() {
   const [packs, setPacks] = useState<CompliancePack[]>([])
   const [assignedCount, setAssignedCount] = useState(0)
+  const [archivedCount, setArchivedCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -73,7 +74,7 @@ export default function CompliancePacksPage() {
 
       if (!showArchived) query = query.or('is_archived.eq.false,is_archived.is.null')
 
-      const [packRes, assignedRes] = await Promise.all([
+      const [packRes, assignedRes, archivedRes] = await Promise.all([
         query,
         supabase
           .from('contractors')
@@ -81,6 +82,11 @@ export default function CompliancePacksPage() {
           .eq('company_id', member.companyId)
           .not('compliance_pack_id', 'is', null)
           .or('partner_kind.eq.contractor,partner_kind.eq.both,partner_kind.is.null'),
+        supabase
+          .from('contractor_compliance_packs')
+          .select('id', { count: 'exact', head: true })
+          .eq('company_id', member.companyId)
+          .eq('is_archived', true),
       ])
 
       if (packRes.error) {
@@ -90,6 +96,7 @@ export default function CompliancePacksPage() {
         setPacks((packRes.data ?? []) as CompliancePack[])
       }
       setAssignedCount(assignedRes.count ?? 0)
+      setArchivedCount(archivedRes.count ?? 0)
     } catch (e: unknown) {
       setLoadError(e instanceof Error ? e.message : 'Failed to load packs')
     }
@@ -228,7 +235,7 @@ export default function CompliancePacksPage() {
             <KpiTile value={activePacks.length} label="Active packs" bg="#1E293B" valueFg="#94A3B8" labelFg="#64748B" />
             <KpiTile value={defaultPack ? 1 : 0} label="Default set" bg="#0F2918" valueFg="#22C55E" labelFg="#4ADE80" />
             <KpiTile value={assignedCount} label="Assigned" bg="#292012" valueFg="#FCD34D" labelFg="#FCD34D" />
-            <KpiTile value={packs.filter(p => p.is_archived).length} label="Archived" bg="#1E293B" valueFg="#94A3B8" labelFg="#64748B" />
+            <KpiTile value={archivedCount} label="Archived" bg="#1E293B" valueFg="#94A3B8" labelFg="#64748B" />
           </div>
         )}
 
