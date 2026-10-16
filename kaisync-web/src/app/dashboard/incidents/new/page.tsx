@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { getCodeSession } from '@/lib/auth/code-session'
+import { SectionCard, FormField, entryClass } from '@/components/SectionCard'
 import {
   INCIDENT_CATEGORIES,
   INCIDENT_SEVERITIES,
@@ -351,102 +352,91 @@ export default function HrNewIncidentPage() {
   }
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-divider shrink-0 bg-surface">
-        <div className="flex items-center gap-3">
-          <Link href="/dashboard/incidents" className="text-text-secondary hover:text-text-primary transition-colors">
-            <span className="material-icons text-[20px]">arrow_back</span>
-          </Link>
-          <h1 className="text-[20px] font-semibold text-text-primary">New Incident</h1>
+    <div className="h-full overflow-y-auto">
+      <div className="p-4 space-y-4 pb-8 max-w-3xl">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Link href="/dashboard/incidents" className="text-text-secondary hover:text-text-primary transition-colors">
+              <span className="material-icons text-[20px]">arrow_back</span>
+            </Link>
+            <h1 className="text-[16px] font-bold text-text-primary">New Incident</h1>
+          </div>
         </div>
-        <button
-          onClick={submit}
-          disabled={submitting}
-          className="h-10 px-5 text-[14px] font-semibold rounded-lg bg-primary text-white hover:bg-primary-dark disabled:opacity-50 transition-colors"
-        >
-          {submitting ? 'Saving…' : 'Submit'}
-        </button>
-      </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 max-w-2xl">
         {error && error !== 'not_linked' && (
-          <div className="rounded-lg border border-error/30 bg-error/10 px-3 py-2 text-[13px] text-error">{error}</div>
+          <p className="text-error text-[13px]">{error}</p>
         )}
         {offlineSaved && (
-          <div className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-[13px] text-warning">
-            Saved offline — will sync when back online.
-          </div>
+          <p className="text-[13px] text-warning">Saved offline — will sync when back online.</p>
         )}
 
-        <section className="card p-4 space-y-3">
-          <p className="section-label">DETAILS</p>
-          <Field label="Title">
-            <input value={title} onChange={e => setTitle(e.target.value)} className="dark-entry w-full" placeholder="Optional short title" />
-          </Field>
-          <Field label="Description *">
+        <SectionCard title="Details">
+          <FormField label="Title">
+            <input value={title} onChange={e => setTitle(e.target.value)} className={entryClass} placeholder="Optional short title" />
+          </FormField>
+          <FormField label="Description *">
             <textarea
               value={description}
               onChange={e => setDescription(e.target.value)}
-              className="dark-entry w-full min-h-[120px]"
+              className={`${entryClass} h-auto py-3 min-h-[120px] resize-none`}
               placeholder="What happened?"
               autoFocus
             />
-          </Field>
+          </FormField>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Severity">
-              <select value={severity} onChange={e => setSeverity(e.target.value)} className="dark-entry w-full">
+            <FormField label="Severity">
+              <select value={severity} onChange={e => setSeverity(e.target.value)} className={`${entryClass} appearance-none capitalize`}>
                 {INCIDENT_SEVERITIES.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
-            </Field>
-            <Field label="Category">
-              <select value={category} onChange={e => setCategory(e.target.value)} className="dark-entry w-full">
+            </FormField>
+            <FormField label="Category">
+              <select value={category} onChange={e => setCategory(e.target.value)} className={`${entryClass} appearance-none capitalize`}>
                 {INCIDENT_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
-            </Field>
+            </FormField>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Occurred date">
-              <input type="date" value={occurredDate} onChange={e => setOccurredDate(e.target.value)} className="dark-entry w-full" />
-            </Field>
-            <Field label="Occurred time">
-              <input type="time" value={occurredTime} onChange={e => setOccurredTime(e.target.value)} className="dark-entry w-full" />
-            </Field>
+            <FormField label="Occurred date">
+              <input type="date" value={occurredDate} onChange={e => setOccurredDate(e.target.value)} className={entryClass} />
+            </FormField>
+            <FormField label="Occurred time">
+              <input type="time" value={occurredTime} onChange={e => setOccurredTime(e.target.value)} className={entryClass} />
+            </FormField>
           </div>
-        </section>
+        </SectionCard>
 
-        <section className="card p-4 space-y-3">
-          <p className="section-label">CONTEXT</p>
-          <Field label="Assign to manager">
-            <select value={selectedManagerId} onChange={e => setSelectedManagerId(e.target.value)} className="dark-entry w-full">
+        <SectionCard title="Where and who">
+          <FormField label="Assign to manager">
+            <select value={selectedManagerId} onChange={e => setSelectedManagerId(e.target.value)} className={`${entryClass} appearance-none`}>
               <option value="">Unassigned</option>
               {managers.map(m => (
                 <option key={m.id} value={m.id}>{m.name} {m.surname}</option>
               ))}
             </select>
-          </Field>
-          <Field label="Linked job">
-            <select value={selectedJobId} onChange={e => onJobChange(e.target.value)} className="dark-entry w-full">
+          </FormField>
+          <FormField label="Linked job">
+            <select value={selectedJobId} onChange={e => onJobChange(e.target.value)} className={`${entryClass} appearance-none`}>
               <option value="">None</option>
               {jobs.map(j => <option key={j.id} value={j.id}>{j.title}</option>)}
             </select>
-          </Field>
-          <Field label="Client">
-            <select value={selectedClientId} onChange={e => onClientChange(e.target.value)} className="dark-entry w-full">
+          </FormField>
+          <FormField label="Client" hint="Choose a client to list its sites.">
+            <select value={selectedClientId} onChange={e => onClientChange(e.target.value)} className={`${entryClass} appearance-none`}>
               <option value="">None</option>
               {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
-          </Field>
+          </FormField>
           {sites.length > 0 && (
-            <Field label="Site">
-              <select value={selectedSiteId} onChange={e => setSelectedSiteId(e.target.value)} className="dark-entry w-full">
+            <FormField label="Site">
+              <select value={selectedSiteId} onChange={e => setSelectedSiteId(e.target.value)} className={`${entryClass} appearance-none`}>
                 <option value="">None</option>
                 {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
-            </Field>
+            </FormField>
           )}
-          <Field label="Location text">
-            <input value={location} onChange={e => setLocation(e.target.value)} className="dark-entry w-full" />
-          </Field>
+          <FormField label="Location">
+            <input value={location} onChange={e => setLocation(e.target.value)} className={entryClass} placeholder="Street, yard, or area" />
+          </FormField>
           <label className="flex items-center gap-2 text-[13px] text-text-primary">
             <input type="checkbox" checked={captureGps} onChange={e => setCaptureGps(e.target.checked)} />
             Capture GPS
@@ -460,20 +450,20 @@ export default function HrNewIncidentPage() {
               Refresh location
             </button>
           )}
-          <Field label="Photos">
+          <FormField label="Photos">
             <input ref={photoRef} type="file" accept="image/*" multiple className="text-[13px] text-text-secondary" />
-          </Field>
-        </section>
-      </div>
-    </div>
-  )
-}
+          </FormField>
+        </SectionCard>
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex flex-col gap-1">
-      <label className="text-xs text-text-secondary font-medium">{label}</label>
-      {children}
+        <button
+          type="button"
+          onClick={submit}
+          disabled={submitting}
+          className="w-full h-[52px] bg-primary text-white rounded-md font-semibold text-[15px] hover:bg-primary-dark disabled:opacity-50 transition-colors"
+        >
+          {submitting ? 'Saving…' : 'Submit incident'}
+        </button>
+      </div>
     </div>
   )
 }
