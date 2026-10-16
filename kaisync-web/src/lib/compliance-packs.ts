@@ -14,6 +14,18 @@ export type PackItemInput = {
   requirement: 'required' | 'recommended'
 }
 
+export function compliancePackErrorMessage(message: string): string {
+  if (message.includes('uq_compliance_pack_company_name')) {
+    return 'A pack with this name already exists.'
+  }
+  if (message.includes('uq_compliance_pack_company_code')) {
+    return 'Another pack already uses a code close to this name. Choose a different name.'
+  }
+  if (message.includes('NAME_REQUIRED')) return 'Pack name is required.'
+  if (message.includes('PACK_NOT_FOUND')) return 'That pack is no longer available.'
+  return message
+}
+
 export async function upsertCompliancePack(
   supabase: SupabaseClient,
   opts: {
@@ -33,7 +45,7 @@ export async function upsertCompliancePack(
       p_description: opts.description?.trim() || null,
       p_items: opts.items,
     })
-    if (error) return { ok: false, message: error.message }
+    if (error) return { ok: false, message: compliancePackErrorMessage(error.message) }
     const id = typeof data === 'string' ? data : String(data)
 
     await logCompliancePackEvent(supabase, {
@@ -59,7 +71,7 @@ export async function setDefaultCompliancePack(
       p_company_id: opts.companyId,
       p_pack_id: opts.packId,
     })
-    if (error) return { ok: false, message: error.message }
+    if (error) return { ok: false, message: compliancePackErrorMessage(error.message) }
 
     await logCompliancePackEvent(supabase, {
       companyId: opts.companyId,
@@ -85,7 +97,7 @@ export async function archiveCompliancePack(
       p_pack_id: opts.packId,
       p_archived: opts.archived ?? true,
     })
-    if (error) return { ok: false, message: error.message }
+    if (error) return { ok: false, message: compliancePackErrorMessage(error.message) }
 
     await logCompliancePackEvent(supabase, {
       companyId: opts.companyId,
