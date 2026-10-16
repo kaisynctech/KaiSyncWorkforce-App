@@ -80,7 +80,7 @@ export default function IncidentDetailPage() {
 
     const [incRes, commRes, histRes, empRes] = await Promise.all([
       supabase.from('incident_reports')
-        .select('*, jobs(title), assignee:employees!assignee_id(name, surname), reporter:employees!employee_id(name, surname)')
+        .select('*, jobs(id, title, job_code), sites(name), assignee:employees!assignee_id(name, surname), reporter:employees!employee_id(name, surname)')
         .eq('id', incidentId)
         .eq('company_id', member.companyId)
         .single(),
@@ -211,14 +211,28 @@ export default function IncidentDetailPage() {
             <div>
               <StatusBadge label={incident.status} bg={stBg(incident.status)} fg={stFg(incident.status)} />
             </div>
+            <p className="text-text-secondary text-[12px]">Occurred {fmtDateTime(incident.occurred_at ?? incident.created_at)}</p>
             <p className="text-text-secondary text-[12px]">Reported {fmtDateTime(incident.created_at)}</p>
           </div>
           <StatusBadge label={incident.severity} bg={sevBg(incident.severity)} fg={sevFg(incident.severity)} />
         </div>
 
-        {incident.jobs?.title && (
+        {incident.jobs?.title && incident.job_id && (
           <div className="card p-4">
-            <p className="text-text-primary text-[14px]">Linked job: {incident.jobs.title}</p>
+            <Link href={`/dashboard/jobs/${incident.job_id}`} className="text-text-primary text-[14px] hover:underline">
+              Linked job: {incident.jobs.job_code ? `${incident.jobs.job_code} · ` : ''}{incident.jobs.title}
+            </Link>
+          </div>
+        )}
+
+        {(incident.sites?.name || incident.location_text) && (
+          <div className="card p-4 space-y-1">
+            {incident.sites?.name && (
+              <p className="text-text-primary text-[14px]">Site: {incident.sites.name}</p>
+            )}
+            {incident.location_text && (
+              <p className="text-text-primary text-[14px]">Location: {incident.location_text}</p>
+            )}
           </div>
         )}
 

@@ -573,7 +573,10 @@ export interface IncidentReport {
   status: string
   category: string | null
   job_id: string | null
+  site_id?: string | null
   deal_id: string | null
+  occurred_at?: string | null
+  location_text?: string | null
   contractor_id: string | null
   employee_id: string | null
   assignee_id: string | null
@@ -581,7 +584,8 @@ export interface IncidentReport {
   resolution_notes: string | null
   photo_urls?: string[] | null
   created_at: string
-  jobs?: { title: string } | null
+  jobs?: { id?: string; title: string; job_code?: string | null } | null
+  sites?: { name: string } | null
   reporter?: { name: string; surname: string } | null
   assignee?: { name: string; surname: string } | null
 }
