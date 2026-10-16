@@ -19,16 +19,18 @@ import { StatusBadge } from '@/components/ui/StatusBadge'
 import { ClientActivityTab } from '@/components/ClientActivityTab'
 import { ClientDocumentRequests } from '@/components/ClientDocumentRequests'
 import { fmtMoney } from '@/lib/finance-calc'
+import { createInvoiceFromAcceptedQuote } from '@/lib/quote-invoice'
 import type { Client, ClientDocument, ClientNote, Site, Project, ProjectDocument } from '@/types/database'
 import type { FinanceInvoice } from '@/lib/finance-types'
 
-const CLIENT_TABS = ['info', 'projects', 'jobs', 'invoices', 'documents', 'notes', 'activity', 'commercial'] as const
+const CLIENT_TABS = ['info', 'projects', 'jobs', 'quotes', 'invoices', 'documents', 'notes', 'activity', 'commercial'] as const
 type ClientTab = typeof CLIENT_TABS[number]
 
 const TAB_LABELS: Record<ClientTab, string> = {
   info: 'Information',
   projects: 'Projects',
   jobs: 'Jobs',
+  quotes: 'Quotes',
   invoices: 'Invoices',
   documents: 'Documents',
   notes: 'Notes',
@@ -150,6 +152,16 @@ function ClientDetailInner() {
   const [projects, setProjects] = useState<Project[]>([])
   const [clientJobs, setClientJobs] = useState<ClientJob[]>([])
   const [invoices, setInvoices] = useState<FinanceInvoice[]>([])
+  const [clientQuotes, setClientQuotes] = useState<Array<{
+    id: string
+    quote_number: string | null
+    title: string
+    status: string
+    total_amount: number
+    created_at: string
+    deal_id: string | null
+  }>>([])
+  const [quoteBusyId, setQuoteBusyId] = useState<string | null>(null)
   const [clientDocs, setClientDocs] = useState<ClientDocument[]>([])
   const [projectDocs, setProjectDocs] = useState<ClientDocRow[]>([])
   const [timelineNotes, setTimelineNotes] = useState<ClientNote[]>([])
@@ -508,7 +520,7 @@ function ClientDetailInner() {
       supabase.from('client_deals').select('*, employees:manager_employee_id(name, surname)').eq('client_id', clientId).order('created_at', { ascending: false }),
       supabase
         .from('finance_invoices')
-        .select('id, invoice_number, status, issue_date, due_date, total_amount, balance_due, client_id, company_id')
+        .select('id, invoice_number, status, issue_date, due_date, total_amount, balance_due, client_id, company_id, quote_id')
         .eq('client_id', clientId)
         .order('issue_date', { ascending: false }),
     ])
@@ -571,6 +583,14 @@ function ClientDetailInner() {
     setSites((sRes.data ?? []) as Site[])
     setProjects(projectRows)
     setInvoices((iRes.data ?? []) as FinanceInvoice[])
+    const { data: quoteRows, error: quoteError } = await supabase
+      .from('commercial_quotes')
+      .select('id, quote_number, title, status, total_amount, created_at, deal_id')
+      .eq('client_id', clientId)
+      .eq('company_id', c.company_id)
+      .order('created_at', { ascending: false })
+    if (quoteError) setError(quoteError.message)
+    setClientQuotes((quoteRows ?? []) as typeof clientQuotes)
 
     const [jobs, docs, cDocs, tNotes] = await Promise.all([
       loadJobs(supabase, projectRows),
@@ -1036,6 +1056,26 @@ function ClientDetailInner() {
     } catch {
       setError('Could not copy portal credentials to clipboard.')
     }
+  }
+
+  async function turnQuoteIntoInvoice(quoteId: string) {
+    if (!client || !canEdit) return
+    setQuoteBusyId(quoteId)
+    setError(null)
+    const supabase = createClient()
+    const member = await resolveCurrentMember(supabase)
+    const result = await createInvoiceFromAcceptedQuote(supabase, {
+      companyId: client.company_id,
+      clientId: client.id,
+      quoteId,
+      employeeId: member?.employeeId ?? null,
+    })
+    setQuoteBusyId(null)
+    if (!result.ok) {
+      setError(result.message)
+      return
+    }
+    router.push(`/dashboard/money/invoices/${result.invoiceId}`)
   }
 
   function selectTab(t: ClientTab) {
@@ -1656,6 +1696,79 @@ function ClientDetailInner() {
                       )
                     })
                   )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {showRelatedTabs && tab === 'quotes' && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="section-label">QUOTES</p>
+              {canEdit && (
+                <button onClick={() => router.push('/dashboard/money/quotes/new')}
+                  className="btn-primary h-9 px-[14px] text-[13px]">+ Quote</button>
+              )}
+            </div>
+            <div className="overflow-x-auto bg-surface rounded-lg border border-divider">
+              <table style={{ minWidth: 760 }} className="w-full">
+                <thead>
+                  <tr className="bg-surface-elevated border-b border-divider">
+                    <th className="data-th">Number</th>
+                    <th className="data-th">Title</th>
+                    <th style={{ width: 110 }} className="data-th">Status</th>
+                    <th style={{ width: 130 }} className="data-th">Client answer</th>
+                    <th style={{ width: 100 }} className="data-th text-right">Amount</th>
+                    <th style={{ width: 150 }} className="data-th"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {clientQuotes.length === 0 ? (
+                    <tr><td colSpan={6} className="text-text-secondary text-center py-6 text-[13px]">No quotes for this client.</td></tr>
+                  ) : clientQuotes.map(quote => {
+                    const deal = projects.find(project => project.id === quote.deal_id)
+                    const answer = deal?.quotation_response === 'accepted'
+                      ? 'Accepted'
+                      : deal?.quotation_response === 'revision_requested'
+                        ? 'Revision asked'
+                        : 'Waiting'
+                    const existingInvoice = invoices.find(invoice => invoice.quote_id === quote.id)
+                    return (
+                      <tr key={quote.id} className="bg-surface border-b border-divider last:border-0">
+                        <td
+                          className="data-td text-primary text-[13px] font-medium cursor-pointer"
+                          onClick={() => router.push(`/dashboard/money/quotes/${quote.id}`)}
+                        >
+                          {quote.quote_number || 'Quote'}
+                        </td>
+                        <td className="data-td text-text-primary text-[13px]">{quote.title}</td>
+                        <td className="data-td text-text-secondary text-[12px] capitalize">{quote.status.replace(/_/g, ' ')}</td>
+                        <td className="data-td text-text-secondary text-[12px]">{quote.deal_id ? answer : '—'}</td>
+                        <td className="data-td text-text-secondary text-[12px] text-right">{fmtMoney(quote.total_amount)}</td>
+                        <td className="data-td text-right">
+                          {existingInvoice ? (
+                            <button
+                              type="button"
+                              onClick={() => router.push(`/dashboard/money/invoices/${existingInvoice.id}`)}
+                              className="text-primary text-[12px] font-medium"
+                            >
+                              Open invoice
+                            </button>
+                          ) : canEdit && answer === 'Accepted' ? (
+                            <button
+                              type="button"
+                              disabled={quoteBusyId === quote.id}
+                              onClick={() => void turnQuoteIntoInvoice(quote.id)}
+                              className="text-primary text-[12px] font-medium disabled:opacity-50"
+                            >
+                              {quoteBusyId === quote.id ? 'Creating…' : 'Turn into invoice'}
+                            </button>
+                          ) : null}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
