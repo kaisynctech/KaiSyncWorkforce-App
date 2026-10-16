@@ -39,6 +39,8 @@ export type EnsureMoneyQuoteInput = {
   validUntil?: string | null
   /** When true, refresh commercial lines from project_quotation_lines if quote is still draft. */
   syncLinesFromProject?: boolean
+  /** Send again: copy the current project lines even when the quote was already sent. */
+  forceLineSync?: boolean
 }
 
 /**
@@ -75,7 +77,7 @@ export async function ensureMoneyQuoteForProject(
     const total = subtotal + vat
 
     if (existing) {
-      if (input.syncLinesFromProject && existing.status === 'draft' && lines.length > 0) {
+      if (input.syncLinesFromProject && lines.length > 0 && (input.forceLineSync || existing.status === 'draft')) {
         await replaceCommercialLines(supabase, {
           companyId: input.companyId,
           quoteId: existing.id,
@@ -199,6 +201,7 @@ export async function sendProjectQuotationViaMoneyQuote(
   const ensured = await ensureMoneyQuoteForProject(supabase, {
     ...input,
     syncLinesFromProject: true,
+    forceLineSync: true,
   })
   if (!ensured.ok) return ensured
 

@@ -7,9 +7,11 @@ import { ClientPortalShell } from '@/components/ClientPortalShell'
 import { PortalTabs } from '@/components/PortalTabs'
 import { useRequireClientPortalSession } from '@/lib/client-portal/use-session'
 import {
+  acceptQuotation,
   addDocumentLink,
   getProject,
   listJobs,
+  reviseQuotation,
   sendMessage,
   signPortalMedia,
   uploadDocument,
@@ -56,6 +58,10 @@ export default function ClientPortalProjectDetailPage() {
   const [showLinkForm, setShowLinkForm] = useState(false)
   const [uploadName, setUploadName] = useState('')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [quoteNote, setQuoteNote] = useState('')
+  const [quoteFile, setQuoteFile] = useState<File | null>(null)
+  const [quoteBusy, setQuoteBusy] = useState(false)
+  const [quoteError, setQuoteError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const messagesRef = useRef<HTMLDivElement>(null)
 
@@ -110,6 +116,42 @@ export default function ClientPortalProjectDetailPage() {
       setError(e instanceof Error ? e.message : 'Failed to load project.')
     }
     setLoading(false)
+  }
+
+  async function acceptThisQuotation() {
+    if (!session) return
+    setQuoteBusy(true)
+    setQuoteError(null)
+    try {
+      await acceptQuotation(session.company_code, session.client_code, dealId)
+      await load()
+    } catch (e: unknown) {
+      setQuoteError(e instanceof Error ? e.message : 'Could not accept the quotation.')
+    }
+    setQuoteBusy(false)
+  }
+
+  async function sendRevision() {
+    if (!session || !quoteNote.trim()) return
+    setQuoteBusy(true)
+    setQuoteError(null)
+    try {
+      await reviseQuotation({
+        companyCode: session.company_code,
+        clientCode: session.client_code,
+        companyId: session.company_id,
+        clientId: session.client_id,
+        dealId,
+        note: quoteNote.trim(),
+        file: quoteFile,
+      })
+      setQuoteNote('')
+      setQuoteFile(null)
+      await load()
+    } catch (e: unknown) {
+      setQuoteError(e instanceof Error ? e.message : 'Could not send the revision.')
+    }
+    setQuoteBusy(false)
   }
 
   const quoteLines = useMemo(
@@ -363,6 +405,46 @@ export default function ClientPortalProjectDetailPage() {
                   {isDateSet(project.quotation_valid_until) && (
                     <p className="text-[12px] text-text-secondary mt-2">Valid until {fmtDate(project.quotation_valid_until)}</p>
                   )}
+                  <div className="mt-4 space-y-2">
+                    {project.quotation_response === 'accepted' && (
+                      <p className="text-[13px] font-semibold text-text-primary">You accepted this quotation.</p>
+                    )}
+                    {project.quotation_response === 'revision_requested' && (
+                      <p className="text-[13px] text-text-primary">
+                        You asked for a revision{project.quotation_response_note ? `: ${project.quotation_response_note}` : '.'} The next version will replace this one.
+                      </p>
+                    )}
+                    {project.quotation_response !== 'accepted' && (
+                      <>
+                        {quoteError && <p className="text-[12px] text-error">{quoteError}</p>}
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            disabled={quoteBusy}
+                            onClick={() => void acceptThisQuotation()}
+                            className="text-[12px] font-semibold px-3 py-1.5 rounded-lg bg-primary text-white disabled:opacity-50"
+                          >
+                            Accept
+                          </button>
+                        </div>
+                        <textarea
+                          value={quoteNote}
+                          onChange={e => setQuoteNote(e.target.value)}
+                          placeholder="What should change"
+                          className="w-full min-h-[72px] rounded-lg border border-divider bg-background px-3 py-2 text-[13px]"
+                        />
+                        <input type="file" onChange={e => setQuoteFile(e.target.files?.[0] ?? null)} className="text-[12px] text-text-secondary" />
+                        <button
+                          type="button"
+                          disabled={quoteBusy || !quoteNote.trim()}
+                          onClick={() => void sendRevision()}
+                          className="text-[12px] font-semibold px-3 py-1.5 rounded-lg border border-divider text-text-primary disabled:opacity-50"
+                        >
+                          Send a revision
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </>
               )}
             </Section>

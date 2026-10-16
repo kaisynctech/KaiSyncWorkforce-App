@@ -5,6 +5,7 @@
 import { createClient } from '@/lib/supabase/client'
 import type {
   ActivityUpdate,
+  ClientDocumentRequest,
   ClientJobChecklistItem,
   ClientJobDocument,
   ClientJobTeamMember,
@@ -152,6 +153,10 @@ export function parseClientPortalProject(row: Record<string, unknown>): ClientPo
     quotation_notes: strN(row.quotation_notes),
     quotation_valid_until: strN(row.quotation_valid_until),
     quotation_sent_at: strN(row.quotation_sent_at),
+    quotation_response: 'pending',
+    quotation_response_note: null,
+    quotation_response_at: null,
+    quotation_response_storage_path: null,
     created_at: str(row.created_at) || new Date().toISOString(),
     updated_at: str(row.updated_at) || new Date().toISOString(),
     job_count: Math.round(num(row.job_count)),
@@ -380,7 +385,24 @@ export async function getProject(
   const rows = asArray(data)
   if (rows.length === 0) return null
   const project = parseClientPortalProject(rows[0])
-  return project.id ? project : null
+  if (!project.id) return null
+  try {
+    const raw = await rpc('client_portal_get_quotation_response', {
+      ...codes(companyCode, clientCode),
+      p_deal_id: dealId,
+    })
+    if (raw && typeof raw === 'object') {
+      const response = raw as Record<string, unknown>
+      const status = str(response.quotation_response)
+      project.quotation_response = status === 'accepted' || status === 'revision_requested' ? status : 'pending'
+      project.quotation_response_note = strN(response.quotation_response_note)
+      project.quotation_response_at = strN(response.quotation_response_at)
+      project.quotation_response_storage_path = strN(response.quotation_response_storage_path)
+    }
+  } catch {
+    // The project still loads if the answer lookup fails.
+  }
+  return project
 }
 
 /** Object path inside workforce-media, whether the stored value is a path or a public URL. */
@@ -497,5 +519,126 @@ export async function uploadDocument(params: {
     document_type: 'client_upload',
     file_url: fileUrl,
     created_at: new Date().toISOString(),
+  }
+}
+
+function handshakeError(error: unknown): never {
+  const message = error instanceof Error ? error.message : 'Request failed.'
+  if (message.includes('NOTE_REQUIRED')) throw new Error('Add a note so the office knows what to change.')
+  if (message.includes('QUOTATION_NOT_SHARED')) throw new Error('There is no quotation to accept yet.')
+  if (message.includes('QUOTATION_ALREADY_ACCEPTED')) throw new Error('This quotation is already accepted.')
+  if (message.includes('REQUEST_NOT_OPEN')) throw new Error('That request is no longer waiting for a file.')
+  if (message.includes('FILE_REQUIRED')) throw new Error('Choose a file to send.')
+  throw error instanceof Error ? error : new Error(message)
+}
+
+export async function listDocumentRequests(
+  companyCode: string,
+  clientCode: string,
+): Promise<ClientDocumentRequest[]> {
+  const data = await rpc('client_portal_list_document_requests', codes(companyCode, clientCode))
+  return asArray(data).map(row => ({
+    id: str(row.id),
+    document_name: str(row.document_name),
+    document_type: str(row.document_type) || 'other',
+    request_note: strN(row.request_note),
+    status: str(row.status) || 'requested',
+    review_note: strN(row.review_note),
+    storage_path: strN(row.storage_path),
+    submitted_at: strN(row.submitted_at),
+    created_at: str(row.created_at) || new Date().toISOString(),
+  })).filter(row => row.id)
+}
+
+async function uploadPortalClientFile(
+  companyCode: string,
+  clientCode: string,
+  companyId: string,
+  clientId: string,
+  file: File,
+  prefix: string,
+): Promise<string> {
+  const supabase = createClient()
+  const ext = file.name.includes('.') ? `.${file.name.split('.').pop()!.toLowerCase()}` : ''
+  const path = `client_documents/${companyId}/${clientId}/${prefix}_${crypto.randomUUID()}${ext}`
+  await rpc('client_portal_prepare_upload', {
+    ...codes(companyCode, clientCode),
+    p_storage_path: path,
+  })
+  const { error } = await supabase.storage
+    .from('workforce-media')
+    .upload(path, file, { upsert: false, contentType: file.type || undefined })
+  if (error) throw error
+  return path
+}
+
+export async function submitDocumentRequest(params: {
+  companyCode: string
+  clientCode: string
+  companyId: string
+  clientId: string
+  requestId: string
+  file: File
+}): Promise<void> {
+  const path = await uploadPortalClientFile(
+    params.companyCode,
+    params.clientCode,
+    params.companyId,
+    params.clientId,
+    params.file,
+    'portal',
+  )
+  try {
+    await rpc('client_portal_submit_document_request', {
+      ...codes(params.companyCode, params.clientCode),
+      p_request_id: params.requestId,
+      p_storage_path: path,
+      p_file_size_bytes: params.file.size,
+      p_mime_type: params.file.type || null,
+    })
+  } catch (error) {
+    handshakeError(error)
+  }
+}
+
+export async function acceptQuotation(companyCode: string, clientCode: string, dealId: string): Promise<void> {
+  try {
+    await rpc('client_portal_accept_quotation', {
+      ...codes(companyCode, clientCode),
+      p_deal_id: dealId,
+    })
+  } catch (error) {
+    handshakeError(error)
+  }
+}
+
+export async function reviseQuotation(params: {
+  companyCode: string
+  clientCode: string
+  companyId: string
+  clientId: string
+  dealId: string
+  note: string
+  file: File | null
+}): Promise<void> {
+  const path = params.file
+    ? await uploadPortalClientFile(
+      params.companyCode,
+      params.clientCode,
+      params.companyId,
+      params.clientId,
+      params.file,
+      'quote',
+    )
+    : null
+  try {
+    await rpc('client_portal_revise_quotation', {
+      ...codes(params.companyCode, params.clientCode),
+      p_deal_id: params.dealId,
+      p_note: params.note,
+      p_storage_path: path,
+    })
+  } catch (error) {
+    handshakeError(error)
   }
 }

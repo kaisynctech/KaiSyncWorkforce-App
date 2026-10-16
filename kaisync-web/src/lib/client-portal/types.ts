@@ -100,6 +100,10 @@ export type ClientPortalProject = {
   quotation_notes: string | null
   quotation_valid_until: string | null
   quotation_sent_at: string | null
+  quotation_response: 'pending' | 'accepted' | 'revision_requested'
+  quotation_response_note: string | null
+  quotation_response_at: string | null
+  quotation_response_storage_path: string | null
   created_at: string
   updated_at: string
   job_count: number
@@ -116,6 +120,18 @@ export type QuotationLine = {
   description: string
   quantity: number
   unit_price: number
+}
+
+export type ClientDocumentRequest = {
+  id: string
+  document_name: string
+  document_type: string
+  request_note: string | null
+  status: string
+  review_note: string | null
+  storage_path: string | null
+  submitted_at: string | null
+  created_at: string
 }
 
 export type ProjectDocument = {

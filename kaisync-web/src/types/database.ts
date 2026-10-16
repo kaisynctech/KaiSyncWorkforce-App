@@ -279,6 +279,10 @@ export interface Project {
   agreement_notes: string | null
   quotation_notes: string | null
   quotation_valid_until: string | null
+  quotation_response?: 'pending' | 'accepted' | 'revision_requested' | null
+  quotation_response_note?: string | null
+  quotation_response_at?: string | null
+  quotation_response_storage_path?: string | null
   site_start_date: string | null
   expected_completion_date: string | null
   next_visit_date: string | null
