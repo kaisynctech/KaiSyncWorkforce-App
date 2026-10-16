@@ -12,7 +12,13 @@ import {
   pageRange,
   totalPages,
 } from '@/lib/list-pagination'
-import { KpiTile } from '@/components/ui/KpiTile'
+import {
+  ResponsiveDataView,
+  DataCard,
+  DataCardTitle,
+  DataCardMeta,
+  DataCardRow,
+} from '@/components/ui/ResponsiveDataView'
 import { logProjectEvent } from '@/lib/project-events'
 import type { Project, ProjectActionItem } from '@/types/database'
 
@@ -22,13 +28,13 @@ const STATUS_LABELS: Record<string, string> = {
   negotiation: 'Negotiation', won: 'Won', lost: 'Lost',
 }
 const STATUS_OPTIONS = ['draft', 'sent', 'in_progress', 'negotiation', 'won', 'lost']
-const STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
-  draft:       { bg: '#E5E7EB', fg: '#6B7280' },
-  sent:        { bg: '#DBEAFE', fg: '#1E40AF' },
-  in_progress: { bg: '#FEF3C7', fg: '#92400E' },
-  negotiation: { bg: '#EDE9FE', fg: '#5B21B6' },
-  won:         { bg: '#DCFCE7', fg: '#166534' },
-  lost:        { bg: '#FEE2E2', fg: '#991B1B' },
+const STATUS_BADGE: Record<string, string> = {
+  draft: 'bg-surface-elevated text-text-secondary',
+  sent: 'bg-[#DBEAFE] text-[#1D4ED8]',
+  in_progress: 'bg-warning-dark text-[#92400E]',
+  negotiation: 'bg-[#EDE9FE] text-[#5B21B6]',
+  won: 'bg-success-dark text-[#166534]',
+  lost: 'bg-error-dark text-[#991B1B]',
 }
 
 const ACTION_TYPE_COLORS: Record<string, { bg: string; fg: string }> = {
@@ -256,48 +262,118 @@ export default function ProjectsPage() {
     )
   }
 
+  const rangeLabel = total === 0
+    ? '0 projects'
+    : `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}`
+
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-divider shrink-0 bg-surface">
-        <h1 className="text-[20px] font-semibold text-text-primary">Projects</h1>
-        <div className="flex gap-2">
-          <button onClick={() => void load()} className="btn-outlined h-9 px-3 text-[13px]">Refresh</button>
-          {canCreate && (
+    <div className="h-full min-h-0 flex flex-col">
+      <div className="px-3 pt-3 pb-2 space-y-2 shrink-0">
+        <div className="flex items-center justify-between gap-2">
+          <h1 className="text-[16px] font-bold text-text-primary">Projects</h1>
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => router.push('/dashboard/projects/import')}
-              className="h-9 px-3 text-[13px] rounded-lg border border-border text-text-primary hover:bg-surface-elevated transition-colors"
+              type="button"
+              onClick={() => void load()}
+              className="h-8 px-2.5 rounded-sm bg-surface border border-border text-[12px] text-text-secondary font-medium hover:border-primary hover:text-primary transition-colors"
             >
-              Import CSV
+              Refresh
             </button>
+            {canCreate && (
+              <button
+                type="button"
+                onClick={() => router.push('/dashboard/projects/import')}
+                className="h-8 px-2.5 rounded-sm bg-surface border border-border text-[12px] text-text-secondary font-medium hover:border-primary hover:text-primary transition-colors"
+              >
+                Import
+              </button>
+            )}
+            {canCreate && (
+              <button
+                type="button"
+                onClick={() => router.push('/dashboard/projects/new')}
+                className="flex items-center gap-1 h-8 px-2.5 rounded-sm bg-primary text-white text-[12px] font-semibold hover:bg-primary-dark transition-colors"
+              >
+                <span className="material-icons text-[16px]">add</span>
+                New Project
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#1E293B]">
+            <span className="text-[14px] font-semibold text-[#94A3B8]">{kpis.total}</span>
+            <span className="text-[11px] text-[#64748B]">Total</span>
+          </span>
+          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#0F2918]">
+            <span className="text-[14px] font-semibold text-[#22C55E]">{kpis.active}</span>
+            <span className="text-[11px] text-[#4ADE80]">Active</span>
+          </span>
+          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#1E293B]">
+            <span className="text-[14px] font-semibold text-[#94A3B8]">{kpis.draft}</span>
+            <span className="text-[11px] text-[#64748B]">Draft</span>
+          </span>
+          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#0F2918]">
+            <span className="text-[14px] font-semibold text-[#22C55E]">{kpis.won}</span>
+            <span className="text-[11px] text-[#4ADE80]">Won</span>
+          </span>
+          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#1E293B]">
+            <span className="text-[14px] font-semibold text-[#FCD34D]">{fmtCurrency(kpis.pipelineValue)}</span>
+            <span className="text-[11px] text-[#64748B]">Pipeline</span>
+          </span>
+          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#1E293B]">
+            <span className="text-[14px] font-semibold text-[#FCA5A5]">{fmtCurrency(kpis.outstanding)}</span>
+            <span className="text-[11px] text-[#64748B]">Outstanding</span>
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          {canViewAll && (
+            <div className="flex rounded-md overflow-hidden border border-divider shrink-0">
+              {([
+                { value: 'all' as const, label: 'All' },
+                { value: 'mine' as const, label: 'Mine' },
+              ]).map(({ value, label }) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setScope(value)}
+                  className={`h-8 px-3 text-[12px] font-medium transition-colors ${scope === value ? 'bg-primary text-white' : 'bg-surface text-text-secondary hover:text-text-primary'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           )}
-          {canCreate && (
-            <button onClick={() => router.push('/dashboard/projects/new')} className="btn-primary h-9 px-3 text-[13px]">
-              + Project
+          <div className="flex items-center gap-1.5 h-8 px-2 bg-surface border border-border rounded-sm flex-1 min-w-0">
+            <span className="material-icons text-text-disabled text-[16px]">search</span>
+            <input
+              type="search"
+              placeholder="Search code or title"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="flex-1 min-w-0 text-[13px] text-text-primary placeholder:text-text-disabled bg-transparent focus:outline-none"
+            />
+          </div>
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          {STATUS_FILTERS.map(value => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setStatusFilter(value)}
+              className={`h-8 px-[14px] rounded-pill text-[11px] font-medium transition-colors ${statusFilter === value ? 'bg-primary text-white' : 'bg-surface text-text-secondary border border-border hover:text-text-primary'}`}
+            >
+              {STATUS_LABELS[value]}
             </button>
-          )}
+          ))}
         </div>
       </div>
 
       {loadError && (
-        <div className="mx-4 mt-2 rounded-lg border border-error/30 bg-error/5 px-3 py-2 text-[13px] text-error">
+        <div className="mx-3 mb-2 rounded-lg border border-error/30 bg-error/5 px-3 py-2 text-[13px] text-error shrink-0">
           {loadError}
         </div>
       )}
-
-      <div className="mx-4 mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-        <KpiTile value={kpis.total} label="Total" bg="#1E293B" valueFg="#94A3B8" labelFg="#64748B" />
-        <KpiTile value={kpis.active} label="Active" bg="#0F2918" valueFg="#22C55E" labelFg="#4ADE80" />
-        <KpiTile value={kpis.draft} label="Draft" bg="#1E293B" valueFg="#94A3B8" labelFg="#64748B" />
-        <KpiTile value={kpis.won} label="Won" bg="#0F2918" valueFg="#22C55E" labelFg="#4ADE80" />
-        <div className="rounded-lg py-2 flex flex-col items-center gap-1" style={{ backgroundColor: '#1E293B' }}>
-          <span className="text-[14px] font-semibold" style={{ color: '#FCD34D' }}>{fmtCurrency(kpis.pipelineValue)}</span>
-          <span className="text-[10px]" style={{ color: '#64748B' }}>Pipeline</span>
-        </div>
-        <div className="rounded-lg py-2 flex flex-col items-center gap-1" style={{ backgroundColor: '#1E293B' }}>
-          <span className="text-[14px] font-semibold" style={{ color: '#FCA5A5' }}>{fmtCurrency(kpis.outstanding)}</span>
-          <span className="text-[10px]" style={{ color: '#64748B' }}>AR outstanding</span>
-        </div>
-      </div>
 
       {/* Action Centre */}
       <div className="mx-4 mt-3 bg-surface rounded-xl border border-divider overflow-hidden">
@@ -350,159 +426,115 @@ export default function ProjectsPage() {
         </div>
       </div>
 
-      {canViewAll && (
-        <div className="grid grid-cols-2 gap-2 mx-4 mt-3">
-          <button
-            type="button"
-            onClick={() => setScope('all')}
-            className={`h-[38px] rounded-[10px] text-[12px] font-medium border ${scope === 'all' ? 'bg-primary text-white border-primary' : 'bg-surface text-text-secondary border-border hover:text-text-primary'}`}
-          >
-            All Projects
-          </button>
-          <button
-            type="button"
-            onClick={() => setScope('mine')}
-            className={`h-[38px] rounded-[10px] text-[12px] font-medium border ${scope === 'mine' ? 'bg-primary text-white border-primary' : 'bg-surface text-text-secondary border-border hover:text-text-primary'}`}
-          >
-            My Projects
-          </button>
-        </div>
-      )}
-
-      <p className="text-text-secondary text-[12px] mx-4 mt-1.5">
-        {total} project{total !== 1 ? 's' : ''}
-        {employeeId && !canViewAll ? ' (your projects)' : ''}
-      </p>
-
-      <div className="mx-4 mt-1 flex flex-wrap gap-2 items-center">
-        <input
-          type="search"
-          placeholder="Search code, title…"
-          className="flex-1 min-w-[200px] bg-surface border border-border text-text-primary placeholder:text-text-disabled rounded-lg px-3 py-2 text-[14px] focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-        />
-        <select
-          value={statusFilter}
-          onChange={e => setStatusFilter(e.target.value)}
-          className="h-10 px-3 rounded-lg border border-border bg-surface text-[13px] text-text-primary"
-        >
-          {STATUS_FILTERS.map(f => (
-            <option key={f} value={f}>{STATUS_LABELS[f]}</option>
-          ))}
-        </select>
-        <select
-          value={pageSize}
-          onChange={e => setPageSize(Number(e.target.value))}
-          className="h-10 px-3 rounded-lg border border-border bg-surface text-[13px] text-text-primary"
-        >
-          {PAGE_SIZE_OPTIONS.map(n => (
-            <option key={n} value={n}>{n} / page</option>
-          ))}
-        </select>
-      </div>
-
-      <div className="flex-1 overflow-y-auto">
-        <div className="overflow-x-auto mx-4 my-3 bg-surface rounded-lg border border-divider">
-          <table style={{ minWidth: 900 }} className="w-full">
-            <thead>
-              <tr className="bg-surface-elevated border-b border-divider">
-                <th style={{ width: 72 }} className="data-th pl-2">Code</th>
-                <th className="data-th">Project</th>
-                <th style={{ width: 88 }} className="data-th">Client</th>
-                <th style={{ width: 108 }} className="data-th">Manager</th>
-                <th style={{ width: 128 }} className="data-th">Status</th>
-                <th style={{ width: 92 }} className="data-th text-right">Offer</th>
-                <th style={{ width: 84 }} className="data-th text-right">Paid</th>
-                <th style={{ width: 56 }} className="data-th text-right">%</th>
-                <th style={{ width: 72 }} className="data-th text-center pr-2">Pay</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan={9} className="py-12 text-center text-[13px] text-text-disabled">Loading…</td></tr>
-              ) : projects.length === 0 ? (
-                <tr><td colSpan={9} className="py-8 text-center text-[13px] text-text-secondary">
-                  No projects match this view. Try All projects or adjust filters.
-                </td></tr>
-              ) : (
-                projects.map(p => {
-                  const sc = STATUS_COLORS[p.status ?? 'draft'] ?? STATUS_COLORS.draft
+      <div className="flex-1 min-h-0 overflow-auto mx-3 mb-1 bg-surface border border-divider rounded-lg">
+        {loading ? (
+          <div className="py-16 text-center text-[13px] text-text-disabled">Loading…</div>
+        ) : projects.length === 0 ? (
+          <div className="py-16 text-center">
+            <span className="material-icons text-[48px] text-text-disabled block mb-2">folder_open</span>
+            <p className="text-[14px] text-text-secondary">No projects found</p>
+          </div>
+        ) : (
+          <ResponsiveDataView
+            table={
+              <table className="w-full text-[13px]">
+                <thead>
+                  <tr className="border-b border-divider bg-surface-elevated">
+                    <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary w-[100px]">Code</th>
+                    <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary">Project</th>
+                    <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary w-[18%]">Client</th>
+                    <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary w-[140px]">Manager</th>
+                    <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary w-[140px]">Status</th>
+                    <th className="text-right px-3 py-2 text-[11px] font-medium text-text-secondary w-[100px]">Offer</th>
+                    <th className="text-right px-3 py-2 text-[11px] font-medium text-text-secondary w-[90px]">Paid</th>
+                    <th className="text-right px-3 py-2 text-[11px] font-medium text-text-secondary w-[56px]">%</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {projects.map(p => {
+                    const badge = STATUS_BADGE[p.status ?? 'draft'] ?? STATUS_BADGE.draft
+                    const progress = p.progress_percent != null
+                      ? Math.round(Number(p.progress_percent))
+                      : (p.offer_amount && p.amount_paid
+                        ? Math.round((Number(p.amount_paid) / Number(p.offer_amount)) * 100)
+                        : 0)
+                    const managerName = p.employees
+                      ? `${p.employees.name} ${p.employees.surname}`.trim()
+                      : '—'
+                    return (
+                      <tr
+                        key={p.id}
+                        className="border-b border-divider last:border-0 hover:bg-background transition-colors cursor-pointer"
+                        onClick={() => router.push(`/dashboard/projects/${p.id}`)}
+                      >
+                        <td className="px-3 py-2 font-mono text-[11px] text-text-secondary whitespace-nowrap">{p.project_code ?? '—'}</td>
+                        <td className="px-3 py-2 font-medium text-text-primary truncate">{p.title || '—'}</td>
+                        <td className="px-3 py-2 text-text-secondary truncate">{p.clients?.name ?? '—'}</td>
+                        <td className="px-3 py-2 text-text-secondary truncate">{managerName}</td>
+                        <td className="px-3 py-2" onClick={e => e.stopPropagation()}>
+                          <select
+                            value={p.status ?? 'draft'}
+                            onChange={e => void updateStatus(p, e.target.value)}
+                            disabled={!canEdit}
+                            className={`text-[11px] h-7 px-2 rounded-pill border-0 font-medium focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-60 ${badge}`}
+                          >
+                            {STATUS_OPTIONS.map(s => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
+                          </select>
+                        </td>
+                        <td className="px-3 py-2 text-right text-text-primary whitespace-nowrap">{fmtCurrency(p.offer_amount)}</td>
+                        <td className="px-3 py-2 text-right text-text-secondary whitespace-nowrap">{fmtCurrency(p.amount_paid)}</td>
+                        <td className="px-3 py-2 text-right font-medium text-text-primary">{progress}%</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            }
+            mobile={
+              <>
+                {projects.map(p => {
+                  const badge = STATUS_BADGE[p.status ?? 'draft'] ?? STATUS_BADGE.draft
                   const progress = p.progress_percent != null
                     ? Math.round(Number(p.progress_percent))
                     : (p.offer_amount && p.amount_paid
                       ? Math.round((Number(p.amount_paid) / Number(p.offer_amount)) * 100)
                       : 0)
-                  const managerName = p.employees
-                    ? `${p.employees.name} ${p.employees.surname}`.trim()
-                    : '—'
                   return (
-                    <tr key={p.id} className="bg-surface border-b border-divider hover:bg-background transition-colors">
-                      <td className="data-td pl-2">
-                        <button onClick={() => router.push(`/dashboard/projects/${p.id}`)}
-                          className="text-text-primary text-[12px] font-medium hover:text-primary transition-colors">
-                          {p.project_code ?? '—'}
-                        </button>
-                      </td>
-                      <td className="data-td">
-                        <button onClick={() => router.push(`/dashboard/projects/${p.id}`)}
-                          className="text-left text-text-primary text-[13px] font-medium truncate w-full hover:text-primary transition-colors">
-                          {p.title || '—'}
-                        </button>
-                      </td>
-                      <td className="data-td text-text-secondary text-[12px] truncate">{p.clients?.name ?? '—'}</td>
-                      <td className="data-td text-text-secondary text-[12px] truncate">{managerName}</td>
-                      <td className="data-td">
-                        <select
-                          value={p.status ?? 'draft'}
-                          onChange={e => void updateStatus(p, e.target.value)}
-                          disabled={!canEdit}
-                          className="text-[11px] h-8 px-2 rounded-lg border border-border bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 w-full disabled:opacity-60"
-                          style={{ color: sc.fg }}
-                        >
-                          {STATUS_OPTIONS.map(s => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
-                        </select>
-                      </td>
-                      <td className="data-td text-text-secondary text-[12px] text-right">{fmtCurrency(p.offer_amount)}</td>
-                      <td className="data-td text-text-secondary text-[12px] text-right">{fmtCurrency(p.amount_paid)}</td>
-                      <td className="data-td text-text-primary font-semibold text-[12px] text-right">{progress}%</td>
-                      <td className="data-td text-center pr-2">
-                        <button
-                          onClick={() => router.push(`/dashboard/projects/${p.id}?tab=payments`)}
-                          className="bg-primary text-white rounded-lg h-7 px-2 text-[10px] font-medium"
-                        >
-                          + Pay
-                        </button>
-                      </td>
-                    </tr>
+                    <DataCard key={p.id} onClick={() => router.push(`/dashboard/projects/${p.id}`)}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <DataCardTitle>{p.title || '—'}</DataCardTitle>
+                          <DataCardMeta className="font-mono">{p.project_code ?? '—'}</DataCardMeta>
+                        </div>
+                        <span className={`px-2 py-0.5 rounded-pill text-[11px] font-medium shrink-0 ${badge}`}>
+                          {STATUS_LABELS[p.status ?? 'draft'] ?? p.status}
+                        </span>
+                      </div>
+                      <DataCardRow label="Client" value={p.clients?.name ?? '—'} />
+                      <DataCardRow label="Offer" value={fmtCurrency(p.offer_amount)} />
+                      <DataCardRow label="Paid" value={fmtCurrency(p.amount_paid)} />
+                      <DataCardRow label="Progress" value={`${progress}%`} />
+                    </DataCard>
                   )
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {pages > 1 && (
-          <div className="mx-4 mb-4 flex items-center justify-between gap-2">
-            <button
-              type="button"
-              disabled={page <= 1}
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              className="btn-outlined h-8 px-3 text-[12px] disabled:opacity-40"
-            >
-              Previous
-            </button>
-            <span className="text-[12px] text-text-secondary">Page {page} of {pages}</span>
-            <button
-              type="button"
-              disabled={page >= pages}
-              onClick={() => setPage(p => Math.min(pages, p + 1))}
-              className="btn-outlined h-8 px-3 text-[12px] disabled:opacity-40"
-            >
-              Next
-            </button>
-          </div>
+                })}
+              </>
+            }
+          />
         )}
+      </div>
+
+      <div className="shrink-0 px-3 py-2 flex items-center gap-2">
+        <p className="text-[12px] text-text-secondary">{rangeLabel}</p>
+        <select
+          value={pageSize}
+          onChange={e => setPageSize(Number(e.target.value))}
+          aria-label="Rows per page"
+          className="h-7 px-1.5 rounded border border-border bg-surface text-[12px] text-text-secondary"
+        >
+          {PAGE_SIZE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
+        </select>
+        <button type="button" disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} className="btn-outlined h-7 px-2.5 text-[12px] disabled:opacity-40">Previous</button>
+        <button type="button" disabled={page >= pages} onClick={() => setPage(p => p + 1)} className="btn-outlined h-7 px-2.5 text-[12px] disabled:opacity-40">Next</button>
       </div>
     </div>
   )
