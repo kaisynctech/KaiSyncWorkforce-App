@@ -7,6 +7,7 @@ import { getCodeSession } from '@/lib/auth/code-session'
 import { loadCompanyWorkspace, loadEmployeeWorkspace } from '@/lib/employee-workspace'
 import { useEmployeeModuleGate } from '@/lib/employee-module-gate'
 import { downloadPayslipTemplatePdf, imageUrlToDataUrl, parsePayslipsRpcJson, type PayslipPdfInput } from '@/lib/payslip-pdf'
+import { parseExtraLines } from '@/lib/payslip-extra-lines'
 import {
   ResponsiveDataView,
   DataCard,
@@ -131,10 +132,10 @@ export default function PayslipsPage() {
         const { data: signed } = await supabase.storage.from('workforce-media').createSignedUrl(companyRow.logo_url, 120)
         if (signed?.signedUrl) logoDataUrl = await imageUrlToDataUrl(signed.signedUrl)
       }
-      const lines = (payslip as PayslipPdfInput & { payslip_lines?: Record<string, number> | null }).payslip_lines ?? {}
+      const lines = (payslip as PayslipPdfInput & { payslip_lines?: Record<string, unknown> | null }).payslip_lines ?? {}
       const amount = (key: string, fallback: number | null | undefined) => {
         const value = lines[key]
-        return value == null ? Number(fallback ?? 0) : Number(value)
+        return value == null || typeof value !== 'number' ? Number(fallback ?? 0) : Number(value)
       }
       downloadPayslipTemplatePdf({
         companyName: companyRow?.name ?? companyName,
@@ -161,6 +162,8 @@ export default function PayslipsPage() {
         loanDeduction: amount('loanDeduction', 0),
         loanBalance: amount('loanBalance', 0),
         unpaidLeave: amount('unpaidLeave', 0),
+        extraEarnings: parseExtraLines(lines.extraEarnings),
+        extraDeductions: parseExtraLines(lines.extraDeductions),
         bankName: personRow?.bank_name,
         bankBranch: personRow?.bank_branch_code,
         bankAccount: personRow?.bank_account,

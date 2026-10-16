@@ -7,6 +7,14 @@ import { createClient } from '@/lib/supabase/client'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { Toggle } from '@/components/Toggle'
 import { approvePaymentRun, releasePayslipToEmployee, savePayslipLines, type PayslipLineAmounts } from '@/lib/payroll'
+import {
+  parseExtraLines,
+  sumExtra,
+  syncMeibcSickPay,
+  WINTERSTECH_COMPANY_ID,
+  winterstechMeibcLines,
+  type PayslipExtraLine,
+} from '@/lib/payslip-extra-lines'
 import { downloadPayslipTemplatePdf, imageUrlToDataUrl } from '@/lib/payslip-pdf'
 import { executeWithStepUp } from '@/lib/step-up'
 import { StepUpDialog } from '@/components/step-up-dialog'
@@ -322,6 +330,11 @@ export default function PayslipDetailPage() {
   const [manualPaye, setManualPaye] = useState('')
   const [extraDeduction, setExtraDeduction] = useState('')
   const [adjustmentNote, setAdjustmentNote] = useState('')
+  const [extraEarnings, setExtraEarnings] = useState<PayslipExtraLine[]>([])
+  const [extraDeductions, setExtraDeductions] = useState<PayslipExtraLine[]>([])
+  const [meibcApplied, setMeibcApplied] = useState(false)
+  const extraRef = useRef({ earnings: [] as PayslipExtraLine[], deductions: [] as PayslipExtraLine[], meibcApplied: false })
+  extraRef.current = { earnings: extraEarnings, deductions: extraDeductions, meibcApplied }
   const [bonusAmount, setBonusAmount] = useState('')
   const [bonusNote, setBonusNote] = useState('')
   const [salaryInput, setSalaryInput] = useState('')
@@ -700,7 +713,7 @@ export default function PayslipDetailPage() {
     const picked = (saved: number | undefined, fallback: number) => moneyText(saved ?? fallback)
     const monthlySalary = person ? Number((person as PersonPay).monthly_salary) || 0 : 0
     const uifFixedAmount = person ? Number((person as PersonPay).uif_fixed_amount) || 0 : 0
-    setLines({
+    const nextLines: SlipLines = {
       regular: picked(savedLines?.regular, Number(p.regular_pay) || monthlySalary),
       overtime: picked(savedLines?.overtime, Number(p.overtime_pay) || 0),
       bonus: picked(savedLines?.bonus, Number(p.bonus_amount) || 0),
@@ -711,7 +724,51 @@ export default function PayslipDetailPage() {
       loanDeduction: picked(savedLines?.loanDeduction, Number(p.manual_adjustment) || 0),
       loanBalance: picked(savedLines?.loanBalance, 0),
       unpaidLeave: picked(savedLines?.unpaidLeave, unpaidLine),
-    })
+    }
+    let nextEarnings = parseExtraLines(savedLines?.extraEarnings)
+    let nextDeductions = parseExtraLines(savedLines?.extraDeductions)
+    let nextMeibc = savedLines?.meibcApplied === true
+    if (p.company_id === WINTERSTECH_COMPANY_ID && p.status === 'pending' && !nextMeibc) {
+      nextDeductions = [...nextDeductions, ...winterstechMeibcLines(moneyValue(nextLines.regular))]
+      nextMeibc = true
+    }
+    setLines(nextLines)
+    setExtraEarnings(nextEarnings)
+    setExtraDeductions(nextDeductions)
+    setMeibcApplied(nextMeibc)
+    extraRef.current = { earnings: nextEarnings, deductions: nextDeductions, meibcApplied: nextMeibc }
+    if (p.company_id === WINTERSTECH_COMPANY_ID && p.status === 'pending' && savedLines?.meibcApplied !== true) {
+      const seededDates = (savedLines as { unpaidAbsenceDates?: unknown } | null)?.unpaidAbsenceDates
+      const seeded = await savePayslipLines(supabase, p.company_id, paymentId, {
+        regular: moneyValue(nextLines.regular),
+        overtime: moneyValue(nextLines.overtime),
+        bonus: moneyValue(nextLines.bonus),
+        incentive: moneyValue(nextLines.incentive),
+        refund: moneyValue(nextLines.refund),
+        uif: moneyValue(nextLines.uif),
+        paye: moneyValue(nextLines.paye),
+        loanDeduction: moneyValue(nextLines.loanDeduction),
+        loanBalance: moneyValue(nextLines.loanBalance),
+        unpaidLeave: moneyValue(nextLines.unpaidLeave),
+        unpaidAbsenceDates: Array.isArray(seededDates) ? seededDates.filter((day): day is string => typeof day === 'string') : [],
+        extraEarnings: nextEarnings,
+        extraDeductions: nextDeductions,
+        meibcApplied: true,
+      }, {
+        payFullBaseSalary: p.pay_full_base_salary ?? false,
+        waivePenalties: absencePayWasChosen(p.audit_log) ? Boolean(p.waive_penalties) : true,
+      })
+      if (seeded.ok) {
+        setPayment(current => current ? {
+          ...current,
+          gross_pay: seeded.data.gross_pay,
+          net_pay: seeded.data.net_pay,
+          deductions: seeded.data.deductions,
+        } : current)
+      } else {
+        setErrorMsg(seeded.message)
+      }
+    }
     const savedDates = (savedLines as { unpaidAbsenceDates?: unknown } | null)?.unpaidAbsenceDates
     absenceExplicit.current = Array.isArray(savedDates)
     setUnpaidAbsenceDates(absenceExplicit.current ? (savedDates as unknown[]).filter((day): day is string => typeof day === 'string') : [])
@@ -903,10 +960,15 @@ export default function PayslipDetailPage() {
     }))
   }
 
-  async function saveLines(next: SlipLines, flags?: { payFull?: boolean; waive?: boolean; unpaidAbsenceDates?: string[] }) {
+  async function saveLines(
+    next: SlipLines,
+    flags?: { payFull?: boolean; waive?: boolean; unpaidAbsenceDates?: string[] },
+    extras?: { earnings: PayslipExtraLine[]; deductions: PayslipExtraLine[]; meibcApplied: boolean },
+  ) {
     if (!payment || payment.status !== 'pending') return
     setBusy(true)
     setErrorMsg(null)
+    const extra = extras ?? extraRef.current
     const supabase = createClient()
     const result = await savePayslipLines(supabase, payment.company_id, paymentId, {
       regular: moneyValue(next.regular),
@@ -920,6 +982,9 @@ export default function PayslipDetailPage() {
       loanBalance: moneyValue(next.loanBalance),
       unpaidLeave: moneyValue(next.unpaidLeave),
       unpaidAbsenceDates: flags?.unpaidAbsenceDates ?? unpaidAbsenceDates,
+      extraEarnings: extra.earnings,
+      extraDeductions: extra.deductions,
+      meibcApplied: extra.meibcApplied,
     }, {
       payFullBaseSalary: flags?.payFull ?? payFullSalary,
       waivePenalties: flags?.waive ?? waivePenalties,
@@ -993,7 +1058,7 @@ export default function PayslipDetailPage() {
       next = { ...next, overtime: moneyText(otAmount) }
       changed = true
     }
-    const gross = moneyValue(next.regular) + moneyValue(next.overtime) + moneyValue(next.bonus) + moneyValue(next.incentive) + moneyValue(next.refund)
+    const gross = moneyValue(next.regular) + moneyValue(next.overtime) + moneyValue(next.bonus) + moneyValue(next.incentive) + moneyValue(next.refund) + sumExtra(extraRef.current.earnings)
     const paye = calculateMonthlyPaye(gross, dateOfBirth)
     const currentPaye = moneyValue(next.paye)
     const flatEighteen = Math.round(gross * 0.18 * 100) / 100
@@ -1050,6 +1115,8 @@ export default function PayslipDetailPage() {
       loanDeduction: moneyValue(lines.loanDeduction),
       loanBalance: moneyValue(lines.loanBalance),
       unpaidLeave: moneyValue(lines.unpaidLeave),
+      extraEarnings,
+      extraDeductions,
       bankName,
       bankBranch,
       bankAccount,
@@ -1123,8 +1190,10 @@ export default function PayslipDetailPage() {
   }
   const absentRows = days.filter(day => day.isAbsentDay)
   const leaveDayRows = days.filter(day => day.isLeaveDay)
-  const grossNow = moneyValue(lines.regular) + moneyValue(lines.overtime) + moneyValue(lines.bonus) + moneyValue(lines.incentive) + moneyValue(lines.refund)
-  const deductedNow = moneyValue(lines.uif) + moneyValue(lines.paye) + moneyValue(lines.loanDeduction) + moneyValue(lines.unpaidLeave)
+  const extraEarnNow = sumExtra(extraEarnings)
+  const extraDeductNow = sumExtra(extraDeductions)
+  const grossNow = moneyValue(lines.regular) + moneyValue(lines.overtime) + moneyValue(lines.bonus) + moneyValue(lines.incentive) + moneyValue(lines.refund) + extraEarnNow
+  const deductedNow = moneyValue(lines.uif) + moneyValue(lines.paye) + moneyValue(lines.loanDeduction) + moneyValue(lines.unpaidLeave) + extraDeductNow
   const netNow = Math.max(0, Math.round((grossNow - deductedNow) * 100) / 100)
   const paidNow = paidLeaveText.trim() === '' ? null : moneyValue(paidLeaveText)
   const sickNow = sickLeaveText.trim() === '' ? null : moneyValue(sickLeaveText)
@@ -1159,8 +1228,13 @@ export default function PayslipDetailPage() {
             onChange={e => setLines(current => ({ ...current, [key]: e.target.value }))}
             onBlur={e => {
               const next = { ...lines, [key]: moneyText(moneyValue(e.target.value)) }
+              let deductions = extraRef.current.deductions
+              if (key === 'regular') {
+                deductions = syncMeibcSickPay(deductions, moneyValue(lines.regular), moneyValue(next.regular))
+                setExtraDeductions(deductions)
+              }
               setLines(next)
-              void saveLines(next)
+              void saveLines(next, undefined, { ...extraRef.current, deductions })
             }}
             className="h-8 w-[6.5rem] rounded-md border border-border/70 bg-transparent px-2 text-right text-[12px] text-text-primary outline-none"
           />
@@ -1170,6 +1244,37 @@ export default function PayslipDetailPage() {
       )}
     </td>
   )
+
+  function changeExtra(kind: 'income' | 'deduction', id: string, patch: Partial<PayslipExtraLine>, commit: boolean) {
+    const current = kind === 'income' ? extraEarnings : extraDeductions
+    const next = current.map(line => line.id === id ? { ...line, ...patch, amount: patch.amount == null ? line.amount : moneyValue(String(patch.amount)) } : line)
+    const earnings = kind === 'income' ? next : extraEarnings
+    const deductions = kind === 'deduction' ? next : extraDeductions
+    if (kind === 'income') setExtraEarnings(next)
+    else setExtraDeductions(next)
+    if (commit) void saveLines(lines, undefined, { earnings, deductions, meibcApplied })
+  }
+
+  function addExtra(kind: 'income' | 'deduction') {
+    const line: PayslipExtraLine = { id: crypto.randomUUID(), label: kind === 'income' ? 'Income' : 'Deduction', amount: 0 }
+    const earnings = kind === 'income' ? [...extraEarnings, line] : extraEarnings
+    const deductions = kind === 'deduction' ? [...extraDeductions, line] : extraDeductions
+    setExtraEarnings(earnings)
+    setExtraDeductions(deductions)
+    void saveLines(lines, undefined, { earnings, deductions, meibcApplied: true })
+    setMeibcApplied(true)
+  }
+
+  function removeExtra(kind: 'income' | 'deduction', id: string) {
+    const earnings = kind === 'income' ? extraEarnings.filter(line => line.id !== id) : extraEarnings
+    const deductions = kind === 'deduction' ? extraDeductions.filter(line => line.id !== id) : extraDeductions
+    setExtraEarnings(earnings)
+    setExtraDeductions(deductions)
+    setMeibcApplied(true)
+    void saveLines(lines, undefined, { earnings, deductions, meibcApplied: true })
+  }
+
+  const extraRowCount = Math.max(extraEarnings.length, extraDeductions.length)
 
   return (
     <div className="h-full flex flex-col">
@@ -1554,6 +1659,114 @@ export default function PayslipDetailPage() {
                   <td className="px-4 text-[13px] border-b border-l border-divider">Unpaid Leave</td>
                   {amountCell('unpaidLeave')}
                 </tr>
+                {Array.from({ length: extraRowCount }, (_, index) => {
+                  const income = extraEarnings[index]
+                  const deduction = extraDeductions[index]
+                  return (
+                    <tr key={`${income?.id ?? 'income'}-${deduction?.id ?? 'deduction'}`} className="h-9">
+                      {income ? (
+                        <>
+                          <td className="px-3 border-b border-divider">
+                            <span className="inline-flex items-center gap-1 w-full">
+                              {canEdit ? (
+                                <input
+                                  type="text"
+                                  value={income.label}
+                                  onChange={e => changeExtra('income', income.id, { label: e.target.value }, false)}
+                                  onBlur={e => changeExtra('income', income.id, { label: e.target.value }, true)}
+                                  className="h-8 min-w-0 flex-1 rounded-md border border-border/70 bg-transparent px-2 text-[12px] text-text-primary outline-none"
+                                />
+                              ) : (
+                                <span className="text-[13px]">{income.label}</span>
+                              )}
+                              {canEdit && (
+                                <button type="button" onClick={() => removeExtra('income', income.id)} className="text-[11px] text-text-secondary hover:text-error" data-noprint>Remove</button>
+                              )}
+                            </span>
+                          </td>
+                          <td className="px-3 text-right whitespace-nowrap align-middle border-b border-divider">
+                            {canEdit ? (
+                              <span className="inline-flex items-center justify-end gap-1">
+                                <span className="text-[13px] text-text-secondary">R</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={income.amount}
+                                  onChange={e => changeExtra('income', income.id, { amount: moneyValue(e.target.value) }, false)}
+                                  onBlur={e => changeExtra('income', income.id, { amount: moneyValue(e.target.value) }, true)}
+                                  className="h-8 w-[6.5rem] rounded-md border border-border/70 bg-transparent px-2 text-right text-[12px] text-text-primary outline-none"
+                                />
+                              </span>
+                            ) : (
+                              <span className="text-[13px]">{fmtR(income.amount)}</span>
+                            )}
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="border-b border-divider" />
+                          <td className="border-b border-divider" />
+                        </>
+                      )}
+                      {deduction ? (
+                        <>
+                          <td className="px-3 border-b border-l border-divider">
+                            <span className="inline-flex items-center gap-1 w-full">
+                              {canEdit ? (
+                                <input
+                                  type="text"
+                                  value={deduction.label}
+                                  onChange={e => changeExtra('deduction', deduction.id, { label: e.target.value }, false)}
+                                  onBlur={e => changeExtra('deduction', deduction.id, { label: e.target.value }, true)}
+                                  className="h-8 min-w-0 flex-1 rounded-md border border-border/70 bg-transparent px-2 text-[12px] text-text-primary outline-none"
+                                />
+                              ) : (
+                                <span className="text-[13px]">{deduction.label}</span>
+                              )}
+                              {canEdit && (
+                                <button type="button" onClick={() => removeExtra('deduction', deduction.id)} className="text-[11px] text-text-secondary hover:text-error" data-noprint>Remove</button>
+                              )}
+                            </span>
+                          </td>
+                          <td className="px-3 text-right whitespace-nowrap align-middle border-b border-divider">
+                            {canEdit ? (
+                              <span className="inline-flex items-center justify-end gap-1">
+                                <span className="text-[13px] text-text-secondary">R</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={deduction.amount}
+                                  onChange={e => changeExtra('deduction', deduction.id, { amount: moneyValue(e.target.value) }, false)}
+                                  onBlur={e => changeExtra('deduction', deduction.id, { amount: moneyValue(e.target.value) }, true)}
+                                  className="h-8 w-[6.5rem] rounded-md border border-border/70 bg-transparent px-2 text-right text-[12px] text-text-primary outline-none"
+                                />
+                              </span>
+                            ) : (
+                              <span className="text-[13px]">{fmtR(deduction.amount)}</span>
+                            )}
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="border-b border-l border-divider" />
+                          <td className="border-b border-divider" />
+                        </>
+                      )}
+                    </tr>
+                  )
+                })}
+                {canEdit && (
+                  <tr className="h-9" data-noprint>
+                    <td className="px-4 py-1 border-b border-divider" colSpan={2}>
+                      <button type="button" onClick={() => addExtra('income')} className="text-[12px] text-primary hover:opacity-70">+ Add income</button>
+                    </td>
+                    <td className="px-4 py-1 border-b border-l border-divider" colSpan={2}>
+                      <button type="button" onClick={() => addExtra('deduction')} className="text-[12px] text-primary hover:opacity-70">+ Add deduction</button>
+                    </td>
+                  </tr>
+                )}
                 <tr className="h-9 font-semibold">
                   <td className="px-4 text-[13px] border-b border-divider">Gross Salary</td>
                   <td className="px-4 text-right text-[13px] whitespace-nowrap border-b border-divider">{fmtR(grossNow)}</td>

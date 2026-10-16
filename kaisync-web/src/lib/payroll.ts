@@ -191,7 +191,7 @@ type PayrollGenerateFunctionBody = {
   period_start?: string
   period_end?: string
   payment_id?: string
-  lines?: Record<string, number | string[]>
+  lines?: Record<string, unknown>
   overrides?: {
     payFullBaseSalary?: boolean
     waivePenalties?: boolean
@@ -313,6 +313,9 @@ export type PayslipLineAmounts = {
   unpaidLeave: number
   /** Absent dates in this month that are not paid. */
   unpaidAbsenceDates?: string[]
+  extraEarnings?: { id: string; label: string; amount: number }[]
+  extraDeductions?: { id: string; label: string; amount: number }[]
+  meibcApplied?: boolean
 }
 
 export async function savePayslipLines(
