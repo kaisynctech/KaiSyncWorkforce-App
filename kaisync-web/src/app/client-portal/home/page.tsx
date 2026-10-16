@@ -4,6 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { ClientPortalShell } from '@/components/ClientPortalShell'
+import { ClientPortalDocuments } from '@/components/ClientPortalDocuments'
 import { useRequireClientPortalSession } from '@/lib/client-portal/use-session'
 import { listInvoices, listJobs, listMessageInbox, listProjects } from '@/lib/client-portal/api'
 import { getDealMessagesReadAt } from '@/lib/client-portal/session'
@@ -11,17 +12,18 @@ import { fmtDate, fmtDateTime, projectStatusLabel } from '@/lib/client-portal/fo
 import { moneyZAR } from '@/lib/client-portal/quotation'
 import { isInvoiceOutstanding, type ClientPortalJob, type ClientPortalProject, type MessageInboxItem, type PortalInvoice } from '@/lib/client-portal/types'
 
-type Tab = 'projects' | 'jobs' | 'messages' | 'invoices'
+type Tab = 'projects' | 'jobs' | 'messages' | 'documents' | 'invoices'
 
 const TAB_TITLES: Record<Tab, string> = {
   projects: 'Projects',
   jobs: 'Jobs',
   messages: 'Messages',
+  documents: 'Documents',
   invoices: 'Invoices',
 }
 
 function parseTab(raw: string | null): Tab {
-  if (raw === 'jobs' || raw === 'messages' || raw === 'invoices' || raw === 'projects') return raw
+  if (raw === 'jobs' || raw === 'messages' || raw === 'documents' || raw === 'invoices' || raw === 'projects') return raw
   return 'projects'
 }
 
@@ -123,6 +125,8 @@ function ClientPortalHomeInner() {
           <JobsTab jobs={jobs} />
         ) : tab === 'messages' ? (
           <MessagesTab inbox={inbox} />
+        ) : tab === 'documents' ? (
+          <ClientPortalDocuments session={session} />
         ) : (
           <InvoicesTab invoices={invoices} outstanding={outstanding} />
         )}

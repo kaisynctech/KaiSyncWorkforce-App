@@ -303,7 +303,14 @@ export default function ProjectDetailPage() {
     setSendBusy(false)
     if (!result.ok) { setError(result.message); return }
     setStatus('sent')
-    setProject(prev => prev ? { ...prev, status: 'sent' } : prev)
+    setProject(prev => prev ? {
+      ...prev,
+      status: 'sent',
+      quotation_response: 'pending',
+      quotation_response_note: null,
+      quotation_response_at: null,
+      quotation_response_storage_path: null,
+    } : prev)
     const linked = await findMoneyQuoteForProject(supabase, { companyId, projectId })
     setMoneyQuote(linked)
   }
@@ -424,6 +431,18 @@ export default function ProjectDetailPage() {
     }
     if (fileRef.current) fileRef.current.value = ''
     setDocBusy(false)
+  }
+
+  async function openStoredFile(path: string) {
+    const name = portalStorageObjectName(path)
+    if (!name) return
+    const supabase = createClient()
+    const { data, error: signErr } = await supabase.storage.from('workforce-media').createSignedUrl(name, 3600)
+    if (signErr || !data?.signedUrl) {
+      setError(signErr?.message ?? 'Could not open the file.')
+      return
+    }
+    window.open(data.signedUrl, '_blank', 'noopener,noreferrer')
   }
 
   async function openDoc(doc: ProjectDocument) {
@@ -729,6 +748,30 @@ export default function ProjectDetailPage() {
                     ? 'Sent to client'
                     : 'Not sent'}
                 </span>
+              </div>
+              <div className="flex items-start justify-between gap-3">
+                <span className="text-[13px] text-text-primary">Client answer</span>
+                <div className="text-right">
+                  <p className="text-[13px] text-text-secondary">
+                    {project?.quotation_response === 'accepted'
+                      ? 'Accepted'
+                      : project?.quotation_response === 'revision_requested'
+                        ? 'Asked for a revision'
+                        : 'Waiting'}
+                  </p>
+                  {project?.quotation_response_note && (
+                    <p className="text-[12px] text-text-primary mt-1 max-w-sm">{project.quotation_response_note}</p>
+                  )}
+                  {project?.quotation_response_storage_path && (
+                    <button
+                      type="button"
+                      onClick={() => void openStoredFile(project.quotation_response_storage_path!)}
+                      className="text-[12px] text-primary hover:underline mt-1"
+                    >
+                      Open their file
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <span className="text-[13px] text-text-primary">Money quote</span>

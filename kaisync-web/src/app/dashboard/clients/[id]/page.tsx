@@ -17,6 +17,7 @@ import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permission
 import { Toggle } from '@/components/Toggle'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { ClientActivityTab } from '@/components/ClientActivityTab'
+import { ClientDocumentRequests } from '@/components/ClientDocumentRequests'
 import { fmtMoney } from '@/lib/finance-calc'
 import type { Client, ClientDocument, ClientNote, Site, Project, ProjectDocument } from '@/types/database'
 import type { FinanceInvoice } from '@/lib/finance-types'
@@ -1803,6 +1804,10 @@ function ClientDetailInner() {
                 </table>
               </div>
             </div>
+
+            {client && (
+              <ClientDocumentRequests clientId={clientId} companyId={client.company_id} canEdit={canEdit} />
+            )}
 
             <div className="space-y-3">
               <p className="section-label">FROM PROJECTS</p>

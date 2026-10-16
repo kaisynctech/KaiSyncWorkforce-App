@@ -170,6 +170,10 @@ export async function sendProjectQuotation(
     .update({
       status: 'sent',
       quotation_sent_at: new Date().toISOString(),
+      quotation_response: 'pending',
+      quotation_response_note: null,
+      quotation_response_at: null,
+      quotation_response_storage_path: null,
       last_update_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
