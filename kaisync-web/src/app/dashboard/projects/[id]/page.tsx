@@ -27,6 +27,7 @@ import {
 } from '@/lib/project-money-quote'
 import { logProjectEvent } from '@/lib/project-events'
 import { portalStorageObjectName } from '@/lib/client-portal/api'
+import { createInvoiceFromAcceptedQuote } from '@/lib/quote-invoice'
 import type { Project, Client, Employee, Job, ProjectDocument, ProjectQuotationLine } from '@/types/database'
 
 const PROJECT_TABS = ['details', 'jobs', 'docs', 'quotation', 'pipeline', 'milestones', 'financials', 'payments', 'activity']
@@ -82,6 +83,7 @@ export default function ProjectDetailPage() {
   const [sendBusy, setSendBusy] = useState(false)
   const [moneyQuote, setMoneyQuote] = useState<MoneyQuoteLink | null>(null)
   const [moneyQuoteBusy, setMoneyQuoteBusy] = useState(false)
+  const [invoiceBusy, setInvoiceBusy] = useState(false)
   const [moneyInvoices, setMoneyInvoices] = useState<Array<{
     id: string
     invoice_number: string | null
@@ -283,6 +285,25 @@ export default function ProjectDetailPage() {
       else setProject(prev => prev ? { ...prev, ...payload, status } as Project : prev)
     }
     setSaving(false)
+  }
+
+  async function turnAcceptedQuoteIntoInvoice() {
+    if (!companyId || !clientId || !moneyQuote || !canEdit) return
+    setInvoiceBusy(true)
+    setError(null)
+    const supabase = createClient()
+    const result = await createInvoiceFromAcceptedQuote(supabase, {
+      companyId,
+      clientId,
+      quoteId: moneyQuote.id,
+      employeeId,
+    })
+    setInvoiceBusy(false)
+    if (!result.ok) {
+      setError(result.message)
+      return
+    }
+    router.push(`/dashboard/money/invoices/${result.invoiceId}`)
   }
 
   async function handleSendQuotation() {
@@ -769,6 +790,16 @@ export default function ProjectDetailPage() {
                       className="text-[12px] text-primary hover:underline mt-1"
                     >
                       Open their file
+                    </button>
+                  )}
+                  {canEdit && project?.quotation_response === 'accepted' && moneyQuote && clientId && (
+                    <button
+                      type="button"
+                      disabled={invoiceBusy}
+                      onClick={() => void turnAcceptedQuoteIntoInvoice()}
+                      className="text-[12px] font-medium text-primary hover:underline mt-2 disabled:opacity-50"
+                    >
+                      {invoiceBusy ? 'Creating invoice…' : 'Turn into invoice'}
                     </button>
                   )}
                 </div>
