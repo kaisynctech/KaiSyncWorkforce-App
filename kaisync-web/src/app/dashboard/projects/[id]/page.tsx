@@ -7,6 +7,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import { SectionCard, FormField, entryClass } from '@/components/SectionCard'
 import { Toggle } from '@/components/Toggle'
 import { ProjectPaymentsTab } from '@/components/ProjectPaymentsTab'
 import { ProjectActivityTab } from '@/components/ProjectActivityTab'
@@ -494,92 +495,60 @@ export default function ProjectDetailPage() {
         {(isNew || tab === 'details') && (
           <>
             {/* PROJECT form */}
-            <div className="card overflow-hidden">
-              <p className="data-th border-b border-divider px-3 py-2 text-[11px] font-semibold tracking-wider uppercase">PROJECT</p>
-              {/* Project name */}
-              <div className="grid grid-cols-[132px_1px_1fr] border-b border-divider">
-                <span className="data-th border-r border-divider py-2">Project name</span>
-                <span />
-                <input placeholder="Required" value={title} onChange={e => setTitle(e.target.value)}
-                  className="dark-entry rounded-none border-0 bg-transparent focus:ring-0 focus:shadow-none" />
-              </div>
-              {/* Code */}
-              <div className="grid grid-cols-[132px_1px_1fr_auto] border-b border-divider">
-                <span className="data-th border-r border-divider py-2">Project code</span>
-                <span />
-                <input placeholder="P{CODE}0001" value={code} onChange={e => setCode(e.target.value)}
-                  className="dark-entry rounded-none border-0 bg-transparent focus:ring-0 focus:shadow-none" />
-                <button onClick={generateCode}
-                  className="px-3 text-[11px] text-text-secondary border-l border-divider hover:text-text-primary transition-colors">
-                  Generate
-                </button>
-              </div>
-              {/* Client */}
-              <div className="grid grid-cols-[132px_1px_1fr] border-b border-divider">
-                <span className="data-th border-r border-divider py-2">Client</span>
-                <span />
-                <select value={clientId} onChange={e => setClientId(e.target.value)}
-                  className="dark-entry rounded-none border-0 bg-transparent focus:ring-0 focus:shadow-none appearance-none">
+            <SectionCard title="Project">
+              <FormField label="Project name">
+                <input placeholder="Required" value={title} onChange={e => setTitle(e.target.value)} className={entryClass} />
+              </FormField>
+              <FormField label="Project code">
+                <div className="flex gap-2">
+                  <input placeholder="P{CODE}0001" value={code} onChange={e => setCode(e.target.value)} className={entryClass} />
+                  <button type="button" onClick={generateCode} className="h-12 px-3 rounded-sm border border-border text-[12px] text-text-secondary hover:text-text-primary shrink-0">
+                    Generate
+                  </button>
+                </div>
+              </FormField>
+              <FormField label="Client">
+                <select value={clientId} onChange={e => setClientId(e.target.value)} className={`${entryClass} appearance-none`}>
                   <option value="">No client — internal project</option>
                   {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
-              </div>
-              {/* Status */}
-              <div className="grid grid-cols-[132px_1px_1fr] border-b border-divider">
-                <span className="data-th border-r border-divider py-2">Status</span>
-                <span />
-                <select value={status} onChange={e => setStatus(e.target.value)}
-                  className="dark-entry rounded-none border-0 bg-transparent focus:ring-0 focus:shadow-none appearance-none">
+              </FormField>
+              <FormField label="Status">
+                <select value={status} onChange={e => setStatus(e.target.value)} className={`${entryClass} appearance-none`}>
                   {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
                 </select>
-              </div>
-              {/* Manager */}
-              <div className="grid grid-cols-[132px_1px_1fr]">
-                <span className="data-th border-r border-divider py-2">Manager</span>
-                <span />
-                <select value={managerId} onChange={e => setManagerId(e.target.value)}
-                  className="dark-entry rounded-none border-0 bg-transparent focus:ring-0 focus:shadow-none appearance-none">
+              </FormField>
+              <FormField label="Manager">
+                <select value={managerId} onChange={e => setManagerId(e.target.value)} className={`${entryClass} appearance-none`}>
                   <option value="">Project manager…</option>
                   {managers.map(m => <option key={m.id} value={m.id}>{m.name} {m.surname}</option>)}
                 </select>
-              </div>
-            </div>
+              </FormField>
+            </SectionCard>
 
-            {/* Dates & Milestones */}
-            <div className="space-y-2">
-              <p className="section-label">DATES & MILESTONES</p>
-              <p className="text-text-secondary text-[11px]">Shown on the client portal so they know what to expect.</p>
-              <div className="card overflow-hidden divide-y divide-divider">
-                {/* Site start */}
-                <div className="grid grid-cols-[160px_1px_1fr_auto] items-center">
-                  <span className="data-th border-r border-divider py-2">Site start</span>
-                  <span />
-                  <div className="px-2">{useSiteStartDate && <input type="date" value={siteStartDate} onChange={e => setSiteStartDate(e.target.value)} className="dark-entry border-0 bg-transparent" />}</div>
-                  <div className="px-2"><Toggle checked={useSiteStartDate} onChange={v => { setUseSiteStartDate(v); if (!v) setSiteStartDate('') }} /></div>
-                </div>
-                {/* Expected completion */}
-                <div className="grid grid-cols-[160px_1px_1fr_auto] items-center">
-                  <span className="data-th border-r border-divider py-2">Expected completion</span>
-                  <span />
-                  <div className="px-2">{useExpectedCompletion && <input type="date" value={expectedCompletion} onChange={e => setExpectedCompletion(e.target.value)} className="dark-entry border-0 bg-transparent" />}</div>
-                  <div className="px-2"><Toggle checked={useExpectedCompletion} onChange={v => { setUseExpectedCompletion(v); if (!v) setExpectedCompletion('') }} /></div>
-                </div>
-                {/* Next visit */}
-                <div className="grid grid-cols-[160px_1px_1fr_auto] items-center">
-                  <span className="data-th border-r border-divider py-2">Next visit</span>
-                  <span />
-                  <div className="px-2">{useNextVisit && <input type="date" value={nextVisit} onChange={e => setNextVisit(e.target.value)} className="dark-entry border-0 bg-transparent" />}</div>
-                  <div className="px-2"><Toggle checked={useNextVisit} onChange={v => { setUseNextVisit(v); if (!v) setNextVisit('') }} /></div>
-                </div>
-                {/* Expected close */}
-                <div className="grid grid-cols-[160px_1px_1fr_auto] items-center">
-                  <span className="data-th border-r border-divider py-2">Expected close</span>
-                  <span />
-                  <div className="px-2">{useExpectedClose && <input type="date" value={expectedClose} onChange={e => setExpectedClose(e.target.value)} className="dark-entry border-0 bg-transparent" />}</div>
-                  <div className="px-2"><Toggle checked={useExpectedClose} onChange={v => { setUseExpectedClose(v); if (!v) setExpectedClose('') }} /></div>
-                </div>
+            <SectionCard title="Dates">
+              <p className="text-[12px] text-text-secondary -mt-1">Shown on the client portal so they know what to expect.</p>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[13px] text-text-primary">Site start</span>
+                <Toggle checked={useSiteStartDate} onChange={v => { setUseSiteStartDate(v); if (!v) setSiteStartDate('') }} />
               </div>
-            </div>
+              {useSiteStartDate && <input type="date" value={siteStartDate} onChange={e => setSiteStartDate(e.target.value)} className={entryClass} />}
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[13px] text-text-primary">Expected completion</span>
+                <Toggle checked={useExpectedCompletion} onChange={v => { setUseExpectedCompletion(v); if (!v) setExpectedCompletion('') }} />
+              </div>
+              {useExpectedCompletion && <input type="date" value={expectedCompletion} onChange={e => setExpectedCompletion(e.target.value)} className={entryClass} />}
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[13px] text-text-primary">Next visit</span>
+                <Toggle checked={useNextVisit} onChange={v => { setUseNextVisit(v); if (!v) setNextVisit('') }} />
+              </div>
+              {useNextVisit && <input type="date" value={nextVisit} onChange={e => setNextVisit(e.target.value)} className={entryClass} />}
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[13px] text-text-primary">Expected close</span>
+                <Toggle checked={useExpectedClose} onChange={v => { setUseExpectedClose(v); if (!v) setExpectedClose('') }} />
+              </div>
+              {useExpectedClose && <input type="date" value={expectedClose} onChange={e => setExpectedClose(e.target.value)} className={entryClass} />}
+            </SectionCard>
           </>
         )}
 
@@ -712,46 +681,36 @@ export default function ProjectDetailPage() {
             </div>
 
             {/* Agreements */}
-            <div className="space-y-2">
-              <p className="section-label">AGREEMENTS</p>
-              <div className="card overflow-hidden divide-y divide-divider">
-                <div className="grid grid-cols-[132px_1px_1fr]">
-                  <span className="data-th border-r border-divider py-3">Client-visible</span>
-                  <span />
-                  <textarea value={agreementNotes} onChange={e => setAgreementNotes(e.target.value)}
-                    placeholder="For the client…"
-                    className="dark-entry rounded-none border-0 bg-transparent focus:ring-0 focus:shadow-none min-h-[72px] py-3 resize-none" />
-                </div>
-                <div className="grid grid-cols-[132px_1px_1fr]">
-                  <span className="data-th border-r border-divider py-3">Internal (HR)</span>
-                  <span />
-                  <textarea value={notes} onChange={e => setNotes(e.target.value)}
-                    placeholder="Internal notes…"
-                    className="dark-entry rounded-none border-0 bg-transparent focus:ring-0 focus:shadow-none min-h-[56px] py-3 resize-none" />
-                </div>
-              </div>
-            </div>
+            <SectionCard title="Agreements">
+              <FormField label="Client-visible">
+                <textarea value={agreementNotes} onChange={e => setAgreementNotes(e.target.value)}
+                  placeholder="For the client…"
+                  className={`${entryClass} min-h-[72px] py-3 resize-none`} />
+              </FormField>
+              <FormField label="Internal (HR)">
+                <textarea value={notes} onChange={e => setNotes(e.target.value)}
+                  placeholder="Internal notes…"
+                  className={`${entryClass} min-h-[56px] py-3 resize-none`} />
+              </FormField>
+            </SectionCard>
           </>
         )}
 
         {/* ── QUOTATION TAB ── */}
         {!isNew && tab === 'quotation' && (
           <div className="space-y-4">
-            <p className="section-label">QUOTATION FOR CLIENT</p>
-            <div className="card overflow-hidden divide-y divide-divider">
-              <div className="grid grid-cols-[132px_1px_1fr]">
-                <span className="data-th border-r border-divider py-3">Status</span>
-                <span />
-                <span className="data-td text-text-secondary text-[12px]">
+            <SectionCard title="Quotation for client">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[13px] text-text-primary">Status</span>
+                <span className="text-[13px] text-text-secondary">
                   {project?.status === 'sent' || moneyQuote?.status === 'sent'
                     ? 'Sent to client'
                     : 'Not sent'}
                 </span>
               </div>
-              <div className="grid grid-cols-[132px_1px_1fr]">
-                <span className="data-th border-r border-divider py-3">Money quote</span>
-                <span />
-                <div className="data-td flex items-center gap-3 flex-wrap py-2">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <span className="text-[13px] text-text-primary">Money quote</span>
+                <div className="flex items-center gap-3 flex-wrap">
                   {moneyQuote ? (
                     <>
                       <span className="text-[12px] text-text-primary font-medium">
@@ -784,28 +743,20 @@ export default function ProjectDetailPage() {
                   )}
                 </div>
               </div>
-              <div className="grid grid-cols-[132px_1px_1fr]">
-                <span className="data-th border-r border-divider py-3">Intro / terms</span>
-                <span />
+              <FormField label="Intro / terms">
                 <textarea value={quotationNotes} onChange={e => setQuotationNotes(e.target.value)}
                   placeholder="For the client…"
-                  className="dark-entry rounded-none border-0 bg-transparent focus:ring-0 focus:shadow-none min-h-[56px] py-3 resize-none" />
+                  className={`${entryClass} min-h-[56px] py-3 resize-none`} />
+              </FormField>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[13px] text-text-primary">Valid until</span>
+                <Toggle checked={useQuotationValidUntil}
+                  onChange={v => { setUseQuotationValidUntil(v); if (!v) setQuotationValidUntil('') }} />
               </div>
-              <div className="grid grid-cols-[132px_1px_1fr_auto] items-center">
-                <span className="data-th border-r border-divider py-3">Valid until</span>
-                <span />
-                <div className="px-2">
-                  {useQuotationValidUntil && (
-                    <input type="date" value={quotationValidUntil} onChange={e => setQuotationValidUntil(e.target.value)}
-                      className="dark-entry border-0 bg-transparent" />
-                  )}
-                </div>
-                <div className="px-2">
-                  <Toggle checked={useQuotationValidUntil}
-                    onChange={v => { setUseQuotationValidUntil(v); if (!v) setQuotationValidUntil('') }} />
-                </div>
-              </div>
-            </div>
+              {useQuotationValidUntil && (
+                <input type="date" value={quotationValidUntil} onChange={e => setQuotationValidUntil(e.target.value)} className={entryClass} />
+              )}
+            </SectionCard>
 
             {/* Line items */}
             <div className="space-y-2">

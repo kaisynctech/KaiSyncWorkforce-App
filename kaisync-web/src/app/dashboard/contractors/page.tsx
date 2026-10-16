@@ -4,9 +4,14 @@ import React, { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
-import { FilterChip } from '@/components/ui/FilterChip'
 import { StatusBadge } from '@/components/ui/StatusBadge'
-import { KpiTile } from '@/components/ui/KpiTile'
+import {
+  ResponsiveDataView,
+  DataCard,
+  DataCardTitle,
+  DataCardMeta,
+  DataCardRow,
+} from '@/components/ui/ResponsiveDataView'
 import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
 import {
   DEFAULT_PAGE_SIZE,
@@ -303,73 +308,89 @@ export default function ContractorsPage() {
   )
 
   return (
-    <div className="h-full flex flex-col">
-      {/* Search bar */}
-      <div className="px-4 pt-4 pb-0">
-        <input
-          type="search"
-          placeholder="Search contractors…"
-          value={searchText}
-          onChange={e => setSearchText(e.target.value)}
-          className="w-full bg-surface border border-border text-text-primary placeholder:text-text-disabled rounded-lg px-3 py-2 text-[14px] focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors"
-        />
-      </div>
-
-      {!loading && (
-        <div className="grid grid-cols-3 gap-2 mx-4 mt-3">
-          <KpiTile value={kpis.active} label="Active" bg="#0F2918" valueFg="#22C55E" labelFg="#4ADE80" />
-          <KpiTile value={kpis.pendingCompliance} label="Compliance" bg="#292012" valueFg="#FCD34D" labelFg="#FCD34D" />
-          <KpiTile value={kpis.pendingPayments} label="Pending pay" bg="#1E293B" valueFg="#94A3B8" labelFg="#64748B" />
+    <div className="h-full min-h-0 flex flex-col">
+      <div className="px-3 pt-3 pb-2 space-y-2 shrink-0">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <h1 className="text-[16px] font-bold text-text-primary">Contractors</h1>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button type="button" onClick={() => void load()} className="h-8 px-2.5 text-[12px] rounded-lg border border-border text-text-secondary hover:text-text-primary transition-colors">Refresh</button>
+            {canEdit && xeroConnected && (
+              <button
+                type="button"
+                onClick={syncAllToXero}
+                disabled={!!xeroPushing}
+                className="h-8 px-2.5 text-[12px] rounded-lg border border-[#13B5EA] text-[#13B5EA] hover:bg-[#13B5EA]/10 disabled:opacity-40 transition-colors whitespace-nowrap"
+              >
+                {xeroPushing === '__all__' ? 'Syncing…' : 'Sync All to Xero'}
+              </button>
+            )}
+            {canEdit && xeroConnected && (
+              <button
+                type="button"
+                onClick={importFromXero}
+                disabled={xeroImporting}
+                className="h-8 px-2.5 text-[12px] rounded-lg border border-[#13B5EA] text-[#13B5EA] font-medium hover:bg-[#13B5EA]/10 disabled:opacity-50 transition-colors"
+              >
+                {xeroImporting ? 'Importing…' : '↓ Import from Xero'}
+              </button>
+            )}
+            <button type="button" onClick={() => void exportCsv()} className="h-8 px-2.5 text-[12px] rounded-lg border border-border text-text-primary font-medium hover:bg-surface-elevated transition-colors">
+              Export
+            </button>
+            {canCreate && (
+              <button type="button" onClick={() => router.push('/dashboard/contractors/import')} className="h-8 px-2.5 text-[12px] rounded-lg border border-border text-text-primary font-medium hover:bg-surface-elevated transition-colors">
+                Import
+              </button>
+            )}
+            {canCreate && (
+              <button type="button" onClick={() => router.push('/dashboard/contractors/new')} className="btn-primary h-8 px-2.5 text-[12px] whitespace-nowrap">
+                + Add Contractor
+              </button>
+            )}
+          </div>
         </div>
-      )}
-
-      {/* Filter toolbar */}
-      <div className="flex items-center gap-[6px] mx-4 my-2 flex-wrap">
-        <FilterChip label="Active"   active={filter === 'active'}   onClick={() => setFilter('active')} />
-        <FilterChip label="Inactive" active={filter === 'inactive'} onClick={() => setFilter('inactive')} />
-        <FilterChip label="All"      active={filter === 'all'}      onClick={() => setFilter('all')} />
-        <span className="ml-2 text-[12px] text-text-secondary flex-1">
-          {total === 0 ? '0 contractors' : `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}`}
-        </span>
-        <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} className="dark-entry h-8 text-[12px] py-0 w-auto">
-          {PAGE_SIZE_OPTIONS.map(n => <option key={n} value={n}>{n}/page</option>)}
-        </select>
-        <button onClick={() => void exportCsv()} className="h-8 px-3 text-[13px] rounded-lg border border-border text-text-primary font-medium hover:bg-surface-elevated transition-colors">
-          Export
-        </button>
-        <button onClick={() => void load()} className="text-[13px] text-primary px-2 hover:opacity-70 transition-opacity">Refresh</button>
-        {canEdit && xeroConnected && (
-          <button
-            onClick={syncAllToXero}
-            disabled={!!xeroPushing}
-            className="h-8 px-3 text-[13px] rounded-lg border border-[#13B5EA] text-[#13B5EA] hover:bg-[#13B5EA]/10 disabled:opacity-40 transition-colors whitespace-nowrap"
-          >
-            {xeroPushing === '__all__' ? 'Syncing…' : 'Sync All to Xero'}
-          </button>
-        )}
-        {canEdit && xeroConnected && (
-          <button
-            onClick={importFromXero}
-            disabled={xeroImporting}
-            className="h-8 px-3 text-[13px] rounded-lg border border-[#13B5EA] text-[#13B5EA] font-medium hover:bg-[#13B5EA]/10 disabled:opacity-50 transition-colors"
-          >
-            {xeroImporting ? 'Importing…' : '↓ Import from Xero'}
-          </button>
-        )}
-        {canCreate && (
-          <button
-            onClick={() => router.push('/dashboard/contractors/import')}
-            className="h-8 px-3 text-[13px] rounded-lg border border-border text-text-primary font-medium hover:bg-surface-elevated transition-colors"
-          >
-            Import
-          </button>
-        )}
-        {canCreate && (
-          <button
-            onClick={() => router.push('/dashboard/contractors/new')}
-            className="h-8 px-3 text-[13px] rounded-lg bg-primary text-white font-semibold hover:bg-primary-dark transition-colors"
-          >+ Add</button>
-        )}
+        <div className="grid grid-cols-3 gap-2">
+          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#0F2918]">
+            <span className="text-[14px] font-semibold text-[#22C55E]">{kpis.active}</span>
+            <span className="text-[11px] text-[#4ADE80]">Active</span>
+          </span>
+          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#292012]">
+            <span className="text-[14px] font-semibold text-[#FCD34D]">{kpis.pendingCompliance}</span>
+            <span className="text-[11px] text-[#FCD34D]">Compliance</span>
+          </span>
+          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#1E293B]">
+            <span className="text-[14px] font-semibold text-[#94A3B8]">{kpis.pendingPayments}</span>
+            <span className="text-[11px] text-[#64748B]">Pending pay</span>
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-md overflow-hidden border border-divider shrink-0">
+            {([
+              { value: 'active' as const, label: 'Active' },
+              { value: 'inactive' as const, label: 'Inactive' },
+              { value: 'all' as const, label: 'All' },
+            ]).map(({ value, label }) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setFilter(value)}
+                className={`h-8 px-3 text-[12px] font-medium transition-colors ${filter === value ? 'bg-primary text-white' : 'bg-surface text-text-secondary hover:text-text-primary'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1.5 h-8 px-2 bg-surface border border-border rounded-sm flex-1 min-w-0">
+            <span className="material-icons text-text-disabled text-[16px]">search</span>
+            <input
+              type="search"
+              placeholder="Search name, contact, or code"
+              value={searchText}
+              onChange={e => setSearchText(e.target.value)}
+              className="flex-1 min-w-0 text-[13px] text-text-primary placeholder:text-text-disabled bg-transparent focus:outline-none"
+            />
+          </div>
+        </div>
       </div>
 
       {xeroMsg && (
@@ -453,23 +474,24 @@ export default function ContractorsPage() {
       </div>
 
       {/* Contractors table */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="overflow-x-auto mx-4 mb-4 bg-surface rounded-lg border border-divider">
-          <table style={{ minWidth: 1100 }} className="w-full text-[13px]">
+      <div className="flex-1 min-h-0 overflow-auto mx-3 mb-1 bg-surface border border-divider rounded-lg">
+        <ResponsiveDataView
+          table={
+          <table className="w-full text-[13px]">
             <thead>
               <tr className="bg-surface-elevated border-b border-divider">
-                <th style={{ width: 185 }} className="text-left px-3 py-3 text-[12px] font-medium text-text-secondary">Company</th>
-                <th style={{ width: 90 }}  className="text-left px-3 py-3 text-[12px] font-medium text-text-secondary">Code</th>
-                <th style={{ width: 130 }} className="text-left px-3 py-3 text-[12px] font-medium text-text-secondary">Contact</th>
-                <th style={{ width: 120 }} className="text-left px-3 py-3 text-[12px] font-medium text-text-secondary">Phone</th>
-                <th style={{ width: 160 }} className="text-left px-3 py-3 text-[12px] font-medium text-text-secondary">Email</th>
-                <th style={{ width: 70 }}  className="text-center px-3 py-3 text-[12px] font-medium text-text-secondary">Rating</th>
-                <th style={{ width: 85 }}  className="text-center px-3 py-3 text-[12px] font-medium text-text-secondary">Banking</th>
-                <th style={{ width: 80 }}  className="text-center px-3 py-3 text-[12px] font-medium text-text-secondary">Payment</th>
-                <th style={{ width: 100 }} className="text-center px-3 py-3 text-[12px] font-medium text-text-secondary">Compliance</th>
-                <th style={{ width: 80 }}  className="text-right px-3 py-3 text-[12px] font-medium text-text-secondary">Status</th>
+                <th style={{ width: 185 }} className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary">Company</th>
+                <th style={{ width: 90 }}  className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary">Code</th>
+                <th style={{ width: 130 }} className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary">Contact</th>
+                <th style={{ width: 120 }} className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary">Phone</th>
+                <th style={{ width: 160 }} className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary">Email</th>
+                <th style={{ width: 70 }}  className="text-center px-3 py-2 text-[11px] font-medium text-text-secondary">Rating</th>
+                <th style={{ width: 85 }}  className="text-center px-3 py-2 text-[11px] font-medium text-text-secondary">Banking</th>
+                <th style={{ width: 80 }}  className="text-center px-3 py-2 text-[11px] font-medium text-text-secondary">Payment</th>
+                <th style={{ width: 100 }} className="text-center px-3 py-2 text-[11px] font-medium text-text-secondary">Compliance</th>
+                <th style={{ width: 80 }}  className="text-right px-3 py-2 text-[11px] font-medium text-text-secondary">Status</th>
                 {xeroConnected && (
-                  <th style={{ width: 80 }} className="text-center px-3 py-3 text-[12px] font-medium text-text-secondary">Xero</th>
+                  <th style={{ width: 80 }} className="text-center px-3 py-2 text-[11px] font-medium text-text-secondary">Xero</th>
                 )}
               </tr>
             </thead>
@@ -544,18 +566,51 @@ export default function ContractorsPage() {
               )}
             </tbody>
           </table>
-        </div>
+          }
+          mobile={
+            loading ? (
+              <p className="py-12 text-center text-[13px] text-text-disabled">Loading…</p>
+            ) : filtered.length === 0 ? (
+              <p className="py-8 text-center text-[13px] text-text-secondary px-4">No contractors yet.</p>
+            ) : (
+              <>
+                {filtered.map(c => {
+                  const status = getStatusBadge(c)
+                  return (
+                    <DataCard key={c.id} onClick={() => router.push(`/dashboard/contractors/${c.id}`)}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <DataCardTitle>{c.name}</DataCardTitle>
+                          <DataCardMeta className="font-mono">{c.contractor_code ?? '—'}</DataCardMeta>
+                        </div>
+                        <StatusBadge {...status} />
+                      </div>
+                      <DataCardRow label="Contact" value={c.contact_person ?? '—'} />
+                      <DataCardRow label="Phone" value={c.phone ?? '—'} />
+                      <DataCardRow label="Email" value={c.email ?? '—'} />
+                    </DataCard>
+                  )
+                })}
+              </>
+            )
+          }
+        />
       </div>
 
-      <div className="flex items-center justify-between px-4 py-3 border-t border-divider">
-        <span className="text-[12px] text-text-secondary">
-          {total === 0 ? '0 contractors' : `Showing ${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}`}
-        </span>
-        <div className="flex items-center gap-2">
-          <button disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} className="btn-outlined h-8 px-3 text-[12px] disabled:opacity-40">Previous</button>
-          <span className="text-[12px] text-text-secondary">Page {page} of {totalPages(total, pageSize)}</span>
-          <button disabled={page >= totalPages(total, pageSize)} onClick={() => setPage(p => p + 1)} className="btn-outlined h-8 px-3 text-[12px] disabled:opacity-40">Next</button>
-        </div>
+      <div className="shrink-0 px-3 py-2 flex items-center gap-2">
+        <p className="text-[12px] text-text-secondary">
+          {total === 0 ? '0 contractors' : `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}`}
+        </p>
+        <select
+          value={pageSize}
+          onChange={e => setPageSize(Number(e.target.value))}
+          aria-label="Rows per page"
+          className="h-7 px-1.5 rounded border border-border bg-surface text-[12px] text-text-secondary"
+        >
+          {PAGE_SIZE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
+        </select>
+        <button type="button" disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} className="btn-outlined h-7 px-2.5 text-[12px] disabled:opacity-40">Previous</button>
+        <button type="button" disabled={page >= totalPages(total, pageSize)} onClick={() => setPage(p => p + 1)} className="btn-outlined h-7 px-2.5 text-[12px] disabled:opacity-40">Next</button>
       </div>
     </div>
   )
