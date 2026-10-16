@@ -13,7 +13,6 @@ import {
   totalPages,
 } from '@/lib/list-pagination'
 import { StatusBadge } from '@/components/ui/StatusBadge'
-import { KpiTile } from '@/components/ui/KpiTile'
 import {
   ResponsiveDataView,
   DataCard,
@@ -242,104 +241,123 @@ export default function IncidentsPage() {
 
   const pages = totalPages(total, pageSize)
 
+  const pill = (active: boolean) =>
+    `h-8 px-3 text-[12px] font-medium transition-colors ${active ? 'bg-primary text-white' : 'bg-surface text-text-secondary hover:text-text-primary'}`
+
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-divider shrink-0 bg-surface">
-        <div>
-          <h1 className="text-[18px] font-semibold text-text-primary">Incident Reports</h1>
-          <p className="text-[12px] text-text-secondary mt-0.5">
-            {total === 0 ? '0 shown' : `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}`}
-          </p>
+    <div className="h-full min-h-0 flex flex-col">
+      <div className="px-3 pt-3 pb-2 space-y-2 shrink-0">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <h1 className="text-[16px] font-bold text-text-primary">Incidents</h1>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => void load()} className="h-8 px-2.5 text-[12px] rounded-lg border border-border text-text-secondary hover:text-text-primary transition-colors">Refresh</button>
+            <button type="button" onClick={() => void exportXlsx()} className="h-8 px-2.5 text-[12px] rounded-lg border border-border text-text-primary font-medium hover:bg-surface-elevated transition-colors">Export</button>
+            {canCreate && (
+              <button type="button" onClick={() => router.push('/dashboard/incidents/new')} className="btn-primary h-8 px-2.5 text-[12px] whitespace-nowrap">
+                + New Incident
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#0F2918]">
+            <span className="text-[14px] font-semibold text-[#22C55E]">{kpis.open}</span>
+            <span className="text-[11px] text-[#4ADE80]">Open</span>
+          </span>
+          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#292012]">
+            <span className="text-[14px] font-semibold text-[#FCD34D]">{kpis.investigating}</span>
+            <span className="text-[11px] text-[#FCD34D]">Investigating</span>
+          </span>
+          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#3F1515]">
+            <span className="text-[14px] font-semibold text-[#FCA5A5]">{kpis.critical}</span>
+            <span className="text-[11px] text-[#FCA5A5]">Critical</span>
+          </span>
+          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#1E293B]">
+            <span className="text-[14px] font-semibold text-[#94A3B8]">{kpis.unassigned}</span>
+            <span className="text-[11px] text-[#64748B]">Unassigned</span>
+          </span>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => void exportXlsx()} className="btn-outlined h-9 px-3 text-[13px]">Export</button>
-          {canCreate && (
-            <button onClick={() => router.push('/dashboard/incidents/new')} className="btn-primary h-9 px-3 text-[13px]">New</button>
-          )}
+          <div className="flex rounded-md overflow-hidden border border-divider shrink-0">
+            {([
+              { value: 'open' as const, label: 'Open' },
+              { value: 'all' as const, label: 'All' },
+              { value: 'closed' as const, label: 'Closed' },
+            ]).map(({ value, label }) => (
+              <button key={value} type="button" onClick={() => setStatusFilter(value)} className={pill(statusFilter === value)}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1.5 h-8 px-2 bg-surface border border-border rounded-sm flex-1 min-w-0">
+            <span className="material-icons text-text-disabled text-[16px]">search</span>
+            <input
+              type="search"
+              placeholder="Search title, description, or category"
+              value={searchText}
+              onChange={e => setSearchText(e.target.value)}
+              className="flex-1 min-w-0 text-[13px] text-text-primary placeholder:text-text-disabled bg-transparent focus:outline-none"
+            />
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {([
+            { value: 'all' as const, label: 'All scopes' },
+            { value: 'standalone' as const, label: 'Standalone' },
+            { value: 'job' as const, label: 'Job-linked' },
+          ]).map(({ value, label }) => (
+            <button key={value} type="button" onClick={() => setScope(value)} className={`h-7 px-2.5 rounded-full text-[11px] font-medium border ${scope === value ? 'bg-primary text-white border-primary' : 'bg-surface text-text-secondary border-border hover:text-text-primary'}`}>
+              {label}
+            </button>
+          ))}
+          {([
+            { value: 'all' as const, label: 'All severity' },
+            { value: 'critical' as const, label: 'Critical' },
+            { value: 'high' as const, label: 'High' },
+            { value: 'medium' as const, label: 'Medium' },
+            { value: 'low' as const, label: 'Low' },
+          ]).map(({ value, label }) => (
+            <button key={value} type="button" onClick={() => setSeverityFilter(value)} className={`h-7 px-2.5 rounded-full text-[11px] font-medium border capitalize ${severityFilter === value ? 'bg-primary text-white border-primary' : 'bg-surface text-text-secondary border-border hover:text-text-primary'}`}>
+              {label}
+            </button>
+          ))}
         </div>
       </div>
 
       {error && error !== 'not_linked' && (
-        <div className="mx-4 mt-3 rounded-lg border border-error/30 bg-error/5 px-3 py-2 text-[13px] text-error">
-          {error}
-        </div>
+        <p className="mx-3 mb-2 text-[12px] text-error">{error}</p>
       )}
 
-      {!loading && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mx-4 mt-3">
-          <KpiTile value={kpis.open} label="Open" bg="#0F2918" valueFg="#22C55E" labelFg="#4ADE80" />
-          <KpiTile value={kpis.investigating} label="Investigating" bg="#292012" valueFg="#FCD34D" labelFg="#FCD34D" />
-          <KpiTile value={kpis.critical} label="Critical" bg="#3F1515" valueFg="#FCA5A5" labelFg="#FCA5A5" />
-          <KpiTile value={kpis.unassigned} label="Unassigned" bg="#1E293B" valueFg="#94A3B8" labelFg="#64748B" />
-        </div>
-      )}
-
-      <div className="mx-4 mt-3 bg-surface rounded-xl border border-divider overflow-hidden">
-        <div className="flex items-center gap-2 px-3 py-[10px] border-b border-divider">
-          <span className="material-icons text-primary text-[18px]">bolt</span>
-          <span className="font-semibold text-[12px] text-primary uppercase tracking-wider">Action Centre</span>
+      <div className="mx-3 mb-2 bg-surface rounded-lg border border-divider overflow-hidden shrink-0">
+        <div className={`flex items-center gap-2 px-3 py-1.5 ${actionItems.length > 0 ? 'border-b border-divider' : ''}`}>
+          <span className="material-icons text-primary text-[16px]">bolt</span>
+          <span className="font-semibold text-[11px] text-primary uppercase tracking-wider">Action Centre</span>
           <span className="text-text-secondary text-[11px] ml-1">
             {actionItems.length > 0 ? `${actionItems.length} pending` : 'Up to date'}
           </span>
+          <button type="button" onClick={() => void load()} className="ml-auto text-text-secondary text-[11px] h-6 px-2 hover:text-text-primary transition-colors">
+            ↻ Refresh
+          </button>
         </div>
-        <div className="max-h-[120px] overflow-y-auto">
-          {actionItems.length === 0 ? (
-            <p className="text-text-secondary text-[12px] px-3 py-2">✓  No pending incident actions</p>
-          ) : (
-            actionItems.map(item => (
+        {actionItems.length > 0 && (
+          <div className="max-h-[88px] overflow-y-auto">
+            {actionItems.map(item => (
               <button
                 key={item.id}
                 type="button"
                 onClick={() => router.push(`/dashboard/incidents/${item.id}`)}
-                className="w-full text-left px-3 py-2 border-t border-divider hover:bg-background transition-colors flex items-center gap-2"
+                className="w-full text-left px-3 py-1.5 border-t border-divider first:border-t-0 hover:bg-background transition-colors flex items-center gap-2"
               >
                 <StatusBadge label={item.severity} bg={sevBg(item.severity)} fg={sevFg(item.severity)} />
                 <span className="text-[12px] text-text-primary truncate flex-1">{item.label}</span>
                 <span className="text-[11px] text-text-secondary capitalize">{item.status}</span>
               </button>
-            ))
-          )}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
-      <div className="px-4 py-3 flex flex-wrap gap-2 items-center border-b border-divider bg-surface shrink-0">
-        <div className="flex items-center gap-2 h-10 px-3 bg-background border border-border rounded-lg flex-1 min-w-[180px]">
-          <span className="material-icons text-text-disabled text-[18px]">search</span>
-          <input
-            type="search"
-            placeholder="Search title, description…"
-            className="flex-1 text-[13px] text-text-primary placeholder:text-text-disabled bg-transparent focus:outline-none"
-            value={searchText}
-            onChange={e => setSearchText(e.target.value)}
-          />
-        </div>
-        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as StatusFilter)}
-          className="h-10 px-3 rounded-lg border border-border bg-surface text-[13px] text-text-primary">
-          <option value="open">Open</option>
-          <option value="all">All statuses</option>
-          <option value="closed">Closed</option>
-        </select>
-        <select value={scope} onChange={e => setScope(e.target.value as ScopeFilter)}
-          className="h-10 px-3 rounded-lg border border-border bg-surface text-[13px] text-text-primary">
-          <option value="all">All scopes</option>
-          <option value="standalone">Standalone</option>
-          <option value="job">Job-linked</option>
-        </select>
-        <select value={severityFilter} onChange={e => setSeverityFilter(e.target.value as SeverityFilter)}
-          className="h-10 px-3 rounded-lg border border-border bg-surface text-[13px] text-text-primary capitalize">
-          <option value="all">All severity</option>
-          <option value="critical">Critical</option>
-          <option value="high">High</option>
-          <option value="medium">Medium</option>
-          <option value="low">Low</option>
-        </select>
-        <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} className="dark-entry h-10 text-[12px] py-0 w-auto">
-          {PAGE_SIZE_OPTIONS.map(n => <option key={n} value={n}>{n}/page</option>)}
-        </select>
-      </div>
-
-      <div className="flex-1 overflow-auto">
-        <div className="mx-4 my-3 bg-surface rounded-lg border border-divider overflow-hidden">
+      <div className="flex-1 min-h-0 overflow-auto mx-3 mb-1 bg-surface border border-divider rounded-lg">
           {loading ? (
             <p className="text-text-secondary text-[13px] text-center py-12">Loading…</p>
           ) : incidents.length === 0 ? (
@@ -352,15 +370,15 @@ export default function IncidentsPage() {
               table={
                 <table className="w-full text-[13px]" style={{ minWidth: 960 }}>
                   <thead>
-                    <tr className="border-b border-divider bg-surface-elevated">
-                      <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase">Title</th>
-                      <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase">Severity</th>
-                      <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase">Status</th>
-                      <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase">Reporter</th>
-                      <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase">Assignee</th>
-                      <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase">Job</th>
-                      <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase">Created</th>
-                      <th className="text-right px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase">Actions</th>
+                    <tr className="bg-surface-elevated border-b border-divider">
+                      <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary">Title</th>
+                      <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary">Severity</th>
+                      <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary">Status</th>
+                      <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary">Reporter</th>
+                      <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary">Assignee</th>
+                      <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary">Job</th>
+                      <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary">Created</th>
+                      <th className="text-right px-3 py-2 text-[11px] font-medium text-text-secondary">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-divider">
@@ -370,18 +388,18 @@ export default function IncidentsPage() {
                       return (
                         <tr key={inc.id} className="hover:bg-background transition-colors cursor-pointer"
                           onClick={() => router.push(`/dashboard/incidents/${inc.id}`)}>
-                          <td className="px-4 py-3 font-medium text-text-primary max-w-[220px] truncate">
+                          <td className="px-3 py-2.5 font-medium text-text-primary max-w-[220px] truncate">
                             {inc.title ?? inc.description ?? '—'}
                           </td>
-                          <td className="px-4 py-3">
+                          <td className="px-3 py-2.5">
                             <StatusBadge label={inc.severity} bg={sevBg(inc.severity)} fg={sevFg(inc.severity)} />
                           </td>
-                          <td className="px-4 py-3 text-text-secondary capitalize">{inc.status}</td>
-                          <td className="px-4 py-3 text-text-secondary truncate max-w-[120px]">{reporter}</td>
-                          <td className="px-4 py-3 text-text-secondary truncate max-w-[120px]">{assignee}</td>
-                          <td className="px-4 py-3 text-text-secondary truncate max-w-[140px]">{inc.jobs?.title ?? '—'}</td>
-                          <td className="px-4 py-3 text-text-secondary whitespace-nowrap">{fmtDate(inc.created_at)}</td>
-                          <td className="px-4 py-3 text-right">
+                          <td className="px-3 py-2.5 text-text-secondary capitalize">{inc.status}</td>
+                          <td className="px-3 py-2.5 text-text-secondary truncate max-w-[120px]">{reporter}</td>
+                          <td className="px-3 py-2.5 text-text-secondary truncate max-w-[120px]">{assignee}</td>
+                          <td className="px-3 py-2.5 text-text-secondary truncate max-w-[140px]">{inc.jobs?.title ?? '—'}</td>
+                          <td className="px-3 py-2.5 text-text-secondary whitespace-nowrap">{fmtDate(inc.created_at)}</td>
+                          <td className="px-3 py-2.5 text-right">
                             {canEdit && isOpenIncident(inc) && (
                               <button
                                 onClick={e => { e.stopPropagation(); void closeIncident(inc) }}
@@ -431,13 +449,17 @@ export default function IncidentsPage() {
               }
             />
           )}
-        </div>
       </div>
 
-      <div className="flex items-center justify-between px-4 py-3 border-t border-divider">
-        <span className="text-[12px] text-text-secondary">
-          {total === 0 ? '0 incidents' : `Showing ${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}`}
-        </span>
+      <div className="flex items-center justify-between px-3 py-2 border-t border-divider shrink-0">
+        <div className="flex items-center gap-2">
+          <span className="text-[12px] text-text-secondary">
+            {total === 0 ? '0 incidents' : `Showing ${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}`}
+          </span>
+          <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))} className="h-8 px-2 rounded-lg border border-border bg-surface text-[12px] text-text-primary">
+            {PAGE_SIZE_OPTIONS.map(n => <option key={n} value={n}>{n}/page</option>)}
+          </select>
+        </div>
         <div className="flex items-center gap-2">
           <button disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} className="btn-outlined h-8 px-3 text-[12px] disabled:opacity-40">Previous</button>
           <span className="text-[12px] text-text-secondary">Page {page} of {pages}</span>
