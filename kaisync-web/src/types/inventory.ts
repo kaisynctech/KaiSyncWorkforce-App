@@ -8,6 +8,7 @@ export type AdjustmentType =
   | 'internal_use'
   | 'transferred_in'
   | 'transferred_out'
+  | 'sold'
   | 'other'
 
 export type ItemType = 'part' | 'service' | 'material' | 'labour'
