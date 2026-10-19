@@ -179,6 +179,9 @@ async function rpc(fn: string, args: Record<string, unknown>): Promise<any> {
     const message = typeof raw.message === 'string' && raw.message.trim()
       ? raw.message
       : 'Request failed.'
+    if (message.includes('PORTAL_DISABLED')) {
+      throw new Error('Portal access is turned off for this client. Turn on Portal user on the client record, then sign in again.')
+    }
     throw new Error(message)
   }
   return data
@@ -506,10 +509,14 @@ export async function uploadDocument(params: {
   const supabase = createClient()
   const ext = file.name.includes('.') ? `.${file.name.split('.').pop()!.toLowerCase()}` : ''
   const path = `project_documents/${companyId}/${dealId}/client_${crypto.randomUUID()}${ext}`
+  await rpc('client_portal_prepare_upload', {
+    ...codes(companyCode, clientCode),
+    p_storage_path: path,
+  })
 
   const { error: upErr } = await supabase.storage
     .from('workforce-media')
-    .upload(path, file, { upsert: true, contentType: file.type || undefined })
+    .upload(path, file, { upsert: false, contentType: file.type || undefined })
   if (upErr) throw upErr
 
   const { data: pub } = supabase.storage.from('workforce-media').getPublicUrl(path)
