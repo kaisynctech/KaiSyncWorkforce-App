@@ -34,14 +34,84 @@ export type EmployeeWorkspace = {
 type CachedCompanyWs = { at: number; data: CompanyWorkspace | null }
 const COMPANY_WS_CACHE_MS = 30_000
 const companyWsCache = new Map<string, CachedCompanyWs>()
+/** Concurrent callers share one request per id instead of each missing the cache. */
+const companyWsInFlight = new Map<string, Promise<CompanyWorkspace | null>>()
+const employeeWsInFlight = new Map<string, Promise<EmployeeWorkspace | null>>()
+/** Bumped on clear so a request that started before sign-out cannot repopulate the cache. */
+let companyWsGeneration = 0
 
-export async function loadCompanyWorkspace(
+/**
+ * Code-login workers have no Supabase Auth session and query as `anon`, which has
+ * no SELECT policy on companies/employees — those reads always return no rows.
+ */
+async function isCodeSessionOnly(supabase: SupabaseClient): Promise<boolean> {
+  const { data } = await supabase.auth.getSession()
+  return !data.session
+}
+
+function codeSessionCompanyWorkspace(companyId: string): CompanyWorkspace | null {
+  // Code-auth has no RLS read on companies — use session company + permissive modules
+  const cs = getCodeSession()
+  if (cs?.company_id !== companyId) return null
+  return {
+    id: cs.company_id,
+    name: cs.company.name,
+    enabled_modules: {},
+    dispatch_settings: {},
+  }
+}
+
+function codeSessionEmployeeWorkspace(employeeId: string): EmployeeWorkspace | null {
+  // Code-auth fallback from kf_cs (employee_* RPCs already validated the session)
+  const cs = getCodeSession()
+  if (cs?.employee_id !== employeeId) return null
+  return {
+    id: cs.employee_id,
+    company_id: cs.company_id,
+    name: cs.employee.name,
+    surname: cs.employee.surname,
+    branch_id: null,
+    branch: cs.employee.branch ?? null,
+    enforce_branch_geofence: true,
+    registration_status: cs.employee.registration_status ?? 'active',
+    is_active: cs.employee.is_active !== false,
+    access_level: cs.employee.access_level,
+  }
+}
+
+export function loadCompanyWorkspace(
   supabase: SupabaseClient,
   companyId: string,
 ): Promise<CompanyWorkspace | null> {
   const cached = companyWsCache.get(companyId)
   if (cached && Date.now() - cached.at < COMPANY_WS_CACHE_MS) {
-    return cached.data
+    return Promise.resolve(cached.data)
+  }
+  const running = companyWsInFlight.get(companyId)
+  if (running) return running
+
+  const request = fetchCompanyWorkspace(supabase, companyId, companyWsGeneration).finally(() => {
+    if (companyWsInFlight.get(companyId) === request) companyWsInFlight.delete(companyId)
+  })
+  companyWsInFlight.set(companyId, request)
+  return request
+}
+
+async function fetchCompanyWorkspace(
+  supabase: SupabaseClient,
+  companyId: string,
+  generation: number,
+): Promise<CompanyWorkspace | null> {
+  const remember = (workspace: CompanyWorkspace) => {
+    if (generation === companyWsGeneration) {
+      companyWsCache.set(companyId, { at: Date.now(), data: workspace })
+    }
+    return workspace
+  }
+
+  const sessionCompany = codeSessionCompanyWorkspace(companyId)
+  if (sessionCompany && await isCodeSessionOnly(supabase)) {
+    return remember(sessionCompany)
   }
 
   // Live schema: companies has enabled_modules + custom_settings (no dispatch_settings column).
@@ -68,36 +138,52 @@ export async function loadCompanyWorkspace(
       enabled_modules: (data.enabled_modules as EnabledModules) ?? {},
       dispatch_settings,
     }
-    companyWsCache.set(companyId, { at: Date.now(), data: workspace })
-    return workspace
+    return remember(workspace)
   }
 
-  // Code-auth may not have RLS read on companies — use session company + permissive modules
-  const cs = getCodeSession()
-  if (cs?.company_id === companyId) {
-    const workspace: CompanyWorkspace = {
-      id: cs.company_id,
-      name: cs.company.name,
-      enabled_modules: {},
-      dispatch_settings: {},
-    }
-    companyWsCache.set(companyId, { at: Date.now(), data: workspace })
-    return workspace
-  }
-
-  return null
+  const fallback = codeSessionCompanyWorkspace(companyId)
+  return fallback ? remember(fallback) : null
 }
 
 /** Invalidate company workspace cache (modules change / sign-out). */
 export function clearCompanyWorkspaceCache(companyId?: string) {
-  if (companyId) companyWsCache.delete(companyId)
-  else companyWsCache.clear()
+  companyWsGeneration += 1
+  if (companyId) {
+    companyWsCache.delete(companyId)
+    companyWsInFlight.delete(companyId)
+  } else {
+    companyWsCache.clear()
+    companyWsInFlight.clear()
+  }
 }
 
-export async function loadEmployeeWorkspace(
+/** Drop shared in-flight employee workspace requests (sign-out). */
+export function clearEmployeeWorkspaceCache(employeeId?: string) {
+  if (employeeId) employeeWsInFlight.delete(employeeId)
+  else employeeWsInFlight.clear()
+}
+
+export function loadEmployeeWorkspace(
   supabase: SupabaseClient,
   employeeId: string,
 ): Promise<EmployeeWorkspace | null> {
+  const running = employeeWsInFlight.get(employeeId)
+  if (running) return running
+
+  const request = fetchEmployeeWorkspace(supabase, employeeId).finally(() => {
+    if (employeeWsInFlight.get(employeeId) === request) employeeWsInFlight.delete(employeeId)
+  })
+  employeeWsInFlight.set(employeeId, request)
+  return request
+}
+
+async function fetchEmployeeWorkspace(
+  supabase: SupabaseClient,
+  employeeId: string,
+): Promise<EmployeeWorkspace | null> {
+  const sessionEmployee = codeSessionEmployeeWorkspace(employeeId)
+  if (sessionEmployee && await isCodeSessionOnly(supabase)) return sessionEmployee
+
   const { data } = await supabase
     .from('employees')
     .select('id, company_id, name, surname, branch_id, branch, enforce_branch_geofence, registration_status, is_active, access_level')
@@ -119,24 +205,7 @@ export async function loadEmployeeWorkspace(
     }
   }
 
-  // Code-auth fallback from kf_cs (employee_* RPCs already validated the session)
-  const cs = getCodeSession()
-  if (cs?.employee_id === employeeId) {
-    return {
-      id: cs.employee_id,
-      company_id: cs.company_id,
-      name: cs.employee.name,
-      surname: cs.employee.surname,
-      branch_id: null,
-      branch: cs.employee.branch ?? null,
-      enforce_branch_geofence: true,
-      registration_status: cs.employee.registration_status ?? 'active',
-      is_active: cs.employee.is_active !== false,
-      access_level: cs.employee.access_level,
-    }
-  }
-
-  return null
+  return codeSessionEmployeeWorkspace(employeeId)
 }
 
 /**

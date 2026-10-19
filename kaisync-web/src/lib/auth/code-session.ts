@@ -183,5 +183,8 @@ export function clearAllAuthLocalState(): void {
   clearEmpContext()
   // Drop in-memory auth/workspace caches so the next login cannot reuse stale tenant.
   void import('@/lib/supabase/resolve-company').then(m => m.clearCurrentMemberCache())
-  void import('@/lib/employee-workspace').then(m => m.clearCompanyWorkspaceCache())
+  void import('@/lib/employee-workspace').then(m => {
+    m.clearCompanyWorkspaceCache()
+    m.clearEmployeeWorkspaceCache()
+  })
 }

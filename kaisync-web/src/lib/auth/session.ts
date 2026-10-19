@@ -92,7 +92,12 @@ function keepCachedCodeSession(reason: string | null | undefined, existing: Code
   return null
 }
 
-/** Mirrors RefreshCodeSessionAsync + ValidateCodeSessionAsync. */
+/**
+ * Mirrors RefreshCodeSessionAsync. No follow-up employee_validate_session call:
+ * employee_refresh_code_session already raises for unknown, revoked or expired
+ * tokens, PIN-reset sessions and inactive accounts, and every employee_* data RPC
+ * re-checks the session against company + employee via _assert_worker_access.
+ */
 export async function refreshCodeSession(
   supabase: SupabaseClient,
 ): Promise<CodeSession | null> {
@@ -115,15 +120,6 @@ export async function refreshCodeSession(
     if (!empId || !companyId || !token) {
       clearCodeSession()
       return null
-    }
-
-    const { data: valid, error: validErr } = await supabase.rpc('employee_validate_session', {
-      p_company_id: companyId,
-      p_employee_id: empId,
-      p_session_token: token,
-    })
-    if (validErr || valid !== true) {
-      return keepCachedCodeSession(validErr?.message, existing)
     }
 
     const refreshed = saveCodeSession(

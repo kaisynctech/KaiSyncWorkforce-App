@@ -597,8 +597,9 @@ export default function EmployeeOverviewPage() {
       setModules(flags)
       employeeBranchRef.current = emp?.branch ?? null
       enforceGeofenceRef.current = emp?.enforce_branch_geofence !== false
-      const assignedIds = await listAssignedBranchIds(supabase, member.companyId, member.employeeId, tok)
-      rememberBranches(emp?.branch_id, assignedIds)
+      // Fetched once per init, alongside the bundle rather than before it.
+      // No await before it is consumed below, so a rejection is always observed.
+      const assignedIdsPromise = listAssignedBranchIds(supabase, member.companyId, member.employeeId, tok)
       dispatchSettingsRef.current = company?.dispatch_settings ?? {}
 
       const pending = isPendingMembership(emp)
@@ -610,6 +611,7 @@ export default function EmployeeOverviewPage() {
       }
 
       if (pending) {
+        rememberBranches(emp?.branch_id, await assignedIdsPromise)
         branchesRef.current = []
         applyLastPunch(null, todayStr)
         setJobs([])
@@ -628,16 +630,20 @@ export default function EmployeeOverviewPage() {
       }
 
       // One round-trip for home widgets (replaces ~11 parallel RPCs).
-      const { data: bundleRaw, error: bundleErr } = await rpc('employee_get_overview_bundle', {
-        p_company_id: member.companyId,
-        p_employee_id: member.employeeId,
-        p_session_token: tok,
-        p_include_jobs: flags.jobs,
-        p_include_leave: flags.leave,
-        p_include_attendance: flags.attendance,
-        p_include_incidents: flags.incidents,
-        p_include_my_pa: flags.myPa,
-      })
+      const [{ data: bundleRaw, error: bundleErr }, assignedIds] = await Promise.all([
+        rpc('employee_get_overview_bundle', {
+          p_company_id: member.companyId,
+          p_employee_id: member.employeeId,
+          p_session_token: tok,
+          p_include_jobs: flags.jobs,
+          p_include_leave: flags.leave,
+          p_include_attendance: flags.attendance,
+          p_include_incidents: flags.incidents,
+          p_include_my_pa: flags.myPa,
+        }),
+        assignedIdsPromise,
+      ])
+      rememberBranches(emp?.branch_id, assignedIds)
       if (bundleErr) throw bundleErr
 
       const bundle = parseOverviewBundle(bundleRaw)
@@ -659,7 +665,6 @@ export default function EmployeeOverviewPage() {
       }
       if (bundle.employee) {
         employeeBranchRef.current = bundle.employee.branch ?? null
-        const assignedIds = await listAssignedBranchIds(supabase, member.companyId, member.employeeId, tok)
         enforceGeofenceRef.current = bundle.employee.enforce_branch_geofence !== false
         rememberBranches(bundle.employee.branch_id, assignedIds)
       }
