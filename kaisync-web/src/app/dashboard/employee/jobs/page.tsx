@@ -15,7 +15,7 @@ import {
   type JobScope,
   type JobStatusFilter,
 } from '@/lib/job-ownership'
-import { downloadJobPack, loadJobPack } from '@/lib/offline/job-pack'
+import { downloadJobPack, JOB_PACK_MAX_AGE_MS, loadJobPack } from '@/lib/offline/job-pack'
 import { networkLooksDown } from '@/lib/offline/meta'
 import {
   ResponsiveDataView,
@@ -83,7 +83,8 @@ export default function EmployeeJobsPage() {
     void init()
   }, [allowed])
 
-  async function init() {
+  /** `force` skips the 2-minute pack reuse (the Refresh button). */
+  async function init(options?: { force?: boolean }) {
     setLoading(true)
     setFromCache(false)
     const supabase = createClient()
@@ -112,6 +113,7 @@ export default function EmployeeJobsPage() {
         companyId: member.companyId,
         employeeId: member.employeeId,
         sessionToken: tok,
+        maxAgeMs: options?.force ? 0 : JOB_PACK_MAX_AGE_MS,
       })
       setJobs(sortJobsByCreatedDesc(pack.jobs as Job[]))
       setCacheAt(pack.syncedAt)
@@ -153,7 +155,7 @@ export default function EmployeeJobsPage() {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => void init()}
+              onClick={() => void init({ force: true })}
               className="text-text-secondary hover:text-text-primary p-1.5"
               aria-label="Refresh"
             >

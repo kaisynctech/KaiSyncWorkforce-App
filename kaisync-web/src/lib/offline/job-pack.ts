@@ -87,10 +87,78 @@ function asObject<T extends object>(data: unknown): T | null {
   return data as T
 }
 
-export async function downloadJobPack(
+/** A stored pack younger than this is reused instead of downloaded again. */
+export const JOB_PACK_MAX_AGE_MS = 120_000
+/** Jobs fetched at the same time while building a pack (each job is 3–4 RPCs). */
+export const JOB_PACK_CONCURRENCY = 4
+
+/** Map items with at most `limit` running at once. Results keep input order. */
+export async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length)
+  let next = 0
+  async function worker(): Promise<void> {
+    while (next < items.length) {
+      const index = next++
+      results[index] = await fn(items[index], index)
+    }
+  }
+  const workers = Array.from({ length: Math.min(Math.max(1, limit), items.length) }, () => worker())
+  await Promise.all(workers)
+  return results
+}
+
+export function isPackFresh(
+  syncedAt: string | null | undefined,
+  maxAgeMs: number,
+  now: number = Date.now(),
+): boolean {
+  if (!syncedAt || maxAgeMs <= 0) return false
+  const at = new Date(syncedAt).getTime()
+  if (Number.isNaN(at)) return false
+  const age = now - at
+  return age >= 0 && age < maxAgeMs
+}
+
+type JobPackOpts = { companyId: string; employeeId: string; sessionToken: string | null }
+
+/** One network download per company:employee at a time; concurrent callers share it. */
+const inFlightDownloads = new Map<string, Promise<JobPack>>()
+
+/**
+ * Returns the assigned-job pack, downloading it unless the stored pack for this
+ * company/employee is younger than `maxAgeMs` (default 2 min; pass 0 to force).
+ */
+export function downloadJobPack(
   supabase: SupabaseClient,
-  opts: { companyId: string; employeeId: string; sessionToken: string | null },
+  opts: JobPackOpts & { maxAgeMs?: number },
 ): Promise<JobPack> {
+  const key = packKey(opts.companyId, opts.employeeId)
+  const running = inFlightDownloads.get(key)
+  if (running) return running
+
+  const start = (): Promise<JobPack> => {
+    // A download may have started while the stored pack was being read.
+    const started = inFlightDownloads.get(key)
+    if (started) return started
+    const download = fetchJobPack(supabase, opts).finally(() => {
+      if (inFlightDownloads.get(key) === download) inFlightDownloads.delete(key)
+    })
+    inFlightDownloads.set(key, download)
+    return download
+  }
+
+  const maxAgeMs = opts.maxAgeMs ?? JOB_PACK_MAX_AGE_MS
+  if (maxAgeMs <= 0) return start()
+  return loadJobPack(opts.companyId, opts.employeeId).then(stored =>
+    stored && isPackFresh(stored.syncedAt, maxAgeMs) ? stored : start(),
+  )
+}
+
+async function fetchJobPack(supabase: SupabaseClient, opts: JobPackOpts): Promise<JobPack> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rpc = (fn: string, args: Record<string, unknown>) => (supabase.rpc as any)(fn, args)
 
@@ -115,8 +183,7 @@ export async function downloadJobPack(
     ...jobs.filter(j => !openJobs.some(o => o.id === j.id)).slice(0, 20),
   ].slice(0, 40)
 
-  const details: Record<string, PackedJobDetail> = {}
-  for (const row of packList) {
+  const packed = await mapWithConcurrency(packList, JOB_PACK_CONCURRENCY, async (row): Promise<PackedJobDetail> => {
     try {
       const [jobRes, cardEmpRes, checkRes] = await Promise.all([
         rpc('employee_get_job_for_employee', {
@@ -152,7 +219,7 @@ export async function downloadJobPack(
       const job = asObject<PackedJobListRow & Record<string, unknown>>(jobRes.data) ?? {
         ...row,
       }
-      details[row.id] = {
+      return {
         job,
         card: card
           ? {
@@ -173,9 +240,12 @@ export async function downloadJobPack(
         })),
       }
     } catch {
-      details[row.id] = { job: row, card: null, checklist: [] }
+      return { job: row, card: null, checklist: [] }
     }
-  }
+  })
+
+  const details: Record<string, PackedJobDetail> = {}
+  packList.forEach((row, i) => { details[row.id] = packed[i] })
 
   const pack: JobPack = {
     companyId: opts.companyId,

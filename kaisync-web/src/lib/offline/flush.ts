@@ -139,6 +139,11 @@ export async function flushEmployeeOffline(
     employeeId: string
     sessionToken: string | null
     refreshPack?: boolean
+    /**
+     * Reuse a stored pack younger than this (ms). Default 0 = always download.
+     * Ignored when job actions were just flushed — the pack must reflect them.
+     */
+    packMaxAgeMs?: number
   },
 ): Promise<FlushResult> {
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
@@ -198,6 +203,7 @@ export async function flushEmployeeOffline(
         companyId: opts.companyId,
         employeeId: opts.employeeId,
         sessionToken: opts.sessionToken,
+        maxAgeMs: jobs.flushed > 0 ? 0 : (opts.packMaxAgeMs ?? 0),
       })
       packUpdated = true
     } catch (e) {

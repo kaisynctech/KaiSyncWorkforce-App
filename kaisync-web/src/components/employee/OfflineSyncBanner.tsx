@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { flushEmployeeOffline } from '@/lib/offline/flush'
+import { JOB_PACK_MAX_AGE_MS } from '@/lib/offline/job-pack'
 import {
   formatLastSynced,
   getLastSyncedAt,
@@ -36,7 +37,7 @@ export function OfflineSyncBanner() {
   }, [refresh])
 
   useEffect(() => {
-    const run = async () => {
+    const run = async (packMaxAgeMs: number) => {
       if (typeof navigator !== 'undefined' && !navigator.onLine) return
       const supabase = createClient()
       const member = await resolveCurrentMember(supabase)
@@ -45,13 +46,14 @@ export function OfflineSyncBanner() {
         ?? (await supabase.auth.getSession()).data.session?.access_token
         ?? null
       const pending = await getOfflinePendingCounts()
-      // Always refresh pack when coming online; also flush queues.
+      // Flush queues, then refresh the pack (forced when coming online).
       setBusy(true)
       const result = await flushEmployeeOffline(supabase, {
         companyId: member.companyId,
         employeeId: member.employeeId,
         sessionToken: tok,
         refreshPack: true,
+        packMaxAgeMs,
       })
       setBusy(false)
       if (!result.ok && result.message) setMessage(result.message)
@@ -61,10 +63,11 @@ export function OfflineSyncBanner() {
         /* quiet */
       }
     }
-    const onOnline = () => { void run() }
+    const onOnline = () => { void run(0) }
     window.addEventListener('online', onOnline)
     // First mount: pull pack if online so jobs are ready before they leave signal.
-    void run()
+    // The layout remounts on every return to /dashboard/employee/*, so reuse a recent pack.
+    void run(JOB_PACK_MAX_AGE_MS)
     return () => window.removeEventListener('online', onOnline)
   }, [refresh])
 
