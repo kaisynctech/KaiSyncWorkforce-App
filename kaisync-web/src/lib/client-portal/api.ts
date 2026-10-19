@@ -212,6 +212,9 @@ export async function resolveClientByCode(
     if (msg.includes('ACCOUNT_LOCKED')) {
       throw new Error('Too many failed sign-in attempts. Please try again later.')
     }
+    if (msg.includes('PORTAL_DISABLED')) {
+      throw new Error('Portal access is turned off for this client. Turn on Portal user on the client record, then sign in again.')
+    }
     throw e instanceof Error ? e : new Error(msg)
   }
 }
