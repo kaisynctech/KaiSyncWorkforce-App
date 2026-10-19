@@ -136,6 +136,7 @@ export default function ProfilePage() {
   const [photoUploading, setPhotoUploading] = useState(false)
   const [photoError,     setPhotoError]     = useState<string | null>(null)
   const photoInputRef = useRef<HTMLInputElement>(null)
+  const saveErrorRef  = useRef<HTMLDivElement>(null)
   const tokRef        = useRef<string | null>(null)
 
   const [firstName,   setFirstName]   = useState('')
@@ -150,6 +151,11 @@ export default function ProfilePage() {
   const [showLeave,      setShowLeave]      = useState(true)
 
   useEffect(() => { init() }, [])
+
+  // The banner sits above the form; Save is at the bottom, so bring a failure into view.
+  useEffect(() => {
+    if (saveError) saveErrorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }, [saveError])
 
   async function init() {
     setLoading(true)
@@ -438,7 +444,7 @@ export default function ProfilePage() {
         )}
 
         {saveError && (
-          <div className="rounded-xl px-4 py-3 bg-error-dark border border-error/30">
+          <div ref={saveErrorRef} role="alert" className="rounded-xl px-4 py-3 bg-error-dark border border-error/30">
             <p className="text-[13px] font-semibold text-error">{saveError}</p>
           </div>
         )}

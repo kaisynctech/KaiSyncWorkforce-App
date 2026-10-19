@@ -1,0 +1,12 @@
+-- Drop the obsolete 10-argument overload of employee_update_profile.
+--
+-- Two overloads exist and every argument after the first two defaults to NULL,
+-- so a call without p_profile_photo_url matches both and PostgREST returns
+-- HTTP 300 (PGRST203). Profile saves from the employee portal never reach the
+-- database.
+--
+-- The 11-argument version (20260716164412_extend_employee_update_profile_photo)
+-- is a strict superset: same _assert_worker_access check, same column updates,
+-- same bank-change HR notification, plus profile_photo_url. Its definition and
+-- grants are left untouched.
+DROP FUNCTION IF EXISTS public.employee_update_profile(uuid, uuid, text, text, text, text, text, text, text, text);
