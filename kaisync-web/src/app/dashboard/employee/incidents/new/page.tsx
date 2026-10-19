@@ -173,12 +173,16 @@ export default function NewIncidentPage() {
       const openJobs = ((jobsRes.data as Job[]) ?? []).filter(j => isOpenJob(j))
       setJobs(openJobs)
 
-      const { data: clientRows } = await supabase
-        .from('clients')
-        .select('id, name')
-        .eq('company_id', member.companyId)
-        .order('name')
-      setClients((clientRows as ClientOption[]) ?? [])
+      // RLS allows clients reads to authenticated users only; a code session
+      // (anon) always gets no rows, so skip the request and keep the list empty.
+      if (!isCodeAuthRef.current) {
+        const { data: clientRows } = await supabase
+          .from('clients')
+          .select('id, name')
+          .eq('company_id', member.companyId)
+          .order('name')
+        setClients((clientRows as ClientOption[]) ?? [])
+      }
     }
 
     setLoading(false)

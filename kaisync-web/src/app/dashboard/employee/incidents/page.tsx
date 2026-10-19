@@ -111,21 +111,25 @@ export default function EmployeeIncidentsPage() {
     return true
   }, [])
 
-  async function replayQueue() {
+  /**
+   * Upload queued reports. The list is reloaded only when something was uploaded,
+   * unless `alwaysReload` (coming back online: the list may have loaded while offline).
+   */
+  async function replayQueue(options?: { alwaysReload?: boolean }) {
     const cid = companyIdRef.current
     const empId = empIdRef.current
     if (!cid || !empId) return
 
     setReplaying(true)
     const supabase = createClient()
-    await flushEmployeeOffline(supabase, {
+    const result = await flushEmployeeOffline(supabase, {
       companyId: cid,
       employeeId: empId,
       sessionToken: tokRef.current,
       refreshPack: false,
     })
     setPendingCount(pendingIncidentCount())
-    await loadList()
+    if (options?.alwaysReload || result.flushed > 0) await loadList()
     setReplaying(false)
   }
 
@@ -143,7 +147,7 @@ export default function EmployeeIncidentsPage() {
   }, [allowed, loadList])
 
   useEffect(() => {
-    const onOnline = () => { void replayQueue() }
+    const onOnline = () => { void replayQueue({ alwaysReload: true }) }
     window.addEventListener('online', onOnline)
     return () => window.removeEventListener('online', onOnline)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -223,7 +227,7 @@ export default function EmployeeIncidentsPage() {
           </p>
           <button
             type="button"
-            onClick={() => void replayQueue()}
+            onClick={() => void replayQueue({ alwaysReload: true })}
             disabled={replaying}
             className="text-[12px] font-semibold text-primary hover:underline disabled:opacity-50"
           >

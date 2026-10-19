@@ -90,12 +90,14 @@ export default function EmployeeShiftsPage() {
     const supabase = createClient()
     const member = await resolveCurrentMember(supabase)
     if (!member) { setLoading(false); return }
-    setEmpId(member.employeeId)
-    setCompanyId(member.companyId)
     tokRef.current = member.sessionToken
       ?? (await supabase.auth.getSession()).data.session?.access_token
       ?? null
     await loadEventsFor(member.employeeId, member.companyId, addDays(new Date(), -7), addDays(new Date(), 30))
+    // Set ids after the initial window is cached, so the weekStart effect sees it
+    // and does not fetch the same range again on mount.
+    setEmpId(member.employeeId)
+    setCompanyId(member.companyId)
     setLoading(false)
   }
 
