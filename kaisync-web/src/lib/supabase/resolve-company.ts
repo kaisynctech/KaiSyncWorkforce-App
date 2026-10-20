@@ -13,8 +13,13 @@ type CachedMember = {
   member: CurrentMember
 }
 
-const MEMBER_CACHE_MS = 15_000
+// The member (employee + company) only changes on sign-in/out, account switch or company
+// switch, and each of those changes the cache key (or clears the cache). RLS stays the
+// data boundary and proxy.ts still verifies the session on every page request.
+const MEMBER_CACHE_MS = 10 * 60_000
 let memberCache: CachedMember | null = null
+/** Callers that start at the same moment (layout, gate, page) share one lookup. */
+const inFlight = new Map<string, Promise<CurrentMember | null>>()
 
 function memberCacheKey(userId: string | null, empId: string | null, companyId: string | null): string {
   return `${userId ?? 'anon'}|${empId ?? ''}|${companyId ?? ''}`
@@ -23,6 +28,18 @@ function memberCacheKey(userId: string | null, empId: string | null, companyId: 
 /** Drop cached member (call after company switch / sign-out). */
 export function clearCurrentMemberCache() {
   memberCache = null
+  inFlight.clear()
+  void import('@/lib/permissions').then(m => m.clearPermissionsCache())
+}
+
+/** User id of the session held in this browser (no network call). */
+async function localSessionUserId(supabase: SupabaseClient): Promise<string | null> {
+  try {
+    const { data } = await supabase.auth.getSession()
+    return data.session?.user?.id ?? null
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -32,6 +49,34 @@ export function clearCurrentMemberCache() {
  * Short in-memory cache avoids layout + page + sidebar all re-hitting auth.
  */
 export async function resolveCurrentMember(
+  supabase: SupabaseClient
+): Promise<CurrentMember | null> {
+  // Fast path: answer from the cache using the locally held session, before any
+  // network call (previously getUser() ran first, so every caller paid a round trip).
+  const ctx = typeof window !== 'undefined' ? getEmpContext() : null
+  const localKey = memberCacheKey(
+    await localSessionUserId(supabase),
+    ctx?.employee_id ?? null,
+    ctx?.company_id ?? null,
+  )
+  if (
+    memberCache &&
+    memberCache.key === localKey &&
+    Date.now() - memberCache.at < MEMBER_CACHE_MS
+  ) {
+    return memberCache.member
+  }
+  const running = inFlight.get(localKey)
+  if (running) return running
+  const lookup = resolveCurrentMemberVerified(supabase).finally(() => {
+    if (inFlight.get(localKey) === lookup) inFlight.delete(localKey)
+  })
+  inFlight.set(localKey, lookup)
+  return lookup
+}
+
+/** Server-verified lookup (getUser + employees), as before; fills the cache. */
+async function resolveCurrentMemberVerified(
   supabase: SupabaseClient
 ): Promise<CurrentMember | null> {
   // Prefer company selected via company picker (kf_emp_ctx) for JWT users.

@@ -215,14 +215,25 @@ export default function EmployeesPage() {
     if (tab === 'pending' && !pendingLoaded) loadPending()
   }, [tab, companyId])
 
+  // Debounce only while typing in search; the first load and filter/page changes run at once.
+  const lastDirectorySearchRef = useRef<string | null>(null)
   useEffect(() => {
     if (!companyId) return
+    const typing = lastDirectorySearchRef.current !== null && lastDirectorySearchRef.current !== search
+    lastDirectorySearchRef.current = search
+    if (!typing) {
+      void loadDirectory()
+      return
+    }
     const timer = setTimeout(() => { void loadDirectory() }, 200)
     return () => clearTimeout(timer)
   }, [companyId, page, search, filterRole, filterStatus, filterBranch, filterEmpType])
 
+  const directoryRequestRef = useRef(0)
   async function loadDirectory() {
     if (!companyId) return
+    // Only the latest request may update the list (filters now load without a delay).
+    const requestId = ++directoryRequestRef.current
     setEmpLoading(true)
     const supabase = createClient()
     const result = await listEmployeeDirectory(supabase, companyId, {
@@ -234,6 +245,7 @@ export default function EmployeesPage() {
       limit: DIRECTORY_PAGE_SIZE,
       offset: page * DIRECTORY_PAGE_SIZE,
     })
+    if (requestId !== directoryRequestRef.current) return
     if (!result.ok) {
       setError(result.message)
       setEmployees([])

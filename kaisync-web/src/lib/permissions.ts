@@ -107,7 +107,39 @@ const FALLBACK: Record<string, Partial<Record<PermissionKey, boolean>>> = {
 
 export type PermissionSet = Set<string>
 
+// my_permissions is asked by the module gate and again by the page on the same load.
+// Share one answer for a minute per signed-in user + company + access level.
+// Permissions are still enforced by the database on every request.
+const PERMISSIONS_CACHE_MS = 60_000
+const permissionsCache = new Map<string, { at: number; value: Promise<PermissionSet> }>()
+
+/** Drop cached permissions (sign-out, account or company switch, role change screens). */
+export function clearPermissionsCache() {
+  permissionsCache.clear()
+}
+
 export async function loadPermissions(
+  supabase: SupabaseClient,
+  companyId: string,
+  accessLevel?: AccessLevel,
+): Promise<PermissionSet> {
+  let userId: string | null = null
+  try {
+    const { data } = await supabase.auth.getSession()
+    userId = data.session?.user?.id ?? null
+  } catch {
+    userId = null
+  }
+  const key = `${userId ?? 'anon'}|${companyId}|${accessLevel ?? ''}`
+  const hit = permissionsCache.get(key)
+  if (hit && Date.now() - hit.at < PERMISSIONS_CACHE_MS) return new Set(await hit.value)
+  const value = loadPermissionsUncached(supabase, companyId, accessLevel)
+  permissionsCache.set(key, { at: Date.now(), value })
+  value.catch(() => permissionsCache.delete(key))
+  return new Set(await value)
+}
+
+async function loadPermissionsUncached(
   supabase: SupabaseClient,
   companyId: string,
   accessLevel?: AccessLevel,

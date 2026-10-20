@@ -2,6 +2,18 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function proxy(request: NextRequest) {
+  const pathname = request.nextUrl.pathname
+
+  // Client / contractor / tenant portals use code-auth (localStorage), not Supabase JWT,
+  // and never read the user below — skip the Supabase round trips for them.
+  if (
+    pathname.startsWith('/client-portal')
+    || pathname.startsWith('/contractor-portal')
+    || pathname.startsWith('/tenant-portal')
+  ) {
+    return NextResponse.next({ request })
+  }
+
   let supabaseResponse = NextResponse.next({ request })
 
   const supabase = createServerClient(
@@ -31,17 +43,6 @@ export async function proxy(request: NextRequest) {
     // Network error or invalid token — treat as unauthenticated and let
     // client-side auth handle it rather than crashing the middleware.
   }
-  const pathname = request.nextUrl.pathname
-
-  // Client / contractor portals use code-auth (localStorage), not Supabase JWT.
-  if (
-    pathname.startsWith('/client-portal')
-    || pathname.startsWith('/contractor-portal')
-    || pathname.startsWith('/tenant-portal')
-  ) {
-    return supabaseResponse
-  }
-
   if (!user && pathname.startsWith('/dashboard')) {
     // Code-auth sessions live in localStorage (kf_cs) and are invisible to middleware.
     // Allow dashboard through; dashboard/layout.tsx enforces JWT or valid code session.
@@ -81,5 +82,9 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/).*)'],
+  // Public files carry no signed-in content: no Supabase work for them
+  // (service worker, icons, manifest, marketing pages and their assets).
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|api/|sw\\.js|manifest\\.webmanifest|robots\\.txt|sitemap\\.xml|icons/|assets/|.*\\.(?:html|css|js|svg|png|jpg|jpeg|gif|webp|ico|txt|xml|json|webmanifest|map)$).*)',
+  ],
 }

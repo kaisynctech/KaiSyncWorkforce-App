@@ -172,19 +172,61 @@ export default function OverviewPage() {
     cIdRef.current = member.companyId
     eIdRef.current = member.employeeId
 
-    const { data: empData } = await supabase
+    // Everything below only needs the company/employee ids, so it starts in one parallel
+    // wave (own row, today's punches, KPIs, and the quotes.view permission check).
+    // The permission result still gates the commercial figures further down.
+    const todayDate = new Date().toISOString().split('T')[0]
+    const empPromise = supabase
       .from('employees').select(`${EMPLOYEE_SAFE_SELECT}, companies(name)`).eq('id', member.employeeId).maybeSingle()
+    // Fetch today's time_punches for whole company (needed for KPIs + attendance)
+    const punchesPromise = supabase
+      .from('time_punches').select('id, employee_id, type, date_time')
+      .eq('company_id', member.companyId).gte('date_time', todayStart())
+      .order('date_time', { ascending: true })
+    const kpiPromise = Promise.all([
+      supabase.from('employees').select('id', { count: 'exact', head: true })
+        .eq('company_id', member.companyId).eq('is_active', true),
+      supabase.from('jobs').select('id', { count: 'exact', head: true })
+        .eq('company_id', member.companyId).in('status', ['open', 'scheduled', 'in_progress']),
+      supabase.from('leave_requests').select('id', { count: 'exact', head: true })
+        .eq('company_id', member.companyId).eq('status', 'pending'),
+      supabase.from('incident_reports').select('id', { count: 'exact', head: true })
+        .eq('company_id', member.companyId).eq('status', 'open'),
+      supabase.from('payment_approvals').select('id', { count: 'exact', head: true })
+        .eq('company_id', member.companyId).eq('status', 'pending'),
+      supabase.from('employees').select('id, name, surname, position, pay_full_monthly_salary')
+        .eq('company_id', member.companyId).eq('is_active', true).order('name'),
+      supabase.from('leave_requests')
+        .select('id, employee_id, employees(name, surname)')
+        .eq('company_id', member.companyId)
+        .eq('status', 'approved')
+        .lte('start_date', todayDate)
+        .gte('end_date', todayDate),
+      supabase.from('daily_absences')
+        .select('id, employee_id, reason, employees(name, surname)')
+        .eq('company_id', member.companyId)
+        .eq('date', todayDate),
+    ])
+    /** true / false = permission answer; null = the check failed (treated as hidden). */
+    const quotesPermissionPromise: Promise<boolean | null> = (async () => {
+      try {
+        const { data: canViewQuotes, error: permissionError } = await supabase.rpc('user_has_permission', {
+          p_company_id: member.companyId,
+          p_permission_key: 'quotes.view',
+        })
+        return !permissionError && Boolean(canViewQuotes)
+      } catch {
+        return null
+      }
+    })()
+
+    const [{ data: empData }, { data: todayPunches }, kpiResults] = await Promise.all([
+      empPromise, punchesPromise, kpiPromise,
+    ])
     if (!stillCurrent()) return
     if (!empData) { setLoading(false); return }
     setEmployee(empData as unknown as Employee)
     setCompanyName((empData as unknown as { companies: { name: string } | null }).companies?.name ?? '')
-
-    // Fetch today's time_punches for whole company (needed for KPIs + attendance)
-    const { data: todayPunches } = await supabase
-      .from('time_punches').select('id, employee_id, type, date_time')
-      .eq('company_id', member.companyId).gte('date_time', todayStart())
-      .order('date_time', { ascending: true })
-    if (!stillCurrent()) return
 
     const punches = (todayPunches ?? []) as TimePunch[]
 
@@ -216,33 +258,8 @@ export default function OverviewPage() {
     }
     setIsClockedIn(selfClockedIn)
 
-    // Parallel KPI queries
-    const todayDate = new Date().toISOString().split('T')[0]
-    const [hcRes, jobRes, leaveRes, incRes, payRes, empsRes, onLeaveRes, absentRes] = await Promise.all([
-      supabase.from('employees').select('id', { count: 'exact', head: true })
-        .eq('company_id', member.companyId).eq('is_active', true),
-      supabase.from('jobs').select('id', { count: 'exact', head: true })
-        .eq('company_id', member.companyId).in('status', ['open', 'scheduled', 'in_progress']),
-      supabase.from('leave_requests').select('id', { count: 'exact', head: true })
-        .eq('company_id', member.companyId).eq('status', 'pending'),
-      supabase.from('incident_reports').select('id', { count: 'exact', head: true })
-        .eq('company_id', member.companyId).eq('status', 'open'),
-      supabase.from('payment_approvals').select('id', { count: 'exact', head: true })
-        .eq('company_id', member.companyId).eq('status', 'pending'),
-      supabase.from('employees').select('id, name, surname, position, pay_full_monthly_salary')
-        .eq('company_id', member.companyId).eq('is_active', true).order('name'),
-      supabase.from('leave_requests')
-        .select('id, employee_id, employees(name, surname)')
-        .eq('company_id', member.companyId)
-        .eq('status', 'approved')
-        .lte('start_date', todayDate)
-        .gte('end_date', todayDate),
-      supabase.from('daily_absences')
-        .select('id, employee_id, reason, employees(name, surname)')
-        .eq('company_id', member.companyId)
-        .eq('date', todayDate),
-    ])
-    if (!stillCurrent()) return
+    // KPI results (requests already ran in the parallel wave above)
+    const [hcRes, jobRes, leaveRes, incRes, payRes, empsRes, onLeaveRes, absentRes] = kpiResults
 
     const employees = (empsRes.data ?? []) as EmpRow[]
     const attendanceEmployees = employees.filter(requiresDailyClockIn)
@@ -295,18 +312,13 @@ export default function OverviewPage() {
     setLoading(false)
 
     const cid = member.companyId
-    let permitted = false
-    try {
-      const { data: canViewQuotes, error: permissionError } = await supabase.rpc('user_has_permission', {
-        p_company_id: cid,
-        p_permission_key: 'quotes.view',
-      })
-      if (!stillCurrent()) return
-      permitted = !permissionError && Boolean(canViewQuotes)
-    } catch {
-      if (stillCurrent()) setCommercial(hiddenCommercial())
+    const permissionAnswer = await quotesPermissionPromise
+    if (!stillCurrent()) return
+    if (permissionAnswer === null) {
+      setCommercial(hiddenCommercial())
       return
     }
+    const permitted = permissionAnswer
 
     if (!permitted) {
       setCommercial(hiddenCommercial())
@@ -353,6 +365,9 @@ export default function OverviewPage() {
   }, [])
 
   useEffect(() => {
+    // Data load on mount (unchanged pattern: load() sets its loading flags before its first
+    // await). The rule started flagging it once the load became one parallel wave.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load()
     return () => { loadIdRef.current += 1 }
   }, [load])
