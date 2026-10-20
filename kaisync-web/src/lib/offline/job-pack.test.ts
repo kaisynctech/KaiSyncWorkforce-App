@@ -60,8 +60,9 @@ function fakeClient(rows: ReturnType<typeof jobRow>[], opts?: { failJob?: string
     }
     if (opts?.failJob === jobId && fn === 'employee_get_job_for_employee') throw new Error('boom')
     if (fn === 'employee_get_job_for_employee') return { data: [{ ...rows.find(r => r.id === jobId), detail: true }], error: null }
-    if (fn === 'employee_get_job_card_for_employee') return { data: null, error: null }
-    if (fn === 'employee_get_job_card_for_job') return { data: { id: `card-${jobId}`, is_completed: 1 }, error: null }
+    if (fn === 'employee_get_job_card_for_employee') {
+      return jobId === 'j0' ? { data: { id: `card-${jobId}`, is_completed: 1 }, error: null } : { data: null, error: null }
+    }
     if (fn === 'employee_get_checklist_for_job') return { data: [{ id: `c-${jobId}`, is_checked: 0 }], error: null }
     return { data: null, error: null }
   })
@@ -108,7 +109,7 @@ describe('isPackFresh', () => {
 describe('downloadJobPack', () => {
   it('runs at most JOB_PACK_CONCURRENCY jobs at once, keeps order and isolates failures', async () => {
     const rows = Array.from({ length: 10 }, (_, i) => jobRow(`j${i}`))
-    const { client, peak } = fakeClient(rows, { failJob: 'j3' })
+    const { client, peak, calls } = fakeClient(rows, { failJob: 'j3' })
     const pack = await downloadJobPack(client, { companyId: CO, employeeId: EMP, sessionToken: 't', maxAgeMs: 0 })
 
     expect(peak()).toBe(JOB_PACK_CONCURRENCY)
@@ -117,6 +118,8 @@ describe('downloadJobPack', () => {
     expect(pack.details.j3).toEqual({ job: rows[3], card: null, checklist: [] })
     expect(pack.details.j0.job).toMatchObject({ id: 'j0', detail: true })
     expect(pack.details.j0.card).toMatchObject({ id: 'card-j0', is_completed: true, work_performed: null, photo_urls: null })
+    // A job without a card must not trigger the redundant for_job lookup.
+    expect(calls).not.toContain('employee_get_job_card_for_job')
     expect(pack.details.j0.checklist).toEqual([{ id: 'c-j0', description: null, is_checked: false, sort_order: null }])
   })
 

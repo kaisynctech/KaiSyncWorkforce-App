@@ -185,7 +185,9 @@ async function fetchJobPack(supabase: SupabaseClient, opts: JobPackOpts): Promis
 
   const packed = await mapWithConcurrency(packList, JOB_PACK_CONCURRENCY, async (row): Promise<PackedJobDetail> => {
     try {
-      const [jobRes, cardEmpRes, checkRes] = await Promise.all([
+      // allSettled: hold this job's slot until all three calls finish, so a failed call
+      // cannot start the next job while this job's other calls are still running.
+      const settled = await Promise.allSettled([
         rpc('employee_get_job_for_employee', {
           p_company_id: opts.companyId,
           p_employee_id: opts.employeeId,
@@ -205,16 +207,16 @@ async function fetchJobPack(supabase: SupabaseClient, opts: JobPackOpts): Promis
           p_session_token: opts.sessionToken,
         }),
       ])
+      const failed = settled.find(r => r.status === 'rejected')
+      if (failed) throw (failed as PromiseRejectedResult).reason
+      const [jobRes, cardEmpRes, checkRes] = settled.map(
+        r => (r as PromiseFulfilledResult<{ data: unknown }>).value,
+      )
 
-      let card = asObject<PackedJobCard>(cardEmpRes.data)
-      if (!card) {
-        const cardJobRes = await rpc('employee_get_job_card_for_job', {
-          p_company_id: opts.companyId,
-          p_job_id: row.id,
-          p_session_token: opts.sessionToken,
-        })
-        card = asObject<PackedJobCard>(cardJobRes.data)
-      }
+      // No second "for_job" lookup: employee_get_job_card_for_job only calls
+      // employee_get_job_card_for_employee with the same arguments, so it can never
+      // find a card this call missed (and without p_employee_id it was always rejected).
+      const card = asObject<PackedJobCard>(cardEmpRes.data)
 
       const job = asObject<PackedJobListRow & Record<string, unknown>>(jobRes.data) ?? {
         ...row,
