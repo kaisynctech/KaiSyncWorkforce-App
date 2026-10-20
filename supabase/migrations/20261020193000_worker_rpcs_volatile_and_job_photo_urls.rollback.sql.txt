@@ -1,0 +1,44 @@
+-- ROLLBACK for 20261020193000_worker_rpcs_volatile_and_job_photo_urls.sql
+-- Restores the exact previous definitions (captured from production 20 Oct 2026).
+-- Not a migration: .txt so the Supabase CLI never runs it. Run manually only if needed.
+ALTER FUNCTION public.employee_assigned_branch_ids(uuid, uuid, text) STABLE;
+ALTER FUNCTION public.message_unread_counts_for_threads(uuid, uuid, uuid[], text) STABLE;
+
+CREATE OR REPLACE FUNCTION public.message_company_feed_unread_count(p_company_id uuid, p_employee_id uuid, p_session_token text DEFAULT NULL::text)
+ RETURNS bigint
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+ SET row_security TO 'off'
+AS $function$
+BEGIN
+  PERFORM public._assert_worker_access(p_company_id, p_employee_id, p_session_token);
+  RETURN (SELECT coalesce((
+    SELECT unread_count
+    FROM public.message_unread_counts_for_threads(
+      p_company_id,
+      p_employee_id,
+      ARRAY[public._company_feed_thread_id(p_company_id, p_session_token)]
+    )
+  ), 0));
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.employee_get_job_photo_urls(p_company_id uuid, p_employee_id uuid, p_job_id uuid, p_session_token text DEFAULT NULL::text)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+BEGIN
+  PERFORM public._assert_worker_access(p_company_id, p_employee_id, p_session_token);
+  RETURN (SELECT json_build_object(
+    'photo_urls_before', coalesce(j.photo_urls_before, '{}'::text[]),
+    'photo_urls_after', coalesce(j.photo_urls_after, '{}'::text[])
+  )
+  FROM public.employee_get_job_for_employee(p_company_id, p_employee_id, p_job_id, p_session_token) j
+  LIMIT 1);
+END;
+$function$;
+
+NOTIFY pgrst, 'reload schema';
