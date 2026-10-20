@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { signWorkforceMediaMany } from '@/lib/media-read'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { uploadJobPhoto, uploadJobDocument } from '@/lib/job-media'
 import { loadCompanyWorkspace, moduleFlagsForCompany } from '@/lib/employee-workspace'
@@ -118,13 +119,9 @@ async function signMediaPaths(
   supabase: any,
   paths: string[],
 ): Promise<string[]> {
-  const signed = await Promise.all(paths.map(async (path) => {
-    if (!path) return null
-    if (path.startsWith('http://') || path.startsWith('https://')) return path
-    const { data } = await supabase.storage.from('workforce-media').createSignedUrl(path, 3600)
-    return data?.signedUrl ?? null
-  }))
-  return signed.filter(Boolean) as string[]
+  const present = paths.filter(Boolean)
+  const signed = await signWorkforceMediaMany(supabase, present, 3600)
+  return present.map(path => signed.get(path.trim()) ?? null).filter(Boolean) as string[]
 }
 
 function parsePhasePhotoUrls(raw: unknown): { before: string[]; after: string[] } {
@@ -421,10 +418,8 @@ export default function JobCardPage() {
 
       setChecklist(((checkRes.data as ChecklistItem[]) ?? []).sort((a,b) => a.sort_order - b.sort_order))
       const rawDocs = (docsRes.data as JobDocument[]) ?? []
-      const docsWithUrls = await Promise.all(rawDocs.map(async d => {
-        const { data: s } = await supabase.storage.from('workforce-media').createSignedUrl(d.file_url, 3600)
-        return { ...d, signedUrl: s?.signedUrl ?? null }
-      }))
+      const docUrls = await signWorkforceMediaMany(supabase, rawDocs.map(d => d.file_url).filter(Boolean), 3600)
+      const docsWithUrls = rawDocs.map(d => ({ ...d, signedUrl: d.file_url ? docUrls.get(d.file_url.trim()) ?? null : null }))
       setDocs(docsWithUrls)
       setSiteVisit((visitRes.data as SiteVisit[] | null)?.[0] ?? null)
       setInventory((invRes.data as InventoryUsage[]) ?? [])

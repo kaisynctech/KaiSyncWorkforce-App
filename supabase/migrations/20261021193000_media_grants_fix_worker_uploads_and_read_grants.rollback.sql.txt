@@ -1,0 +1,68 @@
+-- ROLLBACK for 20261021193000_media_grants_fix_worker_uploads_and_read_grants.sql
+-- Restores the exact previous policies and employee_prepare_media_upload (captured 20 Oct 2026),
+-- then removes the read-grant objects. NOTE: restoring the old policies brings back the
+-- worker/client upload failure.
+DROP POLICY IF EXISTS p_workforce_media_worker_insert ON storage.objects;
+CREATE POLICY p_workforce_media_worker_insert ON storage.objects FOR INSERT TO anon
+  WITH CHECK ((bucket_id = 'workforce-media'::text) AND (EXISTS ( SELECT 1
+   FROM media_upload_grants g
+  WHERE ((g.storage_path = objects.name) AND (g.consumed_at IS NULL) AND (g.expires_at > now())))));
+DROP POLICY IF EXISTS p_workforce_media_worker_select ON storage.objects;
+CREATE POLICY p_workforce_media_worker_select ON storage.objects FOR SELECT TO anon
+  USING ((bucket_id = 'workforce-media'::text) AND (EXISTS ( SELECT 1
+   FROM media_upload_grants g
+  WHERE ((g.storage_path = objects.name) AND (g.expires_at > now())))));
+
+DROP FUNCTION IF EXISTS public.employee_grant_media_read(uuid, uuid, text[], text);
+DROP FUNCTION IF EXISTS public.client_portal_grant_media_read(text, text, text[]);
+DROP FUNCTION IF EXISTS public.contractor_portal_grant_media_read(text, text, text[]);
+DROP FUNCTION IF EXISTS public._media_write_read_grant(text, uuid, text);
+DROP FUNCTION IF EXISTS public.media_upload_granted(text);
+DROP FUNCTION IF EXISTS public.media_read_granted(text);
+DROP TABLE IF EXISTS public.media_read_grants;
+
+CREATE OR REPLACE FUNCTION public.employee_prepare_media_upload(p_company_id uuid, p_employee_id uuid, p_storage_path text, p_purpose text DEFAULT 'attachment'::text, p_session_token text DEFAULT NULL::text)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_path text := trim(both '/' from trim(coalesce(p_storage_path, '')));
+  v_folder text;
+BEGIN
+  PERFORM public._assert_worker_access(p_company_id, p_employee_id, p_session_token);
+
+  IF v_path = '' THEN
+    RAISE EXCEPTION 'storage_path_required';
+  END IF;
+
+  v_folder := split_part(v_path, '/', 1);
+  IF v_folder NOT IN (
+    'leave_attachments', 'incident_reports', 'job_photos',
+    'employee_documents', 'job_documents', 'job_cards'
+  ) THEN
+    RAISE EXCEPTION 'folder_not_allowed';
+  END IF;
+
+  INSERT INTO public.media_upload_grants (
+    company_id, employee_id, storage_path, purpose, expires_at
+  ) VALUES (
+    p_company_id, p_employee_id, v_path, coalesce(nullif(trim(p_purpose), ''), 'attachment'),
+    now() + interval '15 minutes'
+  )
+  ON CONFLICT (storage_path) DO UPDATE SET
+    company_id  = EXCLUDED.company_id,
+    employee_id = EXCLUDED.employee_id,
+    purpose     = EXCLUDED.purpose,
+    expires_at  = EXCLUDED.expires_at,
+    consumed_at = NULL;
+
+  RETURN json_build_object(
+    'storage_path', v_path,
+    'expires_at', (now() + interval '15 minutes')
+  );
+END;
+$function$;
+
+NOTIFY pgrst, 'reload schema';

@@ -2,6 +2,7 @@
 
 import { useRef, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { signWorkforceMedia } from '@/lib/media-read'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { getCodeSession } from '@/lib/auth/code-session'
 import { loadEmployeeWorkspace, isPendingMembership } from '@/lib/employee-workspace'
@@ -98,9 +99,7 @@ export default function DocumentsPage() {
   }
 
   async function getSignedUrl(path: string): Promise<string | null> {
-    const supabase = createClient()
-    const { data } = await supabase.storage.from('workforce-media').createSignedUrl(path, 60)
-    return data?.signedUrl ?? null
+    return signWorkforceMedia(createClient(), path, 60)
   }
 
   async function openDoc(doc: EmployeeDocument) {

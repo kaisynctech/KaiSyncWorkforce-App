@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { signWorkforceMedia } from '@/lib/media-read'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { getCodeSession } from '@/lib/auth/code-session'
 import { prepareMediaUpload, consumeMediaUpload } from '@/lib/job-media'
@@ -115,10 +116,7 @@ async function resolvePhotoUrl(
     setPhotoUrl(null)
     return
   }
-  const { data: signed } = await supabase.storage
-    .from('workforce-media')
-    .createSignedUrl(path, 3600)
-  setPhotoUrl(signed?.signedUrl ?? null)
+  setPhotoUrl(await signWorkforceMedia(supabase, path, 3600))
 }
 
 export default function ProfilePage() {
@@ -291,10 +289,8 @@ export default function ProfilePage() {
       p_session_token:     tokRef.current,
     })
     if (rpcErr) { setPhotoError(rpcErr.message); setPhotoUploading(false); return }
-    const { data: signed } = await supabase.storage
-      .from('workforce-media')
-      .createSignedUrl(path, 3600)
-    if (signed?.signedUrl) setPhotoUrl(signed.signedUrl)
+    const signedPhoto = await signWorkforceMedia(supabase, path, 3600)
+    if (signedPhoto) setPhotoUrl(signedPhoto)
     await init()
     setPhotoUploading(false)
   }

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { signWorkforceMedia } from '@/lib/media-read'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { getCodeSession } from '@/lib/auth/code-session'
 import { loadCompanyWorkspace, loadEmployeeWorkspace } from '@/lib/employee-workspace'
@@ -129,8 +130,8 @@ export default function PayslipsPage() {
       const companyRow = company as { name?: string | null; address?: string | null; logo_url?: string | null } | null
       let logoDataUrl: string | null = null
       if (companyRow?.logo_url) {
-        const { data: signed } = await supabase.storage.from('workforce-media').createSignedUrl(companyRow.logo_url, 120)
-        if (signed?.signedUrl) logoDataUrl = await imageUrlToDataUrl(signed.signedUrl)
+        const signedLogo = await signWorkforceMedia(supabase, companyRow.logo_url, 120)
+        if (signedLogo) logoDataUrl = await imageUrlToDataUrl(signedLogo)
       }
       const lines = (payslip as PayslipPdfInput & { payslip_lines?: Record<string, unknown> | null }).payslip_lines ?? {}
       const amount = (key: string, fallback: number | null | undefined) => {

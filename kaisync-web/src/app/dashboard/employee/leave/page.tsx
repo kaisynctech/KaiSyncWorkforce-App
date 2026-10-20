@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { signWorkforceMedia } from '@/lib/media-read'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { useEmployeeModuleGate } from '@/lib/employee-module-gate'
 import {
@@ -308,11 +309,8 @@ export default function EmployeeLeavePage() {
                             <button
                               type="button"
                               onClick={async () => {
-                                const supabase = createClient()
-                                const { data: urlData } = await supabase.storage
-                                  .from('workforce-media')
-                                  .createSignedUrl(req.attachment_url!, 60)
-                                if (urlData?.signedUrl) window.open(urlData.signedUrl, '_blank')
+                                const signedUrl = await signWorkforceMedia(createClient(), req.attachment_url, 60)
+                                if (signedUrl) window.open(signedUrl, '_blank')
                               }}
                               className="inline-flex items-center justify-center w-10 h-10 rounded-lg border border-divider text-text-secondary hover:border-primary hover:text-primary transition-colors"
                               title="View attachment"

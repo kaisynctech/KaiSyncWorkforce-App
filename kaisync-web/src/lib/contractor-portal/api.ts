@@ -3,6 +3,7 @@
  */
 
 import { createClient } from '@/lib/supabase/client'
+import { grantMediaRead } from '@/lib/media-read'
 import type {
   CompliancePackItem,
   ContractorBankingDecision,
@@ -577,6 +578,7 @@ export async function uploadJobPhoto(params: {
     })
   if (upErr) throw new Error(`Could not upload photo: ${upErr.message}`)
 
+  await grantMediaRead(supabase, [storagePath])
   const { data: signed, error: signErr } = await supabase.storage
     .from('workforce-media')
     .createSignedUrl(storagePath, 60 * 60 * 24 * 365)
@@ -930,6 +932,7 @@ export async function uploadQuote(params: {
   if (upErr) throw new Error(`Could not upload quote file: ${upErr.message}`)
 
   let fileUrl: string
+  await grantMediaRead(supabase, [storagePath])
   const { data: signed } = await supabase.storage
     .from('workforce-media')
     .createSignedUrl(storagePath, 60 * 60 * 24 * 365)
