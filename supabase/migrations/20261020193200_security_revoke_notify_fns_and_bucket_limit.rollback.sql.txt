@@ -1,0 +1,6 @@
+-- ROLLBACK for 20261020193200_security_revoke_notify_fns_and_bucket_limit.sql
+-- Restores the previous grants (PUBLIC, anon, authenticated) and no bucket size limit.
+GRANT EXECUTE ON FUNCTION public.enqueue_client_portal_notification(uuid, text, text, text) TO PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.notify_hr_client_portal_message(uuid, uuid, uuid, text, text) TO PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.notify_hr_contractor_document(uuid, uuid, uuid, text, text, text, text) TO PUBLIC, anon, authenticated;
+UPDATE storage.buckets SET file_size_limit = NULL WHERE id = 'workforce-media';
