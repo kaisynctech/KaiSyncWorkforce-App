@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { needsPlaceName, reverseGeocodeRequired } from '@/lib/geo-location'
-import type { QueuedPunch } from '@/lib/punch-queue'
+import { dequeue, isSessionAuthError, queuedPunchesFor, SESSION_ENDED_MESSAGE, type QueuedPunch } from '@/lib/punch-queue'
 
 type PunchJson = { id?: string; address?: string | null }
 
@@ -50,4 +50,31 @@ export async function insertQueuedPunch(
     }
   }
   return { ok: true }
+}
+
+/**
+ * Upload the signed-in worker's saved clock-ins, oldest first, using that worker's own sign-in.
+ * Clock-ins saved on this phone by other workers are left in place: they cannot be sent with
+ * this worker's sign-in (the server rejects them) and must not block this worker's clock-ins.
+ * They upload when their own worker signs in on this phone.
+ * Stops at the first failure so this worker's clock-ins stay in order.
+ */
+export async function flushQueuedPunchesFor(
+  supabase: SupabaseClient,
+  employeeId: string,
+  sessionToken: string | null,
+): Promise<{ flushed: number; error: string | null }> {
+  let flushed = 0
+  for (const punch of queuedPunchesFor(employeeId)) {
+    const result = await insertQueuedPunch(supabase, punch, sessionToken)
+    if (!result.ok) {
+      return {
+        flushed,
+        error: isSessionAuthError(result.message) ? SESSION_ENDED_MESSAGE : result.message,
+      }
+    }
+    dequeue(punch.idempotency_key)
+    flushed += 1
+  }
+  return { flushed, error: null }
 }

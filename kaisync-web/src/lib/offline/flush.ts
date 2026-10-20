@@ -3,8 +3,8 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { dequeue, getQueue } from '@/lib/punch-queue'
-import { insertQueuedPunch } from '@/lib/punch-replay'
+import { getQueue, otherWorkersQueuedCount } from '@/lib/punch-queue'
+import { flushQueuedPunchesFor } from '@/lib/punch-replay'
 import { dequeueIncident, getIncidentQueue } from '@/lib/incident-queue'
 import { submitQueuedIncident } from '@/lib/offline/incident-replay'
 import {
@@ -26,19 +26,21 @@ export type FlushResult = {
   packUpdated: boolean
 }
 
+/** Only this worker's clock-ins: see flushQueuedPunchesFor. */
 async function flushPunches(
   supabase: SupabaseClient,
+  employeeId: string,
   sessionToken: string | null,
 ): Promise<{ flushed: number; error: string | null }> {
-  const queue = getQueue()
-  let flushed = 0
-  for (const punch of queue) {
-    const result = await insertQueuedPunch(supabase, punch, sessionToken)
-    if (!result.ok) return { flushed, error: result.message }
-    dequeue(punch.idempotency_key)
-    flushed += 1
-  }
-  return { flushed, error: null }
+  return flushQueuedPunchesFor(supabase, employeeId, sessionToken)
+}
+
+/** Shown (not as a failure) when clock-ins for other workers are still saved on this phone. */
+export function otherWorkersPunchMessage(count: number): string | null {
+  if (count <= 0) return null
+  return count === 1
+    ? '1 clock-in saved on this phone belongs to another worker. It will upload when they sign in on this phone.'
+    : `${count} clock-ins saved on this phone belong to other workers. They will upload when those workers sign in on this phone.`
 }
 
 async function flushIncidents(
@@ -157,7 +159,7 @@ export async function flushEmployeeOffline(
   }
 
   let flushed = 0
-  const punch = await flushPunches(supabase, opts.sessionToken)
+  const punch = await flushPunches(supabase, opts.employeeId, opts.sessionToken)
   flushed += punch.flushed
   if (punch.error) {
     notifyOfflineChanged()
@@ -224,11 +226,12 @@ export async function flushEmployeeOffline(
   }
 
   notifyOfflineChanged()
+  const otherWorkers = otherWorkersQueuedCount(opts.employeeId)
   return {
     ok: true,
     flushed,
-    remaining: 0,
-    message: null,
+    remaining: otherWorkers,
+    message: otherWorkersPunchMessage(otherWorkers),
     packUpdated,
   }
 }

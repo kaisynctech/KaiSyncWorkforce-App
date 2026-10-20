@@ -6,8 +6,8 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { useDashboardBootstrap } from '@/components/DashboardBootstrapContext'
-import { type QueuedPunch, getQueue, enqueue, dequeue, shouldQueuePunchFailure } from '@/lib/punch-queue'
-import { insertQueuedPunch } from '@/lib/punch-replay'
+import { type QueuedPunch, getQueue, enqueue, shouldQueuePunchFailure, isSessionAuthError, SESSION_ENDED_MESSAGE } from '@/lib/punch-queue'
+import { flushQueuedPunchesFor } from '@/lib/punch-replay'
 import {
   loadCompanyWorkspace,
   loadEmployeeWorkspace,
@@ -823,13 +823,10 @@ export default function EmployeeOverviewPage() {
   }
 
   async function syncQueue() {
-    const queue = getQueue()
-    if (queue.length === 0) return
-    const supabase = createClient()
-    for (const punch of queue) {
-      const result = await insertQueuedPunch(supabase, punch, tokRef.current)
-      if (result.ok) dequeue(punch.idempotency_key)
-    }
+    const empId = empIdRef.current
+    if (!empId || getQueue().length === 0) return
+    // Only this worker's saved clock-ins, sent with this worker's sign-in.
+    await flushQueuedPunchesFor(createClient(), empId, tokRef.current)
     setPendingPunches(getQueue())
   }
 
@@ -953,7 +950,7 @@ export default function EmployeeOverviewPage() {
         queueAndOptimistic()
         return
       }
-      setClockError(error.message)
+      setClockError(isSessionAuthError(error.message) ? SESSION_ENDED_MESSAGE : error.message)
       setClockLoading(false)
       clockInFlightRef.current = false
       return
@@ -1014,7 +1011,7 @@ export default function EmployeeOverviewPage() {
       p_session_token: tokRef.current,
     })
     if (error) {
-      setClockError(error.message)
+      setClockError(isSessionAuthError(error.message) ? SESSION_ENDED_MESSAGE : error.message)
       setClockLoading(false)
       clockInFlightRef.current = false
       return
