@@ -1,0 +1,4 @@
+-- ROLLBACK for 20261020193100_employee_get_company_settings.sql
+-- Safe at any time: the app falls back to get_company_settings when this function is missing.
+DROP FUNCTION IF EXISTS public.employee_get_company_settings(uuid, uuid, text);
+NOTIFY pgrst, 'reload schema';

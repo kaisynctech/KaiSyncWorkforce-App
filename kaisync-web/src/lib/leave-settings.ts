@@ -267,13 +267,41 @@ export function summarizeCompanyLeave(
   }).filter(s => s.days_approved > 0 || s.days_pending > 0 || s.annual_days > 0)
 }
 
+/** The signed-in worker, when a worker screen loads company settings. */
+export type WorkerSettingsCaller = { employeeId: string; sessionToken: string | null }
+
+/**
+ * Company settings for a worker's own screens: company_id, timezone, currency, leave_settings.
+ * Workers who sign in with a company + login code have no Supabase account, so
+ * get_company_settings (company members only) refuses them and the screen silently fell
+ * back to default leave types and time zone. They read through
+ * employee_get_company_settings with their own sign-in instead. Everyone else, and any
+ * failure of the worker call, uses get_company_settings exactly as before.
+ */
+export async function loadWorkerCompanySettings(
+  supabase: SupabaseClient,
+  companyId: string,
+  worker?: WorkerSettingsCaller | null,
+): Promise<{ data: unknown; error: { message: string } | null }> {
+  if (worker?.sessionToken) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const res = await (supabase.rpc as any)('employee_get_company_settings', {
+      p_company_id: companyId,
+      p_employee_id: worker.employeeId,
+      p_session_token: worker.sessionToken,
+    })
+    if (!res.error) return { data: res.data, error: null }
+  }
+  const { data, error } = await supabase.rpc('get_company_settings', { p_company_id: companyId })
+  return { data, error: error ? { message: error.message } : null }
+}
+
 export async function loadLeaveSettings(
   supabase: SupabaseClient,
-  companyId: string
+  companyId: string,
+  worker?: WorkerSettingsCaller | null,
 ): Promise<{ ok: true; data: LeaveSettingsMap } | { ok: false; message: string }> {
-  const { data, error } = await supabase.rpc('get_company_settings', {
-    p_company_id: companyId,
-  })
+  const { data, error } = await loadWorkerCompanySettings(supabase, companyId, worker)
   if (error) return { ok: false, message: error.message }
 
   const row = (data ?? {}) as { leave_settings?: LeaveSettingsMap }

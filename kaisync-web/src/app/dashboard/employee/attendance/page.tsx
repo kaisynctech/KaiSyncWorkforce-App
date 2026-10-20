@@ -16,6 +16,7 @@ import {
   DataCardRow,
 } from '@/components/ui/ResponsiveDataView'
 import { SHIFT_TEMPLATE_SELECT } from '@/lib/shift-template-schedule'
+import { loadWorkerCompanySettings } from '@/lib/leave-settings'
 import {
   buildPunchSessions,
   earlyFlag,
@@ -201,7 +202,10 @@ export default function EmployeeAttendancePage() {
             .select('custom_settings')
             .eq('id', member.companyId)
             .maybeSingle(),
-          supabase.rpc('get_company_settings', { p_company_id: member.companyId }),
+          loadWorkerCompanySettings(supabase, member.companyId, {
+            employeeId: member.employeeId,
+            sessionToken: member.sessionToken,
+          }),
         ])
         const cs = (co?.custom_settings ?? settings) as Record<string, unknown>
         if (cs.late_threshold_minutes != null) lateMin = Number(cs.late_threshold_minutes) || 30

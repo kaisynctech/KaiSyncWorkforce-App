@@ -100,7 +100,10 @@ export default function EmployeeLeavePage() {
       p_session_token: tok,
     })
     if (!error) setRequests((data as LeaveRequest[]) ?? [])
-    const settingsRes = await loadLeaveSettings(supabase, member.companyId)
+    const settingsRes = await loadLeaveSettings(supabase, member.companyId, {
+      employeeId: member.employeeId,
+      sessionToken: member.sessionToken,
+    })
     if (settingsRes.ok) setLeaveSettings(settingsRes.data)
     setLoading(false)
   }
