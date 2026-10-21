@@ -18,6 +18,7 @@ import { Toggle } from '@/components/Toggle'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { ClientPortalChangesBanner } from '@/components/ClientPortalChangesBanner'
 import { ClientBankingReview } from '@/components/ClientBankingReview'
+import { PartyComplianceTab } from '@/components/PartyComplianceTab'
 import { ClientActivityTab } from '@/components/ClientActivityTab'
 import { ClientDocumentRequests } from '@/components/ClientDocumentRequests'
 import { fmtMoney } from '@/lib/finance-calc'
@@ -25,7 +26,7 @@ import { createInvoiceFromAcceptedQuote } from '@/lib/quote-invoice'
 import type { Client, ClientDocument, ClientNote, Site, Project, ProjectDocument } from '@/types/database'
 import type { FinanceInvoice } from '@/lib/finance-types'
 
-const CLIENT_TABS = ['info', 'projects', 'jobs', 'quotes', 'invoices', 'documents', 'notes', 'activity', 'commercial'] as const
+const CLIENT_TABS = ['info', 'projects', 'jobs', 'quotes', 'invoices', 'documents', 'compliance', 'notes', 'activity', 'commercial'] as const
 type ClientTab = typeof CLIENT_TABS[number]
 
 const TAB_LABELS: Record<ClientTab, string> = {
@@ -35,6 +36,7 @@ const TAB_LABELS: Record<ClientTab, string> = {
   quotes: 'Quotes',
   invoices: 'Invoices',
   documents: 'Documents',
+  compliance: 'Compliance',
   notes: 'Notes',
   activity: 'Activity',
   commercial: 'Commercial',
@@ -2027,6 +2029,10 @@ function ClientDetailInner() {
               </div>
             )}
           </div>
+        )}
+
+        {showRelatedTabs && tab === 'compliance' && client && (
+          <PartyComplianceTab companyId={client.company_id} kind="client" partyId={clientId} partyLabel={client.name} />
         )}
 
         {showRelatedTabs && tab === 'activity' && client && (
