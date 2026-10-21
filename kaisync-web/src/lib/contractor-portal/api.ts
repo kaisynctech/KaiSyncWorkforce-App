@@ -3,7 +3,7 @@
  */
 
 import { createClient } from '@/lib/supabase/client'
-import { grantMediaRead } from '@/lib/media-read'
+import { grantMediaRead, signWorkforceMediaMany } from '@/lib/media-read'
 import type {
   CompliancePackItem,
   ContractorBankingDecision,
@@ -649,7 +649,15 @@ export async function getDocuments(
   companyId: string,
 ): Promise<ContractorDocument[]> {
   const data = await rpc('contractor_portal_get_documents', ids(contractorId, companyId))
-  return asRows(data).map(parseDocument).filter(d => d.id)
+  const docs = asRows(data).map(parseDocument).filter(d => d.id)
+  // Saved links are year-long signed links (or old public links) that stop opening;
+  // give each document a fresh signed link. If signing fails, the saved link is kept.
+  const source = (d: ContractorDocument) => (d.storage_path || d.file_url || '').trim()
+  const signed = await signWorkforceMediaMany(createClient(), docs.map(source).filter(Boolean), 3600)
+  return docs.map(d => {
+    const url = signed.get(source(d))
+    return url ? { ...d, file_url: url } : d
+  })
 }
 
 export async function getCompliancePack(
