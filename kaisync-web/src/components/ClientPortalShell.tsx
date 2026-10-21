@@ -12,7 +12,8 @@ const NAV: PortalNavItem[] = [
   { label: 'Jobs', href: '/client-portal/home?tab=jobs', icon: 'work', activePrefix: '/client-portal/jobs' },
   { label: 'Messages', href: '/client-portal/home?tab=messages', icon: 'chat' },
   { label: 'Documents', href: '/client-portal/home?tab=documents', icon: 'description' },
-  { label: 'Invoices', href: '/client-portal/home?tab=invoices', icon: 'receipt_long' },
+  { label: 'Quotes & Invoices', href: '/client-portal/home?tab=quotes', icon: 'request_quote' },
+  { label: 'Payments', href: '/client-portal/home?tab=payments', icon: 'payments' },
   { label: 'Main menu', href: '/auth/id-entry', icon: 'apps' },
 ]
 

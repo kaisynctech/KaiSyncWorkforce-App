@@ -4,6 +4,8 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { grantMediaRead } from '@/lib/media-read'
+import { parseStatementEntries, type ClientStatementEntry } from '@/lib/client-portal/statement'
+import type { InvoicePdfInput } from '@/lib/invoice-pdf'
 import type {
   ActivityUpdate,
   ClientDocumentRequest,
@@ -721,4 +723,43 @@ export async function updateProfile(
     p_billing_address: values.billing_address,
   })
   return parseProfile(data)
+}
+
+/** Full statement: invoices, payments, credit notes and refunds, in date order. */
+export async function getStatement(companyCode: string, clientCode: string): Promise<ClientStatementEntry[]> {
+  return parseStatementEntries(await rpc('client_portal_get_statement', codes(companyCode, clientCode)))
+}
+
+/** One invoice with its lines, for the PDF download. */
+export async function getInvoiceForPdf(
+  companyCode: string,
+  clientCode: string,
+  invoiceId: string,
+): Promise<InvoicePdfInput | null> {
+  const data = await rpc('client_portal_get_invoice', { ...codes(companyCode, clientCode), p_invoice_id: invoiceId })
+  if (!data || typeof data !== 'object') return null
+  const r = data as Record<string, unknown>
+  const lines = Array.isArray(r.lines) ? (r.lines as Record<string, unknown>[]) : []
+  return {
+    invoice_number: strN(r.invoice_number),
+    status: str(r.status),
+    issue_date: strN(r.issue_date),
+    due_date: strN(r.due_date),
+    notes: strN(r.notes),
+    client_name: strN(r.client_name),
+    client_email: strN(r.client_email),
+    company_name: str(r.company_name),
+    lines: lines.map(l => ({
+      description: str(l.description),
+      qty: Number(l.qty ?? 0) || 0,
+      unit_price: Number(l.unit_price ?? 0) || 0,
+      vat_amount: Number(l.vat_amount ?? 0) || 0,
+      total: Number(l.total ?? 0) || 0,
+    })),
+    subtotal: Number(r.subtotal ?? 0) || 0,
+    vat: Number(r.vat_amount ?? 0) || 0,
+    total: Number(r.total_amount ?? 0) || 0,
+    amount_paid: Number(r.amount_paid ?? 0) || 0,
+    balance_due: Number(r.balance_due ?? 0) || 0,
+  }
 }

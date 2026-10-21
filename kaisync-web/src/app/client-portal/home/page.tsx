@@ -6,14 +6,15 @@ import { useSearchParams } from 'next/navigation'
 import { ClientPortalShell } from '@/components/ClientPortalShell'
 import { ClientPortalDocuments } from '@/components/ClientPortalDocuments'
 import { ClientPortalInformation } from '@/components/ClientPortalInformation'
+import { ClientPortalStatement } from '@/components/ClientPortalStatement'
 import { useRequireClientPortalSession } from '@/lib/client-portal/use-session'
-import { listDocumentRequests, listInvoices, listJobs, listMessageInbox, listProjects } from '@/lib/client-portal/api'
-import { getDealMessagesReadAt } from '@/lib/client-portal/session'
+import { getInvoiceForPdf, listDocumentRequests, listInvoices, listJobs, listMessageInbox, listProjects } from '@/lib/client-portal/api'
+import { getDealMessagesReadAt, type ClientPortalSession } from '@/lib/client-portal/session'
 import { fmtDate, fmtDateTime, projectStatusLabel } from '@/lib/client-portal/format'
 import { moneyZAR } from '@/lib/client-portal/quotation'
 import { isInvoiceOutstanding, type ClientDocumentRequest, type ClientPortalJob, type ClientPortalProject, type MessageInboxItem, type PortalInvoice } from '@/lib/client-portal/types'
 
-type Tab = 'home' | 'information' | 'projects' | 'jobs' | 'messages' | 'documents' | 'invoices'
+type Tab = 'home' | 'information' | 'projects' | 'jobs' | 'quotes' | 'payments' | 'messages' | 'documents' | 'invoices'
 
 const TAB_TITLES: Record<Tab, string> = {
   home: 'Home',
@@ -22,7 +23,9 @@ const TAB_TITLES: Record<Tab, string> = {
   jobs: 'Jobs',
   messages: 'Messages',
   documents: 'Documents',
-  invoices: 'Invoices',
+  invoices: 'Quotes & Invoices',
+  quotes: 'Quotes & Invoices',
+  payments: 'Payments & statement',
 }
 
 function parseTab(raw: string | null): Tab {
@@ -145,8 +148,16 @@ function ClientPortalHomeInner() {
           <MessagesTab inbox={inbox} />
         ) : tab === 'documents' ? (
           <ClientPortalDocuments session={session} />
+        ) : tab === 'payments' ? (
+          <ClientPortalStatement session={session} />
         ) : (
-          <InvoicesTab invoices={invoices} outstanding={outstanding} />
+          <QuotesInvoicesTab
+            session={session}
+            projects={projects}
+            invoices={invoices}
+            outstanding={outstanding}
+            initial={tab === 'invoices' || searchParams.get('section') === 'invoices' ? 'invoices' : 'quotes'}
+          />
         )}
       </div>
     </ClientPortalShell>
@@ -280,13 +291,29 @@ function MessagesTab({ inbox }: { inbox: MessageInboxItem[] }) {
   )
 }
 
-function InvoicesTab({ invoices, outstanding }: { invoices: PortalInvoice[]; outstanding: number }) {
+function InvoicesTab({ invoices, outstanding, session }: { invoices: PortalInvoice[]; outstanding: number; session: ClientPortalSession }) {
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [pdfError, setPdfError] = useState<string | null>(null)
+  async function pdf(id: string) {
+    setBusyId(id)
+    setPdfError(null)
+    try {
+      const input = await getInvoiceForPdf(session.company_code, session.client_code, id)
+      if (!input) throw new Error('Invoice not found.')
+      const { downloadInvoicePdf } = await import('@/lib/invoice-pdf')
+      downloadInvoicePdf(input)
+    } catch (e: unknown) {
+      setPdfError(e instanceof Error ? e.message : 'Could not create the PDF.')
+    }
+    setBusyId(null)
+  }
   return (
     <div className="space-y-3">
       <div className="bg-primary/10 border border-primary/25 rounded-xl px-4 py-3 flex items-center justify-between">
         <p className="text-[12px] font-semibold text-primary uppercase tracking-wide">Outstanding</p>
         <p className="text-[18px] font-bold text-text-primary">{moneyZAR(outstanding)}</p>
       </div>
+      {pdfError && <p className="text-[12px] text-error">{pdfError}</p>}
       {invoices.length === 0 ? (
         <Empty icon="receipt_long" title="No invoices" sub="Invoices issued to you will appear here." />
       ) : (
@@ -300,6 +327,7 @@ function InvoicesTab({ invoices, outstanding }: { invoices: PortalInvoice[]; out
                 <Th>Balance</Th>
                 <Th>Issued</Th>
                 <Th>Due</Th>
+                <Th>PDF</Th>
               </tr>
             </thead>
             <tbody>
@@ -313,6 +341,16 @@ function InvoicesTab({ invoices, outstanding }: { invoices: PortalInvoice[]; out
                   </td>
                   <td className="px-3 py-3 text-text-secondary whitespace-nowrap">{fmtDate(inv.issue_date)}</td>
                   <td className="px-3 py-3 text-text-secondary whitespace-nowrap">{fmtDate(inv.due_date)}</td>
+                  <td className="px-3 py-3 whitespace-nowrap">
+                    <button
+                      type="button"
+                      disabled={busyId === inv.id}
+                      onClick={() => void pdf(inv.id)}
+                      className="text-primary text-[12px] font-semibold hover:underline disabled:opacity-50"
+                    >
+                      {busyId === inv.id ? '…' : 'Download'}
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -398,7 +436,8 @@ function HomeTab({
       <div className="grid gap-2 md:grid-cols-2">
         <HomeLink label="My information" sub="Your company and contact details" href="/client-portal/home?tab=information" />
         <HomeLink label="Projects" sub="Progress, photos and documents" href="/client-portal/home?tab=projects" />
-        <HomeLink label="Invoices" sub="What you owe and what you have paid" href="/client-portal/home?tab=invoices" />
+        <HomeLink label="Quotes & Invoices" sub="Quotes to review and invoices to download" href="/client-portal/home?tab=quotes" />
+        <HomeLink label="Payments & statement" sub="What you have paid and your full statement" href="/client-portal/home?tab=payments" />
         <HomeLink label="Documents" sub="Documents requested from you and shared with you" href="/client-portal/home?tab=documents" />
       </div>
     </div>
@@ -423,5 +462,65 @@ function HomeLink({ label, sub, href }: { label: string; sub: string; href: stri
       </span>
       <span className="material-icons text-text-secondary text-[20px]">chevron_right</span>
     </Link>
+  )
+}
+
+const QUOTE_WAITING = ['quoted', 'sent', 'negotiation']
+
+function QuotesInvoicesTab({
+  session, projects, invoices, outstanding, initial,
+}: {
+  session: ClientPortalSession
+  projects: ClientPortalProject[]
+  invoices: PortalInvoice[]
+  outstanding: number
+  initial: 'quotes' | 'invoices'
+}) {
+  const [section, setSection] = useState<'quotes' | 'invoices'>(initial)
+  const quoted = projects.filter(p => (p.offer_amount ?? 0) > 0 || QUOTE_WAITING.includes((p.status ?? '').toLowerCase()))
+  return (
+    <div className="space-y-4">
+      <div className="bg-surface-elevated inline-flex gap-1 p-1 rounded-xl">
+        {(['quotes', 'invoices'] as const).map(s => (
+          <button
+            key={s}
+            type="button"
+            onClick={() => setSection(s)}
+            className={`text-[13px] font-semibold px-4 py-1.5 rounded-lg ${section === s ? 'bg-primary text-white' : 'text-text-secondary hover:text-text-primary'}`}
+          >
+            {s === 'quotes' ? 'Quotes' : 'Invoices'}
+          </button>
+        ))}
+      </div>
+      {section === 'invoices' ? (
+        <InvoicesTab invoices={invoices} outstanding={outstanding} session={session} />
+      ) : quoted.length === 0 ? (
+        <Empty icon="request_quote" title="No quotes" sub="Quotes we send you will appear here." />
+      ) : (
+        <div className="space-y-2">
+          {quoted.map(p => {
+            const waiting = QUOTE_WAITING.includes((p.status ?? '').toLowerCase())
+            return (
+              <Link
+                key={p.id}
+                href={`/client-portal/projects/${p.id}`}
+                className="block border-divider bg-surface rounded-xl border px-4 py-3 hover:border-primary/40"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[14px] font-semibold text-text-primary truncate">{p.title}</p>
+                    <p className="text-[12px] text-text-secondary mt-0.5">{p.project_code || '—'} · {projectStatusLabel(p.status)}</p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-[15px] font-bold text-text-primary">{moneyZAR(p.offer_amount ?? 0)}</p>
+                    {waiting && <span className="inline-block mt-1 text-[10px] font-semibold text-warning">Awaiting your response</span>}
+                  </div>
+                </div>
+              </Link>
+            )
+          })}
+        </div>
+      )}
+    </div>
   )
 }
