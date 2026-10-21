@@ -9,7 +9,7 @@ vi.stubGlobal('localStorage', {
 })
 vi.stubGlobal('window', { location: { pathname: '/dashboard/employee/overview' } })
 
-import { currentMediaReader, signWorkforceMedia, signWorkforceMediaMany } from '@/lib/media-read'
+import { currentMediaReader, signWorkforceMedia, signWorkforceMediaMany, workforceMediaPath } from '@/lib/media-read'
 
 function fakeSupabase(opts?: { grantFails?: boolean }) {
   const rpc = vi.fn(async (fn: string) => {
@@ -64,5 +64,32 @@ describe('signWorkforceMediaMany', () => {
     const { client, rpc } = fakeSupabase()
     expect(await signWorkforceMedia(client, 'company_logos/c/logo.png', 120, null)).toBe('signed:company_logos/c/logo.png')
     expect(rpc).not.toHaveBeenCalled()
+  })
+})
+
+describe('old saved workforce-media links', () => {
+  const pub = 'https://p.supabase.co/storage/v1/object/public/workforce-media/employee_documents/c/e/a%20b.pdf'
+  const sig = 'https://p.supabase.co/storage/v1/object/sign/workforce-media/contractor_documents/c/k/x.pdf?token=abc'
+
+  it('turns public and expired signed links back into storage paths', () => {
+    expect(workforceMediaPath(pub)).toBe('employee_documents/c/e/a b.pdf')
+    expect(workforceMediaPath(sig)).toBe('contractor_documents/c/k/x.pdf')
+    expect(workforceMediaPath('/job_photos/c/j/a.png')).toBe('job_photos/c/j/a.png')
+    expect(workforceMediaPath('https://example.com/a.png')).toBeNull()
+    expect(workforceMediaPath('https://p.supabase.co/storage/v1/object/public/other-bucket/a.png')).toBeNull()
+    expect(workforceMediaPath('  ')).toBeNull()
+  })
+
+  it('signs an old link fresh, keyed by the value the caller passed', async () => {
+    const { client, rpc, createSignedUrl } = fakeSupabase()
+    const reader = { kind: 'employee' as const, companyId: 'c', employeeId: 'e', sessionToken: 't' }
+    const out = await signWorkforceMediaMany(client, [pub, 'employee_documents/c/e/a b.pdf'], 60, reader)
+    expect(rpc).toHaveBeenCalledWith('employee_grant_media_read', {
+      p_company_id: 'c', p_employee_id: 'e', p_paths: ['employee_documents/c/e/a b.pdf'], p_session_token: 't',
+    })
+    expect(createSignedUrl).toHaveBeenCalledTimes(1)
+    expect(out.get(pub)).toBe('signed:employee_documents/c/e/a b.pdf')
+    expect(out.get('employee_documents/c/e/a b.pdf')).toBe('signed:employee_documents/c/e/a b.pdf')
+    expect(await signWorkforceMedia(client, sig, 60, null)).toBe('signed:contractor_documents/c/k/x.pdf')
   })
 })

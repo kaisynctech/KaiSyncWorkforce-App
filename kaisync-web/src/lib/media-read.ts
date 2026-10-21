@@ -46,6 +46,26 @@ function isStoragePath(value: string): boolean {
   return value.trim() !== '' && !/^https?:\/\//i.test(value.trim())
 }
 
+const WORKFORCE_MEDIA_URL_MARKER = /\/storage\/v1\/object\/(?:public|sign|authenticated)\/workforce-media\/(.+)$/i
+
+/**
+ * The storage path for a stored value: a plain path is returned as is; an old
+ * workforce-media link (public / signed / authenticated form, as saved by earlier
+ * versions) is turned back into its path, because the bucket is private and those
+ * links no longer open. Any other web link returns null and is used unchanged.
+ */
+export function workforceMediaPath(value: string): string | null {
+  const raw = value.trim()
+  if (!raw) return null
+  if (isStoragePath(raw)) return raw.replace(/^\/+/, '')
+  try {
+    const m = new URL(raw).pathname.match(WORKFORCE_MEDIA_URL_MARKER)
+    return m ? decodeURIComponent(m[1]) : null
+  } catch {
+    return null
+  }
+}
+
 /** Ask the server for read access to these files. Never throws. */
 export async function grantMediaRead(
   supabase: SupabaseClient,
@@ -53,7 +73,7 @@ export async function grantMediaRead(
   reader: MediaReader | null = currentMediaReader(),
 ): Promise<void> {
   if (!reader) return
-  const unique = [...new Set(paths.map(p => p.trim()).filter(isStoragePath))]
+  const unique = [...new Set(paths.map(p => workforceMediaPath(p)).filter((p): p is string => !!p))]
   if (unique.length === 0) return
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rpc = (fn: string, args: Record<string, unknown>) => (supabase.rpc as any)(fn, args)
@@ -86,22 +106,35 @@ export async function grantMediaRead(
   }
 }
 
-/** Signed links for several storage paths (http(s) links are returned unchanged). */
+/** Signed links for several storage paths or old workforce-media links (other web links are returned unchanged). */
 export async function signWorkforceMediaMany(
   supabase: SupabaseClient,
   paths: string[],
   expiresIn = 3600,
   reader: MediaReader | null = currentMediaReader(),
 ): Promise<Map<string, string>> {
+  // Result is keyed by the value as given (trimmed), so callers look up what they passed in.
   const out = new Map<string, string>()
-  const storagePaths = [...new Set(paths.map(p => p.trim()).filter(isStoragePath))]
-  for (const p of paths) if (p && !isStoragePath(p)) out.set(p, p.trim())
+  const pathFor = new Map<string, string>()
+  for (const p of paths) {
+    const key = (p ?? '').trim()
+    if (!key) continue
+    const path = workforceMediaPath(key)
+    if (path) pathFor.set(key, path)
+    else out.set(key, key)
+  }
+  const storagePaths = [...new Set(pathFor.values())]
   if (storagePaths.length === 0) return out
   await grantMediaRead(supabase, storagePaths, reader)
+  const signed = new Map<string, string>()
   await Promise.all(storagePaths.map(async (name) => {
     const { data } = await supabase.storage.from(WORKFORCE_MEDIA_BUCKET).createSignedUrl(name, expiresIn)
-    if (data?.signedUrl) out.set(name, data.signedUrl)
+    if (data?.signedUrl) signed.set(name, data.signedUrl)
   }))
+  for (const [key, path] of pathFor) {
+    const url = signed.get(path)
+    if (url) out.set(key, url)
+  }
   return out
 }
 
