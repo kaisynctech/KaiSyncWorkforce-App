@@ -8,9 +8,11 @@ import { ContractorPortalComplianceTab } from '@/components/ContractorPortalComp
 import { ContractorPortalMessagesTab } from '@/components/ContractorPortalMessagesTab'
 import { ContractorPortalQuotesInvoicesTab } from '@/components/ContractorPortalQuotesInvoicesTab'
 import { ContractorPortalStatementTab } from '@/components/ContractorPortalStatementTab'
+import { PortalComplianceReminder } from '@/components/PortalComplianceReminder'
 import { useRequireContractorPortalSession } from '@/lib/contractor-portal/use-session'
 import {
   getBanking,
+  getDocuments,
   getLatestBankingDecision,
   getOpenVisit,
   getProfile,
@@ -31,6 +33,7 @@ import {
   payoutNetPayable,
   type ContractorBankingDecision,
   type ContractorBankingStatus,
+  type ContractorDocument,
   type ContractorJob,
   type ContractorPayout,
   type ContractorPortalProfile,
@@ -226,6 +229,7 @@ function ContractorPortalHomeInner() {
             onGoPayments={() => selectTab('payments')}
             onGoCompliance={() => selectTab('compliance')}
             onGoBanking={() => selectTab('banking')}
+            loadDocuments={() => getDocuments(session.contractor_id, session.company_id)}
           />
         ) : tab === 'information' ? (
           <InformationTab
@@ -270,7 +274,7 @@ function ContractorPortalHomeInner() {
 
 function HomeTab({
   name, profile, openJobs, outstanding, openVisit,
-  onGoJobs, onGoInfo, onGoPayments, onGoCompliance, onGoBanking,
+  onGoJobs, onGoInfo, onGoPayments, onGoCompliance, onGoBanking, loadDocuments,
 }: {
   name: string
   profile: ContractorPortalProfile | null
@@ -282,6 +286,7 @@ function HomeTab({
   onGoPayments: () => void
   onGoCompliance: () => void
   onGoBanking: () => void
+  loadDocuments: () => Promise<ContractorDocument[]>
 }) {
   return (
     <div className="space-y-4">
@@ -300,6 +305,8 @@ function HomeTab({
           )}
         </div>
       )}
+
+      <PortalComplianceReminder load={loadDocuments} onOpen={onGoCompliance} />
 
       {openVisit?.sign_in_at && (
         <div className="bg-success/10 border border-success/30 rounded-xl px-4 py-3">

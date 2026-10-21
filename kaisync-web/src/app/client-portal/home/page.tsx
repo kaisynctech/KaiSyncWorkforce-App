@@ -9,8 +9,9 @@ import { ClientPortalInformation } from '@/components/ClientPortalInformation'
 import { ClientPortalStatement } from '@/components/ClientPortalStatement'
 import { ClientPortalBanking } from '@/components/ClientPortalBanking'
 import { ClientPortalCompliance } from '@/components/ClientPortalCompliance'
+import { PortalComplianceReminder } from '@/components/PortalComplianceReminder'
 import { useRequireClientPortalSession } from '@/lib/client-portal/use-session'
-import { getInvoiceForPdf, listDocumentRequests, listInvoices, listJobs, listMessageInbox, listProjects } from '@/lib/client-portal/api'
+import { getInvoiceForPdf, getPartyComplianceDocuments, listDocumentRequests, listInvoices, listJobs, listMessageInbox, listProjects } from '@/lib/client-portal/api'
 import { getDealMessagesReadAt, type ClientPortalSession } from '@/lib/client-portal/session'
 import { fmtDate, fmtDateTime, projectStatusLabel } from '@/lib/client-portal/format'
 import { moneyZAR } from '@/lib/client-portal/quotation'
@@ -140,6 +141,7 @@ function ClientPortalHomeInner() {
             outstanding={outstanding}
             unreadCount={unreadCount}
             docRequests={docRequests}
+            session={session}
           />
         ) : tab === 'information' ? (
           <ClientPortalInformation session={session} />
@@ -391,7 +393,7 @@ const CLOSED_PROJECT = ['completed', 'closed', 'cancelled', 'lost', 'archived']
 const CLOSED_JOB = ['completed', 'closed', 'cancelled', 'invoiced']
 
 function HomeTab({
-  name, projects, jobs, invoices, outstanding, unreadCount, docRequests,
+  name, projects, jobs, invoices, outstanding, unreadCount, docRequests, session,
 }: {
   name: string
   projects: ClientPortalProject[]
@@ -400,6 +402,7 @@ function HomeTab({
   outstanding: number
   unreadCount: number
   docRequests: ClientDocumentRequest[]
+  session: ClientPortalSession
 }) {
   const today = new Date().toISOString().slice(0, 10)
   const openProjects = projects.filter(p => !CLOSED_PROJECT.includes((p.status ?? '').toLowerCase())).length
@@ -410,6 +413,11 @@ function HomeTab({
   return (
     <div className="space-y-4">
       <p className="text-text-secondary text-[13px]">Welcome, {name}. Here is where things stand.</p>
+
+      <PortalComplianceReminder
+        load={() => getPartyComplianceDocuments(session.company_code, session.client_code)}
+        href="/client-portal/home?tab=documents"
+      />
 
       {(overdue.length > 0 || pendingRequests.length > 0) && (
         <div className="space-y-2">
