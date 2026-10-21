@@ -16,6 +16,7 @@ import { logClientEvent } from '@/lib/client-events'
 import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
 import { Toggle } from '@/components/Toggle'
 import { StatusBadge } from '@/components/ui/StatusBadge'
+import { ClientPortalChangesBanner } from '@/components/ClientPortalChangesBanner'
 import { ClientActivityTab } from '@/components/ClientActivityTab'
 import { ClientDocumentRequests } from '@/components/ClientDocumentRequests'
 import { fmtMoney } from '@/lib/finance-calc'
@@ -1246,6 +1247,13 @@ function ClientDetailInner() {
 
         {(isNew || tab === 'info') && (
           <>
+            {!isNew && client?.company_id && (
+              <ClientPortalChangesBanner
+                companyId={client.company_id}
+                clientId={clientId}
+                onOpenActivity={() => selectTab('activity')}
+              />
+            )}
             <div className="card p-4 space-y-3">
               <p className="section-label">CLIENT DETAILS</p>
               <input placeholder="Client / company name *" value={name} onChange={e => setName(e.target.value)}

@@ -22,6 +22,8 @@ import type {
   ProgressPhoto,
   ProjectDocument,
   QuotationLine,
+  ClientPortalProfile,
+  ClientEditableField,
 } from './types'
 
 function num(v: unknown): number {
@@ -655,4 +657,68 @@ export async function reviseQuotation(params: {
   } catch (error) {
     handshakeError(error)
   }
+}
+
+
+function parseProfile(raw: unknown): ClientPortalProfile | null {
+  if (!raw || typeof raw !== 'object') return null
+  const row = raw as Record<string, unknown>
+  const contacts = Array.isArray(row.contacts) ? (row.contacts as Record<string, unknown>[]) : []
+  const n = (v: unknown) => (v == null || v === '' ? null : Number(v))
+  return {
+    id: str(row.id),
+    client_code: strN(row.client_code),
+    name: str(row.name),
+    legal_name: strN(row.legal_name),
+    company_number: strN(row.company_number),
+    vat_number: strN(row.vat_number),
+    contact_person: strN(row.contact_person),
+    email: strN(row.email),
+    phone: strN(row.phone),
+    mobile: strN(row.mobile),
+    direct_line: strN(row.direct_line),
+    fax: strN(row.fax),
+    website: strN(row.website),
+    address: strN(row.address),
+    billing_address: strN(row.billing_address),
+    account_number: strN(row.account_number),
+    payment_terms_days: n(row.payment_terms_days),
+    credit_limit: n(row.credit_limit),
+    tax_exempt: row.tax_exempt == null ? null : Boolean(row.tax_exempt),
+    contacts: contacts.map(c => ({ id: str(c.id), name: str(c.name), email: strN(c.email) })),
+  }
+}
+
+/** The signed-in client's own details. */
+export async function getProfile(companyCode: string, clientCode: string): Promise<ClientPortalProfile | null> {
+  return parseProfile(await rpc('client_portal_get_profile', codes(companyCode, clientCode)))
+}
+
+/**
+ * Save the client's own details. Changes apply straight away; the server records each
+ * change (old → new) on the HR client record and notifies HR.
+ */
+export async function updateProfile(
+  companyCode: string,
+  clientCode: string,
+  values: Record<ClientEditableField, string>,
+): Promise<ClientPortalProfile | null> {
+  if (!values.name.trim()) throw new Error('Company name is required.')
+  const data = await rpc('client_portal_update_profile', {
+    ...codes(companyCode, clientCode),
+    p_name: values.name,
+    p_legal_name: values.legal_name,
+    p_company_number: values.company_number,
+    p_vat_number: values.vat_number,
+    p_contact_person: values.contact_person,
+    p_email: values.email,
+    p_phone: values.phone,
+    p_mobile: values.mobile,
+    p_direct_line: values.direct_line,
+    p_fax: values.fax,
+    p_website: values.website,
+    p_address: values.address,
+    p_billing_address: values.billing_address,
+  })
+  return parseProfile(data)
 }

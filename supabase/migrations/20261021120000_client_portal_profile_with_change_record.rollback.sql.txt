@@ -1,0 +1,7 @@
+-- Rollback for 20261021120000 (run only if needed; app falls back to an error message on My information).
+REVOKE EXECUTE ON FUNCTION public.client_portal_update_profile(text, text, text, text, text, text, text, text, text, text, text, text, text, text, text) FROM anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.client_portal_get_profile(text, text) FROM anon, authenticated;
+-- The functions can then be dropped in the night window:
+-- DROP FUNCTION public.client_portal_update_profile(text, text, text, text, text, text, text, text, text, text, text, text, text, text, text);
+-- DROP FUNCTION public.client_portal_get_profile(text, text);
+-- DROP FUNCTION public.notify_hr_client_profile_updated(uuid, uuid, text);

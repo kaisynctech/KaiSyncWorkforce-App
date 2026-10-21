@@ -204,3 +204,35 @@ export type PortalInvoice = {
 export function isInvoiceOutstanding(status: string): boolean {
   return ['sent', 'viewed', 'partially_paid', 'overdue'].includes((status ?? '').toLowerCase())
 }
+
+/** The client's own details, as shown on "My information". */
+export type ClientPortalProfile = {
+  id: string
+  client_code: string | null
+  name: string
+  legal_name: string | null
+  company_number: string | null
+  vat_number: string | null
+  contact_person: string | null
+  email: string | null
+  phone: string | null
+  mobile: string | null
+  direct_line: string | null
+  fax: string | null
+  website: string | null
+  address: string | null
+  billing_address: string | null
+  // Set by HR only (shown read-only)
+  account_number: string | null
+  payment_terms_days: number | null
+  credit_limit: number | null
+  tax_exempt: boolean | null
+  contacts: { id: string; name: string; email: string | null }[]
+}
+
+/** Fields a client may change themselves. */
+export const CLIENT_EDITABLE_FIELDS = [
+  'name', 'legal_name', 'company_number', 'vat_number', 'contact_person', 'email',
+  'phone', 'mobile', 'direct_line', 'fax', 'website', 'address', 'billing_address',
+] as const
+export type ClientEditableField = typeof CLIENT_EDITABLE_FIELDS[number]

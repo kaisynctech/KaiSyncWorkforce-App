@@ -5,16 +5,19 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { ClientPortalShell } from '@/components/ClientPortalShell'
 import { ClientPortalDocuments } from '@/components/ClientPortalDocuments'
+import { ClientPortalInformation } from '@/components/ClientPortalInformation'
 import { useRequireClientPortalSession } from '@/lib/client-portal/use-session'
-import { listInvoices, listJobs, listMessageInbox, listProjects } from '@/lib/client-portal/api'
+import { listDocumentRequests, listInvoices, listJobs, listMessageInbox, listProjects } from '@/lib/client-portal/api'
 import { getDealMessagesReadAt } from '@/lib/client-portal/session'
 import { fmtDate, fmtDateTime, projectStatusLabel } from '@/lib/client-portal/format'
 import { moneyZAR } from '@/lib/client-portal/quotation'
-import { isInvoiceOutstanding, type ClientPortalJob, type ClientPortalProject, type MessageInboxItem, type PortalInvoice } from '@/lib/client-portal/types'
+import { isInvoiceOutstanding, type ClientDocumentRequest, type ClientPortalJob, type ClientPortalProject, type MessageInboxItem, type PortalInvoice } from '@/lib/client-portal/types'
 
-type Tab = 'projects' | 'jobs' | 'messages' | 'documents' | 'invoices'
+type Tab = 'home' | 'information' | 'projects' | 'jobs' | 'messages' | 'documents' | 'invoices'
 
 const TAB_TITLES: Record<Tab, string> = {
+  home: 'Home',
+  information: 'My information',
   projects: 'Projects',
   jobs: 'Jobs',
   messages: 'Messages',
@@ -23,8 +26,8 @@ const TAB_TITLES: Record<Tab, string> = {
 }
 
 function parseTab(raw: string | null): Tab {
-  if (raw === 'jobs' || raw === 'messages' || raw === 'documents' || raw === 'invoices' || raw === 'projects') return raw
-  return 'projects'
+  if (raw && raw in TAB_TITLES) return raw as Tab
+  return 'home'
 }
 
 export default function ClientPortalHomePage() {
@@ -49,6 +52,7 @@ function ClientPortalHomeInner() {
   const [jobs, setJobs] = useState<ClientPortalJob[]>([])
   const [inbox, setInbox] = useState<MessageInboxItem[]>([])
   const [invoices, setInvoices] = useState<PortalInvoice[]>([])
+  const [docRequests, setDocRequests] = useState<ClientDocumentRequest[]>([])
 
   useEffect(() => {
     if (!session) return
@@ -61,11 +65,12 @@ function ClientPortalHomeInner() {
     setLoading(true)
     setError(null)
     try {
-      const [p, jobRows, m, inv] = await Promise.all([
+      const [p, jobRows, m, inv, reqs] = await Promise.all([
         listProjects(session.company_code, session.client_code),
         listJobs(session.company_code, session.client_code),
         listMessageInbox(session.company_code, session.client_code),
         listInvoices(session.company_code, session.client_code),
+        listDocumentRequests(session.company_code, session.client_code).catch(() => [] as ClientDocumentRequest[]),
       ])
       const withUnread = m.map(item => {
         if (!item.last_from_hr || !item.last_message_at) {
@@ -79,6 +84,7 @@ function ClientPortalHomeInner() {
       setJobs(jobRows)
       setInbox(withUnread)
       setInvoices(inv)
+      setDocRequests(reqs)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load portal.')
     }
@@ -119,6 +125,18 @@ function ClientPortalHomeInner() {
 
         {loading ? (
           <div className="py-16 text-center text-text-secondary text-[14px]">Loading…</div>
+        ) : tab === 'home' ? (
+          <HomeTab
+            name={session.client_name}
+            projects={projects}
+            jobs={jobs}
+            invoices={invoices}
+            outstanding={outstanding}
+            unreadCount={unreadCount}
+            docRequests={docRequests}
+          />
+        ) : tab === 'information' ? (
+          <ClientPortalInformation session={session} />
         ) : tab === 'projects' ? (
           <ProjectsTab projects={projects} />
         ) : tab === 'jobs' ? (
@@ -320,5 +338,90 @@ function Empty({ icon, title, sub }: { icon: string; title: string; sub: string 
       <p className="text-[15px] font-semibold text-text-primary">{title}</p>
       <p className="text-[13px] text-text-secondary max-w-sm">{sub}</p>
     </div>
+  )
+}
+
+const CLOSED_PROJECT = ['completed', 'closed', 'cancelled', 'lost', 'archived']
+const CLOSED_JOB = ['completed', 'closed', 'cancelled', 'invoiced']
+
+function HomeTab({
+  name, projects, jobs, invoices, outstanding, unreadCount, docRequests,
+}: {
+  name: string
+  projects: ClientPortalProject[]
+  jobs: ClientPortalJob[]
+  invoices: PortalInvoice[]
+  outstanding: number
+  unreadCount: number
+  docRequests: ClientDocumentRequest[]
+}) {
+  const today = new Date().toISOString().slice(0, 10)
+  const openProjects = projects.filter(p => !CLOSED_PROJECT.includes((p.status ?? '').toLowerCase())).length
+  const openJobs = jobs.filter(j => !CLOSED_JOB.includes((j.status ?? '').toLowerCase())).length
+  const overdue = invoices.filter(i => isInvoiceOutstanding(i.status) && i.due_date && i.due_date < today)
+  const pendingRequests = docRequests.filter(r => ['requested', 'rejected'].includes((r.status ?? '').toLowerCase()))
+
+  return (
+    <div className="space-y-4">
+      <p className="text-text-secondary text-[13px]">Welcome, {name}. Here is where things stand.</p>
+
+      {(overdue.length > 0 || pendingRequests.length > 0) && (
+        <div className="space-y-2">
+          {overdue.length > 0 && (
+            <Link href="/client-portal/home?tab=invoices" className="block bg-error/10 border border-error/25 rounded-xl px-4 py-3">
+              <p className="text-[13px] font-semibold text-error">
+                {overdue.length === 1 ? '1 invoice is overdue' : `${overdue.length} invoices are overdue`}
+              </p>
+              <p className="text-[12px] text-text-secondary mt-0.5">
+                {moneyZAR(overdue.reduce((s, i) => s + i.balance_due, 0))} past the due date. Tap to view.
+              </p>
+            </Link>
+          )}
+          {pendingRequests.length > 0 && (
+            <Link href="/client-portal/home?tab=documents" className="block bg-warning/10 border border-warning/30 rounded-xl px-4 py-3">
+              <p className="text-[13px] font-semibold text-warning">
+                {pendingRequests.length === 1 ? '1 document is needed from you' : `${pendingRequests.length} documents are needed from you`}
+              </p>
+              <p className="text-[12px] text-text-secondary mt-0.5">Tap to upload.</p>
+            </Link>
+          )}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <HomeKpi label="Open projects" value={String(openProjects)} href="/client-portal/home?tab=projects" />
+        <HomeKpi label="Open jobs" value={String(openJobs)} href="/client-portal/home?tab=jobs" />
+        <HomeKpi label="Amount owing" value={moneyZAR(outstanding)} href="/client-portal/home?tab=invoices" />
+        <HomeKpi label="Unread messages" value={String(unreadCount)} href="/client-portal/home?tab=messages" />
+      </div>
+
+      <div className="grid gap-2 md:grid-cols-2">
+        <HomeLink label="My information" sub="Your company and contact details" href="/client-portal/home?tab=information" />
+        <HomeLink label="Projects" sub="Progress, photos and documents" href="/client-portal/home?tab=projects" />
+        <HomeLink label="Invoices" sub="What you owe and what you have paid" href="/client-portal/home?tab=invoices" />
+        <HomeLink label="Documents" sub="Documents requested from you and shared with you" href="/client-portal/home?tab=documents" />
+      </div>
+    </div>
+  )
+}
+
+function HomeKpi({ label, value, href }: { label: string; value: string; href: string }) {
+  return (
+    <Link href={href} className="border-divider bg-surface rounded-xl border px-3 py-2.5 hover:border-primary/40">
+      <p className="text-[11px] text-text-secondary">{label}</p>
+      <p className="text-[17px] font-bold text-text-primary mt-0.5">{value}</p>
+    </Link>
+  )
+}
+
+function HomeLink({ label, sub, href }: { label: string; sub: string; href: string }) {
+  return (
+    <Link href={href} className="border-divider bg-surface rounded-xl border px-4 py-3 flex items-center justify-between hover:border-primary/40">
+      <span>
+        <span className="block text-[14px] font-semibold text-text-primary">{label}</span>
+        <span className="block text-[12px] text-text-secondary">{sub}</span>
+      </span>
+      <span className="material-symbols-outlined text-text-secondary text-[20px]">chevron_right</span>
+    </Link>
   )
 }

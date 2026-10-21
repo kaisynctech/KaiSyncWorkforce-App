@@ -6,6 +6,8 @@ import { PortalAppShell, type PortalNavItem } from '@/components/PortalAppShell'
 import { signOutClientPortal, type ClientPortalSession } from '@/lib/client-portal/session'
 
 const NAV: PortalNavItem[] = [
+  { label: 'Home', href: '/client-portal/home?tab=home', icon: 'home' },
+  { label: 'My information', href: '/client-portal/home?tab=information', icon: 'badge' },
   { label: 'Projects', href: '/client-portal/home?tab=projects', icon: 'folder', activePrefix: '/client-portal/projects' },
   { label: 'Jobs', href: '/client-portal/home?tab=jobs', icon: 'work', activePrefix: '/client-portal/jobs' },
   { label: 'Messages', href: '/client-portal/home?tab=messages', icon: 'chat' },

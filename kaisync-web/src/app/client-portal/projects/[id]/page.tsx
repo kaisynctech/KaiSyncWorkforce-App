@@ -257,7 +257,7 @@ export default function ClientPortalProjectDetailPage() {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => router.push('/client-portal/home')}
+            onClick={() => router.push('/client-portal/home?tab=projects')}
             className="text-text-secondary hover:text-text-primary transition-colors"
           >
             <span className="material-icons">arrow_back</span>
@@ -283,7 +283,7 @@ export default function ClientPortalProjectDetailPage() {
         ) : !project ? (
           <div className="py-16 text-center space-y-3">
             <p className="text-text-secondary text-[14px]">Project not found.</p>
-            <Link href="/client-portal/home" className="text-primary text-[13px] hover:underline">Back to portal</Link>
+            <Link href="/client-portal/home?tab=projects" className="text-primary text-[13px] hover:underline">Back to portal</Link>
           </div>
         ) : (
           <>
