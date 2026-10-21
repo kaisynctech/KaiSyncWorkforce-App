@@ -421,7 +421,7 @@ function HomeLink({ label, sub, href }: { label: string; sub: string; href: stri
         <span className="block text-[14px] font-semibold text-text-primary">{label}</span>
         <span className="block text-[12px] text-text-secondary">{sub}</span>
       </span>
-      <span className="material-symbols-outlined text-text-secondary text-[20px]">chevron_right</span>
+      <span className="material-icons text-text-secondary text-[20px]">chevron_right</span>
     </Link>
   )
 }
