@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { signWorkforceMedia } from '@/lib/media-read'
 import { prepareMediaUpload, consumeMediaUpload } from '@/lib/job-media'
 
 /** Storage path: incident_reports/{company}/{employee}/{guid}{ext} */
@@ -47,8 +48,8 @@ export async function resolveIncidentPhotoUrl(
   }
   const path = incidentStorageObjectPath(stored)
   if (!path) return /^https?:\/\//i.test(stored) ? stored : null
-  const { data } = await supabase.storage.from('workforce-media').createSignedUrl(path, expiresIn)
-  return data?.signedUrl ?? (/^https?:\/\//i.test(stored) ? stored : null)
+  const signed = await signWorkforceMedia(supabase, path, expiresIn)
+  return signed ?? (/^https?:\/\//i.test(stored) ? stored : null)
 }
 
 /** Upload one incident photo; returns relative storage path (or null on soft failure). */

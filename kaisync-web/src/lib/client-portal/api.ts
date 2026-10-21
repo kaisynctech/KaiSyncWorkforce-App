@@ -3,6 +3,7 @@
  */
 
 import { createClient } from '@/lib/supabase/client'
+import { grantMediaRead } from '@/lib/media-read'
 import type {
   ActivityUpdate,
   ClientDocumentRequest,
@@ -436,6 +437,9 @@ export async function signPortalMedia(values: string[]): Promise<Record<string, 
   const unique = [...new Set(values.map(value => value.trim()).filter(Boolean))]
   const supabase = createClient()
   const signedByPath = new Map<string, string>()
+  // Ask the server for read access to exactly these files first (checked against this client).
+  const names = unique.map(portalStorageObjectName).filter((n): n is string => Boolean(n))
+  await grantMediaRead(supabase, names)
   await Promise.all(unique.map(async (original) => {
     const name = portalStorageObjectName(original)
     if (!name) return
