@@ -18,6 +18,8 @@ export default function ComplianceOverviewPage() {
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [perms, setPerms] = useState<PermissionSet | null>(null)
   const [view, setView] = useState<View>('overview')
+  const [kind, setKind] = useState<'client' | 'contractor'>('client')
+  const [contractorRows, setContractorRows] = useState<OverviewRow[] | null>(null)
   const [rows, setRows] = useState<OverviewRow[] | null>(null)
   const [packs, setPacks] = useState<PackWithItems[]>([])
   const [types, setTypes] = useState<DocType[]>([])
@@ -31,13 +33,15 @@ export default function ComplianceOverviewPage() {
       const member = await resolveCurrentMember(supabase)
       if (!member) { setError('Your account is not linked to a company.'); return }
       setCompanyId(member.companyId)
-      const [p, ov, pk] = await Promise.all([
+      const [p, ov, pk, cov] = await Promise.all([
         loadPermissions(supabase, member.companyId),
         getOverview(supabase, member.companyId, 'client'),
         listPacks(supabase, member.companyId, 'client'),
+        getOverview(supabase, member.companyId, 'contractor').catch(() => [] as OverviewRow[]),
       ])
       setPerms(p)
       setRows(ov)
+      setContractorRows(cov)
       setPacks(pk.packs)
       setTypes(pk.types)
     } catch (e: unknown) {
@@ -50,32 +54,33 @@ export default function ComplianceOverviewPage() {
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void load() }, [load])
 
-  const filtered = useMemo(() => (rows ?? []).filter(r => {
+  const shown = kind === 'client' ? rows : contractorRows
+  const filtered = useMemo(() => (shown ?? []).filter(r => {
     if (q && !`${r.name} ${r.code ?? ''}`.toLowerCase().includes(q.toLowerCase())) return false
     if (filter === 'attention') return r.status === 'non_compliant' || r.status === 'partial' || r.expired_count > 0
     if (filter === 'review') return r.pending_count > 0
     if (filter === 'expiring') return r.expiring_count > 0 || r.expired_count > 0
     if (filter === 'unassigned') return !r.pack_id
     return true
-  }), [rows, filter, q])
+  }), [shown, filter, q])
 
   const counts = useMemo(() => {
-    const r = rows ?? []
+    const r = shown ?? []
     return {
       assigned: r.filter(x => x.pack_id).length,
       compliant: r.filter(x => x.status === 'compliant').length,
       review: r.reduce((s, x) => s + x.pending_count, 0),
       expiring: r.reduce((s, x) => s + x.expiring_count + x.expired_count, 0),
     }
-  }, [rows])
+  }, [shown])
 
   function exportCsv() {
-    const head = ['Client', 'Code', 'Pack', 'Status', 'Score', 'Grade', 'Waiting review', 'Missing', 'Expiring', 'Expired', 'Our obligations open']
+    const head = [kind === 'client' ? 'Client' : 'Contractor', 'Code', 'Pack', 'Status', 'Score', 'Grade', 'Waiting review', 'Missing', 'Expiring', 'Expired', 'Our obligations open']
     const lines = filtered.map(r => [r.name, r.code ?? '', r.pack_name ?? '', STATUS_LABEL[r.status], r.score, r.hr_grade ?? '',
       r.pending_count, r.missing_count, r.expiring_count, r.expired_count, r.obligations_open])
     const csv = [head, ...lines].map(l => l.map(v => { const s = String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }).join(',')).join('\n')
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
-    const a = document.createElement('a'); a.href = url; a.download = `client-compliance-${new Date().toISOString().slice(0, 10)}.csv`; a.click()
+    const a = document.createElement('a'); a.href = url; a.download = `${kind}-compliance-${new Date().toISOString().slice(0, 10)}.csv`; a.click()
     URL.revokeObjectURL(url)
   }
 
@@ -85,7 +90,7 @@ export default function ComplianceOverviewPage() {
     <div className="p-4 md:p-6 space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-text-primary text-[20px] font-bold">Client Compliance</h1>
+          <h1 className="text-text-primary text-[20px] font-bold">Compliance</h1>
           <p className="text-[12px] text-text-secondary">Documents each client must give us, documents we owe them, scores and grades. Flag only — nothing is blocked.</p>
         </div>
         <div className="flex gap-1 bg-surface-elevated p-1 rounded-xl">
@@ -101,12 +106,23 @@ export default function ComplianceOverviewPage() {
 
       {view === 'packs' ? (
         companyId && <PacksEditor companyId={companyId} packs={packs} types={types} canEdit={canEdit} onChanged={() => void load()} />
-      ) : rows === null ? (
+      ) : shown === null ? (
         <p className="text-[13px] text-text-secondary">Loading…</p>
       ) : (
         <>
+          <div className="flex gap-1 bg-surface-elevated p-1 rounded-xl w-fit">
+            {(['client', 'contractor'] as const).map(k => (
+              <button key={k} type="button" onClick={() => setKind(k)}
+                className={`text-[12px] font-semibold px-3 py-1.5 rounded-lg ${kind === k ? 'bg-primary text-white' : 'text-text-secondary'}`}>
+                {k === 'client' ? 'Clients' : 'Contractors'}
+              </button>
+            ))}
+          </div>
+          {kind === 'contractor' && (
+            <p className="text-[12px] text-text-secondary">Contractor packs and documents are managed on each contractor record and under Compliance Packs, as before.</p>
+          )}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-            <Tile label="Clients with a pack" value={`${counts.assigned} / ${rows.length}`} />
+            <Tile label={kind === 'client' ? 'Clients with a pack' : 'Contractors with a pack'} value={`${counts.assigned} / ${shown.length}`} />
             <Tile label="Fully compliant" value={String(counts.compliant)} />
             <Tile label="Waiting for review" value={String(counts.review)} onClick={() => setFilter('review')} />
             <Tile label="Expiring / expired" value={String(counts.expiring)} onClick={() => setFilter('expiring')} />
@@ -123,7 +139,7 @@ export default function ComplianceOverviewPage() {
             <table className="w-full text-[12px] min-w-[720px]">
               <thead>
                 <tr className="text-left text-text-secondary">
-                  <th className="px-3 py-2">Client</th><th className="px-3 py-2">Pack</th><th className="px-3 py-2">Status</th>
+                  <th className="px-3 py-2">{kind === 'client' ? 'Client' : 'Contractor'}</th><th className="px-3 py-2">Pack</th><th className="px-3 py-2">Status</th>
                   <th className="px-3 py-2 text-right">Score</th><th className="px-3 py-2">Grade</th><th className="px-3 py-2">To do</th>
                 </tr>
               </thead>
@@ -131,7 +147,7 @@ export default function ComplianceOverviewPage() {
                 {filtered.map(r => (
                   <tr key={r.party_id} className="border-t border-border">
                     <td className="px-3 py-2">
-                      <Link href={`/dashboard/clients/${r.party_id}?tab=compliance`} className="text-primary hover:underline font-semibold">{r.name}</Link>
+                      <Link href={kind === 'client' ? `/dashboard/clients/${r.party_id}?tab=compliance` : `/dashboard/contractors/${r.party_id}`} className="text-primary hover:underline font-semibold">{r.name}</Link>
                       <span className="text-text-secondary"> {r.code ?? ''}</span>
                     </td>
                     <td className="px-3 py-2 text-text-secondary">{r.pack_name ?? '—'}</td>
@@ -145,7 +161,7 @@ export default function ComplianceOverviewPage() {
                     </td>
                   </tr>
                 ))}
-                {filtered.length === 0 && <tr><td colSpan={6} className="px-3 py-6 text-center text-text-secondary">No clients match.</td></tr>}
+                {filtered.length === 0 && <tr><td colSpan={6} className="px-3 py-6 text-center text-text-secondary">Nothing matches.</td></tr>}
               </tbody>
             </table>
           </div>

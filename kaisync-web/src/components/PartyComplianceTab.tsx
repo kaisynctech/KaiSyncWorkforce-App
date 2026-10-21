@@ -102,7 +102,7 @@ export function PartyComplianceTab({ companyId, kind, partyId, partyLabel }: {
             <p className="text-[13px] text-text-primary mt-1">{data.pack?.name ?? 'No pack'}</p>
           )}
           {data.packs.length === 0 && (
-            <p className="text-[11px] text-text-secondary mt-1">Create packs under Client Compliance → Packs.</p>
+            <p className="text-[11px] text-text-secondary mt-1">Create packs under Compliance → Requirement packs.</p>
           )}
           {s.obligations_open > 0 && (
             <p className="text-[12px] text-warning mt-2">{s.obligations_open} document(s) we still owe this {partyWord}.</p>

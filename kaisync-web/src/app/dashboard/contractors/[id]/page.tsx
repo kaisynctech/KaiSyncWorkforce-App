@@ -30,6 +30,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge'
 import { ContractorActivityTab } from '@/components/ContractorActivityTab'
 import { ContractorQuotesTab } from '@/components/ContractorQuotesTab'
 import { ContractorInvoicesTab } from '@/components/ContractorInvoicesTab'
+import { ComplianceGradeBox } from '@/components/ComplianceGradeBox'
 import { KpiTile } from '@/components/ui/KpiTile'
 import { DocFilterChip } from '@/components/ui/DocFilterChip'
 import type {
@@ -1095,6 +1096,10 @@ function ContractorDetailInner() {
                 </p>
               )}
             </SectionCard>
+
+            {contractor?.company_id && (
+              <ComplianceGradeBox companyId={contractor.company_id} kind="contractor" partyId={contractorId} />
+            )}
 
             {complianceView.has_pack && complianceView.checklist.length > 0 && (
               <SectionCard title="REQUIRED DOCUMENTS CHECKLIST">
