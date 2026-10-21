@@ -9,10 +9,11 @@ const NAV: PortalNavItem[] = [
   { label: 'Home', href: '/contractor-portal/home?tab=home', icon: 'home' },
   { label: 'Information', href: '/contractor-portal/home?tab=information', icon: 'badge' },
   { label: 'Jobs', href: '/contractor-portal/home?tab=jobs', icon: 'work', activePrefix: '/contractor-portal/jobs' },
+  { label: 'Quotes & Invoices', href: '/contractor-portal/home?tab=quotes', icon: 'request_quote' },
   { label: 'Payments', href: '/contractor-portal/home?tab=payments', icon: 'payments' },
   { label: 'Banking', href: '/contractor-portal/home?tab=banking', icon: 'account_balance' },
   { label: 'Compliance', href: '/contractor-portal/home?tab=compliance', icon: 'verified_user' },
-  { label: 'Quotes', href: '/contractor-portal/home?tab=quotes', icon: 'request_quote' },
+  { label: 'Messages', href: '/contractor-portal/home?tab=messages', icon: 'chat' },
   { label: 'Main menu', href: '/auth/id-entry', icon: 'apps' },
 ]
 

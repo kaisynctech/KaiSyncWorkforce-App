@@ -5,8 +5,9 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { ContractorPortalShell } from '@/components/ContractorPortalShell'
 import { ContractorPortalComplianceTab } from '@/components/ContractorPortalComplianceTab'
-import { ContractorPortalPaymentsTab } from '@/components/ContractorPortalPaymentsTab'
-import { ContractorPortalQuotesTab } from '@/components/ContractorPortalQuotesTab'
+import { ContractorPortalMessagesTab } from '@/components/ContractorPortalMessagesTab'
+import { ContractorPortalQuotesInvoicesTab } from '@/components/ContractorPortalQuotesInvoicesTab'
+import { ContractorPortalStatementTab } from '@/components/ContractorPortalStatementTab'
 import { useRequireContractorPortalSession } from '@/lib/contractor-portal/use-session'
 import {
   getBanking,
@@ -36,16 +37,17 @@ import {
   type OpenVisit,
 } from '@/lib/contractor-portal/types'
 
-type Tab = 'home' | 'information' | 'jobs' | 'payments' | 'banking' | 'compliance' | 'quotes'
+type Tab = 'home' | 'information' | 'jobs' | 'quotes' | 'payments' | 'banking' | 'compliance' | 'messages'
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'home', label: 'Home' },
   { key: 'information', label: 'Information' },
   { key: 'jobs', label: 'Jobs' },
+  { key: 'quotes', label: 'Quotes & Invoices' },
   { key: 'payments', label: 'Payments' },
   { key: 'banking', label: 'Banking' },
   { key: 'compliance', label: 'Compliance' },
-  { key: 'quotes', label: 'Quotes' },
+  { key: 'messages', label: 'Messages' },
 ]
 
 function parseTab(raw: string | null): Tab {
@@ -243,17 +245,21 @@ function ContractorPortalHomeInner() {
         ) : tab === 'compliance' ? (
           <ContractorPortalComplianceTab session={session} onError={setError} />
         ) : tab === 'payments' ? (
-          <ContractorPortalPaymentsTab
+          <ContractorPortalStatementTab session={session} payouts={payouts} />
+        ) : tab === 'quotes' ? (
+          <ContractorPortalQuotesInvoicesTab
             session={session}
             payouts={payouts}
+            jobs={jobs}
+            initialSection={searchParams.get('section') === 'invoices' ? 'invoices' : 'quotes'}
             onError={setError}
-            onRefresh={async () => {
+            onRefreshPayouts={async () => {
               const list = await listPayouts(session.company_code, session.contractor_code)
               setPayouts(list)
             }}
           />
-        ) : tab === 'quotes' ? (
-          <ContractorPortalQuotesTab session={session} onError={setError} />
+        ) : tab === 'messages' ? (
+          <ContractorPortalMessagesTab session={session} jobs={jobs} />
         ) : (
           <ComingSoon tab={TABS.find(t => t.key === tab)?.label ?? tab} />
         )}
@@ -313,7 +319,7 @@ function HomeTab({
         <QuickLink label="My information" sub="View and edit your profile" onClick={onGoInfo} />
         <QuickLink label="Jobs" sub="Assigned jobs and site visits" onClick={onGoJobs} />
         <QuickLink label="Banking" sub="Masked details and HR update requests" onClick={onGoBanking} />
-        <QuickLink label="Payments" sub="Payouts and invoices" onClick={onGoPayments} />
+        <QuickLink label="Payments" sub="Payments made to you and your statement" onClick={onGoPayments} />
         <QuickLink label="Compliance" sub="Documents and pack status" onClick={onGoCompliance} />
       </div>
     </div>

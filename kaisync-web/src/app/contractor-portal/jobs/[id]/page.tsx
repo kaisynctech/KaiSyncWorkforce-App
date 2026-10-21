@@ -48,6 +48,12 @@ export default function ContractorJobDetailPage() {
   const [sessions, setSessions] = useState<JobSiteSessionRow[]>([])
   const [messages, setMessages] = useState<JobMessage[]>([])
   const [loading, setLoading] = useState(true)
+
+  // Opened from the Messages tab (#messages): scroll to the conversation once loaded.
+  useEffect(() => {
+    if (loading || typeof window === 'undefined' || window.location.hash !== '#messages') return
+    document.getElementById('messages')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [loading])
   const [error, setError] = useState<string | null>(null)
   const [msgText, setMsgText] = useState('')
   const [sending, setSending] = useState(false)
@@ -402,6 +408,7 @@ export default function ContractorJobDetailPage() {
               </div>
             </Section>
 
+            <div id="messages" className="scroll-mt-20" />
             <Section title="Message manager">
               <div className="space-y-2 max-h-64 overflow-y-auto mb-3">
                 {messages.length === 0 ? (

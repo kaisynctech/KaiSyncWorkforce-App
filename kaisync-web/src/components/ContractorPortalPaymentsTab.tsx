@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { resubmitPayout } from '@/lib/contractor-portal/api'
+import { resubmitPayout, submitInvoice } from '@/lib/contractor-portal/api'
 import type { ContractorPortalSession } from '@/lib/contractor-portal/session'
 import {
   moneyZAR,
@@ -10,6 +10,7 @@ import {
   payoutJobDisplay,
   payoutNetPayable,
   payoutStatusLabel,
+  type ContractorJob,
   type ContractorPayout,
 } from '@/lib/contractor-portal/types'
 
@@ -24,14 +25,17 @@ function fmtDate(iso: string | null | undefined): string {
   return d.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
+/** Invoices section of "Quotes & Invoices": submit, track and revise invoices. */
 export function ContractorPortalPaymentsTab({
   session,
   payouts,
+  jobs = [],
   onRefresh,
   onError,
 }: {
   session: ContractorPortalSession
   payouts: ContractorPayout[]
+  jobs?: ContractorJob[]
   onRefresh: () => Promise<void>
   onError: (msg: string | null) => void
 }) {
@@ -41,6 +45,42 @@ export function ContractorPortalPaymentsTab({
   const [invoiceRef, setInvoiceRef] = useState('')
   const [notes, setNotes] = useState('')
   const [busy, setBusy] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [newJobId, setNewJobId] = useState('')
+  const [newAmount, setNewAmount] = useState('')
+  const [newRef, setNewRef] = useState('')
+  const [newNotes, setNewNotes] = useState('')
+
+  function cancelCreate() {
+    setCreating(false)
+    setNewJobId('')
+    setNewAmount('')
+    setNewRef('')
+    setNewNotes('')
+  }
+
+  async function submitNew() {
+    const amt = Number(newAmount)
+    if (!newJobId) { onError('Choose the job this invoice is for.'); return }
+    if (!(amt > 0)) { onError('Enter a valid amount.'); return }
+    setBusy(true)
+    onError(null)
+    try {
+      await submitInvoice({
+        companyCode: session.company_code,
+        contractorCode: session.contractor_code,
+        jobId: newJobId,
+        amount: amt,
+        invoiceReference: newRef.trim() || null,
+        notes: newNotes.trim() || null,
+      })
+      cancelCreate()
+      await onRefresh()
+    } catch (e: unknown) {
+      onError(e instanceof Error ? e.message : 'Could not submit invoice.')
+    }
+    setBusy(false)
+  }
 
   const filtered = useMemo(() => {
     switch (filter) {
@@ -108,10 +148,52 @@ export function ContractorPortalPaymentsTab({
     <div className="space-y-4">
       <div className="flex items-end justify-between gap-3">
         <div>
-          <h2 className="text-text-primary text-[18px] font-bold">Payments</h2>
-          <p className="text-[12px] text-text-secondary mt-0.5">Outstanding: {moneyZAR(outstanding)}</p>
+          <h2 className="text-text-primary text-[18px] font-bold">Invoices</h2>
+          <p className="text-[12px] text-text-secondary mt-0.5">Not yet paid: {moneyZAR(outstanding)}</p>
         </div>
+        {!creating && jobs.length > 0 && (
+          <button
+            type="button"
+            onClick={() => { setCreating(true); onError(null) }}
+            className="h-9 px-3 rounded-lg bg-primary text-white text-[12px] font-semibold shrink-0"
+          >
+            + Submit invoice
+          </button>
+        )}
       </div>
+
+      {creating && (
+        <section className="border-divider bg-surface rounded-xl border px-4 py-3 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[13px] font-semibold text-text-primary">New invoice</p>
+            <button type="button" onClick={cancelCreate} className="text-[12px] text-text-secondary">Cancel</button>
+          </div>
+          <div className="space-y-1">
+            <label className="text-[11px] font-semibold text-text-secondary uppercase">Job *</label>
+            <select
+              className="bg-surface border border-divider text-text-primary w-full h-10 px-3 rounded-lg text-[13px]"
+              value={newJobId}
+              onChange={e => setNewJobId(e.target.value)}
+            >
+              <option value="">Choose a job…</option>
+              {jobs.map(j => (
+                <option key={j.id} value={j.id}>{j.job_code ? `${j.job_code} · ${j.title}` : j.title}</option>
+              ))}
+            </select>
+          </div>
+          <Field label="Amount (ZAR) *" value={newAmount} onChange={setNewAmount} inputMode="decimal" />
+          <Field label="Your invoice number" value={newRef} onChange={setNewRef} />
+          <Field label="Notes" value={newNotes} onChange={setNewNotes} />
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void submitNew()}
+            className="h-10 px-4 rounded-xl bg-primary text-white text-[13px] font-semibold disabled:opacity-50"
+          >
+            {busy ? 'Submitting…' : 'Submit for approval'}
+          </button>
+        </section>
+      )}
 
       <div className="bg-surface-elevated flex gap-1 overflow-x-auto p-1 rounded-xl">
         {FILTERS.map(f => (
@@ -154,7 +236,7 @@ export function ContractorPortalPaymentsTab({
       )}
 
       {filtered.length === 0 ? (
-        <div className="py-16 text-center text-text-secondary text-[13px]">No payouts in this filter.</div>
+        <div className="py-16 text-center text-text-secondary text-[13px]">No invoices in this filter.</div>
       ) : (
         <div className="space-y-2">
           {filtered.map(p => (
@@ -201,7 +283,7 @@ export function ContractorPortalPaymentsTab({
       )}
 
       <p className="text-[12px] text-text-secondary">
-        Submit new invoices from a job detail page.
+        You can also submit an invoice from a job&apos;s page. Payments made to you are under Payments.
       </p>
     </div>
   )
