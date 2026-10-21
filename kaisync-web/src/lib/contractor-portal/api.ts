@@ -624,6 +624,33 @@ export async function createIncident(params: {
   }
 }
 
+/**
+ * Saved file links are signed links made at upload time (now expired) or old public
+ * links, which no longer open. Give each item a fresh signed link (from storage_path,
+ * else the saved link), with checked contractor read access. If signing fails, the
+ * saved link is kept, so nothing shows less than before.
+ */
+async function withFreshFileLinks<T extends { file_url: string; storage_path: string | null }>(
+  items: T[],
+): Promise<T[]> {
+  const source = (it: T) => (it.storage_path || it.file_url || '').trim()
+  const sources = items.map(source).filter(Boolean)
+  if (sources.length === 0) return items
+  const signed = await signWorkforceMediaMany(createClient(), sources, 3600)
+  return items.map(it => {
+    const url = signed.get(source(it))
+    return url ? { ...it, file_url: url } : it
+  })
+}
+
+async function withFreshQuoteLinks(quotes: ContractorQuote[]): Promise<ContractorQuote[]> {
+  const all = quotes.flatMap(q => q.attachments)
+  if (all.length === 0) return quotes
+  const fresh = await withFreshFileLinks(all)
+  const byId = new Map(fresh.map((a, i) => [all[i], a]))
+  return quotes.map(q => ({ ...q, attachments: q.attachments.map(a => byId.get(a) ?? a) }))
+}
+
 function parseDocument(row: Record<string, unknown>): ContractorDocument {
   return {
     id: str(row.id),
@@ -649,15 +676,7 @@ export async function getDocuments(
   companyId: string,
 ): Promise<ContractorDocument[]> {
   const data = await rpc('contractor_portal_get_documents', ids(contractorId, companyId))
-  const docs = asRows(data).map(parseDocument).filter(d => d.id)
-  // Saved links are year-long signed links (or old public links) that stop opening;
-  // give each document a fresh signed link. If signing fails, the saved link is kept.
-  const source = (d: ContractorDocument) => (d.storage_path || d.file_url || '').trim()
-  const signed = await signWorkforceMediaMany(createClient(), docs.map(source).filter(Boolean), 3600)
-  return docs.map(d => {
-    const url = signed.get(source(d))
-    return url ? { ...d, file_url: url } : d
-  })
+  return withFreshFileLinks(asRows(data).map(parseDocument).filter(d => d.id))
 }
 
 export async function getCompliancePack(
@@ -804,7 +823,7 @@ export async function listQuotes(contractorId: string, companyId: string): Promi
   if (typeof raw === 'string') {
     try { raw = JSON.parse(raw) } catch { raw = [] }
   }
-  return asRows(raw).map(parseQuote).filter(q => q.id)
+  return withFreshQuoteLinks(asRows(raw).map(parseQuote).filter(q => q.id))
 }
 
 export async function getQuote(
@@ -819,7 +838,8 @@ export async function getQuote(
   if (data == null || data === 'null') return null
   const row = Array.isArray(data) ? data[0] : data
   if (!row || typeof row !== 'object') return null
-  return parseQuote(row as Record<string, unknown>)
+  const [quote] = await withFreshQuoteLinks([parseQuote(row as Record<string, unknown>)])
+  return quote
 }
 
 export async function saveQuoteDraft(params: {
