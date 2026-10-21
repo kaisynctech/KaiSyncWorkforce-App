@@ -17,6 +17,7 @@ import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permission
 import { Toggle } from '@/components/Toggle'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { ClientPortalChangesBanner } from '@/components/ClientPortalChangesBanner'
+import { ClientBankingReview } from '@/components/ClientBankingReview'
 import { ClientActivityTab } from '@/components/ClientActivityTab'
 import { ClientDocumentRequests } from '@/components/ClientDocumentRequests'
 import { fmtMoney } from '@/lib/finance-calc'
@@ -1306,6 +1307,9 @@ function ClientDetailInner() {
 
             <div className="card p-4 space-y-3">
               <p className="section-label">BANK DETAILS</p>
+              {canEdit && !isNew && client?.company_id && (
+                <ClientBankingReview companyId={client.company_id} clientId={clientId} onApproved={() => void load()} />
+              )}
               {canEdit ? (
                 <>
                   <p className="text-[12px] text-text-secondary">

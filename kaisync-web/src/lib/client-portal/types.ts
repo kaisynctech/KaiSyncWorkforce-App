@@ -236,3 +236,18 @@ export const CLIENT_EDITABLE_FIELDS = [
   'phone', 'mobile', 'direct_line', 'fax', 'website', 'address', 'billing_address',
 ] as const
 export type ClientEditableField = typeof CLIENT_EDITABLE_FIELDS[number]
+
+export type ClientBankingView = {
+  current: { account_holder: string | null; bank_name: string | null; masked_account: string | null; branch_code: string | null; updated_at: string | null } | null
+  latest: {
+    status: 'pending' | 'approved' | 'rejected'
+    account_holder: string | null
+    bank_name: string | null
+    masked_account: string | null
+    branch_code: string | null
+    account_type: string | null
+    submitted_at: string
+    reviewed_at: string | null
+    rejection_reason: string | null
+  } | null
+}

@@ -14,6 +14,7 @@ const NAV: PortalNavItem[] = [
   { label: 'Documents', href: '/client-portal/home?tab=documents', icon: 'description' },
   { label: 'Quotes & Invoices', href: '/client-portal/home?tab=quotes', icon: 'request_quote' },
   { label: 'Payments', href: '/client-portal/home?tab=payments', icon: 'payments' },
+  { label: 'Banking', href: '/client-portal/home?tab=banking', icon: 'account_balance' },
   { label: 'Main menu', href: '/auth/id-entry', icon: 'apps' },
 ]
 

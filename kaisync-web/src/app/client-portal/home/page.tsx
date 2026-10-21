@@ -7,6 +7,7 @@ import { ClientPortalShell } from '@/components/ClientPortalShell'
 import { ClientPortalDocuments } from '@/components/ClientPortalDocuments'
 import { ClientPortalInformation } from '@/components/ClientPortalInformation'
 import { ClientPortalStatement } from '@/components/ClientPortalStatement'
+import { ClientPortalBanking } from '@/components/ClientPortalBanking'
 import { useRequireClientPortalSession } from '@/lib/client-portal/use-session'
 import { getInvoiceForPdf, listDocumentRequests, listInvoices, listJobs, listMessageInbox, listProjects } from '@/lib/client-portal/api'
 import { getDealMessagesReadAt, type ClientPortalSession } from '@/lib/client-portal/session'
@@ -14,7 +15,7 @@ import { fmtDate, fmtDateTime, projectStatusLabel } from '@/lib/client-portal/fo
 import { moneyZAR } from '@/lib/client-portal/quotation'
 import { isInvoiceOutstanding, type ClientDocumentRequest, type ClientPortalJob, type ClientPortalProject, type MessageInboxItem, type PortalInvoice } from '@/lib/client-portal/types'
 
-type Tab = 'home' | 'information' | 'projects' | 'jobs' | 'quotes' | 'payments' | 'messages' | 'documents' | 'invoices'
+type Tab = 'home' | 'information' | 'projects' | 'jobs' | 'quotes' | 'payments' | 'banking' | 'messages' | 'documents' | 'invoices'
 
 const TAB_TITLES: Record<Tab, string> = {
   home: 'Home',
@@ -26,6 +27,7 @@ const TAB_TITLES: Record<Tab, string> = {
   invoices: 'Quotes & Invoices',
   quotes: 'Quotes & Invoices',
   payments: 'Payments & statement',
+  banking: 'Banking (refunds)',
 }
 
 function parseTab(raw: string | null): Tab {
@@ -148,6 +150,8 @@ function ClientPortalHomeInner() {
           <MessagesTab inbox={inbox} />
         ) : tab === 'documents' ? (
           <ClientPortalDocuments session={session} />
+        ) : tab === 'banking' ? (
+          <ClientPortalBanking session={session} />
         ) : tab === 'payments' ? (
           <ClientPortalStatement session={session} />
         ) : (

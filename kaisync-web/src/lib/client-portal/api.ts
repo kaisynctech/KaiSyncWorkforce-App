@@ -7,6 +7,7 @@ import { grantMediaRead } from '@/lib/media-read'
 import { parseStatementEntries, type ClientStatementEntry } from '@/lib/client-portal/statement'
 import type { InvoicePdfInput } from '@/lib/invoice-pdf'
 import type {
+  ClientBankingView,
   ActivityUpdate,
   ClientDocumentRequest,
   ClientJobChecklistItem,
@@ -762,4 +763,34 @@ export async function getInvoiceForPdf(
     amount_paid: Number(r.amount_paid ?? 0) || 0,
     balance_due: Number(r.balance_due ?? 0) || 0,
   }
+}
+
+
+/** Bank details for refunds: current (masked) and the latest request with its review result. */
+export async function getBanking(companyCode: string, clientCode: string): Promise<ClientBankingView> {
+  const data = await rpc('client_portal_get_banking', codes(companyCode, clientCode))
+  const r = (data && typeof data === 'object' ? data : {}) as Partial<ClientBankingView>
+  return { current: r.current ?? null, latest: r.latest ?? null }
+}
+
+/** Submit bank details for refunds; our team reviews them before they are used. */
+export async function submitBanking(companyCode: string, clientCode: string, v: {
+  accountHolder: string
+  bankName: string
+  accountNumber: string
+  branchCode: string
+  accountType: string
+}): Promise<void> {
+  const account = v.accountNumber.replace(/\s/g, '')
+  if (!v.accountHolder.trim()) throw new Error('Account holder name is required.')
+  if (!v.bankName.trim()) throw new Error('Bank name is required.')
+  if (!/^[0-9]{5,20}$/.test(account)) throw new Error('Account number must be 5 to 20 digits.')
+  await rpc('client_portal_submit_banking', {
+    ...codes(companyCode, clientCode),
+    p_account_holder: v.accountHolder,
+    p_bank_name: v.bankName,
+    p_account_number: account,
+    p_branch_code: v.branchCode,
+    p_account_type: v.accountType,
+  })
 }
