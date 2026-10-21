@@ -2,15 +2,11 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { getPartyCompliance, setGrade, STATUS_LABEL, type PartyCompliance, type PartyKind } from '@/lib/compliance/api'
+import { getGrade, setGrade, type GradeInfo, type PartyKind } from '@/lib/compliance/party'
 
-/**
- * Add-on for the existing contractor Compliance tab: internal A–D risk grade (with reason and
- * history) from the shared compliance engine. The contractor's own pack and documents stay
- * managed by the existing screens; the shared engine mirrors them automatically.
- */
+/** Internal A–D risk grade (with reason and history) on a contractor or client. Never shown to them. */
 export function ComplianceGradeBox({ companyId, kind, partyId }: { companyId: string; kind: PartyKind; partyId: string }) {
-  const [data, setData] = useState<PartyCompliance | null>(null)
+  const [data, setData] = useState<GradeInfo | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
@@ -19,7 +15,7 @@ export function ComplianceGradeBox({ companyId, kind, partyId }: { companyId: st
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(async () => {
-    try { setData(await getPartyCompliance(createClient(), companyId, kind, partyId)) }
+    try { setData(await getGrade(createClient(), companyId, kind, partyId)) }
     catch (e: unknown) { setError(e instanceof Error ? e.message : 'Could not load the grade.') }
   }, [companyId, kind, partyId])
 
@@ -35,27 +31,26 @@ export function ComplianceGradeBox({ companyId, kind, partyId }: { companyId: st
   }
 
   if (!data) return error ? <p className="text-[12px] text-error">{error}</p> : null
-  const s = data.summary
 
   return (
     <div className="card p-4 space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="section-label">HR RISK GRADE (INTERNAL)</p>
-        <p className="text-[11px] text-text-secondary">Score {s.status === 'not_configured' ? '—' : `${s.score}% · ${STATUS_LABEL[s.status]}`}</p>
+        {data.set_at && <p className="text-[11px] text-text-secondary">Set {new Date(data.set_at).toLocaleDateString('en-ZA')}</p>}
       </div>
       <div className="flex items-center gap-3">
-        <span className="text-[24px] font-bold text-text-primary">{s.hr_grade ?? '—'}</span>
+        <span className="text-[24px] font-bold text-text-primary">{data.grade ?? '—'}</span>
         {data.can_edit && (
-          <button type="button" className="text-[12px] text-primary hover:underline" onClick={() => { setOpen(v => !v); setG(s.hr_grade ?? '') }}>
-            {s.hr_grade ? 'Change' : 'Set grade'}
+          <button type="button" className="text-[12px] text-primary hover:underline" onClick={() => { setOpen(v => !v); setG(data.grade ?? '') }}>
+            {data.grade ? 'Change' : 'Set grade'}
           </button>
         )}
-        {data.grade_history.length > 0 && (
+        {data.history.length > 0 && (
           <button type="button" className="text-[12px] text-text-secondary hover:underline" onClick={() => setShowHistory(v => !v)}>History</button>
         )}
       </div>
-      {s.hr_grade_reason && <p className="text-[11px] text-text-secondary">{s.hr_grade_reason}</p>}
-      <p className="text-[10px] text-text-secondary">A = low risk, D = high risk. Never shown to the contractor.</p>
+      {data.reason && <p className="text-[11px] text-text-secondary">{data.reason}</p>}
+      <p className="text-[10px] text-text-secondary">A = low risk, D = high risk. Never shown to the {kind}.</p>
       {error && <p className="text-[12px] text-error">{error}</p>}
       {open && (
         <div className="space-y-2">
@@ -75,7 +70,7 @@ export function ComplianceGradeBox({ companyId, kind, partyId }: { companyId: st
           </div>
         </div>
       )}
-      {showHistory && data.grade_history.map((h, i) => (
+      {showHistory && data.history.map((h, i) => (
         <p key={i} className="text-[11px] text-text-secondary">
           <span className="font-semibold text-text-primary">{h.grade ?? 'cleared'}</span> · {new Date(h.set_at).toLocaleDateString('en-ZA')}
           {h.set_by_name ? ` · ${h.set_by_name}` : ''} — {h.reason}

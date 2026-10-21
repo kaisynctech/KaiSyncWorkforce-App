@@ -348,7 +348,7 @@ function ContractorDetailInner() {
     const [docsRes, pendingRes, packsRes] = await Promise.all([
       supabase.from('contractor_documents').select('*').eq('contractor_id', contractorId).eq('is_current', true).order('created_at', { ascending: false }),
       supabase.from('contractor_banking_updates').select('*').eq('contractor_id', contractorId).eq('status', 'pending').maybeSingle(),
-      supabase.from('contractor_compliance_packs').select('*').eq('company_id', cont.company_id).eq('is_archived', false).order('sort_order'),
+      supabase.from('contractor_compliance_packs').select('*').eq('company_id', cont.company_id).eq('party_kind', 'contractor').eq('is_archived', false).order('sort_order'),
     ])
     setComplianceDocs((docsRes.data ?? []) as ComplianceDocument[])
     setPendingBanking(pendingRes.data as PendingBankingUpdate | null)

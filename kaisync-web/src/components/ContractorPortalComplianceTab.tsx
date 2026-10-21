@@ -21,6 +21,15 @@ import {
   type PackChecklistRow,
 } from '@/lib/contractor-portal/types'
 
+/** Where the tab reads and writes. Default: the signed-in contractor (unchanged behaviour). */
+export type ComplianceSource = {
+  key: string
+  getDocuments: () => Promise<ContractorDocument[]>
+  getPack: () => Promise<{ document_type: string; requirement: string; sort_order: number; direction?: 'from_party' | 'to_party' }[]>
+  upload: (p: { file: File; documentType: string; documentName: string; expiryDate: string | null; oldDocumentId: string | null }) => Promise<string>
+  docTypes?: { value: string; label: string; fromUs?: boolean }[]
+}
+
 type UploadTarget =
   | { mode: 'missing'; documentType: string; typeLabel: string }
   | { mode: 'replace'; doc: ContractorDocument }
@@ -29,14 +38,24 @@ type UploadTarget =
 export function ContractorPortalComplianceTab({
   session,
   onError,
+  source,
 }: {
-  session: ContractorPortalSession
+  session?: ContractorPortalSession
   onError: (msg: string | null) => void
+  source?: ComplianceSource
 }) {
+  const src: ComplianceSource = source ?? {
+    key: `${session?.contractor_id}:${session?.company_id}`,
+    getDocuments: () => getDocuments(session!.contractor_id, session!.company_id),
+    getPack: () => getCompliancePack(session!.contractor_id, session!.company_id),
+    upload: p => uploadComplianceDocument({ contractorId: session!.contractor_id, companyId: session!.company_id, ...p }),
+  }
+  const docTypeOptions = (src.docTypes ?? CONTRACTOR_DOC_TYPES).filter(t => !('fromUs' in t && t.fromUs))
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [docs, setDocs] = useState<ContractorDocument[]>([])
   const [packItems, setPackItems] = useState<{ document_type: string; requirement: string; sort_order: number }[]>([])
+  const [fromUs, setFromUs] = useState<ContractorDocument[]>([])
   const [uploadTarget, setUploadTarget] = useState<UploadTarget | null>(null)
   const [docName, setDocName] = useState('')
   const [docType, setDocType] = useState('other')
@@ -47,18 +66,19 @@ export function ContractorPortalComplianceTab({
   useEffect(() => {
     void load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session.contractor_id, session.company_id])
+  }, [src.key])
 
   async function load() {
     setLoading(true)
     onError(null)
     try {
       const [d, p] = await Promise.all([
-        getDocuments(session.contractor_id, session.company_id),
-        getCompliancePack(session.contractor_id, session.company_id).catch(() => []),
+        src.getDocuments(),
+        src.getPack().catch(() => []),
       ])
-      setDocs(d)
-      setPackItems(p)
+      setDocs(d.filter(x => (x.direction ?? 'from_party') === 'from_party'))
+      setFromUs(d.filter(x => x.direction === 'to_party'))
+      setPackItems(p.filter(x => (x.direction ?? 'from_party') === 'from_party'))
     } catch (e: unknown) {
       onError(e instanceof Error ? e.message : 'Could not load compliance.')
     }
@@ -114,9 +134,7 @@ export function ContractorPortalComplianceTab({
     setBusy(true)
     onError(null)
     try {
-      await uploadComplianceDocument({
-        contractorId: session.contractor_id,
-        companyId: session.company_id,
+      await src.upload({
         file,
         documentType,
         documentName: docName.trim(),
@@ -297,6 +315,29 @@ export function ContractorPortalComplianceTab({
         )}
       </Section>
 
+      {fromUs.length > 0 && (
+        <Section title="Documents from us">
+          <div className="space-y-1">
+            {fromUs.map(doc => (
+              <div key={doc.id} className="border-divider flex items-center gap-2 py-2 border-b last:border-0">
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13px] text-text-primary truncate">{doc.document_name}</p>
+                  <p className="text-[11px] text-text-secondary">
+                    {documentTypeLabel(doc.document_type)}
+                    {doc.expiry_date ? ` · ${expiryDisplay(doc)}` : ''}
+                  </p>
+                </div>
+                {doc.file_url && (
+                  <a href={doc.file_url} target="_blank" rel="noreferrer" className="text-primary text-[12px] font-semibold hover:underline">
+                    Download
+                  </a>
+                )}
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+
       {view.checklist.length > 0 && (
         <Section title="Compliance progress">
           <div className="space-y-1">
@@ -335,7 +376,7 @@ export function ContractorPortalComplianceTab({
                   value={docType}
                   onChange={e => setDocType(e.target.value)}
                 >
-                  {CONTRACTOR_DOC_TYPES.map(t => (
+                  {docTypeOptions.map(t => (
                     <option key={t.value} value={t.value} className="bg-surface">{t.label}</option>
                   ))}
                 </select>

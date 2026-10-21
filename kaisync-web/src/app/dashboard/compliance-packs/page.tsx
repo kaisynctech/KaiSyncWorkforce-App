@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
-import { CONTRACTOR_DOC_TYPES } from '@/lib/contractor-portal/types'
+import { CLIENT_DOC_TYPES, CONTRACTOR_DOC_TYPES } from '@/lib/contractor-portal/types'
+import { upsertClientPack } from '@/lib/compliance/party'
 import { KpiTile } from '@/components/ui/KpiTile'
 import {
   archiveCompliancePack,
@@ -15,7 +16,10 @@ import {
 interface PackItem {
   document_type: string
   requirement: 'required' | 'recommended' | 'none'
+  is_archived?: boolean | null
 }
+
+type PartyKind = 'contractor' | 'client'
 
 interface CompliancePack {
   id: string
@@ -41,13 +45,15 @@ export default function CompliancePacksPage() {
   const [editingPackId, setEditingPackId] = useState<string | null>(null)
   const [isBusy, setIsBusy] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
+  const [kind, setKind] = useState<PartyKind>('contractor')
 
   const [editName, setEditName] = useState('')
   const [editDescription, setEditDescription] = useState('')
   const [editItems, setEditItems] = useState<Record<string, 'required' | 'recommended' | 'none'>>({})
 
-  const canEdit = can(perms, PERM.contractorsEdit)
-  const docTypes = CONTRACTOR_DOC_TYPES.map(t => t.value)
+  const typeList: { value: string; label: string; fromUs?: boolean }[] = kind === 'client' ? CLIENT_DOC_TYPES : CONTRACTOR_DOC_TYPES
+  const canEdit = can(perms, kind === 'client' ? PERM.clientsEdit : PERM.contractorsEdit)
+  const docTypes = typeList.map(t => t.value)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -68,24 +74,33 @@ export default function CompliancePacksPage() {
 
       let query = supabase
         .from('contractor_compliance_packs')
-        .select('id, company_id, name, pack_code, description, is_default, is_archived, items:contractor_compliance_pack_items(document_type, requirement)')
+        .select('id, company_id, name, pack_code, description, is_default, is_archived, items:contractor_compliance_pack_items(document_type, requirement, is_archived)')
         .eq('company_id', member.companyId)
+        .eq('party_kind', kind)
         .order('name')
 
       if (!showArchived) query = query.or('is_archived.eq.false,is_archived.is.null')
 
+      const assignedQuery = (async (): Promise<{ count: number | null }> => {
+        if (kind === 'client') {
+          const r = await supabase.from('clients').select('id', { count: 'exact', head: true })
+            .eq('company_id', member.companyId).not('compliance_pack_id', 'is', null)
+          return { count: r.count }
+        }
+        const r = await supabase.from('contractors').select('id', { count: 'exact', head: true })
+          .eq('company_id', member.companyId).not('compliance_pack_id', 'is', null)
+          .or('partner_kind.eq.contractor,partner_kind.eq.both,partner_kind.is.null')
+        return { count: r.count }
+      })()
+
       const [packRes, assignedRes, archivedRes] = await Promise.all([
         query,
-        supabase
-          .from('contractors')
-          .select('id', { count: 'exact', head: true })
-          .eq('company_id', member.companyId)
-          .not('compliance_pack_id', 'is', null)
-          .or('partner_kind.eq.contractor,partner_kind.eq.both,partner_kind.is.null'),
+        assignedQuery,
         supabase
           .from('contractor_compliance_packs')
           .select('id', { count: 'exact', head: true })
           .eq('company_id', member.companyId)
+          .eq('party_kind', kind)
           .eq('is_archived', true),
       ])
 
@@ -93,7 +108,10 @@ export default function CompliancePacksPage() {
         setLoadError(packRes.error.message)
         setPacks([])
       } else {
-        setPacks((packRes.data ?? []) as CompliancePack[])
+        setPacks(((packRes.data ?? []) as CompliancePack[]).map(p => ({
+          ...p,
+          items: (p.items ?? []).filter(i => !i.is_archived),
+        })))
       }
       setAssignedCount(assignedRes.count ?? 0)
       setArchivedCount(archivedRes.count ?? 0)
@@ -101,7 +119,7 @@ export default function CompliancePacksPage() {
       setLoadError(e instanceof Error ? e.message : 'Failed to load packs')
     }
     setLoading(false)
-  }, [showArchived])
+  }, [showArchived, kind])
 
   useEffect(() => { void load() }, [load])
 
@@ -152,6 +170,23 @@ export default function CompliancePacksPage() {
         document_type,
         requirement: requirement as 'required' | 'recommended',
       }))
+
+    if (kind === 'client') {
+      try {
+        await upsertClientPack(supabase, companyId, editingPackId, editName, editDescription, itemsPayload.map(i => ({
+          ...i,
+          direction: typeList.find(t => t.value === i.document_type)?.fromUs ? 'to_party' as const : 'from_party' as const,
+        })))
+      } catch (e: unknown) {
+        setIsBusy(false)
+        setError(e instanceof Error ? e.message : 'Could not save the pack.')
+        return
+      }
+      setIsBusy(false)
+      setIsEditing(false)
+      void load()
+      return
+    }
 
     const res = await upsertCompliancePack(supabase, {
       companyId,
@@ -217,7 +252,18 @@ export default function CompliancePacksPage() {
         <div className="flex items-center justify-between gap-2">
           <div>
             <h1 className="text-[18px] font-semibold text-text-primary">Compliance Packs</h1>
-            <p className="text-[12px] text-text-secondary">Contractor document requirement templates</p>
+            <p className="text-[12px] text-text-secondary">
+              {kind === 'client' ? 'Client document requirement templates' : 'Contractor document requirement templates'}
+            </p>
+          </div>
+          <div className="flex rounded-lg border border-border overflow-hidden text-[12px]">
+            {(['contractor', 'client'] as const).map(k => (
+              <button key={k} type="button"
+                onClick={() => { setKind(k); setIsEditing(false); setError(null) }}
+                className={`h-9 px-3 ${kind === k ? 'bg-primary text-white' : 'text-text-secondary'}`}>
+                {k === 'client' ? 'Clients' : 'Contractors'}
+              </button>
+            ))}
           </div>
           <div className="flex items-center gap-2">
             <label className="flex items-center gap-1.5 text-[12px] text-text-secondary">
@@ -342,7 +388,9 @@ export default function CompliancePacksPage() {
               <div className="space-y-2">
                 <p className="section-label">DOCUMENT REQUIREMENTS</p>
                 <p className="text-xs text-text-secondary">
-                  Only contractor document types supported by uploads are listed.
+                  {kind === 'client'
+                    ? 'Documents the client gives us, and (marked "we provide") documents we give the client.'
+                    : 'Only contractor document types supported by uploads are listed.'}
                 </p>
 
                 <div className="flex gap-2 mt-1">
@@ -351,11 +399,14 @@ export default function CompliancePacksPage() {
                   <span className="text-[10px] px-2 py-0.5 rounded" style={{ backgroundColor: '#1E293B', color: '#475569' }}>Exclude</span>
                 </div>
 
-                {CONTRACTOR_DOC_TYPES.map(({ value, label }) => {
+                {typeList.map(({ value, label, fromUs }) => {
                   const current = editItems[value] ?? 'none'
                   return (
                     <div key={value} className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-1 py-1.5 border-b border-divider last:border-0">
-                      <span className="text-sm text-text-primary">{label}</span>
+                      <span className="text-sm text-text-primary">
+                        {label}
+                        {fromUs && <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-surface-elevated text-text-secondary">we provide</span>}
+                      </span>
                       <button
                         onClick={() => toggleItem(value, 'required')}
                         className="h-[28px] px-2.5 text-[10px] rounded-md"

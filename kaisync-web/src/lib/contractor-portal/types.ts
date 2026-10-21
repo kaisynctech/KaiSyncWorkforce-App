@@ -190,12 +190,15 @@ export type ContractorDocument = {
   expiry_date: string | null
   created_at: string
   updated_at: string
+  /** 'to_party' = a document we give them (clients). Contractor documents are always from them. */
+  direction?: 'from_party' | 'to_party'
 }
 
 export type CompliancePackItem = {
   document_type: string
   requirement: string
   sort_order: number
+  direction?: 'from_party' | 'to_party'
 }
 
 export type PackChecklistRow = {
@@ -243,6 +246,30 @@ export const CONTRACTOR_DOC_TYPES: { value: string; label: string }[] = [
   { value: 'fidelity_guarantee', label: 'Fidelity Guarantee' },
   { value: 'liquor_license', label: 'Liquor Licence' },
   { value: 'food_safety_cert', label: 'Food Safety Certificate' },
+  { value: 'other', label: 'Other' },
+]
+
+/** Client compliance document types (same compliance system; client-specific types added). */
+export const CLIENT_DOC_TYPES: { value: string; label: string; fromUs?: boolean }[] = [
+  { value: 'company_registration', label: 'Company Registration' },
+  { value: 'tax_clearance', label: 'Tax Clearance (SARS TCS)' },
+  { value: 'vat_certificate', label: 'VAT Certificate' },
+  { value: 'bbee_certificate', label: 'B-BBEE Certificate' },
+  { value: 'signed_msa', label: 'Signed MSA / SLA' },
+  { value: 'credit_application', label: 'Credit Application' },
+  { value: 'procurement_rules', label: 'PO / Procurement Rules' },
+  { value: 'site_access_rules', label: 'Site Access Rules' },
+  { value: 'public_liability_insurance', label: 'Public Liability Insurance' },
+  { value: 'health_safety_file', label: 'Health & Safety File' },
+  { value: 'nda', label: 'NDA' },
+  { value: 'popia_agreement', label: 'POPIA Agreement' },
+  { value: 'proof_of_address', label: 'Proof of Address' },
+  { value: 'our_safety_file', label: 'Our Safety File', fromUs: true },
+  { value: 'our_coida_letter', label: 'Our COIDA Letter', fromUs: true },
+  { value: 'our_public_liability', label: 'Our Public Liability Insurance', fromUs: true },
+  { value: 'our_tax_clearance', label: 'Our Tax Clearance', fromUs: true },
+  { value: 'our_bbee_certificate', label: 'Our B-BBEE Certificate', fromUs: true },
+  { value: 'induction_records', label: 'Induction Records', fromUs: true },
   { value: 'other', label: 'Other' },
 ]
 

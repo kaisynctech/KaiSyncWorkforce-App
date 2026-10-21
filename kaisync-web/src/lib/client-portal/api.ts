@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { grantMediaRead } from '@/lib/media-read'
 import { parseStatementEntries, type ClientStatementEntry } from '@/lib/client-portal/statement'
 import type { InvoicePdfInput } from '@/lib/invoice-pdf'
+import type { CompliancePackItem, ContractorDocument } from '@/lib/contractor-portal/types'
 import type {
   ClientBankingView,
   ActivityUpdate,
@@ -872,6 +873,79 @@ export async function submitComplianceDocument(params: {
     p_issue: params.issueDate || null,
     p_expiry: params.expiryDate || null,
     p_notes: params.notes || null,
+  })
+  return typeof id === 'string' ? id.replace(/"/g, '') : String(id)
+}
+
+// ── Compliance (the same system contractors use) ─────────────────────────────
+
+/** Current compliance documents: the client's uploads plus approved documents we give them. */
+export async function getPartyComplianceDocuments(companyCode: string, clientCode: string): Promise<ContractorDocument[]> {
+  const rows = asArray(await rpc('client_portal_get_compliance_documents', codes(companyCode, clientCode)))
+  const paths = rows.map(r => str(r.storage_path || r.file_url)).filter(Boolean)
+  const signed = paths.length ? await signPortalMedia(paths).catch(() => ({} as Record<string, string>)) : {}
+  return rows.map(r => {
+    const path = str(r.storage_path || r.file_url)
+    return {
+      id: str(r.id),
+      company_id: str(r.company_id),
+      contractor_id: '',
+      document_type: str(r.document_type),
+      document_name: str(r.document_name),
+      file_url: signed[path] ?? '',
+      storage_path: path || null,
+      approval_status: str(r.approval_status),
+      rejected_reason: r.rejected_reason == null ? null : str(r.rejected_reason),
+      is_required: Boolean(r.is_required),
+      is_current: Boolean(r.is_current),
+      uploaded_by_role: str(r.uploaded_by_role),
+      expiry_date: r.expiry_date == null ? null : str(r.expiry_date),
+      created_at: str(r.created_at),
+      updated_at: str(r.updated_at),
+      direction: r.direction === 'to_party' ? 'to_party' : 'from_party',
+    }
+  })
+}
+
+export async function getPartyCompliancePack(companyCode: string, clientCode: string): Promise<CompliancePackItem[]> {
+  return asArray(await rpc('client_portal_get_compliance_pack', codes(companyCode, clientCode))).map(r => ({
+    document_type: str(r.document_type),
+    requirement: str(r.requirement),
+    sort_order: num(r.sort_order),
+    direction: r.direction === 'to_party' ? 'to_party' : 'from_party',
+  }))
+}
+
+/** Checked upload into the client's own folder, then saved as "waiting for HR review". */
+export async function uploadPartyComplianceDocument(params: {
+  companyCode: string
+  clientCode: string
+  companyId: string
+  clientId: string
+  file: File
+  documentType: string
+  documentName: string
+  expiryDate: string | null
+  oldDocumentId: string | null
+}): Promise<string> {
+  const { companyCode, clientCode, companyId, clientId, file } = params
+  const ext = (file.name.split('.').pop() ?? '').toLowerCase()
+  if (!['pdf', 'png', 'jpg', 'jpeg', 'webp', 'heic', 'doc', 'docx', 'xls', 'xlsx'].includes(ext)) {
+    throw new Error('Use a PDF, image, Word or Excel file.')
+  }
+  if (file.size > 25 * 1024 * 1024) throw new Error('The file is larger than 25 MB.')
+  const path = `client_documents/${companyId}/${clientId}/compliance/${crypto.randomUUID()}.${ext}`
+  await rpc('client_portal_prepare_upload', { ...codes(companyCode, clientCode), p_storage_path: path })
+  const supabase = createClient()
+  const { error } = await supabase.storage.from('workforce-media').upload(path, file, { upsert: false, contentType: file.type || undefined })
+  if (error) throw new Error(`Could not upload the file: ${error.message}`)
+  const id = await rpc('client_portal_insert_document', {
+    ...codes(companyCode, clientCode),
+    p_document_type: params.documentType,
+    p_document_name: params.documentName,
+    p_storage_path: path,
+    p_expiry_date: params.expiryDate || null,
+    p_old_document_id: params.oldDocumentId || null,
   })
   return typeof id === 'string' ? id.replace(/"/g, '') : String(id)
 }

@@ -18,7 +18,7 @@ import { Toggle } from '@/components/Toggle'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { ClientPortalChangesBanner } from '@/components/ClientPortalChangesBanner'
 import { ClientBankingReview } from '@/components/ClientBankingReview'
-import { PartyComplianceTab } from '@/components/PartyComplianceTab'
+import { ClientComplianceTab } from '@/components/ClientComplianceTab'
 import { ClientActivityTab } from '@/components/ClientActivityTab'
 import { ClientDocumentRequests } from '@/components/ClientDocumentRequests'
 import { fmtMoney } from '@/lib/finance-calc'
@@ -2032,7 +2032,7 @@ function ClientDetailInner() {
         )}
 
         {showRelatedTabs && tab === 'compliance' && client && (
-          <PartyComplianceTab companyId={client.company_id} kind="client" partyId={clientId} partyLabel={client.name} />
+          <ClientComplianceTab companyId={client.company_id} clientId={clientId} focusDocId={focusId} />
         )}
 
         {showRelatedTabs && tab === 'activity' && client && (

@@ -15,7 +15,7 @@ export type PackItemInput = {
 }
 
 export function compliancePackErrorMessage(message: string): string {
-  if (message.includes('uq_compliance_pack_company_name')) {
+  if (message.includes('uq_compliance_pack_company_name') || message.includes('uq_compliance_pack_company_kind_name')) {
     return 'A pack with this name already exists.'
   }
   if (message.includes('uq_compliance_pack_company_code')) {

@@ -4,6 +4,7 @@
  */
 
 import {
+  CLIENT_DOC_TYPES,
   CONTRACTOR_DOC_TYPES,
   type CompliancePackItem,
   type ComplianceView,
@@ -12,7 +13,7 @@ import {
 } from './types'
 
 export function documentTypeLabel(raw: string): string {
-  const hit = CONTRACTOR_DOC_TYPES.find(t => t.value === raw)
+  const hit = CONTRACTOR_DOC_TYPES.find(t => t.value === raw) ?? CLIENT_DOC_TYPES.find(t => t.value === raw)
   return hit?.label ?? (raw?.trim() || '—')
 }
 
