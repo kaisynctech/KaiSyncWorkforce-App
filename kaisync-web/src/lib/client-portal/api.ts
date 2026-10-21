@@ -794,3 +794,84 @@ export async function submitBanking(companyCode: string, clientCode: string, v: 
     p_account_type: v.accountType,
   })
 }
+
+export type ClientComplianceView = {
+  summary: {
+    status: 'not_configured' | 'compliant' | 'near' | 'partial' | 'non_compliant'
+    score: number
+    required_count: number
+    complete_count: number
+    missing_count: number
+    pending_count: number
+    expiring_count: number
+    expired_count: number
+    rejected_count: number
+    has_pack: boolean
+  }
+  upload_prefix: string
+  items: {
+    document_type_code: string
+    direction: 'from_party' | 'to_party'
+    requirement: 'required' | 'recommended'
+    validity_days: number | null
+    expiry_required: boolean
+    notes: string | null
+    label: string
+  }[]
+  documents: {
+    id: string
+    document_type_code: string
+    direction: 'from_party' | 'to_party'
+    document_name: string
+    storage_path: string
+    issue_date: string | null
+    expiry_date: string | null
+    status: 'pending' | 'approved' | 'rejected' | 'expired' | 'superseded'
+    is_current: boolean
+    rejected_reason: string | null
+    uploaded_by_kind: string
+    created_at: string
+    reviewed_at: string | null
+  }[]
+}
+
+/** Compliance checklist, the client's uploads and approved documents from us. */
+export async function getCompliance(companyCode: string, clientCode: string): Promise<ClientComplianceView> {
+  return (await rpc('client_portal_get_compliance', codes(companyCode, clientCode))) as ClientComplianceView
+}
+
+/** Upload a compliance document: checked upload, then registered as "waiting for review". */
+export async function submitComplianceDocument(params: {
+  companyCode: string
+  clientCode: string
+  uploadPrefix: string
+  typeCode: string
+  file: File
+  issueDate: string | null
+  expiryDate: string | null
+  notes: string | null
+}): Promise<string> {
+  const { companyCode, clientCode, uploadPrefix, typeCode, file } = params
+  const ext = (file.name.split('.').pop() ?? '').toLowerCase()
+  if (!['pdf', 'png', 'jpg', 'jpeg', 'webp', 'heic', 'doc', 'docx', 'xls', 'xlsx'].includes(ext)) {
+    throw new Error('Use a PDF, image, Word or Excel file.')
+  }
+  if (file.size > 25 * 1024 * 1024) throw new Error('The file is larger than 25 MB.')
+  const path = `${uploadPrefix}${crypto.randomUUID()}.${ext}`
+  await rpc('client_portal_prepare_upload', { ...codes(companyCode, clientCode), p_storage_path: path })
+  const supabase = createClient()
+  const { error } = await supabase.storage.from('workforce-media').upload(path, file, { upsert: false, contentType: file.type || undefined })
+  if (error) throw new Error(`Could not upload the file: ${error.message}`)
+  const id = await rpc('client_portal_submit_compliance_document', {
+    ...codes(companyCode, clientCode),
+    p_type_code: typeCode,
+    p_name: file.name,
+    p_storage_path: path,
+    p_mime: file.type || null,
+    p_size: file.size,
+    p_issue: params.issueDate || null,
+    p_expiry: params.expiryDate || null,
+    p_notes: params.notes || null,
+  })
+  return typeof id === 'string' ? id.replace(/"/g, '') : String(id)
+}

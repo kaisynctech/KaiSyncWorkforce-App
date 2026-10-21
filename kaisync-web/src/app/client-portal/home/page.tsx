@@ -8,6 +8,7 @@ import { ClientPortalDocuments } from '@/components/ClientPortalDocuments'
 import { ClientPortalInformation } from '@/components/ClientPortalInformation'
 import { ClientPortalStatement } from '@/components/ClientPortalStatement'
 import { ClientPortalBanking } from '@/components/ClientPortalBanking'
+import { ClientPortalCompliance } from '@/components/ClientPortalCompliance'
 import { useRequireClientPortalSession } from '@/lib/client-portal/use-session'
 import { getInvoiceForPdf, listDocumentRequests, listInvoices, listJobs, listMessageInbox, listProjects } from '@/lib/client-portal/api'
 import { getDealMessagesReadAt, type ClientPortalSession } from '@/lib/client-portal/session'
@@ -23,7 +24,7 @@ const TAB_TITLES: Record<Tab, string> = {
   projects: 'Projects',
   jobs: 'Jobs',
   messages: 'Messages',
-  documents: 'Documents',
+  documents: 'Compliance & documents',
   invoices: 'Quotes & Invoices',
   quotes: 'Quotes & Invoices',
   payments: 'Payments & statement',
@@ -149,7 +150,10 @@ function ClientPortalHomeInner() {
         ) : tab === 'messages' ? (
           <MessagesTab inbox={inbox} />
         ) : tab === 'documents' ? (
-          <ClientPortalDocuments session={session} />
+          <div className="space-y-4">
+            <ClientPortalCompliance session={session} />
+            <ClientPortalDocuments session={session} />
+          </div>
         ) : tab === 'banking' ? (
           <ClientPortalBanking session={session} />
         ) : tab === 'payments' ? (
