@@ -34,7 +34,7 @@ export default function HrRegisterPage() {
         options: { data: { full_name: name } },
       })
       if (signUpError) throw signUpError
-      router.push('/auth/hr-register-verify')
+      router.push(`/auth/hr-register-verify?email=${encodeURIComponent(email.trim().toLowerCase())}`)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Registration failed')
     } finally {
