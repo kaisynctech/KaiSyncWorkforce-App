@@ -10,6 +10,7 @@ import { SectionCard, FormField, entryClass } from '@/components/SectionCard'
 import { FormSelect } from '@/components/FormSelect'
 import { FormDateInput } from '@/components/FormDateInput'
 import { Toggle } from '@/components/Toggle'
+import { missingRateMessage, resolvePayRates } from '@/lib/pay-rates'
 import { StepUpDialog } from '@/components/step-up-dialog'
 import {
   CREATE_ACCESS_LEVELS,
@@ -76,6 +77,8 @@ export default function EditEmployeePage({
   const [monthlySalary, setMonthlySalary] = useState('')
   const [payByHour, setPayByHour] = useState(false)
   const [payBasis, setPayBasis] = useState('hourly')
+  const [hourlyRateInput, setHourlyRateInput] = useState('')
+  const [dailyRateInput, setDailyRateInput] = useState('')
   const [payeRate, setPayeRate] = useState('')
   const [exemptUif, setExemptUif] = useState(false)
   const [payFullMonthlySalary, setPayFullMonthlySalary] = useState(false)
@@ -169,6 +172,8 @@ export default function EditEmployeePage({
     setMonthlySalary(emp.monthly_salary?.toString() ?? '')
     setPayByHour(emp.pay_by_hour ?? false)
     setPayBasis(emp.pay_basis ?? 'hourly')
+    setHourlyRateInput(emp.hourly_rate ? String(emp.hourly_rate) : '')
+    setDailyRateInput(emp.daily_rate ? String(emp.daily_rate) : '')
     setPayeRate((raw.paye_rate_percent ?? emp.paye_rate)?.toString() ?? '')
     setExemptUif(raw.uif_exempt ?? emp.exempt_from_uif ?? false)
     setPayFullMonthlySalary(Boolean(raw.pay_full_monthly_salary))
@@ -192,12 +197,25 @@ export default function EditEmployeePage({
   const daysNum = parseFloat(workDays) || 5
   const hoursNum = parseFloat(dailyHours) || 8
   const salaryNum = parseFloat(monthlySalary) || 0
-  const computedDailyRate = salaryNum / (daysNum * 52 / 12)
-  const computedHourlyRate = computedDailyRate / hoursNum
+  const payRateInput = {
+    monthlySalary: salaryNum,
+    payByHour,
+    payBasis,
+    hourlyRate: parseFloat(hourlyRateInput) || 0,
+    dailyRate: parseFloat(dailyRateInput) || 0,
+    workDaysWeekly: daysNum,
+    dailyHours: hoursNum,
+  }
+  const payRates = resolvePayRates(payRateInput)
 
   async function handleSave() {
     if (!companyId || !firstName.trim() || !lastName.trim()) {
       setError('First name and last name are required.')
+      return
+    }
+    const rateProblem = missingRateMessage(payRateInput)
+    if (rateProblem) {
+      setError(rateProblem)
       return
     }
     setSaving(true)
@@ -238,8 +256,8 @@ export default function EditEmployeePage({
         unionDeduction: union ? parseFloat(union) : 0,
         workDaysWeekly: daysNum,
         dailyHours: hoursNum,
-        hourlyRate: salaryNum ? computedHourlyRate : 0,
-        dailyRate: salaryNum ? computedDailyRate : 0,
+        hourlyRate: payRates.hourlyRate,
+        dailyRate: payRates.dailyRate,
         bankName,
         bankAccount: accountNumber,
         bankBranchCode,
@@ -388,7 +406,7 @@ export default function EditEmployeePage({
             <span className={cn('text-[13px] font-medium', isActive ? 'text-text-primary' : 'text-text-secondary')}>
               {isActive ? 'Active' : 'Inactive'}
             </span>
-            <Toggle checked={isActive} onChange={setIsActive} />
+            <Toggle checked={isActive} onChange={setIsActive} label="Active" />
           </div>
         </div>
 
@@ -559,13 +577,24 @@ export default function EditEmployeePage({
           </FormField>
           <div className="flex items-center justify-between py-1">
             <p className="text-[14px] font-medium text-text-primary">Pay by hour/day instead</p>
-            <Toggle checked={payByHour} onChange={setPayByHour} />
+            <Toggle checked={payByHour} onChange={setPayByHour} label="Pay by hour/day instead" />
           </div>
           {payByHour && (
-            <FormSelect label="Pay basis" value={payBasis} onChange={e => setPayBasis(e.target.value)}>
-              <option value="hourly">Hourly</option>
-              <option value="daily">Daily</option>
-            </FormSelect>
+            <>
+              <FormSelect label="Pay basis" value={payBasis} onChange={e => setPayBasis(e.target.value)}>
+                <option value="hourly">Hourly</option>
+                <option value="daily">Daily</option>
+              </FormSelect>
+              {payBasis === 'daily' ? (
+                <FormField label="Day rate (R)">
+                  <input type="number" value={dailyRateInput} onChange={e => setDailyRateInput(e.target.value)} placeholder="0.00" step="0.01" min="0" className={entryClass} />
+                </FormField>
+              ) : (
+                <FormField label="Hourly rate (R)">
+                  <input type="number" value={hourlyRateInput} onChange={e => setHourlyRateInput(e.target.value)} placeholder="0.00" step="0.01" min="0" className={entryClass} />
+                </FormField>
+              )}
+            </>
           )}
           <FormField label="PAYE rate %">
             <input type="number" value={payeRate} onChange={e => setPayeRate(e.target.value)} placeholder="Company default" step="0.01" min="0" max="100" className={entryClass} />
@@ -575,11 +604,11 @@ export default function EditEmployeePage({
               <p className="text-[14px] font-medium text-text-primary">Pay full monthly salary</p>
               <p className="text-[12px] text-text-secondary">No clock-in required — payroll always pays the full salary.</p>
             </div>
-            <Toggle checked={payFullMonthlySalary} onChange={setPayFullMonthlySalary} />
+            <Toggle checked={payFullMonthlySalary} onChange={setPayFullMonthlySalary} label="Pay full monthly salary" />
           </div>
           <div className="flex items-center justify-between py-1">
             <p className="text-[14px] font-medium text-text-primary">Exempt from UIF</p>
-            <Toggle checked={exemptUif} onChange={setExemptUif} />
+            <Toggle checked={exemptUif} onChange={setExemptUif} label="Exempt from UIF" />
           </div>
           <p className="text-[11px] font-semibold text-text-secondary tracking-wider uppercase pt-1">Monthly deductions (R)</p>
           <div className="grid grid-cols-2 gap-3">
@@ -599,18 +628,20 @@ export default function EditEmployeePage({
               <input type="number" value={workDays} onChange={e => setWorkDays(e.target.value)} placeholder="5" step="0.5" min="1" max="7" className={entryClass} />
             </FormField>
             <FormField label="Daily hours">
-              <input type="number" value={dailyHours} onChange={e => setDailyHours(e.target.value)} placeholder="8" step="0.5" min="1" max="24" className={entryClass} />
+              <input type="number" value={dailyHours} onChange={e => setDailyHours(e.target.value)} placeholder="8" step="0.25" min="1" max="24" className={entryClass} />
             </FormField>
           </div>
-          {salaryNum > 0 && (
+          {(salaryNum > 0 || payByHour) && (
             <div className="border-t border-divider pt-3">
-              <p className="text-[11px] text-text-secondary mb-2">Auto-calculated from monthly salary</p>
+              <p className="text-[11px] text-text-secondary mb-2">
+                {payByHour && (payRateInput.hourlyRate > 0 || payRateInput.dailyRate > 0) ? 'Calculated from the rate above' : 'Auto-calculated from monthly salary'}
+              </p>
               <div className="grid grid-cols-2 gap-3">
                 <FormField label="Daily rate (R)">
-                  <input readOnly value={computedDailyRate.toFixed(2)} className={`${entryClass} bg-surface-elevated text-primary cursor-default`} />
+                  <input readOnly value={payRates.dailyRate.toFixed(2)} className={`${entryClass} bg-surface-elevated text-primary cursor-default`} />
                 </FormField>
                 <FormField label="Hourly rate (R)">
-                  <input readOnly value={computedHourlyRate.toFixed(2)} className={`${entryClass} bg-surface-elevated text-primary cursor-default`} />
+                  <input readOnly value={payRates.hourlyRate.toFixed(2)} className={`${entryClass} bg-surface-elevated text-primary cursor-default`} />
                 </FormField>
               </div>
             </div>

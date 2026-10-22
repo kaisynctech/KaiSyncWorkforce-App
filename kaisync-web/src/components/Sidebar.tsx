@@ -237,6 +237,7 @@ function PanelItems({
                 href={item.href}
                 prefetch={false}
                 title={collapsed ? item.label : undefined}
+                aria-label={collapsed ? item.label : undefined}
                 onClick={onNavigate}
                 className={cn(
                   'flex items-center gap-2 mx-1 mb-0.5 rounded-md transition-colors',

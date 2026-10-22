@@ -9,6 +9,7 @@ import { SectionCard, FormField, entryClass } from '@/components/SectionCard'
 import { FormSelect } from '@/components/FormSelect'
 import { FormDateInput } from '@/components/FormDateInput'
 import { Toggle } from '@/components/Toggle'
+import { missingRateMessage, resolvePayRates } from '@/lib/pay-rates'
 import {
   CREATE_ACCESS_LEVELS,
   EMPLOYMENT_TYPES,
@@ -50,6 +51,8 @@ export default function CreateEmployeePage() {
   const [monthlySalary, setMonthlySalary] = useState('')
   const [payByHour, setPayByHour] = useState(false)
   const [payBasis, setPayBasis] = useState('hourly')
+  const [hourlyRateInput, setHourlyRateInput] = useState('')
+  const [dailyRateInput, setDailyRateInput] = useState('')
   const [payeRate, setPayeRate] = useState('')
   const [exemptUif, setExemptUif] = useState(false)
   const [medicalAid, setMedicalAid] = useState('')
@@ -97,9 +100,16 @@ export default function CreateEmployeePage() {
   const daysNum = parseFloat(workDays) || 5
   const hoursNum = parseFloat(dailyHours) || 8
   const salaryNum = parseFloat(monthlySalary) || 0
-  const weeklyDays = daysNum * (52 / 12)
-  const computedDailyRate = salaryNum / weeklyDays
-  const computedHourlyRate = computedDailyRate / hoursNum
+  const payRateInput = {
+    monthlySalary: salaryNum,
+    payByHour,
+    payBasis,
+    hourlyRate: parseFloat(hourlyRateInput) || 0,
+    dailyRate: parseFloat(dailyRateInput) || 0,
+    workDaysWeekly: daysNum,
+    dailyHours: hoursNum,
+  }
+  const payRates = resolvePayRates(payRateInput)
 
   const selectedTemplate = templates.find(t => t.id === templateId)
 
@@ -111,6 +121,11 @@ export default function CreateEmployeePage() {
     }
     if (sendInvite && !email.trim()) {
       setError('Email is required when Send email invite is enabled.')
+      return
+    }
+    const rateProblem = missingRateMessage(payRateInput)
+    if (rateProblem) {
+      setError(rateProblem)
       return
     }
     setSaving(true)
@@ -144,8 +159,8 @@ export default function CreateEmployeePage() {
       unionDeduction: union ? parseFloat(union) : 0,
       workDaysWeekly: daysNum,
       dailyHours: hoursNum,
-      hourlyRate: salaryNum ? computedHourlyRate : 0,
-      dailyRate: salaryNum ? computedDailyRate : 0,
+      hourlyRate: payRates.hourlyRate,
+      dailyRate: payRates.dailyRate,
       bankName,
       bankAccount: accountNumber,
       bankBranchCode,
@@ -302,14 +317,27 @@ export default function CreateEmployeePage() {
           <div>
             <p className="text-[14px] font-medium text-text-primary">Pay by hour/day instead</p>
           </div>
-          <Toggle checked={payByHour} onChange={setPayByHour} />
+          <Toggle checked={payByHour} onChange={setPayByHour} label="Pay by hour/day instead" />
         </div>
 
         {payByHour && (
-          <FormSelect label="Pay basis" value={payBasis} onChange={e => setPayBasis(e.target.value)}>
-            <option value="hourly">Hourly</option>
-            <option value="daily">Daily</option>
-          </FormSelect>
+          <>
+            <FormSelect label="Pay basis" value={payBasis} onChange={e => setPayBasis(e.target.value)}>
+              <option value="hourly">Hourly</option>
+              <option value="daily">Daily</option>
+            </FormSelect>
+            {payBasis === 'daily' ? (
+              <FormField label="Day rate (R)">
+                <input type="number" value={dailyRateInput} onChange={e => setDailyRateInput(e.target.value)}
+                  placeholder="0.00" step="0.01" min="0" className={entryClass} />
+              </FormField>
+            ) : (
+              <FormField label="Hourly rate (R)">
+                <input type="number" value={hourlyRateInput} onChange={e => setHourlyRateInput(e.target.value)}
+                  placeholder="0.00" step="0.01" min="0" className={entryClass} />
+              </FormField>
+            )}
+          </>
         )}
 
         <FormField label="PAYE rate %">
@@ -319,7 +347,7 @@ export default function CreateEmployeePage() {
 
         <div className="flex items-center justify-between py-1">
           <p className="text-[14px] font-medium text-text-primary">Exempt from UIF</p>
-          <Toggle checked={exemptUif} onChange={setExemptUif} />
+          <Toggle checked={exemptUif} onChange={setExemptUif} label="Exempt from UIF" />
         </div>
 
         <p className="text-[11px] font-semibold text-text-secondary tracking-wider uppercase pt-1">
@@ -350,21 +378,23 @@ export default function CreateEmployeePage() {
           </FormField>
           <FormField label="Daily hours">
             <input type="number" value={dailyHours} onChange={e => setDailyHours(e.target.value)}
-              placeholder="8" step="0.5" min="1" max="24" className={entryClass} />
+              placeholder="8" step="0.25" min="1" max="24" className={entryClass} />
           </FormField>
         </div>
 
-        {salaryNum > 0 && (
+        {(salaryNum > 0 || (payByHour && (payRateInput.hourlyRate > 0 || payRateInput.dailyRate > 0))) && (
           <>
             <div className="border-t border-divider pt-3">
-              <p className="text-[11px] text-text-secondary mb-2">Auto-calculated from monthly salary</p>
+              <p className="text-[11px] text-text-secondary mb-2">
+                {payByHour && (payRateInput.hourlyRate > 0 || payRateInput.dailyRate > 0) ? 'Calculated from the rate above' : 'Auto-calculated from monthly salary'}
+              </p>
               <div className="grid grid-cols-2 gap-3">
                 <FormField label="Daily rate (R)">
-                  <input readOnly value={computedDailyRate.toFixed(2)}
+                  <input readOnly value={payRates.dailyRate.toFixed(2)}
                     className={`${entryClass} bg-surface-elevated text-primary cursor-default`} />
                 </FormField>
                 <FormField label="Hourly rate (R)">
-                  <input readOnly value={computedHourlyRate.toFixed(2)}
+                  <input readOnly value={payRates.hourlyRate.toFixed(2)}
                     className={`${entryClass} bg-surface-elevated text-primary cursor-default`} />
                 </FormField>
               </div>
@@ -400,7 +430,7 @@ export default function CreateEmployeePage() {
             <p className="text-[15px] font-medium text-text-primary">Send email invite</p>
             <p className="text-[11px] text-text-secondary">Requires email — sends a login link</p>
           </div>
-          <Toggle checked={sendInvite} onChange={setSendInvite} />
+          <Toggle checked={sendInvite} onChange={setSendInvite} label="Send email invite" />
         </div>
       </SectionCard>
 

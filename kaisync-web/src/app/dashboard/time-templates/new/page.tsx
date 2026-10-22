@@ -203,7 +203,10 @@ export default function NewTimeTemplatePage() {
 
       {showAddBreak && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-surface rounded-xl shadow-lg w-full max-w-sm p-5 space-y-3">
+          <form
+            onSubmit={e => { e.preventDefault(); addBreak() }}
+            className="bg-surface rounded-xl shadow-lg w-full max-w-sm p-5 space-y-3"
+          >
             <h3 className="font-semibold text-text-primary">Add Break</h3>
             <div className="flex flex-col gap-1">
               <label className="text-xs text-text-secondary">Label</label>
@@ -216,10 +219,10 @@ export default function NewTimeTemplatePage() {
                 min="5" max="120" className="dark-entry w-full" />
             </div>
             <div className="flex gap-2 justify-end">
-              <button onClick={() => setShowAddBreak(false)} className="btn-outlined h-9 px-4 text-[13px]">Cancel</button>
-              <button onClick={addBreak} className="btn-primary h-9 px-4 text-[13px]">Add</button>
+              <button type="button" onClick={() => setShowAddBreak(false)} className="btn-outlined h-9 px-4 text-[13px]">Cancel</button>
+              <button type="submit" className="btn-primary h-9 px-4 text-[13px]">Add</button>
             </div>
-          </div>
+          </form>
         </div>
       )}
     </div>

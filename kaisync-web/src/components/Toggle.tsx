@@ -5,6 +5,8 @@ interface ToggleProps {
   onChange: (v: boolean) => void
   disabled?: boolean
   activeColor?: string
+  /** Accessible name for screen readers when there is no visible <label>. */
+  label?: string
 }
 
 const TRACK_WIDTH = 44
@@ -12,13 +14,14 @@ const TRACK_HEIGHT = 26
 const KNOB = 20
 const KNOB_INSET = 3
 
-export function Toggle({ checked, onChange, disabled, activeColor }: ToggleProps) {
+export function Toggle({ checked, onChange, disabled, activeColor, label }: ToggleProps) {
   const usesCustomColor = checked && !!activeColor
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
+      aria-label={label}
       onClick={() => !disabled && onChange(!checked)}
       disabled={disabled}
       style={{
