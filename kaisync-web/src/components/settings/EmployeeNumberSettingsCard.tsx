@@ -21,14 +21,21 @@ export function EmployeeNumberSettingsCard({ companyId }: { companyId: string })
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
 
-  async function load() {
-    const res = await getEmployeeNumberSettings(createClient(), companyId)
+  function applySettings(res: Awaited<ReturnType<typeof getEmployeeNumberSettings>>) {
     if (!res.ok) { setMessage({ kind: 'error', text: res.message }); return }
     setSettings(res.data)
     setPrefix(res.data.prefix ?? '')
   }
 
-  useEffect(() => { void load() }, [companyId]) // eslint-disable-line react-hooks/exhaustive-deps
+  async function load() {
+    applySettings(await getEmployeeNumberSettings(createClient(), companyId))
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    getEmployeeNumberSettings(createClient(), companyId).then(res => { if (!cancelled) applySettings(res) })
+    return () => { cancelled = true }
+  }, [companyId])
 
   async function savePrefix() {
     const checked = validateEmployeeNumberPrefix(prefix)
