@@ -49,7 +49,7 @@ type PayrollRecord = {
   employee?: {
     name: string
     surname: string
-    employee_code:   string | null
+    employee_number:   string | null
     bank_name:       string | null
     bank_account:    string | null
     bank_branch_code: string | null
@@ -164,7 +164,7 @@ export default function PayrollPage() {
     const [{ data: paymentsData, error: payErr }, { data: locks, error: lockErr }] = await Promise.all([
       supabase
         .from('payment_approvals')
-        .select('*, employee:employees(name, surname, employee_code, bank_name, bank_account, bank_branch_code, id_number, tax_number, account_type)')
+        .select('*, employee:employees(name, surname, employee_number, bank_name, bank_account, bank_branch_code, id_number, tax_number, account_type)')
         .eq('company_id', cid)
         .gte('period_start', from)
         .lte('period_end', to)
@@ -340,14 +340,14 @@ export default function PayrollPage() {
   }
 
   function exportRegisterCSV() {
-    const header = 'Employee,Code,Period Start,Period End,Gross (R),Deductions (R),Net (R),Hours,Status'
+    const header = 'Employee,Employee number,Period Start,Period End,Gross (R),Deductions (R),Net (R),Hours,Status'
     const rows   = filtered.map(p => {
       const emp   = p.employee
       const name  = emp ? `${emp.name} ${emp.surname}`.trim() : ''
       const hours = ((p.regular_hours ?? 0) + (p.overtime_hours ?? 0)).toFixed(2)
       return [
         `"${name}"`,
-        emp?.employee_code ?? '',
+        emp?.employee_number ?? '',
         p.period_start,
         p.period_end,
         (p.gross_pay   ?? 0).toFixed(2),

@@ -12,6 +12,8 @@ export type EmployeeCreateInput = {
   email?: string | null
   phone?: string | null
   idNumber?: string | null
+  /** Staff number shown on payslips and reports. Blank = next automatic number (e.g. IV-0012). */
+  employeeNumber?: string | null
   position?: string | null
   department?: string | null
   branchId?: string | null
@@ -68,6 +70,7 @@ export function buildEmployeeCreatePayload(input: EmployeeCreateInput): Record<s
     email: emptyToNull(input.email),
     phone: emptyToNull(input.phone),
     id_number: emptyToNull(input.idNumber),
+    employee_number: emptyToNull(input.employeeNumber),
     position: emptyToNull(input.position),
     // Canonical: department / branch_id / manager_id
     // Dual-write: cost_center / branch text / manager_user_id 

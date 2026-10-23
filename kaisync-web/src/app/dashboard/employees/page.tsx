@@ -338,7 +338,7 @@ export default function EmployeesPage() {
         .order('start_date', { ascending: false }),
       supabase
         .from('leave_requests')
-        .select('*, employees(name, surname, employee_code)')
+        .select('*, employees(name, surname, employee_number)')
         .eq('company_id', companyId)
         .eq('status', 'pending')
         .order('created_at', { ascending: false }),
@@ -1115,7 +1115,7 @@ export default function EmployeesPage() {
               ) : (
                 <div className="divide-y divide-divider">
                   {pendingLeave.map(req => {
-                    const emp = req.employees as { name: string; surname: string; employee_code?: string } | undefined
+                    const emp = req.employees as { name: string; surname: string; employee_number?: string } | undefined
                     const name = emp ? `${emp.name} ${emp.surname}` : 'Employee'
                     return (
                       <div key={req.id} className="flex items-center gap-4 px-5 py-3">

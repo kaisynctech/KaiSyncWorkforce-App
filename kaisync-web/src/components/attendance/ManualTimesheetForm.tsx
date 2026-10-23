@@ -8,7 +8,7 @@ export type TimesheetEmployee = {
   id: string
   name: string
   surname: string
-  employee_code?: string | null
+  employee_number?: string | null
 }
 
 type Props = {
@@ -84,7 +84,7 @@ export function ManualTimesheetForm({
               <option value="">Select</option>
               {employees.map(emp => (
                 <option key={emp.id} value={emp.id}>
-                  {emp.name} {emp.surname}{emp.employee_code ? ` · ${emp.employee_code}` : ''}
+                  {emp.name} {emp.surname}{emp.employee_number ? ` · ${emp.employee_number}` : ''}
                 </option>
               ))}
             </select>

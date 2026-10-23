@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { employeeWriteMessage } from '@/lib/employees'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -139,7 +140,7 @@ type PersonPay = {
   bank_branch_code: string | null
   bank_account: string | null
   account_type: string | null
-  employee_code: string | null
+  employee_number: string | null
   id_number: string | null
   overtime_rate: number
 }
@@ -197,7 +198,7 @@ const EMPTY_PERSON_PAY: PersonPay = {
   bank_branch_code: null,
   bank_account: null,
   account_type: null,
-  employee_code: null,
+  employee_number: null,
   id_number: null,
   overtime_rate: 0,
 }
@@ -625,7 +626,7 @@ export default function PayslipDetailPage() {
     const [{ data: person, error: personErr }, { data: company, error: companyErr }] = await Promise.all([
       supabase
         .from('employees')
-        .select('name, surname, monthly_salary, hourly_rate, daily_rate, daily_hours, work_days_weekly, uif_fixed_amount, uif_rate_percent, uif_exempt, employment_date, termination_date, date_of_birth, pay_full_monthly_salary, bank_name, bank_branch_code, bank_account, account_type, employee_code, id_number, tax_number, overtime_rate, overtime_hourly_rate, paid_leave_balance, sick_leave_balance, address')
+        .select('name, surname, monthly_salary, hourly_rate, daily_rate, daily_hours, work_days_weekly, uif_fixed_amount, uif_rate_percent, uif_exempt, employment_date, termination_date, date_of_birth, pay_full_monthly_salary, bank_name, bank_branch_code, bank_account, account_type, employee_number, id_number, tax_number, overtime_rate, overtime_hourly_rate, paid_leave_balance, sick_leave_balance, address')
         .eq('id', p.employee_id)
         .eq('company_id', p.company_id)
         .maybeSingle(),
@@ -670,7 +671,7 @@ export default function PayslipDetailPage() {
         bank_branch_code: row.bank_branch_code ?? null,
         bank_account: row.bank_account ?? null,
         account_type: row.account_type ?? null,
-        employee_code: row.employee_code ?? null,
+        employee_number: row.employee_number ?? null,
         id_number: row.id_number ?? null,
         overtime_rate: Number(row.overtime_rate) || 0,
       })
@@ -678,7 +679,7 @@ export default function PayslipDetailPage() {
       setBankBranch(row.bank_branch_code ?? '')
       setBankAccount(row.bank_account ?? '')
       setFullName(`${row.name ?? ''} ${row.surname ?? ''}`.replace(/\s+/g, ' ').trim())
-      setEmployeeNumber(row.employee_code ?? '')
+      setEmployeeNumber(row.employee_number ?? '')
       setEmployeeIdNumber(row.id_number ?? '')
       setIncomeTaxNumber((row as PersonPay & { tax_number?: string | null }).tax_number ?? '')
       setDateOfBirth((row as { date_of_birth?: string | null }).date_of_birth ?? null)
@@ -786,7 +787,7 @@ export default function PayslipDetailPage() {
       .eq('id', payment.employee_id)
       .eq('company_id', payment.company_id)
     if (error) {
-      setErrorMsg(error.message)
+      setErrorMsg(employeeWriteMessage(error))
       return false
     }
     return true
@@ -814,8 +815,8 @@ export default function PayslipDetailPage() {
   async function saveEmployeeNumber(next: string) {
     const trimmed = next.trim()
     setEmployeeNumber(trimmed)
-    const saved = await saveEmployee({ employee_code: trimmed || null })
-    if (saved) setPersonPay(current => ({ ...current, employee_code: trimmed || null }))
+    const saved = await saveEmployee({ employee_number: trimmed || null })
+    if (saved) setPersonPay(current => ({ ...current, employee_number: trimmed || null }))
   }
 
   async function saveIncomeTax(next: string) {

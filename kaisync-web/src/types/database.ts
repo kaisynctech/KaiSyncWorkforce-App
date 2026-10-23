@@ -6,7 +6,10 @@ export interface Employee {
   user_id: string | null
   name: string
   surname: string
+  /** Private sign-in code (company code + this code). Not shown on payslips or reports. */
   employee_code: string | null
+  /** Staff number shown on profiles, payslips and reports, e.g. IV-0001. */
+  employee_number?: string | null
   access_level: AccessLevel
   is_active: boolean
   department: string | null

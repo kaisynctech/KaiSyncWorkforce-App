@@ -9,7 +9,7 @@ import {
   type EmployeeCreateInput,
 } from '@/lib/employee-create-payload'
 import { deleteEmployee, setEmployeeActive } from '@/lib/employee-lifecycle'
-import { EMPLOYEE_SAFE_SELECT } from '@/lib/employee-columns'
+import { EMPLOYEE_HR_SELECT, EMPLOYEE_SAFE_SELECT } from '@/lib/employee-columns'
 import { buildOrgWriteFields } from '@/lib/employee-org'
 import { loadScopedEmployeeIds } from '@/lib/employee-scope'
 import {
@@ -165,7 +165,7 @@ export async function getEmployee(
 
   const { data, error } = await supabase
     .from('employees')
-    .select(EMPLOYEE_SAFE_SELECT)
+    .select(EMPLOYEE_HR_SELECT)
     .eq('id', employeeId)
     .eq('company_id', companyId)
     .maybeSingle()
@@ -279,9 +279,9 @@ export async function createEmployee(
   const { data, error } = await supabase
     .from('employees')
     .insert(payload)
-    .select(EMPLOYEE_SAFE_SELECT)
+    .select(EMPLOYEE_HR_SELECT)
     .single()
-  if (error) return { ok: false, message: error.message }
+  if (error) return { ok: false, message: employeeWriteMessage(error) }
 
   let employee = data as unknown as Employee
 
@@ -313,6 +313,14 @@ export async function createEmployee(
   return { ok: true, data: employee }
 }
 
+/** Plain-language message for an employees insert/update error. */
+export function employeeWriteMessage(error: { code?: string; message: string }): string {
+  if (error.code === '23505' && error.message.includes('employee_number')) {
+    return 'That employee number is already used by someone else in your company. Choose another, or leave it blank for the next automatic number.'
+  }
+  return error.message
+}
+
 export type EmployeeUpdateInput = {
   companyId: string
   name: string
@@ -320,6 +328,8 @@ export type EmployeeUpdateInput = {
   email?: string | null
   phone?: string | null
   idNumber?: string | null
+  /** Staff number. Leave undefined to keep the current one. */
+  employeeNumber?: string | null
   position?: string | null
   department?: string | null
   branchId?: string | null
@@ -393,6 +403,7 @@ export async function updateEmployee(
       email: input.email?.trim() || null,
       phone: input.phone?.trim() || null,
       id_number: input.idNumber?.trim() || null,
+      ...(input.employeeNumber !== undefined ? { employee_number: input.employeeNumber?.trim() || null } : {}),
       position: input.position?.trim() || null,
       department: org.department,
       cost_center: org.cost_center,
@@ -420,7 +431,7 @@ export async function updateEmployee(
     })
     .eq('id', employeeId)
     .eq('company_id', input.companyId)
-  if (error) return { ok: false, message: error.message }
+  if (error) return { ok: false, message: employeeWriteMessage(error) }
 
   const nextBank = {
     bank_name: normBank(input.bankName) || null,

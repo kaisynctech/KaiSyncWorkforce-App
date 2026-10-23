@@ -16,6 +16,7 @@ import {
 } from '@/lib/employee-taxonomy'
 import { createEmployee, listBranches, listManagerOptions, listShiftTemplates } from '@/lib/employees'
 import { sendEmployeeInvite } from '@/lib/employee-invite'
+import { getEmployeeNumberSettings, nextEmployeeNumberPreview, type EmployeeNumberSettings } from '@/lib/employee-numbers'
 import type { Branch, ShiftTemplate, Employee } from '@/types/database'
 
 const ACCOUNT_TYPES = ['Cheque', 'Savings', 'Transmission']
@@ -36,6 +37,8 @@ export default function CreateEmployeePage() {
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
   const [idNumber, setIdNumber] = useState('')
+  const [employeeNumber, setEmployeeNumber] = useState('')
+  const [numberSettings, setNumberSettings] = useState<EmployeeNumberSettings | null>(null)
 
   // Employment
   const [position, setPosition] = useState('')
@@ -81,12 +84,15 @@ export default function CreateEmployeePage() {
     if (!member) { setError('not_linked'); return }
     setCompanyId(member.companyId)
 
-    const [br, tmpl, mgr, roleRes] = await Promise.all([
+    const [br, tmpl, mgr, roleRes, numRes] = await Promise.all([
       listBranches(supabase, member.companyId),
       listShiftTemplates(supabase, member.companyId),
       listManagerOptions(supabase, member.companyId),
       supabase.rpc('get_my_role', { p_company_id: member.companyId }),
+      getEmployeeNumberSettings(supabase, member.companyId),
     ])
+
+    if (numRes.ok) setNumberSettings(numRes.data)
 
     setCallerRole(typeof roleRes.data === 'string' ? roleRes.data : null)
     if (br.ok) setBranches(br.data)
@@ -139,6 +145,7 @@ export default function CreateEmployeePage() {
       email,
       phone,
       idNumber,
+      employeeNumber,
       position,
       department,
       branchId,
@@ -234,6 +241,15 @@ export default function CreateEmployeePage() {
         <FormField label="ID / Passport number" hint="The employee uses this + company code to sign in.">
           <input type="text" value={idNumber} onChange={e => setIdNumber(e.target.value)}
             placeholder="e.g. 9001015009087" className={entryClass} />
+        </FormField>
+        <FormField
+          label="Employee number"
+          hint={nextEmployeeNumberPreview(numberSettings)
+            ? `Leave blank to use the next number (${nextEmployeeNumberPreview(numberSettings)}).`
+            : 'Optional. Set a number prefix in Settings to number staff automatically.'}
+        >
+          <input type="text" value={employeeNumber} onChange={e => setEmployeeNumber(e.target.value)}
+            placeholder={nextEmployeeNumberPreview(numberSettings) ?? 'e.g. EMP-0001'} className={entryClass} />
         </FormField>
       </SectionCard>
 

@@ -14,6 +14,7 @@ import {
 } from '@/lib/company-modules'
 import { notifyModulesUpdated } from '@/lib/module-events'
 import { EMPLOYEE_SAFE_SELECT } from '@/lib/employee-columns'
+import { EmployeeNumberSettingsCard } from '@/components/settings/EmployeeNumberSettingsCard'
 import type { Company, Employee, SecuritySettings, AuditEvent } from '@/types/database'
 import { formatZar, loadCompanyBillingSummary, type BillingSummary } from '@/lib/billing'
 import { checkQuoteEmailConfigured } from '@/lib/send-quote-email'
@@ -1142,6 +1143,7 @@ export default function SettingsPage() {
 
       {activeTab === 'organisation' && isHrOrAbove && (
         <>
+          {companyId && <EmployeeNumberSettingsCard companyId={companyId} />}
           <Section title="Branch sign-in" icon="my_location">
             <div className="flex flex-col gap-3">
               <p className="text-[13px] text-text-secondary">

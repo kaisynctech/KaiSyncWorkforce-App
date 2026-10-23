@@ -78,3 +78,10 @@ export const EMPLOYEE_SAFE_SELECT = [
   'account_type',
   'department',
 ].join(', ')
+
+/**
+ * HR screens (signed-in users with a Supabase session) also read the staff number.
+ * Kept out of EMPLOYEE_SAFE_SELECT because code-login screens run without a session
+ * and that role cannot read employee_number.
+ */
+export const EMPLOYEE_HR_SELECT = `${EMPLOYEE_SAFE_SELECT}, employee_number`

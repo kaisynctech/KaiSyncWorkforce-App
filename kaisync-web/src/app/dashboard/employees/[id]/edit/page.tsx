@@ -63,6 +63,7 @@ export default function EditEmployeePage({
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
   const [idNumber, setIdNumber] = useState('')
+  const [employeeNumber, setEmployeeNumber] = useState('')
   const [position, setPosition] = useState('')
   const [department, setDepartment] = useState('')
   const [branchId, setBranchId] = useState('')
@@ -150,6 +151,7 @@ export default function EditEmployeePage({
     setEmail(emp.email ?? '')
     setPhone(emp.phone ?? '')
     setIdNumber(emp.id_number ?? '')
+    setEmployeeNumber(emp.employee_number ?? '')
     setPosition(emp.position ?? '')
     setDepartment(emp.department ?? '')
     setBranchId(emp.branch_id ?? '')
@@ -235,6 +237,7 @@ export default function EditEmployeePage({
         email,
         phone,
         idNumber,
+        employeeNumber,
         position,
         department,
         branchId: branchId || null,
@@ -478,6 +481,9 @@ export default function EditEmployeePage({
           </FormField>
           <FormField label="ID / Passport number">
             <input type="text" value={idNumber} onChange={e => setIdNumber(e.target.value)} placeholder="e.g. 9001015009087" className={entryClass} />
+          </FormField>
+          <FormField label="Employee number" hint="Shown on payslips and reports. Not used to sign in.">
+            <input type="text" value={employeeNumber} onChange={e => setEmployeeNumber(e.target.value)} placeholder="e.g. IV-0001" className={entryClass} />
           </FormField>
         </SectionCard>
 

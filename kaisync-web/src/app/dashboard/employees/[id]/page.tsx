@@ -574,7 +574,8 @@ export default function EmployeeDetailPage() {
                 <InfoCell label="Branch" value={branchName ?? '—'} />
                 <InfoCell label="Position" value={employee.position ?? '—'} />
                 <InfoCell label="Time template" value={templateName ?? '—'} />
-                <InfoCell label="Employee number" value={employee.employee_code ?? '—'} />
+                <InfoCell label="Employee number" value={employee.employee_number ?? '—'} />
+                <InfoCell label="Sign-in code" value={employee.employee_code ?? '—'} />
                 <InfoCell label="ID number" value={employee.id_number ?? '—'} />
                 <InfoCell label="Income tax number" value={employee.tax_number ?? '—'} />
                 <InfoCell label="Address" value={employee.address ?? '—'} />
@@ -857,7 +858,7 @@ function EmployeePayslips({ employee }: { employee: Employee }) {
       address: employee.address,
       employeeId: employee.id_number,
       incomeTaxNumber: employee.tax_number,
-      employeeNumber: employee.employee_code,
+      employeeNumber: employee.employee_number ?? null,
       employmentDate: employee.employment_date,
       periodStart: row.period_start,
       periodEnd: row.period_end,

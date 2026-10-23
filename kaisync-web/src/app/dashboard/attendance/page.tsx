@@ -41,7 +41,7 @@ type EmpRow = {
   id: string
   name: string
   surname: string
-  employee_code: string | null
+  employee_number: string | null
   hourly_rate: number | null
   daily_hours: number | null
   shift_template_id: string | null
@@ -117,7 +117,7 @@ function toDisplay(row: PunchSessionRow, emp: EmpRow | undefined): DisplaySessio
     key: `${row.employeeId}_${row.clockIn.toISOString()}`,
     employeeId: row.employeeId,
     employeeName: row.employeeName,
-    employeeCode: emp?.employee_code ?? '',
+    employeeCode: emp?.employee_number ?? '',
     row,
     pay: hours * rate,
   }
@@ -290,7 +290,7 @@ export default function AttendancePage() {
       onLeaveTodayRes,
     ] = await Promise.all([
       supabase.from('employees')
-        .select('id, name, surname, employee_code, hourly_rate, daily_hours, shift_template_id, pay_full_monthly_salary')
+        .select('id, name, surname, employee_number, hourly_rate, daily_hours, shift_template_id, pay_full_monthly_salary')
         .eq('company_id', cid)
         .eq('is_active', true),
       supabase.from('time_punches')

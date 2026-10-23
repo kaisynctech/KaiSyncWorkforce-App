@@ -115,7 +115,7 @@ export default function LeavePage() {
       loadLeaveSettings(supabase, member.companyId),
       supabase
         .from('leave_requests')
-        .select('*, employees(name, surname, employee_code)')
+        .select('*, employees(name, surname, employee_number)')
         .eq('company_id', member.companyId)
         .order('created_at', { ascending: false }),
       supabase
@@ -472,7 +472,7 @@ export default function LeavePage() {
                       const emp = req.employees as {
                         name: string
                         surname: string
-                        employee_code: string | null
+                        employee_number: string | null
                       } | undefined
                       const badge = STATUS_BADGES[req.status] ?? STATUS_BADGES.cancelled
                       const empName = emp ? `${emp.name} ${emp.surname}` : 'Unknown'
@@ -548,7 +548,7 @@ export default function LeavePage() {
                     const emp = req.employees as {
                       name: string
                       surname: string
-                      employee_code: string | null
+                      employee_number: string | null
                     } | undefined
                     const badge = STATUS_BADGES[req.status] ?? STATUS_BADGES.cancelled
                     const empName = emp ? `${emp.name} ${emp.surname}` : 'Unknown'
