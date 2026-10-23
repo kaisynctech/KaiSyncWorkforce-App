@@ -204,7 +204,11 @@ function payeFromCurrentTables(
     medicalAidMonthly: emp?.medical_aid_deduction ?? 0,
     medicalAidDependants: emp?.medical_aid_dependants ?? 0,
   })
-  const paye = Math.abs(typed.paye - flatOnSavedGross) < 0.05 ? sarsPaye : typed.paye
+  // Automatic PAYE figures (old flat 18%, or the plain tables without pension/medical aid that the
+  // payslip page filled in before W5) are replaced; a PAYE a person typed is kept.
+  const plainTables = calculateMonthlyPaye(gross, dateOfBirth)
+  const automatic = Math.abs(typed.paye - flatOnSavedGross) < 0.05 || Math.abs(typed.paye - plainTables) < 0.05
+  const paye = automatic ? sarsPaye : typed.paye
   const deductions = Math.round((typed.uif + paye + typed.loanDeduction + typed.unpaidLeave + sumExtra(extraDeductions)) * 100) / 100
   const net = Math.round(Math.max(0, gross - deductions) * 100) / 100
   const saved = { ...typed.saved, overtime, paye }

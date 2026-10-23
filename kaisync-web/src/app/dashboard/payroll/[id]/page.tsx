@@ -22,7 +22,7 @@ import { downloadPayslipTemplatePdf, imageUrlToDataUrl } from '@/lib/payslip-pdf
 import { executeWithStepUp } from '@/lib/step-up'
 import { StepUpDialog } from '@/components/step-up-dialog'
 import { isUnpaidLeave } from '@/lib/payroll/leave-days'
-import { calculateMonthlyPaye } from '@/lib/payroll/sars-paye'
+import { calculateMonthlyPaye, type PayeAllowances } from '@/lib/payroll/sars-paye'
 import { computeLeaveSummary, type LeaveSummary } from '@/lib/leave-policy'
 import { loadPayrollSettings } from '@/lib/payroll-settings'
 import { SHIFT_TEMPLATE_NAMED_SELECT } from '@/lib/shift-template-schedule'
@@ -315,6 +315,8 @@ export default function PayslipDetailPage() {
   const [slipTab, setSlipTab] = useState<SlipTab>('pay')
   const [daysPerWeek, setDaysPerWeek] = useState(5)
   const [dateOfBirth, setDateOfBirth] = useState<string | null>(null)
+  /** Pension and medical aid lower PAYE (2026/27). Without them the page used to put back the higher PAYE. */
+  const [payeAllowances, setPayeAllowances] = useState<PayeAllowances>({})
   const [companyTimezone, setCompanyTimezone] = useState('Africa/Johannesburg')
   const [unpaidAbsenceDates, setUnpaidAbsenceDates] = useState<string[]>([])
   const autoApplied = useRef<string | null>(null)
@@ -628,7 +630,7 @@ export default function PayslipDetailPage() {
     const [{ data: person, error: personErr }, { data: company, error: companyErr }] = await Promise.all([
       supabase
         .from('employees')
-        .select('name, surname, monthly_salary, hourly_rate, daily_rate, daily_hours, work_days_weekly, uif_fixed_amount, uif_rate_percent, uif_exempt, employment_date, termination_date, date_of_birth, pay_full_monthly_salary, bank_name, bank_branch_code, bank_account, account_type, employee_number, id_number, tax_number, overtime_rate, overtime_hourly_rate, paid_leave_balance, sick_leave_balance, address, medical_aid_deduction, pension_deduction, union_deduction')
+        .select('name, surname, monthly_salary, hourly_rate, daily_rate, daily_hours, work_days_weekly, uif_fixed_amount, uif_rate_percent, uif_exempt, employment_date, termination_date, date_of_birth, pay_full_monthly_salary, bank_name, bank_branch_code, bank_account, account_type, employee_number, id_number, tax_number, overtime_rate, overtime_hourly_rate, paid_leave_balance, sick_leave_balance, address, medical_aid_deduction, medical_aid_dependants, pension_deduction, union_deduction')
         .eq('id', p.employee_id)
         .eq('company_id', p.company_id)
         .maybeSingle(),
@@ -685,6 +687,12 @@ export default function PayslipDetailPage() {
       setEmployeeIdNumber(row.id_number ?? '')
       setIncomeTaxNumber((row as PersonPay & { tax_number?: string | null }).tax_number ?? '')
       setDateOfBirth((row as { date_of_birth?: string | null }).date_of_birth ?? null)
+      const deductionsRow = row as EmployeeDeductionFields & { medical_aid_dependants?: number | null }
+      setPayeAllowances({
+        retirementFundMonthly: Number(deductionsRow.pension_deduction) || 0,
+        medicalAidMonthly: Number(deductionsRow.medical_aid_deduction) || 0,
+        medicalAidDependants: Number(deductionsRow.medical_aid_dependants) || 0,
+      })
       setEmploymentDateText(row.employment_date ? fmtDmy(row.employment_date) : '')
       const hourly = Number(row.hourly_rate) || 0
       setHourlyRateText(moneyText(hourly))
@@ -1068,12 +1076,19 @@ export default function PayslipDetailPage() {
       changed = true
     }
     const gross = moneyValue(next.regular) + moneyValue(next.overtime) + moneyValue(next.bonus) + moneyValue(next.incentive) + moneyValue(next.refund) + sumExtra(extraRef.current.earnings)
-    const paye = calculateMonthlyPaye(gross, dateOfBirth)
+    const paye = calculateMonthlyPaye(gross, dateOfBirth, null, payeAllowances)
     const currentPaye = moneyValue(next.paye)
     const flatEighteen = Math.round(gross * 0.18 * 100) / 100
     const previousGross = gross - moneyValue(next.overtime) + moneyValue(lines.overtime)
-    const previousSars = calculateMonthlyPaye(previousGross, dateOfBirth)
-    if ((saved == null || Math.abs(currentPaye - flatEighteen) < 0.05 || Math.abs(currentPaye - previousSars) < 0.05) && Math.abs(paye - currentPaye) >= 0.01) {
+    const previousSars = calculateMonthlyPaye(previousGross, dateOfBirth, null, payeAllowances)
+    // The plain tables without pension/medical aid is what this page filled in before W5, so it is
+    // an automatic figure, not one a person typed.
+    const plainTables = calculateMonthlyPaye(gross, dateOfBirth)
+    const automatic = saved == null
+      || Math.abs(currentPaye - flatEighteen) < 0.05
+      || Math.abs(currentPaye - previousSars) < 0.05
+      || Math.abs(currentPaye - plainTables) < 0.05
+    if (automatic && Math.abs(paye - currentPaye) >= 0.01) {
       next = { ...next, paye: moneyText(paye) }
       changed = true
     }
@@ -1081,7 +1096,7 @@ export default function PayslipDetailPage() {
     if (!changed) return
     setLines(next)
     void saveLines(next, { unpaidAbsenceDates: dates, waive: dates.length === 0 })
-  }, [loading, daysLoading, days, payment, lines, overtimeRateText, dateOfBirth, unpaidAbsenceDates, waivePenalties])
+  }, [loading, daysLoading, days, payment, lines, overtimeRateText, dateOfBirth, payeAllowances, unpaidAbsenceDates, waivePenalties])
 
   async function downloadPdf() {
     if (!payment) return

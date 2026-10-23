@@ -149,7 +149,6 @@ export default function PayrollPage() {
 
   async function loadPayroll(from: string, to: string) {
     setLoading(true)
-    setSuccess(null)
     const supabase = createClient()
 
     // Resolve company once
@@ -488,7 +487,7 @@ export default function PayrollPage() {
           <PayrollTabs active={section} className="" />
           <div className="flex-1 min-w-[8px]" />
           <label htmlFor="payroll-month" className="text-[11px] text-text-secondary">Month</label>
-          <input id="payroll-month" type="month" value={month} onChange={e => setMonth(e.target.value)} className="dark-entry h-8" />
+          <input id="payroll-month" type="month" value={month} onChange={e => { setSuccess(null); setMonth(e.target.value) }} className="dark-entry h-8" />
           <span className="text-[12px] text-text-secondary">{dateFrom} to {dateTo}</span>
           <button
             type="button"
