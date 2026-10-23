@@ -87,7 +87,7 @@ export function appendAssetServiceNote(
 ): string {
   const text = note.trim()
   if (!text) return (existing ?? '').trim()
-  const date = new Date().toISOString().slice(0, 10)
+  const date = localISODate()
   const who = actorName?.trim() ? ` (${actorName.trim()})` : ''
   const line = `[${date}]${who} ${text}`
   const prev = (existing ?? '').trim()
@@ -107,3 +107,5 @@ export function extendWarrantyDate(
   base.setDate(base.getDate() + days)
   return base.toISOString().slice(0, 10)
 }
+
+import { localISODate } from '@/lib/utils'

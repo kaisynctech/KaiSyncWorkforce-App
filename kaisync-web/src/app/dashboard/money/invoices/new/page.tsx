@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { calculateVatExclusive, roundFinancial } from '@/lib/finance-calc'
 import { isFunderPayer, payerTypeLabel, resolveRentBillToClientId } from '@/lib/lease-billing'
+import { localISODate } from '@/lib/utils'
 
 type ClientOpt = { id: string; name: string }
 type JobOpt = { id: string; title: string; job_code: string | null }
@@ -29,7 +30,7 @@ function NewMoneyInvoiceInner() {
   const [dealId, setDealId] = useState(() => searchParams.get('deal_id') ?? searchParams.get('project_id') ?? '')
   const [leaseId, setLeaseId] = useState(() => searchParams.get('lease_id') ?? '')
   const [siteId, setSiteId] = useState(() => searchParams.get('site_id') ?? '')
-  const [issueDate, setIssueDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [issueDate, setIssueDate] = useState(() => localISODate())
   const [dueDate, setDueDate] = useState('')
   const [description, setDescription] = useState('Professional services')
   const [amount, setAmount] = useState('0')

@@ -42,6 +42,7 @@ import type {
   StayDepositStatus,
   Unit,
 } from '@/types/database'
+import { localISODate } from '@/lib/utils'
 
 type Props = {
   companyId: string
@@ -94,7 +95,7 @@ export function GuestHouseBoard({
   const [idNumber, setIdNumber] = useState('')
   const [passport, setPassport] = useState('')
   const [unitId, setUnitId] = useState('')
-  const [checkIn, setCheckIn] = useState(() => new Date().toISOString().slice(0, 10))
+  const [checkIn, setCheckIn] = useState(() => localISODate())
   const [checkOut, setCheckOut] = useState(() => {
     const d = new Date()
     d.setDate(d.getDate() + 1)

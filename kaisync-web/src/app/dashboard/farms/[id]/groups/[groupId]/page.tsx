@@ -21,6 +21,7 @@ import {
   type FarmLivestockGroup,
   type LivestockEventType,
 } from '@/types/farms'
+import { localISODate } from '@/lib/utils'
 
 export default function LivestockGroupDetailPage() {
   const { id: farmId, groupId } = useParams<{ id: string; groupId: string }>()
@@ -41,7 +42,7 @@ export default function LivestockGroupDetailPage() {
   const [showEvent, setShowEvent] = useState(false)
   const [eType, setEType] = useState<LivestockEventType>('death')
   const [eQty, setEQty] = useState('1')
-  const [eDate, setEDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [eDate, setEDate] = useState(() => localISODate())
   const [eNotes, setENotes] = useState('')
   const [eToLand, setEToLand] = useState('')
   const [eAnimal, setEAnimal] = useState('')
@@ -224,7 +225,7 @@ export default function LivestockGroupDetailPage() {
       farm_id: farmId,
       group_id: group.id,
       event_type: hType,
-      event_date: new Date().toISOString().slice(0, 10),
+      event_date: localISODate(),
       product_label: hProduct.trim() || null,
       dosage: hDosage.trim() || null,
       withdrawal_until: hWithdraw || null,

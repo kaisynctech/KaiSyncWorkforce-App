@@ -15,6 +15,7 @@ import {
   type ProductionEventType,
   type ProductionLotStatus,
 } from '@/types/farms'
+import { localISODate } from '@/lib/utils'
 
 export default function ProductionLotDetailPage() {
   const { id: farmId, lotId } = useParams<{ id: string; lotId: string }>()
@@ -33,7 +34,7 @@ export default function ProductionLotDetailPage() {
   const [showEvent, setShowEvent] = useState(false)
   const [eType, setEType] = useState<ProductionEventType>('collect')
   const [eQty, setEQty] = useState('1')
-  const [eDate, setEDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [eDate, setEDate] = useState(() => localISODate())
   const [eNotes, setENotes] = useState('')
 
   const canEdit = can(perms, PERM.farmsEdit)

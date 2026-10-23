@@ -17,6 +17,7 @@ import {
   type PlantingEventType,
   type PlantingStatus,
 } from '@/types/farms'
+import { localISODate } from '@/lib/utils'
 
 export default function PlantingDetailPage() {
   const { id: farmId, plantingId } = useParams<{ id: string; plantingId: string }>()
@@ -36,7 +37,7 @@ export default function PlantingDetailPage() {
   const [eType, setEType] = useState<PlantingEventType>('harvest')
   const [eQty, setEQty] = useState('1')
   const [eUnit, setEUnit] = useState<FarmQtyUnit>('kg')
-  const [eDate, setEDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [eDate, setEDate] = useState(() => localISODate())
   const [eNotes, setENotes] = useState('')
 
   const canEdit = can(perms, PERM.farmsEdit)

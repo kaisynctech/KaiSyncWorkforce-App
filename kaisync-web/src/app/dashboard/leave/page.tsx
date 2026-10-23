@@ -7,7 +7,7 @@ import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { loadScopedEmployeeIds, viewerSeesAllCompany } from '@/lib/employee-scope'
 import { decideLeaveRequest, formatLeaveDecideError } from '@/lib/leave'
 import { getCompanyAnnualDays, loadLeaveSettings, type LeaveSettingsMap } from '@/lib/leave-settings'
-import { formatDate, returnToWorkLabel } from '@/lib/utils'
+import { formatDate, returnToWorkLabel, localISODate } from '@/lib/utils'
 import {
   ResponsiveDataView,
   DataCard,
@@ -108,7 +108,7 @@ export default function LeavePage() {
     if (!member) { setError('not_linked'); setLoading(false); return }
     setCompanyId(member.companyId)
 
-    const today = new Date().toISOString().split('T')[0]
+    const today = localISODate()
 
     const [scopeRes, settingsRes, reqsRes, onLeaveRes] = await Promise.all([
       loadScopedEmployeeIds(supabase, member.companyId, member.employeeId),

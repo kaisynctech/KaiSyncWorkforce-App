@@ -146,6 +146,31 @@ export async function setWorkTeamMembers(
   return { ok: true, data: undefined }
 }
 
+/**
+ * Adds people to a team on the server in one statement (duplicates ignored). Safe when several
+ * people add members at once — the old way rewrote the whole list from the page's copy and lost members.
+ */
+export async function addWorkTeamMembers(
+  supabase: SupabaseClient,
+  teamId: string,
+  employeeIds: string[]
+): Promise<WorkTeamResult<string[]>> {
+  const { data, error } = await supabase.rpc('work_team_add_members', { p_team_id: teamId, p_employee_ids: employeeIds })
+  if (error) return { ok: false, message: error.message }
+  return { ok: true, data: (data as string[] | null) ?? [] }
+}
+
+/** Removes one person from a team on the server (clears the leader if it was them). */
+export async function removeWorkTeamMember(
+  supabase: SupabaseClient,
+  teamId: string,
+  employeeId: string
+): Promise<WorkTeamResult<string[]>> {
+  const { data, error } = await supabase.rpc('work_team_remove_member', { p_team_id: teamId, p_employee_id: employeeId })
+  if (error) return { ok: false, message: error.message }
+  return { ok: true, data: (data as string[] | null) ?? [] }
+}
+
 export async function setWorkTeamLeader(
   supabase: SupabaseClient,
   teamId: string,

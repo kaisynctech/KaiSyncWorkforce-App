@@ -60,3 +60,35 @@ export function syncMeibcSickPay(lines: PayslipExtraLine[], previousRegular: num
     return { ...line, amount: next }
   })
 }
+
+/**
+ * The employee's own monthly deductions (from their profile) as payslip lines.
+ * Before W5 the payslip screen left these out, so the payslip showed a higher net pay than payroll
+ * (e.g. union R45 missing). They are added once; after that the lines on the payslip are what count.
+ */
+export type EmployeeDeductionFields = {
+  medical_aid_deduction?: number | null
+  pension_deduction?: number | null
+  union_deduction?: number | null
+}
+
+export function employeeDeductionLines(emp: EmployeeDeductionFields | null | undefined): PayslipExtraLine[] {
+  if (!emp) return []
+  const lines: PayslipExtraLine[] = [
+    { id: 'emp-medical-aid', label: 'Medical aid', amount: moneyCents(Number(emp.medical_aid_deduction) || 0) },
+    { id: 'emp-pension', label: 'Pension', amount: moneyCents(Number(emp.pension_deduction) || 0) },
+    { id: 'emp-union', label: 'Union', amount: moneyCents(Number(emp.union_deduction) || 0) },
+  ]
+  return lines.filter(line => line.amount > 0)
+}
+
+/** Adds the employee's own deductions unless this payslip already has them. */
+export function withEmployeeDeductions(
+  lines: PayslipExtraLine[],
+  emp: EmployeeDeductionFields | null | undefined,
+  alreadyApplied: boolean,
+): PayslipExtraLine[] {
+  if (alreadyApplied) return lines
+  const have = new Set(lines.map(line => line.id))
+  return [...lines, ...employeeDeductionLines(emp).filter(line => !have.has(line.id))]
+}

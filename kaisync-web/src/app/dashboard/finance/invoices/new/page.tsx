@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { calculateVatExclusive, roundFinancial } from '@/lib/finance-calc'
+import { localISODate } from '@/lib/utils'
 
 type ClientOpt = { id: string; name: string }
 
@@ -21,7 +22,7 @@ function NewFinanceInvoiceInner() {
   const searchParams = useSearchParams()
   const [clients, setClients] = useState<ClientOpt[]>([])
   const [clientId, setClientId] = useState(() => searchParams.get('clientId') ?? '')
-  const [issueDate, setIssueDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [issueDate, setIssueDate] = useState(() => localISODate())
   const [dueDate, setDueDate] = useState('')
   const [description, setDescription] = useState('Professional services')
   const [amount, setAmount] = useState('0')

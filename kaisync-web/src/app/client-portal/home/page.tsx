@@ -16,6 +16,7 @@ import { getDealMessagesReadAt, type ClientPortalSession } from '@/lib/client-po
 import { fmtDate, fmtDateTime, projectStatusLabel } from '@/lib/client-portal/format'
 import { moneyZAR } from '@/lib/client-portal/quotation'
 import { isInvoiceOutstanding, type ClientDocumentRequest, type ClientPortalJob, type ClientPortalProject, type MessageInboxItem, type PortalInvoice } from '@/lib/client-portal/types'
+import { localISODate } from '@/lib/utils'
 
 type Tab = 'home' | 'information' | 'projects' | 'jobs' | 'quotes' | 'payments' | 'banking' | 'messages' | 'documents' | 'invoices'
 
@@ -404,7 +405,7 @@ function HomeTab({
   docRequests: ClientDocumentRequest[]
   session: ClientPortalSession
 }) {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localISODate()
   const openProjects = projects.filter(p => !CLOSED_PROJECT.includes((p.status ?? '').toLowerCase())).length
   const openJobs = jobs.filter(j => !CLOSED_JOB.includes((j.status ?? '').toLowerCase())).length
   const overdue = invoices.filter(i => isInvoiceOutstanding(i.status) && i.due_date && i.due_date < today)

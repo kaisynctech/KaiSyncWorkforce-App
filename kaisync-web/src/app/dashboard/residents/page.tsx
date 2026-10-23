@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import type { Site, Resident, Unit, SiteComplianceEntry } from '@/types/database'
+import { localISODate } from '@/lib/utils'
 
 type Tab = 'residents' | 'units' | 'compliance'
 
@@ -136,7 +137,7 @@ function ResidentsInner() {
         ...emergency,
       }).eq('id', editResident.id)
     } else {
-      const today = new Date().toISOString().split('T')[0]
+      const today = localISODate()
       await supabase.from('residents').insert({
         company_id: companyId,
         site_id: selectedSiteId,

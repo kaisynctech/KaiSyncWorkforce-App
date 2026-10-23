@@ -10,6 +10,7 @@ import type {
   StayDepositStatus,
   StayStatus,
 } from '@/types/database'
+import { localISODate } from '@/lib/utils'
 
 export const STAY_STATUSES: { value: StayStatus; label: string }[] = [
   { value: 'reserved', label: 'Reserved' },
@@ -418,7 +419,7 @@ export type RoomBoardRow = {
 export function buildRoomBoard(
   units: RoomBoardRow['unit'][],
   stays: PropertyStay[],
-  today = new Date().toISOString().slice(0, 10),
+  today = localISODate(),
 ): RoomBoardRow[] {
   return units.map(unit => {
     const unitStays = stays.filter(s => s.unit_id === unit.id)

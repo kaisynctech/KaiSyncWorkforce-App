@@ -48,6 +48,8 @@ export interface Employee {
   uif_exempt?: boolean
   /** Whether VAT applies to this person. Does not change PAYE or UIF. */
   vat_applies?: boolean | null
+  /** People on the medical aid besides the employee (PAYE medical credit). */
+  medical_aid_dependants?: number | null
   medical_aid_deduction: number | null
   pension_deduction: number | null
   union_deduction: number | null

@@ -52,6 +52,7 @@ import type {
   SiteComplianceEntry,
   Unit,
 } from '@/types/database'
+import { localISODate } from '@/lib/utils'
 
 type Tab = 'overview' | 'units' | 'residents' | 'leases' | 'stays' | 'maintenance' | 'incidents' | 'meters' | 'inspections' | 'compliance'
 type ClientOption = { id: string; name: string }
@@ -339,7 +340,7 @@ function PropertyDetailInner() {
     const occupied = units.filter(u => u.is_occupied).length
     const currentResidents = residents.filter(r => !r.move_out_date).length
     const activeLeases = leases.filter(l => l.status === 'active').length
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localISODate()
     const arrears = rentInvoices.filter(inv =>
       Number(inv.balance_due) > 0
       && inv.status !== 'voided'
@@ -501,7 +502,7 @@ function PropertyDetailInner() {
     setEditResident(null)
     setRName(''); setRSurname(''); setRPhone(''); setREmail('')
     setRIdNumber(''); setRPassport('')
-    setRUnit(''); setRMoveIn(new Date().toISOString().slice(0, 10)); setRMoveOut(''); setRNotes('')
+    setRUnit(''); setRMoveIn(localISODate()); setRMoveOut(''); setRNotes('')
     setREmergName(''); setREmergPhone(''); setREmergRel('')
     setRPortalEnabled(false); setRPortalCode(null); setCodeCopied(false)
     setShowResident(true)
@@ -617,7 +618,7 @@ function PropertyDetailInner() {
   function openCreateLease() {
     setEditLease(null)
     setLUnit(''); setLResident(''); setLTenantClient(''); setLTenantName('')
-    setLStart(new Date().toISOString().slice(0, 10)); setLEnd('')
+    setLStart(localISODate()); setLEnd('')
     setLRent(''); setLDeposit(''); setLDepositStatus('none')
     setLDepositPaidAmt(''); setLDepositPaidAt('')
     setLPayerType('self'); setLSponsor(''); setLPayerClient(''); setLNoticeDays('30')

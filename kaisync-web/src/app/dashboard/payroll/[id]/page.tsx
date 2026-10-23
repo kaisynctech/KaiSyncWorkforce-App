@@ -14,6 +14,8 @@ import {
   syncMeibcSickPay,
   WINTERSTECH_COMPANY_ID,
   winterstechMeibcLines,
+  withEmployeeDeductions,
+  type EmployeeDeductionFields,
   type PayslipExtraLine,
 } from '@/lib/payslip-extra-lines'
 import { downloadPayslipTemplatePdf, imageUrlToDataUrl } from '@/lib/payslip-pdf'
@@ -30,7 +32,7 @@ import {
   buildPunchSessions,
   earlyFlag,
   fmtSessionDate,
-  fmtSessionTime,
+  fmtSessionOut, fmtSessionTime,
   lateFlag,
   locationDisplay,
   mergeNonWorkDays,
@@ -259,14 +261,14 @@ function SessionTable({ rows, payForDate, calculationForRow, totalLabel, totalVa
                   {late && <span className="block text-[10px] text-error font-semibold">{late}</span>}
                 </td>
                 <td className="px-4 py-3 text-text-secondary max-w-[160px] truncate">
-                  {row.isAbsentDay || row.isLeaveDay ? '—' : locationDisplay(row.clockInAddress, row.clockInLat, row.clockInLng)}
+                  {row.isAbsentDay || row.isLeaveDay ? '—' : locationDisplay(row.clockInAddress, row.clockInLat, row.clockInLng, row.notes)}
                 </td>
                 <td className="px-4 py-3 text-text-primary whitespace-nowrap">
-                  {fmtSessionTime(row.clockOut, 'out')}
+                  {fmtSessionOut(row)}
                   {early && <span className="block text-[10px] text-warning font-semibold">{early}</span>}
                 </td>
                 <td className="px-4 py-3 text-text-secondary max-w-[160px] truncate">
-                  {row.isAbsentDay || row.isLeaveDay ? '—' : locationDisplay(row.clockOutAddress, row.clockOutLat, row.clockOutLng)}
+                  {row.isAbsentDay || row.isLeaveDay ? '—' : locationDisplay(row.clockOutAddress, row.clockOutLat, row.clockOutLng, row.notes)}
                 </td>
                 <td className="px-4 py-3 text-right text-text-primary">{row.regularHours.toFixed(1)}</td>
                 <td className="px-4 py-3 text-right text-warning font-medium">
@@ -626,7 +628,7 @@ export default function PayslipDetailPage() {
     const [{ data: person, error: personErr }, { data: company, error: companyErr }] = await Promise.all([
       supabase
         .from('employees')
-        .select('name, surname, monthly_salary, hourly_rate, daily_rate, daily_hours, work_days_weekly, uif_fixed_amount, uif_rate_percent, uif_exempt, employment_date, termination_date, date_of_birth, pay_full_monthly_salary, bank_name, bank_branch_code, bank_account, account_type, employee_number, id_number, tax_number, overtime_rate, overtime_hourly_rate, paid_leave_balance, sick_leave_balance, address')
+        .select('name, surname, monthly_salary, hourly_rate, daily_rate, daily_hours, work_days_weekly, uif_fixed_amount, uif_rate_percent, uif_exempt, employment_date, termination_date, date_of_birth, pay_full_monthly_salary, bank_name, bank_branch_code, bank_account, account_type, employee_number, id_number, tax_number, overtime_rate, overtime_hourly_rate, paid_leave_balance, sick_leave_balance, address, medical_aid_deduction, pension_deduction, union_deduction')
         .eq('id', p.employee_id)
         .eq('company_id', p.company_id)
         .maybeSingle(),
@@ -727,7 +729,11 @@ export default function PayslipDetailPage() {
       unpaidLeave: picked(savedLines?.unpaidLeave, unpaidLine),
     }
     let nextEarnings = parseExtraLines(savedLines?.extraEarnings)
-    let nextDeductions = parseExtraLines(savedLines?.extraDeductions)
+    let nextDeductions = withEmployeeDeductions(
+      parseExtraLines(savedLines?.extraDeductions),
+      person as EmployeeDeductionFields | null,
+      savedLines?.employeeDeductionsApplied === true,
+    )
     let nextMeibc = savedLines?.meibcApplied === true
     if (p.company_id === WINTERSTECH_COMPANY_ID && p.status === 'pending' && !nextMeibc) {
       nextDeductions = [...nextDeductions, ...winterstechMeibcLines(moneyValue(nextLines.regular))]
@@ -755,6 +761,7 @@ export default function PayslipDetailPage() {
         extraEarnings: nextEarnings,
         extraDeductions: nextDeductions,
         meibcApplied: true,
+        employeeDeductionsApplied: true,
       }, {
         payFullBaseSalary: p.pay_full_base_salary ?? false,
         waivePenalties: absencePayWasChosen(p.audit_log) ? Boolean(p.waive_penalties) : true,
@@ -986,6 +993,7 @@ export default function PayslipDetailPage() {
       extraEarnings: extra.earnings,
       extraDeductions: extra.deductions,
       meibcApplied: extra.meibcApplied,
+      employeeDeductionsApplied: true,
     }, {
       payFullBaseSalary: flags?.payFull ?? payFullSalary,
       waivePenalties: flags?.waive ?? waivePenalties,

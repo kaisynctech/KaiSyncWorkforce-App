@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/ResponsiveDataView'
 import type { Client, ClientActionItem } from '@/types/database'
 import * as XLSX from 'xlsx'
+import { localISODate } from '@/lib/utils'
 
 type ClientKpis = {
   total: number
@@ -84,7 +85,7 @@ export default function ClientsPage() {
       .maybeSingle()
     setPerms(await loadPermissions(supabase, member.companyId, me?.access_level))
 
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localISODate()
     const { from, to } = pageRange(page, pageSize)
 
     let query = supabase
@@ -227,7 +228,7 @@ export default function ClientsPage() {
     const ws = XLSX.utils.json_to_sheet(rows)
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Clients')
-    XLSX.writeFile(wb, `clients_export_${new Date().toISOString().slice(0, 10)}.xlsx`)
+    XLSX.writeFile(wb, `clients_export_${localISODate()}.xlsx`)
   }
 
   async function openActionItem(item: ClientActionItem) {

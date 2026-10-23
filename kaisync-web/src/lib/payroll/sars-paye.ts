@@ -58,10 +58,45 @@ export function isBelowAnnualTaxThreshold(monthlyTaxable: number, dateOfBirth?: 
   return monthlyTaxable * 12 <= annualTaxThreshold(dateOfBirth)
 }
 
+/** Retirement fund contributions: deductible up to 27.5% of remuneration, at most R430,000 a year. 2026/27. */
+const RETIREMENT_DEDUCTION_RATE = 0.275
+const RETIREMENT_DEDUCTION_ANNUAL_CAP = 430_000
+
+/** Medical scheme fees tax credit per month, 2026/27: main member, first dependant, each further dependant. */
+const MEDICAL_CREDIT_MAIN = 376
+const MEDICAL_CREDIT_FIRST_DEPENDANT = 376
+const MEDICAL_CREDIT_OTHER_DEPENDANT = 254
+
+export type PayeAllowances = {
+  /** Employee's monthly pension / provident / retirement annuity contribution. */
+  retirementFundMonthly?: number | null
+  /** Employee's monthly medical aid contribution. The credit applies only when this is above 0. */
+  medicalAidMonthly?: number | null
+  /** People on the medical aid besides the employee. */
+  medicalAidDependants?: number | null
+}
+
+/** Monthly retirement fund amount that reduces taxable income (capped). */
+export function deductibleRetirementMonthly(monthlyRemuneration: number, contributionMonthly: number): number {
+  if (monthlyRemuneration <= 0 || contributionMonthly <= 0) return 0
+  const cap = Math.min(monthlyRemuneration * RETIREMENT_DEDUCTION_RATE, RETIREMENT_DEDUCTION_ANNUAL_CAP / 12)
+  return Math.min(contributionMonthly, cap)
+}
+
+/** Monthly medical scheme fees tax credit. 0 when the employee does not contribute to a medical aid. */
+export function medicalTaxCreditMonthly(medicalAidMonthly: number, dependants: number): number {
+  if (!(medicalAidMonthly > 0)) return 0
+  const deps = Math.max(0, Math.floor(dependants || 0))
+  return MEDICAL_CREDIT_MAIN
+    + (deps >= 1 ? MEDICAL_CREDIT_FIRST_DEPENDANT : 0)
+    + Math.max(0, deps - 1) * MEDICAL_CREDIT_OTHER_DEPENDANT
+}
+
 export function calculateMonthlyPaye(
   monthlyTaxableIncome: number,
   dateOfBirth?: string | null,
-  directiveRatePercent?: number | null
+  directiveRatePercent?: number | null,
+  allowances?: PayeAllowances
 ): number {
   if (monthlyTaxableIncome <= 0) return 0
 
@@ -69,9 +104,11 @@ export function calculateMonthlyPaye(
     return round2((monthlyTaxableIncome * directiveRatePercent) / 100)
   }
 
-  const annual = monthlyTaxableIncome * 12
+  const retirement = deductibleRetirementMonthly(monthlyTaxableIncome, Number(allowances?.retirementFundMonthly ?? 0))
+  const annual = (monthlyTaxableIncome - retirement) * 12
   let tax = calculateAnnualTax(annual)
   const rebate = rebatesFor(dateOfBirth)
   tax = Math.max(0, tax - rebate)
-  return round2(tax / 12)
+  const credit = medicalTaxCreditMonthly(Number(allowances?.medicalAidMonthly ?? 0), Number(allowances?.medicalAidDependants ?? 0))
+  return round2(Math.max(0, tax / 12 - credit))
 }

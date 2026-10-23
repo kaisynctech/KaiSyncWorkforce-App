@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { getOverview, type OverviewRow, type PartyKind } from '@/lib/compliance/party'
+import { localISODate } from '@/lib/utils'
 
 type Status = 'not_configured' | 'compliant' | 'partial' | 'non_compliant'
 const STATUS_LABEL: Record<Status, string> = {
@@ -81,7 +82,7 @@ export default function ComplianceOverviewPage() {
       r.pending_count, r.missing_count, r.expiring_count, r.expired_count, r.rejected_count, ...(kind === 'client' ? [r.obligations_open] : [])])
     const csv = [head, ...lines].map(l => l.map(v => { const s = String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }).join(',')).join('\n')
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
-    const a = document.createElement('a'); a.href = url; a.download = `${kind}-compliance-${new Date().toISOString().slice(0, 10)}.csv`; a.click()
+    const a = document.createElement('a'); a.href = url; a.download = `${kind}-compliance-${localISODate()}.csv`; a.click()
     URL.revokeObjectURL(url)
   }
 

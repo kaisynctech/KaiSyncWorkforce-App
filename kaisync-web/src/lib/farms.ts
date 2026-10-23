@@ -11,6 +11,7 @@ import type {
   PlantingEventType,
   ProductionEventType,
 } from '@/types/farms'
+import { localISODate } from '@/lib/utils'
 
 export type RecordLivestockEventInput = {
   companyId: string
@@ -75,7 +76,7 @@ export async function recordLivestockEvent(
     return { ok: false, message: `Cannot reduce headcount below 0 (current ${current}).` }
   }
 
-  const eventDate = input.eventDate ?? new Date().toISOString().slice(0, 10)
+  const eventDate = input.eventDate ?? localISODate()
   const { error: eErr } = await supabase.from('farm_livestock_events').insert({
     company_id: input.companyId,
     farm_id: input.farmId,
@@ -157,7 +158,7 @@ export async function recordPlantingEvent(
   }
 
   const unit = input.unit ?? (planting.harvest_unit as FarmQtyUnit) ?? 'kg'
-  const eventDate = input.eventDate ?? new Date().toISOString().slice(0, 10)
+  const eventDate = input.eventDate ?? localISODate()
   const { error: eErr } = await supabase.from('farm_planting_events').insert({
     company_id: input.companyId,
     farm_id: input.farmId,
@@ -242,7 +243,7 @@ export async function recordProductionEvent(
     return { ok: false, message: `Cannot reduce quantity below 0 (current ${current}).` }
   }
 
-  const eventDate = input.eventDate ?? new Date().toISOString().slice(0, 10)
+  const eventDate = input.eventDate ?? localISODate()
   const { error: eErr } = await supabase.from('farm_production_events').insert({
     company_id: input.companyId,
     farm_id: input.farmId,
@@ -323,7 +324,7 @@ export async function recordInputUsage(
     company_id: input.companyId,
     farm_id: input.farmId,
     usage_type: input.usageType,
-    usage_date: input.usageDate ?? new Date().toISOString().slice(0, 10),
+    usage_date: input.usageDate ?? localISODate(),
     quantity: qty,
     unit: input.unit,
     product_label: input.productLabel?.trim() || null,

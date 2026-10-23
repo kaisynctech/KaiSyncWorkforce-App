@@ -84,4 +84,4 @@ export const EMPLOYEE_SAFE_SELECT = [
  * Kept out of EMPLOYEE_SAFE_SELECT because code-login screens run without a session
  * and that role cannot read employee_number.
  */
-export const EMPLOYEE_HR_SELECT = `${EMPLOYEE_SAFE_SELECT}, employee_number`
+export const EMPLOYEE_HR_SELECT = `${EMPLOYEE_SAFE_SELECT}, employee_number, medical_aid_dependants`

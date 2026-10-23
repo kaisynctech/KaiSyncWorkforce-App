@@ -33,6 +33,7 @@ export type EmployeeCreateInput = {
   payeRatePercent?: number | null
   uifExempt?: boolean
   medicalAidDeduction?: number | null
+  medicalAidDependants?: number | null
   pensionDeduction?: number | null
   unionDeduction?: number | null
   workDaysWeekly?: number | null
@@ -96,6 +97,7 @@ export function buildEmployeeCreatePayload(input: EmployeeCreateInput): Record<s
     work_days_weekly: workDaysWeekly,
     daily_hours: dailyHours,
     medical_aid_deduction: numOrZero(input.medicalAidDeduction),
+    medical_aid_dependants: Math.max(0, Math.floor(numOrZero(input.medicalAidDependants))),
     pension_deduction: numOrZero(input.pensionDeduction),
     union_deduction: numOrZero(input.unionDeduction),
     paye_fixed_amount: 0,

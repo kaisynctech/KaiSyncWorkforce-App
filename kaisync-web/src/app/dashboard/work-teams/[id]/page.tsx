@@ -6,25 +6,19 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { filterTeamsByScope, loadScopedEmployeeIds } from '@/lib/employee-scope'
-import { listEmployeesScoped } from '@/lib/employees'
+import { EmployeePicker, type PickedEmployee } from '@/components/EmployeePicker'
 import {
   createWorkTeam,
   getWorkTeam,
   memberIdsOf,
   resolveWorkTeamMembers,
   setWorkTeamLeader,
-  setWorkTeamMembers,
+  addWorkTeamMembers,
+  removeWorkTeamMember,
   updateWorkTeam,
   type WorkTeamMemberView,
   type WorkTeamRow,
 } from '@/lib/work-teams'
-
-interface EmployeeOption {
-  id: string
-  name: string
-  surname: string
-  branch_id: string | null
-}
 
 export default function WorkTeamDetailPage() {
   const params = useParams<{ id: string }>()
@@ -34,7 +28,6 @@ export default function WorkTeamDetailPage() {
 
   const [team, setTeam] = useState<WorkTeamRow | null>(null)
   const [members, setMembers] = useState<WorkTeamMemberView[]>([])
-  const [allEmployees, setAllEmployees] = useState<EmployeeOption[]>([])
   const [loading, setLoading] = useState(!isNew)
   const [saving, setSaving] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -47,7 +40,7 @@ export default function WorkTeamDetailPage() {
   const [isActive, setIsActive] = useState(true)
 
   const [showAddMember, setShowAddMember] = useState(false)
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState('')
+  const [picked, setPicked] = useState<PickedEmployee[]>([])
 
   const hasMixedBranches = (() => {
     const branchIds = members
@@ -62,20 +55,8 @@ export default function WorkTeamDetailPage() {
     if (!member) { setError('not_linked'); return }
     setCompanyId(member.companyId)
 
-    const [empRes, scopeRes] = await Promise.all([
-      listEmployeesScoped(supabase, member.companyId, member.employeeId, { activeOnly: true }),
-      loadScopedEmployeeIds(supabase, member.companyId, member.employeeId),
-    ])
-    if (empRes.ok) {
-      setAllEmployees(
-        empRes.data.map(e => ({
-          id: e.id,
-          name: e.name,
-          surname: e.surname,
-          branch_id: e.branch_id,
-        }))
-      )
-    }
+    // The add-member picker searches on the server, so the page no longer downloads every employee.
+    const scopeRes = await loadScopedEmployeeIds(supabase, member.companyId, member.employeeId)
 
     if (isNew) { setLoading(false); return }
 
@@ -140,17 +121,15 @@ export default function WorkTeamDetailPage() {
     setSaving(false)
   }
 
-  async function addMember() {
-    if (!selectedEmployeeId || !team) return
-    if (memberIdsOf(team).includes(selectedEmployeeId)) return
+  async function addMembers() {
+    if (picked.length === 0 || !team) return
     setBusy(true)
     setErrorMsg('')
-    const nextIds = [...memberIdsOf(team), selectedEmployeeId]
     const supabase = createClient()
-    const result = await setWorkTeamMembers(supabase, teamId, nextIds)
+    const result = await addWorkTeamMembers(supabase, teamId, picked.map(p => p.id))
     setBusy(false)
     if (!result.ok) { setErrorMsg(result.message); return }
-    setSelectedEmployeeId('')
+    setPicked([])
     setShowAddMember(false)
     await load()
   }
@@ -162,10 +141,8 @@ export default function WorkTeamDetailPage() {
     if (!window.confirm(`Remove ${name} from the team?`)) return
     setBusy(true)
     setErrorMsg('')
-    const nextIds = memberIdsOf(team).filter(id => id !== employeeId)
-    const nextLeader = team.leader_employee_id === employeeId ? null : team.leader_employee_id
     const supabase = createClient()
-    const result = await setWorkTeamMembers(supabase, teamId, nextIds, nextLeader)
+    const result = await removeWorkTeamMember(supabase, teamId, employeeId)
     setBusy(false)
     if (!result.ok) { setErrorMsg(result.message); return }
     await load()
@@ -333,23 +310,24 @@ export default function WorkTeamDetailPage() {
         {busy && <p className="text-text-secondary text-[13px] text-center">Processing…</p>}
       </div>
 
-      {showAddMember && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-surface rounded-xl shadow-lg w-full max-w-sm p-5 space-y-3">
-            <h3 className="font-semibold text-text-primary">Add Member</h3>
-            <select value={selectedEmployeeId} onChange={e => setSelectedEmployeeId(e.target.value)}
-              className="dark-entry w-full appearance-none">
-              <option value="">Select employee…</option>
-              {allEmployees
-                .filter(e => !members.some(m => m.employee_id === e.id))
-                .map(e => (
-                  <option key={e.id} value={e.id}>{e.name} {e.surname}</option>
-                ))
-              }
-            </select>
+      {showAddMember && companyId && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="add-members-title">
+          <div className="bg-surface rounded-xl shadow-lg w-full max-w-md p-5 space-y-3">
+            <h3 id="add-members-title" className="font-semibold text-text-primary">Add members</h3>
+            <EmployeePicker
+              companyId={companyId}
+              multiple
+              autoFocus
+              label="Find people"
+              excludeIds={new Set(members.map(m => m.employee_id))}
+              value={picked}
+              onChange={setPicked}
+            />
             <div className="flex gap-2 justify-end">
-              <button onClick={() => setShowAddMember(false)} className="btn-outlined h-9 px-4 text-[13px]">Cancel</button>
-              <button onClick={addMember} disabled={!selectedEmployeeId || busy} className="btn-primary h-9 px-4 text-[13px]">Add</button>
+              <button onClick={() => { setShowAddMember(false); setPicked([]) }} className="btn-outlined h-9 px-4 text-[13px]">Cancel</button>
+              <button onClick={() => void addMembers()} disabled={picked.length === 0 || busy} className="btn-primary h-9 px-4 text-[13px]">
+                {busy ? 'Adding…' : picked.length > 1 ? `Add ${picked.length} people` : 'Add'}
+              </button>
             </div>
           </div>
         </div>

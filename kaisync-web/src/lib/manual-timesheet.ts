@@ -1,5 +1,6 @@
 /**
- * Same-day manual timesheet. The server inserts the punch pair.
+ * Manual timesheet. The server inserts the punch pair.
+ * A time out earlier than the time in is a night shift that ends the next morning (W5).
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -25,8 +26,19 @@ export function manualTimesheetProblem(input: {
   if (!/^\d{1,2}:\d{2}(:\d{2})?$/.test(input.timeIn) || !/^\d{1,2}:\d{2}(:\d{2})?$/.test(input.timeOut)) {
     return 'Enter time in and time out.'
   }
-  if (input.timeOut <= input.timeIn) return 'Time out must be after time in on the same day.'
+  if (clockMinutes(input.timeOut) === clockMinutes(input.timeIn)) return 'Time out must be different from time in.'
   return null
+}
+
+function clockMinutes(t: string): number {
+  const [h, m] = t.split(':').map(Number)
+  return h * 60 + m
+}
+
+/** True when the shift ends the next day (time out earlier than time in). */
+export function manualTimesheetIsOvernight(timeIn: string, timeOut: string): boolean {
+  if (!/^\d{1,2}:\d{2}/.test(timeIn) || !/^\d{1,2}:\d{2}/.test(timeOut)) return false
+  return clockMinutes(timeOut) < clockMinutes(timeIn)
 }
 
 export async function submitManualTimesheet(

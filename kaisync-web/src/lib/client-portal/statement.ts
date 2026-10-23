@@ -51,7 +51,7 @@ export function parseStatementEntries(raw: unknown): ClientStatementEntry[] {
   })
 }
 
-export function buildClientStatement(entries: ClientStatementEntry[], today = new Date().toISOString().slice(0, 10)): ClientStatement {
+export function buildClientStatement(entries: ClientStatementEntry[], today = localISODate()): ClientStatement {
   let running = 0
   let totalInvoiced = 0
   let totalPaid = 0
@@ -110,3 +110,5 @@ export function clientStatementToCsv(st: ClientStatement, title: string): string
   ]
   return rows.map(r => r.map(csvCell).join(',')).join('\n')
 }
+
+import { localISODate } from '@/lib/utils'

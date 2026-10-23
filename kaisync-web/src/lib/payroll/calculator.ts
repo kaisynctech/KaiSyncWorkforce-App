@@ -77,6 +77,8 @@ export type EmployeeSnapshot = {
   terminationDate?: ISODate | null
   workerType?: string | null
   medicalAidDeduction: number
+  /** People on the employee's medical aid besides themselves (for the PAYE medical credit). */
+  medicalAidDependants?: number | null
   pensionDeduction: number
   unionDeduction: number
   payFullMonthlySalary: boolean
@@ -478,7 +480,12 @@ function addStatutoryDeductions(
       if (emp.payeFixedAmount > 0) {
         paye = emp.payeFixedAmount
       } else {
-        paye = calculateMonthlyPaye(grossPay, emp.dateOfBirth, emp.taxDirectiveRatePercent)
+        // Pension reduces taxable income; medical aid earns the monthly credit (2026/27). Nyarie, 23 Oct 2026.
+        paye = calculateMonthlyPaye(grossPay, emp.dateOfBirth, emp.taxDirectiveRatePercent, {
+          retirementFundMonthly: emp.pensionDeduction,
+          medicalAidMonthly: emp.medicalAidDeduction,
+          medicalAidDependants: emp.medicalAidDependants,
+        })
       }
     }
     if (paye != null && paye > 0) deductions.push({ label: 'PAYE', amount: paye })
@@ -620,10 +627,11 @@ export function calculate(input: CalculationInput): CalculationResult | null {
     earnings.push({ label: overrides.bonusNote?.trim() ? overrides.bonusNote : 'Bonus', amount: bonusAmount })
   }
 
+  // Unpaid leave is one deduction line. It used to be taken off the salary AND added as a
+  // deduction, so net pay lost two days for each unpaid day (23 Oct 2026).
   let unpaidLeaveDeduction = 0
   if (unpaidLeaveDays > 0 && payBasis === 'monthly_salary' && !overrides.waivePenalties) {
-    unpaidLeaveDeduction = unpaidLeaveDays * dailyRate
-    regularPay = Math.max(0, regularPay - unpaidLeaveDeduction)
+    unpaidLeaveDeduction = Math.min(regularPay, round2(unpaidLeaveDays * dailyRate))
   }
 
   const grossPay = regularPay + overtimePay + bonusAmount
@@ -651,11 +659,18 @@ export function calculate(input: CalculationInput): CalculationResult | null {
       payBasis === 'monthly_salary'
         ? monthlySalaryFactor(input.periodStart, input.periodEnd, emp.employmentDate, emp.terminationDate)
         : periodDays / daysInMonth(year, month)
-    addStatutoryDeductions(deductions, policy, emp, grossPay, statutoryFactor, overrides)
+    // UIF and PAYE are worked out on pay after unpaid leave.
+    addStatutoryDeductions(deductions, policy, emp, Math.max(0, grossPay - unpaidLeaveDeduction), statutoryFactor, overrides)
   }
 
-  const totalDeductions = deductions.reduce((s, d) => s + d.amount, 0)
-  const netPay = Math.max(0, grossPay - totalDeductions)
+  // Money is stored and shown in cents. Lines are rounded first so totals add up exactly.
+  for (const line of earnings) line.amount = round2(line.amount)
+  for (const line of deductions) line.amount = round2(line.amount)
+  regularPay = round2(regularPay)
+  const overtimePayCents = round2(overtimePay)
+  const grossPayCents = round2(regularPay + overtimePayCents + round2(bonusAmount))
+  const totalDeductions = round2(deductions.reduce((s, d) => s + d.amount, 0))
+  const netPay = Math.max(0, round2(grossPayCents - totalDeductions))
 
   const noteParts: string[] = []
   if (
@@ -683,7 +698,7 @@ export function calculate(input: CalculationInput): CalculationResult | null {
 
   const result: CalculationResult = {
     payBasis,
-    baseSalary,
+    baseSalary: round2(baseSalary),
     workingDays,
     leaveDays: round2(paidLeaveDays),
     absentDays,
@@ -691,8 +706,8 @@ export function calculate(input: CalculationInput): CalculationResult | null {
     regularHours,
     overtimeHours,
     regularPay,
-    overtimePay,
-    grossPay,
+    overtimePay: overtimePayCents,
+    grossPay: grossPayCents,
     totalDeductions,
     netPay,
     lateCount,

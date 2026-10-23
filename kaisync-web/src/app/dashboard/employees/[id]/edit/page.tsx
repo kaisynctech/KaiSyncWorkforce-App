@@ -84,6 +84,7 @@ export default function EditEmployeePage({
   const [exemptUif, setExemptUif] = useState(false)
   const [payFullMonthlySalary, setPayFullMonthlySalary] = useState(false)
   const [medicalAid, setMedicalAid] = useState('')
+  const [medicalDependants, setMedicalDependants] = useState('')
   const [pension, setPension] = useState('')
   const [union, setUnion] = useState('')
   const [workDays, setWorkDays] = useState('5')
@@ -180,6 +181,7 @@ export default function EditEmployeePage({
     setExemptUif(raw.uif_exempt ?? emp.exempt_from_uif ?? false)
     setPayFullMonthlySalary(Boolean(raw.pay_full_monthly_salary))
     setMedicalAid(emp.medical_aid_deduction?.toString() ?? '')
+    setMedicalDependants(emp.medical_aid_dependants ? String(emp.medical_aid_dependants) : '')
     setPension(emp.pension_deduction?.toString() ?? '')
     setUnion(emp.union_deduction?.toString() ?? '')
     setWorkDays((raw.work_days_weekly ?? emp.work_days_per_week)?.toString() ?? '5')
@@ -255,6 +257,7 @@ export default function EditEmployeePage({
         payeRatePercent: payeRate ? parseFloat(payeRate) : null,
         uifExempt: exemptUif,
         medicalAidDeduction: medicalAid ? parseFloat(medicalAid) : 0,
+        medicalAidDependants: parseInt(medicalDependants, 10) || 0,
         pensionDeduction: pension ? parseFloat(pension) : 0,
         unionDeduction: union ? parseFloat(union) : 0,
         workDaysWeekly: daysNum,
@@ -620,6 +623,9 @@ export default function EditEmployeePage({
           <div className="grid grid-cols-2 gap-3">
             <FormField label="Medical aid">
               <input type="number" value={medicalAid} onChange={e => setMedicalAid(e.target.value)} placeholder="0.00" step="0.01" min="0" className={entryClass} />
+            </FormField>
+            <FormField label="Medical aid dependants" hint="People on the medical aid besides the employee. Used for the PAYE medical credit.">
+              <input type="number" value={medicalDependants} onChange={e => setMedicalDependants(e.target.value)} placeholder="0" step="1" min="0" max="20" className={entryClass} />
             </FormField>
             <FormField label="Pension">
               <input type="number" value={pension} onChange={e => setPension(e.target.value)} placeholder="0.00" step="0.01" min="0" className={entryClass} />

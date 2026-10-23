@@ -17,6 +17,7 @@ import {
   fileToQueuedPhoto,
   shouldQueueIncidentFailure,
 } from '@/lib/incident-queue'
+import { localISODate } from '@/lib/utils'
 
 interface Manager {
   id: string
@@ -48,7 +49,7 @@ interface SiteOption {
 
 const MGMT = ['manager', 'hr', 'hr_admin', 'owner', 'admin']
 
-function todayStr(): string { return new Date().toISOString().split('T')[0] }
+function todayStr(): string { return localISODate() }
 function nowTimeStr(): string {
   const d = new Date()
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`

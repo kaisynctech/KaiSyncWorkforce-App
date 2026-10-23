@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
-import { listEmployeesScoped } from '@/lib/employees'
+import { EmployeePicker, personLabel, type PickedEmployee } from '@/components/EmployeePicker'
 import { SectionCard, FormField, entryClass } from '@/components/SectionCard'
 import { FormSelect } from '@/components/FormSelect'
 import { FormDateInput } from '@/components/FormDateInput'
@@ -23,7 +23,7 @@ function ApplyLeaveContent() {
   const queryEmployeeId = searchParams.get('employeeId')
 
   const [selectedEmployeeId, setSelectedEmployeeId] = useState(queryEmployeeId ?? '')
-  const [employeeOptions, setEmployeeOptions] = useState<{ id: string; label: string }[]>([])
+  const [picked, setPicked] = useState<PickedEmployee[]>([])
   const [employeeName, setEmployeeName] = useState('')
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [leaveSettings, setLeaveSettings] = useState<LeaveSettingsMap>({})
@@ -62,20 +62,7 @@ function ApplyLeaveContent() {
     }
     setCompanyId(member.companyId)
 
-    const empRes = await listEmployeesScoped(
-      supabase,
-      member.companyId,
-      member.employeeId,
-      { activeOnly: true }
-    )
-    if (!empRes.ok) {
-      setError(empRes.message)
-      setLoading(false)
-      return
-    }
-    setEmployeeOptions(
-      empRes.data.map(e => ({ id: e.id, label: `${e.name} ${e.surname}` }))
-    )
+    // The employee picker searches on the server, so nobody's whole staff list is downloaded here.
 
     if (queryEmployeeId) {
       setSelectedEmployeeId(queryEmployeeId)
@@ -190,17 +177,17 @@ function ApplyLeaveContent() {
             />
           </FormField>
         ) : (
-          <FormSelect
-            label="Employee *"
-            value={selectedEmployeeId}
-            onChange={e => setSelectedEmployeeId(e.target.value)}
-            hint="Select who this leave application is for."
-          >
-            <option value="">Select employee…</option>
-            {employeeOptions.map(e => (
-              <option key={e.id} value={e.id}>{e.label}</option>
-            ))}
-          </FormSelect>
+          companyId && (
+            <div className="space-y-1">
+              <EmployeePicker
+                companyId={companyId}
+                label="Employee *"
+                value={picked}
+                onChange={next => { setPicked(next); setSelectedEmployeeId(next[0]?.id ?? '') }}
+              />
+              {picked[0] && <p className="text-[12px] text-text-primary">Applying for {personLabel(picked[0])}</p>}
+            </div>
+          )
         )}
 
         <FormSelect

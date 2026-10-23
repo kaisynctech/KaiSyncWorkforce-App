@@ -3,15 +3,19 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
-import { listEmployeesScoped } from '@/lib/employees'
+import { listWorkTeams, memberIdsOf } from '@/lib/work-teams'
+import { localISODate } from '@/lib/utils'
+import { localDayOf, localDayRangeIso, localTimeOf, repeatDates, shiftTimesIso, WEEKDAYS } from '@/lib/schedule-times'
+import { EmployeePicker, personLabel, type PickedEmployee } from '@/components/EmployeePicker'
 import type { CalendarEvent } from '@/types/database'
 
 type ViewMode = 'day' | 'week'
 type EventType = 'shift' | 'meeting' | 'reminder'
 
-interface EmpOption { id: string; name: string; surname: string }
+type TeamOption = { id: string; name: string; memberIds: string[] }
 
-const todayStr = () => new Date().toISOString().split('T')[0]
+// Local calendar date (it used the UTC date, which is yesterday between 00:00 and 02:00 in South Africa).
+const todayStr = () => localISODate()
 
 const fmtTime = (iso: string) =>
   new Intl.DateTimeFormat('en-ZA', { hour: '2-digit', minute: '2-digit' }).format(new Date(iso))
@@ -33,8 +37,7 @@ function getWeekRange(dateStr: string): { start: string; end: string } {
   mon.setDate(d.getDate() + diffToMon)
   const sun = new Date(mon)
   sun.setDate(mon.getDate() + 6)
-  const fmt = (dt: Date) => dt.toISOString().split('T')[0]
-  return { start: fmt(mon), end: fmt(sun) }
+  return { start: localISODate(mon), end: localISODate(sun) }
 }
 
 function getWeekDays(dateStr: string): string[] {
@@ -42,7 +45,7 @@ function getWeekDays(dateStr: string): string[] {
   return Array.from({ length: 7 }, (_, i) => {
     const d = new Date(start + 'T12:00:00')
     d.setDate(d.getDate() + i)
-    return d.toISOString().split('T')[0]
+    return localISODate(d)
   })
 }
 
@@ -51,19 +54,14 @@ function csvEscape(v: string) {
   return v
 }
 
-function timeFromIso(iso: string | null | undefined, fallback: string): string {
-  if (!iso) return fallback
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return fallback
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
 
 export default function SchedulingPage() {
   const [selectedDate, setSelectedDate] = useState(todayStr())
   const [viewMode, setViewMode] = useState<ViewMode>('day')
   const [events, setEvents] = useState<CalendarEvent[]>([])
-  const [employees, setEmployees] = useState<EmpOption[]>([])
+  /** Names of people on the loaded schedule (looked up only for them, not the whole company). */
+  const [people, setPeople] = useState<Map<string, PickedEmployee>>(new Map())
+  const [teams, setTeams] = useState<TeamOption[]>([])
   const [loading, setLoading] = useState(true)
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [employeeId, setEmployeeId] = useState<string | null>(null)
@@ -78,7 +76,10 @@ export default function SchedulingPage() {
   const [newStart, setNewStart] = useState('09:00')
   const [newEnd, setNewEnd] = useState('10:00')
   const [newDesc, setNewDesc] = useState('')
-  const [newAssignee, setNewAssignee] = useState('')
+  const [assignees, setAssignees] = useState<PickedEmployee[]>([])
+  const [repeatUntil, setRepeatUntil] = useState('')
+  const [repeatDays, setRepeatDays] = useState<Set<number>>(new Set([1, 2, 3, 4, 5]))
+  const [teamToAdd, setTeamToAdd] = useState('')
 
   const load = useCallback(async (date: string, mode: ViewMode) => {
     setLoading(true)
@@ -88,45 +89,61 @@ export default function SchedulingPage() {
     setCompanyId(member.companyId)
     setEmployeeId(member.employeeId)
 
-    let from: string
-    let to: string
-    if (mode === 'week') {
-      const range = getWeekRange(date)
-      from = `${range.start}T00:00:00`
-      to   = `${range.end}T23:59:59`
-    } else {
-      const next = new Date(date + 'T12:00:00')
-      next.setDate(next.getDate() + 1)
-      from = `${date}T00:00:00`
-      to   = `${next.toISOString().split('T')[0]}T00:00:00`
-    }
+    const range = mode === 'week' ? getWeekRange(date) : { start: date, end: date }
+    const { fromIso, toIso } = localDayRangeIso(range.start, range.end)
 
-    const [{ data, error: evErr }, empRes] = await Promise.all([
+    const [{ data, error: evErr }, teamRes] = await Promise.all([
       supabase
         .from('calendar_events')
         .select('*')
         .eq('company_id', member.companyId)
-        .gte('start_time', from)
-        .lt('start_time', to)
+        .gte('start_time', fromIso)
+        .lt('start_time', toIso)
         .order('start_time'),
-      listEmployeesScoped(supabase, member.companyId, member.employeeId, { activeOnly: true }),
+      listWorkTeams(supabase, member.companyId, { activeOnly: true }),
     ])
-    if (evErr) {
-      setError(evErr.message)
-      setEvents([])
-    } else {
-      setEvents((data ?? []) as CalendarEvent[])
-    }
-    if (empRes.ok) {
-      setEmployees(empRes.data.map(e => ({ id: e.id, name: e.name, surname: e.surname })))
-    } else {
-      setError(empRes.message)
-      setEmployees([])
-    }
+    const rows = evErr ? [] : ((data ?? []) as CalendarEvent[])
+    if (evErr) setError(evErr.message)
+    setEvents(rows)
+    if (teamRes.ok) setTeams(teamRes.data.map(t => ({ id: t.id, name: t.name, memberIds: memberIdsOf(t) })))
+    await loadPeople(rows.flatMap(ev => ev.attendee_ids ?? []))
     setLoading(false)
   }, [])
 
   useEffect(() => { void load(selectedDate, viewMode) }, [load, selectedDate, viewMode])
+
+  /** Looks up names and employee numbers for these people (200 at a time) and keeps them. */
+  async function loadPeople(ids: string[]): Promise<PickedEmployee[]> {
+    const wanted = [...new Set(ids)].filter(Boolean)
+    if (wanted.length === 0) return []
+    const supabase = createClient()
+    const found: PickedEmployee[] = []
+    for (let i = 0; i < wanted.length; i += 200) {
+      const { data } = await supabase
+        .from('employees')
+        .select('id, name, surname, employee_number, position, department')
+        .in('id', wanted.slice(i, i + 200))
+      found.push(...((data ?? []) as PickedEmployee[]))
+    }
+    setPeople(prev => {
+      const next = new Map(prev)
+      for (const p of found) next.set(p.id, p)
+      return next
+    })
+    return found
+  }
+
+  async function addTeam(teamId: string) {
+    const team = teams.find(t => t.id === teamId)
+    if (!team) return
+    const already = new Set(assignees.map(a => a.id))
+    const missing = team.memberIds.filter(id => !already.has(id))
+    const known = missing.map(id => people.get(id)).filter((p): p is PickedEmployee => Boolean(p))
+    const toFetch = missing.filter(id => !people.has(id))
+    const fetched = await loadPeople(toFetch)
+    setAssignees(prev => [...prev, ...known, ...fetched])
+    setTeamToAdd('')
+  }
 
   function resetForm() {
     setNewTitle('')
@@ -134,7 +151,10 @@ export default function SchedulingPage() {
     setNewStart('09:00')
     setNewEnd('10:00')
     setNewDesc('')
-    setNewAssignee('')
+    setAssignees([])
+    setRepeatUntil('')
+    setRepeatDays(new Set([1, 2, 3, 4, 5]))
+    setTeamToAdd('')
     setEditingId(null)
     setFormError(null)
   }
@@ -148,19 +168,20 @@ export default function SchedulingPage() {
     setEditingId(ev.id)
     setNewTitle(ev.title)
     setNewType((ev.event_type as EventType) || 'shift')
-    setNewStart(timeFromIso(ev.start_time, '09:00'))
-    setNewEnd(timeFromIso(ev.end_time, '10:00'))
+    setNewStart(localTimeOf(ev.start_time, '09:00'))
+    setNewEnd(localTimeOf(ev.end_time, '10:00'))
     setNewDesc(ev.description ?? '')
-    setNewAssignee(ev.attendee_ids?.[0] ?? '')
+    setAssignees((ev.attendee_ids ?? []).map(id => people.get(id) ?? { id, name: 'Unknown', surname: '' }))
+    setRepeatUntil('')
     setFormError(null)
-    const day = ev.start_time.slice(0, 10)
+    const day = localDayOf(ev.start_time)
     if (day) setSelectedDate(day)
     setShowEditor(true)
   }
 
   function downloadCSV() {
     const headers = ['Title', 'Type', 'Start', 'End', 'Description', 'Attendees']
-    const empMap = new Map(employees.map(e => [e.id, `${e.name} ${e.surname}`]))
+    const empMap = new Map([...people.values()].map(e => [e.id, personLabel(e)]))
     const rows = events.map(ev => {
       const attendees = (ev.attendee_ids ?? [])
         .map(id => empMap.get(id) ?? id.slice(0, 8))
@@ -189,55 +210,59 @@ export default function SchedulingPage() {
     setBusy(true)
     setFormError(null)
     const supabase = createClient()
-    const startIso = `${selectedDate}T${newStart}:00`
-    const endIso = `${selectedDate}T${newEnd}:00`
+    const dates = editingId ? [selectedDate] : repeatDates(selectedDate, repeatUntil, repeatDays)
+    if (dates.length === 0) { setFormError('No days match the repeat settings.'); setBusy(false); return }
+    const attendeeIds = assignees.map(a => a.id)
 
-    if (newAssignee) {
+    // Warn about anyone on approved leave or reported absent on these days.
+    if (attendeeIds.length > 0) {
+      const first = dates[0]
+      const last = dates[dates.length - 1]
       const [{ data: leaveRows }, { data: absenceRows }] = await Promise.all([
         supabase.from('leave_requests')
-          .select('id')
+          .select('employee_id, start_date, end_date')
           .eq('company_id', companyId)
-          .eq('employee_id', newAssignee)
+          .in('employee_id', attendeeIds)
           .eq('status', 'approved')
-          .lte('start_date', selectedDate)
-          .gte('end_date', selectedDate)
-          .limit(1),
+          .lte('start_date', last)
+          .gte('end_date', first),
         supabase.from('daily_absences')
-          .select('id, reason')
+          .select('employee_id, date, reason')
           .eq('company_id', companyId)
-          .eq('employee_id', newAssignee)
-          .eq('date', selectedDate)
-          .limit(1),
+          .in('employee_id', attendeeIds)
+          .in('date', dates),
       ])
-
-      const onLeave = (leaveRows ?? []).length > 0
-      const absent = (absenceRows ?? [])[0] as { id: string; reason: string } | undefined
-      if (onLeave || absent) {
-        const emp = employees.find(e => e.id === newAssignee)
-        const name = emp ? `${emp.name} ${emp.surname}` : 'Employee'
-        const reason = onLeave
-          ? 'on approved leave'
-          : `reported absent (${absent?.reason ?? 'absent'})`
-        const proceed = window.confirm(
-          `${name} is ${reason} on ${selectedDate}. Assign anyway?`,
-        )
-        if (!proceed) { setBusy(false); return }
+      const clashes: string[] = []
+      for (const l of (leaveRows ?? []) as { employee_id: string; start_date: string; end_date: string }[]) {
+        const days = dates.filter(d => d >= l.start_date && d <= l.end_date)
+        if (days.length) clashes.push(`${personLabel(people.get(l.employee_id) ?? { name: 'Someone', surname: '' })} is on leave (${days.join(', ')})`)
+      }
+      for (const a of (absenceRows ?? []) as { employee_id: string; date: string; reason: string }[]) {
+        clashes.push(`${personLabel(people.get(a.employee_id) ?? { name: 'Someone', surname: '' })} is reported absent on ${a.date} (${a.reason})`)
+      }
+      if (clashes.length > 0) {
+        const shown = clashes.slice(0, 8).join('\n')
+        const more = clashes.length > 8 ? `\n…and ${clashes.length - 8} more.` : ''
+        if (!window.confirm(`${shown}${more}\n\nSchedule anyway?`)) { setBusy(false); return }
       }
     }
 
-    const payload = {
-      title: newTitle.trim(),
-      start_time: startIso,
-      end_time: endIso,
-      description: newDesc.trim() || null,
-      event_type: newType,
-      attendee_ids: newAssignee ? [newAssignee] : [],
-    }
+    const rows = dates.map(day => {
+      const { startIso, endIso } = shiftTimesIso(day, newStart, newEnd)
+      return {
+        title: newTitle.trim(),
+        start_time: startIso,
+        end_time: endIso,
+        description: newDesc.trim() || null,
+        event_type: newType,
+        attendee_ids: attendeeIds,
+      }
+    })
 
     if (editingId) {
       const { data, error: updErr } = await supabase
         .from('calendar_events')
-        .update(payload)
+        .update(rows[0])
         .eq('id', editingId)
         .eq('company_id', companyId)
         .select()
@@ -255,25 +280,15 @@ export default function SchedulingPage() {
         )
       }
     } else {
-      const { data, error: insErr } = await supabase
+      const { error: insErr } = await supabase
         .from('calendar_events')
-        .insert({
-          company_id: companyId,
-          created_by: employeeId,
-          ...payload,
-        })
-        .select()
-        .single()
+        .insert(rows.map(r => ({ company_id: companyId, created_by: employeeId, ...r })))
       if (insErr) {
         setFormError(insErr.message)
         setBusy(false)
         return
       }
-      if (data) {
-        setEvents(prev =>
-          [...prev, data as CalendarEvent].sort((a, b) => a.start_time.localeCompare(b.start_time))
-        )
-      }
+      await load(selectedDate, viewMode)
     }
 
     resetForm()
@@ -318,7 +333,9 @@ export default function SchedulingPage() {
 
   const weekDays = viewMode === 'week' ? getWeekDays(selectedDate) : []
   const today = todayStr()
-  const empMap = new Map(employees.map(e => [e.id, `${e.name} ${e.surname}`]))
+  const empMap = new Map([...people.values()].map(e => [e.id, personLabel(e)]))
+  const overnight = shiftTimesIso(selectedDate, newStart, newEnd).overnight
+  const repeatCount = editingId ? 1 : repeatDates(selectedDate, repeatUntil, repeatDays).length
 
   return (
     <div className="h-full flex flex-col">
@@ -345,8 +362,9 @@ export default function SchedulingPage() {
       )}
 
       <div className="px-4 py-2.5 flex items-center gap-3 bg-surface-dark border-b border-divider shrink-0">
-        <label className="text-xs font-medium text-text-secondary">Date:</label>
+        <label htmlFor="schedule-date" className="text-xs font-medium text-text-secondary">Date:</label>
         <input
+          id="schedule-date"
           type="date"
           value={selectedDate}
           onChange={e => setSelectedDate(e.target.value)}
@@ -374,7 +392,7 @@ export default function SchedulingPage() {
         ) : viewMode === 'week' ? (
           <div className="grid gap-px" style={{ gridTemplateColumns: 'repeat(7, minmax(0, 1fr))' }}>
             {weekDays.map(day => {
-              const dayEvents = events.filter(ev => ev.start_time.startsWith(day))
+              const dayEvents = events.filter(ev => localDayOf(ev.start_time) === day)
               const isToday = day === today
               return (
                 <div key={day} className="flex flex-col gap-1 min-h-[120px]">
@@ -454,7 +472,7 @@ export default function SchedulingPage() {
 
       {showEditor && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-surface rounded-xl shadow-lg w-full max-w-sm p-5 space-y-3">
+          <div className="bg-surface rounded-xl shadow-lg w-full max-w-md p-5 space-y-3 max-h-[90vh] overflow-y-auto">
             <h3 className="font-semibold text-text-primary">
               {editingId ? 'Edit Event' : 'New Event'}
             </h3>
@@ -462,14 +480,15 @@ export default function SchedulingPage() {
               <p className="text-[13px] text-error">{formError}</p>
             )}
             <div className="flex flex-col gap-1">
-              <label className="text-xs text-text-secondary">Title *</label>
-              <input value={newTitle} onChange={e => setNewTitle(e.target.value)}
+              <label htmlFor="ev-title" className="text-xs text-text-secondary">Title *</label>
+              <input id="ev-title" value={newTitle} onChange={e => setNewTitle(e.target.value)}
                 placeholder="e.g. Morning shift, Team meeting"
                 className="dark-entry w-full" autoFocus />
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-xs text-text-secondary">Type</label>
+              <label htmlFor="ev-type" className="text-xs text-text-secondary">Type</label>
               <select
+                id="ev-type"
                 value={newType}
                 onChange={e => setNewType(e.target.value as EventType)}
                 className="dark-entry w-full"
@@ -481,36 +500,83 @@ export default function SchedulingPage() {
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div className="flex flex-col gap-1">
-                <label className="text-xs text-text-secondary">Start time</label>
+                <label htmlFor="ev-start" className="text-xs text-text-secondary">Start time</label>
                 <div className="bg-surface-dark rounded-lg px-3 py-1">
-                  <input type="time" value={newStart} onChange={e => setNewStart(e.target.value)}
+                  <input id="ev-start" type="time" value={newStart} onChange={e => setNewStart(e.target.value)}
                     className="bg-transparent text-text-primary outline-none h-9 w-full" />
                 </div>
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-xs text-text-secondary">End time</label>
+                <label htmlFor="ev-end" className="text-xs text-text-secondary">End time</label>
                 <div className="bg-surface-dark rounded-lg px-3 py-1">
-                  <input type="time" value={newEnd} onChange={e => setNewEnd(e.target.value)}
+                  <input id="ev-end" type="time" value={newEnd} onChange={e => setNewEnd(e.target.value)}
                     className="bg-transparent text-text-primary outline-none h-9 w-full" />
                 </div>
               </div>
             </div>
+            {overnight && (
+              <p className="text-[12px] text-text-secondary">Ends the next day (night shift).</p>
+            )}
+            {!editingId && (
+              <fieldset className="flex flex-col gap-1.5 border border-divider rounded-lg p-2">
+                <legend className="text-xs text-text-secondary px-1">Repeat (optional)</legend>
+                <label htmlFor="ev-repeat-until" className="text-xs text-text-secondary">Repeat until</label>
+                <input id="ev-repeat-until" type="date" value={repeatUntil} min={selectedDate}
+                  onChange={e => setRepeatUntil(e.target.value)} className="dark-entry w-full" />
+                {repeatUntil && repeatUntil > selectedDate && (
+                  <div className="flex flex-wrap gap-1" role="group" aria-label="Repeat on these days">
+                    {WEEKDAYS.map(w => {
+                      const on = repeatDays.has(w.day)
+                      return (
+                        <button key={w.day} type="button" aria-pressed={on}
+                          onClick={() => setRepeatDays(prev => {
+                            const next = new Set(prev)
+                            if (next.has(w.day)) next.delete(w.day); else next.add(w.day)
+                            return next
+                          })}
+                          className={`h-8 px-2 rounded text-[12px] border ${on ? 'bg-primary text-white border-primary' : 'border-border text-text-secondary'}`}>
+                          {w.short}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+                <p className="text-[11px] text-text-secondary">
+                  {repeatCount === 1 ? 'One day.' : `${repeatCount} days. Repeats can run up to about 3 months ahead.`}
+                </p>
+              </fieldset>
+            )}
+            {companyId && (
+              <EmployeePicker
+                companyId={companyId}
+                multiple
+                label="Assign to (optional)"
+                value={assignees}
+                onChange={setAssignees}
+              />
+            )}
+            {teams.length > 0 && (
+              <div className="flex flex-col gap-1">
+                <label htmlFor="ev-team" className="text-xs text-text-secondary">Add a whole team</label>
+                <select id="ev-team" value={teamToAdd}
+                  onChange={e => { setTeamToAdd(e.target.value); if (e.target.value) void addTeam(e.target.value) }}
+                  className="dark-entry w-full">
+                  <option value="">Choose a team…</option>
+                  {teams.map(t => (
+                    <option key={t.id} value={t.id}>{t.name} ({t.memberIds.length})</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {assignees.length > 0 && (
+              <p className="text-[12px] text-text-secondary">
+                {assignees.length === 1 ? '1 person' : `${assignees.length} people`} assigned: {assignees.slice(0, 5).map(personLabel).join(', ')}
+                {assignees.length > 5 ? ` and ${assignees.length - 5} more` : ''}
+              </p>
+            )}
             <div className="flex flex-col gap-1">
-              <label className="text-xs text-text-secondary">Assign to (optional)</label>
-              <select
-                value={newAssignee}
-                onChange={e => setNewAssignee(e.target.value)}
-                className="dark-entry w-full"
-              >
-                <option value="">Unassigned</option>
-                {employees.map(e => (
-                  <option key={e.id} value={e.id}>{e.name} {e.surname}</option>
-                ))}
-              </select>
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-text-secondary">Description (optional)</label>
-              <textarea value={newDesc} onChange={e => setNewDesc(e.target.value)}
+              <label htmlFor="ev-desc" className="text-xs text-text-secondary">Description (optional)</label>
+              <textarea id="ev-desc" value={newDesc} onChange={e => setNewDesc(e.target.value)}
                 rows={2} placeholder="Notes…"
                 className="dark-entry w-full resize-none" />
             </div>
@@ -539,7 +605,7 @@ export default function SchedulingPage() {
                   disabled={!newTitle.trim() || busy}
                   className="btn-primary h-9 px-4 text-[13px] disabled:opacity-50"
                 >
-                  {busy ? 'Saving…' : 'Save'}
+                  {busy ? 'Saving…' : repeatCount > 1 ? `Save ${repeatCount} days` : 'Save'}
                 </button>
               </div>
             </div>

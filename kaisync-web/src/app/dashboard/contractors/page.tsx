@@ -22,6 +22,7 @@ import {
 } from '@/lib/list-pagination'
 import type { Contractor, ContractorActionItem } from '@/types/database'
 import * as XLSX from 'xlsx'
+import { localISODate } from '@/lib/utils'
 
 type FilterValue = 'active' | 'inactive' | 'all'
 
@@ -102,7 +103,7 @@ export default function ContractorsPage() {
       .maybeSingle()
     setPerms(await loadPermissions(supabase, member.companyId, me?.access_level))
 
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localISODate()
     const contractorScope = () =>
       supabase
         .from('contractors')
@@ -216,7 +217,7 @@ export default function ContractorsPage() {
     const ws = XLSX.utils.json_to_sheet(rows)
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Contractors')
-    XLSX.writeFile(wb, `contractors_export_${new Date().toISOString().slice(0, 10)}.xlsx`)
+    XLSX.writeFile(wb, `contractors_export_${localISODate()}.xlsx`)
   }
 
   const fmtDate = (d: string) =>

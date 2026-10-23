@@ -4,6 +4,7 @@ import { useMemo } from 'react'
 import type { ContractorPortalSession } from '@/lib/contractor-portal/session'
 import { buildContractorStatement, statementToCsv } from '@/lib/contractor-portal/statement'
 import { moneyZAR, type ContractorPayout } from '@/lib/contractor-portal/types'
+import { localISODate } from '@/lib/utils'
 
 function fmtDate(iso: string): string {
   if (!iso) return '—'
@@ -28,7 +29,7 @@ export function ContractorPortalStatementTab({
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `statement-${session.contractor_code}-${new Date().toISOString().slice(0, 10)}.csv`
+    a.download = `statement-${session.contractor_code}-${localISODate()}.csv`
     a.click()
     URL.revokeObjectURL(url)
   }

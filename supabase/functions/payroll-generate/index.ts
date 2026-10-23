@@ -44,7 +44,7 @@ function json(body: unknown, status = 200) {
 }
 
 const EMP_SELECT =
-  'id, name, surname, is_active, monthly_salary, hourly_rate, daily_rate, daily_hours, pay_by_hour, pay_basis, uif_exempt, paye_rate_percent, paye_fixed_amount, uif_rate_percent, uif_fixed_amount, medical_aid_deduction, pension_deduction, union_deduction, department, cost_center, branch, worker_type, shift_template_id, bank_name, bank_account, bank_branch_code, employment_date, termination_date, date_of_birth, tax_directive_rate_percent, pay_full_monthly_salary, overtime_rate, work_days_weekly, account_type, tax_number'
+  'id, name, surname, is_active, monthly_salary, hourly_rate, daily_rate, daily_hours, pay_by_hour, pay_basis, uif_exempt, paye_rate_percent, paye_fixed_amount, uif_rate_percent, uif_fixed_amount, medical_aid_deduction, medical_aid_dependants, pension_deduction, union_deduction, department, cost_center, branch, worker_type, shift_template_id, bank_name, bank_account, bank_branch_code, employment_date, termination_date, date_of_birth, tax_directive_rate_percent, pay_full_monthly_salary, overtime_rate, work_days_weekly, account_type, tax_number'
 
 type EmployeeRow = EngineEmployee & {
   is_active: boolean
@@ -58,6 +58,9 @@ type RequestBody = {
   period_start: string
   period_end: string
   payment_id?: string
+  /** generate: first person (by id order) in this chunk, and how many to do. */
+  offset?: number
+  limit?: number
   lines?: Record<string, unknown>
   overrides?: {
     payFullBaseSalary?: boolean
@@ -118,8 +121,31 @@ function withWinterstechMeibc(companyId: string | undefined, raw: Record<string,
   }
 }
 
-function totalsFromLines(raw: Record<string, unknown>, companyId?: string) {
-  const source = withWinterstechMeibc(companyId, raw)
+type EmployeeDeductionFields = {
+  medical_aid_deduction?: number | null
+  pension_deduction?: number | null
+  union_deduction?: number | null
+}
+
+/**
+ * The employee's own medical aid / pension / union deductions as payslip lines (same ids as the
+ * payslip screen, kaisync-web/src/lib/payslip-extra-lines.ts). Added once; after that the saved lines count.
+ * Before W5 typed payslips left these out, so the payslip net was higher than it should be.
+ */
+function withEmployeeDeductions(raw: Record<string, unknown>, emp?: EmployeeDeductionFields | null): Record<string, unknown> {
+  if (!emp || raw.employeeDeductionsApplied === true) return raw
+  const existing = parseExtraLines(raw.extraDeductions)
+  const have = new Set(existing.map(line => line.id))
+  const add = [
+    { id: 'emp-medical-aid', label: 'Medical aid', amount: lineAmount(emp.medical_aid_deduction) },
+    { id: 'emp-pension', label: 'Pension', amount: lineAmount(emp.pension_deduction) },
+    { id: 'emp-union', label: 'Union', amount: lineAmount(emp.union_deduction) },
+  ].filter(line => line.amount > 0 && !have.has(line.id))
+  return { ...raw, employeeDeductionsApplied: true, extraDeductions: [...existing, ...add] }
+}
+
+function totalsFromLines(raw: Record<string, unknown>, companyId?: string, emp?: EmployeeDeductionFields | null) {
+  const source = withEmployeeDeductions(withWinterstechMeibc(companyId, raw), emp)
   const regular = lineAmount(source.regular)
   const overtime = lineAmount(source.overtime)
   const bonus = lineAmount(source.bonus)
@@ -141,6 +167,7 @@ function totalsFromLines(raw: Record<string, unknown>, companyId?: string) {
   const saved = {
     regular, overtime, bonus, incentive, refund, uif, paye, loanDeduction, loanBalance, unpaidLeave, unpaidAbsenceDates,
     extraEarnings, extraDeductions, meibcApplied: source.meibcApplied === true,
+    employeeDeductionsApplied: source.employeeDeductionsApplied === true,
   }
   const earnings = [
     { label: 'Regular Earnings', amount: regular },
@@ -164,14 +191,19 @@ function totalsFromLines(raw: Record<string, unknown>, companyId?: string) {
 function payeFromCurrentTables(
   typed: ReturnType<typeof totalsFromLines>,
   engineOvertime: number,
-  dateOfBirth: string | null
+  dateOfBirth: string | null,
+  emp?: EmployeeDeductionFields & { medical_aid_dependants?: number | null } | null
 ) {
   const overtime = typed.overtime > 0 ? typed.overtime : Math.round(Math.max(0, engineOvertime) * 100) / 100
   const extraEarnings = typed.saved.extraEarnings ?? []
   const extraDeductions = typed.saved.extraDeductions ?? []
   const gross = Math.round((typed.regular + overtime + typed.bonus + typed.saved.incentive + typed.saved.refund + sumExtra(extraEarnings)) * 100) / 100
   const flatOnSavedGross = Math.round(typed.gross * 18) / 100
-  const sarsPaye = calculateMonthlyPaye(gross, dateOfBirth)
+  const sarsPaye = calculateMonthlyPaye(gross, dateOfBirth, null, {
+    retirementFundMonthly: emp?.pension_deduction ?? 0,
+    medicalAidMonthly: emp?.medical_aid_deduction ?? 0,
+    medicalAidDependants: emp?.medical_aid_dependants ?? 0,
+  })
   const paye = Math.abs(typed.paye - flatOnSavedGross) < 0.05 ? sarsPaye : typed.paye
   const deductions = Math.round((typed.uif + paye + typed.loanDeduction + typed.unpaidLeave + sumExtra(extraDeductions)) * 100) / 100
   const net = Math.round(Math.max(0, gross - deductions) * 100) / 100
@@ -406,6 +438,70 @@ async function loadYtdPrior(
   return { gross_pay: gross, paye, uif, net_pay: net }
 }
 
+const GENERATE_CHUNK_DEFAULT = 150
+const GENERATE_CHUNK_MAX = 300
+/** Employee ids per `.in()` filter (keeps the request URL short). */
+const IDS_PER_QUERY = 150
+
+type Page<T> = PromiseLike<{ data: T[] | null; error: { message: string } | null }>
+
+/** Every row for these people, 1,000 at a time (the API returns at most 1,000 rows per request). */
+async function fetchForIds<T>(ids: string[], build: (part: string[]) => (from: number, to: number) => Page<T>): Promise<T[]> {
+  const out: T[] = []
+  for (let i = 0; i < ids.length; i += IDS_PER_QUERY) {
+    const page = build(ids.slice(i, i + IDS_PER_QUERY))
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await page(from, from + 999)
+      if (error) throw new Error(error.message)
+      const rows = data ?? []
+      out.push(...rows)
+      if (rows.length < 1000) break
+    }
+  }
+  return out
+}
+
+function groupBy<T>(rows: T[], key: (row: T) => string): Map<string, T[]> {
+  const map = new Map<string, T[]>()
+  for (const row of rows) {
+    const k = key(row)
+    const list = map.get(k)
+    if (list) list.push(row)
+    else map.set(k, [row])
+  }
+  return map
+}
+
+async function runLimited(tasks: (() => Promise<void>)[], concurrency: number): Promise<void> {
+  let next = 0
+  const workers = Array.from({ length: Math.min(concurrency, tasks.length) }, async () => {
+    while (next < tasks.length) {
+      const task = tasks[next++]
+      await task()
+    }
+  })
+  await Promise.all(workers)
+}
+
+/** Same totals as loadYtdPrior, from rows already loaded. */
+function ytdFromRows(rows: { gross_pay: number | null; net_pay: number | null; deductions_breakdown: unknown }[]) {
+  let gross = 0
+  let net = 0
+  let paye = 0
+  let uif = 0
+  for (const row of rows) {
+    gross += Number(row.gross_pay ?? 0)
+    net += Number(row.net_pay ?? 0)
+    const lines = (Array.isArray(row.deductions_breakdown) ? row.deductions_breakdown : []) as { label?: string; amount?: number }[]
+    for (const line of lines) {
+      const label = (line.label ?? '').toLowerCase()
+      if (label === 'paye') paye += Number(line.amount ?? 0)
+      if (label === 'uif') uif += Number(line.amount ?? 0)
+    }
+  }
+  return { gross_pay: gross, paye, uif, net_pay: net }
+}
+
 async function handleGenerate(
   admin: SupabaseClient,
   userClient: SupabaseClient,
@@ -431,32 +527,23 @@ async function handleGenerate(
   if (!settingsRes.ok) return json({ ok: false, error: settingsRes.message }, 400)
   const settings = settingsRes.settings
 
-  const [
-    { data: emps, error: empErr },
-    { data: existing, error: existErr },
-    { data: punches, error: punchErr },
-    templates,
-  ] = await Promise.all([
-    admin.from('employees').select(EMP_SELECT).eq('company_id', companyId).eq('is_active', true),
-    admin
-      .from('payment_approvals')
-      .select('id, employee_id, status, pay_full_base_salary, waive_penalties, manual_paye_override, manual_adjustment, adjustment_note, bonus_amount, bonus_note, payslip_lines, audit_log')
-      .eq('company_id', companyId)
-      .gte('period_start', periodStart)
-      .lte('period_start', periodEnd)
-      .neq('status', 'rejected'),
-    admin
-      .from('time_punches')
-      .select('employee_id, type, date_time')
-      .eq('company_id', companyId)
-      .gte('date_time', `${periodStart}T00:00:00`)
-      .lte('date_time', `${periodEnd}T23:59:59`),
+  // W5: one chunk of people per call (ordered by id). The page calls again with next_offset until
+  // done, showing progress. Before, one call did the whole company with ~6 queries per person
+  // (326 people took 37 s; 10,000 would run past the server time limit).
+  const offset = Math.max(0, Math.floor(Number(body.offset ?? 0)) || 0)
+  const limit = Math.min(GENERATE_CHUNK_MAX, Math.max(1, Math.floor(Number(body.limit ?? GENERATE_CHUNK_DEFAULT)) || GENERATE_CHUNK_DEFAULT))
+
+  const [{ data: emps, error: empErr, count: totalPeople }, templates] = await Promise.all([
+    admin.from('employees').select(EMP_SELECT, { count: 'exact' })
+      .eq('company_id', companyId).eq('is_active', true)
+      .order('id').range(offset, offset + limit - 1),
     loadShiftTemplates(admin, companyId),
   ])
-
   if (empErr) return json({ ok: false, error: empErr.message }, 500)
-  if (existErr) return json({ ok: false, error: existErr.message }, 500)
-  if (punchErr) return json({ ok: false, error: punchErr.message }, 500)
+  const chunk = (emps ?? []) as EmployeeRow[]
+  const ids = chunk.map(e => e.id)
+  const total = totalPeople ?? offset + chunk.length
+  const nextOffset = offset + chunk.length < total && chunk.length > 0 ? offset + chunk.length : null
 
   type ExistingPay = {
     id: string
@@ -472,36 +559,107 @@ async function handleGenerate(
     payslip_lines: Record<string, unknown> | null
     audit_log: unknown
   }
-  const existingByEmployee = new Map<string, ExistingPay>()
-  for (const row of (existing ?? []) as ExistingPay[]) {
-    const prev = existingByEmployee.get(row.employee_id)
-    if (!prev || (prev.status !== 'pending' && row.status === 'pending')) {
-      existingByEmployee.set(row.employee_id, row)
-    }
+  type PriorSlip = { employee_id: string; period_start: string; payslip_lines: Record<string, unknown> | null; pay_full_base_salary: boolean | null; waive_penalties: boolean | null }
+  type LeaveRow = { employee_id: string; leave_type: string | null; start_date: string; end_date: string; total_days: number | null; half_day_start: boolean | null; half_day_end: boolean | null }
+  type SalaryRow = { employee_id: string; effective_date: string; monthly_salary: number | null; hourly_rate: number | null; daily_rate: number | null; created_at: string | null }
+  type YtdRow = { employee_id: string; gross_pay: number | null; net_pay: number | null; deductions_breakdown: unknown }
+  type AbsenceRow = { employee_id: string; date: string }
+
+  const year = periodStart.slice(0, 4)
+  const priorFrom = `${Number(year) - 2}${periodStart.slice(4)}`
+  let existing: ExistingPay[], punchRows: PunchLike[], leaveRows: LeaveRow[], salaryRows: SalaryRow[]
+  let ytdRows: YtdRow[], absenceRows: AbsenceRow[], priorRows: PriorSlip[]
+  try {
+    ;[existing, punchRows, leaveRows, salaryRows, ytdRows, absenceRows, priorRows] = await Promise.all([
+      fetchForIds<ExistingPay>(ids, part => (from, to) => admin.from('payment_approvals')
+        .select('id, employee_id, status, pay_full_base_salary, waive_penalties, manual_paye_override, manual_adjustment, adjustment_note, bonus_amount, bonus_note, payslip_lines, audit_log')
+        .eq('company_id', companyId).in('employee_id', part)
+        .gte('period_start', periodStart).lte('period_start', periodEnd).neq('status', 'rejected')
+        .order('id').range(from, to)),
+      fetchForIds<PunchLike>(ids, part => (from, to) => admin.from('time_punches')
+        .select('employee_id, type, date_time')
+        .eq('company_id', companyId).in('employee_id', part)
+        .gte('date_time', `${periodStart}T00:00:00`).lte('date_time', `${periodEnd}T23:59:59`)
+        .order('id').range(from, to)),
+      fetchForIds<LeaveRow>(ids, part => (from, to) => admin.from('leave_requests')
+        .select('employee_id, leave_type, start_date, end_date, total_days, half_day_start, half_day_end')
+        .eq('company_id', companyId).in('employee_id', part).eq('status', 'approved')
+        .lte('start_date', periodEnd).gte('end_date', periodStart)
+        .order('id').range(from, to)),
+      fetchForIds<SalaryRow>(ids, part => (from, to) => admin.from('employee_salary_history')
+        .select('employee_id, effective_date, monthly_salary, hourly_rate, daily_rate, created_at')
+        .eq('company_id', companyId).in('employee_id', part)
+        .order('id').range(from, to)),
+      fetchForIds<YtdRow>(ids, part => (from, to) => admin.from('payment_approvals')
+        .select('employee_id, gross_pay, net_pay, deductions_breakdown')
+        .eq('company_id', companyId).in('employee_id', part)
+        .gte('period_start', `${year}-01-01`).lt('period_start', periodStart)
+        .in('status', ['approved', 'paid', 'pending'])
+        .order('id').range(from, to)),
+      fetchForIds<AbsenceRow>(ids, part => (from, to) => admin.from('daily_absences')
+        .select('employee_id, date')
+        .eq('company_id', companyId).in('employee_id', part)
+        .gte('date', periodStart).lte('date', periodEnd)
+        .order('id').range(from, to)),
+      // Lines carried from the person's latest earlier payslip (looked back two years).
+      fetchForIds<PriorSlip>(ids, part => (from, to) => admin.from('payment_approvals')
+        .select('employee_id, period_start, payslip_lines, pay_full_base_salary, waive_penalties')
+        .eq('company_id', companyId).in('employee_id', part)
+        .gte('period_start', priorFrom).lt('period_start', periodStart)
+        .order('id').range(from, to)),
+    ])
+  } catch (err) {
+    return json({ ok: false, error: err instanceof Error ? err.message : String(err) }, 500)
   }
-  const punchRows = (punches ?? []) as PunchLike[]
+
+  const existingByEmployee = new Map<string, ExistingPay>()
+  for (const row of existing) {
+    const prev = existingByEmployee.get(row.employee_id)
+    if (!prev || (prev.status !== 'pending' && row.status === 'pending')) existingByEmployee.set(row.employee_id, row)
+  }
+  const punchesBy = groupBy(punchRows, r => r.employee_id)
+  const leaveBy = groupBy(leaveRows, r => r.employee_id)
+  const salaryBy = groupBy(salaryRows, r => r.employee_id)
+  const ytdBy = groupBy(ytdRows, r => r.employee_id)
+  const absenceBy = groupBy(absenceRows, r => r.employee_id)
+  const priorBy = new Map<string, PriorSlip>()
+  for (const row of priorRows) {
+    const prev = priorBy.get(row.employee_id)
+    if (!prev || row.period_start > prev.period_start) priorBy.set(row.employee_id, row)
+  }
+
   let generated = 0
   let updated = 0
   let skipped = 0
   const errors: string[] = []
+  const updates: (() => Promise<void>)[] = []
+  const inserts: { name: string; row: Record<string, unknown> }[] = []
 
-  for (const raw of (emps ?? []) as EmployeeRow[]) {
-    if (!isEligibleForPeriod(raw, periodStart, periodEnd)) {
-      skipped++
-      continue
-    }
+  for (const raw of chunk) {
+    if (!isEligibleForPeriod(raw, periodStart, periodEnd)) { skipped++; continue }
     const existingPay = existingByEmployee.get(raw.id)
-    if (existingPay && existingPay.status !== 'pending') {
-      skipped++
-      continue
-    }
+    if (existingPay && existingPay.status !== 'pending') { skipped++; continue }
 
-    const [leaveRecords, salaryHistory, ytdPrior, absences] = await Promise.all([
-      loadLeaveRecordsInPeriod(admin, companyId, raw.id, periodStart, periodEnd),
-      loadSalaryHistory(admin, companyId, raw.id),
-      loadYtdPrior(admin, companyId, raw.id, periodStart),
-      loadAbsencesInPeriod(admin, companyId, raw.id, periodStart, periodEnd),
-    ])
+    const leaveRecords: LeaveSnapshot[] = (leaveBy.get(raw.id) ?? []).map(row => ({
+      leaveType: row.leave_type ?? 'Annual Leave',
+      startDate: row.start_date,
+      endDate: row.end_date,
+      halfDayStart: Boolean(row.half_day_start),
+      halfDayEnd: Boolean(row.half_day_end),
+      totalDays: Number(row.total_days ?? 0),
+      isApproved: true,
+    }))
+    const salaryHistory: SalaryHistoryEntry[] = (salaryBy.get(raw.id) ?? [])
+      .map(row => ({
+        effective_date: row.effective_date,
+        monthly_salary: Number(row.monthly_salary ?? 0),
+        hourly_rate: Number(row.hourly_rate ?? 0),
+        daily_rate: Number(row.daily_rate ?? 0),
+        created_at: row.created_at ?? null,
+      }))
+      .sort((a, b) => (a.effective_date < b.effective_date ? 1 : a.effective_date > b.effective_date ? -1 : 0))
+    const ytdPrior = ytdFromRows(ytdBy.get(raw.id) ?? [])
+    const absences: AbsenceSnapshot[] = (absenceBy.get(raw.id) ?? []).map(row => ({ date: row.date }))
 
     const shiftTemplate =
       (raw.shift_template_id ? templates.byId.get(raw.shift_template_id) : null) ??
@@ -522,7 +680,7 @@ async function handleGenerate(
     const slip = calculatePayslip({
       employee: raw,
       settings,
-      punches: punchRows,
+      punches: punchesBy.get(raw.id) ?? [],
       periodStart,
       periodEnd,
       overrides,
@@ -532,10 +690,7 @@ async function handleGenerate(
       salaryHistory,
       ytdPrior,
     })
-    if (!slip) {
-      skipped++
-      continue
-    }
+    if (!slip) { skipped++; continue }
 
     const figures = {
       period_start: slip.period_start,
@@ -560,13 +715,14 @@ async function handleGenerate(
       policy_snapshot: slip.policy_snapshot,
       ytd_json: slip.ytd_json,
     }
+    const who = `${raw.name} ${raw.surname}`
 
     if (existingPay) {
       const priorAudit = Array.isArray(existingPay.audit_log) ? existingPay.audit_log : []
       const typed = existingPay.payslip_lines && typeof existingPay.payslip_lines === 'object'
-        ? payeFromCurrentTables(totalsFromLines(existingPay.payslip_lines, companyId), slip.overtime_pay, raw.date_of_birth ?? null)
+        ? payeFromCurrentTables(totalsFromLines(existingPay.payslip_lines, companyId, raw), slip.overtime_pay, raw.date_of_birth ?? null, raw)
         : null
-      const { error: updateErr } = await admin.from('payment_approvals').update({
+      const patch = {
         ...figures,
         ...(typed
           ? {
@@ -588,63 +744,69 @@ async function handleGenerate(
           ...priorAudit,
           { action: 'refreshed', detail: `Month ${periodStart} to ${periodEnd} by user ${actorUserId}`, at: new Date().toISOString() },
         ],
-      }).eq('id', existingPay.id).eq('company_id', companyId)
-      if (updateErr) errors.push(`${raw.name} ${raw.surname}: ${updateErr.message}`)
-      else updated++
+      }
+      updates.push(async () => {
+        const { error } = await admin.from('payment_approvals').update(patch).eq('id', existingPay.id).eq('company_id', companyId)
+        if (error) errors.push(`${who}: ${error.message}`)
+        else updated++
+      })
       continue
     }
 
-    const { data: priorSlip } = await admin
-      .from('payment_approvals')
-      .select('payslip_lines, pay_full_base_salary, waive_penalties')
-      .eq('company_id', companyId)
-      .eq('employee_id', slip.employee_id)
-      .lt('period_start', periodStart)
-      .order('period_start', { ascending: false })
-      .limit(1)
-      .maybeSingle()
+    const priorSlip = priorBy.get(raw.id)
     const carried = priorSlip?.payslip_lines && typeof priorSlip.payslip_lines === 'object'
-      ? totalsFromLines(priorSlip.payslip_lines as Record<string, unknown>, companyId)
+      ? totalsFromLines(priorSlip.payslip_lines, companyId, raw)
       : null
-
-    const { error: insertErr } = await admin.from('payment_approvals').insert({
-      ...figures,
-      ...(carried
-        ? {
-            regular_pay: carried.regular,
-            overtime_pay: carried.overtime,
-            base_salary: carried.regular,
-            gross_pay: carried.gross,
-            deductions: carried.deductions,
-            net_pay: carried.net,
-            bonus_amount: carried.bonus,
-            manual_adjustment: carried.loanDeduction,
-            manual_paye_override: carried.paye,
-            earnings_breakdown: carried.earnings,
-            deductions_breakdown: carried.deductionLines,
-            payslip_lines: { ...carried.saved, unpaidAbsenceDates: [] },
-            pay_full_base_salary: priorSlip?.pay_full_base_salary ?? false,
-            waive_penalties: priorSlip?.waive_penalties ?? false,
-          }
-        : {}),
-      company_id: companyId,
-      employee_id: slip.employee_id,
-      audit_log: [
-        ...slip.audit_log,
-        { action: 'generated', detail: `By user ${actorUserId} via payroll-generate EF`, at: new Date().toISOString() },
-      ],
-      status: 'pending',
-      shared_with_employee: false,
+    inserts.push({
+      name: who,
+      row: {
+        ...figures,
+        ...(carried
+          ? {
+              regular_pay: carried.regular,
+              overtime_pay: carried.overtime,
+              base_salary: carried.regular,
+              gross_pay: carried.gross,
+              deductions: carried.deductions,
+              net_pay: carried.net,
+              bonus_amount: carried.bonus,
+              manual_adjustment: carried.loanDeduction,
+              manual_paye_override: carried.paye,
+              earnings_breakdown: carried.earnings,
+              deductions_breakdown: carried.deductionLines,
+              payslip_lines: { ...carried.saved, unpaidAbsenceDates: [] },
+              pay_full_base_salary: priorSlip?.pay_full_base_salary ?? false,
+              waive_penalties: priorSlip?.waive_penalties ?? false,
+            }
+          : {}),
+        company_id: companyId,
+        employee_id: slip.employee_id,
+        audit_log: [
+          ...slip.audit_log,
+          { action: 'generated', detail: `By user ${actorUserId} via payroll-generate EF`, at: new Date().toISOString() },
+        ],
+        status: 'pending',
+        shared_with_employee: false,
+      },
     })
-
-    if (insertErr) {
-      errors.push(`${raw.name} ${raw.surname}: ${insertErr.message}`)
-    } else {
-      generated++
-    }
   }
 
-  return json({ ok: true, generated, updated, skipped, errors })
+  // New payslips: one insert for the chunk; if that fails, one by one so a single bad row
+  // does not stop everyone else.
+  if (inserts.length > 0) {
+    const { error } = await admin.from('payment_approvals').insert(inserts.map(i => i.row))
+    if (!error) generated += inserts.length
+    else {
+      await runLimited(inserts.map(item => async () => {
+        const { error: oneErr } = await admin.from('payment_approvals').insert(item.row)
+        if (oneErr) errors.push(`${item.name}: ${oneErr.message}`)
+        else generated++
+      }), 8)
+    }
+  }
+  await runLimited(updates, 8)
+
+  return json({ ok: true, generated, updated, skipped, errors, total, processed: offset + chunk.length, next_offset: nextOffset })
 }
 
 async function handleRecalculate(
@@ -825,14 +987,14 @@ async function handleSaveLines(
   if (lockErr) return json({ ok: false, error: lockErr.message }, 500)
   if (lockRow) return json({ ok: false, error: 'This payroll period is locked.' }, 409)
 
-  const totals = totalsFromLines(body.lines, companyId)
   const { data: emp, error: empErr } = await admin
     .from('employees')
-    .select('work_days_weekly, daily_hours, daily_rate, hourly_rate')
+    .select('work_days_weekly, daily_hours, daily_rate, hourly_rate, medical_aid_deduction, pension_deduction, union_deduction')
     .eq('id', payment.employee_id)
     .eq('company_id', companyId)
     .maybeSingle()
   if (empErr) return json({ ok: false, error: empErr.message }, 500)
+  const totals = totalsFromLines(body.lines, companyId, emp as EmployeeDeductionFields | null)
 
   const daily = Number(emp?.daily_rate) || 0
   const hourly = Number(emp?.hourly_rate) || 0

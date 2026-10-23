@@ -15,6 +15,7 @@ import type {
   StayStatus,
   StaySyncStatus,
 } from '@/types/database'
+import { localISODate } from '@/lib/utils'
 
 export const CHANNEL_PROVIDERS: { value: ChannelProvider; label: string }[] = [
   { value: 'manual', label: 'Manual / placeholder' },
@@ -416,7 +417,7 @@ export async function syncIcalForConnection(
     return { ok: false, message: msg }
   }
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localISODate()
   const seenUidsByUnit = new Map<string, Set<string>>()
 
   for (const mapping of activeMaps) {

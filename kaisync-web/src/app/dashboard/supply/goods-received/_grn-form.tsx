@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { roundFinancial } from '@/lib/finance-calc'
+import { localISODate } from '@/lib/utils'
 
 interface Po { id: string; po_number: string | null; supplier_id: string | null }
 interface Employee { id: string; name: string; surname: string }
@@ -39,7 +40,7 @@ export default function GrnForm({ grnId }: { grnId?: string }) {
   const [employees, setEmployees] = useState<Employee[]>([])
   const [lines, setLines] = useState<DraftGrnLine[]>([])
   const [poId, setPoId] = useState(prePoId ?? '')
-  const [receivedDate, setReceivedDate] = useState(new Date().toISOString().slice(0, 10))
+  const [receivedDate, setReceivedDate] = useState(localISODate())
   const [receivedBy, setReceivedBy] = useState('')
   const [deliveryNoteNum, setDeliveryNoteNum] = useState('')
   const [notes, setNotes] = useState('')

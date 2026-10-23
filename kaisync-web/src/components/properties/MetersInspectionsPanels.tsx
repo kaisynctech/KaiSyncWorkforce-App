@@ -10,6 +10,7 @@ import type {
   PropertyMeterReading,
   Unit,
 } from '@/types/database'
+import { localISODate } from '@/lib/utils'
 
 const METER_TYPES: MeterType[] = ['electricity', 'water', 'gas', 'other']
 const INSP_TYPES: InspectionType[] = ['move_in', 'move_out', 'routine', 'general', 'other']
@@ -52,7 +53,7 @@ export function MetersPanel({
 
   const [readingMeterId, setReadingMeterId] = useState<string | null>(null)
   const [readingValue, setReadingValue] = useState('')
-  const [readingDate, setReadingDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [readingDate, setReadingDate] = useState(() => localISODate())
   const [readingNotes, setReadingNotes] = useState('')
 
   const unitLabel = (id: string | null) => {
@@ -102,7 +103,7 @@ export function MetersPanel({
                         onClick={() => {
                           setReadingMeterId(m.id)
                           setReadingValue('')
-                          setReadingDate(new Date().toISOString().slice(0, 10))
+                          setReadingDate(localISODate())
                           setReadingNotes('')
                         }}
                         className="text-[12px] text-primary hover:underline"
@@ -221,7 +222,7 @@ export function InspectionsPanel({
 }) {
   const [show, setShow] = useState(false)
   const [type, setType] = useState<InspectionType>('routine')
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [date, setDate] = useState(() => localISODate())
   const [result, setResult] = useState<InspectionResult>('pass')
   const [unitId, setUnitId] = useState('')
   const [inspector, setInspector] = useState('')

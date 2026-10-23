@@ -13,6 +13,7 @@ import {
 } from '@/lib/contractor-payout-gate'
 import { isContractorKind } from '@/lib/partner-kinds'
 import type { ContractorPayout } from '@/lib/finance-types'
+import { localISODate } from '@/lib/utils'
 
 type ContractorOpt = {
   id: string
@@ -147,7 +148,7 @@ export default function ContractorPayoutsPage() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `eft-payouts-${new Date().toISOString().slice(0, 10)}.csv`
+    a.download = `eft-payouts-${localISODate()}.csv`
     a.click()
     URL.revokeObjectURL(url)
   }

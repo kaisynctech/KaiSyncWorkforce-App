@@ -35,6 +35,7 @@ import {
   type ProductionProductType,
   type ProductionUnit,
 } from '@/types/farms'
+import { localISODate } from '@/lib/utils'
 
 type Tab = 'overview' | 'land' | 'livestock' | 'animals' | 'events' | 'plantings' | 'production' | 'diary' | 'health' | 'inputs'
 
@@ -100,7 +101,7 @@ function FarmDetailInner() {
   const [eGroup, setEGroup] = useState('')
   const [eType, setEType] = useState<LivestockEventType>('death')
   const [eQty, setEQty] = useState('1')
-  const [eDate, setEDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [eDate, setEDate] = useState(() => localISODate())
   const [eNotes, setENotes] = useState('')
   const [eToLand, setEToLand] = useState('')
 
@@ -120,7 +121,7 @@ function FarmDetailInner() {
   const [pLand, setPLand] = useState('')
   const [pArea, setPArea] = useState('')
   const [pCount, setPCount] = useState('')
-  const [pPlanted, setPPlanted] = useState(() => new Date().toISOString().slice(0, 10))
+  const [pPlanted, setPPlanted] = useState(() => localISODate())
   const [pUnit, setPUnit] = useState<FarmQtyUnit>('kg')
 
   // Production lot form
@@ -297,7 +298,7 @@ function FarmDetailInner() {
       land_unit_id: gLand || null,
       status: 'active',
       created_by: employeeId,
-      acquired_at: new Date().toISOString().slice(0, 10),
+      acquired_at: localISODate(),
     }).select('id').single()
     if (e || !created) {
       setBusy(false)
@@ -310,7 +311,7 @@ function FarmDetailInner() {
         farm_id: id,
         group_id: created.id,
         event_type: 'intake',
-        event_date: new Date().toISOString().slice(0, 10),
+        event_date: localISODate(),
         quantity: headcount,
         notes: 'Initial intake',
         recorded_by: employeeId,

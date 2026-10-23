@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { recordInputUsage } from '@/lib/farms'
+import { localISODate } from '@/lib/utils'
 import {
   HEALTH_EVENT_LABELS,
   INPUT_UNITS,
@@ -56,14 +57,14 @@ export function FarmWave3aPanels(props: Props) {
   const [showHealth, setShowHealth] = useState(false)
   const [showInput, setShowInput] = useState(false)
 
-  const [dDate, setDDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [dDate, setDDate] = useState(() => localISODate())
   const [dTitle, setDTitle] = useState('')
   const [dBody, setDBody] = useState('')
   const [dGroup, setDGroup] = useState('')
   const [dLand, setDLand] = useState('')
 
   const [hType, setHType] = useState<FarmHealthEventType>('treatment')
-  const [hDate, setHDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [hDate, setHDate] = useState(() => localISODate())
   const [hGroup, setHGroup] = useState('')
   const [hAnimal, setHAnimal] = useState('')
   const [hProduct, setHProduct] = useState('')
@@ -73,7 +74,7 @@ export function FarmWave3aPanels(props: Props) {
   const [hNotes, setHNotes] = useState('')
 
   const [iType, setIType] = useState<FarmInputUsageType>('feed')
-  const [iDate, setIDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [iDate, setIDate] = useState(() => localISODate())
   const [iQty, setIQty] = useState('1')
   const [iUnit, setIUnit] = useState<FarmInputUnit>('kg')
   const [iProduct, setIProduct] = useState('')

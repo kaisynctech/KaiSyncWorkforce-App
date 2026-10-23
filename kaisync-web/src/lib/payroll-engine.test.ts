@@ -124,3 +124,39 @@ describe('calculatePayslip', () => {
     expect(slip!.deductions_breakdown.find(d => d.label === 'PAYE')?.amount).toBe(1000)
   })
 })
+
+describe('fixes found on Ironvale (23 Oct 2026)', () => {
+  const noTax: PayrollSettings = { ...settings, uif_enabled: false, paye_enabled: false }
+
+  it('one unpaid leave day comes off net pay once', () => {
+    const slip = calculatePayslip({
+      employee: { ...emp, monthly_salary: 21670, medical_aid_deduction: 0, work_days_weekly: 5 } as never,
+      settings: noTax, punches: [], periodStart: '2026-08-01', periodEnd: '2026-08-31', unpaidLeaveDays: 1,
+    })
+    expect(slip!.gross_pay).toBe(21670)
+    expect(slip!.net_pay).toBe(20669.85)
+  })
+
+  it('day-rate staff are paid per day, not per hour', () => {
+    const day = { ...emp, monthly_salary: 0, hourly_rate: 51.63, daily_rate: 413, pay_by_hour: true, pay_basis: 'daily', medical_aid_deduction: 0 }
+    const punches = [
+      { employee_id: 'e1', type: 'in', date_time: '2026-10-19T08:00:00Z' },
+      { employee_id: 'e1', type: 'out', date_time: '2026-10-19T16:00:00Z' },
+      { employee_id: 'e1', type: 'in', date_time: '2026-10-20T08:00:00Z' },
+      { employee_id: 'e1', type: 'out', date_time: '2026-10-20T16:00:00Z' },
+    ]
+    const slip = calculatePayslip({ employee: day as never, settings: noTax, punches, periodStart: '2026-10-01', periodEnd: '2026-10-31' })
+    expect(slip!.pay_basis).toBe('daily')
+    expect(slip!.gross_pay).toBe(826)
+  })
+
+  it('money is in whole cents', () => {
+    const hourly = { ...emp, monthly_salary: 0, hourly_rate: 51.63, daily_rate: 0, daily_hours: 8.25, pay_by_hour: true, pay_basis: 'hourly', medical_aid_deduction: 0 }
+    const punches = [
+      { employee_id: 'e1', type: 'in', date_time: '2026-10-19T08:00:00Z' },
+      { employee_id: 'e1', type: 'out', date_time: '2026-10-19T16:15:00Z' },
+    ]
+    const slip = calculatePayslip({ employee: hourly as never, settings, punches, periodStart: '2026-10-01', periodEnd: '2026-10-31' })
+    for (const v of [slip!.gross_pay, slip!.deductions, slip!.net_pay]) expect(Math.round(v * 100) / 100).toBe(v)
+  })
+})

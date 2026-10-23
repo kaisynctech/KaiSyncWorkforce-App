@@ -21,6 +21,7 @@ import { ModalShell } from '@/components/ui/ModalShell'
 import { PROPERTY_KINDS, propertyKindLabel } from '@/lib/properties'
 import { paginateSlice, PROPERTY_LIST_PAGE_SIZE, totalPages } from '@/lib/property-list'
 import type { PropertyKind, Site } from '@/types/database'
+import { localISODate } from '@/lib/utils'
 
 type SiteRow = Site & {
   units?: { count: number }[] | { count: number } | null
@@ -85,7 +86,7 @@ export default function PropertiesPage() {
       .maybeSingle()
     setPerms(await loadPermissions(supabase, member.companyId, me?.access_level))
 
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localISODate()
     const [sRes, statsRes, eRes, lRes, invRes] = await Promise.all([
       supabase
         .from('sites')

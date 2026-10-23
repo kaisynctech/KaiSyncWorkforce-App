@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { annualTaxThreshold, calculateAnnualTax, calculateMonthlyPaye, isBelowAnnualTaxThreshold } from './sars-paye'
+import { annualTaxThreshold, calculateAnnualTax, calculateMonthlyPaye, deductibleRetirementMonthly, isBelowAnnualTaxThreshold, medicalTaxCreditMonthly } from './sars-paye'
 
 describe('calculateAnnualTax', () => {
   it('applies the first bracket rate from zero', () => {
@@ -53,5 +53,29 @@ describe('calculateMonthlyPaye', () => {
 
   it('returns 0 for non-positive income', () => {
     expect(calculateMonthlyPaye(0)).toBe(0)
+  })
+})
+
+describe('pension and medical aid (2026/27, added 23 Oct 2026)', () => {
+  it('Ironvale foreman: R32,500, R1,200 pension, medical aid with no dependants', () => {
+    expect(calculateMonthlyPaye(32_500, null, null)).toBe(5359.75)
+    expect(calculateMonthlyPaye(32_500, null, null, { retirementFundMonthly: 1200 })).toBe(5019)
+    expect(calculateMonthlyPaye(32_500, null, null, { retirementFundMonthly: 1200, medicalAidMonthly: 1850 })).toBe(4643)
+  })
+  it('medical credits: R376 main, R376 first dependant, R254 each further dependant', () => {
+    expect(medicalTaxCreditMonthly(0, 3)).toBe(0)
+    expect(medicalTaxCreditMonthly(1500, 0)).toBe(376)
+    expect(medicalTaxCreditMonthly(1500, 1)).toBe(752)
+    expect(medicalTaxCreditMonthly(1500, 3)).toBe(1260)
+  })
+  it('retirement deduction is capped at 27.5% of pay', () => {
+    expect(deductibleRetirementMonthly(10_000, 5_000)).toBe(2750)
+    expect(deductibleRetirementMonthly(10_000, 500)).toBe(500)
+  })
+  it('credits never make PAYE negative', () => {
+    expect(calculateMonthlyPaye(9_000, null, null, { medicalAidMonthly: 2000, medicalAidDependants: 4 })).toBe(0)
+  })
+  it('a tax directive still overrides everything', () => {
+    expect(calculateMonthlyPaye(20_000, null, 25, { retirementFundMonthly: 2000, medicalAidMonthly: 1000 })).toBe(5000)
   })
 })

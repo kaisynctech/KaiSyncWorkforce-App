@@ -9,6 +9,7 @@ import { recordInvoicePayment } from '@/lib/finance-api'
 import { nightsBetween } from '@/lib/property-stays'
 import { sumStayExtras } from '@/lib/stay-extras'
 import type { PropertyStay, StayDepositStatus } from '@/types/database'
+import { localISODate } from '@/lib/utils'
 
 export type StayCharge = {
   nights: number
@@ -176,7 +177,7 @@ export async function createStayCheckoutInvoice(
     p_company_id: input.companyId,
   })
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localISODate()
   const now = new Date().toISOString()
   const { data: inv, error } = await supabase
     .from('finance_invoices')

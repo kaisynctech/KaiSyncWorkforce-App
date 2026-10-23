@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { fmtMoney } from '@/lib/finance-calc'
 import type { ProjectFinancialSummary, ProjectCostEntry, CostType, CostCategory } from '@/types/commercial'
+import { localISODate } from '@/lib/utils'
 
 interface Props {
   projectId: string
@@ -72,7 +73,7 @@ export function ProjectFinancialsTab({ projectId, companyId }: Props) {
   const [newCategory, setNewCategory] = useState<CostCategory>('materials')
   const [newQty, setNewQty] = useState('1')
   const [newUnitCost, setNewUnitCost] = useState('')
-  const [newCostDate, setNewCostDate] = useState(new Date().toISOString().slice(0, 10))
+  const [newCostDate, setNewCostDate] = useState(localISODate())
   const [newNotes, setNewNotes] = useState('')
 
   function showToast(msg: string) {

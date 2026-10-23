@@ -39,6 +39,8 @@ export type EngineEmployee = {
   uif_exempt: boolean | null
   paye_rate_percent: number | null
   medical_aid_deduction: number | null
+  /** People on the medical aid besides the employee (PAYE medical credit). */
+  medical_aid_dependants?: number | null
   pension_deduction: number | null
   union_deduction: number | null
   department: string | null
@@ -97,10 +99,14 @@ export type EnginePayslip = {
 export { sumPunchHours }
 
 function mapPayBasisIn(emp: EngineEmployee): PayBasis | undefined {
-  if (emp.pay_by_hour) return 'hourly'
   const raw = (emp.pay_basis ?? '').toLowerCase()
+  // "daily" does not contain "day", so test for both spellings.
+  const isDaily = raw.includes('daily') || raw.includes('day')
+  // "Pay by hour/day" covers both hourly and day-rate staff; pay_basis says which.
+  // It used to return hourly for both, so day-rate staff were paid by the hour (23 Oct 2026).
+  if (emp.pay_by_hour) return isDaily ? 'daily' : 'hourly'
   if (raw.includes('hour')) return 'hourly'
-  if (raw.includes('day')) return 'daily'
+  if (isDaily) return 'daily'
   if (raw.includes('month') || raw.includes('salary')) return 'monthly_salary'
   return undefined
 }
@@ -125,6 +131,7 @@ function buildEmployeeSnapshot(emp: EngineEmployee, dailyHours: number): Employe
     terminationDate: emp.termination_date ?? null,
     workerType: emp.worker_type ?? null,
     medicalAidDeduction: emp.medical_aid_deduction ?? 0,
+    medicalAidDependants: emp.medical_aid_dependants ?? 0,
     pensionDeduction: emp.pension_deduction ?? 0,
     unionDeduction: emp.union_deduction ?? 0,
     payFullMonthlySalary: Boolean(emp.pay_full_monthly_salary),

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { localISODate } from '@/lib/utils'
 
 export type QuoteInvoiceResult =
   | { ok: true; invoiceId: string; alreadyExisted: boolean }
@@ -93,7 +94,7 @@ export async function createInvoiceFromAcceptedQuote(
   const vatAmount = Number(row.vat_amount)
   const total = Number(row.total_amount)
   const vatRate = vatRateFromTotals(subtotal, vatAmount)
-  const issue = new Date().toISOString().slice(0, 10)
+  const issue = localISODate()
 
   const { data: invoice, error: invoiceError } = await supabase
     .from('finance_invoices')

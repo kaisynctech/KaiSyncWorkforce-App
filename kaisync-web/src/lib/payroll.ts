@@ -1,7 +1,7 @@
 /**
  * Shared Payroll API for the HR web app.
  * Approve/reject use live RPCs; release updates shared_with_employee;
- * generate/recalculate call the `payroll-generate` Edge Function, which runs the
+ * generate/recalculate call the `payroll-generate-v2` Edge Function, which runs the
  * SAME calculation engine (`supabase/functions/_shared/payroll/*`, mirrored from
  * `kaisync-web/src/lib/payroll/*`) server-side — persisted pay is never
  * browser-authoritative. See docs/modules/payroll-web-program.md.
@@ -191,6 +191,8 @@ type PayrollGenerateFunctionBody = {
   period_start?: string
   period_end?: string
   payment_id?: string
+  offset?: number
+  limit?: number
   lines?: Record<string, unknown>
   overrides?: {
     payFullBaseSalary?: boolean
@@ -204,12 +206,18 @@ type PayrollGenerateFunctionBody = {
 }
 
 /**
- * Calls the `payroll-generate` Edge Function — the server-side source of truth for
+ * Calls the payroll Edge Function — the server-side source of truth for
  * payroll math (same engine as web, run with the service role so persisted
  * `payment_approvals` rows can't be forged from the browser). Never falls back to a
  * client-side calculation: if the function is unreachable or errors, the caller must
  * see a clear failure rather than a silently different (browser-computed) payslip.
  */
+/**
+ * W5: payroll-generate-v2 works in chunks (with the payslip deduction fixes). The live site keeps
+ * using payroll-generate until this code goes live, so the two never mix.
+ */
+const PAYROLL_FUNCTION = 'payroll-generate-v2'
+
 async function callPayrollGenerateFunction(
   supabase: SupabaseClient,
   body: PayrollGenerateFunctionBody
@@ -226,7 +234,7 @@ async function callPayrollGenerateFunction(
 
   let res: Response
   try {
-    res = await fetch(`${supabaseUrl}/functions/v1/payroll-generate`, {
+    res = await fetch(`${supabaseUrl}/functions/v1/${PAYROLL_FUNCTION}`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -253,24 +261,49 @@ async function callPayrollGenerateFunction(
   return { ok: true, data: payload }
 }
 
+export type PayrollGenerateProgress = { done: number; total: number }
+
+/**
+ * Creates or updates the month's payslips, a chunk of people at a time, so a company of any
+ * size finishes (one call per chunk stays well inside the server time limit).
+ */
 export async function generatePayrollPeriod(
   supabase: SupabaseClient,
   companyId: string,
   periodStart: string,
-  periodEnd: string
+  periodEnd: string,
+  onProgress?: (progress: PayrollGenerateProgress) => void
 ): Promise<PayrollResult<{ generated: number; updated: number; skipped: number; errors: string[] }>> {
-  const result = await callPayrollGenerateFunction(supabase, {
-    company_id: companyId,
-    action: 'generate',
-    period_start: periodStart,
-    period_end: periodEnd,
-  })
-  if (!result.ok) return result
-
-  const generated = Number(result.data.generated ?? 0)
-  const updated = Number(result.data.updated ?? 0)
-  const skipped = Number(result.data.skipped ?? 0)
-  const errors = Array.isArray(result.data.errors) ? (result.data.errors as string[]) : []
+  let generated = 0
+  let updated = 0
+  let skipped = 0
+  const errors: string[] = []
+  let offset: number | null = 0
+  let guard = 0
+  while (offset !== null && guard++ < 1000) {
+    const result = await callPayrollGenerateFunction(supabase, {
+      company_id: companyId,
+      action: 'generate',
+      period_start: periodStart,
+      period_end: periodEnd,
+      offset,
+      limit: 150,
+    })
+    if (!result.ok) {
+      if (generated + updated === 0) return result
+      errors.push(result.message)
+      break
+    }
+    generated += Number(result.data.generated ?? 0)
+    updated += Number(result.data.updated ?? 0)
+    skipped += Number(result.data.skipped ?? 0)
+    if (Array.isArray(result.data.errors)) errors.push(...(result.data.errors as string[]))
+    const total = Number(result.data.total ?? 0)
+    const processed = Number(result.data.processed ?? total)
+    onProgress?.({ done: Math.min(processed, total), total })
+    const next = result.data.next_offset
+    offset = typeof next === 'number' && next > offset ? next : null
+  }
   return { ok: true, data: { generated, updated, skipped, errors } }
 }
 
@@ -316,6 +349,8 @@ export type PayslipLineAmounts = {
   extraEarnings?: { id: string; label: string; amount: number }[]
   extraDeductions?: { id: string; label: string; amount: number }[]
   meibcApplied?: boolean
+  /** The employee's own medical aid / pension / union lines are already on this payslip. */
+  employeeDeductionsApplied?: boolean
 }
 
 export async function savePayslipLines(

@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/ResponsiveDataView'
 import { logProjectEvent } from '@/lib/project-events'
 import type { Project, ProjectActionItem } from '@/types/database'
+import { localISODate } from '@/lib/utils'
 
 const STATUS_FILTERS = ['all', 'draft', 'sent', 'in_progress', 'negotiation', 'won', 'lost'] as const
 const STATUS_LABELS: Record<string, string> = {
@@ -117,7 +118,7 @@ export default function ProjectsPage() {
     const effectiveScope = viewAll ? scope : 'mine'
     if (!viewAll && scope === 'all') setScope('mine')
 
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localISODate()
     const { from, to } = pageRange(page, pageSize)
 
     let query = supabase

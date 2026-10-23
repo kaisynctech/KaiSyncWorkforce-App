@@ -23,6 +23,7 @@ import {
 import { hrUpdateIncident } from '@/lib/incidents'
 import type { IncidentReport } from '@/types/database'
 import * as XLSX from 'xlsx'
+import { localISODate } from '@/lib/utils'
 
 const SEVERITY_COLORS: Record<string, { bg: string; fg: string }> = {
   critical: { bg: '#FEE2E2', fg: '#991B1B' },
@@ -223,7 +224,7 @@ export default function IncidentsPage() {
     const ws = XLSX.utils.json_to_sheet(rows)
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Incidents')
-    XLSX.writeFile(wb, `incidents_export_${new Date().toISOString().slice(0, 10)}.xlsx`)
+    XLSX.writeFile(wb, `incidents_export_${localISODate()}.xlsx`)
   }
 
   if (error === 'not_linked') return (

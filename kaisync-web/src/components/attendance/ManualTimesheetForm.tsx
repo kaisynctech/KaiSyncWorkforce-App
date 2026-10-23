@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { submitManualTimesheet } from '@/lib/manual-timesheet'
+import { manualTimesheetIsOvernight, submitManualTimesheet } from '@/lib/manual-timesheet'
 
 export type TimesheetEmployee = {
   id: string
@@ -56,7 +56,7 @@ export function ManualTimesheetForm({
       setError(result.message)
       return
     }
-    setSaved(`Saved ${workDate}, ${timeIn} to ${timeOut}.`)
+    setSaved(`Saved ${workDate}, ${timeIn} to ${timeOut}${manualTimesheetIsOvernight(timeIn, timeOut) ? ' the next day' : ''}.`)
     setNotes('')
     onSaved(workDate)
   }
@@ -70,6 +70,7 @@ export function ManualTimesheetForm({
         <p className="text-[13px] font-semibold text-text-primary">Add timesheet</p>
         <p className="text-[12px] text-text-secondary">
           Enter a date with a time in and time out. The day is added to attendance and payroll.
+          For a night shift, enter the date it started; a time out earlier than the time in ends the next day.
         </p>
       </div>
       <div className="flex flex-wrap items-end gap-2">
@@ -134,6 +135,9 @@ export function ManualTimesheetForm({
           {busy ? 'Saving…' : 'Save day'}
         </button>
       </div>
+      {manualTimesheetIsOvernight(timeIn, timeOut) && (
+        <p className="text-[12px] text-text-secondary">Ends the next day ({timeIn} to {timeOut}).</p>
+      )}
       {error && <p className="text-[12px] text-error">{error}</p>}
       {saved && <p className="text-[12px] text-text-primary">{saved}</p>}
     </form>

@@ -152,6 +152,9 @@ export function scheduleForPunchDay(
   }
 }
 
+/** The template break is only deducted when more than this many hours were worked that day. */
+export const BREAK_AFTER_HOURS = 5
+
 function paidHoursBetween(
   start: { h: number; m: number },
   end: { h: number; m: number },
@@ -243,25 +246,34 @@ function computeMetrics(
     const billingStart = isLate
       ? clockIn
       : zonedTimeOnPunchDay(clockIn, startT.h, startT.m, timeZone)
-    const brk = breakMinutesOf(template) / 60
+    // The break is only taken off when the person worked more than 5 hours that day
+    // (a meal interval is due after 5 hours of continuous work). Nyarie, 23 Oct 2026.
+    const workedSpan = ((clockOut ?? now).getTime() - billingStart.getTime()) / 3600000
+    const brk = workedSpan > BREAK_AFTER_HOURS ? breakMinutesOf(template) / 60 : 0
     const paidCap = startT && endT
       ? paidHoursBetween(startT, endT, breakMinutesOf(template))
       : 8
     if (!clockOut) {
       regularHours = Math.max(0, (now.getTime() - billingStart.getTime()) / 3600000 - brk)
     } else {
-      const paidElapsed = (clockOut.getTime() - billingStart.getTime()) / 3600000 - brk
-      regularHours = Math.max(0, Math.min(paidElapsed, paidCap))
       const otLine = otStartT ?? endT
       if (otLine) {
         let otAt = zonedTimeOnPunchDay(clockOut, otLine.h, otLine.m, timeZone)
         if (otAt.getTime() < billingStart.getTime()) {
           otAt = new Date(otAt.getTime() + 24 * 3600000)
         }
-        const minutesPast = (clockOut.getTime() - otAt.getTime()) / 60000
-        overtimeHours = otStartT
-          ? (minutesPast > 0 ? minutesPast / 60 : 0)
-          : (minutesPast > otAfter ? (minutesPast - otAfter) / 60 : 0)
+        // Without an overtime clock, overtime starts after the company grace (otAfter).
+        const otBegins = otStartT ? otAt : new Date(otAt.getTime() + otAfter * 60000)
+        // Normal time is everything worked from the paid start until overtime begins, so time
+        // between the shift end and the start of overtime is paid as normal time (it used to be
+        // paid as neither). Overtime is everything after. Nyarie, 23 Oct 2026.
+        const normalEnd = Math.min(clockOut.getTime(), otBegins.getTime())
+        regularHours = Math.max(0, (normalEnd - billingStart.getTime()) / 3600000 - brk)
+        const minutesPast = (clockOut.getTime() - otBegins.getTime()) / 60000
+        overtimeHours = minutesPast > 0 ? minutesPast / 60 : 0
+      } else {
+        const paidElapsed = (clockOut.getTime() - billingStart.getTime()) / 3600000 - brk
+        regularHours = Math.max(0, Math.min(paidElapsed, paidCap))
       }
     }
     overtimeHours += earlyOvertimeHours(clockIn, clockOut, now, startT, earlyOtT, timeZone)
@@ -446,6 +458,12 @@ export function fmtSessionTime(d: Date | null, kind: 'in' | 'out' | 'absent' | '
   return d.toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit', hour12: true })
 }
 
+/** Time out for a row. Leave and absent days have no time out (they used to show 12:00 am). */
+export function fmtSessionOut(s: Pick<PunchSessionRow, 'clockOut' | 'isLeaveDay' | 'isAbsentDay'>): string {
+  if (s.isLeaveDay || s.isAbsentDay) return '—'
+  return fmtSessionTime(s.clockOut, 'out')
+}
+
 export function fmtSessionDate(d: Date): string {
   return d.toLocaleDateString('en-ZA', {
     weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
@@ -473,7 +491,11 @@ export function totalHrsDisplay(s: PunchSessionRow): string {
   return `${(s.regularHours + s.overtimeHours).toFixed(1)}h`
 }
 
-export function locationDisplay(address: string | null, lat: number | null, lng: number | null): string {
+/**
+ * Where a clock-in/out happened. Manual timesheet entries have no place (nobody was on a phone), so
+ * they show "Manual entry" instead of "No signal" (W5).
+ */
+export function locationDisplay(address: string | null, lat: number | null, lng: number | null, notes?: string | null): string {
   const trimmed = address?.trim() || null
   if (
     trimmed
@@ -485,5 +507,6 @@ export function locationDisplay(address: string | null, lat: number | null, lng:
   if (lat != null && lng != null) {
     return `${lat.toFixed(5)}, ${lng.toFixed(5)} — No signal`
   }
+  if (notes && /^manual timesheet/i.test(notes.trim())) return 'Manual entry'
   return 'No signal'
 }

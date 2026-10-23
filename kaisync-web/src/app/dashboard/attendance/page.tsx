@@ -10,7 +10,7 @@ import {
   buildPunchSessions,
   earlyFlag,
   fmtSessionDate,
-  fmtSessionTime,
+  fmtSessionOut, fmtSessionTime,
   lateFlag,
   locationDisplay,
   mergeNonWorkDays,
@@ -24,7 +24,7 @@ import { ManualTimesheetForm } from '@/components/attendance/ManualTimesheetForm
 import { AttendanceNote } from '@/components/attendance/AttendanceNote'
 import { enrichSessionsWithPlaceNames } from '@/lib/punch-address-enrich'
 import { resumeSameDayShift } from '@/lib/resume-shift'
-import { returnToWorkLabel } from '@/lib/utils'
+import { returnToWorkLabel, localISODate } from '@/lib/utils'
 import {
   ResponsiveDataView,
   DataCard,
@@ -75,7 +75,7 @@ function focusDayForRange(from: string, to: string, timeZone: string): string {
   return to
 }
 
-const todayStr = () => new Date().toISOString().split('T')[0]
+const todayStr = () => localISODate()
 
 function eachDateInclusive(from: string, to: string): string[] {
   const out: string[] = []
@@ -134,9 +134,9 @@ function exportCSV(sessions: DisplaySession[], from: string, to: string) {
       s.employeeCode,
       fmtSessionDate(r.clockIn),
       fmtSessionTime(r.clockIn, kind as 'in' | 'absent' | 'leave'),
-      `"${locationDisplay(r.clockInAddress, r.clockInLat, r.clockInLng).replace(/"/g, '""')}"`,
-      fmtSessionTime(r.clockOut, 'out'),
-      `"${locationDisplay(r.clockOutAddress, r.clockOutLat, r.clockOutLng).replace(/"/g, '""')}"`,
+      `"${locationDisplay(r.clockInAddress, r.clockInLat, r.clockInLng, r.notes).replace(/"/g, '""')}"`,
+      fmtSessionOut(r),
+      `"${locationDisplay(r.clockOutAddress, r.clockOutLat, r.clockOutLng, r.notes).replace(/"/g, '""')}"`,
       r.regularHours.toFixed(2),
       r.overtimeHours.toFixed(2),
       totalHrsDisplay(r),
@@ -163,9 +163,9 @@ function exportPDF(sessions: DisplaySession[], from: string, to: string) {
       <td>${s.employeeName.replace(/</g, '&lt;')}</td>
       <td>${fmtSessionDate(r.clockIn)}</td>
       <td>${fmtSessionTime(r.clockIn, kind as 'in' | 'absent' | 'leave')}</td>
-      <td>${locationDisplay(r.clockInAddress, r.clockInLat, r.clockInLng).replace(/</g, '&lt;')}</td>
-      <td>${fmtSessionTime(r.clockOut, 'out')}</td>
-      <td>${locationDisplay(r.clockOutAddress, r.clockOutLat, r.clockOutLng).replace(/</g, '&lt;')}</td>
+      <td>${locationDisplay(r.clockInAddress, r.clockInLat, r.clockInLng, r.notes).replace(/</g, '&lt;')}</td>
+      <td>${fmtSessionOut(r)}</td>
+      <td>${locationDisplay(r.clockOutAddress, r.clockOutLat, r.clockOutLng, r.notes).replace(/</g, '&lt;')}</td>
       <td>${totalHrsDisplay(r)}</td>
       <td>${notes.replace(/</g, '&lt;') || '—'}</td>
     </tr>`
@@ -751,16 +751,16 @@ export default function AttendancePage() {
                         <td className="px-4 py-3 text-text-secondary max-w-[160px] truncate">
                           {r.isAbsentDay || r.isLeaveDay
                             ? '—'
-                            : locationDisplay(r.clockInAddress, r.clockInLat, r.clockInLng)}
+                            : locationDisplay(r.clockInAddress, r.clockInLat, r.clockInLng, r.notes)}
                         </td>
                         <td className="px-4 py-3 text-text-primary whitespace-nowrap">
-                          {fmtSessionTime(r.clockOut, 'out')}
+                          {fmtSessionOut(r)}
                           {early && <span className="block text-[10px] text-warning font-semibold">{early}</span>}
                         </td>
                         <td className="px-4 py-3 text-text-secondary max-w-[160px] truncate">
                           {r.isAbsentDay || r.isLeaveDay
                             ? '—'
-                            : locationDisplay(r.clockOutAddress, r.clockOutLat, r.clockOutLng)}
+                            : locationDisplay(r.clockOutAddress, r.clockOutLat, r.clockOutLng, r.notes)}
                         </td>
                         <td className="px-4 py-3 text-right text-text-primary">{r.regularHours.toFixed(1)}</td>
                         <td className="px-4 py-3 text-right text-warning font-medium">
@@ -821,7 +821,7 @@ export default function AttendancePage() {
                           {r.isOpen && !r.isAbsentDay && !r.isLeaveDay ? ' · OPEN' : ''}
                         </span>
                       </div>
-                      <DataCardRow label="Out" value={fmtSessionTime(r.clockOut, 'out')} />
+                      <DataCardRow label="Out" value={fmtSessionOut(r)} />
                       <DataCardRow label="Hours" value={totalHrsDisplay(r)} />
                       <DataCardRow label="Pay" value={s.pay > 0 ? `R${s.pay.toFixed(2)}` : '—'} />
                       {notes ? (

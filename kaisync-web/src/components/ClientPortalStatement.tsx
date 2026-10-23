@@ -6,6 +6,7 @@ import { fmtDate } from '@/lib/client-portal/format'
 import { moneyZAR } from '@/lib/client-portal/quotation'
 import type { ClientPortalSession } from '@/lib/client-portal/session'
 import { buildClientStatement, clientStatementToCsv, type ClientStatementEntry } from '@/lib/client-portal/statement'
+import { localISODate } from '@/lib/utils'
 
 const KIND_LABEL: Record<ClientStatementEntry['kind'], string> = {
   invoice: 'Invoice',
@@ -35,7 +36,7 @@ export function ClientPortalStatement({ session }: { session: ClientPortalSessio
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `statement-${session.client_code}-${new Date().toISOString().slice(0, 10)}.csv`
+    a.download = `statement-${session.client_code}-${localISODate()}.csv`
     a.click()
     URL.revokeObjectURL(url)
   }

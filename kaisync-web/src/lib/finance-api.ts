@@ -9,6 +9,7 @@ import {
   summariseLines,
   type TaxType,
 } from '@/lib/finance-calc'
+import { localISODate } from '@/lib/utils'
 
 export async function logFinanceAudit(
   supabase: SupabaseClient,
@@ -60,7 +61,7 @@ export async function addFinanceTransaction(
     reference_number: args.referenceNumber ?? null,
     amount: args.amount,
     total_amount: args.amount,
-    transaction_date: args.transactionDate ?? new Date().toISOString().slice(0, 10),
+    transaction_date: args.transactionDate ?? localISODate(),
     payment_method: args.paymentMethod ?? null,
     notes: args.notes ?? null,
     created_by: args.createdBy ?? null,
@@ -251,7 +252,7 @@ export async function markContractorPayoutPaid(
 ) {
   const { data: p } = await supabase.from('contractor_payouts').select('*').eq('id', payoutId).maybeSingle()
   if (!p) throw new Error('Payout not found')
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localISODate()
   await supabase.from('contractor_payouts').update({
     payout_status: 'paid',
     paid_at: new Date().toISOString(),
@@ -303,7 +304,7 @@ export async function recordInvoicePayment(
       : state === 'partially_paid' ? 'partially_paid'
         : state === 'overdue' ? 'overdue'
           : inv.status
-  const payDate = opts?.transactionDate ?? new Date().toISOString().slice(0, 10)
+  const payDate = opts?.transactionDate ?? localISODate()
   await supabase.from('finance_invoices').update({
     amount_paid: paid,
     balance_due: due,
@@ -383,7 +384,7 @@ export async function createDraftSupplierReorderInvoices(
   }
 
   const invoiceIds: string[] = []
-  const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+  const stamp = localISODate().replace(/-/g, '')
 
   for (const [supplierId, group] of bySupplier) {
     const calcLines = group.map(l =>

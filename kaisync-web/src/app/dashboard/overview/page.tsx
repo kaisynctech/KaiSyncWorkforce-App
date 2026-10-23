@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
-import { timeGreeting } from '@/lib/utils'
+import { timeGreeting, localISODate } from '@/lib/utils'
 import { EMPLOYEE_SAFE_SELECT } from '@/lib/employee-columns'
 import type { Employee } from '@/types/database'
 import { PwaInstallButton } from '@/components/PwaInstallButton'
@@ -175,7 +175,7 @@ export default function OverviewPage() {
     // Everything below only needs the company/employee ids, so it starts in one parallel
     // wave (own row, today's punches, KPIs, and the quotes.view permission check).
     // The permission result still gates the commercial figures further down.
-    const todayDate = new Date().toISOString().split('T')[0]
+    const todayDate = localISODate()
     const empPromise = supabase
       .from('employees').select(`${EMPLOYEE_SAFE_SELECT}, companies(name)`).eq('id', member.employeeId).maybeSingle()
     // Fetch today's time_punches for whole company (needed for KPIs + attendance)
@@ -342,7 +342,7 @@ export default function OverviewPage() {
           .eq('company_id', cid)
           .in('status', ['sent', 'partial'])
           .gt('balance_due', 0)
-          .lt('due_date', new Date().toISOString().split('T')[0]),
+          .lt('due_date', localISODate()),
       ])
       if (!stillCurrent()) return
       const failed = Boolean(openQuotesRes.error || invDataRes.error || overdueRes.error)
@@ -394,7 +394,7 @@ export default function OverviewPage() {
     setMarkAbsentSuccess(null)
     const supabase = createClient()
     const { data: { session } } = await supabase.auth.getSession()
-    const today = new Date().toISOString().split('T')[0]
+    const today = localISODate()
     const target = allEmployees.find(e => e.id === empId)
     const targetName = target ? `${target.name} ${target.surname}` : 'Employee'
     const { error: err } = await supabase.rpc('employee_report_absence', {

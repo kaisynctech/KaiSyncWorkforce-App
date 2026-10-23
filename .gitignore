@@ -60,3 +60,4 @@ ARCH-*.md
 **/node_modules/
 **/.next/
 **/.fuse_hidden*
+.payroll-generate-v2.bundle.js

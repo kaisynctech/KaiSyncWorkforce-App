@@ -8,6 +8,7 @@ import { fmtMoney } from '@/lib/finance-calc'
 import { recordInvoicePayment } from '@/lib/finance-api'
 import { downloadInvoicePdf, openInvoiceMailto } from '@/lib/invoice-pdf'
 import type { FinanceInvoice, FinanceInvoiceLine } from '@/lib/finance-types'
+import { localISODate } from '@/lib/utils'
 
 // ─── Extended types ────────────────────────────────────────────────────────────
 
@@ -190,7 +191,7 @@ function MoneyInvoiceDetailInner() {
     if (invoice) {
       const bal = (invoice as Invoice).balance_due ?? 0
       setPayAmount(String(bal > 0 ? bal : 0))
-      setPayDate(new Date().toISOString().split('T')[0])
+      setPayDate(localISODate())
     }
     setLoading(false)
   }, [id])
@@ -380,7 +381,7 @@ function MoneyInvoiceDetailInner() {
         subtotal: inv.subtotal,
         vat_amount: inv.vat_amount,
         total_amount: inv.total_amount,
-        issue_date: new Date().toISOString().split('T')[0],
+        issue_date: localISODate(),
       }).select().maybeSingle()
       if (cnErr) throw cnErr
 
@@ -415,7 +416,7 @@ function MoneyInvoiceDetailInner() {
           description: `Credit note issued against ${inv.invoice_number ?? inv.id}`,
           debit: 0,
           credit: inv.total_amount,
-          entry_date: new Date().toISOString().split('T')[0],
+          entry_date: localISODate(),
         })
       }
 

@@ -13,4 +13,9 @@ describe('locationDisplay', () => {
   it('shows No signal when the phone has no map point', () => {
     expect(locationDisplay(null, null, null)).toBe('No signal')
   })
+
+  it('shows Manual entry for a manual timesheet with no place', () => {
+    expect(locationDisplay(null, null, null, 'Manual timesheet · late paperwork')).toBe('Manual entry')
+    expect(locationDisplay('Site office', null, null, 'Manual timesheet')).toBe('Site office')
+  })
 })

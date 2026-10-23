@@ -3,6 +3,7 @@
  */
 
 import { jsPDF } from 'jspdf'
+import { localISODate } from '@/lib/utils'
 
 export type QuotePdfLine = {
   description: string
@@ -57,7 +58,7 @@ export function buildQuotePdf(input: QuotePdfInput): jsPDF {
   doc.setFontSize(10)
   doc.setTextColor(100, 116, 139)
   doc.text(input.quote_number ? `Quote ${input.quote_number}` : 'Draft quote', left, y)
-  doc.text(fmtDate(new Date().toISOString().slice(0, 10)), right, y, { align: 'right' })
+  doc.text(fmtDate(localISODate()), right, y, { align: 'right' })
   y += 10
 
   doc.setDrawColor(226, 232, 240)

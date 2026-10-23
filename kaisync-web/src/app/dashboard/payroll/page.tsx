@@ -104,7 +104,6 @@ export default function PayrollPage() {
 
   // persist company across re-renders without triggering re-fetch
   const companyIdRef = useRef<string | null>(null)
-  const refreshedPeriods = useRef(new Set<string>())
 
   const [payments,     setPayments]     = useState<PayrollRecord[]>([])
   const [loading,      setLoading]      = useState(true)
@@ -116,6 +115,7 @@ export default function PayrollPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [isLocked,     setIsLocked]     = useState(false)
   const [generating,   setGenerating]   = useState(false)
+  const [genProgress,  setGenProgress]  = useState<{ done: number; total: number } | null>(null)
   const [approving,    setApproving]    = useState(false)
   const [releasing,    setReleasing]    = useState(false)
   const [genPreview,   setGenPreview]   = useState<PayrollGeneratePreview | null>(null)
@@ -185,15 +185,8 @@ export default function PayrollPage() {
     const rows = (paymentsData ?? []) as PayrollRecord[]
     const locked = (locks ?? []).some(l => l.period_start === from && l.period_end === to)
     setIsLocked(locked)
-    const refreshKey = `${cid}|${from}|${to}`
-    if (!locked && rows.some(row => row.status === 'pending') && !refreshedPeriods.current.has(refreshKey)) {
-      refreshedPeriods.current.add(refreshKey)
-      const refreshed = await generatePayrollPeriod(supabase, cid, from, to)
-      if (!refreshed.ok) setError(refreshed.message)
-      else if (refreshed.data.errors.length > 0) setError(refreshed.data.errors[0])
-      await loadPayroll(from, to)
-      return
-    }
+    // W5: opening the page no longer works out every payslip again (that took 37 s for 326 people
+    // and would time out for a large company). Payslips update when someone presses "Update payslips".
 
     setPayments(rows)
     setLoading(false)
@@ -226,11 +219,13 @@ export default function PayrollPage() {
     const cid = companyIdRef.current
     if (!cid) return
     setGenerating(true)
+    setGenProgress(null)
     setError(null)
     setSuccess(null)
     const supabase = createClient()
-    const result = await generatePayrollPeriod(supabase, cid, dateFrom, dateTo)
+    const result = await generatePayrollPeriod(supabase, cid, dateFrom, dateTo, setGenProgress)
     setGenerating(false)
+    setGenProgress(null)
     setShowGenModal(false)
     if (!result.ok) {
       setError(result.message)
@@ -285,9 +280,16 @@ export default function PayrollPage() {
   async function approveAll() {
     const cid = companyIdRef.current
     if (!cid) return
-    const pending = filtered.filter(p => p.status === 'pending')
-    if (!pending.length) return
-    if (!window.confirm(`Approve all ${pending.length} pending payslip${pending.length !== 1 ? 's' : ''}?`)) return
+    // Payslips with nothing to pay (R0) are left for someone to check, not approved in bulk.
+    const allPending = filtered.filter(p => p.status === 'pending')
+    const pending = allPending.filter(p => (p.net_pay ?? 0) > 0)
+    const zero = allPending.length - pending.length
+    if (!pending.length) {
+      if (zero) setError(`The ${zero === 1 ? 'pending payslip pays' : `${zero} pending payslips pay`} R0. Open ${zero === 1 ? 'it' : 'them'} to check before approving.`)
+      return
+    }
+    const zeroNote = zero ? `\n\n${zero} payslip${zero !== 1 ? 's' : ''} with R0 to pay will be left pending for you to check.` : ''
+    if (!window.confirm(`Approve ${pending.length} pending payslip${pending.length !== 1 ? 's' : ''}?${zeroNote}`)) return
     setApproving(true)
     setError(null)
     const supabase = createClient()
@@ -446,6 +448,10 @@ export default function PayrollPage() {
       if (!name.includes(q) && !period.includes(q)) return false
     }
     return true
+  }).sort((a, b) => {
+    const an = `${a.employee?.surname ?? ''} ${a.employee?.name ?? ''}`.trim().toLowerCase()
+    const bn = `${b.employee?.surname ?? ''} ${b.employee?.name ?? ''}`.trim().toLowerCase()
+    return an.localeCompare(bn) || (a.period_start ?? '').localeCompare(b.period_start ?? '')
   })
 
   const pendingGross  = filtered.filter(p => p.status === 'pending')
@@ -481,8 +487,8 @@ export default function PayrollPage() {
           <h1 className="text-[16px] font-semibold text-text-primary">Payroll</h1>
           <PayrollTabs active={section} className="" />
           <div className="flex-1 min-w-[8px]" />
-          <label className="text-[11px] text-text-secondary">Month</label>
-          <input type="month" value={month} onChange={e => setMonth(e.target.value)} className="dark-entry h-8" />
+          <label htmlFor="payroll-month" className="text-[11px] text-text-secondary">Month</label>
+          <input id="payroll-month" type="month" value={month} onChange={e => setMonth(e.target.value)} className="dark-entry h-8" />
           <span className="text-[12px] text-text-secondary">{dateFrom} to {dateTo}</span>
           <button
             type="button"
@@ -500,6 +506,11 @@ export default function PayrollPage() {
         {error && error !== 'not_linked' && (
           <p className="text-error text-[13px] font-medium">{error}</p>
         )}
+        {section === 'payslips' && !isLocked && pendingCount > 0 && !generating && (
+          <p className="text-text-secondary text-[12px]">
+            Pending payslips are not worked out again each time this page opens. After new clock-ins, leave or pay changes, press Update payslips.
+          </p>
+        )}
         {isLocked && (
           <p className="text-error text-[12px] font-medium">Period is locked. Recalculation and overrides are disabled.</p>
         )}
@@ -514,7 +525,7 @@ export default function PayrollPage() {
               <span className="mx-1.5 text-text-disabled">·</span>
               Net <span className="text-text-primary font-medium">{fmtR(approvedNet)}</span>
               <span className="mx-1.5 text-text-disabled">·</span>
-              {filtered.length} in view
+              {filtered.length === 1 ? '1 payslip' : `${filtered.length} payslips`} in view
             </p>
             <div className="flex items-center gap-1 flex-1 min-w-[180px] bg-surface border border-border rounded-md px-2">
               <span className="material-icons text-text-secondary text-[16px]">search</span>
@@ -538,7 +549,9 @@ export default function PayrollPage() {
               disabled={generating || isLocked}
               className="h-8 px-3 text-[12px] rounded-md bg-surface-dark border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
             >
-              {generating ? 'Generating…' : 'Generate'}
+              {generating
+                ? genProgress ? `Working out ${genProgress.done.toLocaleString()} of ${genProgress.total.toLocaleString()}…` : 'Working out payslips…'
+                : pendingCount > 0 ? 'Update payslips' : 'Create payslips'}
             </button>
             <button
               onClick={approveAll}
@@ -805,7 +818,9 @@ export default function PayrollPage() {
                 disabled={generating || genPreview.readyCount === 0}
                 className="btn-primary h-11 px-4 text-[13px] disabled:opacity-50"
               >
-                {generating ? 'Working…' : genPreview.refreshCount > 0 ? `Update ${genPreview.readyCount}` : `Generate ${genPreview.readyCount}`}
+                {generating
+                  ? genProgress ? `${genProgress.done.toLocaleString()} of ${genProgress.total.toLocaleString()}…` : 'Working…'
+                  : genPreview.refreshCount > 0 ? `Update ${genPreview.readyCount}` : `Generate ${genPreview.readyCount}`}
               </button>
             </>
           ) : null
@@ -830,8 +845,8 @@ export default function PayrollPage() {
               {genPreview.missingShiftCount > 0 && (
                 <li className={genPreview.companyHasDefaultTemplate ? 'text-text-secondary' : 'text-warning'}>
                   {genPreview.companyHasDefaultTemplate
-                    ? `${genPreview.missingShiftCount} people have no template of their own. Payroll uses the company default.`
-                    : `${genPreview.missingShiftCount} people have no template, and this company has no default. Set one under Time Templates.`}
+                    ? `${genPreview.missingShiftCount === 1 ? '1 person has' : `${genPreview.missingShiftCount} people have`} no template of their own. Payroll uses the company default.`
+                    : `${genPreview.missingShiftCount === 1 ? '1 person has' : `${genPreview.missingShiftCount} people have`} no template, and this company has no default. Set one under Time Templates.`}
                 </li>
               )}
               {genPreview.missingBankCount > 0 && (

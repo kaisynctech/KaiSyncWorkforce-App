@@ -112,21 +112,25 @@ export async function listEmployeesScoped(
   opts?: { activeOnly?: boolean }
 ): Promise<EmployeeResult<Employee[]>> {
   void viewerEmployeeId
+  // The directory returns at most 200 rows per call. The first call gives the total; the rest are
+  // fetched a few at a time in parallel. (It used to stop at 5,000 people and fetch one page at a time.)
   const pageSize = 200
-  const rows: Employee[] = []
-  let offset = 0
-  let total = 0
-  do {
-    const page = await listEmployeeDirectory(supabase, companyId, {
-      status: opts?.activeOnly ? 'active' : '',
-      limit: pageSize,
-      offset,
-    })
-    if (!page.ok) return page
-    total = page.data.total
-    rows.push(...page.data.rows)
-    offset += pageSize
-  } while (rows.length < total && offset < 5000)
+  const status = opts?.activeOnly ? 'active' : ''
+  const first = await listEmployeeDirectory(supabase, companyId, { status, limit: pageSize, offset: 0 })
+  if (!first.ok) return first
+  const rows: Employee[] = [...first.data.rows]
+  const offsets: number[] = []
+  for (let offset = pageSize; offset < first.data.total; offset += pageSize) offsets.push(offset)
+  const parallel = 4
+  for (let i = 0; i < offsets.length; i += parallel) {
+    const pages = await Promise.all(
+      offsets.slice(i, i + parallel).map(offset => listEmployeeDirectory(supabase, companyId, { status, limit: pageSize, offset }))
+    )
+    for (const page of pages) {
+      if (!page.ok) return page
+      rows.push(...page.data.rows)
+    }
+  }
   return { ok: true, data: rows }
 }
 
@@ -327,6 +331,8 @@ export type EmployeeUpdateInput = {
   payeRatePercent?: number | null
   uifExempt: boolean
   medicalAidDeduction: number
+  /** Leave undefined to keep the current value. */
+  medicalAidDependants?: number
   pensionDeduction: number
   unionDeduction: number
   workDaysWeekly: number
@@ -401,6 +407,7 @@ export async function updateEmployee(
       paye_rate_percent: input.payeRatePercent ?? null,
       uif_exempt: input.uifExempt,
       medical_aid_deduction: input.medicalAidDeduction,
+      ...(input.medicalAidDependants !== undefined ? { medical_aid_dependants: Math.max(0, Math.floor(input.medicalAidDependants)) } : {}),
       pension_deduction: input.pensionDeduction,
       union_deduction: input.unionDeduction,
       work_days_weekly: input.workDaysWeekly,
