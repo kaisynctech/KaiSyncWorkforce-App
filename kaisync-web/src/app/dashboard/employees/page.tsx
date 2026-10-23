@@ -616,7 +616,7 @@ export default function EmployeesPage() {
               <span className="material-icons text-text-disabled text-[18px]">search</span>
               <input
                 type="text"
-                placeholder="Search by name, ID number, department…"
+                placeholder="Search by name, employee no., ID number, department…"
                 value={search}
                 onChange={e => { setSearch(e.target.value); setPage(0) }}
                 className="flex-1 text-[13px] text-text-primary placeholder:text-text-disabled bg-transparent focus:outline-none"
@@ -707,6 +707,7 @@ export default function EmployeesPage() {
                     <thead>
                       <tr className="border-b border-divider bg-surface-elevated">
                         <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Employee</th>
+                        <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Employee no.</th>
                         <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">ID number</th>
                         <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Role</th>
                         <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Department</th>
@@ -737,6 +738,9 @@ export default function EmployeesPage() {
                                   )}
                                 </div>
                               </div>
+                            </td>
+                            <td className="px-5 py-3 text-text-secondary font-mono">
+                              {emp.employee_number?.trim() || '—'}
                             </td>
                             <td className="px-5 py-3 text-text-secondary font-mono">
                               {emp.id_number?.trim() || '—'}
@@ -804,6 +808,7 @@ export default function EmployeesPage() {
                               {badge.label}
                             </span>
                           </div>
+                          <DataCardRow label="Employee no." value={emp.employee_number?.trim() || '—'} />
                           <DataCardRow label="ID number" value={emp.id_number?.trim() || '—'} />
                           <DataCardRow label="Dept" value={emp.department ?? '—'} />
                           <DataCardRow

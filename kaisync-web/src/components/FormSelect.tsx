@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import { cn } from '@/lib/utils'
 
 interface FormSelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
@@ -5,13 +6,16 @@ interface FormSelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> 
   hint?: string
 }
 
-export function FormSelect({ label, hint, className, children, ...props }: FormSelectProps) {
+export function FormSelect({ label, hint, className, children, id, ...props }: FormSelectProps) {
+  const autoId = useId()
+  const selectId = id ?? autoId
   return (
     <div className="flex flex-col gap-1.5">
       {label && (
-        <label className="text-[12px] font-medium text-text-secondary">{label}</label>
+        <label htmlFor={selectId} className="text-[12px] font-medium text-text-secondary">{label}</label>
       )}
       <select
+        id={selectId}
         className={cn(
           'w-full h-12 px-3 rounded-sm bg-surface-elevated border border-border text-[14px] text-text-primary',
           'focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary',

@@ -90,7 +90,8 @@ export async function listEmployeeDirectory(
   })
   if (error) return { ok: false, message: error.message }
   const body = (data ?? {}) as DirectoryPayload
-  const rows = await attachLoginIdNumbers(supabase, companyId, (body.rows ?? []) as Employee[])
+  // The directory RPC returns id_number and employee_number itself; no second query per page.
+  const rows = (body.rows ?? []) as Employee[]
   return {
     ok: true,
     data: {
@@ -98,28 +99,6 @@ export async function listEmployeeDirectory(
       rows,
     },
   }
-}
-
-/** Directory rows omit the login ID. It is already readable on the employee record. */
-async function attachLoginIdNumbers(
-  supabase: SupabaseClient,
-  companyId: string,
-  rows: Employee[],
-): Promise<Employee[]> {
-  if (rows.length === 0) return rows
-  const { data, error } = await supabase
-    .from('employees')
-    .select('id, id_number')
-    .eq('company_id', companyId)
-    .in('id', rows.map(row => row.id))
-  if (error || !data) return rows
-  const byId = new Map(
-    (data as { id: string; id_number: string | null }[]).map(row => [row.id, row.id_number]),
-  )
-  return rows.map(row => ({
-    ...row,
-    id_number: byId.get(row.id) ?? row.id_number ?? null,
-  }))
 }
 
 /**
