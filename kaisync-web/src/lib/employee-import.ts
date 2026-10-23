@@ -77,6 +77,9 @@ const HEADER_ALIASES: Record<string, ImportColumnKey> = {
   accounttype: 'account_type',
 }
 
+/** Columns from the old template that are no longer used. Ignored without a warning. */
+const RETIRED_HEADERS = new Set(['workertype'])
+
 export function headerKey(header: string): ImportColumnKey | null {
   const k = header.replace(/\*/g, '').toLowerCase().replace(/[^a-z0-9]/g, '')
   return HEADER_ALIASES[k] ?? null
@@ -343,7 +346,8 @@ const fullName = (r: ImportRow) => `${r.name} ${r.surname}`.trim().replace(/\s+/
  */
 export function parseImportSheet(sheetRows: Record<string, unknown>[], headers: string[], firstDataRow = 2): ParseResult {
   const known = new Set(headers.map(h => headerKey(h)).filter(Boolean) as ImportColumnKey[])
-  const unknownHeaders = headers.filter(h => h.trim() && !headerKey(h) && !/^__EMPTY/.test(h))
+  const unknownHeaders = headers.filter(h => h.trim() && !headerKey(h) && !/^__EMPTY/.test(h)
+    && !RETIRED_HEADERS.has(h.toLowerCase().replace(/[^a-z0-9]/g, '')))
   const missingColumns = ['name', 'surname'].filter(k => !known.has(k as ImportColumnKey))
     .map(k => IMPORT_COLUMNS.find(c => c.key === k)!.header.replace(' *', ''))
 
@@ -402,6 +406,19 @@ export function chunk<T>(items: T[], size: number): T[][] {
   const out: T[][] = []
   for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size))
   return out
+}
+
+/** True when every problem on the row is "this person is already in the company". */
+export function isAlreadyInCompany(errors: string[]): boolean {
+  return errors.length > 0 && errors.every(e => /already exists|is already used/.test(e))
+}
+
+/** "under a second", "1 second", "14 seconds", "2 min 5 s". */
+export function formatDuration(seconds: number): string {
+  if (seconds < 1) return 'under a second'
+  const s = Math.round(seconds)
+  if (s < 60) return s === 1 ? '1 second' : `${s} seconds`
+  return `${Math.floor(s / 60)} min ${s % 60} s`
 }
 
 /** CSV of problems for download (opens in Excel). */

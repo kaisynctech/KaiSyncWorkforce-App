@@ -8,7 +8,7 @@ import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { listBranches, listShiftTemplates } from '@/lib/employees'
 import { getEmployeeNumberSettings, nextEmployeeNumberPreview } from '@/lib/employee-numbers'
 import {
-  IMPORT_COLUMNS, chunk, managerIsInFile, parseImportSheet, problemsCsv,
+  IMPORT_COLUMNS, chunk, formatDuration, isAlreadyInCompany, managerIsInFile, parseImportSheet, problemsCsv,
   type ImportRow, type ParsedRow,
 } from '@/lib/employee-import'
 
@@ -248,13 +248,14 @@ export default function ImportEmployeesPage() {
     }
 
     setProblems(failed)
-    setSummary({ created: created.size, failed: failed.filter(f => !f.problem.startsWith('Added,')).length, linked, seconds: Math.round((performance.now() - started) / 100) / 10 })
+    setSummary({ created: created.size, failed: failed.filter(f => !f.problem.startsWith('Added,')).length, linked, seconds: (performance.now() - started) / 1000 })
     setProgress(null)
     setPhase('done')
   }
 
   const readyCount = parsed.filter(p => p.errors.length === 0).length
-  const problemRows = parsed.length - readyCount
+  const alreadyCount = parsed.filter(p => isAlreadyInCompany(p.errors)).length
+  const problemRows = parsed.length - readyCount - alreadyCount
   const busy = phase === 'reading' || phase === 'checking' || phase === 'importing' || phase === 'linking'
   const progressLabel = phase === 'checking' ? 'Checking' : phase === 'linking' ? 'Setting reporting lines' : 'Importing'
 
@@ -333,13 +334,17 @@ export default function ImportEmployeesPage() {
             <p className="text-[14px] font-semibold text-text-primary">3. Check and import</p>
             <ul className="text-[13px] text-text-primary space-y-1">
               <li><strong>{readyCount.toLocaleString()}</strong> {readyCount === 1 ? 'person is' : 'people are'} ready to import.</li>
-              {problemRows > 0 && <li className="text-error"><strong>{problemRows.toLocaleString()}</strong> {problemRows === 1 ? 'row has' : 'rows have'} problems and will be skipped. Fix them in your file and choose it again, or import the rest now.</li>}
+              {alreadyCount > 0 && <li><strong>{alreadyCount.toLocaleString()}</strong> {alreadyCount === 1 ? 'person is' : 'people are'} already in your company and will be skipped.</li>}
+              {problemRows > 0 && <li className="text-error"><strong>{problemRows.toLocaleString()}</strong> {problemRows === 1 ? 'row has' : 'rows have'} problems and will be skipped. {readyCount > 0 ? 'Fix them in your file and choose it again, or import the rest now.' : 'Fix them in your file and choose it again.'}</li>}
+              {readyCount === 0 && problemRows === 0 && alreadyCount > 0 && <li>There is nobody new to import.</li>}
               {warnings.length > 0 && <li className="text-warning">{warnings.length.toLocaleString()} {warnings.length === 1 ? 'note' : 'notes'} (they will still be imported).</li>}
             </ul>
             <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={() => void runImport()} disabled={readyCount === 0} className={btnPrimary}>
-                Import {readyCount.toLocaleString()} {readyCount === 1 ? 'person' : 'people'}
-              </button>
+              {readyCount > 0 && (
+                <button type="button" onClick={() => void runImport()} className={btnPrimary}>
+                  Import {readyCount.toLocaleString()} {readyCount === 1 ? 'person' : 'people'}
+                </button>
+              )}
               <button type="button" onClick={reset} className={btnSecondary}>Choose another file</button>
             </div>
           </div>
@@ -349,7 +354,7 @@ export default function ImportEmployeesPage() {
           <div className="card p-4 space-y-3" role="status">
             <p className="text-[14px] font-semibold text-text-primary">Import finished</p>
             <ul className="text-[13px] text-text-primary space-y-1">
-              <li><strong>{summary.created.toLocaleString()}</strong> {summary.created === 1 ? 'person was' : 'people were'} added in {summary.seconds} seconds.</li>
+              <li><strong>{summary.created.toLocaleString()}</strong> {summary.created === 1 ? 'person was' : 'people were'} added in {formatDuration(summary.seconds)}.</li>
               {summary.linked > 0 && <li>{summary.linked.toLocaleString()} reporting {summary.linked === 1 ? 'line was' : 'lines were'} set.</li>}
               {summary.failed > 0 && <li className="text-error">{summary.failed.toLocaleString()} {summary.failed === 1 ? 'row was' : 'rows were'} not imported (see below).</li>}
             </ul>

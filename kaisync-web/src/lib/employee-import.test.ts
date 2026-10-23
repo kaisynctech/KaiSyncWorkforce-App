@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  chunk, headerKey, managerIsInFile, parseAmount, parseDate, parseImportRow, parseImportSheet, problemsCsv,
+  chunk, formatDuration, headerKey, isAlreadyInCompany, managerIsInFile, parseAmount, parseDate, parseImportRow, parseImportSheet, problemsCsv,
 } from './employee-import'
 
 describe('headers', () => {
@@ -113,6 +113,20 @@ describe('whole file', () => {
 })
 
 describe('helpers', () => {
+  it('ignores the old Worker Type column without a warning', () => {
+    expect(parseImportSheet([{ Name: 'A', Surname: 'B', 'Worker Type': 'employee' }], ['Name', 'Surname', 'Worker Type']).unknownHeaders).toEqual([])
+  })
+  it('spots rows that are only "already in the company"', () => {
+    expect(isAlreadyInCompany(['Someone with email a@b.co already exists.'])).toBe(true)
+    expect(isAlreadyInCompany(['Employee number IV-1 is already used.', 'Branch "X" was not found.'])).toBe(false)
+    expect(isAlreadyInCompany([])).toBe(false)
+  })
+  it('formats durations', () => {
+    expect(formatDuration(0.4)).toBe('under a second')
+    expect(formatDuration(1.2)).toBe('1 second')
+    expect(formatDuration(14)).toBe('14 seconds')
+    expect(formatDuration(125)).toBe('2 min 5 s')
+  })
   it('chunks', () => expect(chunk([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]))
   it('writes a problems CSV', () => {
     expect(problemsCsv([{ row: 3, name: 'A "B"', problem: 'Bad, very' }])).toBe('Row,Name,Problem\r\n3,"A ""B""","Bad, very"')
