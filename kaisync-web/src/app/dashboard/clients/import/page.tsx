@@ -7,6 +7,8 @@ import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { normalizeClientType } from '@/lib/client-create-payload'
 import { createClientRecord, replaceClientContacts, saveClientBankDetails } from '@/lib/clients'
 import { can, loadPermissions, PERM } from '@/lib/permissions'
+import { applyColumnCopies } from '@/lib/import-column-map'
+import { columnMatchNotes, matchImportColumns } from '@/lib/import-column-match'
 import * as XLSX from 'xlsx'
 
 interface PreviewClient {
@@ -174,12 +176,16 @@ export default function ImportClientsPage() {
           return
         }
 
-        const warnings: string[] = []
+        const headerRow = (XLSX.utils.sheet_to_json(ws, { header: 1, range: 0 })[0] ?? []) as unknown[]
+        const headers = headerRow.map(header => String(header ?? '')).filter(header => header.trim() !== '')
+        const match = await matchImportColumns('clients', headers, rows)
+        const mappedRows = applyColumnCopies(rows, match.copies)
+        const warnings: string[] = columnMatchNotes(match)
         const errors: string[] = []
         const clients: PreviewClient[] = []
         const seenNames = new Set<string>()
 
-        rows.forEach((row, i) => {
+        mappedRows.forEach((row, i) => {
           try {
             const c = normalise(row)
             if (!c.name) {
@@ -338,7 +344,7 @@ export default function ImportClientsPage() {
         <div className="card p-4 space-y-3">
           <p className="text-[14px] font-semibold text-text-primary">1. Download template</p>
           <p className="text-[13px] text-text-secondary">
-            Use the Excel or CSV template. Name is required. Type may be individual, company, government, ngo, or property
+            Use your own customer spreadsheet, or the template. Name is required. Headings we do not already know are matched before you confirm, and every cell is copied as it appears, including bank details. Type may be individual, company, government, ngo, or property
             (defaults to individual). Portal access stays off until enabled on each record;
             a permanent client code is assigned on import.
           </p>
@@ -412,9 +418,16 @@ export default function ImportClientsPage() {
                 <div key={`${c.name}-${i}`} className="px-3 py-2 text-[12px]">
                   <p className="font-medium text-text-primary">{c.name}</p>
                   <p className="text-text-secondary">
-                    {[c.type, c.contact_person, c.email, c.phone]
-                      .filter(Boolean)
-                      .join(' · ') || '—'}
+                    {[
+                      c.type,
+                      c.contact_person,
+                      c.email,
+                      c.phone,
+                      cell(c.raw, 'Address'),
+                      cell(c.raw, 'Bank Name', 'BankName'),
+                      cell(c.raw, 'Bank Account Number', 'BankAccountNumber'),
+                      cell(c.raw, 'Branch Code', 'Bank Branch Code', 'BranchCode'),
+                    ].filter(Boolean).join(' · ') || '—'}
                   </p>
                 </div>
               ))}

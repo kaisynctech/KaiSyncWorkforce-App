@@ -699,6 +699,11 @@ export default function EmployeesPage() {
                 <Link href="/dashboard/employees/new" className="mt-3 inline-block text-primary text-[13px] hover:underline">
                   + Add your first employee
                 </Link>
+                {directoryTotal === 0 && (
+                  <Link href="/dashboard/employees/import" className="mt-2 block text-primary text-[13px] hover:underline">
+                    Import a spreadsheet you already have
+                  </Link>
+                )}
               </div>
             ) : (
               <ResponsiveDataView

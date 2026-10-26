@@ -11,6 +11,8 @@ import {
   IMPORT_COLUMNS, chunk, formatDuration, isAlreadyInCompany, managerIsInFile, parseImportSheet, problemsCsv,
   type ImportRow, type ParsedRow,
 } from '@/lib/employee-import'
+import { applyColumnCopies } from '@/lib/import-column-map'
+import { columnMatchNotes, matchImportColumns } from '@/lib/import-column-match'
 
 /** Rows per database call. 500 rows take about half a second on the server. */
 const CHECK_BATCH = 500
@@ -142,14 +144,20 @@ export default function ImportEmployeesPage() {
       const ws = wb.Sheets[sheetName]
       const headers = ((XLSX.utils.sheet_to_json(ws, { header: 1, range: 0 })[0] ?? []) as unknown[]).map(h => String(h ?? ''))
       const rows = XLSX.utils.sheet_to_json(ws, { defval: '' }) as Record<string, unknown>[]
-      result = parseImportSheet(rows, headers)
+      const match = await matchImportColumns('employees', headers, rows)
+      const copiedFrom = new Set(match.copies.map(copy => copy.from))
+      const headersForParse = [...headers.filter(header => !copiedFrom.has(header)), ...match.copies.map(copy => copy.to)]
+      result = parseImportSheet(applyColumnCopies(rows, match.copies), headersForParse)
+      result = { ...result, unknownHeaders: match.unsure }
+      setNotes(columnMatchNotes(match))
     } catch {
       setFatal('This file could not be read. Save it as .xlsx or .csv and try again.')
       setPhase('idle')
       return
     }
-    if (result.missingColumns.length > 0) {
-      setFatal(`The file has no ${result.missingColumns.join(' or ')} column. Use the template, or rename your column headings.`)
+    const missingName = result.missingColumns.filter(column => column === 'First name')
+    if (missingName.length > 0) {
+      setFatal('The file has no first name column. Use the template, or rename your column headings.')
       setPhase('idle')
       return
     }
@@ -158,7 +166,6 @@ export default function ImportEmployeesPage() {
       setPhase('idle')
       return
     }
-    setNotes(result.unknownHeaders.length > 0 ? [`These columns were not recognised and will be ignored: ${result.unknownHeaders.join(', ')}.`] : [])
     setParsed(result.rows)
     await check(result.rows)
   }
@@ -272,7 +279,7 @@ export default function ImportEmployeesPage() {
         <div className="card p-4 space-y-3">
           <p className="text-[14px] font-semibold text-text-primary">1. Download the template</p>
           <p className="text-[13px] text-text-secondary">
-            One person per row. It includes pay, start date, time template, branch, who they report to and banking,
+            Use your own people spreadsheet, or the template. One person per row. Headings we do not already know are matched before you confirm, and ID numbers and bank accounts are copied as they appear. The template includes pay, start date, time template, branch, who they report to and banking,
             plus a Lists sheet with your branches and time templates.
             {nextNumber && ` Leave Employee number blank to number people automatically from ${nextNumber}.`}
           </p>
@@ -332,6 +339,16 @@ export default function ImportEmployeesPage() {
         {phase === 'checked' && (
           <div className="card p-4 space-y-3">
             <p className="text-[14px] font-semibold text-text-primary">3. Check and import</p>
+            <div className="max-h-48 overflow-y-auto border border-divider rounded-sm divide-y divide-divider">
+              {parsed.filter(person => person.errors.length === 0).slice(0, 8).map(person => (
+                <p key={person.row.row} className="px-3 py-2 text-[12px] text-text-secondary">
+                  <span className="text-text-primary font-medium">{personName(person.row)}</span>
+                  {person.row.id_number ? ` · ${person.row.id_number}` : ''}
+                  {person.row.email ? ` · ${person.row.email}` : ''}
+                  {person.row.bank_account ? ` · ${[person.row.bank_name, person.row.bank_account].filter(Boolean).join(' ')}` : ''}
+                </p>
+              ))}
+            </div>
             <ul className="text-[13px] text-text-primary space-y-1">
               <li><strong>{readyCount.toLocaleString()}</strong> {readyCount === 1 ? 'person is' : 'people are'} ready to import.</li>
               {alreadyCount > 0 && <li><strong>{alreadyCount.toLocaleString()}</strong> {alreadyCount === 1 ? 'person is' : 'people are'} already in your company and will be skipped.</li>}

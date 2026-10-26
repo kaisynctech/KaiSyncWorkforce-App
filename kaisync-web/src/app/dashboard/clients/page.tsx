@@ -510,7 +510,7 @@ export default function ClientsPage() {
                     <tr><td colSpan={xeroConnected ? 7 : 6} className="py-12 text-center text-[13px] text-text-disabled">Loading…</td></tr>
                   ) : clients.length === 0 ? (
                     <tr><td colSpan={xeroConnected ? 7 : 6} className="py-8 text-center text-[13px] text-text-secondary">
-                      {total === 0 && !searchDebounced ? 'No clients yet. Click + Add Client to create one.' : 'No clients match your search.'}
+                      {total === 0 && !searchDebounced ? 'No clients yet. Use Import for a spreadsheet you already have, or + Add Client.' : 'No clients match your search.'}
                     </td></tr>
                   ) : (
                     clients.map(c => (
@@ -559,7 +559,7 @@ export default function ClientsPage() {
                 <p className="py-12 text-center text-[13px] text-text-disabled">Loading…</p>
               ) : clients.length === 0 ? (
                 <p className="py-8 text-center text-[13px] text-text-secondary px-4">
-                  {total === 0 && !searchDebounced ? 'No clients yet. Click + Add Client to create one.' : 'No clients match your search.'}
+                  {total === 0 && !searchDebounced ? 'No clients yet. Use Import for a spreadsheet you already have, or + Add Client.' : 'No clients match your search.'}
                 </p>
               ) : (
                 <>
