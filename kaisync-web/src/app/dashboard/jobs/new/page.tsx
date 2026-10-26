@@ -11,6 +11,7 @@ import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permission
 import { createJob } from '@/lib/jobs'
 import { localDateTimeToIso, localDateTimeInputOf } from '@/lib/schedule-times'
 import { JobWherePicker, type JobWhereValue } from '@/components/jobs/JobWherePicker'
+import { ClientSearch } from '@/components/jobs/ClientSearch'
 import {
   addServiceChecklistToJob,
   areaOptions,
@@ -115,6 +116,14 @@ function CreateJobInner() {
     }
   }
 
+  function pickClient(next: string) {
+    changeClient(next)
+    if (dealId) {
+      const deal = deals.find(d => d.id === dealId)
+      if (deal?.client_id && next && deal.client_id !== next) setDealId('')
+    }
+  }
+
   function changeClient(next: string) {
     setClientId(next)
     setWhere({ siteId: '', areaId: '', serviceId: '' })
@@ -131,7 +140,7 @@ function CreateJobInner() {
     setEmployeeId(member.employeeId)
 
     const [cl, emp, dl, me, sv] = await Promise.all([
-      supabase.from('clients').select('id, name, client_code').eq('company_id', member.companyId).order('name'),
+      supabase.from('clients').select('id, name, client_code, account_number').eq('company_id', member.companyId).order('name').limit(10000),
       supabase.from('employees').select('id, name, surname')
         .eq('company_id', member.companyId).eq('is_active', true).order('name'),
       supabase.from('client_deals').select('id, title, project_code, client_id').eq('company_id', member.companyId).order('title'),
@@ -261,7 +270,7 @@ function CreateJobInner() {
         <h1 className="text-[19px] font-bold text-text-primary">New Job</h1>
       </div>
 
-      <SectionCard title="SERVICE">
+      <SectionCard title="SERVICE & CLIENT">
         <FormSelect label="What is the job?" value={serviceId} onChange={e => pickService(e.target.value)}
           hint={services.length === 0 ? 'No services yet. Add them under Jobs › Job services, or skip this and type a title below.' : undefined}>
           <option value="">{services.length ? 'Choose a service (optional)' : 'No services yet'}</option>
@@ -287,6 +296,27 @@ function CreateJobInner() {
         )}
         {pickedService && clientRows.length > 0 && !clientRows.some(r => r.service_id === pickedService.id) && (
           <p className="text-[12px] text-warning">This service is not on this client&apos;s agreed list.</p>
+        )}
+
+        <ClientSearch clients={clients} value={clientId} onChange={pickClient} />
+
+        {companyId && clientId && (
+          <>
+            <JobWherePicker
+              companyId={companyId}
+              clientId={clientId}
+              value={where}
+              onChange={setWhere}
+              canAdd={canCreate}
+              showService={false}
+            />
+            {where.areaId && (
+              <label className="flex items-center gap-2 text-[13px] text-text-primary cursor-pointer">
+                <input type="checkbox" className="accent-primary" checked={addAreaUnits} onChange={e => setAddAreaUnits(e.target.checked)} />
+                Put this area&apos;s equipment on the job card
+              </label>
+            )}
+          </>
         )}
       </SectionCard>
 
@@ -333,26 +363,7 @@ function CreateJobInner() {
         </div>
       </SectionCard>
 
-      <SectionCard title="CLIENT & PROJECT">
-        <FormSelect
-          label="Client"
-          value={clientId}
-          onChange={e => {
-            const next = e.target.value
-            changeClient(next)
-            if (dealId) {
-              const deal = deals.find(d => d.id === dealId)
-              if (deal?.client_id && next && deal.client_id !== next) setDealId('')
-            }
-          }}
-        >
-          <option value="">No client</option>
-          {clients.map(c => (
-            <option key={c.id} value={c.id}>
-              {c.name}{c.client_code ? ` (${c.client_code})` : ''}
-            </option>
-          ))}
-        </FormSelect>
+      <SectionCard title="PROJECT">
         <FormSelect
           label="Project"
           value={dealId}
@@ -375,25 +386,6 @@ function CreateJobInner() {
             ))}
         </FormSelect>
       </SectionCard>
-
-      {companyId && (
-        <SectionCard title="SITE & AREA">
-          <JobWherePicker
-            companyId={companyId}
-            clientId={clientId}
-            value={where}
-            onChange={setWhere}
-            canAdd={canCreate}
-            showService={false}
-          />
-          {clientId && where.areaId && (
-            <label className="flex items-center gap-2 text-[13px] text-text-primary cursor-pointer">
-              <input type="checkbox" className="accent-primary" checked={addAreaUnits} onChange={e => setAddAreaUnits(e.target.checked)} />
-              Put this area&apos;s equipment on the job card
-            </label>
-          )}
-        </SectionCard>
-      )}
 
       <SectionCard title="LOCATION">
         <FormField label="Address">
