@@ -336,6 +336,10 @@ export interface Job {
   client_id: string | null
   site_id: string | null
   unit_id?: string | null
+  /** Area inside the site (site_areas), e.g. Brewhouse › Service Room. */
+  area_id?: string | null
+  /** What is done (job_services), e.g. Minor service. */
+  service_id?: string | null
   deal_id: string | null
   address: string | null
   assignee_employee_id: string | null
@@ -348,6 +352,10 @@ export interface Job {
   created_at: string
   clients?: { name: string; client_code?: string | null } | null
   sites?: Pick<Site, 'name' | 'address'> | null
+  /** Embed via jobs.area_id → site_areas (with its parent area's name). */
+  area?: { id: string; name: string; parent?: { name: string } | null } | null
+  /** Embed via jobs.service_id → job_services */
+  service?: { id: string; name: string } | null
   /** Embed via jobs.deal_id → client_deals */
   client_deals?: { id: string; title: string; project_code: string | null } | null
 }

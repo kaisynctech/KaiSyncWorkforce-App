@@ -59,3 +59,22 @@ export function repeatDates(first: string, until: string | null | undefined, wee
   }
   return out
 }
+
+/** Value for an <input type="datetime-local"> in local time ("2026-10-26T07:00"). */
+export function localDateTimeInputOf(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return `${localISODate(d)}T${localTimeOf(iso, '00:00')}`
+}
+
+/**
+ * A local date and "HH:MM" (or a datetime-local value) as an ISO instant. Sending "2026-10-26T07:00:00"
+ * without a time zone made the database store 07:00 UTC, shown as 09:00 in South Africa.
+ */
+export function localDateTimeToIso(date: string, time?: string | null): string | null {
+  if (!date) return null
+  const value = date.includes('T') ? date : `${date}T${time || '00:00'}`
+  const d = new Date(value.length === 16 ? `${value}:00` : value)
+  return Number.isNaN(d.getTime()) ? null : d.toISOString()
+}

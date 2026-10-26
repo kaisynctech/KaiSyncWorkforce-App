@@ -22,6 +22,8 @@ import {
 } from '@/components/ui/ResponsiveDataView'
 import { cn, formatDate, formatCurrency } from '@/lib/utils'
 import { Toggle } from '@/components/Toggle'
+import { JobsTabs } from '@/components/jobs/JobsTabs'
+import { areaOptions, listClientSites, listJobServices, listSiteAreas, type AreaOption } from '@/lib/job-services'
 import type { Job, JobStatus } from '@/types/database'
 
 type Scope = 'all' | 'mine'
@@ -61,6 +63,17 @@ const PRIORITY_BADGES: Record<string, { label: string; cls: string }> = {
 
 const FALLBACK_BADGE = { label: '—', cls: 'bg-surface-elevated text-text-secondary' }
 
+const JOB_LIST_SELECT =
+  '*, clients(name, client_code), sites(name, address), area:area_id(id, name, parent:parent_area_id(name)), service:service_id(id, name)'
+
+const filterSelect =
+  'h-9 px-2 rounded-sm border border-border bg-surface-elevated text-[13px] text-text-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50'
+
+function areaLabel(job: Job): string {
+  if (!job.area) return ''
+  return job.area.parent?.name ? `${job.area.parent.name} › ${job.area.name}` : job.area.name
+}
+
 type JobListFilters = {
   companyId: string
   employeeId: string
@@ -72,6 +85,11 @@ type JobListFilters = {
   dateFrom: string
   dateTo: string
   clientIds: string[]
+  /** Filter panel: one client, one site, an area (with the areas inside it), one service. */
+  clientId: string
+  siteId: string
+  areaIds: string[]
+  serviceId: string
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -91,6 +109,10 @@ function withJobFilters(query: any, filters: JobListFilters) {
     if (filters.clientIds.length > 0) parts.push(`client_id.in.(${filters.clientIds.join(',')})`)
     next = next.or(parts.join(','))
   }
+  if (filters.clientId) next = next.eq('client_id', filters.clientId)
+  if (filters.siteId) next = next.eq('site_id', filters.siteId)
+  if (filters.areaIds.length > 0) next = next.in('area_id', filters.areaIds)
+  if (filters.serviceId) next = next.eq('service_id', filters.serviceId)
   if (filters.dateFilter && filters.dateFrom) next = next.gte('scheduled_start', filters.dateFrom)
   if (filters.dateFilter && filters.dateTo) next = next.lte('scheduled_end', `${filters.dateTo}T23:59:59`)
   return next
@@ -131,6 +153,15 @@ export default function JobsPage() {
   const [total, setTotal] = useState(0)
   const [perms, setPerms] = useState<PermissionSet | null>(null)
   const [kpis, setKpis] = useState<JobKpis>({ total: 0, open: 0, inProgress: 0, unassigned: 0 })
+  const [companyId, setCompanyId] = useState<string | null>(null)
+  const [filterClients, setFilterClients] = useState<{ id: string; name: string }[]>([])
+  const [filterServices, setFilterServices] = useState<{ id: string; name: string }[]>([])
+  const [filterSites, setFilterSites] = useState<{ id: string; name: string }[]>([])
+  const [filterAreas, setFilterAreas] = useState<AreaOption[]>([])
+  const [clientFilter, setClientFilter] = useState('')
+  const [siteFilter, setSiteFilter] = useState('')
+  const [areaFilter, setAreaFilter] = useState('')
+  const [serviceFilter, setServiceFilter] = useState('')
 
   const canCreate = can(perms, PERM.jobsCreate)
   const canViewAll = can(perms, PERM.jobsViewAll)
@@ -140,13 +171,57 @@ export default function JobsPage() {
     return () => clearTimeout(t)
   }, [search])
 
-  useEffect(() => { setPage(1) }, [searchDebounced, statusFilter, scope, pageSize, dateFrom, dateTo, dateFilter])
+  useEffect(() => { setPage(1) }, [searchDebounced, statusFilter, scope, pageSize, dateFrom, dateTo, dateFilter, clientFilter, siteFilter, areaFilter, serviceFilter])
+
+  // Filter choices: clients and services when the filter panel opens; sites and areas for the chosen client and site.
+  useEffect(() => {
+    if (!filterOpen || !companyId || filterServices.length || filterClients.length) return
+    let cancelled = false
+    const supabase = createClient()
+    void Promise.all([
+      supabase.from('clients').select('id, name').eq('company_id', companyId).order('name').limit(5000),
+      listJobServices(supabase, companyId, { includeInactive: true }),
+    ]).then(([c, sv]) => {
+      if (cancelled) return
+      setFilterClients((c.data ?? []) as { id: string; name: string }[])
+      if (sv.ok) setFilterServices(sv.data.map(x => ({ id: x.id, name: x.name })))
+    })
+    return () => { cancelled = true }
+  }, [filterOpen, companyId, filterServices.length, filterClients.length])
+
+  useEffect(() => {
+    let cancelled = false
+    if (!companyId || !clientFilter) { void Promise.resolve().then(() => { if (!cancelled) setFilterSites([]) }); return () => { cancelled = true } }
+    void listClientSites(createClient(), companyId, clientFilter).then(res => { if (!cancelled && res.ok) setFilterSites(res.data) })
+    return () => { cancelled = true }
+  }, [companyId, clientFilter])
+
+  useEffect(() => {
+    let cancelled = false
+    if (!companyId || !siteFilter) { void Promise.resolve().then(() => { if (!cancelled) setFilterAreas([]) }); return () => { cancelled = true } }
+    void listSiteAreas(createClient(), companyId, [siteFilter], { includeInactive: true }).then(res => {
+      if (!cancelled && res.ok) setFilterAreas(areaOptions(res.data))
+    })
+    return () => { cancelled = true }
+  }, [companyId, siteFilter])
+
+  /** The chosen area and every area inside it. */
+  const areaIds = (() => {
+    if (!areaFilter) return [] as string[]
+    const chosen = filterAreas.find(a => a.id === areaFilter)
+    if (!chosen) return [areaFilter]
+    return filterAreas.filter(a => a.id === areaFilter || a.path.startsWith(`${chosen.path} › `)).map(a => a.id)
+  })()
+  const areaKey = areaIds.join(',')
+  const activeFilterCount = [clientFilter, siteFilter, areaFilter, serviceFilter].filter(Boolean).length
+    + (statusFilter !== 'all' ? 1 : 0) + (dateFilter ? 1 : 0)
 
   const loadJobs = useCallback(async () => {
     setLoading(true)
     const supabase = createClient()
     const member = await resolveCurrentMember(supabase)
     if (!member) { setError('not_linked'); setLoading(false); return }
+    setCompanyId(member.companyId)
 
     const { data: me } = await supabase
       .from('employees')
@@ -178,6 +253,10 @@ export default function JobsPage() {
       dateFrom,
       dateTo,
       clientIds,
+      clientId: clientFilter,
+      siteId: siteFilter,
+      areaIds: areaKey ? areaKey.split(',') : [],
+      serviceId: serviceFilter,
     }
 
     const { from, to } = pageRange(page, pageSize)
@@ -189,6 +268,10 @@ export default function JobsPage() {
       dateFrom: '',
       dateTo: '',
       clientIds: [],
+      clientId: '',
+      siteId: '',
+      areaIds: [],
+      serviceId: '',
     }
     const scopeCount = () =>
       withJobFilters(
@@ -198,7 +281,7 @@ export default function JobsPage() {
 
     const [pageRes, scopeRes, openRes, inProgRes, unassignedRes] = await Promise.all([
       withJobFilters(
-        supabase.from('jobs').select('*, clients(name, client_code)', { count: 'exact' }),
+        supabase.from('jobs').select(JOB_LIST_SELECT, { count: 'exact' }),
         filters,
       ).order('created_at', { ascending: false }).range(from, to),
       scopeCount(),
@@ -234,7 +317,7 @@ export default function JobsPage() {
       }
     }
     setLoading(false)
-  }, [scope, page, pageSize, searchDebounced, statusFilter, dateFilter, dateFrom, dateTo])
+  }, [scope, page, pageSize, searchDebounced, statusFilter, dateFilter, dateFrom, dateTo, clientFilter, siteFilter, areaKey, serviceFilter])
 
   useEffect(() => { void loadJobs() }, [loadJobs])
 
@@ -268,13 +351,17 @@ export default function JobsPage() {
       dateFrom,
       dateTo,
       clientIds,
+      clientId: clientFilter,
+      siteId: siteFilter,
+      areaIds,
+      serviceId: serviceFilter,
     }
 
     const rows: Job[] = []
     const batch = 500
     for (let from = 0; from < 20000; from += batch) {
       const { data, error: exportError } = await withJobFilters(
-        supabase.from('jobs').select('*, clients(name, client_code)'),
+        supabase.from('jobs').select(JOB_LIST_SELECT),
         filters,
       ).order('created_at', { ascending: false }).range(from, from + batch - 1)
       if (exportError) {
@@ -286,13 +373,16 @@ export default function JobsPage() {
       if (pageRows.length < batch) break
     }
 
-    const headers = ['Code', 'Title', 'Client', 'Status', 'Priority', 'Start', 'End', 'Estimated Cost']
+    const headers = ['Code', 'Title', 'Client', 'Site', 'Area', 'Service', 'Status', 'Priority', 'Start', 'End', 'Estimated Cost']
     const csvRows = rows.map(job => {
       const client = (job.clients as { name: string } | undefined)?.name ?? ''
       return [
         job.job_code ?? job.id.slice(0, 8).toUpperCase(),
         job.title,
         client,
+        job.sites?.name ?? '',
+        areaLabel(job),
+        job.service?.name ?? '',
         job.status,
         job.priority,
         job.scheduled_start ?? '',
@@ -336,8 +426,11 @@ export default function JobsPage() {
   return (
     <div className="h-full min-h-0 flex flex-col">
       <div className="px-3 pt-3 pb-2 space-y-2 shrink-0">
-        <div className="flex items-center justify-between gap-2">
-          <h1 className="text-[16px] font-bold text-text-primary">Jobs</h1>
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-[16px] font-bold text-text-primary">Jobs</h1>
+            <JobsTabs active="jobs" />
+          </div>
           <div className="flex items-center gap-2">
             <button
               onClick={downloadCSV}
@@ -411,8 +504,8 @@ export default function JobsPage() {
               filterOpen ? 'bg-primary text-white border-primary' : 'bg-surface border-border text-text-secondary hover:text-text-primary'
             )}
           >
-            <span className="material-icons text-[16px]">filter_list</span>
-            Filter
+            <span className="material-icons text-[16px]" aria-hidden="true">filter_list</span>
+            Filter{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
           </button>
         </div>
       </div>
@@ -426,6 +519,45 @@ export default function JobsPage() {
       {filterOpen && (
         <div className="mx-3 mb-2 shrink-0">
           <div className="bg-surface border border-divider rounded-sm p-3 space-y-3">
+            <div className="grid gap-2 sm:grid-cols-4">
+              <label className="flex flex-col gap-1 text-[11px] text-text-secondary">
+                Client
+                <select value={clientFilter} onChange={e => { setClientFilter(e.target.value); setSiteFilter(''); setAreaFilter('') }} className={filterSelect}>
+                  <option value="">All clients</option>
+                  {filterClients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-[11px] text-text-secondary">
+                Site
+                <select value={siteFilter} disabled={!clientFilter} onChange={e => { setSiteFilter(e.target.value); setAreaFilter('') }} className={filterSelect}>
+                  <option value="">{clientFilter ? 'All sites' : 'Choose a client first'}</option>
+                  {filterSites.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-[11px] text-text-secondary">
+                Area
+                <select value={areaFilter} disabled={!siteFilter} onChange={e => setAreaFilter(e.target.value)} className={filterSelect}>
+                  <option value="">{siteFilter ? 'All areas' : 'Choose a site first'}</option>
+                  {filterAreas.map(a => <option key={a.id} value={a.id}>{`${'\u00A0\u00A0'.repeat(a.depth)}${a.name}`}</option>)}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-[11px] text-text-secondary">
+                Service
+                <select value={serviceFilter} onChange={e => setServiceFilter(e.target.value)} className={filterSelect}>
+                  <option value="">All services</option>
+                  {filterServices.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
+                </select>
+              </label>
+            </div>
+            {activeFilterCount > 0 && (
+              <button
+                type="button"
+                className="text-[12px] text-primary hover:underline"
+                onClick={() => { setClientFilter(''); setSiteFilter(''); setAreaFilter(''); setServiceFilter(''); setStatusFilter('all'); setDateFilter(false) }}
+              >
+                Clear filters
+              </button>
+            )}
             <div className="flex items-center justify-between">
               <p className="text-[13px] font-medium text-text-primary">Date filter</p>
               <Toggle checked={dateFilter} onChange={setDateFilter} />
@@ -497,6 +629,11 @@ export default function JobsPage() {
                         </td>
                         <td className="px-3 py-2">
                           <p className="font-medium text-text-primary truncate">{job.title || '—'}</p>
+                          {(job.service?.name || job.area) && (
+                            <p className="text-[11px] text-text-secondary truncate">
+                              {[job.service?.name, areaLabel(job)].filter(Boolean).join(' · ')}
+                            </p>
+                          )}
                         </td>
                         <td className="px-3 py-2 text-text-secondary truncate">
                           {client?.name ?? '—'}
@@ -549,6 +686,8 @@ export default function JobsPage() {
                         </span>
                       </div>
                       <DataCardRow label="Client" value={client?.name ?? '—'} />
+                      {job.service?.name && <DataCardRow label="Service" value={job.service.name} />}
+                      {job.area && <DataCardRow label="Area" value={areaLabel(job)} />}
                       <DataCardRow label="Priority" value={priorityBadge.label} />
                       <DataCardRow
                         label="Start"

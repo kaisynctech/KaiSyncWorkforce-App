@@ -15,6 +15,10 @@ export type JobCreateInput = {
   clientId?: string | null
   siteId?: string | null
   unitId?: string | null
+  /** Area inside the site (site_areas). */
+  areaId?: string | null
+  /** What is done (job_services). */
+  serviceId?: string | null
   contractorId?: string | null
   dealId?: string | null
   address?: string | null
@@ -61,6 +65,8 @@ export function buildJobCreatePayload(input: JobCreateInput): Record<string, unk
     client_id: input.clientId || null,
     site_id: input.siteId || null,
     unit_id: input.unitId || null,
+    area_id: input.areaId || null,
+    service_id: input.serviceId || null,
     contractor_id: input.contractorId || null,
     deal_id: input.dealId || null,
     address: emptyToNull(input.address),

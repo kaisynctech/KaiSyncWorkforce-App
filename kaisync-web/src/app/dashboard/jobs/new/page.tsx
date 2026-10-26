@@ -9,6 +9,9 @@ import { SectionCard, FormField, entryClass } from '@/components/SectionCard'
 import { FormSelect } from '@/components/FormSelect'
 import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
 import { createJob } from '@/lib/jobs'
+import { localDateTimeToIso, localDateTimeInputOf } from '@/lib/schedule-times'
+import { JobWherePicker, type JobWhereValue } from '@/components/jobs/JobWherePicker'
+import { addServiceChecklistToJob, type OfferedService } from '@/lib/job-services'
 import type { Client, Employee } from '@/types/database'
 
 export default function CreateJobPage() {
@@ -44,11 +47,29 @@ function CreateJobInner() {
   const [dealId, setDealId] = useState(preselectedDealId)
   const [address, setAddress] = useState('')
   const [assignedEmployeeId, setAssignedEmployeeId] = useState('')
+  const [where, setWhere] = useState<JobWhereValue>({ siteId: '', areaId: '', serviceId: '' })
+  const [pickedService, setPickedService] = useState<OfferedService | null>(null)
 
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
   const canCreate = can(perms, PERM.jobsCreate)
+
+  /** Choosing a service fills what is still empty: title, estimated cost, end time. */
+  function servicePicked(service: OfferedService | null) {
+    setPickedService(service)
+    if (!service) return
+    if (!title.trim()) setTitle(service.name)
+    if (!estimatedCost && service.price != null) setEstimatedCost(String(service.price))
+    if (service.default_duration_minutes && startDate && !endDate) {
+      const startIso = localDateTimeToIso(startDate, startTime)
+      if (startIso) {
+        const end = localDateTimeInputOf(new Date(new Date(startIso).getTime() + service.default_duration_minutes * 60000).toISOString())
+        setEndDate(end.slice(0, 10))
+        setEndTime(end.slice(11, 16))
+      }
+    }
+  }
 
   useEffect(() => { void loadContext() }, [])
 
@@ -93,12 +114,9 @@ function CreateJobInner() {
     setSaving(true)
     setError(null)
 
-    const scheduledStart = startDate
-      ? `${startDate}T${startTime || '00:00'}:00`
-      : null
-    const scheduledEnd = endDate
-      ? `${endDate}T${endTime || '00:00'}:00`
-      : null
+    // Local (South African) time. These used to be sent without a time zone and stored 2 h late.
+    const scheduledStart = localDateTimeToIso(startDate, startTime)
+    const scheduledEnd = localDateTimeToIso(endDate, endTime)
 
     const supabase = createClient()
     const assignee = assignedEmployeeId || null
@@ -111,6 +129,9 @@ function CreateJobInner() {
       scheduledStart,
       scheduledEnd,
       clientId: clientId || null,
+      siteId: clientId ? where.siteId || null : null,
+      areaId: clientId ? where.areaId || null : null,
+      serviceId: where.serviceId || null,
       dealId: dealId || null,
       address,
       assigneeEmployeeId: assignee,
@@ -119,6 +140,10 @@ function CreateJobInner() {
       assignCode: true,
     })
 
+    if (created.ok && pickedService && pickedService.id === where.serviceId && pickedService.checklist.length) {
+      const steps = await addServiceChecklistToJob(supabase, companyId, created.data.id, pickedService.checklist)
+      if (!steps.ok) console.warn('Checklist steps were not added:', steps.message)
+    }
     setSaving(false)
     if (!created.ok) { setError(created.message); return }
     router.push(`/dashboard/jobs/${created.data.id}`)
@@ -220,6 +245,8 @@ function CreateJobInner() {
           onChange={e => {
             const next = e.target.value
             setClientId(next)
+            setWhere({ siteId: '', areaId: '', serviceId: '' })
+            setPickedService(null)
             if (dealId) {
               const deal = deals.find(d => d.id === dealId)
               if (deal?.client_id && next && deal.client_id !== next) setDealId('')
@@ -241,7 +268,11 @@ function CreateJobInner() {
             setDealId(next)
             if (next) {
               const deal = deals.find(d => d.id === next)
-              if (deal?.client_id) setClientId(deal.client_id)
+              if (deal?.client_id && deal.client_id !== clientId) {
+                setClientId(deal.client_id)
+                setWhere({ siteId: '', areaId: '', serviceId: '' })
+                setPickedService(null)
+              }
             }
           }}
         >
@@ -255,6 +286,24 @@ function CreateJobInner() {
             ))}
         </FormSelect>
       </SectionCard>
+
+      {companyId && (
+        <SectionCard title="SITE, AREA & SERVICE">
+          <JobWherePicker
+            companyId={companyId}
+            clientId={clientId}
+            value={where}
+            onChange={setWhere}
+            onServicePicked={servicePicked}
+            canAdd={canCreate}
+          />
+          {pickedService && pickedService.checklist.length > 0 && (
+            <p className="text-[12px] text-text-secondary">
+              {pickedService.checklist.length} checklist step{pickedService.checklist.length === 1 ? '' : 's'} from this service will be added to the job.
+            </p>
+          )}
+        </SectionCard>
+      )}
 
       <SectionCard title="LOCATION">
         <FormField label="Address">

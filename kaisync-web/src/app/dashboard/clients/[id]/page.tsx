@@ -1,6 +1,8 @@
 'use client'
 
-import { Suspense, useEffect, useRef, useState, type DragEvent } from 'react'
+import { SiteAreasPanel } from '@/components/jobs/SiteAreasPanel'
+import { ClientServicesPanel } from '@/components/jobs/ClientServicesPanel'
+import { Fragment, Suspense, useEffect, useRef, useState, type DragEvent } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -187,6 +189,9 @@ function ClientDetailInner() {
   const [projectView, setProjectView] = useState<'table' | 'board'>('table')
   const [codeCopied, setCodeCopied] = useState(false)
   const [addingSite, setAddingSite] = useState(false)
+  /** Site whose areas are open below it, and how many areas each site has. */
+  const [areasSiteId, setAreasSiteId] = useState<string | null>(null)
+  const [areaCounts, setAreaCounts] = useState<Record<string, number>>({})
   const [siteName, setSiteName] = useState('')
   const [siteAddress, setSiteAddress] = useState('')
   const [editingSiteId, setEditingSiteId] = useState<string | null>(null)
@@ -1486,14 +1491,15 @@ function ClientDetailInner() {
                     </button>
                   </div>
                 )}
-                <div className="card overflow-hidden" style={{ maxHeight: 280, overflowY: 'auto' }}>
+                <div className="card overflow-hidden" style={areasSiteId ? undefined : { maxHeight: 280, overflowY: 'auto' }}>
                   {sites.length === 0 ? (
                     <p className="text-text-secondary text-[13px] p-4">No sites.</p>
                   ) : (
                     <table className="w-full">
                       <tbody>
                         {sites.map(s => (
-                          <tr key={s.id} className="border-b border-divider last:border-0">
+                          <Fragment key={s.id}>
+                          <tr className="border-b border-divider last:border-0">
                             {editingSiteId === s.id ? (
                               <td className="data-td" colSpan={2}>
                                 <div className="space-y-2 py-1">
@@ -1511,23 +1517,51 @@ function ClientDetailInner() {
                                 <td className="data-td text-text-secondary text-[12px]">
                                   <div className="flex items-center justify-between gap-2">
                                     <span className="truncate">{s.address ?? '—'}</span>
+                                    <span className="shrink-0 flex gap-3">
+                                      <button
+                                        type="button"
+                                        className="text-primary text-[11px] font-medium"
+                                        aria-expanded={areasSiteId === s.id}
+                                        onClick={() => setAreasSiteId(prev => prev === s.id ? null : s.id)}
+                                      >
+                                        {areasSiteId === s.id ? 'Close areas' : `Areas${areaCounts[s.id] != null ? ` (${areaCounts[s.id]})` : ''}`}
+                                      </button>
                                     {canEdit && (
                                       <span className="shrink-0 flex gap-3">
                                         <button type="button" className="text-primary text-[11px] font-medium" onClick={() => { setEditingSiteId(s.id); setEditSiteName(s.name); setEditSiteAddress(s.address ?? '') }}>Edit</button>
                                         <button type="button" className="text-error text-[11px] font-medium" onClick={() => void deleteSite(s)}>Remove</button>
                                       </span>
                                     )}
+                                    </span>
                                   </div>
                                 </td>
                               </>
                             )}
                           </tr>
+                          {areasSiteId === s.id && client && (
+                            <tr className="border-b border-divider last:border-0">
+                              <td className="data-td" colSpan={2}>
+                                <SiteAreasPanel
+                                  companyId={client.company_id}
+                                  siteId={s.id}
+                                  siteName={s.name}
+                                  canEdit={canEdit}
+                                  onCount={n => setAreaCounts(prev => prev[s.id] === n ? prev : { ...prev, [s.id]: n })}
+                                />
+                              </td>
+                            </tr>
+                          )}
+                          </Fragment>
                         ))}
                       </tbody>
                     </table>
                   )}
                 </div>
               </div>
+            )}
+
+            {showRelatedTabs && client && (
+              <ClientServicesPanel companyId={client.company_id} clientId={client.id} clientName={client.name} canEdit={canEdit} />
             )}
           </>
         )}

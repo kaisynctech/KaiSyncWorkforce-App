@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { localDateTimeInputOf, localDateTimeToIso } from '@/lib/schedule-times'
+import { JobWherePicker, type JobWhereValue } from '@/components/jobs/JobWherePicker'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { FormSelect } from '@/components/FormSelect'
@@ -159,6 +161,7 @@ export default function JobDetailPage() {
   const [editClientId,    setEditClientId]    = useState<string | null>(null)
   const [editDealId,      setEditDealId]      = useState<string | null>(null)
   const [editAddress,     setEditAddress]     = useState('')
+  const [editWhere,       setEditWhere]       = useState<JobWhereValue>({ siteId: '', areaId: '', serviceId: '' })
   const [clients,         setClients]         = useState<ClientRow[]>([])
   const [clientContacts, setClientContacts]  = useState<JobClientContact[]>([])
   const [deals,           setDeals]           = useState<DealRow[]>([])
@@ -194,7 +197,7 @@ export default function JobDetailPage() {
 
     const [jobRes, empRes, jcRes, leRes, invRes, clientRes, dealRes, contractorRes, invItemsRes, meRes, quoteRes, invMoneyRes] =
       await Promise.all([
-        supabase.from('jobs').select('*, clients(*), sites(*), client_deals:deal_id(id, title, project_code)').eq('id', jobId).single(),
+        supabase.from('jobs').select('*, clients(*), sites(*), area:area_id(id, name, parent:parent_area_id(name)), service:service_id(id, name), client_deals:deal_id(id, title, project_code)').eq('id', jobId).single(),
         supabase.from('employees').select('id, name, surname, hourly_rate').eq('company_id', member.companyId).eq('is_active', true).order('name'),
         supabase.from('job_contractors').select('*, contractors(name, contractor_code)').eq('job_id', jobId),
         supabase.from('labor_entries').select('id, job_id, employee_id, work_date, hours, hourly_rate').eq('job_id', jobId).order('work_date'),
@@ -314,11 +317,12 @@ export default function JobDetailPage() {
     setEditTitle(job.title)
     setEditDescription(job.description ?? '')
     setEditPriority(job.priority)
-    setEditStart(job.scheduled_start ? job.scheduled_start.slice(0, 16) : '')
-    setEditEnd(job.scheduled_end ? job.scheduled_end.slice(0, 16) : '')
+    setEditStart(localDateTimeInputOf(job.scheduled_start))
+    setEditEnd(localDateTimeInputOf(job.scheduled_end))
     setEditClientId(job.client_id ?? null)
     setEditDealId(job.deal_id ?? null)
     setEditAddress(job.address ?? '')
+    setEditWhere({ siteId: job.site_id ?? '', areaId: job.area_id ?? '', serviceId: job.service_id ?? '' })
     setTab('details')
     setIsEditing(true)
   }
@@ -333,11 +337,15 @@ export default function JobDetailPage() {
       title:           editTitle.trim(),
       description:     editDescription.trim() || null,
       priority:        editPriority,
-      scheduled_start: editStart ? new Date(editStart).toISOString() : null,
-      scheduled_end:   editEnd ? new Date(editEnd).toISOString() : null,
+      scheduled_start: localDateTimeToIso(editStart),
+      scheduled_end:   localDateTimeToIso(editEnd),
       client_id:       editClientId,
       deal_id:         editDealId,
       address:         editAddress.trim() || null,
+      // A job without a client may still have a property site (Properties module): keep it.
+      site_id:         editClientId ? editWhere.siteId || null : (job.client_id ? null : job.site_id),
+      area_id:         editClientId ? editWhere.areaId || null : (job.client_id ? null : job.area_id ?? null),
+      service_id:      editWhere.serviceId || null,
     }).eq('id', jobId)
     if (e) {
       setError(e.message)
@@ -347,8 +355,8 @@ export default function JobDetailPage() {
         title:           editTitle.trim(),
         description:     editDescription.trim() || null,
         priority:        editPriority,
-        scheduled_start: editStart ? new Date(editStart).toISOString() : null,
-        scheduled_end:   editEnd ? new Date(editEnd).toISOString() : null,
+        scheduled_start: localDateTimeToIso(editStart),
+        scheduled_end:   localDateTimeToIso(editEnd),
         client_id:       editClientId,
         deal_id:         editDealId,
         address:         editAddress.trim() || null,
@@ -833,6 +841,7 @@ export default function JobDetailPage() {
                 value={editClientId ?? ''}
                 onChange={e => {
                   const next = e.target.value || null
+                  if (next !== editClientId) setEditWhere({ siteId: '', areaId: '', serviceId: editWhere.serviceId })
                   setEditClientId(next)
                   if (editDealId) {
                     const deal = deals.find(d => d.id === editDealId)
@@ -869,6 +878,15 @@ export default function JobDetailPage() {
                   ))}
               </FormSelect>
             </div>
+            {companyId && (
+              <JobWherePicker
+                companyId={companyId}
+                clientId={editClientId ?? ''}
+                value={editWhere}
+                onChange={setEditWhere}
+                canAdd={canEdit}
+              />
+            )}
           </div>
         ) : (
           /* ── Display mode ── */
@@ -905,7 +923,23 @@ export default function JobDetailPage() {
                 )}
 
                 <span className="text-[12px] text-text-secondary">Site</span>
-                <span className="text-[13px] text-text-primary">{job.sites?.address ?? job.address ?? '—'}</span>
+                <span className="text-[13px] text-text-primary">
+                  {job.sites?.name
+                    ? `${job.sites.name}${job.sites.address ? ` · ${job.sites.address}` : ''}`
+                    : job.address ?? '—'}
+                </span>
+
+                {job.area && (
+                  <>
+                    <span className="text-[12px] text-text-secondary">Area</span>
+                    <span className="text-[13px] text-text-primary">
+                      {job.area.parent?.name ? `${job.area.parent.name} › ${job.area.name}` : job.area.name}
+                    </span>
+                  </>
+                )}
+
+                <span className="text-[12px] text-text-secondary">Service</span>
+                <span className="text-[13px] text-text-primary">{job.service?.name ?? '—'}</span>
 
                 <span className="text-[12px] text-text-secondary">Start</span>
                 <span className="text-[13px] text-text-primary">{fmtDatetime(job.scheduled_start)}</span>

@@ -37,4 +37,14 @@ describe('scheduling times in South Africa', async () => {
     expect(dates).not.toContain('2026-11-01')
     expect(repeatDates('2026-10-26', '', new Set([1]))).toEqual(['2026-10-26'])
   })
+
+  it('job times: local date/time to ISO and back (were 2 h off)', async () => {
+    process.env.TZ = 'Africa/Johannesburg'
+    const { localDateTimeToIso, localDateTimeInputOf } = await import('./schedule-times')
+    expect(localDateTimeToIso('2026-10-26', '08:00')).toBe('2026-10-26T06:00:00.000Z')
+    expect(localDateTimeToIso('2026-10-26T08:00')).toBe('2026-10-26T06:00:00.000Z')
+    expect(localDateTimeToIso('', '08:00')).toBeNull()
+    expect(localDateTimeInputOf('2026-10-26T06:00:00+00:00')).toBe('2026-10-26T08:00')
+    expect(localDateTimeInputOf(null)).toBe('')
+  })
 })
