@@ -12,6 +12,7 @@ import { useEmployeeModuleGate } from '@/lib/employee-module-gate'
 import { getPackedJobDetail, loadJobPack, saveJobPack } from '@/lib/offline/job-pack'
 import { enqueueChecklistToggle, enqueueJobCard, enqueueJobPhoto } from '@/lib/offline/job-queue'
 import { networkLooksDown } from '@/lib/offline/meta'
+import { WorkerJobEquipment } from '@/components/jobs/WorkerJobEquipment'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 interface Job {
@@ -1135,6 +1136,11 @@ export default function JobCardPage() {
             </div>
           </div>
         </Section>
+
+        {/* ── Service & equipment (Phase 2) ── */}
+        {companyId && empId && (
+          <WorkerJobEquipment companyId={companyId} employeeId={empId} jobId={jobId} sessionToken={token || null} />
+        )}
 
         {/* ── Photos ── */}
         <Section title="Photos">

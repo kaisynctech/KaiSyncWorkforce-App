@@ -78,6 +78,23 @@ describe('parseAreaRows', () => {
     ])
   })
 
+  it('reads equipment lines from the SAB layout, skipping "-" rows', () => {
+    const { units } = parseAreaRows([
+      ['AREAS', 'MODEL', 'TYPE', 'INVERTER / NON-INVERTER', 'SIZE', 'QTY'],
+      ['BREWHOUSE', '', '', '', '', ''],
+      ['a) Service Room', 'Midea', 'Underceiling ', '', '36 000 btu', 1],
+      ['UTILITIES'],
+      ['Ongezwas Office', '-', '-', '', '-', '-'],
+      ['Issuing Office', '', 'Midwall-split', 'Inverter', '18 000 btu', 1],
+      ['Open-plan', '', 'Difusers', '', '', 8],
+    ])
+    expect(units).toEqual([
+      { area: 'BREWHOUSE', subArea: 'Service Room', make: 'Midea', type: 'Underceiling', size: '36 000 btu', quantity: 1, notes: '' },
+      { area: 'UTILITIES', subArea: 'Issuing Office', make: '', type: 'Midwall-split', size: '18 000 btu', quantity: 1, notes: 'Inverter' },
+      { area: 'UTILITIES', subArea: 'Open-plan', make: '', type: 'Difusers', size: '', quantity: 8, notes: '' },
+    ])
+  })
+
   it('asks for a header row when there is none', () => {
     expect(parseAreaRows([['x', 'y']]).problems[0]).toMatch(/Area/)
   })

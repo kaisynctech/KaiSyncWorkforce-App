@@ -13,7 +13,10 @@ import {
   updateSiteArea,
   type AreaImportRow,
   type SiteArea,
+  type UnitImportRow,
 } from '@/lib/job-services'
+import { importSiteEquipment, listSiteEquipment } from '@/lib/job-equipment'
+import { SiteEquipmentPanel } from '@/components/jobs/SiteEquipmentPanel'
 
 type Props = {
   companyId: string
@@ -42,7 +45,8 @@ export function SiteAreasPanel({ companyId, siteId, siteName, canEdit, onCount }
   const [parent, setParent] = useState('')
   const [priority, setPriority] = useState('')
   const [editing, setEditing] = useState<{ id: string; name: string; priority: string } | null>(null)
-  const [preview, setPreview] = useState<{ file: string; rows: AreaImportRow[]; problems: string[] } | null>(null)
+  const [preview, setPreview] = useState<{ file: string; rows: AreaImportRow[]; units: UnitImportRow[]; problems: string[] } | null>(null)
+  const [equipmentKey, setEquipmentKey] = useState(0)
   const fileRef = useRef<HTMLInputElement>(null)
   const onCountRef = useRef(onCount)
   useEffect(() => { onCountRef.current = onCount })
@@ -131,11 +135,26 @@ export function SiteAreasPanel({ companyId, siteId, siteName, canEdit, onCount }
   async function runImport() {
     if (!preview) return
     setBusy(true); setError(null)
-    const res = await importSiteAreas(createClient(), companyId, siteId, preview.rows, areas)
+    const supabase = createClient()
+    const res = await importSiteAreas(supabase, companyId, siteId, preview.rows, areas)
+    if (!res.ok) { setBusy(false); setError(res.message); await load(); return }
+    let unitText = ''
+    if (preview.units.length > 0) {
+      const [fresh, existing] = await Promise.all([
+        listSiteAreas(supabase, companyId, [siteId], { includeInactive: true }),
+        listSiteEquipment(supabase, companyId, [siteId]),
+      ])
+      if (!fresh.ok || !existing.ok) {
+        setBusy(false); setError(!fresh.ok ? fresh.message : !existing.ok ? existing.message : ''); await load(); return
+      }
+      const u = await importSiteEquipment(supabase, companyId, siteId, preview.units, fresh.data, existing.data)
+      if (!u.ok) { setBusy(false); setError(`Areas imported, but the equipment was not: ${u.message}`); await load(); setEquipmentKey(k => k + 1); return }
+      unitText = ` and ${u.data.added} unit${u.data.added === 1 ? '' : 's'} of equipment${u.data.skipped ? ` (${u.data.skipped} already there)` : ''}`
+    }
     setBusy(false)
-    if (!res.ok) { setError(res.message); await load(); return }
     setPreview(null)
-    setNotice(`Imported ${res.data.added} area${res.data.added === 1 ? '' : 's'}${res.data.skipped ? `; ${res.data.skipped} already there` : ''}.`)
+    setNotice(`Imported ${res.data.added} area${res.data.added === 1 ? '' : 's'}${res.data.skipped ? ` (${res.data.skipped} already there)` : ''}${unitText}.`)
+    setEquipmentKey(k => k + 1)
     await load()
   }
 
@@ -160,8 +179,9 @@ export function SiteAreasPanel({ companyId, siteId, siteName, canEdit, onCount }
       {preview && (
         <div className="rounded-sm border border-primary/40 bg-surface p-3 space-y-2">
           <p className="text-[13px] text-text-primary">
-            {preview.file}: {groups} area{groups === 1 ? '' : 's'}{inner ? ` with ${inner} area${inner === 1 ? '' : 's'} inside them` : ''}.
-            Areas that are already here are skipped.
+            {preview.file}: {groups} area{groups === 1 ? '' : 's'}{inner ? ` with ${inner} area${inner === 1 ? '' : 's'} inside them` : ''}
+            {preview.units.length > 0 ? ` and ${preview.units.length} line${preview.units.length === 1 ? '' : 's'} of equipment` : ''}.
+            Anything already here is skipped.
           </p>
           {preview.problems.length > 0 && (
             <ul className="text-[12px] text-warning list-disc pl-4">
@@ -180,7 +200,7 @@ export function SiteAreasPanel({ companyId, siteId, siteName, canEdit, onCount }
             <button type="button" onClick={() => setPreview(null)} className="btn-outlined h-8 px-3 text-[12px]">Cancel</button>
           </div>
           <p className="text-[11px] text-text-secondary">
-            The sheet needs an &quot;Area&quot; column. Optional: &quot;Sub-area&quot; and &quot;Priority&quot;. A schedule where a name in capitals heads a group of rooms also works.
+            The sheet needs an &quot;Area&quot; column. Optional: &quot;Sub-area&quot;, &quot;Priority&quot;, and equipment columns &quot;Type&quot;, &quot;Make&quot; (or &quot;Model&quot;), &quot;Size&quot; and &quot;Qty&quot;. A schedule where a name in capitals heads a group of rooms also works.
           </p>
         </div>
       )}
@@ -246,6 +266,8 @@ export function SiteAreasPanel({ companyId, siteId, siteName, canEdit, onCount }
           ))}
         </ul>
       )}
+
+      <SiteEquipmentPanel companyId={companyId} siteId={siteId} areas={areas} canEdit={canEdit} reloadKey={equipmentKey} />
     </div>
   )
 }

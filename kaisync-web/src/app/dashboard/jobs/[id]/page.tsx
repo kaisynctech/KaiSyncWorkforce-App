@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { localDateTimeInputOf, localDateTimeToIso } from '@/lib/schedule-times'
 import { JobWherePicker, type JobWhereValue } from '@/components/jobs/JobWherePicker'
+import { JobEquipmentSection } from '@/components/jobs/JobEquipmentSection'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { FormSelect } from '@/components/FormSelect'
@@ -1011,6 +1012,18 @@ export default function JobDetailPage() {
           </button>
         </div>
       </div>
+      )}
+
+      {/* ── Equipment serviced on this job ── */}
+      {companyId && !isEditing && (
+        <JobEquipmentSection
+          key={`${job.site_id ?? ''}|${job.area_id ?? ''}`}
+          companyId={companyId}
+          jobId={job.id}
+          siteId={job.site_id ?? null}
+          areaId={job.area_id ?? null}
+          canEdit={canEdit}
+        />
       )}
       </>)}
 

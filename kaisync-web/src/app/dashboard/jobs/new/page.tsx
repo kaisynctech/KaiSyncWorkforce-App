@@ -11,7 +11,8 @@ import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permission
 import { createJob } from '@/lib/jobs'
 import { localDateTimeToIso, localDateTimeInputOf } from '@/lib/schedule-times'
 import { JobWherePicker, type JobWhereValue } from '@/components/jobs/JobWherePicker'
-import { addServiceChecklistToJob, type OfferedService } from '@/lib/job-services'
+import { addServiceChecklistToJob, areaOptions, listSiteAreas, type OfferedService } from '@/lib/job-services'
+import { addJobEquipment, areaAndInner, listSiteEquipment } from '@/lib/job-equipment'
 import type { Client, Employee } from '@/types/database'
 
 export default function CreateJobPage() {
@@ -48,6 +49,7 @@ function CreateJobInner() {
   const [address, setAddress] = useState('')
   const [assignedEmployeeId, setAssignedEmployeeId] = useState('')
   const [where, setWhere] = useState<JobWhereValue>({ siteId: '', areaId: '', serviceId: '' })
+  const [addAreaUnits, setAddAreaUnits] = useState(true)
   const [pickedService, setPickedService] = useState<OfferedService | null>(null)
 
   const [error, setError] = useState<string | null>(null)
@@ -143,6 +145,19 @@ function CreateJobInner() {
     if (created.ok && pickedService && pickedService.id === where.serviceId && pickedService.checklist.length) {
       const steps = await addServiceChecklistToJob(supabase, companyId, created.data.id, pickedService.checklist)
       if (!steps.ok) console.warn('Checklist steps were not added:', steps.message)
+    }
+    // The area's equipment (and the areas inside it) goes on the job card for the technician to tick off.
+    if (created.ok && clientId && where.siteId && where.areaId && addAreaUnits) {
+      const [areas, units] = await Promise.all([
+        listSiteAreas(supabase, companyId, [where.siteId], { includeInactive: true }),
+        listSiteEquipment(supabase, companyId, [where.siteId]),
+      ])
+      if (areas.ok && units.ok) {
+        const inArea = areaAndInner(where.areaId, areaOptions(areas.data))
+        const ids = units.data.filter(u => u.status === 'active' && u.area_id && inArea.has(u.area_id)).map(u => u.id)
+        const added = await addJobEquipment(supabase, companyId, created.data.id, ids)
+        if (!added.ok) console.warn('Equipment was not added:', added.message)
+      }
     }
     setSaving(false)
     if (!created.ok) { setError(created.message); return }
@@ -301,6 +316,12 @@ function CreateJobInner() {
             <p className="text-[12px] text-text-secondary">
               {pickedService.checklist.length} checklist step{pickedService.checklist.length === 1 ? '' : 's'} from this service will be added to the job.
             </p>
+          )}
+          {clientId && where.areaId && (
+            <label className="flex items-center gap-2 text-[13px] text-text-primary cursor-pointer">
+              <input type="checkbox" className="accent-primary" checked={addAreaUnits} onChange={e => setAddAreaUnits(e.target.checked)} />
+              Put this area&apos;s equipment on the job card
+            </label>
           )}
         </SectionCard>
       )}

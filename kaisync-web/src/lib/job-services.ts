@@ -327,9 +327,26 @@ export async function deleteSiteArea(supabase: SupabaseClient, companyId: string
 
 export type AreaImportRow = { area: string; subArea: string; priority: number | null }
 
+/** A unit of equipment read from the same sheet, e.g. Midea Underceiling 36 000 btu x1 in Brewhouse › Service Room. */
+export type UnitImportRow = {
+  area: string
+  subArea: string
+  make: string
+  type: string
+  size: string
+  quantity: number
+  notes: string
+}
+
 const SKIP_ROW = /^(client signature|client name|technician|month of service|service completed|next service due|incomplete|total|summary)\b/i
 const AREA_HEADER = /^(area|areas|location|locations|building|department)$/
 const SUB_HEADER = /^(sub[- ]?areas?|rooms?|sub[- ]?locations?|spaces?|offices?)$/
+const MAKE_HEADER = /^(model|make|brand|manufacturer|make ?\/ ?model)$/
+const TYPE_HEADER = /^(type|unit type|equipment|equipment type|asset type)$/
+const SIZE_HEADER = /^(size|capacity|rating)$/
+const QTY_HEADER = /^(qty|quantity|units|no\.? of units|count)$/
+const EXTRA_HEADER = /^(inverter|inverter ?\/ ?non[- ]inverter|notes?)$/
+const BLANK = /^[-–—]*$/
 
 function cleanCell(v: unknown): string {
   return String(v ?? '').replace(/\s+/g, ' ').trim()
@@ -355,14 +372,35 @@ function priorityOf(raw: string): number | null {
  *    (BREWHOUSE) starts a group and the rows under it ("a) Service Room") are areas inside it.
  * Repeated header rows and sign-off rows (Client signature, Technician) are ignored.
  */
-export function parseAreaRows(rows: unknown[][]): { rows: AreaImportRow[]; problems: string[] } {
+export function parseAreaRows(rows: unknown[][]): { rows: AreaImportRow[]; units: UnitImportRow[]; problems: string[] } {
   const problems: string[] = []
+  const units: UnitImportRow[] = []
   const headerIndex = rows.findIndex(r => r.some(c => AREA_HEADER.test(cleanCell(c).toLowerCase())))
-  if (headerIndex < 0) return { rows: [], problems: ['Add a header row with an "Area" column.'] }
+  if (headerIndex < 0) return { rows: [], units, problems: ['Add a header row with an "Area" column.'] }
   const header = rows[headerIndex].map(c => cleanCell(c).toLowerCase())
   const areaCol = header.findIndex(h => AREA_HEADER.test(h))
   const subCol = header.findIndex(h => SUB_HEADER.test(h))
   const prioCol = header.findIndex(h => h === 'priority')
+  const makeCol = header.findIndex(h => MAKE_HEADER.test(h))
+  const typeCol = header.findIndex(h => TYPE_HEADER.test(h))
+  const sizeCol = header.findIndex(h => SIZE_HEADER.test(h))
+  const qtyCol = header.findIndex(h => QTY_HEADER.test(h))
+  const extraCol = header.findIndex(h => EXTRA_HEADER.test(h))
+  const hasUnits = typeCol >= 0 || makeCol >= 0
+  const cell = (cells: string[], col: number) => (col >= 0 && !BLANK.test(cells[col] ?? '') ? cells[col] : '')
+  const unitFrom = (cells: string[], area: string, subArea: string) => {
+    if (!hasUnits) return
+    const make = cell(cells, makeCol)
+    const type = cell(cells, typeCol)
+    const size = cell(cells, sizeCol)
+    if (!make && !type && !size) return // e.g. "No A/C unit" rows marked with "-"
+    const q = Number(cell(cells, qtyCol))
+    units.push({
+      area, subArea, make, type: type || 'Unit', size,
+      quantity: Number.isInteger(q) && q >= 1 ? q : 1,
+      notes: cell(cells, extraCol),
+    })
+  }
   const out: AreaImportRow[] = []
   const seen = new Set<string>()
   const push = (row: AreaImportRow) => {
@@ -385,6 +423,7 @@ export function parseAreaRows(rows: unknown[][]): { rows: AreaImportRow[]; probl
       if (!area && !subArea) return
       if (!area) { problems.push(`Row ${headerIndex + i + 2}: "${subArea}" has no area.`); return }
       push({ area, subArea, priority })
+      unitFrom(cells, area, subArea)
       return
     }
     if (!first) return
@@ -396,11 +435,11 @@ export function parseAreaRows(rows: unknown[][]): { rows: AreaImportRow[]; probl
       return
     }
     const name = stripListMarker(first)
-    if (group) push({ area: group, subArea: name, priority })
-    else push({ area: name, subArea: '', priority })
+    if (group) { push({ area: group, subArea: name, priority }); unitFrom(cells, group, name) }
+    else { push({ area: name, subArea: '', priority }); unitFrom(cells, name, '') }
   })
   if (out.length === 0) problems.push('No areas found under the header row.')
-  return { rows: out, problems }
+  return { rows: out, units, problems }
 }
 
 /**
