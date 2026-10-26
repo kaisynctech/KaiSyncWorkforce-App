@@ -11,7 +11,16 @@ import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permission
 import { createJob } from '@/lib/jobs'
 import { localDateTimeToIso, localDateTimeInputOf } from '@/lib/schedule-times'
 import { JobWherePicker, type JobWhereValue } from '@/components/jobs/JobWherePicker'
-import { addServiceChecklistToJob, areaOptions, listSiteAreas, type OfferedService } from '@/lib/job-services'
+import {
+  addServiceChecklistToJob,
+  areaOptions,
+  formatPrice,
+  listClientServices,
+  listJobServices,
+  listSiteAreas,
+  type ClientServiceRow,
+  type JobService,
+} from '@/lib/job-services'
 import { addJobEquipment, areaAndInner, listSiteEquipment } from '@/lib/job-equipment'
 import type { Client, Employee } from '@/types/database'
 
@@ -50,27 +59,66 @@ function CreateJobInner() {
   const [assignedEmployeeId, setAssignedEmployeeId] = useState('')
   const [where, setWhere] = useState<JobWhereValue>({ siteId: '', areaId: '', serviceId: '' })
   const [addAreaUnits, setAddAreaUnits] = useState(true)
-  const [pickedService, setPickedService] = useState<OfferedService | null>(null)
+  const [services, setServices] = useState<JobService[]>([])
+  const [clientRows, setClientRows] = useState<ClientServiceRow[]>([])
+  const [serviceId, setServiceId] = useState('')
+  // What the service filled in, so a later change (client, start time) only replaces values nobody typed over.
+  const [autoTitle, setAutoTitle] = useState('')
+  const [autoCost, setAutoCost] = useState('')
+  const [autoEnd, setAutoEnd] = useState('')
 
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
   const canCreate = can(perms, PERM.jobsCreate)
 
-  /** Choosing a service fills what is still empty: title, estimated cost, end time. */
-  function servicePicked(service: OfferedService | null) {
-    setPickedService(service)
+  const pickedService = services.find(s => s.id === serviceId) ?? null
+
+  /** The client's agreed price wins over the company's usual price. */
+  function priceFor(id: string, rows: ClientServiceRow[] = clientRows): number | null {
+    const agreed = rows.find(r => r.service_id === id)?.agreed_price
+    return agreed ?? services.find(s => s.id === id)?.default_price ?? null
+  }
+
+  /** Fills the end from the start plus the service's usual time, unless someone set the end by hand. */
+  function fillEnd(service: JobService | null, date: string, time: string) {
+    const current = endDate ? `${endDate}T${endTime}` : ''
+    if (!service?.default_duration_minutes || !date || (current && current !== autoEnd)) return
+    const startIso = localDateTimeToIso(date, time)
+    if (!startIso) return
+    const end = localDateTimeInputOf(new Date(new Date(startIso).getTime() + service.default_duration_minutes * 60000).toISOString())
+    setEndDate(end.slice(0, 10))
+    setEndTime(end.slice(11, 16))
+    setAutoEnd(`${end.slice(0, 10)}T${end.slice(11, 16)}`)
+  }
+
+  /** Choosing the service first fills the title, estimated cost and end time (only where nothing was typed). */
+  function pickService(id: string) {
+    setServiceId(id)
+    const service = services.find(s => s.id === id) ?? null
     if (!service) return
-    if (!title.trim()) setTitle(service.name)
-    if (!estimatedCost && service.price != null) setEstimatedCost(String(service.price))
-    if (service.default_duration_minutes && startDate && !endDate) {
-      const startIso = localDateTimeToIso(startDate, startTime)
-      if (startIso) {
-        const end = localDateTimeInputOf(new Date(new Date(startIso).getTime() + service.default_duration_minutes * 60000).toISOString())
-        setEndDate(end.slice(0, 10))
-        setEndTime(end.slice(11, 16))
-      }
+    if (!title.trim() || title === autoTitle) { setTitle(service.name); setAutoTitle(service.name) }
+    const price = priceFor(id)
+    if (price != null && (!estimatedCost || estimatedCost === autoCost)) { setEstimatedCost(String(price)); setAutoCost(String(price)) }
+    fillEnd(service, startDate, startTime)
+  }
+
+  /** Loads the client's own service list; an agreed price replaces the filled-in cost. */
+  async function loadClientServices(nextClientId: string, company: string | null = companyId) {
+    if (!nextClientId || !company) { setClientRows([]); return }
+    const res = await listClientServices(createClient(), company, nextClientId)
+    const rows = res.ok ? res.data : []
+    setClientRows(rows)
+    if (serviceId) {
+      const price = priceFor(serviceId, rows)
+      if (price != null && (!estimatedCost || estimatedCost === autoCost)) { setEstimatedCost(String(price)); setAutoCost(String(price)) }
     }
+  }
+
+  function changeClient(next: string) {
+    setClientId(next)
+    setWhere({ siteId: '', areaId: '', serviceId: '' })
+    void loadClientServices(next)
   }
 
   useEffect(() => { void loadContext() }, [])
@@ -82,13 +130,15 @@ function CreateJobInner() {
     setCompanyId(member.companyId)
     setEmployeeId(member.employeeId)
 
-    const [cl, emp, dl, me] = await Promise.all([
+    const [cl, emp, dl, me, sv] = await Promise.all([
       supabase.from('clients').select('id, name, client_code').eq('company_id', member.companyId).order('name'),
       supabase.from('employees').select('id, name, surname')
         .eq('company_id', member.companyId).eq('is_active', true).order('name'),
       supabase.from('client_deals').select('id, title, project_code, client_id').eq('company_id', member.companyId).order('title'),
       supabase.from('employees').select('access_level').eq('id', member.employeeId).maybeSingle(),
+      listJobServices(supabase, member.companyId),
     ])
+    if (sv.ok) setServices(sv.data)
 
     setPerms(await loadPermissions(supabase, member.companyId, me.data?.access_level))
 
@@ -100,9 +150,10 @@ function CreateJobInner() {
     if (preselectedDealId) {
       setDealId(preselectedDealId)
       const deal = dealRows.find(d => d.id === preselectedDealId)
-      if (deal?.client_id) setClientId(deal.client_id)
+      if (deal?.client_id) { setClientId(deal.client_id); void loadClientServices(deal.client_id, member.companyId) }
     } else if (preselectedClientId) {
       setClientId(preselectedClientId)
+      void loadClientServices(preselectedClientId, member.companyId)
     }
   }
 
@@ -133,7 +184,7 @@ function CreateJobInner() {
       clientId: clientId || null,
       siteId: clientId ? where.siteId || null : null,
       areaId: clientId ? where.areaId || null : null,
-      serviceId: where.serviceId || null,
+      serviceId: serviceId || null,
       dealId: dealId || null,
       address,
       assigneeEmployeeId: assignee,
@@ -142,7 +193,7 @@ function CreateJobInner() {
       assignCode: true,
     })
 
-    if (created.ok && pickedService && pickedService.id === where.serviceId && pickedService.checklist.length) {
+    if (created.ok && pickedService && pickedService.checklist.length) {
       const steps = await addServiceChecklistToJob(supabase, companyId, created.data.id, pickedService.checklist)
       if (!steps.ok) console.warn('Checklist steps were not added:', steps.message)
     }
@@ -210,6 +261,35 @@ function CreateJobInner() {
         <h1 className="text-[19px] font-bold text-text-primary">New Job</h1>
       </div>
 
+      <SectionCard title="SERVICE">
+        <FormSelect label="What is the job?" value={serviceId} onChange={e => pickService(e.target.value)}
+          hint={services.length === 0 ? 'No services yet. Add them under Jobs › Job services, or skip this and type a title below.' : undefined}>
+          <option value="">{services.length ? 'Choose a service (optional)' : 'No services yet'}</option>
+          {clientRows.length > 0 && (
+            <optgroup label="Agreed for this client">
+              {services.filter(s => clientRows.some(r => r.service_id === s.id)).map(s => (
+                <option key={s.id} value={s.id}>{s.name}{priceFor(s.id) != null ? ` · ${formatPrice(priceFor(s.id))}` : ''}</option>
+              ))}
+            </optgroup>
+          )}
+          <optgroup label={clientRows.length > 0 ? 'Other services' : 'Services'}>
+            {services.filter(s => !clientRows.some(r => r.service_id === s.id)).map(s => (
+              <option key={s.id} value={s.id}>{s.name}{s.default_price != null ? ` · ${formatPrice(s.default_price)}` : ''}</option>
+            ))}
+          </optgroup>
+        </FormSelect>
+        {pickedService?.description && <p className="text-[12px] text-text-secondary">{pickedService.description}</p>}
+        {pickedService && (
+          <p className="text-[12px] text-text-secondary">
+            Fills in the title and estimated cost{pickedService.default_duration_minutes ? ', and the end time once you pick a start' : ''}.
+            {pickedService.checklist.length > 0 && ` ${pickedService.checklist.length} checklist step${pickedService.checklist.length === 1 ? '' : 's'} will be added to the job.`}
+          </p>
+        )}
+        {pickedService && clientRows.length > 0 && !clientRows.some(r => r.service_id === pickedService.id) && (
+          <p className="text-[12px] text-warning">This service is not on this client&apos;s agreed list.</p>
+        )}
+      </SectionCard>
+
       <SectionCard title="JOB DETAILS">
         <FormField label="Title *">
           <input type="text" value={title} onChange={e => setTitle(e.target.value)}
@@ -239,10 +319,10 @@ function CreateJobInner() {
       <SectionCard title="SCHEDULE">
         <div className="grid grid-cols-2 gap-3">
           <FormField label="Start date">
-            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className={entryClass} />
+            <input type="date" value={startDate} onChange={e => { setStartDate(e.target.value); fillEnd(pickedService, e.target.value, startTime) }} className={entryClass} />
           </FormField>
           <FormField label="Start time">
-            <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} className={entryClass} />
+            <input type="time" value={startTime} onChange={e => { setStartTime(e.target.value); fillEnd(pickedService, startDate, e.target.value) }} className={entryClass} />
           </FormField>
           <FormField label="End date">
             <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className={entryClass} />
@@ -259,9 +339,7 @@ function CreateJobInner() {
           value={clientId}
           onChange={e => {
             const next = e.target.value
-            setClientId(next)
-            setWhere({ siteId: '', areaId: '', serviceId: '' })
-            setPickedService(null)
+            changeClient(next)
             if (dealId) {
               const deal = deals.find(d => d.id === dealId)
               if (deal?.client_id && next && deal.client_id !== next) setDealId('')
@@ -283,11 +361,7 @@ function CreateJobInner() {
             setDealId(next)
             if (next) {
               const deal = deals.find(d => d.id === next)
-              if (deal?.client_id && deal.client_id !== clientId) {
-                setClientId(deal.client_id)
-                setWhere({ siteId: '', areaId: '', serviceId: '' })
-                setPickedService(null)
-              }
+              if (deal?.client_id && deal.client_id !== clientId) changeClient(deal.client_id)
             }
           }}
         >
@@ -303,20 +377,15 @@ function CreateJobInner() {
       </SectionCard>
 
       {companyId && (
-        <SectionCard title="SITE, AREA & SERVICE">
+        <SectionCard title="SITE & AREA">
           <JobWherePicker
             companyId={companyId}
             clientId={clientId}
             value={where}
             onChange={setWhere}
-            onServicePicked={servicePicked}
             canAdd={canCreate}
+            showService={false}
           />
-          {pickedService && pickedService.checklist.length > 0 && (
-            <p className="text-[12px] text-text-secondary">
-              {pickedService.checklist.length} checklist step{pickedService.checklist.length === 1 ? '' : 's'} from this service will be added to the job.
-            </p>
-          )}
           {clientId && where.areaId && (
             <label className="flex items-center gap-2 text-[13px] text-text-primary cursor-pointer">
               <input type="checkbox" className="accent-primary" checked={addAreaUnits} onChange={e => setAddAreaUnits(e.target.checked)} />

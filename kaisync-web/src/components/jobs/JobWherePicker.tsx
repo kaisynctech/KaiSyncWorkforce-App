@@ -30,6 +30,8 @@ type Props = {
   /** Whether the person may add sites and areas from here (jobs.create or jobs.edit). */
   canAdd: boolean
   disabled?: boolean
+  /** False when the form picks the service itself (New job asks for the service first). */
+  showService?: boolean
 }
 
 const ADD = '__add__'
@@ -43,7 +45,7 @@ const smallInput =
  * the client's own list when it has one, otherwise the company's list (Jobs > Job services).
  * A site or area that is missing can be added on the spot and is saved to the client for next time.
  */
-export function JobWherePicker({ companyId, clientId, value, onChange, onServicePicked, canAdd, disabled }: Props) {
+export function JobWherePicker({ companyId, clientId, value, onChange, onServicePicked, canAdd, disabled, showService = true }: Props) {
   const [sites, setSites] = useState<SiteRow[]>([])
   const [areas, setAreas] = useState<SiteArea[]>([])
   const [services, setServices] = useState<OfferedService[]>([])
@@ -202,6 +204,7 @@ export function JobWherePicker({ companyId, clientId, value, onChange, onService
         </>
       )}
 
+      {showService && <>
       <FormSelect
         label="Service"
         value={value.serviceId}
@@ -222,6 +225,7 @@ export function JobWherePicker({ companyId, clientId, value, onChange, onService
         ))}
       </FormSelect>
       {selected?.description && <p className="text-[12px] text-text-secondary -mt-1">{selected.description}</p>}
+      </>}
       {error && <p className="text-[12px] text-error" role="alert">{error}</p>}
     </div>
   )
