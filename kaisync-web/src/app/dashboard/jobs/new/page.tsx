@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -12,6 +12,7 @@ import { createJob } from '@/lib/jobs'
 import { localDateTimeToIso, localDateTimeInputOf } from '@/lib/schedule-times'
 import { JobWherePicker, type JobWhereValue } from '@/components/jobs/JobWherePicker'
 import { ClientSearch } from '@/components/jobs/ClientSearch'
+import { SearchPicker } from '@/components/SearchPicker'
 import {
   addServiceChecklistToJob,
   areaOptions,
@@ -43,7 +44,7 @@ function CreateJobInner() {
   const [employeeId, setEmployeeId] = useState<string | null>(null)
   const [clients, setClients] = useState<Client[]>([])
   const [deals, setDeals] = useState<{ id: string; title: string; project_code: string | null; client_id: string | null }[]>([])
-  const [employees, setEmployees] = useState<Pick<Employee, 'id' | 'name' | 'surname'>[]>([])
+  const [employees, setEmployees] = useState<Pick<Employee, 'id' | 'name' | 'surname' | 'employee_number' | 'position' | 'department'>[]>([])
   const [perms, setPerms] = useState<PermissionSet | null>(null)
 
   const [title, setTitle] = useState('')
@@ -74,6 +75,12 @@ function CreateJobInner() {
   const canCreate = can(perms, PERM.jobsCreate)
 
   const pickedService = services.find(s => s.id === serviceId) ?? null
+  const employeeOptions = useMemo(() => employees.map(e => ({
+    id: e.id,
+    label: `${e.name ?? ''} ${e.surname ?? ''}`.trim(),
+    detail: e.employee_number ?? null,
+    keywords: [e.position, e.department].filter(Boolean).join(' '),
+  })), [employees])
 
   /** The client's agreed price wins over the company's usual price. */
   function priceFor(id: string, rows: ClientServiceRow[] = clientRows): number | null {
@@ -141,7 +148,7 @@ function CreateJobInner() {
 
     const [cl, emp, dl, me, sv] = await Promise.all([
       supabase.from('clients').select('id, name, client_code, account_number').eq('company_id', member.companyId).order('name').limit(10000),
-      supabase.from('employees').select('id, name, surname')
+      supabase.from('employees').select('id, name, surname, employee_number, position, department')
         .eq('company_id', member.companyId).eq('is_active', true).order('name'),
       supabase.from('client_deals').select('id, title, project_code, client_id').eq('company_id', member.companyId).order('title'),
       supabase.from('employees').select('access_level').eq('id', member.employeeId).maybeSingle(),
@@ -153,7 +160,7 @@ function CreateJobInner() {
 
     const dealRows = (dl.data ?? []) as { id: string; title: string; project_code: string | null; client_id: string | null }[]
     setClients((cl.data ?? []) as Client[])
-    setEmployees((emp.data ?? []) as Pick<Employee, 'id' | 'name' | 'surname'>[])
+    setEmployees((emp.data ?? []) as Pick<Employee, 'id' | 'name' | 'surname' | 'employee_number' | 'position' | 'department'>[])
     setDeals(dealRows)
 
     if (preselectedDealId) {
@@ -395,13 +402,14 @@ function CreateJobInner() {
       </SectionCard>
 
       <SectionCard title="ASSIGNMENT">
-        <FormSelect label="Assign to employee" value={assignedEmployeeId}
-          onChange={e => setAssignedEmployeeId(e.target.value)}>
-          <option value="">Unassigned</option>
-          {employees.map(emp => (
-            <option key={emp.id} value={emp.id}>{emp.name} {emp.surname}</option>
-          ))}
-        </FormSelect>
+        <SearchPicker
+          label="Assign to employee"
+          noun="employee"
+          value={assignedEmployeeId}
+          onChange={setAssignedEmployeeId}
+          placeholder={`Type a name or employee number (${employees.length.toLocaleString()} staff) — leave empty for unassigned`}
+          options={employeeOptions}
+        />
       </SectionCard>
 
       {error && <p className="text-error text-[13px] px-1">{error}</p>}
