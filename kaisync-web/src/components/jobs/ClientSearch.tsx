@@ -71,7 +71,7 @@ export function ClientSearch({ clients, value, onChange, label = 'Client', disab
           autoComplete="off"
           disabled={disabled}
           value={open ? query : (selected ? label2(selected) : query)}
-          placeholder={`Type to search ${clients.length.toLocaleString()} clients by name or code…`}
+          placeholder={`Type a client name or code (${clients.length.toLocaleString()} client${clients.length === 1 ? '' : 's'})…`}
           onFocus={() => { setOpen(true); setQuery('') }}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
           onChange={e => { setQuery(e.target.value); setOpen(true); setActive(0) }}
