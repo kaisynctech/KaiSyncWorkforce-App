@@ -88,6 +88,8 @@ export function ClientServicesPanel({ companyId, clientId, clientName, canEdit }
   }
 
   async function remove(row: ClientServiceRow) {
+    const name = byId.get(row.service_id)?.name ?? 'this service'
+    if (!window.confirm(`Remove ${name} from ${clientName}'s services?`)) return
     setBusy(true); setError(null)
     const res = await removeClientService(createClient(), companyId, row.id)
     setBusy(false)
