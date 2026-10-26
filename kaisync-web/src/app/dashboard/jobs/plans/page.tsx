@@ -105,6 +105,7 @@ export default function ServicePlansPage() {
   const [month, setMonth] = useState(() => todayIso().slice(0, 7))
   const [visits, setVisits] = useState<PlanVisit[]>([])
   const [outcomeFilter, setOutcomeFilter] = useState<VisitOutcome | ''>('')
+  const [personSearch, setPersonSearch] = useState('')
 
   const canCreate = can(perms, PERM.jobsCreate)
   const canEdit = can(perms, PERM.jobsEdit)
@@ -370,10 +371,17 @@ export default function ServicePlansPage() {
                 onClick={() => setDraft({ ...draft, employeeIds: draft.employeeIds.filter(x => x !== id) })}>×</button>
             </span>
           ))}
+          {people.length > 30 && (
+            <input className={`${small} w-40`} type="search" aria-label="Find a technician" placeholder="Type a name…"
+              value={personSearch} onChange={e => setPersonSearch(e.target.value)} />
+          )}
           <select className={small} aria-label="Add a technician" value=""
-            onChange={e => { if (e.target.value) setDraft({ ...draft, employeeIds: [...draft.employeeIds, e.target.value] }) }}>
+            onChange={e => { if (e.target.value) { setDraft({ ...draft, employeeIds: [...draft.employeeIds, e.target.value] }); setPersonSearch('') } }}>
             <option value="">+ Add…</option>
-            {people.filter(p => !draft.employeeIds.includes(p.id)).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            {people
+              .filter(p => !draft.employeeIds.includes(p.id))
+              .filter(p => !personSearch.trim() || p.name.toLowerCase().includes(personSearch.trim().toLowerCase()))
+              .map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </div>
       </fieldset>

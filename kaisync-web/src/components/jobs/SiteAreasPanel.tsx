@@ -149,7 +149,7 @@ export function SiteAreasPanel({ companyId, siteId, siteName, canEdit, onCount }
       }
       const u = await importSiteEquipment(supabase, companyId, siteId, preview.units, fresh.data, existing.data)
       if (!u.ok) { setBusy(false); setError(`Areas imported, but the equipment was not: ${u.message}`); await load(); setEquipmentKey(k => k + 1); return }
-      unitText = ` and ${u.data.added} unit${u.data.added === 1 ? '' : 's'} of equipment${u.data.skipped ? ` (${u.data.skipped} already there)` : ''}`
+      unitText = ` and ${u.data.added} line${u.data.added === 1 ? '' : 's'} of equipment${u.data.skipped ? ` (${u.data.skipped} already there)` : ''}`
     }
     setBusy(false)
     setPreview(null)

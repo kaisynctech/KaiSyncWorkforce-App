@@ -113,6 +113,9 @@ export function JobEquipmentSection({ companyId, jobId, siteId, areaId, canEdit 
   if (!siteId && rows.length === 0) return null
 
   const done = rows.filter(r => r.status === 'done').length
+  const areaOrder = new Map(options.map((o, i) => [o.id, i]))
+  const sortedRows = [...rows].sort((a, b) =>
+    (areaOrder.get(a.asset?.area_id ?? '') ?? 1e9) - (areaOrder.get(b.asset?.area_id ?? '') ?? 1e9))
 
   return (
     <div className="space-y-2">
@@ -130,7 +133,7 @@ export function JobEquipmentSection({ companyId, jobId, siteId, areaId, canEdit 
         )}
         {rows.length > 0 && (
           <ul className="divide-y divide-divider rounded-sm border border-divider">
-            {rows.map(r => (
+            {sortedRows.map(r => (
               <li key={r.id} className="px-2 py-2 space-y-1.5">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="flex-1 min-w-[160px] text-[13px] text-text-primary">

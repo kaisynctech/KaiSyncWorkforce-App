@@ -590,6 +590,14 @@ function ClientDetailInner() {
 
     const projectRows = (pRes.data ?? []) as Project[]
     setSites((sRes.data ?? []) as Site[])
+    const siteIdsForCounts = (sRes.data ?? []).map(s => s.id as string)
+    if (siteIdsForCounts.length) {
+      const { data: areaRows } = await supabase.from('site_areas').select('site_id')
+        .eq('company_id', c.company_id).eq('is_active', true).in('site_id', siteIdsForCounts.slice(0, 200)).limit(10000)
+      const counts: Record<string, number> = {}
+      for (const r of areaRows ?? []) counts[r.site_id as string] = (counts[r.site_id as string] ?? 0) + 1
+      setAreaCounts(counts)
+    }
     setProjects(projectRows)
     setInvoices((iRes.data ?? []) as FinanceInvoice[])
     const { data: quoteRows, error: quoteError } = await supabase

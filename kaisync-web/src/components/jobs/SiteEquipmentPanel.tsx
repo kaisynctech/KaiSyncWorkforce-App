@@ -100,7 +100,8 @@ export function SiteEquipmentPanel({ companyId, siteId, areas, canEdit, reloadKe
     setHistoryFor(id); setHistory(null)
     const res = await equipmentHistory(createClient(), companyId, id)
     if (!res.ok) { setError(res.message); setHistoryFor(null); return }
-    setHistory(res.data)
+    const when = (h: EquipmentHistoryRow) => h.job?.scheduled_start ?? h.done_at ?? h.created_at
+    setHistory([...res.data].sort((a, b) => when(b).localeCompare(when(a))))
   }
 
   const total = items.reduce((n, e) => n + e.quantity, 0)
@@ -177,7 +178,7 @@ export function SiteEquipmentPanel({ companyId, siteId, areas, canEdit, reloadKe
                           <ul className="space-y-1">
                             {history.map(h => (
                               <li key={h.id} className="text-[12px] flex flex-wrap gap-x-2">
-                                <span className="text-text-secondary w-24 shrink-0">{fmtDate(h.done_at ?? h.job?.scheduled_start ?? h.created_at)}</span>
+                                <span className="text-text-secondary w-24 shrink-0" title={h.done_at ? `Marked on ${fmtDate(h.done_at)}` : undefined}>{fmtDate(h.job?.scheduled_start ?? h.done_at ?? h.created_at)}</span>
                                 {h.job ? (
                                   <Link href={`/dashboard/jobs/${h.job.id}`} className="text-primary hover:underline">
                                     {h.job.job_code ? `${h.job.job_code} · ` : ''}{h.job.service?.name ?? h.job.title}
