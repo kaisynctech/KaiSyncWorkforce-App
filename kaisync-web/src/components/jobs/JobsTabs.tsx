@@ -2,11 +2,12 @@
 
 import Link from 'next/link'
 
-export type JobsSection = 'jobs' | 'services'
+export type JobsSection = 'jobs' | 'services' | 'plans'
 
 const TABS: { id: JobsSection; label: string; href: string }[] = [
   { id: 'jobs', label: 'Jobs', href: '/dashboard/jobs' },
   { id: 'services', label: 'Job services', href: '/dashboard/jobs/services' },
+  { id: 'plans', label: 'Service plans', href: '/dashboard/jobs/plans' },
 ]
 
 export function JobsTabs({ active, className = '' }: { active: JobsSection; className?: string }) {
