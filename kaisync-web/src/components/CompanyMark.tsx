@@ -65,9 +65,10 @@ export function CompanyMark({ name, logoUrl, size = 32, className = '' }: {
   if (showLogo) {
     return (
       <span className={`inline-flex items-center justify-center bg-white shrink-0 overflow-hidden ${className}`}
-        style={{ width: size, height: size, borderRadius: radius, padding: Math.max(2, Math.round(size / 10)) }}>
+        style={{ height: size, minWidth: size, maxWidth: size * 3, borderRadius: radius, padding: Math.max(2, Math.round(size / 10)) }}>
+        {/* Wide logos get a wider tile (up to 3× the height) so they stay readable. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={logoUrl!} alt={name ? `${name} logo` : 'Company logo'} className="max-w-full max-h-full object-contain"
+        <img src={logoUrl!} alt={name ? `${name} logo` : 'Company logo'} className="h-full w-auto max-w-full object-contain"
           onError={() => setBroken(logoUrl!)} />
       </span>
     )

@@ -172,10 +172,15 @@ export function CompanyProfileSettings({ company, isOwner, isHrOrAbove, onSaved 
       show_bank_on_quotes: form.show_bank_on_quotes,
       document_footer: clean(form.document_footer),
     }
-    const { data, error } = await supabase.from('companies').update(row).eq('id', company.id).select('*').maybeSingle()
+    const { data, error } = await supabase.rpc('update_company_profile', { p_company_id: company.id, p_profile: row })
     setBusy(false)
     if (error || !data) {
-      setMsg({ ok: false, text: error?.message && !/row-level|permission/i.test(error.message) ? error.message : 'Only the owner can change the company details.' })
+      const m = error?.message ?? ''
+      setMsg({ ok: false, text:
+        /ONLY_OWNER|permission/i.test(m) ? 'Only the owner can change the company details.'
+        : /NAME_REQUIRED/.test(m) ? 'The company name is required.'
+        : /check constraint/i.test(m) ? 'One of the fields is too long.'
+        : m || 'Could not save the company details.' })
       return
     }
     forgetBrand(company.code)
