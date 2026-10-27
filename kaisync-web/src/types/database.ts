@@ -96,6 +96,25 @@ export interface Company {
   address: string | null
   /** Storage path in workforce-media, shown on the payslip PDF. */
   logo_url?: string | null
+  /** Logo path in the public company-branding bucket (shown everywhere). */
+  brand_logo_path?: string | null
+  legal_name?: string | null
+  registration_number?: string | null
+  website?: string | null
+  postal_address?: string | null
+  contact_email?: string | null
+  contact_phone?: string | null
+  is_vat_registered?: boolean | null
+  vat_number?: string | null
+  bank_account_holder?: string | null
+  bank_name?: string | null
+  bank_account_number?: string | null
+  bank_branch_code?: string | null
+  bank_account_type?: string | null
+  bank_swift_code?: string | null
+  show_bank_on_invoices?: boolean | null
+  show_bank_on_quotes?: boolean | null
+  document_footer?: string | null
   enabled_modules?: Record<string, boolean> | null
   created_at: string
 }

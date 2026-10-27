@@ -1,5 +1,6 @@
 'use client'
 
+import { CompanyProfileSettings } from '@/components/settings/CompanyProfileSettings'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -896,60 +897,13 @@ export default function SettingsPage() {
       <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-5 pb-16">
         <div className="max-w-3xl">
 
-      {activeTab === 'general' && (
-        <Section title="Company" icon="business">
-          <div className="flex flex-col gap-4">
-            <Field label="Company logo">
-              <div className="flex items-center gap-4">
-                <div className="h-16 w-16 rounded-md border border-border bg-surface-elevated overflow-hidden flex items-center justify-center">
-                  {logoPreview
-                    ? <img src={logoPreview} alt="" className="h-full w-full object-contain" />
-                    : <span className="material-icons text-text-disabled">image</span>}
-                </div>
-                {isHrOrAbove && (
-                  <label className="h-9 px-4 rounded-md border border-border text-[13px] font-medium inline-flex items-center cursor-pointer hover:border-primary">
-                    {saving === 'logo' ? 'Uploading…' : 'Add logo'}
-                    <input
-                      type="file"
-                      accept="image/png,image/jpeg"
-                      className="hidden"
-                      disabled={saving === 'logo'}
-                      onChange={e => {
-                        const file = e.target.files?.[0]
-                        if (file) void uploadCompanyLogo(file)
-                        e.target.value = ''
-                      }}
-                    />
-                  </label>
-                )}
-              </div>
-              {logoMsg && <p className="text-[12px] text-text-secondary mt-2">{logoMsg}</p>}
-            </Field>
-            <Field label="Company Name">
-              <input
-                type="text"
-                value={companyName}
-                onChange={e => setCompanyName(e.target.value)}
-                disabled={!isOwner}
-                className="input"
-              />
-            </Field>
-            <Field label="Company Code">
-              <div className="flex items-center gap-2 h-10 px-3 rounded-md border border-border bg-surface-elevated text-[13px] text-text-secondary">
-                <span className="font-mono">{company?.code ?? company?.company_code ?? 'Not set'}</span>
-              </div>
-            </Field>
-            {isOwner && (
-              <button
-                onClick={saveCompanyName}
-                disabled={saving === 'company'}
-                className="self-start h-9 px-4 rounded-md bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors"
-              >
-                {saving === 'company' ? 'Saving…' : 'Save Changes'}
-              </button>
-            )}
-          </div>
-        </Section>
+      {activeTab === 'general' && company && (
+        <CompanyProfileSettings
+          company={company}
+          isOwner={isOwner}
+          isHrOrAbove={isHrOrAbove}
+          onSaved={next => { setCompany(prev => (prev ? { ...prev, ...next } : prev)); setCompanyName(next.name) }}
+        />
       )}
 
       {activeTab === 'billing' && isHrOrAbove && (

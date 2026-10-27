@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { cn, getInitials } from '@/lib/utils'
+import { CompanyMark, useCompanyBrand } from '@/components/CompanyMark'
 
 export type PortalNavItem = {
   label: string
@@ -20,9 +21,12 @@ export function PortalAppShell({
   items,
   defaultTab,
   onSignOut,
+  companyCode,
   children,
 }: {
   portalLabel: string
+  /** The company whose portal this is (its name and logo are shown, not KaiSync's). */
+  companyCode?: string | null
   displayName: string
   roleLabel: string
   items: PortalNavItem[]
@@ -53,6 +57,8 @@ export function PortalAppShell({
     setOpen(false)
   }, [pathname, tab])
 
+  const brand = useCompanyBrand(null, { companyCode })
+  const companyName = brand.name || 'KaiSync'
   const mobileClosed = !isDesktop && !open
   const showLabels = isDesktop ? open : true
   const desktopCollapsed = isDesktop && !open
@@ -84,11 +90,9 @@ export function PortalAppShell({
         >
           {showLabels ? (
             <>
-              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0">
-                <span className="material-icons text-white text-[18px]">bolt</span>
-              </div>
+              <CompanyMark name={companyName} logoUrl={brand.logoUrl} size={32} />
               <div className="flex-1 overflow-hidden min-w-0">
-                <p className="text-white text-[13px] font-semibold truncate">KaiSync</p>
+                <p className="text-white text-[13px] font-semibold truncate" title={companyName}>{companyName}</p>
                 <p className="text-white/50 text-[11px] truncate">{portalLabel}</p>
               </div>
               <button
@@ -147,6 +151,12 @@ export function PortalAppShell({
         </nav>
 
         <div className="border-t border-white/10 p-3">
+          {showLabels && (
+            <p className="text-[10px] text-white/40 mb-2 flex items-center gap-1">
+              <span className="material-icons text-[12px]" aria-hidden="true">bolt</span>
+              Powered by KaiSync
+            </p>
+          )}
           <div className={cn('flex items-center gap-3', desktopCollapsed && 'justify-center')}>
             <div className="w-8 h-8 rounded-full bg-primary-dark flex items-center justify-center shrink-0">
               <span className="text-white text-[12px] font-semibold">{getInitials(displayName)}</span>
@@ -182,7 +192,11 @@ export function PortalAppShell({
             >
               <span className="material-icons text-[22px]">menu</span>
             </button>
-            <p className="text-[14px] font-semibold text-text-primary truncate">{portalLabel}</p>
+            <CompanyMark name={companyName} logoUrl={brand.logoUrl} size={28} />
+            <div className="min-w-0">
+              <p className="text-[14px] font-semibold text-text-primary truncate leading-tight">{companyName}</p>
+              <p className="text-[11px] text-text-secondary truncate leading-tight">{portalLabel}</p>
+            </div>
           </div>
         )}
         <main className="flex-1 overflow-y-auto min-h-0">{children}</main>

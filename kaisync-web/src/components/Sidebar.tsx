@@ -11,6 +11,8 @@ import {
 } from '@/lib/company-modules'
 import { resolveFinanceNavFlag } from '@/lib/finance-gate'
 import { loadCompanyWorkspace, clearCompanyWorkspaceCache } from '@/lib/employee-workspace'
+import { CompanyMark, useCompanyBrand } from '@/components/CompanyMark'
+import { isHrOrAbove } from '@/lib/employee-taxonomy'
 import { isPlatformAdmin } from '@/lib/platform-admin'
 import { MODULES_UPDATED_EVENT, type ModulesUpdatedDetail } from '@/lib/module-events'
 import { PwaInstallButton } from '@/components/PwaInstallButton'
@@ -372,6 +374,7 @@ export default function Sidebar({
   }, [company?.id])
 
   const isOwner = (employee?.access_level ?? '').toLowerCase() === 'owner'
+  const brand = useCompanyBrand(platformOnly ? null : company, { canCopyOldLogo: isHrOrAbove(employee?.access_level) })
 
   const sections = useMemo(() => {
     if (platformOnly) return [] as NavSection[]
@@ -448,10 +451,14 @@ export default function Sidebar({
 
         {/* Logo + company name */}
         <div className="flex items-center gap-2 px-3 border-r border-white/10 shrink-0">
-          <div className="w-7 h-7 lg:w-6 lg:h-6 rounded-md bg-[#3B5CF6] flex items-center justify-center">
-            <span className="material-icons text-white text-[14px]">bolt</span>
-          </div>
-          <span className="text-[12px] font-semibold text-white truncate max-w-[120px]">
+          {platformOnly || !company ? (
+            <div className="w-7 h-7 lg:w-6 lg:h-6 rounded-md bg-[#3B5CF6] flex items-center justify-center">
+              <span className="material-icons text-white text-[14px]">bolt</span>
+            </div>
+          ) : (
+            <CompanyMark name={brand.name ?? company.name} logoUrl={brand.logoUrl} size={28} />
+          )}
+          <span className="text-[12px] font-semibold text-white truncate max-w-[140px]" title={company?.name ?? undefined}>
             {company?.name ?? (platformOnly ? 'KaiSync Platform' : 'KaiSync')}
           </span>
         </div>

@@ -29,6 +29,7 @@ export function ClientPortalShell({
 
   return (
     <PortalAppShell
+      companyCode={session.company_code}
       portalLabel="Client Portal"
       displayName={session.client_name || 'Client'}
       roleLabel="Client"

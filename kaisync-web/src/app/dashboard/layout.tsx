@@ -1,5 +1,6 @@
 'use client'
 
+import { CompanyMark, useCompanyBrand } from '@/components/CompanyMark'
 import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -205,6 +206,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   >
                     <span className="material-icons text-[22px]">menu</span>
                   </button>
+                  {company && <CompanyMarkFor company={company} />}
                   <p className="text-[14px] font-semibold text-text-primary truncate">
                     {company?.name ?? 'KaiSync'}
                   </p>
@@ -246,4 +248,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </DashboardBootstrapProvider>
     </DashboardCompanyProvider>
   )
+}
+
+function CompanyMarkFor({ company }: { company: Company }) {
+  const brand = useCompanyBrand(company)
+  return <CompanyMark name={brand.name ?? company.name} logoUrl={brand.logoUrl} size={28} />
 }

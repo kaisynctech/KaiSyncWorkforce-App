@@ -1,5 +1,6 @@
 'use client'
 
+import { CompanyMark, useCompanyBrand } from '@/components/CompanyMark'
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -47,6 +48,7 @@ interface SidebarProps {
 }
 
 export default function EmployeeSidebar({ open, onToggle, onClose, company, employee }: SidebarProps) {
+  const brand = useCompanyBrand(company)
   const pathname = usePathname()
   const router = useRouter()
   const bootstrap = useDashboardBootstrap()
@@ -155,11 +157,9 @@ export default function EmployeeSidebar({ open, onToggle, onClose, company, empl
         >
           {showLabels ? (
             <>
-              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0">
-                <span className="material-icons text-white text-[18px]">bolt</span>
-              </div>
+              <CompanyMark name={brand.name ?? company?.name} logoUrl={brand.logoUrl} size={32} />
               <div className="flex-1 overflow-hidden min-w-0">
-                <p className="text-white text-[13px] font-semibold truncate">{company?.name ?? 'KaiSync'}</p>
+                <p className="text-white text-[13px] font-semibold truncate">{brand.name ?? company?.name ?? 'KaiSync'}</p>
                 <p className="text-white/50 text-[11px] truncate">Employee Portal</p>
               </div>
               <button
