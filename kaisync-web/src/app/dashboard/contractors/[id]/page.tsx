@@ -24,6 +24,7 @@ import {
   type ContractorDocument,
 } from '@/lib/contractor-portal/types'
 import { SectionCard, FormField, entryClass } from '@/components/SectionCard'
+import { CompanyRecordLink } from '@/components/CompanyRecordLink'
 import { FormSelect } from '@/components/FormSelect'
 import { Toggle } from '@/components/Toggle'
 import { StatusBadge } from '@/components/ui/StatusBadge'
@@ -1048,6 +1049,10 @@ function ContractorDetailInner() {
                 </p>
               )}
             </SectionCard>
+
+            {contractor?.id && contractor.company_id && (
+              <CompanyRecordLink companyId={contractor.company_id} recordId={contractor.id} kind="hired" canEdit={canEdit} />
+            )}
 
             <SectionCard title="CONTACT">
               <FormField label="Contact person">

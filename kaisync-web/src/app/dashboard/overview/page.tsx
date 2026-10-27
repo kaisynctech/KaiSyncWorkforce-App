@@ -9,6 +9,7 @@ import { timeGreeting, localISODate } from '@/lib/utils'
 import { EMPLOYEE_SAFE_SELECT } from '@/lib/employee-columns'
 import type { Employee } from '@/types/database'
 import { PwaInstallButton } from '@/components/PwaInstallButton'
+import { isHrOrAbove } from '@/lib/employee-taxonomy'
 import {
   applyIfCurrent,
   errorCommercial,
@@ -478,6 +479,20 @@ export default function OverviewPage() {
           </div>
           <p className="text-[12px] text-text-secondary shrink-0 pt-1">{formatDate(now)}</p>
         </div>
+
+        {isHrOrAbove(employee?.access_level) && (
+          <Link
+            href="/dashboard/portals"
+            className="flex items-center justify-between rounded-2xl border border-divider px-4 py-3 hover:border-primary transition-colors"
+            style={{ background: 'var(--color-surface-card)' }}
+          >
+            <div>
+              <p className="text-[14px] font-semibold text-text-primary">Portals</p>
+              <p className="text-[12px] text-text-secondary">As a client and as a contractor</p>
+            </div>
+            <span className="material-icons text-text-disabled">chevron_right</span>
+          </Link>
+        )}
 
         {/* ── Clock card ── */}
         <div className="rounded-2xl p-4 flex items-center gap-4"

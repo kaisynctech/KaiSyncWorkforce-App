@@ -23,6 +23,7 @@ import { ClientBankingReview } from '@/components/ClientBankingReview'
 import { ClientComplianceTab } from '@/components/ClientComplianceTab'
 import { ClientActivityTab } from '@/components/ClientActivityTab'
 import { ClientDocumentRequests } from '@/components/ClientDocumentRequests'
+import { CompanyRecordLink } from '@/components/CompanyRecordLink'
 import { fmtMoney } from '@/lib/finance-calc'
 import { createInvoiceFromAcceptedQuote } from '@/lib/quote-invoice'
 import type { Client, ClientDocument, ClientNote, Site, Project, ProjectDocument } from '@/types/database'
@@ -1460,6 +1461,10 @@ function ClientDetailInner() {
                 </p>
               )}
             </div>
+
+            {showRelatedTabs && client && (
+              <CompanyRecordLink companyId={client.company_id} recordId={client.id} kind="customer" canEdit={canEdit} />
+            )}
 
             {showRelatedTabs && (
               <div className="space-y-2">
