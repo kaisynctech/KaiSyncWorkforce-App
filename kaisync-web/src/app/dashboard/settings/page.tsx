@@ -957,10 +957,10 @@ export default function SettingsPage() {
           <div className="flex flex-col gap-4">
             <p className="text-[13px] text-text-secondary">
               {billing?.billable === false
-                ? 'This is KaiSync’s own company. It is not billed.'
+                ? 'This is KaiSync’s own company. It is not billed. The price list below is what a customer company pays.'
                 : typeof billing?.price_override === 'number'
-                  ? 'Agreed monthly price. Seat counts are shown for reference.'
-                  : 'Standard monthly price. It includes 25 employees, 15 contractor portal seats, 15 client portal seats and 5 properties. Each active farm is R1,000. A trial status is shown beside the amount.'}
+                  ? 'The amount due is the agreed price. The price list is the standard monthly cost of each part, including parts this company is not using yet.'
+                  : 'The amount due follows the standard price list. Every part is listed, including parts this company is not using yet.'}
             </p>
             {billingLoading && (
               <p className="text-[13px] text-text-secondary">Calculating…</p>
@@ -988,7 +988,6 @@ export default function SettingsPage() {
                     overage={billing.employees.overage}
                     unitPrice={billing.employees.unit_price}
                     billable={billing.billable !== false}
-                    referenceOnly={typeof billing.price_override === 'number'}
                   />
                   <MeterCard
                     label="Contractor portals"
@@ -997,7 +996,6 @@ export default function SettingsPage() {
                     overage={billing.contractors.overage}
                     unitPrice={billing.contractors.unit_price}
                     billable={billing.billable !== false}
-                    referenceOnly={typeof billing.price_override === 'number'}
                   />
                   <MeterCard
                     label="Client portals"
@@ -1006,7 +1004,6 @@ export default function SettingsPage() {
                     overage={billing.client_portals.overage}
                     unitPrice={billing.client_portals.unit_price}
                     billable={billing.billable !== false}
-                    referenceOnly={typeof billing.price_override === 'number'}
                   />
                   <MeterCard
                     label="Properties"
@@ -1015,7 +1012,6 @@ export default function SettingsPage() {
                     overage={billing.properties.overage}
                     unitPrice={billing.properties.unit_price}
                     billable={billing.billable !== false}
-                    referenceOnly={typeof billing.price_override === 'number'}
                   />
                   <MeterCard
                     label="Farms"
@@ -1024,17 +1020,33 @@ export default function SettingsPage() {
                     overage={billing.farms.overage}
                     unitPrice={billing.farms.unit_price}
                     billable={billing.billable !== false}
-                    referenceOnly={typeof billing.price_override === 'number'}
                   />
                 </div>
                 <div className="flex flex-col gap-2 border-t border-divider pt-3">
-                  {(billing.lines ?? []).map((line, i) => (
-                    <div key={i} className="flex items-center justify-between gap-3 text-[13px]">
+                  <p className="text-[12px] uppercase tracking-wide text-text-secondary">This month</p>
+                  {(billing.lines ?? []).filter(line => line.kind !== 'price_list').map((line, i) => (
+                    <div key={`charge-${i}`} className="flex items-center justify-between gap-3 text-[13px]">
                       <span className="text-text-secondary">{line.description}</span>
                       <span className="font-medium text-text-primary shrink-0">{formatZar(Number(line.amount))}</span>
                     </div>
                   ))}
                 </div>
+                {(billing.lines ?? []).some(line => line.kind === 'price_list') && (
+                  <div className="flex flex-col gap-2 border-t border-divider pt-3">
+                    <p className="text-[12px] uppercase tracking-wide text-text-secondary">Price list per month</p>
+                    <p className="text-[12px] text-text-secondary">
+                      These prices stay visible for parts this company is not using yet.
+                    </p>
+                    {(billing.lines ?? []).filter(line => line.kind === 'price_list').map((line, i) => (
+                      <div key={`price-${i}`} className="flex items-center justify-between gap-3 text-[13px]">
+                        <span className="text-text-secondary">{line.description.replace(/^Price list — /, '')}</span>
+                        <span className="font-medium text-text-primary shrink-0">
+                          {Number(line.amount) === 0 ? 'Included' : formatZar(Number(line.amount))}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <button
                   type="button"
                   onClick={() => companyId && loadBilling(companyId)}

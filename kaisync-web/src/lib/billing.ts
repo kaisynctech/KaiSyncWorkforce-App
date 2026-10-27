@@ -12,6 +12,7 @@ export type BillingMeter = {
 export type BillingLine = {
   description: string
   amount: number
+  kind?: 'charge' | 'price_list'
 }
 
 export type BillingSummary = {
