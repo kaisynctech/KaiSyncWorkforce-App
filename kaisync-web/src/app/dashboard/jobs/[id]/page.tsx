@@ -6,6 +6,8 @@ import Link from 'next/link'
 import { localDateTimeInputOf, localDateTimeToIso } from '@/lib/schedule-times'
 import { JobWherePicker, type JobWhereValue } from '@/components/jobs/JobWherePicker'
 import { JobEquipmentSection } from '@/components/jobs/JobEquipmentSection'
+import { JobWorkReport } from '@/components/jobs/JobWorkReport'
+import { signWorkforceMediaMany } from '@/lib/media-read'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { FormSelect } from '@/components/FormSelect'
@@ -249,7 +251,9 @@ export default function JobDetailPage() {
         storage_path: url,
         url,
       }))
-      setPhotos([...before, ...after] as JobPhoto[])
+      // Photos are stored as private file paths; they need a signed link before they can be shown.
+      const signed = await signWorkforceMediaMany(supabase, [...before, ...after].map(p => p.storage_path))
+      setPhotos([...before, ...after].map(p => ({ ...p, url: signed.get(p.storage_path.trim()) ?? p.url })) as JobPhoto[])
       const team = new Set<string>(row.assigned_employee_ids ?? [])
       if (row.assignee_employee_id) team.add(row.assignee_employee_id)
       setAssignedIds(team)
@@ -1013,6 +1017,9 @@ export default function JobDetailPage() {
         </div>
       </div>
       )}
+
+      {/* ── Technician's job card (Work performed) ── */}
+      {companyId && !isEditing && <JobWorkReport companyId={companyId} jobId={job.id} />}
 
       {/* ── Equipment serviced on this job ── */}
       {companyId && !isEditing && (

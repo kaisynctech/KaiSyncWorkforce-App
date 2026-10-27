@@ -96,6 +96,13 @@ interface Incident {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
+/** The job card RPCs return one object; older versions returned a list. Accept both. */
+function firstCard(data: unknown): JobCard | null {
+  if (!data) return null
+  if (Array.isArray(data)) return (data[0] as JobCard | undefined) ?? null
+  return typeof data === 'object' ? (data as JobCard) : null
+}
+
 function toLocalDateTimeInput(iso: string | null): string {
   if (!iso) return ''
   const d = new Date(iso)
@@ -351,7 +358,7 @@ export default function JobCardPage() {
         p_job_id: jobId,
         p_session_token: tok,
       })
-      if (cardRes.error || !cardRes.data || (Array.isArray(cardRes.data) && cardRes.data.length === 0)) {
+      if (cardRes.error || !firstCard(cardRes.data)) {
         cardRes = await rpc('employee_get_job_card_for_job', {
           p_company_id: member.companyId,
           p_job_id: jobId,
@@ -394,7 +401,9 @@ export default function JobCardPage() {
       setNotFound(false)
       setJob(foundJob)
 
-      const card = (cardRes.data as JobCard[] | null)?.[0] ?? null
+      // The RPC returns one job card object (row_to_json), not a list. Reading it as a list
+      // gave "nothing saved" after every save, so Work performed looked lost.
+      const card = firstCard(cardRes.data)
       setJobCard(card)
       if (card) {
         setStartTime(toLocalDateTimeInput(card.start_time))
