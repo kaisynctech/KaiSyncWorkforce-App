@@ -63,9 +63,12 @@ export function HrModuleGate({
       }
 
       const workspace = await loadCompanyWorkspace(supabase, companyId)
+      // The layout company is loaded once at sign-in. A module save updates the
+      // database and the menu, but that snapshot stays old until the next load.
+      // The workspace read is the saved value, so it wins over the snapshot.
       const enabled: EnabledModules = {
-        ...(workspace?.enabled_modules ?? {}),
         ...(company?.enabled_modules ?? {}),
+        ...(workspace?.enabled_modules ?? {}),
         ...(modulesOverride ?? {}),
       }
 

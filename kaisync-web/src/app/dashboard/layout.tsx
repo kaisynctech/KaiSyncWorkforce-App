@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import Sidebar from '@/components/Sidebar'
 import EmployeeSidebar from '@/components/EmployeeSidebar'
 import { DashboardCompanyProvider } from '@/components/DashboardCompanyContext'
+import { MODULES_UPDATED_EVENT, type ModulesUpdatedDetail } from '@/lib/module-events'
 import { DashboardBootstrapProvider } from '@/components/DashboardBootstrapContext'
 import { getCodeSession, getEmpContext, clearCodeSession } from '@/lib/auth/code-session'
 import { AUTH_ROUTES, usesCompanyDashboard } from '@/lib/auth/employee-routing'
@@ -158,6 +159,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     // Intentionally once on mount — re-running on every pathname made every nav feel slow.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router])
+
+  useEffect(() => {
+    function onModulesUpdated(ev: Event) {
+      const detail = (ev as CustomEvent<ModulesUpdatedDetail>).detail
+      if (!detail) return
+      setCompany(prev => {
+        if (!prev || prev.id !== detail.companyId) return prev
+        return { ...prev, enabled_modules: detail.enabledModules }
+      })
+    }
+    window.addEventListener(MODULES_UPDATED_EVENT, onModulesUpdated)
+    return () => window.removeEventListener(MODULES_UPDATED_EVENT, onModulesUpdated)
+  }, [])
 
   // Platform-only users: keep them on /dashboard/platform without re-auth.
   useEffect(() => {
