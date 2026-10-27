@@ -22,6 +22,7 @@ export type BillingSummary = {
   currency: string
   base_price: number
   monthly_charge: number
+  billable?: boolean
   employees: BillingMeter
   contractors: BillingMeter
   client_portals: BillingMeter

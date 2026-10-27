@@ -956,7 +956,9 @@ export default function SettingsPage() {
         <Section title="Subscription" icon="payments">
           <div className="flex flex-col gap-4">
             <p className="text-[13px] text-text-secondary">
-              Standard monthly price. It includes 25 employees, 15 contractor portal seats, 15 client portal seats and 5 properties. Each active farm is R1,000. A trial status is shown beside the amount.
+              {billing?.billable === false
+                ? 'This is KaiSync’s own company. It is not billed.'
+                : 'Standard monthly price. It includes 25 employees, 15 contractor portal seats, 15 client portal seats and 5 properties. Each active farm is R1,000. A trial status is shown beside the amount.'}
             </p>
             {billingLoading && (
               <p className="text-[13px] text-text-secondary">Calculating…</p>
@@ -983,6 +985,7 @@ export default function SettingsPage() {
                     included={billing.employees.included}
                     overage={billing.employees.overage}
                     unitPrice={billing.employees.unit_price}
+                    billable={billing.billable !== false}
                   />
                   <MeterCard
                     label="Contractor portals"
@@ -990,6 +993,7 @@ export default function SettingsPage() {
                     included={billing.contractors.included}
                     overage={billing.contractors.overage}
                     unitPrice={billing.contractors.unit_price}
+                    billable={billing.billable !== false}
                   />
                   <MeterCard
                     label="Client portals"
@@ -997,6 +1001,7 @@ export default function SettingsPage() {
                     included={billing.client_portals.included}
                     overage={billing.client_portals.overage}
                     unitPrice={billing.client_portals.unit_price}
+                    billable={billing.billable !== false}
                   />
                   <MeterCard
                     label="Properties"
@@ -1004,6 +1009,7 @@ export default function SettingsPage() {
                     included={billing.properties.included}
                     overage={billing.properties.overage}
                     unitPrice={billing.properties.unit_price}
+                    billable={billing.billable !== false}
                   />
                   <MeterCard
                     label="Farms"
@@ -1011,6 +1017,7 @@ export default function SettingsPage() {
                     included={billing.farms.included}
                     overage={billing.farms.overage}
                     unitPrice={billing.farms.unit_price}
+                    billable={billing.billable !== false}
                   />
                 </div>
                 <div className="flex flex-col gap-2 border-t border-divider pt-3">
@@ -2063,28 +2070,32 @@ function MeterCard({
   included,
   overage,
   unitPrice,
+  billable = true,
 }: {
   label: string
   count: number
   included: number
   overage: number
   unitPrice: number
+  billable?: boolean
 }) {
   return (
     <div className="rounded-lg border border-border p-3">
       <p className="text-[12px] text-text-secondary">{label}</p>
       <p className="text-[18px] font-semibold text-text-primary mt-0.5">
         {count}
-        {included > 0 && (
+        {billable && included > 0 && (
           <span className="text-[12px] font-normal text-text-secondary"> / {included} included</span>
         )}
       </p>
       <p className="text-[11px] text-text-secondary mt-1">
-        {included === 0
-          ? `${count} active · ${formatZar(unitPrice)} each`
-          : overage > 0
-            ? `${overage} over · ${formatZar(unitPrice)} each`
-            : `Within included · then ${formatZar(unitPrice)}`}
+        {!billable
+          ? 'Not billed'
+          : included === 0
+            ? `${count} active · ${formatZar(unitPrice)} each`
+            : overage > 0
+              ? `${overage} over · ${formatZar(unitPrice)} each`
+              : `Within included · then ${formatZar(unitPrice)}`}
       </p>
     </div>
   )
