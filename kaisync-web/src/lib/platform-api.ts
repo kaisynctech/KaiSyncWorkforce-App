@@ -38,6 +38,9 @@ export async function searchPlatformCompanies(
       employee_count: Number(row.employee_count ?? 0),
       employee_limit: Number(row.employee_limit ?? 0),
       monthly_charge: Number(row.monthly_charge ?? 0),
+      standard_monthly_charge: Number(row.standard_monthly_charge ?? row.monthly_charge ?? 0),
+      price_override: row.price_override == null ? null : Number(row.price_override),
+      is_platform_home: Boolean(row.is_platform_home),
       created_at: String(row.created_at ?? ''),
       subscription_active: Boolean(row.subscription_active),
     }
@@ -53,6 +56,20 @@ export async function setCompanySubscriptionStatus(
   const { error } = await supabase.rpc('platform_set_subscription_status', {
     p_company_id: companyId,
     p_status: status,
+    p_note: note ?? null,
+  })
+  if (error) throw new Error(error.message)
+}
+
+export async function setCompanyPrice(
+  supabase: SupabaseClient,
+  companyId: string,
+  amount: number | null,
+  note?: string | null,
+) {
+  const { error } = await supabase.rpc('platform_set_company_price', {
+    p_company_id: companyId,
+    p_amount: amount,
     p_note: note ?? null,
   })
   if (error) throw new Error(error.message)

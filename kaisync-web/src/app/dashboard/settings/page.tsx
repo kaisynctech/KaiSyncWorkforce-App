@@ -958,7 +958,9 @@ export default function SettingsPage() {
             <p className="text-[13px] text-text-secondary">
               {billing?.billable === false
                 ? 'This is KaiSync’s own company. It is not billed.'
-                : 'Standard monthly price. It includes 25 employees, 15 contractor portal seats, 15 client portal seats and 5 properties. Each active farm is R1,000. A trial status is shown beside the amount.'}
+                : typeof billing?.price_override === 'number'
+                  ? 'Agreed monthly price. Seat counts are shown for reference.'
+                  : 'Standard monthly price. It includes 25 employees, 15 contractor portal seats, 15 client portal seats and 5 properties. Each active farm is R1,000. A trial status is shown beside the amount.'}
             </p>
             {billingLoading && (
               <p className="text-[13px] text-text-secondary">Calculating…</p>
@@ -986,6 +988,7 @@ export default function SettingsPage() {
                     overage={billing.employees.overage}
                     unitPrice={billing.employees.unit_price}
                     billable={billing.billable !== false}
+                    referenceOnly={typeof billing.price_override === 'number'}
                   />
                   <MeterCard
                     label="Contractor portals"
@@ -994,6 +997,7 @@ export default function SettingsPage() {
                     overage={billing.contractors.overage}
                     unitPrice={billing.contractors.unit_price}
                     billable={billing.billable !== false}
+                    referenceOnly={typeof billing.price_override === 'number'}
                   />
                   <MeterCard
                     label="Client portals"
@@ -1002,6 +1006,7 @@ export default function SettingsPage() {
                     overage={billing.client_portals.overage}
                     unitPrice={billing.client_portals.unit_price}
                     billable={billing.billable !== false}
+                    referenceOnly={typeof billing.price_override === 'number'}
                   />
                   <MeterCard
                     label="Properties"
@@ -1010,6 +1015,7 @@ export default function SettingsPage() {
                     overage={billing.properties.overage}
                     unitPrice={billing.properties.unit_price}
                     billable={billing.billable !== false}
+                    referenceOnly={typeof billing.price_override === 'number'}
                   />
                   <MeterCard
                     label="Farms"
@@ -1018,6 +1024,7 @@ export default function SettingsPage() {
                     overage={billing.farms.overage}
                     unitPrice={billing.farms.unit_price}
                     billable={billing.billable !== false}
+                    referenceOnly={typeof billing.price_override === 'number'}
                   />
                 </div>
                 <div className="flex flex-col gap-2 border-t border-divider pt-3">
@@ -2071,6 +2078,7 @@ function MeterCard({
   overage,
   unitPrice,
   billable = true,
+  referenceOnly = false,
 }: {
   label: string
   count: number
@@ -2078,6 +2086,7 @@ function MeterCard({
   overage: number
   unitPrice: number
   billable?: boolean
+  referenceOnly?: boolean
 }) {
   return (
     <div className="rounded-lg border border-border p-3">
@@ -2089,7 +2098,9 @@ function MeterCard({
         )}
       </p>
       <p className="text-[11px] text-text-secondary mt-1">
-        {!billable
+        {referenceOnly
+          ? 'For reference'
+          : !billable
           ? 'Not billed'
           : included === 0
             ? `${count} active · ${formatZar(unitPrice)} each`
