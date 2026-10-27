@@ -1,4 +1,5 @@
 import { jsPDF } from 'jspdf'
+import { letterheadDetailLines, type Letterhead } from '@/lib/letterhead'
 
 export type PayslipLine = { label: string; amount: number }
 
@@ -201,6 +202,8 @@ export type PayslipTemplatePdfInput = {
   companyName: string
   companyAddress?: string | null
   logoDataUrl?: string | null
+  /** Company letterhead (new logo and details). Takes over from companyName/address/logo when given. */
+  letterhead?: Letterhead | null
   employeeName: string
   address?: string | null
   employeeId?: string | null
@@ -277,27 +280,45 @@ export function downloadPayslipTemplatePdf(input: PayslipTemplatePdfInput): void
     ? Math.round((input.paidTimeOff + input.sickTimeOff) * 100) / 100
     : null
 
-  if (input.logoDataUrl) {
+  const lh = input.letterhead ?? null
+  const logo = lh?.logo
+    ? lh.logo
+    : input.logoDataUrl ? { dataUrl: input.logoDataUrl, width: 1, height: 1 } : null
+  let textX = left
+  let headerBottom = y + 14
+  if (logo) {
     try {
-      const kind = input.logoDataUrl.includes('image/png') ? 'PNG' : 'JPEG'
-      doc.addImage(input.logoDataUrl, kind, left, y - 2, 18, 18)
+      // Fit inside 40 × 18 mm, keeping the logo's shape.
+      const scale = Math.min(40 / logo.width, 18 / logo.height)
+      const w = logo.width * scale, h = logo.height * scale
+      const kind = logo.dataUrl.includes('image/jpeg') || logo.dataUrl.includes('image/jpg') ? 'JPEG' : 'PNG'
+      doc.addImage(logo.dataUrl, kind, left, y - 2, w, h)
+      textX = left + w + 4
+      headerBottom = Math.max(headerBottom, y - 2 + h)
     } catch {
       // A logo that cannot be drawn still leaves the company name on the slip.
     }
   }
   doc.setTextColor(15, 23, 42)
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(16)
-  doc.text(input.companyName || 'Company', input.logoDataUrl ? left + 22 : left, y + 4)
+  doc.setFontSize(lh ? 13 : 16)
+  doc.text(lh?.name || input.companyName || 'Company', textX, y + 3)
   doc.setFont('helvetica', 'normal')
-  doc.setFontSize(9)
+  doc.setFontSize(lh ? 7.5 : 9)
   doc.setTextColor(100, 116, 139)
-  if (input.companyAddress) doc.text(input.companyAddress, input.logoDataUrl ? left + 22 : left, y + 10, { maxWidth: 110 })
+  const details = lh ? letterheadDetailLines(lh) : (input.companyAddress ? [input.companyAddress] : [])
+  let dy = y + (lh ? 7.5 : 10)
+  for (const line of details) {
+    const wrapped = doc.splitTextToSize(line, right - textX - 30) as string[]
+    doc.text(wrapped, textX, dy)
+    dy += (lh ? 3.5 : 4) * wrapped.length
+  }
+  headerBottom = Math.max(headerBottom, dy)
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(11)
   doc.setTextColor(30, 58, 95)
   doc.text('PAYSLIP', right, y + 4, { align: 'right' })
-  y += 24
+  y = Math.max(y + 24, headerBottom + 6)
 
   const fact = (label: string, value: string, x: number, rowY: number) => {
     doc.setFont('helvetica', 'normal')

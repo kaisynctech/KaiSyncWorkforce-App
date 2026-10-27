@@ -7,6 +7,7 @@ import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { fmtMoney } from '@/lib/finance-calc'
 import { recordInvoicePayment } from '@/lib/finance-api'
 import { downloadInvoicePdf, openInvoiceMailto } from '@/lib/invoice-pdf'
+import { companyLetterhead, type Letterhead } from '@/lib/letterhead'
 import type { FinanceInvoice, FinanceInvoiceLine } from '@/lib/finance-types'
 import { localISODate } from '@/lib/utils'
 
@@ -126,6 +127,7 @@ function MoneyInvoiceDetailInner() {
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [employeeId, setEmployeeId] = useState<string | null>(null)
   const [companyName, setCompanyName] = useState('KaiSync')
+  const [letterhead, setLetterhead] = useState<Letterhead | null>(null)
   const [clientEmail, setClientEmail] = useState<string | null>(null)
 
   // Modal states
@@ -157,6 +159,7 @@ function MoneyInvoiceDetailInner() {
     const member = await resolveCurrentMember(supabase)
     if (!member) { setLoading(false); return }
     setCompanyId(member.companyId)
+    void companyLetterhead(supabase, member.companyId).then(setLetterhead)
     setEmployeeId(member.employeeId)
 
     const [{ data: invoice }, { data: lineRows }, { data: transactions }, { data: company }, { data: proofRows }] = await Promise.all([
@@ -216,6 +219,7 @@ function MoneyInvoiceDetailInner() {
       client_name: (inv.clients as { name?: string } | null)?.name ?? null,
       client_email: clientEmail,
       company_name: companyName,
+      letterhead,
       lines: lines.map(l => ({
         description: l.description,
         qty: l.quantity,

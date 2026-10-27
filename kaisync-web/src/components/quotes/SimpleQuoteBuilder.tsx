@@ -11,6 +11,7 @@ import { createJob } from '@/lib/jobs'
 import { createSupplyRfqFromQuote } from '@/lib/supply-rfq'
 import { downloadQuotePdf, openQuoteMailto, quotePdfBase64 } from '@/lib/quote-pdf'
 import { sendQuoteEmailViaResend } from '@/lib/send-quote-email'
+import { companyLetterhead, type Letterhead } from '@/lib/letterhead'
 import SimpleQuoteLineRow from './SimpleQuoteLineRow'
 import RateCardPicker, { type RateCardSelection } from './RateCardPicker'
 
@@ -77,6 +78,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   // ── Auth ──────────────────────────────────────────────────────────────────
   const [companyId,  setCompanyId]  = useState<string | null>(null)
   const [companyName, setCompanyName] = useState('KaiSync')
+  const [letterhead, setLetterhead] = useState<Letterhead | null>(null)
   const [employeeId, setEmployeeId] = useState<string | null>(null)
   const [authReady,  setAuthReady]  = useState(false)
 
@@ -178,6 +180,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   useEffect(() => {
     if (!authReady || !companyId) return
     void loadData(companyId)
+    void companyLetterhead(supabase, companyId).then(setLetterhead)
   }, [authReady, companyId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadData(cid: string) {
@@ -537,6 +540,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
       client_name: client?.name ?? null,
       client_email: client?.email ?? null,
       company_name: companyName,
+      letterhead,
       lines: linesRef.current.map(l => ({
         description: l.description,
         qty: l.qty,

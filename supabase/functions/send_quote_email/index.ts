@@ -15,6 +15,63 @@ const cors = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+function esc(s: unknown): string {
+  return String(s ?? "").replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!)
+  );
+}
+
+type Company = {
+  name: string | null;
+  legal_name: string | null;
+  registration_number: string | null;
+  is_vat_registered: boolean | null;
+  vat_number: string | null;
+  address: string | null;
+  contact_phone: string | null;
+  contact_email: string | null;
+  website: string | null;
+  brand_logo_path: string | null;
+  document_footer: string | null;
+};
+
+/** Branded quote email: company logo and name on top, contact details and footer note below. */
+function quoteEmailHtml(c: Company, logoUrl: string | null, quoteNumber: string | null, title: string | null): string {
+  const name = esc(c.name || "Our company");
+  const ids = [
+    c.registration_number ? `Reg. no. ${esc(c.registration_number)}` : "",
+    c.is_vat_registered && c.vat_number ? `VAT no. ${esc(c.vat_number)}` : "",
+  ].filter(Boolean).join(" &middot; ");
+  const contacts = [
+    c.contact_phone ? esc(c.contact_phone) : "",
+    c.contact_email ? `<a href="mailto:${esc(c.contact_email)}" style="color:#1E3A5F">${esc(c.contact_email)}</a>` : "",
+    c.website ? esc(c.website) : "",
+  ].filter(Boolean).join(" &middot; ");
+  const head = logoUrl
+    ? `<img src="${esc(logoUrl)}" alt="${name}" style="max-height:56px;max-width:220px;display:block">`
+    : `<div style="font-size:20px;font-weight:700;color:#0F172A">${name}</div>`;
+  return `<!doctype html><html><body style="margin:0;background:#F1F5F9;font-family:Arial,Helvetica,sans-serif">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F1F5F9;padding:24px 12px"><tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#ffffff;border-radius:10px;overflow:hidden">
+<tr><td style="padding:24px 28px;border-bottom:3px solid #1E3A5F">${head}</td></tr>
+<tr><td style="padding:24px 28px;color:#0F172A;font-size:14px;line-height:1.6">
+<p style="margin:0 0 12px">Hello,</p>
+<p style="margin:0 0 12px">Please find attached our quotation${quoteNumber ? ` <strong>${esc(quoteNumber)}</strong>` : ""}${title ? ` for <strong>${esc(title)}</strong>` : ""}.</p>
+<p style="margin:0 0 12px">If you have any questions, simply reply to this email.</p>
+<p style="margin:16px 0 0">Kind regards,<br><strong>${name}</strong></p>
+</td></tr>
+<tr><td style="padding:16px 28px;background:#F8FAFC;color:#64748B;font-size:12px;line-height:1.6">
+${c.legal_name && c.legal_name !== c.name ? `<div>${esc(c.legal_name)}</div>` : ""}
+${ids ? `<div>${ids}</div>` : ""}
+${c.address ? `<div>${esc(c.address).replace(/\n/g, ", ")}</div>` : ""}
+${contacts ? `<div>${contacts}</div>` : ""}
+${c.document_footer ? `<div style="margin-top:8px">${esc(c.document_footer)}</div>` : ""}
+</td></tr>
+</table>
+<div style="color:#94A3B8;font-size:11px;margin-top:12px">Sent with KaiSync</div>
+</td></tr></table></body></html>`;
+}
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -109,14 +166,33 @@ Deno.serve(async (req: Request) => {
 
     const pdfBase64 = body.pdf_base64.replace(/^data:application\/pdf;base64,/, "");
 
+    const { data: company } = await admin
+      .from("companies")
+      .select("name, legal_name, registration_number, is_vat_registered, vat_number, address, contact_phone, contact_email, website, brand_logo_path, document_footer")
+      .eq("id", emp.company_id)
+      .maybeSingle();
+    const co = (company ?? { name: null }) as Company;
+    const logoUrl = co.brand_logo_path
+      ? admin.storage.from("company-branding").getPublicUrl(co.brand_logo_path).data.publicUrl
+      : null;
+    const companyName = (co.name ?? "").trim() || "KaiSync";
+
     const textBody = [
       "Hello,",
       "",
       `Please find attached our quotation${quote.quote_number ? ` (${quote.quote_number})` : ""}.`,
       "",
       "Kind regards,",
-      "KaiSync",
-    ].join("\n");
+      companyName,
+      [co.contact_phone, co.contact_email, co.website].filter(Boolean).join(" · "),
+    ].filter((l, i, a) => l !== "" || i < a.length - 1).join("\n");
+    const htmlBody = quoteEmailHtml(co, logoUrl, quote.quote_number ?? null, quote.title ?? null);
+
+    // Sender shows the company's name; replies go to the company's contact email.
+    const fromAddress = (from.match(/<([^>]+)>/)?.[1] ?? from).trim();
+    const safeName = companyName.replace(/["<>\r\n]/g, "").slice(0, 80);
+    const fromBranded = `"${safeName}" <${fromAddress}>`;
+    const replyTo = (co.contact_email ?? "").trim();
 
     const resendRes = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -125,10 +201,12 @@ Deno.serve(async (req: Request) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from,
+        from: fromBranded,
         to: [recipient],
+        ...(replyTo ? { reply_to: replyTo } : {}),
         subject,
         text: textBody,
+        html: htmlBody,
         attachments: [{ filename, content: pdfBase64 }],
       }),
     });

@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { grantMediaRead } from '@/lib/media-read'
 import { parseStatementEntries, type ClientStatementEntry } from '@/lib/client-portal/statement'
 import type { InvoicePdfInput } from '@/lib/invoice-pdf'
+import { letterheadFromRow, loadLetterheadLogo, type Letterhead } from '@/lib/letterhead'
 import type { CompliancePackItem, ContractorDocument } from '@/lib/contractor-portal/types'
 import type {
   ClientBankingView,
@@ -789,7 +790,15 @@ export async function getInvoiceForPdf(
     total: Number(r.total_amount ?? 0) || 0,
     amount_paid: Number(r.amount_paid ?? 0) || 0,
     balance_due: Number(r.balance_due ?? 0) || 0,
+    letterhead: await getLetterhead(companyCode, clientCode, str(r.company_name)).catch(() => null),
   }
+}
+
+/** The company's letterhead (logo, details, banking when switched on) for documents. */
+export async function getLetterhead(companyCode: string, clientCode: string, fallbackName = ''): Promise<Letterhead> {
+  const data = await rpc('client_portal_get_letterhead', codes(companyCode, clientCode))
+  const lh = letterheadFromRow(data && typeof data === 'object' ? (data as Record<string, unknown>) : null, fallbackName)
+  return loadLetterheadLogo(createClient(), lh)
 }
 
 

@@ -14,6 +14,7 @@ import { getEmployee } from '@/lib/employees'
 import EditEmployeePage from './edit/page'
 import { assessPayrollReadiness } from '@/lib/payroll-readiness'
 import { downloadPayslipTemplatePdf, imageUrlToDataUrl } from '@/lib/payslip-pdf'
+import { companyLetterhead } from '@/lib/letterhead'
 import type { Employee, LeaveRequest, TimePunch, AccessLevel } from '@/types/database'
 
 type PairSession = {
@@ -854,6 +855,7 @@ function EmployeePayslips({ employee }: { employee: Employee }) {
       companyName: companyRow?.name ?? 'Company',
       companyAddress: companyRow?.address,
       logoDataUrl,
+      letterhead: await companyLetterhead(supabase, employee.company_id, companyRow?.name ?? 'Company'),
       employeeName: `${employee.name} ${employee.surname}`.trim(),
       address: employee.address,
       employeeId: employee.id_number,

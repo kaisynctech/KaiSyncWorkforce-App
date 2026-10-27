@@ -3,6 +3,7 @@
  */
 
 import { jsPDF } from 'jspdf'
+import { drawLetterhead, finishDocument, letterheadFromRow, showsBank, type Letterhead } from '@/lib/letterhead'
 
 export type InvoicePdfLine = {
   description: string
@@ -27,6 +28,8 @@ export type InvoicePdfInput = {
   total: number
   amount_paid: number
   balance_due: number
+  /** Company letterhead (logo, details, banking). Falls back to the company name only. */
+  letterhead?: Letterhead | null
 }
 
 function money(n: number): string {
@@ -46,38 +49,35 @@ export function buildInvoicePdf(input: InvoicePdfInput): jsPDF {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' })
   const left = 18
   const right = 192
-  let y = 18
+  const lh = input.letterhead ?? letterheadFromRow({ name: input.company_name }, input.company_name)
+  let y = drawLetterhead(doc, lh, {
+    title: lh.vatNumber ? 'Tax invoice' : 'Invoice',
+    meta: [
+      ['Invoice no.', input.invoice_number ?? 'Draft'],
+      ['Date', fmtDate(input.issue_date)],
+      ['Due', fmtDate(input.due_date)],
+    ],
+  })
 
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(16)
-  doc.setTextColor(15, 23, 42)
-  doc.text(input.company_name || 'Invoice', left, y)
-  y += 7
-
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(10)
+  doc.setFontSize(8)
   doc.setTextColor(100, 116, 139)
-  doc.text(input.invoice_number ? `Invoice ${input.invoice_number}` : 'Draft invoice', left, y)
-  doc.text(fmtDate(input.issue_date), right, y, { align: 'right' })
-  y += 10
-
-  doc.setDrawColor(226, 232, 240)
-  doc.line(left, y, right, y)
-  y += 8
-
+  doc.text('BILL TO', left, y)
+  y += 5
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(10)
   doc.setTextColor(51, 65, 85)
-  doc.text(`Client: ${input.client_name?.trim() || '—'}`, left, y)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(15, 23, 42)
+  doc.text(input.client_name?.trim() || '—', left, y)
+  doc.setFont('helvetica', 'normal')
+  doc.setTextColor(51, 65, 85)
   y += 5
   if (input.client_email?.trim()) {
-    doc.text(`Email: ${input.client_email.trim()}`, left, y)
+    doc.text(input.client_email.trim(), left, y)
     y += 5
   }
-  doc.text(`Due: ${fmtDate(input.due_date)}`, left, y)
   y += 5
-  doc.text(`Status: ${input.status.replace(/_/g, ' ')}`, left, y)
-  y += 10
 
   doc.setFillColor(241, 245, 249)
   doc.rect(left, y - 4, right - left, 8, 'F')
@@ -145,9 +145,12 @@ export function buildInvoicePdf(input: InvoicePdfInput): jsPDF {
     y += 5
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(51, 65, 85)
-    doc.text(doc.splitTextToSize(input.notes.trim(), right - left), left, y)
+    const noteLines = doc.splitTextToSize(input.notes.trim(), right - left) as string[]
+    doc.text(noteLines, left, y)
+    y += noteLines.length * 4.2
   }
 
+  finishDocument(doc, lh, { y: y + 8, bank: showsBank(lh, 'invoice'), reference: input.invoice_number })
   return doc
 }
 

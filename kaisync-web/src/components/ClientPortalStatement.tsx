@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { getStatement } from '@/lib/client-portal/api'
+import { getLetterhead, getStatement } from '@/lib/client-portal/api'
 import { fmtDate } from '@/lib/client-portal/format'
 import { moneyZAR } from '@/lib/client-portal/quotation'
 import type { ClientPortalSession } from '@/lib/client-portal/session'
@@ -19,6 +19,7 @@ const KIND_LABEL: Record<ClientStatementEntry['kind'], string> = {
 export function ClientPortalStatement({ session }: { session: ClientPortalSession }) {
   const [entries, setEntries] = useState<ClientStatementEntry[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [pdfBusy, setPdfBusy] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -41,6 +42,48 @@ export function ClientPortalStatement({ session }: { session: ClientPortalSessio
     URL.revokeObjectURL(url)
   }
 
+  async function downloadPdf() {
+    setPdfBusy(true)
+    setError(null)
+    try {
+      const [letterhead, { downloadStatementPdf }] = await Promise.all([
+        getLetterhead(session.company_code, session.client_code),
+        import('@/lib/statement-pdf'),
+      ])
+      downloadStatementPdf({
+        letterhead,
+        title: 'Statement of account',
+        toName: session.client_name,
+        toCode: session.client_code,
+        summary: [
+          ['Total invoiced', moneyZAR(st.totalInvoiced)],
+          ['Total paid', moneyZAR(st.totalPaid)],
+          ['Credit notes', moneyZAR(st.totalCredited)],
+          ['Overdue', moneyZAR(st.overdue)],
+        ],
+        closing: [st.balance < 0 ? 'In credit' : 'Balance owing', moneyZAR(Math.abs(st.balance))],
+        columns: [
+          { label: 'Date', width: 22 },
+          { label: 'Type', width: 22 },
+          { label: 'Reference', width: 24 },
+          { label: 'Description', width: 46 },
+          { label: 'Debit', width: 20, align: 'right' },
+          { label: 'Credit', width: 20, align: 'right' },
+          { label: 'Balance', width: 20, align: 'right' },
+        ],
+        rows: st.lines.map(l => [
+          fmtDate(l.entry_date), KIND_LABEL[l.kind] ?? l.kind, l.reference || '—', l.description,
+          l.debit ? moneyZAR(l.debit) : '', l.credit ? moneyZAR(l.credit) : '', moneyZAR(l.balance),
+        ]),
+        bank: st.balance > 0,
+        fileName: `Statement-${session.client_code}-${localISODate()}.pdf`,
+      })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not create the PDF.')
+    }
+    setPdfBusy(false)
+  }
+
   if (entries === null) return <div className="py-16 text-center text-text-secondary text-[14px]">Loading…</div>
 
   return (
@@ -48,6 +91,7 @@ export function ClientPortalStatement({ session }: { session: ClientPortalSessio
       <div className="flex items-end justify-between gap-3 flex-wrap">
         <p className="text-[12px] text-text-secondary">Everything we have invoiced, what you have paid, and any credits or refunds.</p>
         <div className="flex gap-2 print:hidden">
+          <button type="button" onClick={() => void downloadPdf()} disabled={pdfBusy} className="h-9 px-3 rounded-lg bg-primary text-white text-[12px] font-semibold disabled:opacity-60">{pdfBusy ? 'Preparing…' : 'Download PDF'}</button>
           <button type="button" onClick={download} className="h-9 px-3 rounded-lg border border-divider text-[12px] font-semibold text-text-primary">Download (CSV)</button>
           <button type="button" onClick={() => window.print()} className="h-9 px-3 rounded-lg border border-divider text-[12px] font-semibold text-text-primary">Print</button>
         </div>

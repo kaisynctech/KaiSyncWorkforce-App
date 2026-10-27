@@ -4,6 +4,7 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { grantMediaRead, signWorkforceMediaMany } from '@/lib/media-read'
+import { letterheadFromRow, loadLetterheadLogo, type Letterhead } from '@/lib/letterhead'
 import type {
   CompliancePackItem,
   ContractorBankingDecision,
@@ -992,4 +993,11 @@ export async function uploadQuote(params: {
   const id = typeof data === 'string' ? data.replace(/"/g, '') : str(data)
   if (!id) throw new Error('Could not submit uploaded quote.')
   return id
+}
+
+/** The company's letterhead (logo and details, no banking) for the payments statement. */
+export async function getLetterhead(companyCode: string, contractorCode: string, fallbackName = ''): Promise<Letterhead> {
+  const data = await rpc('contractor_portal_get_letterhead', codes(companyCode, contractorCode))
+  const lh = letterheadFromRow(data && typeof data === 'object' ? (data as Record<string, unknown>) : null, fallbackName)
+  return loadLetterheadLogo(createClient(), lh)
 }

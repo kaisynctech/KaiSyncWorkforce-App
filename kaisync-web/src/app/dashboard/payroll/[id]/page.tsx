@@ -19,6 +19,7 @@ import {
   type PayslipExtraLine,
 } from '@/lib/payslip-extra-lines'
 import { downloadPayslipTemplatePdf, imageUrlToDataUrl } from '@/lib/payslip-pdf'
+import { companyLetterhead } from '@/lib/letterhead'
 import { executeWithStepUp } from '@/lib/step-up'
 import { StepUpDialog } from '@/components/step-up-dialog'
 import { isUnpaidLeave } from '@/lib/payroll/leave-days'
@@ -1118,6 +1119,7 @@ export default function PayslipDetailPage() {
       companyName: companyRow?.name?.trim() || companyName,
       companyAddress: companyRow?.address ?? companyAddress,
       logoDataUrl,
+      letterhead: await companyLetterhead(supabase, payment.company_id, companyRow?.name ?? companyName),
       employeeName: fullName,
       address: homeAddress,
       employeeId: employeeIdNumber,

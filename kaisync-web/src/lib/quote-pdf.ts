@@ -4,6 +4,7 @@
 
 import { jsPDF } from 'jspdf'
 import { localISODate } from '@/lib/utils'
+import { drawLetterhead, finishDocument, letterheadFromRow, showsBank, type Letterhead } from '@/lib/letterhead'
 
 export type QuotePdfLine = {
   description: string
@@ -27,6 +28,8 @@ export type QuotePdfInput = {
   subtotal: number
   vat: number
   total: number
+  /** Company letterhead (logo, details, banking). Falls back to the company name only. */
+  letterhead?: Letterhead | null
 }
 
 function money(n: number): string {
@@ -46,24 +49,15 @@ export function buildQuotePdf(input: QuotePdfInput): jsPDF {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' })
   const left = 18
   const right = 192
-  let y = 18
-
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(16)
-  doc.setTextColor(15, 23, 42)
-  doc.text(input.company_name || 'Quote', left, y)
-  y += 7
-
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(10)
-  doc.setTextColor(100, 116, 139)
-  doc.text(input.quote_number ? `Quote ${input.quote_number}` : 'Draft quote', left, y)
-  doc.text(fmtDate(localISODate()), right, y, { align: 'right' })
-  y += 10
-
-  doc.setDrawColor(226, 232, 240)
-  doc.line(left, y, right, y)
-  y += 8
+  const lh = input.letterhead ?? letterheadFromRow({ name: input.company_name }, input.company_name)
+  let y = drawLetterhead(doc, lh, {
+    title: 'Quotation',
+    meta: [
+      ['Quote no.', input.quote_number ?? 'Draft'],
+      ['Date', fmtDate(localISODate())],
+      ['Valid until', fmtDate(input.valid_until)],
+    ],
+  })
 
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(12)
@@ -80,10 +74,7 @@ export function buildQuotePdf(input: QuotePdfInput): jsPDF {
     doc.text(`Email: ${input.client_email.trim()}`, left, y)
     y += 5
   }
-  doc.text(`Valid until: ${fmtDate(input.valid_until)}`, left, y)
   y += 5
-  doc.text(`Status: ${input.status.replace(/_/g, ' ')}`, left, y)
-  y += 10
 
   // Table header
   doc.setFillColor(241, 245, 249)
@@ -155,8 +146,10 @@ export function buildQuotePdf(input: QuotePdfInput): jsPDF {
     doc.setTextColor(51, 65, 85)
     const noteLines = doc.splitTextToSize(input.notes.trim(), right - left)
     doc.text(noteLines, left, y)
+    y += noteLines.length * 4.2
   }
 
+  finishDocument(doc, lh, { y: y + 8, bank: showsBank(lh, 'quote'), reference: input.quote_number })
   return doc
 }
 

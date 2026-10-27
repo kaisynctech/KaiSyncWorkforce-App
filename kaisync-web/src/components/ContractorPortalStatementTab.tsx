@@ -1,6 +1,7 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
+import { getLetterhead } from '@/lib/contractor-portal/api'
 import type { ContractorPortalSession } from '@/lib/contractor-portal/session'
 import { buildContractorStatement, statementToCsv } from '@/lib/contractor-portal/statement'
 import { moneyZAR, type ContractorPayout } from '@/lib/contractor-portal/types'
@@ -22,6 +23,50 @@ export function ContractorPortalStatementTab({
   payouts: ContractorPayout[]
 }) {
   const st = useMemo(() => buildContractorStatement(payouts), [payouts])
+  const [pdfBusy, setPdfBusy] = useState(false)
+  const [pdfError, setPdfError] = useState<string | null>(null)
+
+  async function downloadPdf() {
+    setPdfBusy(true)
+    setPdfError(null)
+    try {
+      const [letterhead, { downloadStatementPdf }] = await Promise.all([
+        getLetterhead(session.company_code, session.contractor_code),
+        import('@/lib/statement-pdf'),
+      ])
+      downloadStatementPdf({
+        letterhead,
+        title: 'Payments statement',
+        toName: session.contractor_name,
+        toCode: session.contractor_code,
+        summary: [
+          ['Total invoiced', moneyZAR(st.totalInvoiced)],
+          ['Total paid', moneyZAR(st.totalPaid)],
+          ['Approved, not yet paid', moneyZAR(st.approvedUnpaid)],
+          ['Awaiting approval', moneyZAR(st.awaitingApproval)],
+        ],
+        closing: ['Balance owed to you', moneyZAR(st.balance)],
+        columns: [
+          { label: 'Date', width: 24 },
+          { label: 'Description', width: 64 },
+          { label: 'Ref', width: 26 },
+          { label: 'Invoiced', width: 20, align: 'right' },
+          { label: 'Paid', width: 20, align: 'right' },
+          { label: 'Balance', width: 20, align: 'right' },
+        ],
+        rows: st.lines.map(l => [
+          fmtDate(l.date),
+          l.kind === 'invoice' && l.status !== 'Paid' ? `${l.description} (${l.status})` : l.description,
+          l.reference, l.charge ? moneyZAR(l.charge) : '', l.payment ? moneyZAR(l.payment) : '', moneyZAR(l.balance),
+        ]),
+        bank: false,
+        fileName: `Statement-${session.contractor_code}-${localISODate()}.pdf`,
+      })
+    } catch (e) {
+      setPdfError(e instanceof Error ? e.message : 'Could not create the PDF.')
+    }
+    setPdfBusy(false)
+  }
 
   function download() {
     const title = `Statement — ${session.contractor_name} (${session.contractor_code}) — ${new Date().toLocaleDateString('en-ZA')}`
@@ -42,6 +87,9 @@ export function ContractorPortalStatementTab({
           <p className="text-[12px] text-text-secondary mt-0.5">Everything you have invoiced and been paid.</p>
         </div>
         <div className="flex gap-2 print:hidden">
+          <button type="button" onClick={() => void downloadPdf()} disabled={pdfBusy} className="h-9 px-3 rounded-lg bg-primary text-white text-[12px] font-semibold disabled:opacity-60">
+            {pdfBusy ? 'Preparing…' : 'Download PDF'}
+          </button>
           <button type="button" onClick={download} className="h-9 px-3 rounded-lg border border-divider text-[12px] font-semibold text-text-primary">
             Download (CSV)
           </button>
@@ -51,6 +99,7 @@ export function ContractorPortalStatementTab({
         </div>
       </div>
 
+      {pdfError && <p className="text-[12px] text-error">{pdfError}</p>}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         <Tile label="Total invoiced" value={moneyZAR(st.totalInvoiced)} />
         <Tile label="Total paid" value={moneyZAR(st.totalPaid)} />

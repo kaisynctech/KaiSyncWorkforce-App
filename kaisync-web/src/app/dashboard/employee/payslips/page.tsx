@@ -8,6 +8,7 @@ import { getCodeSession } from '@/lib/auth/code-session'
 import { loadCompanyWorkspace, loadEmployeeWorkspace } from '@/lib/employee-workspace'
 import { useEmployeeModuleGate } from '@/lib/employee-module-gate'
 import { downloadPayslipTemplatePdf, imageUrlToDataUrl, parsePayslipsRpcJson, type PayslipPdfInput } from '@/lib/payslip-pdf'
+import { companyLetterhead } from '@/lib/letterhead'
 import { parseExtraLines } from '@/lib/payslip-extra-lines'
 import {
   ResponsiveDataView,
@@ -142,6 +143,7 @@ export default function PayslipsPage() {
         companyName: companyRow?.name ?? companyName,
         companyAddress: companyRow?.address,
         logoDataUrl,
+        letterhead: await companyLetterhead(supabase, companyId, companyRow?.name ?? companyName, getCodeSession()?.company_code),
         employeeName: personRow ? `${personRow.name ?? ''} ${personRow.surname ?? ''}`.trim() : employeeName,
         address: personRow?.address,
         employeeId: personRow?.id_number,
