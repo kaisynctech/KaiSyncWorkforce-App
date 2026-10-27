@@ -957,10 +957,8 @@ export default function SettingsPage() {
           <div className="flex flex-col gap-4">
             <p className="text-[13px] text-text-secondary">
               {billing?.billable === false
-                ? 'This is KaiSync’s own company. It is not billed. The price list below is what a customer company pays.'
-                : typeof billing?.price_override === 'number'
-                  ? 'The amount due is the agreed price. The price list is the standard monthly cost of each part, including parts this company is not using yet.'
-                  : 'The amount due follows the standard price list. Every part is listed, including parts this company is not using yet.'}
+                ? 'This is KaiSync’s own company. It is not billed.'
+                : 'Live monthly amount. Each box shows what is included, and the price per month after that.'}
             </p>
             {billingLoading && (
               <p className="text-[13px] text-text-secondary">Calculating…</p>
@@ -980,7 +978,7 @@ export default function SettingsPage() {
                     {billing.renewal_date ? ` · renews ${billing.renewal_date}` : ''}
                   </p>
                 </div>
-                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                   <MeterCard
                     label="Employees"
                     count={billing.employees.count}
@@ -990,7 +988,7 @@ export default function SettingsPage() {
                     billable={billing.billable !== false}
                   />
                   <MeterCard
-                    label="Contractor portals"
+                    label="Portal contractors"
                     count={billing.contractors.count}
                     included={billing.contractors.included}
                     overage={billing.contractors.overage}
@@ -1021,32 +1019,24 @@ export default function SettingsPage() {
                     unitPrice={billing.farms.unit_price}
                     billable={billing.billable !== false}
                   />
+                  <div className="rounded-lg border border-border p-3">
+                    <p className="text-[12px] text-text-secondary">Also included</p>
+                    <p className="text-[13px] font-medium text-text-primary mt-1 leading-snug">
+                      Workforce, jobs and projects, clients, contractors, supply and assets, incidents, reports, and My PA
+                    </p>
+                    <p className="text-[11px] text-text-secondary mt-1">
+                      {billing.billable === false ? 'Not billed' : 'In the base price, even when switched off'}
+                    </p>
+                  </div>
                 </div>
                 <div className="flex flex-col gap-2 border-t border-divider pt-3">
-                  <p className="text-[12px] uppercase tracking-wide text-text-secondary">This month</p>
                   {(billing.lines ?? []).filter(line => line.kind !== 'price_list').map((line, i) => (
-                    <div key={`charge-${i}`} className="flex items-center justify-between gap-3 text-[13px]">
+                    <div key={i} className="flex items-center justify-between gap-3 text-[13px]">
                       <span className="text-text-secondary">{line.description}</span>
                       <span className="font-medium text-text-primary shrink-0">{formatZar(Number(line.amount))}</span>
                     </div>
                   ))}
                 </div>
-                {(billing.lines ?? []).some(line => line.kind === 'price_list') && (
-                  <div className="flex flex-col gap-2 border-t border-divider pt-3">
-                    <p className="text-[12px] uppercase tracking-wide text-text-secondary">Price list per month</p>
-                    <p className="text-[12px] text-text-secondary">
-                      These prices stay visible for parts this company is not using yet.
-                    </p>
-                    {(billing.lines ?? []).filter(line => line.kind === 'price_list').map((line, i) => (
-                      <div key={`price-${i}`} className="flex items-center justify-between gap-3 text-[13px]">
-                        <span className="text-text-secondary">{line.description.replace(/^Price list — /, '')}</span>
-                        <span className="font-medium text-text-primary shrink-0">
-                          {Number(line.amount) === 0 ? 'Included' : formatZar(Number(line.amount))}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
                 <button
                   type="button"
                   onClick={() => companyId && loadBilling(companyId)}
@@ -2090,7 +2080,6 @@ function MeterCard({
   overage,
   unitPrice,
   billable = true,
-  referenceOnly = false,
 }: {
   label: string
   count: number
@@ -2098,27 +2087,25 @@ function MeterCard({
   overage: number
   unitPrice: number
   billable?: boolean
-  referenceOnly?: boolean
 }) {
+  const rate = formatZar(unitPrice)
   return (
     <div className="rounded-lg border border-border p-3">
       <p className="text-[12px] text-text-secondary">{label}</p>
       <p className="text-[18px] font-semibold text-text-primary mt-0.5">
         {count}
-        {billable && included > 0 && (
+        {included > 0 && (
           <span className="text-[12px] font-normal text-text-secondary"> / {included} included</span>
         )}
       </p>
       <p className="text-[11px] text-text-secondary mt-1">
-        {referenceOnly
-          ? 'For reference'
-          : !billable
+        {!billable
           ? 'Not billed'
           : included === 0
-            ? `${count} active · ${formatZar(unitPrice)} each`
+            ? `${rate} each per month`
             : overage > 0
-              ? `${overage} over · ${formatZar(unitPrice)} each`
-              : `Within included · then ${formatZar(unitPrice)}`}
+              ? `${overage} over · ${rate} each`
+              : `Within included · then ${rate}`}
       </p>
     </div>
   )
