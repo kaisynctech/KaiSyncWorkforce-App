@@ -138,27 +138,37 @@ export async function clearBrandLogo(supabase: SupabaseClient, companyId: string
   return error ? { ok: false, message: friendly(error.message) } : { ok: true, data: undefined }
 }
 
-const migrating = new Set<string>()
+const migrating = new Map<string, Promise<string | null>>()
 
 /**
  * One-off: a company that uploaded its logo before the public bucket existed has it only in the
  * private bucket. HR users copy it across (trimmed and resized) the first time they load a page.
+ * Every screen asking at the same time (top bar, settings) gets the same copied path.
  * Quietly does nothing for everyone else or when there is nothing to copy.
  */
-export async function copyOldLogoIfNeeded(
+export function copyOldLogoIfNeeded(
   supabase: SupabaseClient,
   company: { id: string; logo_url?: string | null; brand_logo_path?: string | null },
 ): Promise<string | null> {
-  if (company.brand_logo_path || !company.logo_url || migrating.has(company.id)) return null
-  migrating.add(company.id)
-  try {
-    const { data: signed } = await supabase.storage.from('workforce-media').createSignedUrl(company.logo_url, 120)
-    if (!signed?.signedUrl) return null
-    const blob = await (await fetch(signed.signedUrl)).blob()
-    const png = await prepareLogo(blob)
-    const res = await saveBrandLogo(supabase, company.id, png)
-    return res.ok ? res.data : null
-  } catch {
-    return null
-  }
+  if (company.brand_logo_path || !company.logo_url) return Promise.resolve(null)
+  const running = migrating.get(company.id)
+  if (running) return running
+  const p = (async () => {
+    try {
+      // Another device may already have copied it: use that instead of copying again.
+      const { data: row } = await supabase.from('companies').select('brand_logo_path').eq('id', company.id).maybeSingle()
+      const existing = (row as { brand_logo_path?: string | null } | null)?.brand_logo_path
+      if (existing) return existing
+      const { data: signed } = await supabase.storage.from('workforce-media').createSignedUrl(company.logo_url!, 120)
+      if (!signed?.signedUrl) return null
+      const blob = await (await fetch(signed.signedUrl)).blob()
+      const png = await prepareLogo(blob)
+      const res = await saveBrandLogo(supabase, company.id, png)
+      return res.ok ? res.data : null
+    } catch {
+      return null
+    }
+  })()
+  migrating.set(company.id, p)
+  return p
 }
