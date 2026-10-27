@@ -110,7 +110,13 @@ export default function PlatformCompaniesPage() {
                   <td className="data-td text-[13px] text-right">
                     {r.employee_count}/{r.employee_limit}
                   </td>
-                  <td className="data-td text-[13px] text-right">{fmtMoney(r.monthly_charge)}</td>
+                  <td className="data-td text-[13px] text-right">
+                    {fmtMoney(r.monthly_charge)}
+                    {r.is_platform_home && <span className="block text-[11px] text-text-secondary">Not billed</span>}
+                    {!r.is_platform_home && r.price_override != null && (
+                      <span className="block text-[11px] text-text-secondary">Agreed</span>
+                    )}
+                  </td>
                   <td className="data-td text-right">
                     <div className="inline-flex gap-1">
                       <button

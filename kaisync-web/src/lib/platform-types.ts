@@ -32,6 +32,9 @@ export type PlatformCompany = {
   employee_count: number
   employee_limit: number
   monthly_charge: number
+  standard_monthly_charge: number
+  price_override: number | null
+  is_platform_home: boolean
   created_at: string
   subscription_active: boolean
 }
