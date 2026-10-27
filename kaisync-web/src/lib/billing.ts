@@ -24,7 +24,9 @@ export type BillingSummary = {
   monthly_charge: number
   employees: BillingMeter
   contractors: BillingMeter
+  client_portals: BillingMeter
   properties: BillingMeter
+  farms: BillingMeter
   lines: BillingLine[]
 }
 
