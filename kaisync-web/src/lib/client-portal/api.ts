@@ -345,6 +345,32 @@ export async function getJob(
   }
 }
 
+/** Work reports on a job that the company lets the client see (newest first). */
+export type ClientJobReport = {
+  id: string
+  author: string | null
+  report_date: string
+  start_time: string | null
+  end_time: string | null
+  work_performed: string
+  materials_used: string | null
+  marks_job_complete: boolean
+}
+
+export async function listJobReports(companyCode: string, clientCode: string, jobId: string): Promise<ClientJobReport[]> {
+  const data = await rpc('client_portal_list_job_reports', { ...codes(companyCode, clientCode), p_job_id: jobId })
+  return asArray(data).map(r => ({
+    id: str(r.id),
+    author: strN(r.author),
+    report_date: str(r.report_date),
+    start_time: strN(r.start_time),
+    end_time: strN(r.end_time),
+    work_performed: str(r.work_performed),
+    materials_used: strN(r.materials_used),
+    marks_job_complete: r.marks_job_complete === true,
+  })).filter(r => r.id && r.work_performed)
+}
+
 export async function listProjects(companyCode: string, clientCode: string): Promise<ClientPortalProject[]> {
   const data = await rpc('client_portal_list_projects', codes(companyCode, clientCode))
   return asArray(data).map(parseClientPortalProject).filter(p => p.id)

@@ -6,7 +6,8 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { ClientPortalShell } from '@/components/ClientPortalShell'
 import { PortalTabs } from '@/components/PortalTabs'
 import { useRequireClientPortalSession } from '@/lib/client-portal/use-session'
-import { getJob, signPortalMedia } from '@/lib/client-portal/api'
+import { getJob, listJobReports, signPortalMedia, type ClientJobReport } from '@/lib/client-portal/api'
+import { ReportView } from '@/components/jobs/ReportParts'
 import { fmtDate, fmtDateTime, projectStatusLabel } from '@/lib/client-portal/format'
 import type { ClientJobVisit, ClientPortalJobDetail } from '@/lib/client-portal/types'
 
@@ -18,6 +19,7 @@ const JOB_TABS = [
   { id: 'details', label: 'Details' },
   { id: 'team', label: 'Team' },
   { id: 'progress', label: 'Progress' },
+  { id: 'reports', label: 'Reports' },
   { id: 'photos', label: 'Photos' },
   { id: 'documents', label: 'Documents' },
 ] as const
@@ -36,13 +38,18 @@ export default function ClientPortalJobPage() {
   const [error, setError] = useState<string | null>(null)
   const [tab, setTab] = useState<JobTab>('details')
   const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({})
+  const [reports, setReports] = useState<ClientJobReport[]>([])
 
   const load = useCallback(async () => {
     if (!session || !jobId) return
     setError(null)
     try {
-      const row = await getJob(session.company_code, session.client_code, jobId)
+      const [row, rows] = await Promise.all([
+        getJob(session.company_code, session.client_code, jobId),
+        listJobReports(session.company_code, session.client_code, jobId).catch(() => [] as ClientJobReport[]),
+      ])
       setJob(row)
+      setReports(rows)
       if (!row) setError('This job is not available.')
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load job.')
@@ -241,6 +248,18 @@ export default function ClientPortalJobPage() {
               )}
             </Section>
             </>)}
+
+            {tab === 'reports' && (
+            <Section title={reports.length ? `Work reports · ${reports.length}` : 'Work reports'}>
+              {reports.length === 0 ? (
+                <p className="text-[13px] text-text-secondary">No work reports yet. They appear here after each visit.</p>
+              ) : (
+                <div className="divide-y divide-divider">
+                  {reports.map(r => <ReportView key={r.id} report={r} />)}
+                </div>
+              )}
+            </Section>
+            )}
 
             {tab === 'photos' && (
             <Section title="Photos">

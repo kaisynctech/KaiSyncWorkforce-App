@@ -13,6 +13,7 @@ import { getPackedJobDetail, loadJobPack, saveJobPack } from '@/lib/offline/job-
 import { enqueueChecklistToggle, enqueueJobCard, enqueueJobPhoto } from '@/lib/offline/job-queue'
 import { networkLooksDown } from '@/lib/offline/meta'
 import { WorkerJobEquipment } from '@/components/jobs/WorkerJobEquipment'
+import { WorkerJobReports } from '@/components/jobs/WorkerJobReports'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 interface Job {
@@ -1075,52 +1076,11 @@ export default function JobCardPage() {
           </div>
         </Section>
 
-        {/* ── Job Card ── */}
-        <Section title="Job Card (Work Record)">
-          <div className="p-4 space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide">Actual Start</label>
-                <div className="flex gap-2">
-                  <input className="input flex-1 text-[12px]" type="datetime-local" value={startTime}
-                    onChange={e => setStartTime(e.target.value)} />
-                  <button onClick={stampStart} disabled={savingCard}
-                    className="text-[11px] font-semibold px-2 py-1.5 rounded-lg bg-surface-elevated border border-divider hover:border-primary transition-colors whitespace-nowrap disabled:opacity-60">
-                    Now
-                  </button>
-                </div>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide">Actual End</label>
-                <div className="flex gap-2">
-                  <input className="input flex-1 text-[12px]" type="datetime-local" value={endTime}
-                    onChange={e => setEndTime(e.target.value)} />
-                  <button onClick={stampEnd} disabled={savingCard}
-                    className="text-[11px] font-semibold px-2 py-1.5 rounded-lg bg-surface-elevated border border-divider hover:border-primary transition-colors whitespace-nowrap disabled:opacity-60">
-                    Now
-                  </button>
-                </div>
-              </div>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide">Work Performed</label>
-              <textarea className="input resize-none" rows={3} value={workPerformed} onChange={e => setWorkPerformed(e.target.value)} />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide">Materials Used</label>
-              <textarea className="input resize-none" rows={3} value={materialsUsed} onChange={e => setMaterialsUsed(e.target.value)} />
-            </div>
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input type="checkbox" className="w-5 h-5 accent-primary"
-                checked={isCompleted} onChange={e => setIsCompleted(e.target.checked)} />
-              <span className="text-[14px] font-semibold text-text-primary">Mark as completed</span>
-            </label>
-            <button onClick={saveCard} disabled={savingCard}
-              className="w-full h-10 rounded-xl bg-primary text-white text-[14px] font-semibold hover:bg-primary-dark transition-colors disabled:opacity-60">
-              {savingCard ? 'Saving…' : 'Save Job Card'}
-            </button>
-          </div>
-        </Section>
+        {/* ── Work reports (one per visit, each technician) ── */}
+        {companyId && empId && (
+          <WorkerJobReports companyId={companyId} employeeId={empId} jobId={jobId} sessionToken={token || null}
+            onJobFinished={() => void init()} />
+        )}
 
         {/* ── Checklist ── */}
         <Section title="Checklist">

@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { localDateTimeInputOf, localDateTimeToIso } from '@/lib/schedule-times'
 import { JobWherePicker, type JobWhereValue } from '@/components/jobs/JobWherePicker'
 import { JobEquipmentSection } from '@/components/jobs/JobEquipmentSection'
-import { JobWorkReport } from '@/components/jobs/JobWorkReport'
+import { JobReportsTab } from '@/components/jobs/JobReportsTab'
 import { signWorkforceMediaMany } from '@/lib/media-read'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
@@ -22,10 +22,11 @@ import type { Job, Employee, JobContractor, LaborEntry, JobInventoryItem, JobPho
 
 const STATUS_OPTIONS = ['open', 'scheduled', 'in_progress', 'completed', 'cancelled'] as const
 
-const JOB_TABS = ['details', 'client', 'team', 'contractors', 'money', 'labor', 'inventory', 'photos'] as const
+const JOB_TABS = ['details', 'reports', 'client', 'team', 'contractors', 'money', 'labor', 'inventory', 'photos'] as const
 type JobTab = typeof JOB_TABS[number]
 const JOB_TAB_LABELS: Record<JobTab, string> = {
   details: 'Details',
+  reports: 'Reports',
   client: 'Client',
   team: 'Team',
   contractors: 'Contractors',
@@ -1018,9 +1019,6 @@ export default function JobDetailPage() {
       </div>
       )}
 
-      {/* ── Technician's job card (Work performed) ── */}
-      {companyId && !isEditing && <JobWorkReport companyId={companyId} jobId={job.id} />}
-
       {/* ── Equipment serviced on this job ── */}
       {companyId && !isEditing && (
         <JobEquipmentSection
@@ -1451,6 +1449,10 @@ export default function JobDetailPage() {
           ))
         )}
       </div>
+      )}
+
+      {tab === 'reports' && companyId && (
+        <JobReportsTab companyId={companyId} jobId={job.id} people={employees} canEdit={canEdit} onChanged={() => void load()} />
       )}
 
       {tab === 'photos' && (
