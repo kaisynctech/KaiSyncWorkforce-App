@@ -87,8 +87,8 @@ const PAYSLIP_COLORS: Record<string, { bg: string; fg: string }> = {
 function stBg(s: string) { return (PAYSLIP_COLORS[s?.toLowerCase()] ?? PAYSLIP_COLORS.pending).bg }
 function stFg(s: string) { return (PAYSLIP_COLORS[s?.toLowerCase()] ?? PAYSLIP_COLORS.pending).fg }
 
-const slipCell = 'px-2 py-[3px] text-[12px] whitespace-nowrap align-middle'
-const slipHead = 'px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-text-secondary whitespace-nowrap bg-surface-elevated'
+const slipCell = 'px-1.5 py-px text-[11px] leading-4 whitespace-nowrap align-middle'
+const slipHead = 'px-1.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-text-secondary whitespace-nowrap bg-surface-elevated'
 
 function CompactChip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
@@ -558,31 +558,27 @@ export default function PayrollPage() {
 
         {section === 'payslips' && (
           <>
-            <div className="flex flex-wrap items-center gap-1.5">
+            <div className="flex flex-nowrap items-center gap-2 overflow-x-auto">
               <input
                 id="payroll-month"
                 type="month"
                 aria-label="Month"
                 value={month}
                 onChange={e => { setSuccess(null); setMonth(e.target.value) }}
-                className="h-7 w-[9.5rem] rounded-md border border-border bg-surface-elevated px-2 text-[12px] text-text-primary"
+                className="h-7 shrink-0 rounded-md border border-border bg-surface-elevated px-2 text-[12px] text-text-primary"
+                style={{ width: 148, maxWidth: 148, flex: '0 0 148px' }}
               />
+              <span className="text-[11px] text-text-secondary whitespace-nowrap shrink-0">{dateFrom} to {dateTo}</span>
               <button
                 type="button"
                 onClick={() => void toggleLock()}
-                className="h-7 px-2 text-[11px] rounded-md border border-border bg-surface-dark text-text-primary hover:opacity-80"
+                className="h-7 shrink-0 px-2 text-[11px] rounded-md border border-border bg-surface-dark text-text-primary hover:opacity-80"
               >
-                {isLocked ? 'Unlock' : 'Lock'}
+                {isLocked ? 'Unlock period' : 'Lock period'}
               </button>
-              <div className="flex items-center gap-1 flex-1 min-w-[140px] h-7 bg-surface border border-border rounded-md px-2">
-                <span className="material-icons text-text-secondary text-[14px]">search</span>
-                <input
-                  placeholder="Search"
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  className="flex-1 min-w-0 bg-transparent text-text-primary text-[12px] h-7 outline-none placeholder:text-text-disabled"
-                />
-              </div>
+              <span className="text-[11px] text-text-secondary whitespace-nowrap shrink-0">{isLocked ? 'Locked' : 'Open'}</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
               {(['all', 'pending', 'approved', 'paid'] as StatusFilter[]).map(s => (
                 <CompactChip
                   key={s}
@@ -591,6 +587,15 @@ export default function PayrollPage() {
                   onClick={() => setStatusFilter(s)}
                 />
               ))}
+              <div className="flex items-center gap-1 w-44 shrink-0 h-7 bg-surface border border-border rounded-md px-2">
+                <span className="material-icons text-text-secondary text-[14px]">search</span>
+                <input
+                  placeholder="Search employee"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  className="flex-1 min-w-0 bg-transparent text-text-primary text-[11px] h-7 outline-none placeholder:text-text-disabled"
+                />
+              </div>
               <button
                 onClick={() => void openGenerate()}
                 disabled={generating || isLocked}
@@ -598,7 +603,7 @@ export default function PayrollPage() {
               >
                 {generating
                   ? genProgress ? `${genProgress.done.toLocaleString()}/${genProgress.total.toLocaleString()}` : 'Working…'
-                  : pendingCount > 0 ? 'Update' : 'Create'}
+                  : pendingCount > 0 ? 'Update payslips' : 'Create payslips'}
               </button>
               <button
                 onClick={approveAll}
