@@ -118,7 +118,11 @@ export function CompanyLinkPanel({ companyId, myRole, recordId }: Props) {
                   <p className="text-text-secondary text-[12px]">{link.other.legal_name}</p>
                 )}
                 <p className="text-text-secondary mt-1">
-                  {link.status === 'active' ? relationWords(myRole, link.other.name) + ' on KaiSync.' : statusWords(link)}
+                  {link.status === 'active'
+                    ? relationWords(myRole, link.other.name) + ' on KaiSync.'
+                    : link.waiting_on_me
+                      ? `${link.other.name} asked to link with you as your ${myRole === 'provider' ? 'client' : 'contractor'}.`
+                      : 'Request sent. They accept it inside their own KaiSync.'}
                   {link.status === 'active' && link.decided_at ? ` Linked ${new Date(link.decided_at).toLocaleDateString()}.` : ''}
                 </p>
               </div>
