@@ -97,6 +97,9 @@ export default function LinkedCompaniesPage() {
               <button disabled={busy === link.id} onClick={() => void decide(link, false, null)} className="btn-outlined h-8 px-3 text-[12px]">Decline</button>
             </>
           )}
+          {link.status === 'active' && link.my_role === 'customer' && (
+            <Link href={`/dashboard/linked-companies/${link.id}`} className="btn-primary h-8 px-3 text-[12px] inline-flex items-center">Open their work</Link>
+          )}
           {(link.status === 'active' || (link.status === 'pending' && !link.waiting_on_me)) && (
             <button disabled={busy === link.id} onClick={() => void disconnect(link)} className="btn-outlined h-8 px-3 text-[12px]">
               {link.status === 'active' ? 'Disconnect' : 'Cancel request'}

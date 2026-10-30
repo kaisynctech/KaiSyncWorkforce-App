@@ -4,6 +4,7 @@
 
 import { createClient } from '@/lib/supabase/client'
 import { grantMediaRead } from '@/lib/media-read'
+import { parseLinkedCompanyCode } from '@/lib/client-portal/portal-mode'
 import { parseStatementEntries, type ClientStatementEntry } from '@/lib/client-portal/statement'
 import type { InvoicePdfInput } from '@/lib/invoice-pdf'
 import { letterheadFromRow, loadLetterheadLogo, type Letterhead } from '@/lib/letterhead'
@@ -177,11 +178,34 @@ export function parseClientPortalProject(row: Record<string, unknown>): ClientPo
   }
 }
 
+/**
+ * Database functions a linked customer company can use through its link (same rules as the
+ * portal; see supabase/migrations/20261031090000_linked_view.sql).
+ */
+const LINKED_FUNCTIONS = new Set([
+  'list_jobs', 'get_job', 'list_job_reports', 'list_projects', 'get_project', 'get_quotation_response',
+  'list_message_inbox', 'list_invoices', 'get_invoice', 'get_statement', 'get_letterhead', 'get_profile',
+  'get_compliance', 'get_compliance_documents', 'get_compliance_pack', 'list_document_requests', 'grant_media_read',
+])
+
+/** A portal call made from a linked company's dashboard goes to the matching linked_* function. */
+export function linkedCall(fn: string, args: Record<string, unknown>): { fn: string; args: Record<string, unknown> } | null {
+  const link = parseLinkedCompanyCode(typeof args.p_company_code === 'string' ? args.p_company_code : null)
+  if (!link) return null
+  const name = fn.replace(/^client_portal_/, '')
+  if (name === fn || !LINKED_FUNCTIONS.has(name)) throw new Error('This is not available for linked companies yet.')
+  const rest = { ...args }
+  delete rest.p_company_code
+  delete rest.p_client_code
+  return { fn: `linked_${name}`, args: { p_company_id: link.companyId, p_link_id: link.linkId, ...rest } }
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function rpc(fn: string, args: Record<string, unknown>): Promise<any> {
   const supabase = createClient()
+  const linked = linkedCall(fn, args)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase.rpc as any)(fn, args)
+  const { data, error } = await (supabase.rpc as any)(linked?.fn ?? fn, linked?.args ?? args)
   if (error) {
     const raw = error as { message?: unknown }
     const message = typeof raw.message === 'string' && raw.message.trim()

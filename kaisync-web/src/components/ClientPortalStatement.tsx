@@ -32,12 +32,12 @@ export function ClientPortalStatement({ session }: { session: ClientPortalSessio
   const st = useMemo(() => buildClientStatement(entries ?? []), [entries])
 
   function download() {
-    const title = `Statement — ${session.client_name} (${session.client_code}) — ${new Date().toLocaleDateString('en-ZA')}`
+    const title = `Statement — ${session.client_name}${session.client_code ? ` (${session.client_code})` : ''} — ${new Date().toLocaleDateString('en-ZA')}`
     const blob = new Blob([clientStatementToCsv(st, title)], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `statement-${session.client_code}-${localISODate()}.csv`
+    a.download = `statement-${session.client_code || 'account'}-${localISODate()}.csv`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -76,7 +76,7 @@ export function ClientPortalStatement({ session }: { session: ClientPortalSessio
           l.debit ? moneyZAR(l.debit) : '', l.credit ? moneyZAR(l.credit) : '', moneyZAR(l.balance),
         ]),
         bank: st.balance > 0,
-        fileName: `Statement-${session.client_code}-${localISODate()}.pdf`,
+        fileName: `Statement-${session.client_code || 'account'}-${localISODate()}.pdf`,
       })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not create the PDF.')

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { listDocumentRequests, signPortalMedia, submitDocumentRequest } from '@/lib/client-portal/api'
 import { fmtDate } from '@/lib/client-portal/format'
 import type { ClientPortalSession } from '@/lib/client-portal/session'
+import { usePortalCanAct } from '@/lib/client-portal/portal-mode'
 import type { ClientDocumentRequest } from '@/lib/client-portal/types'
 
 function statusLabel(status: string): string {
@@ -14,6 +15,7 @@ function statusLabel(status: string): string {
 }
 
 export function ClientPortalDocuments({ session }: { session: ClientPortalSession }) {
+  const canAct = usePortalCanAct()
   const [rows, setRows] = useState<ClientDocumentRequest[]>([])
   const [signed, setSigned] = useState<Record<string, string>>({})
   const [files, setFiles] = useState<Record<string, File | null>>({})
@@ -93,7 +95,7 @@ export function ClientPortalDocuments({ session }: { session: ClientPortalSessio
             </div>
             {row.request_note && <p className="text-[13px] text-text-primary">{row.request_note}</p>}
             {row.review_note && <p className="text-[13px] text-text-primary">Please send again: {row.review_note}</p>}
-            {open && (
+            {open && canAct && (
               <div className="flex flex-wrap items-center gap-2">
                 <input
                   type="file"

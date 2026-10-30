@@ -8,16 +8,18 @@ import {
   uploadPartyComplianceDocument,
 } from '@/lib/client-portal/api'
 import type { ClientPortalSession } from '@/lib/client-portal/session'
+import { usePortalCanAct } from '@/lib/client-portal/portal-mode'
 import { CLIENT_DOC_TYPES } from '@/lib/contractor-portal/types'
 
 /** The client portal's Compliance tab: the same screen and system the contractor portal uses. */
 export function ClientPortalCompliance({ session }: { session: ClientPortalSession }) {
   const [error, setError] = useState<string | null>(null)
+  const canAct = usePortalCanAct()
   const source = useMemo<ComplianceSource>(() => ({
     key: `client:${session.client_id}:${session.company_id}`,
     getDocuments: () => getPartyComplianceDocuments(session.company_code, session.client_code),
     getPack: () => getPartyCompliancePack(session.company_code, session.client_code),
-    upload: p => uploadPartyComplianceDocument({
+    upload: !canAct ? undefined : p => uploadPartyComplianceDocument({
       companyCode: session.company_code,
       clientCode: session.client_code,
       companyId: session.company_id,
@@ -25,7 +27,7 @@ export function ClientPortalCompliance({ session }: { session: ClientPortalSessi
       ...p,
     }),
     docTypes: CLIENT_DOC_TYPES,
-  }), [session.client_id, session.company_id, session.company_code, session.client_code])
+  }), [session.client_id, session.company_id, session.company_code, session.client_code, canAct])
 
   return (
     <div className="space-y-3">

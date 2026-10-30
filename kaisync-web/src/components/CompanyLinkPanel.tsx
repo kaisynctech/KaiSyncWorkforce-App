@@ -131,6 +131,11 @@ export function CompanyLinkPanel({ companyId, myRole, recordId }: Props) {
               </span>
             </div>
             <div className="flex flex-wrap gap-2">
+              {link.status === 'active' && myRole === 'customer' && (
+                <Link href={`/dashboard/linked-companies/${link.id}`} className="btn-primary h-9 px-3 text-[13px] inline-flex items-center">
+                  Open {link.other.name}&apos;s work for you
+                </Link>
+              )}
               {link.status === 'pending' && link.waiting_on_me && (
                 <>
                   <button disabled={busy} onClick={() => void accept(true)} className="btn-primary h-9 px-3 text-[13px]">Accept and link this record</button>
