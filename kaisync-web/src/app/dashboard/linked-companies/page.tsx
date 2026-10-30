@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { SearchPicker } from '@/components/SearchPicker'
 import {
-  decideLink, disconnectLink, groupLinks, startTab, listLinks, myRecordNoun, myUnlinkedRecords, relationWords, statusWords,
+  decideLink, disconnectLink, groupLinks, startTab, listLinks, myRecordNoun, myUnlinkedRecords, statusWords,
   type CompanyLink, type LinkTab,
 } from '@/lib/company-links'
 
@@ -48,7 +48,6 @@ export default function LinkedCompaniesPage() {
     setLoading(false)
   }, [])
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- loads from the database once, then sets state
   useEffect(() => { void load() }, [load])
 
   async function startAccept(link: CompanyLink) {
@@ -87,58 +86,97 @@ export default function LinkedCompaniesPage() {
   const { waiting, open, ended } = groupLinks(links, tab)
   const current = TABS.find(t => t.id === tab) ?? TABS[0]
 
-  function row(link: CompanyLink) {
+  function sinceDate(link: CompanyLink): string {
+    const raw = link.status === 'active' ? link.decided_at : link.status === 'pending' ? link.created_at : link.ended_at ?? link.decided_at
+    return raw ? new Date(raw).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
+  }
+
+  function rows(link: CompanyLink) {
     const href = recordHref(link)
-    return (
-      <li key={link.id} className="px-4 py-3 flex items-start justify-between gap-3 flex-wrap">
-        <div className="min-w-0">
+    const noun = myRecordNoun(link.my_role)
+    return [
+      <tr key={link.id} className="border-t border-divider align-middle">
+        <td className="px-4 py-3">
           <p className="font-semibold text-text-primary">{link.other.name}</p>
-          <p className="text-text-secondary text-[12px]">
-            {relationWords(link.my_role, link.other.name)}
-            {link.my_record_name ? <> · your {myRecordNoun(link.my_role)} record: {href ? <Link href={href} className="text-primary hover:underline">{link.my_record_name}</Link> : link.my_record_name}</> : null}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+          {link.other.legal_name && link.other.legal_name !== link.other.name && (
+            <p className="text-[12px] text-text-secondary">{link.other.legal_name}</p>
+          )}
+        </td>
+        <td className="px-4 py-3">
+          {link.my_record_name
+            ? (href ? <Link href={href} className="text-primary hover:underline">{link.my_record_name}</Link> : link.my_record_name)
+            : <span className="text-text-secondary">—</span>}
+        </td>
+        <td className="px-4 py-3 whitespace-nowrap">
           <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${link.status === 'active' ? 'bg-success/10 text-success' : link.status === 'pending' ? 'bg-warning/10 text-warning' : 'bg-surface-elevated text-text-secondary'}`}>
             {statusWords(link)}
           </span>
-          {link.status === 'pending' && link.waiting_on_me && (
-            <>
-              <button disabled={busy === link.id} onClick={() => void startAccept(link)} className="btn-primary h-8 px-3 text-[12px]">Accept…</button>
-              <button disabled={busy === link.id} onClick={() => void decide(link, false, null)} className="btn-outlined h-8 px-3 text-[12px]">Decline</button>
-            </>
-          )}
-          {link.status === 'active' && link.my_role === 'customer' && (
-            <Link href={`/dashboard/linked-companies/${link.id}`} className="btn-primary h-8 px-3 text-[12px] inline-flex items-center">Open their work</Link>
-          )}
-          {(link.status === 'active' || (link.status === 'pending' && !link.waiting_on_me)) && (
-            <button disabled={busy === link.id} onClick={() => void disconnect(link)} className="btn-outlined h-8 px-3 text-[12px]">
-              {link.status === 'active' ? 'Disconnect' : 'Cancel request'}
-            </button>
-          )}
-        </div>
-        {accepting?.id === link.id && (
-          <div className="w-full rounded-md border border-divider p-3 space-y-3 bg-surface-elevated/40">
-            <p className="text-text-secondary">
-              {link.other.name} says it works with you. Choose your {myRecordNoun(link.my_role)} record for them,
-              or leave it empty to create a new {myRecordNoun(link.my_role)} called “{link.other.name}”.
-            </p>
-            <SearchPicker
-              options={records.map(r => ({ id: r.id, label: r.name }))}
-              value={chosen}
-              onChange={setChosen}
-              label={`Your ${myRecordNoun(link.my_role)} record`}
-              noun={myRecordNoun(link.my_role)}
-            />
-            <div className="flex gap-2">
-              <button disabled={busy === link.id} onClick={() => void decide(link, true, chosen || null)} className="btn-primary h-9 px-3 text-[13px]">
-                {chosen ? 'Accept and link' : `Accept and create ${myRecordNoun(link.my_role)}`}
+        </td>
+        <td className="px-4 py-3 text-text-secondary whitespace-nowrap">{sinceDate(link)}</td>
+        <td className="px-4 py-3">
+          <div className="flex items-center justify-end gap-2 flex-wrap">
+            {link.status === 'pending' && link.waiting_on_me && (
+              <>
+                <button disabled={busy === link.id} onClick={() => void startAccept(link)} className="btn-primary h-8 px-3 text-[12px]">Accept…</button>
+                <button disabled={busy === link.id} onClick={() => void decide(link, false, null)} className="btn-outlined h-8 px-3 text-[12px]">Decline</button>
+              </>
+            )}
+            {link.status === 'active' && link.my_role === 'customer' && (
+              <Link href={`/dashboard/linked-companies/${link.id}`} className="btn-primary h-8 px-3 text-[12px] inline-flex items-center whitespace-nowrap">Open their work</Link>
+            )}
+            {(link.status === 'active' || (link.status === 'pending' && !link.waiting_on_me)) && (
+              <button disabled={busy === link.id} onClick={() => void disconnect(link)} className="btn-outlined h-8 px-3 text-[12px] whitespace-nowrap">
+                {link.status === 'active' ? 'Disconnect' : 'Cancel request'}
               </button>
-              <button onClick={() => setAccepting(null)} className="btn-outlined h-9 px-3 text-[13px]">Back</button>
-            </div>
+            )}
           </div>
-        )}
-      </li>
+        </td>
+      </tr>,
+      accepting?.id === link.id ? (
+        <tr key={`${link.id}-accept`} className="bg-surface-elevated/40">
+          <td colSpan={5} className="px-4 py-3">
+            <div className="space-y-3 max-w-2xl">
+              <p className="text-text-secondary">
+                {link.other.name} says it works with you. Choose your {noun} record for them,
+                or leave it empty to create a new {noun} called “{link.other.name}”.
+              </p>
+              <SearchPicker
+                options={records.map(r => ({ id: r.id, label: r.name }))}
+                value={chosen}
+                onChange={setChosen}
+                label={`Your ${noun} record`}
+                noun={noun}
+              />
+              <div className="flex gap-2">
+                <button disabled={busy === link.id} onClick={() => void decide(link, true, chosen || null)} className="btn-primary h-9 px-3 text-[13px]">
+                  {chosen ? 'Accept and link' : `Accept and create ${noun}`}
+                </button>
+                <button onClick={() => setAccepting(null)} className="btn-outlined h-9 px-3 text-[13px]">Back</button>
+              </div>
+            </div>
+          </td>
+        </tr>
+      ) : null,
+    ]
+  }
+
+  function table(list: CompanyLink[]) {
+    const noun = tab === 'clients' ? 'client' : 'contractor'
+    return (
+      <div className="overflow-x-auto">
+        <table className="w-full text-[13px]">
+          <thead>
+            <tr className="bg-surface-elevated/50 text-left">
+              <th className="px-4 py-2.5 font-medium text-text-secondary">Company</th>
+              <th className="px-4 py-2.5 font-medium text-text-secondary">Your {noun} record</th>
+              <th className="px-4 py-2.5 font-medium text-text-secondary">Status</th>
+              <th className="px-4 py-2.5 font-medium text-text-secondary">Since</th>
+              <th className="px-4 py-2.5 font-medium text-text-secondary text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>{list.flatMap(rows)}</tbody>
+        </table>
+      </div>
     )
   }
 
@@ -184,7 +222,7 @@ export default function LinkedCompaniesPage() {
                 <div className="px-4 py-2.5 border-b border-divider bg-warning/5">
                   <p className="text-[11px] font-semibold text-text-secondary tracking-wider uppercase">Waiting for you ({waiting.length})</p>
                 </div>
-                <ul className="divide-y divide-divider">{waiting.map(row)}</ul>
+                {table(waiting)}
               </section>
             )}
             <section className="bg-surface border border-divider rounded-lg overflow-hidden">
@@ -194,7 +232,7 @@ export default function LinkedCompaniesPage() {
               {open.length === 0 ? (
                 <p className="px-4 py-6 text-text-secondary text-center">{current.empty} {current.how}</p>
               ) : (
-                <ul className="divide-y divide-divider">{open.map(row)}</ul>
+                table(open)
               )}
             </section>
             {ended.length > 0 && (
@@ -203,7 +241,7 @@ export default function LinkedCompaniesPage() {
                   {showEnded ? 'Hide' : 'Show'} ended links ({ended.length})
                 </button>
                 {showEnded && (
-                  <ul className="mt-2 bg-surface border border-divider rounded-lg divide-y divide-divider">{ended.map(row)}</ul>
+                  <div className="mt-2 bg-surface border border-divider rounded-lg overflow-hidden">{table(ended)}</div>
                 )}
               </section>
             )}
