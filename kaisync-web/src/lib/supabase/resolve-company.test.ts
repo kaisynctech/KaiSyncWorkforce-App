@@ -9,7 +9,7 @@ vi.stubGlobal('localStorage', {
 })
 vi.stubGlobal('window', globalThis)
 
-import { clearCurrentMemberCache, resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import { clearCurrentMemberCache, primeCurrentMember, resolveCurrentMember } from '@/lib/supabase/resolve-company'
 
 function fakeSupabase(userId: string | null, empRow: { id: string; company_id: string } | null) {
   const getUser = vi.fn(async () => ({ data: { user: userId ? { id: userId } : null } }))
@@ -55,5 +55,30 @@ describe('resolveCurrentMember', () => {
     mem.set('kf_emp_ctx', JSON.stringify({ employee_id: 'e9', company_id: 'c9' }))
     await resolveCurrentMember(client)
     expect(getUser).toHaveBeenCalledTimes(2)
+  })
+
+  it('a member primed by the layout is answered with no network call', async () => {
+    const { client, getUser, from } = fakeSupabase('u1', { id: 'e1', company_id: 'c1' })
+    primeCurrentMember('u1', { employeeId: 'e1', companyId: 'c1', sessionToken: null })
+    expect(await resolveCurrentMember(client)).toEqual({ employeeId: 'e1', companyId: 'c1', sessionToken: null })
+    expect(getUser).not.toHaveBeenCalled()
+    expect(from).not.toHaveBeenCalled()
+  })
+
+  it("a member primed for another user is not reused", async () => {
+    primeCurrentMember('u1', { employeeId: 'e1', companyId: 'c1', sessionToken: null })
+    const b = fakeSupabase('u2', { id: 'e2', company_id: 'c2' })
+    expect(await resolveCurrentMember(b.client)).toEqual({ employeeId: 'e2', companyId: 'c2', sessionToken: null })
+    expect(b.getUser).toHaveBeenCalledTimes(1)
+  })
+
+  it('a primed member respects the company picked in kf_emp_ctx', async () => {
+    mem.set('kf_emp_ctx', JSON.stringify({ employee_id: 'e9', company_id: 'c9' }))
+    primeCurrentMember('u1', { employeeId: 'e9', companyId: 'c9', sessionToken: null })
+    const { client, getUser } = fakeSupabase('u1', { id: 'e1', company_id: 'c1' })
+    expect(await resolveCurrentMember(client)).toEqual({ employeeId: 'e9', companyId: 'c9', sessionToken: null })
+    mem.set('kf_emp_ctx', JSON.stringify({ employee_id: 'e1', company_id: 'c1' }))
+    await resolveCurrentMember(client)
+    expect(getUser).toHaveBeenCalledTimes(1)
   })
 })

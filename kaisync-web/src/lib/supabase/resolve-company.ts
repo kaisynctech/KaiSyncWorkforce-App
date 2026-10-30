@@ -32,6 +32,17 @@ export function clearCurrentMemberCache() {
   void import('@/lib/permissions').then(m => m.clearPermissionsCache())
 }
 
+/**
+ * Hands the member the dashboard layout has just loaded to every later caller, so the
+ * bootstrap, gates and pages do not repeat the sign-in check and employee lookup.
+ * The key is built exactly as resolveCurrentMember builds it (session user + company picker).
+ */
+export function primeCurrentMember(userId: string | null, member: CurrentMember) {
+  const ctx = typeof window !== 'undefined' ? getEmpContext() : null
+  const key = memberCacheKey(userId, ctx?.employee_id ?? null, ctx?.company_id ?? null)
+  memberCache = { at: Date.now(), key, member }
+}
+
 /** User id of the session held in this browser (no network call). */
 async function localSessionUserId(supabase: SupabaseClient): Promise<string | null> {
   try {

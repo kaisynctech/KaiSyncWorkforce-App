@@ -14,6 +14,8 @@ import { AUTH_ROUTES, usesCompanyDashboard } from '@/lib/auth/employee-routing'
 import { refreshCodeSession } from '@/lib/auth/session'
 import { isPlatformAdmin } from '@/lib/platform-admin'
 import { EMPLOYEE_SAFE_SELECT } from '@/lib/employee-columns'
+import { primeCurrentMember } from '@/lib/supabase/resolve-company'
+import { primeCompanyWorkspace, primeEmployeeWorkspace } from '@/lib/employee-workspace'
 import type { Company, Employee } from '@/types/database'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -45,7 +47,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
     async function init() {
       // ── Path 1: Supabase JWT session (HR users + email-auth employees) ──
-      const { data: { user } } = await supabase.auth.getUser()
+      // The session held in this browser (refreshed if expired) — no network check here:
+      // proxy.ts verifies the user on the page request and RLS checks every query.
+      const { data: { session } } = await supabase.auth.getSession()
+      const user = session?.user ?? null
       if (cancelled) return
 
       if (user) {
@@ -71,6 +76,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             router.replace(AUTH_ROUTES.companyPicker)
             setLoading(false)
             return
+          }
+          // Share what was just read so the bootstrap, sidebar and pages don't read it again.
+          const row = emp as unknown as Employee & { companies: Company | null }
+          primeCurrentMember(user.id, { employeeId: row.id, companyId: row.company_id, sessionToken: null })
+          primeEmployeeWorkspace(row as unknown as Record<string, unknown> & { id: string; company_id: string })
+          if (row.companies?.id) {
+            primeCompanyWorkspace(row.companies as unknown as { id: string; name?: string | null; enabled_modules?: unknown; custom_settings?: unknown })
           }
           setEmployee(emp as unknown as Employee)
           setCompany((emp as unknown as { companies: Company }).companies)
@@ -106,6 +118,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       // Paint from cached session first; refresh once in the background (not on every nav).
       const existing = getCodeSession()
       if (existing?.employee?.id && existing.company?.id) {
+        if (existing.employee_id && existing.company_id) {
+          primeCurrentMember(user?.id ?? null, {
+            employeeId: existing.employee_id,
+            companyId: existing.company_id,
+            sessionToken: existing.session_token ?? null,
+          })
+        }
         setEmployee({
           ...existing.employee,
           company_id: existing.company_id,

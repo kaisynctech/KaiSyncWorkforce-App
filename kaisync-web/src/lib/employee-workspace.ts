@@ -37,6 +37,9 @@ const companyWsCache = new Map<string, CachedCompanyWs>()
 /** Concurrent callers share one request per id instead of each missing the cache. */
 const companyWsInFlight = new Map<string, Promise<CompanyWorkspace | null>>()
 const employeeWsInFlight = new Map<string, Promise<EmployeeWorkspace | null>>()
+type CachedEmployeeWs = { at: number; data: EmployeeWorkspace }
+const EMPLOYEE_WS_CACHE_MS = 30_000
+const employeeWsCache = new Map<string, CachedEmployeeWs>()
 /** Bumped on clear so a request that started before sign-out cannot repopulate the cache. */
 let companyWsGeneration = 0
 
@@ -125,21 +128,7 @@ async function fetchCompanyWorkspace(
     console.error('[loadCompanyWorkspace]', error.message)
   }
 
-  if (data) {
-    const custom = (data.custom_settings ?? {}) as Record<string, unknown>
-    const nestedDispatch = custom.dispatch_settings
-    const dispatch_settings: DispatchSettings =
-      nestedDispatch && typeof nestedDispatch === 'object'
-        ? (nestedDispatch as DispatchSettings)
-        : {}
-    const workspace: CompanyWorkspace = {
-      id: data.id,
-      name: data.name ?? '',
-      enabled_modules: (data.enabled_modules as EnabledModules) ?? {},
-      dispatch_settings,
-    }
-    return remember(workspace)
-  }
+  if (data) return remember(companyWorkspaceFromRow(data))
 
   const fallback = codeSessionCompanyWorkspace(companyId)
   return fallback ? remember(fallback) : null
@@ -159,14 +148,73 @@ export function clearCompanyWorkspaceCache(companyId?: string) {
 
 /** Drop shared in-flight employee workspace requests (sign-out). */
 export function clearEmployeeWorkspaceCache(employeeId?: string) {
-  if (employeeId) employeeWsInFlight.delete(employeeId)
-  else employeeWsInFlight.clear()
+  if (employeeId) {
+    employeeWsInFlight.delete(employeeId)
+    employeeWsCache.delete(employeeId)
+  } else {
+    employeeWsInFlight.clear()
+    employeeWsCache.clear()
+  }
+}
+
+/** The companies row the dashboard layout already read: use it instead of reading it again. */
+export function primeCompanyWorkspace(row: {
+  id: string
+  name?: string | null
+  enabled_modules?: unknown
+  custom_settings?: unknown
+}) {
+  companyWsCache.set(row.id, { at: Date.now(), data: companyWorkspaceFromRow(row) })
+}
+
+/** The employees row the dashboard layout already read: use it instead of reading it again. */
+export function primeEmployeeWorkspace(row: Record<string, unknown> & { id: string; company_id: string }) {
+  employeeWsCache.set(row.id, { at: Date.now(), data: employeeWorkspaceFromRow(row) })
+}
+
+function companyWorkspaceFromRow(data: {
+  id: string
+  name?: string | null
+  enabled_modules?: unknown
+  custom_settings?: unknown
+}): CompanyWorkspace {
+  const custom = (data.custom_settings ?? {}) as Record<string, unknown>
+  const nestedDispatch = custom.dispatch_settings
+  const dispatch_settings: DispatchSettings =
+    nestedDispatch && typeof nestedDispatch === 'object'
+      ? (nestedDispatch as DispatchSettings)
+      : {}
+  return {
+    id: data.id,
+    name: data.name ?? '',
+    enabled_modules: (data.enabled_modules as EnabledModules) ?? {},
+    dispatch_settings,
+  }
+}
+
+function employeeWorkspaceFromRow(data: Record<string, unknown> & { id: string; company_id: string }): EmployeeWorkspace {
+  return {
+    id: data.id,
+    company_id: data.company_id,
+    name: (data.name as string | null) ?? '',
+    surname: (data.surname as string | null) ?? '',
+    branch_id: (data.branch_id as string | null) ?? null,
+    branch: (data.branch as string | null) ?? null,
+    enforce_branch_geofence: data.enforce_branch_geofence !== false,
+    registration_status: (data.registration_status as string | null) ?? 'active',
+    is_active: data.is_active !== false,
+    access_level: (data.access_level as string | null) ?? 'employee',
+  }
 }
 
 export function loadEmployeeWorkspace(
   supabase: SupabaseClient,
   employeeId: string,
 ): Promise<EmployeeWorkspace | null> {
+  const cached = employeeWsCache.get(employeeId)
+  if (cached && Date.now() - cached.at < EMPLOYEE_WS_CACHE_MS) {
+    return Promise.resolve(cached.data)
+  }
   const running = employeeWsInFlight.get(employeeId)
   if (running) return running
 
@@ -190,20 +238,7 @@ async function fetchEmployeeWorkspace(
     .eq('id', employeeId)
     .maybeSingle()
 
-  if (data) {
-    return {
-      id: data.id,
-      company_id: data.company_id,
-      name: data.name ?? '',
-      surname: data.surname ?? '',
-      branch_id: data.branch_id ?? null,
-      branch: data.branch ?? null,
-      enforce_branch_geofence: data.enforce_branch_geofence !== false,
-      registration_status: data.registration_status ?? 'active',
-      is_active: data.is_active !== false,
-      access_level: data.access_level ?? 'employee',
-    }
-  }
+  if (data) return employeeWorkspaceFromRow(data)
 
   return codeSessionEmployeeWorkspace(employeeId)
 }
