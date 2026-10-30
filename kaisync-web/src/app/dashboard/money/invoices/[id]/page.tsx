@@ -164,7 +164,7 @@ function MoneyInvoiceDetailInner() {
 
     const [{ data: invoice }, { data: lineRows }, { data: transactions }, { data: company }, { data: proofRows }] = await Promise.all([
       supabase.from('finance_invoices')
-        .select('*, clients(name, email), client_deals(title), jobs(title, job_code)')
+        .select('*, clients(name, email), client_deals!finance_invoices_deal_id_fkey(title), jobs(title, job_code)')
         .eq('id', id)
         .maybeSingle(),
       supabase.from('finance_invoice_lines')
