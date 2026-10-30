@@ -79,9 +79,11 @@ export function isEligibleForPeriod(
   periodStart: string,
   periodEnd: string
 ): boolean {
-  if (!isEligibleForPayroll(emp)) return false
+  if (!emp.is_active) return false
   if (emp.employment_date && emp.employment_date > periodEnd) return false
   if (emp.termination_date && emp.termination_date < periodStart) return false
+  const contractor = emp.worker_type === 'contractor' || emp.worker_type === 'subcontractor'
+  if (contractor && !hasPayRate(emp)) return false
   return true
 }
 
@@ -98,10 +100,8 @@ export function isOnPayrollRoster(
   return true
 }
 
-export function payrollRosterGap(emp: Pick<PayrollEmployeeLike, 'monthly_salary' | 'hourly_rate' | 'daily_rate'>): string {
-  return hasPayRate(emp)
-    ? 'No payslip yet. Press Update payslips.'
-    : 'No pay rate, so Update payslips leaves this person off.'
+export function payrollRosterGap(): string {
+  return 'This month’s payslip is being added from the employee record.'
 }
 
 export function buildPayrollGeneratePreview(
@@ -126,10 +126,6 @@ export function buildPayrollGeneratePreview(
   for (const emp of employees.filter(e => e.is_active)) {
     if (!isEligibleForPeriod(emp, periodStart, periodEnd)) {
       notInPeriod++
-      if (isOnPayrollRoster(emp, periodStart, periodEnd) && !hasPayRate(emp)) {
-        missingRates++
-        details.push(`${emp.name} ${emp.surname}: no pay rate, so no payslip is created`)
-      }
       continue
     }
     if (lockedEmployeeIds.has(emp.id)) {
@@ -140,12 +136,16 @@ export function buildPayrollGeneratePreview(
     if (existingEmployeeIds.has(emp.id)) refresh++
 
     const info = assessPayrollReadiness(emp, { companyHasDefaultTemplate })
-    if (!hasPayRate(emp)) missingRates++
+    const onRoster = isOnPayrollRoster(emp, periodStart, periodEnd)
+    if (!hasPayRate(emp)) {
+      missingRates++
+      if (onRoster) details.push(`${emp.name} ${emp.surname}: no pay rate yet. A payslip is still created.`)
+    }
     if (!emp.shift_template_id) missingShift++
     if (!hasBanking(emp)) missingBank++
     if (emp.worker_type === 'contractor' || emp.worker_type === 'subcontractor') contractor++
 
-    if (info.isReady || hasPayRate(emp)) ready++
+    if (info.isReady || hasPayRate(emp) || onRoster) ready++
     else details.push(`${emp.name} ${emp.surname}: ${info.issues.join(', ')}`)
   }
 

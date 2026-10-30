@@ -193,6 +193,7 @@ type PayrollGenerateFunctionBody = {
   payment_id?: string
   offset?: number
   limit?: number
+  only_missing?: boolean
   lines?: Record<string, unknown>
   overrides?: {
     payFullBaseSalary?: boolean
@@ -272,7 +273,8 @@ export async function generatePayrollPeriod(
   companyId: string,
   periodStart: string,
   periodEnd: string,
-  onProgress?: (progress: PayrollGenerateProgress) => void
+  onProgress?: (progress: PayrollGenerateProgress) => void,
+  options?: { onlyMissing?: boolean }
 ): Promise<PayrollResult<{ generated: number; updated: number; skipped: number; errors: string[] }>> {
   let generated = 0
   let updated = 0
@@ -288,6 +290,7 @@ export async function generatePayrollPeriod(
       period_end: periodEnd,
       offset,
       limit: 150,
+      only_missing: options?.onlyMissing === true,
     })
     if (!result.ok) {
       if (generated + updated === 0) return result
@@ -305,6 +308,28 @@ export async function generatePayrollPeriod(
     offset = typeof next === 'number' && next > offset ? next : null
   }
   return { ok: true, data: { generated, updated, skipped, errors } }
+}
+
+/** After pay or bank details change on the employee, refresh this month's pending payslip from that record. */
+export async function refreshCurrentPendingPayslip(
+  supabase: SupabaseClient,
+  companyId: string,
+  employeeId: string,
+): Promise<void> {
+  const today = new Date()
+  const month = calendarMonthBounds(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`)
+  const { data, error } = await supabase
+    .from('payment_approvals')
+    .select('id')
+    .eq('company_id', companyId)
+    .eq('employee_id', employeeId)
+    .eq('status', 'pending')
+    .gte('period_start', month.start)
+    .lte('period_start', month.end)
+    .limit(1)
+    .maybeSingle()
+  if (error || !data?.id) return
+  await recalculatePayslip(supabase, companyId, data.id)
 }
 
 export async function recalculatePayslip(

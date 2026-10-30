@@ -139,6 +139,7 @@ export default function PayrollPage() {
   const [stepUpBusy,   setStepUpBusy]   = useState(false)
   const [stepUpError,  setStepUpError]  = useState<string | null>(null)
   const stepUpResolverRef = useRef<((password: string | null) => void) | null>(null)
+  const ensuredPayslipsRef = useRef('')
 
   function promptStepUpPassword(): Promise<string | null> {
     setStepUpError(null)
@@ -482,6 +483,20 @@ export default function PayrollPage() {
     const name = `${person.name} ${person.surname}`.toLowerCase()
     return name.includes(search.toLowerCase())
   }).sort((a, b) => `${a.surname} ${a.name}`.localeCompare(`${b.surname} ${b.name}`, 'en'))
+  const uncoveredKey = uncovered.map(person => person.id).sort().join(',')
+
+  useEffect(() => {
+    if (loading || isLocked || uncovered.length === 0) return
+    const cid = companyIdRef.current
+    if (!cid) return
+    const key = `${dateFrom}|${uncoveredKey}`
+    if (ensuredPayslipsRef.current === key) return
+    ensuredPayslipsRef.current = key
+    const supabase = createClient()
+    void generatePayrollPeriod(supabase, cid, dateFrom, dateTo, undefined, { onlyMissing: true }).then(result => {
+      if (result.ok && result.data.generated > 0) void loadPayroll(dateFrom, dateTo)
+    })
+  }, [loading, isLocked, dateFrom, dateTo, uncoveredKey])
 
   const pendingGross  = filtered.filter(p => p.status === 'pending')
     .reduce((s, p) => s + (p.gross_pay ?? 0), 0)
@@ -537,7 +552,7 @@ export default function PayrollPage() {
         )}
         {section === 'payslips' && !isLocked && pendingCount > 0 && !generating && (
           <p className="text-text-secondary text-[12px]">
-            Pending payslips are not worked out again each time this page opens. After new clock-ins, leave or pay changes, press Update payslips.
+            Pending payslips are not worked out again each time this page opens. People with no payslip for this month are added automatically from their employee record. After new clock-ins, leave or pay changes, press Update payslips.
           </p>
         )}
         {isLocked && (
@@ -772,7 +787,7 @@ export default function PayrollPage() {
                       className="bg-surface-card border-b border-divider cursor-pointer hover:bg-background transition-colors"
                     >
                       <td className="data-td text-text-primary text-sm font-medium">{person.name} {person.surname}</td>
-                      <td className="data-td text-text-secondary text-sm">{payrollRosterGap(person)}</td>
+                      <td className="data-td text-text-secondary text-sm">{payrollRosterGap()}</td>
                       <td className="data-td text-sm text-right text-text-disabled">—</td>
                       <td className="data-td text-sm text-right text-text-disabled">—</td>
                       <td className="data-td text-sm text-right text-text-disabled">—</td>
@@ -861,7 +876,7 @@ export default function PayrollPage() {
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <DataCardTitle>{person.name} {person.surname}</DataCardTitle>
-                        <DataCardMeta>{payrollRosterGap(person)}</DataCardMeta>
+                        <DataCardMeta>{payrollRosterGap()}</DataCardMeta>
                       </div>
                       <StatusBadge label="No payslip" bg="#F3F4F6" fg="#374151" />
                     </div>
