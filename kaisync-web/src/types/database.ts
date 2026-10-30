@@ -366,6 +366,8 @@ export interface Job {
   contractor_id?: string | null
   contractor_cost?: number | null
   created_by_employee_id?: string | null
+  /** Set when a linked customer company created the job, e.g. "Thandi Mokoena (test company)". */
+  created_by_label?: string | null
   first_response_at: string | null
   closed_at: string | null
   created_at: string

@@ -5,7 +5,9 @@ import Link from 'next/link'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { ClientPortalShell } from '@/components/ClientPortalShell'
 import { PortalTabs } from '@/components/PortalTabs'
-import { usePortalHref, usePortalSession } from '@/lib/client-portal/portal-mode'
+import { usePortalHref, usePortalMode, usePortalSession } from '@/lib/client-portal/portal-mode'
+import { createClient } from '@/lib/supabase/client'
+import { cancelLinkedJob, linkedJobActions, type LinkedJobActions } from '@/lib/linked-jobs'
 import { getJob, listJobReports, signPortalMedia, type ClientJobReport } from '@/lib/client-portal/api'
 import { ReportView } from '@/components/jobs/ReportParts'
 import { fmtDate, fmtDateTime, projectStatusLabel } from '@/lib/client-portal/format'
@@ -27,7 +29,12 @@ type JobTab = typeof JOB_TABS[number]['id']
 
 export function ClientPortalJobView() {
   const ph = usePortalHref()
+  const mode = usePortalMode()
   const { session, ready } = usePortalSession()
+  // Linked company only: who created the job and whether we may still cancel it.
+  const [linkedActions, setLinkedActions] = useState<LinkedJobActions | null>(null)
+  const [cancelBusy, setCancelBusy] = useState(false)
+  const [cancelError, setCancelError] = useState<string | null>(null)
   const params = useParams()
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -71,6 +78,27 @@ export function ClientPortalJobView() {
     document.addEventListener('visibilitychange', onVisible)
     return () => document.removeEventListener('visibilitychange', onVisible)
   }, [load])
+
+  useEffect(() => {
+    if (mode.kind !== 'linked' || !job) return
+    let cancelled = false
+    void linkedJobActions(createClient(), mode.companyId, mode.linkId, job.id).then(res => {
+      if (!cancelled) setLinkedActions(res.ok ? res.data : null)
+    })
+    return () => { cancelled = true }
+  }, [mode, job])
+
+  async function cancelJob() {
+    if (mode.kind !== 'linked' || !job) return
+    if (!window.confirm(`Cancel ${job.job_code ?? 'this job'}? ${mode.providerName} will be told.`)) return
+    setCancelBusy(true)
+    setCancelError(null)
+    const res = await cancelLinkedJob(createClient(), mode.companyId, mode.linkId, job.id)
+    setCancelBusy(false)
+    if (!res.ok) { setCancelError(res.message); return }
+    setLoading(true)
+    await load()
+  }
 
   useEffect(() => {
     if (!job) return
@@ -153,6 +181,20 @@ export function ClientPortalJobView() {
             <PortalTabs tabs={[...JOB_TABS]} tab={tab} onChange={setTab} />
 
             {tab === 'details' && (<>
+            {linkedActions?.created_by_us && (
+              <div className="bg-surface border border-divider rounded-xl px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+                <p className="text-[13px] text-text-primary">
+                  Created by {linkedActions.created_by_label ?? 'your company'}.
+                  {linkedActions.can_cancel ? ' You can cancel it until the team is assigned.' : ''}
+                </p>
+                {linkedActions.can_cancel && (
+                  <button type="button" disabled={cancelBusy} onClick={() => void cancelJob()} className="btn-outlined h-9 px-3 text-[13px]">
+                    {cancelBusy ? 'Cancelling…' : 'Cancel job'}
+                  </button>
+                )}
+                {cancelError && <p className="w-full text-[12px] text-error">{cancelError}</p>}
+              </div>
+            )}
             <Section title="Overview">
               <InfoRow label="Status" value={projectStatusLabel(job.status)} />
               {job.priority && <InfoRow label="Priority" value={projectStatusLabel(job.priority)} />}

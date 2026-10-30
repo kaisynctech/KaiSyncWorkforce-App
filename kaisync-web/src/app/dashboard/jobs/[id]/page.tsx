@@ -906,6 +906,12 @@ export default function JobDetailPage() {
                 {job.status.replace('_', ' ')}
               </span>
             </div>
+            {job.created_by_label && (
+              <p className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-[12px] font-medium text-primary">
+                <span className="material-icons text-[14px]">link</span>
+                Created by {job.created_by_label} through KaiSync
+              </p>
+            )}
             {job.description && (
               <p className="text-[13px] text-text-secondary">{job.description}</p>
             )}

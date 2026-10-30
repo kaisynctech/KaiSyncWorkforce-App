@@ -10,7 +10,7 @@ import { ClientPortalStatement } from '@/components/ClientPortalStatement'
 import { ClientPortalBanking } from '@/components/ClientPortalBanking'
 import { ClientPortalCompliance } from '@/components/ClientPortalCompliance'
 import { PortalComplianceReminder } from '@/components/PortalComplianceReminder'
-import { usePortalHref, usePortalSession } from '@/lib/client-portal/portal-mode'
+import { usePortalHref, usePortalMode, usePortalSession } from '@/lib/client-portal/portal-mode'
 import { getInvoiceForPdf, getPartyComplianceDocuments, listDocumentRequests, listInvoices, listJobs, listMessageInbox, listProjects } from '@/lib/client-portal/api'
 import { getDealMessagesReadAt, type ClientPortalSession } from '@/lib/client-portal/session'
 import { fmtDate, fmtDateTime, projectStatusLabel } from '@/lib/client-portal/format'
@@ -218,12 +218,24 @@ function ProjectsTab({ projects }: { projects: ClientPortalProject[] }) {
 
 function JobsTab({ jobs }: { jobs: ClientPortalJob[] }) {
   const ph = usePortalHref()
+  const mode = usePortalMode()
+  // A linked company can create a job for the provider (stage 3); the portal cannot.
+  const newJob = mode.kind === 'linked' && mode.canAct ? (
+    <div className="flex justify-end mb-3">
+      <Link href={ph('/jobs/new')} className="btn-primary h-9 px-3 text-[13px] inline-flex items-center">+ New job</Link>
+    </div>
+  ) : null
   if (jobs.length === 0) {
     return (
-      <Empty icon="work_outline" title="No jobs yet" sub="Jobs for you will appear here, including ones that are not on a project." />
+      <>
+        {newJob}
+        <Empty icon="work_outline" title="No jobs yet" sub="Jobs for you will appear here, including ones that are not on a project." />
+      </>
     )
   }
   return (
+    <>
+    {newJob}
     <div className="border-divider bg-surface overflow-x-auto rounded-xl border">
       <table className="w-full text-[13px]">
         <thead>
@@ -263,6 +275,7 @@ function JobsTab({ jobs }: { jobs: ClientPortalJob[] }) {
         </tbody>
       </table>
     </div>
+    </>
   )
 }
 
