@@ -164,6 +164,8 @@ export interface Client {
   id: string
   company_id: string
   name: string
+  /** Another KaiSync company this record stands for (also used by the platform billing link; for Linked companies use company_link_list). */
+  linked_company_id?: string | null
   client_code: string | null
   portal_enabled?: boolean | null
   client_code_expires_at?: string | null
@@ -366,6 +368,8 @@ export interface Job {
   contractor_id?: string | null
   contractor_cost?: number | null
   created_by_employee_id?: string | null
+  /** Set when a linked customer company created the job, e.g. "Thandi Mokoena (test company)". */
+  created_by_label?: string | null
   first_response_at: string | null
   closed_at: string | null
   created_at: string
@@ -444,6 +448,8 @@ export interface Contractor {
   id: string
   company_id: string
   name: string
+  /** Another KaiSync company this record stands for (also used by the platform billing link; for Linked companies use company_link_list). */
+  linked_company_id?: string | null
   contractor_code: string | null
   partner_kind?: string | null
   registration_number?: string | null
@@ -598,6 +604,9 @@ export interface AppNotification {
   body: string
   is_read: boolean
   created_at: string
+  ref_type?: string | null
+  ref_id?: string | null
+  data?: Record<string, unknown> | null
 }
 
 export interface IncidentReport {

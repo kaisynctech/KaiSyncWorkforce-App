@@ -7,13 +7,14 @@ import {
   type ClientPortalSession,
 } from '@/lib/client-portal/session'
 
-/** Redirect to login when no client portal session. */
-export function useRequireClientPortalSession() {
+/** Redirect to login when no client portal session. Pass false to skip (linked company view). */
+export function useRequireClientPortalSession(enabled = true) {
   const router = useRouter()
   const [session, setSession] = useState<ClientPortalSession | null>(null)
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
+    if (!enabled) return
     const s = getClientPortalSession()
     if (!s) {
       router.replace('/client-portal')
@@ -22,7 +23,7 @@ export function useRequireClientPortalSession() {
     }
     setSession(s)
     setReady(true)
-  }, [router])
+  }, [router, enabled])
 
   return { session, ready }
 }

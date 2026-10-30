@@ -22,11 +22,21 @@ export type MediaReader =
   | { kind: 'employee'; companyId: string; employeeId: string; sessionToken: string }
   | { kind: 'client'; companyCode: string; clientCode: string }
   | { kind: 'contractor'; companyCode: string; contractorCode: string }
+  | { kind: 'link'; companyId: string; linkId: string }
+
+/** Set while a linked company's view of another company's work is open (see portal-mode.tsx). */
+let linkedReader: { companyId: string; linkId: string } | null = null
+export function setLinkedMediaReader(reader: { companyId: string; linkId: string } | null): void {
+  linkedReader = reader
+}
 
 /** Which portal user (if any) is reading files on this page. Staff accounts return null. */
 export function currentMediaReader(pathname?: string): MediaReader | null {
   if (typeof window === 'undefined') return null
   const path = pathname ?? window.location.pathname
+  if (linkedReader && path.startsWith(`/dashboard/linked-companies/${linkedReader.linkId}`)) {
+    return { kind: 'link', companyId: linkedReader.companyId, linkId: linkedReader.linkId }
+  }
   if (path.startsWith('/client-portal')) {
     const s = getClientPortalSession()
     return s ? { kind: 'client', companyCode: s.company_code, clientCode: s.client_code } : null
@@ -91,6 +101,12 @@ export async function grantMediaRead(
         await rpc('client_portal_grant_media_read', {
           p_company_code: reader.companyCode,
           p_client_code: reader.clientCode,
+          p_paths: batch,
+        })
+      } else if (reader.kind === 'link') {
+        await rpc('linked_grant_media_read', {
+          p_company_id: reader.companyId,
+          p_link_id: reader.linkId,
           p_paths: batch,
         })
       } else {

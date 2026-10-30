@@ -10,6 +10,7 @@ import { downloadInvoicePdf, openInvoiceMailto } from '@/lib/invoice-pdf'
 import { companyLetterhead, type Letterhead } from '@/lib/letterhead'
 import type { FinanceInvoice, FinanceInvoiceLine } from '@/lib/finance-types'
 import { localISODate } from '@/lib/utils'
+import { signWorkforceMediaMany } from '@/lib/media-read'
 
 // ─── Extended types ────────────────────────────────────────────────────────────
 
@@ -164,7 +165,7 @@ function MoneyInvoiceDetailInner() {
 
     const [{ data: invoice }, { data: lineRows }, { data: transactions }, { data: company }, { data: proofRows }] = await Promise.all([
       supabase.from('finance_invoices')
-        .select('*, clients(name, email), client_deals(title), jobs(title, job_code)')
+        .select('*, clients(name, email), client_deals!finance_invoices_deal_id_fkey(title), jobs(title, job_code)')
         .eq('id', id)
         .maybeSingle(),
       supabase.from('finance_invoice_lines')
@@ -187,7 +188,14 @@ function MoneyInvoiceDetailInner() {
     setInv(invoice as Invoice | null)
     setLines((lineRows ?? []) as FinanceInvoiceLine[])
     setTxRows((transactions ?? []) as Transaction[])
-    setProofs((proofRows ?? []) as PaymentProof[])
+    // Proofs sent from a linked company keep only the storage path: sign a link for those.
+    const proofList = (proofRows ?? []) as PaymentProof[]
+    const unsigned = proofList.filter(p => !p.file_url && p.storage_path).map(p => p.storage_path)
+    if (unsigned.length) {
+      const signed = await signWorkforceMediaMany(supabase, unsigned).catch(() => new Map<string, string>())
+      for (const p of proofList) if (!p.file_url && p.storage_path) p.file_url = signed.get(p.storage_path.trim()) ?? null
+    }
+    setProofs(proofList)
     setCompanyName((company as { name?: string } | null)?.name ?? 'KaiSync')
     setClientEmail((invoice as { clients?: { email?: string | null } | null } | null)?.clients?.email ?? null)
 
@@ -569,7 +577,7 @@ function MoneyInvoiceDetailInner() {
         {proofs.length > 0 && (
           <div className="bg-surface-card border border-divider rounded-xl overflow-hidden">
             <p className="px-4 py-2.5 text-[12px] font-semibold text-text-secondary uppercase tracking-wide border-b border-divider">
-              Tenant payment proofs
+              Payment proofs
             </p>
             <ul className="divide-y divide-divider">
               {proofs.map(p => (

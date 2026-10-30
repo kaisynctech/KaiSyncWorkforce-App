@@ -26,7 +26,8 @@ export type ComplianceSource = {
   key: string
   getDocuments: () => Promise<ContractorDocument[]>
   getPack: () => Promise<{ document_type: string; requirement: string; sort_order: number; direction?: 'from_party' | 'to_party' }[]>
-  upload: (p: { file: File; documentType: string; documentName: string; expiryDate: string | null; oldDocumentId: string | null }) => Promise<string>
+  /** Leave out to show the documents without upload buttons (view only). */
+  upload?: (p: { file: File; documentType: string; documentName: string; expiryDate: string | null; oldDocumentId: string | null }) => Promise<string>
   docTypes?: { value: string; label: string; fromUs?: boolean }[]
 }
 
@@ -86,6 +87,7 @@ export function ContractorPortalComplianceTab({
   }
 
   const view = useMemo(() => buildComplianceView(docs, packItems), [docs, packItems])
+  const canUpload = Boolean(src.upload)
 
   function openUpload(target: UploadTarget) {
     setUploadTarget(target)
@@ -134,6 +136,7 @@ export function ContractorPortalComplianceTab({
     setBusy(true)
     onError(null)
     try {
+      if (!src.upload) return
       await src.upload({
         file,
         documentType,
@@ -165,6 +168,7 @@ export function ContractorPortalComplianceTab({
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-text-primary text-[18px] font-bold">Compliance</h2>
+        {canUpload && (
         <button
           type="button"
           onClick={() => openUpload({ mode: 'additional' })}
@@ -172,6 +176,7 @@ export function ContractorPortalComplianceTab({
         >
           + Upload document
         </button>
+        )}
       </div>
 
       {/* Score card */}
@@ -216,6 +221,7 @@ export function ContractorPortalComplianceTab({
               <div key={`${row.document_type}-${row.status}`} className="border-divider flex items-center gap-2 py-2 border-b last:border-0">
                 <ReqBadge required={row.is_required} />
                 <p className="flex-1 text-[13px] text-text-primary truncate">{row.type_label}</p>
+                {canUpload && (
                 <button
                   type="button"
                   onClick={() => openUpload({ mode: 'missing', documentType: row.document_type, typeLabel: row.type_label })}
@@ -223,6 +229,7 @@ export function ContractorPortalComplianceTab({
                 >
                   Upload
                 </button>
+                )}
               </div>
             ))}
           </div>
@@ -235,7 +242,7 @@ export function ContractorPortalComplianceTab({
             docs={view.expiring_docs}
             actionLabel="Replace"
             actionTone="amber"
-            onAction={doc => openUpload({ mode: 'replace', doc })}
+            onAction={canUpload ? doc => openUpload({ mode: 'replace', doc }) : undefined}
           />
         </Section>
       )}
@@ -251,6 +258,7 @@ export function ContractorPortalComplianceTab({
                     <p className="text-[11px] text-error mt-0.5">Reason: {doc.rejected_reason}</p>
                   )}
                 </div>
+                {canUpload && (
                 <button
                   type="button"
                   onClick={() => openUpload({ mode: 'replace', doc })}
@@ -259,6 +267,7 @@ export function ContractorPortalComplianceTab({
                 >
                   Re-upload
                 </button>
+                )}
               </div>
             ))}
           </div>
@@ -299,6 +308,7 @@ export function ContractorPortalComplianceTab({
                           View
                         </a>
                       )}
+                      {canUpload && (
                       <button
                         type="button"
                         onClick={() => openUpload({ mode: 'replace', doc })}
@@ -306,6 +316,7 @@ export function ContractorPortalComplianceTab({
                       >
                         Replace
                       </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -480,7 +491,7 @@ function DocActionList({
   docs: ContractorDocument[]
   actionLabel: string
   actionTone: 'amber' | 'red'
-  onAction: (doc: ContractorDocument) => void
+  onAction?: (doc: ContractorDocument) => void
 }) {
   return (
     <div className="space-y-1">
@@ -493,6 +504,7 @@ function DocActionList({
           <p className={`text-[12px] font-medium whitespace-nowrap ${actionTone === 'amber' ? 'text-warning' : 'text-error'}`}>
             {expiryDisplay(doc)}
           </p>
+          {onAction && (
           <button
             type="button"
             onClick={() => onAction(doc)}
@@ -501,6 +513,7 @@ function DocActionList({
           >
             {actionLabel}
           </button>
+          )}
         </div>
       ))}
     </div>

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { getProfile, updateProfile } from '@/lib/client-portal/api'
 import type { ClientPortalSession } from '@/lib/client-portal/session'
+import { usePortalMode } from '@/lib/client-portal/portal-mode'
 import { moneyZAR } from '@/lib/client-portal/quotation'
 import { CLIENT_EDITABLE_FIELDS, type ClientEditableField, type ClientPortalProfile } from '@/lib/client-portal/types'
 
@@ -36,6 +37,8 @@ function toForm(p: ClientPortalProfile): Record<ClientEditableField, string> {
 
 /** "My information": the client views and updates their own details. */
 export function ClientPortalInformation({ session }: { session: ClientPortalSession }) {
+  const mode = usePortalMode()
+  const canEdit = mode.kind === 'portal' || (mode.canAct && mode.canEditDetails)
   const [profile, setProfile] = useState<ClientPortalProfile | null>(null)
   const [form, setForm] = useState<Record<ClientEditableField, string> | null>(null)
   const [editing, setEditing] = useState(false)
@@ -80,7 +83,7 @@ export function ClientPortalInformation({ session }: { session: ClientPortalSess
         <p className="text-[12px] text-text-secondary">
           Keep your details up to date. Changes are saved straight away and shared with our team.
         </p>
-        {!editing && (
+        {!editing && canEdit && (
           <button
             type="button"
             onClick={() => { setEditing(true); setSaved(false); setError(null) }}

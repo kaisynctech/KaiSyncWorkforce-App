@@ -123,7 +123,7 @@ export default function CompanySelectorPage() {
   async function signOut() {
     const supabase = createClient()
     await revokeCodeSession(supabase)
-    await supabase.auth.signOut()
+    await supabase.auth.signOut({ scope: 'local' })
     clearAllAuthLocalState()
     router.replace(AUTH_ROUTES.idEntry)
   }

@@ -27,6 +27,7 @@ import { fmtMoney } from '@/lib/finance-calc'
 import { createInvoiceFromAcceptedQuote } from '@/lib/quote-invoice'
 import type { Client, ClientDocument, ClientNote, Site, Project, ProjectDocument } from '@/types/database'
 import type { FinanceInvoice } from '@/lib/finance-types'
+import { CompanyLinkPanel } from '@/components/CompanyLinkPanel'
 
 const CLIENT_TABS = ['info', 'projects', 'jobs', 'quotes', 'invoices', 'documents', 'compliance', 'notes', 'activity', 'commercial'] as const
 type ClientTab = typeof CLIENT_TABS[number]
@@ -1269,6 +1270,9 @@ function ClientDetailInner() {
                 clientId={clientId}
                 onOpenActivity={() => selectTab('activity')}
               />
+            )}
+            {!isNew && client?.company_id && (
+              <CompanyLinkPanel companyId={client.company_id} myRole="provider" recordId={clientId} />
             )}
             <div className="card p-4 space-y-3">
               <p className="section-label">CLIENT DETAILS</p>

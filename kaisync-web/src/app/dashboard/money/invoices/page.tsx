@@ -77,7 +77,7 @@ function MoneyInvoicesInner() {
         issue_date, due_date, paid_date,
         client_id, job_id, deal_id, project_id,
         clients(name),
-        client_deals(title)
+        client_deals!finance_invoices_deal_id_fkey(title)
       `)
       .eq('company_id', member.companyId)
       .order('created_at', { ascending: false })

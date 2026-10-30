@@ -21,6 +21,8 @@ import {
   DataCardRow,
 } from '@/components/ui/ResponsiveDataView'
 import type { Client, ClientActionItem } from '@/types/database'
+import { LinkedBadge, LinkedOnlyToggle } from '@/components/LinkedBadge'
+import { activeLinkedRecordIds } from '@/lib/company-links'
 import * as XLSX from 'xlsx'
 import { localISODate } from '@/lib/utils'
 
@@ -47,6 +49,8 @@ export default function ClientsPage() {
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [searchDebounced, setSearchDebounced] = useState('')
+  const [linkedOnly, setLinkedOnly] = useState(false)
+  const [linkedIds, setLinkedIds] = useState<Set<string>>(new Set())
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [total, setTotal] = useState(0)
@@ -67,7 +71,7 @@ export default function ClientsPage() {
     return () => clearTimeout(t)
   }, [search])
 
-  useEffect(() => { setPage(1) }, [searchDebounced, pageSize])
+  useEffect(() => { setPage(1) }, [searchDebounced, pageSize, linkedOnly])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -94,6 +98,10 @@ export default function ClientsPage() {
       .eq('company_id', cId)
       .order('name')
 
+    // Joined to another KaiSync company through Linked companies (active links only).
+    const linkedSet = await activeLinkedRecordIds(supabase, cId, 'provider')
+    setLinkedIds(linkedSet)
+    if (linkedOnly) query = query.in('id', linkedSet.size ? [...linkedSet] : ['00000000-0000-0000-0000-000000000000'])
     if (searchDebounced) {
       const q = escapeIlike(searchDebounced)
       query = query.or(
@@ -149,7 +157,7 @@ export default function ClientsPage() {
     const { data: { session } } = await supabase.auth.getSession()
     setSessionToken(session?.access_token ?? null)
     setLoading(false)
-  }, [page, pageSize, searchDebounced])
+  }, [page, pageSize, searchDebounced, linkedOnly])
 
   useEffect(() => { void load() }, [load])
 
@@ -404,6 +412,7 @@ export default function ClientsPage() {
             <span className="text-[11px] text-[#64748B]">Open jobs</span>
           </span>
         </div>
+        <LinkedOnlyToggle value={linkedOnly} onChange={setLinkedOnly} />
         <div className="flex items-center gap-1.5 h-8 px-2 bg-surface border border-border rounded-sm">
           <span className="material-icons text-text-disabled text-[16px]">search</span>
           <input
@@ -510,7 +519,7 @@ export default function ClientsPage() {
                     <tr><td colSpan={xeroConnected ? 7 : 6} className="py-12 text-center text-[13px] text-text-disabled">Loading…</td></tr>
                   ) : clients.length === 0 ? (
                     <tr><td colSpan={xeroConnected ? 7 : 6} className="py-8 text-center text-[13px] text-text-secondary">
-                      {total === 0 && !searchDebounced ? 'No clients yet. Click + Add Client to create one.' : 'No clients match your search.'}
+                      {total === 0 && !searchDebounced && !linkedOnly ? 'No clients yet. Click + Add Client to create one.' : (linkedOnly ? 'No clients linked on KaiSync match.' : 'No clients match your search.')}
                     </td></tr>
                   ) : (
                     clients.map(c => (
@@ -518,7 +527,7 @@ export default function ClientsPage() {
                         onClick={() => router.push(`/dashboard/clients/${c.id}`)}
                         className="bg-surface hover:bg-background cursor-pointer border-b border-divider last:border-0 transition-colors">
                         <td className="data-td text-text-primary text-[13px]">
-                          <span className="block truncate">{c.name}</span>
+                          <span className="flex items-center gap-1 min-w-0"><span className="truncate">{c.name}</span><LinkedBadge linked={linkedIds.has(c.id)} /></span>
                         </td>
                         <td className="data-td text-text-primary font-medium text-[12px]">{c.client_code ?? '—'}</td>
                         <td className="data-td text-text-secondary text-[12px]">
@@ -559,13 +568,13 @@ export default function ClientsPage() {
                 <p className="py-12 text-center text-[13px] text-text-disabled">Loading…</p>
               ) : clients.length === 0 ? (
                 <p className="py-8 text-center text-[13px] text-text-secondary px-4">
-                  {total === 0 && !searchDebounced ? 'No clients yet. Click + Add Client to create one.' : 'No clients match your search.'}
+                  {total === 0 && !searchDebounced && !linkedOnly ? 'No clients yet. Click + Add Client to create one.' : (linkedOnly ? 'No clients linked on KaiSync match.' : 'No clients match your search.')}
                 </p>
               ) : (
                 <>
                   {clients.map(c => (
                     <DataCard key={c.id} onClick={() => router.push(`/dashboard/clients/${c.id}`)}>
-                      <DataCardTitle>{c.name}</DataCardTitle>
+                      <DataCardTitle>{c.name} <LinkedBadge linked={linkedIds.has(c.id)} /></DataCardTitle>
                       <DataCardMeta>
                         {c.client_code ?? '—'} · {CLIENT_TYPE_LABELS[c.type ?? ''] ?? c.type ?? '—'}
                       </DataCardMeta>
