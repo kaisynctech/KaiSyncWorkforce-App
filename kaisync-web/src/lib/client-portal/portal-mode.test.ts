@@ -16,7 +16,9 @@ describe('linked company view', () => {
     const call = linkedCall('client_portal_get_job', { p_company_code: linkedCompanyCode(C, L).toUpperCase(), p_client_code: '', p_job_id: 'j1' })
     expect(call).toEqual({ fn: 'linked_get_job', args: { p_company_id: C, p_link_id: L, p_job_id: 'j1' } })
     expect(linkedCall('client_portal_get_job', { p_company_code: '32', p_client_code: 'C1' })).toBeNull()
-    expect(() => linkedCall('client_portal_accept_quotation', { p_company_code: linkedCompanyCode(C, L) })).toThrow(/not available/)
+    expect(linkedCall('client_portal_accept_quotation', { p_company_code: linkedCompanyCode(C, L), p_client_code: '', p_deal_id: 'd1' }))
+      .toEqual({ fn: 'linked_accept_quotation', args: { p_company_id: C, p_link_id: L, p_deal_id: 'd1' } })
+    expect(() => linkedCall('client_portal_list_unknown', { p_company_code: linkedCompanyCode(C, L) })).toThrow(/not available/)
   })
 
   it('builds links inside the portal or inside Linked companies', () => {

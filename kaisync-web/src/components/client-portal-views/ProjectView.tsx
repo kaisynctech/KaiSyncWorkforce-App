@@ -5,7 +5,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { ClientPortalShell } from '@/components/ClientPortalShell'
 import { PortalTabs } from '@/components/PortalTabs'
-import { usePortalCanAct, usePortalHref, usePortalSession } from '@/lib/client-portal/portal-mode'
+import { usePortalCanAct, usePortalHref, usePortalMode, usePortalSession } from '@/lib/client-portal/portal-mode'
 import {
   acceptQuotation,
   addDocumentLink,
@@ -39,6 +39,7 @@ type ProjectTab = typeof PROJECT_TABS[number]['id']
 export function ClientPortalProjectView() {
   const ph = usePortalHref()
   const canAct = usePortalCanAct()
+  const mode = usePortalMode()
   const { session, ready } = usePortalSession()
   const params = useParams()
   const searchParams = useSearchParams()
@@ -628,7 +629,7 @@ export function ClientPortalProjectView() {
                         }`}
                       >
                         <p className="text-[11px] font-semibold text-text-secondary mb-0.5">
-                          {m.author === 'client' ? 'You' : 'Team'} · {fmtDateTime(m.created_at)}
+                          {m.author === 'client' ? (mode.kind === 'linked' ? 'Your company' : 'You') : (mode.kind === 'linked' ? mode.providerName : 'Team')} · {fmtDateTime(m.created_at)}
                         </p>
                         <p className="text-[13px] text-text-primary whitespace-pre-wrap">{m.body}</p>
                       </div>

@@ -41,6 +41,10 @@ export function LinkedWorkProvider({ children }: { children: ReactNode }) {
         if (!cancelled) setError(e instanceof Error ? e.message : 'Could not open this company.')
         return
       }
+      // Details and banking: owner, HR or admin (the database checks this again).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: role } = await (supabase.rpc as any)('get_my_role', { p_company_id: member.companyId })
+      const canEditDetails = ['owner', 'admin', 'hr', 'hr_admin'].includes(String(role ?? ''))
       setLinkedMediaReader({ companyId: member.companyId, linkId: link.id })
       if (cancelled) return
       setMode({
@@ -55,8 +59,8 @@ export function LinkedWorkProvider({ children }: { children: ReactNode }) {
           clientId,
           clientName,
         }),
-        canAct: false,
-        canEditDetails: false,
+        canAct: true,
+        canEditDetails,
       })
     })()
     return () => { cancelled = true; setLinkedMediaReader(null) }

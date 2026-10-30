@@ -180,12 +180,15 @@ export function parseClientPortalProject(row: Record<string, unknown>): ClientPo
 
 /**
  * Database functions a linked customer company can use through its link (same rules as the
- * portal; see supabase/migrations/20261031090000_linked_view.sql).
+ * portal; see supabase/migrations/20261031090000_linked_view.sql and …100000_linked_actions.sql).
  */
 const LINKED_FUNCTIONS = new Set([
   'list_jobs', 'get_job', 'list_job_reports', 'list_projects', 'get_project', 'get_quotation_response',
   'list_message_inbox', 'list_invoices', 'get_invoice', 'get_statement', 'get_letterhead', 'get_profile',
   'get_compliance', 'get_compliance_documents', 'get_compliance_pack', 'list_document_requests', 'grant_media_read',
+  // Part B (supabase/migrations/20261031100000_linked_actions.sql)
+  'accept_quotation', 'revise_quotation', 'send_message', 'add_document_link', 'register_document', 'prepare_upload',
+  'insert_document', 'submit_document_request', 'submit_compliance_document', 'update_profile', 'get_banking', 'submit_banking',
 ])
 
 /** A portal call made from a linked company's dashboard goes to the matching linked_* function. */
