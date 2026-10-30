@@ -20,6 +20,12 @@ import {
   sumOutstanding,
   type CommercialSnapshot,
 } from '@/lib/overview-loading'
+import {
+  ATTENDANCE_PAGE_SIZE,
+  attendancePageCount,
+  attendancePageItems,
+  attendanceRangeLabel,
+} from '@/lib/attendance-page'
 
 interface TimePunch { id: string; employee_id: string; type: string; date_time: string }
 interface EmpRow {
@@ -83,6 +89,10 @@ export default function OverviewPage() {
   const [noClockLoading, setNoClockLoading] = useState<string | null>(null)
   const [markAbsentError, setMarkAbsentError] = useState<string | null>(null)
   const [markAbsentSuccess, setMarkAbsentSuccess] = useState<string | null>(null)
+  const [markAllConfirm, setMarkAllConfirm] = useState(false)
+  const [markAllProgress, setMarkAllProgress] = useState<{ done: number; total: number } | null>(null)
+  const [unsignedPage, setUnsignedPage] = useState(1)
+  const [absentPage, setAbsentPage] = useState(1)
 
   const [commercial, setCommercial] = useState<CommercialSnapshot>(initialCommercial)
   const loadIdRef = useRef(0)
@@ -414,6 +424,57 @@ export default function OverviewPage() {
     await load()
   }
 
+  async function markAllAbsent(targets: EmpRow[]) {
+    if (!companyId || targets.length === 0 || markAllProgress) return
+    setMarkAllConfirm(false)
+    setMarkAbsentError(null)
+    setMarkAbsentSuccess(null)
+    setMarkAllProgress({ done: 0, total: targets.length })
+    const supabase = createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    const today = localISODate()
+    const token = session?.access_token ?? null
+    const failed: string[] = []
+    let firstError: string | null = null
+    const batchSize = 5
+    for (let i = 0; i < targets.length; i += batchSize) {
+      const slice = targets.slice(i, i + batchSize)
+      const results = await Promise.all(slice.map(async (emp) => {
+        const { error: err } = await supabase.rpc('employee_report_absence', {
+          p_company_id: companyId,
+          p_employee_id: emp.id,
+          p_date: today,
+          p_reason: 'absent',
+          p_note: 'Marked absent by HR from overview',
+          p_session_token: token,
+        })
+        return { name: `${emp.name} ${emp.surname}`.trim(), err }
+      }))
+      for (const result of results) {
+        if (!result.err) continue
+        failed.push(result.name)
+        if (!firstError) firstError = result.err.message
+      }
+      setMarkAllProgress({ done: Math.min(i + slice.length, targets.length), total: targets.length })
+    }
+    const marked = targets.length - failed.length
+    setMarkAllProgress(null)
+    if (failed.length === 0) {
+      setMarkAbsentSuccess(
+        marked === 1 ? 'Marked 1 person absent for today.' : `Marked ${marked} people absent for today.`,
+      )
+    } else if (marked === 0) {
+      setMarkAbsentError(firstError ? `Could not mark anyone absent: ${firstError}` : 'Could not mark anyone absent.')
+    } else {
+      const shown = failed.slice(0, 3).join(', ')
+      const more = failed.length > 3 ? ` and ${failed.length - 3} more` : ''
+      setMarkAbsentError(
+        `Marked ${marked} absent. Could not mark ${shown}${more}${firstError ? `: ${firstError}` : '.'}`,
+      )
+    }
+    await load()
+  }
+
   async function excuseClockIn(empId: string) {
     if (!companyId) return
     setNoClockLoading(empId)
@@ -438,6 +499,12 @@ export default function OverviewPage() {
 
   const greeting = timeGreeting()
   const notSignedInList = allEmployees.filter(e => notClockedInIds.has(e.id))
+  const unsignedPages = attendancePageCount(notSignedInList.length)
+  const unsignedCurrent = Math.min(unsignedPage, unsignedPages)
+  const unsignedRows = attendancePageItems(notSignedInList, unsignedCurrent)
+  const absentPages = attendancePageCount(absentToday.length)
+  const absentCurrent = Math.min(absentPage, absentPages)
+  const absentRows = attendancePageItems(absentToday, absentCurrent)
   const presentation = overviewPresentation(loading, commercial.phase)
 
   if (presentation.showCoreLoading) return (
@@ -579,19 +646,34 @@ export default function OverviewPage() {
           )}
 
           {absentToday.length > 0 && (
-            <div>
-              <p className="px-4 pt-3 pb-1 text-[11px] font-semibold text-text-secondary tracking-wide">
-                REPORTED ABSENT TODAY
-              </p>
-              {absentToday.map(row => (
-                <div key={row.id} className="flex items-center gap-3 px-4 py-2 border-b border-divider">
-                  <span className="material-icons text-[18px]" style={{ color: '#d97706' }}>person_off</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[13px] text-text-primary">{row.name}</p>
-                    <p className="text-[11px] text-text-secondary capitalize">{row.reason.replace(/_/g, ' ')}</p>
-                  </div>
-                </div>
-              ))}
+            <div className="border-t border-divider mt-3">
+              <div className="flex items-center justify-between gap-3 px-4 py-2">
+                <p className="text-[11px] font-semibold text-text-secondary tracking-wide">REPORTED ABSENT TODAY</p>
+                <p className="text-[12px] text-text-secondary">{attendanceRangeLabel(absentToday.length, absentCurrent)}</p>
+              </div>
+              <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-left">
+                <thead>
+                  <tr className="border-y border-divider">
+                    <th className="data-th" style={{ padding: '6px 16px' }}>Name</th>
+                    <th className="data-th" style={{ padding: '6px 16px' }}>Reason</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {absentRows.map(row => (
+                    <tr key={row.id} className="border-b border-divider last:border-0">
+                      <td className="data-td" style={{ padding: '6px 16px' }}>
+                        <p className="text-[13px] text-text-primary truncate">{row.name}</p>
+                      </td>
+                      <td className="data-td" style={{ padding: '6px 16px' }}>
+                        <p className="text-[12px] text-text-secondary capitalize">{row.reason.replace(/_/g, ' ')}</p>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              </div>
+              <AttendancePager page={absentCurrent} pages={absentPages} total={absentToday.length} onPage={setAbsentPage} />
             </div>
           )}
 
@@ -618,40 +700,103 @@ export default function OverviewPage() {
               </p>
             </div>
           ) : (
-            <div>
-              <p className="px-4 pt-3 pb-1 text-[11px] font-semibold text-text-secondary tracking-wide">
-                NOT SIGNED IN TODAY
-              </p>
-              {notSignedInList.map(emp => (
-                <div key={emp.id} className="flex items-center gap-3 px-4 py-2.5 border-b border-divider last:border-0">
-                  <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-white text-[13px] font-bold"
-                    style={{ background: 'linear-gradient(135deg, #3b82f6, #6366f1)' }}>
-                    {emp.name.charAt(0)}{emp.surname.charAt(0)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[13px] font-medium text-text-primary truncate">
-                      {emp.name} {emp.surname}
-                    </p>
-                    {emp.position && (
-                      <p className="text-[11px] text-text-secondary truncate">{emp.position}</p>
-                    )}
-                  </div>
-                  <button
-                    onClick={() => excuseClockIn(emp.id)}
-                    disabled={noClockLoading === emp.id || markAbsentLoading === emp.id}
-                    className="h-10 px-3 text-[12px] font-medium rounded-lg border transition-opacity disabled:opacity-50"
-                    style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-primary)', backgroundColor: 'var(--color-surface)' }}>
-                    {noClockLoading === emp.id ? '…' : 'No clock-in'}
-                  </button>
-                  <button
-                    onClick={() => markAbsent(emp.id)}
-                    disabled={markAbsentLoading === emp.id || noClockLoading === emp.id}
-                    className="h-10 px-3 text-[12px] font-medium rounded-lg border transition-opacity disabled:opacity-50"
-                    style={{ borderColor: '#d97706', color: '#d97706', backgroundColor: 'rgba(217,119,6,0.08)' }}>
-                    {markAbsentLoading === emp.id ? '…' : 'Mark Absent'}
-                  </button>
+            <div className="border-t border-divider mt-3">
+              <div className="flex items-center justify-between gap-3 px-4 py-2">
+                <div>
+                  <p className="text-[11px] font-semibold text-text-secondary tracking-wide">NOT SIGNED IN TODAY</p>
+                  <p className="text-[12px] text-text-secondary">{attendanceRangeLabel(notSignedInList.length, unsignedCurrent)}</p>
                 </div>
-              ))}
+                {markAllConfirm ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[12px] text-text-primary">
+                      Mark all {notSignedInList.length} absent?
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => void markAllAbsent(notSignedInList)}
+                      className="h-8 px-3 text-[12px] font-semibold rounded-lg text-white disabled:opacity-50"
+                      style={{ backgroundColor: '#d97706' }}
+                    >
+                      Confirm
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMarkAllConfirm(false)}
+                      className="btn-outlined h-8 px-3 text-[12px]"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setMarkAllConfirm(true)}
+                    disabled={markAllProgress !== null || markAbsentLoading !== null || noClockLoading !== null}
+                    className="h-8 px-3 text-[12px] font-semibold rounded-lg border transition-opacity disabled:opacity-50"
+                    style={{ borderColor: '#d97706', color: '#d97706', backgroundColor: 'rgba(217,119,6,0.08)' }}
+                  >
+                    {markAllProgress
+                      ? `Marking ${markAllProgress.done} of ${markAllProgress.total}`
+                      : 'Mark all absent'}
+                  </button>
+                )}
+              </div>
+              <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-left">
+                <thead>
+                  <tr className="border-y border-divider">
+                    <th className="data-th" style={{ padding: '6px 16px' }}>Name</th>
+                    <th className="data-th" style={{ padding: '6px 16px' }}>Position</th>
+                    <th className="data-th" style={{ padding: '6px 16px', textAlign: 'right' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {unsignedRows.map(emp => (
+                    <tr key={emp.id} className="border-b border-divider last:border-0">
+                      <td className="data-td" style={{ padding: '6px 16px' }}>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div
+                            className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-white text-[11px] font-semibold"
+                            style={{ backgroundColor: 'var(--color-primary)' }}
+                          >
+                            {emp.name.charAt(0)}{emp.surname.charAt(0)}
+                          </div>
+                          <p className="text-[13px] font-medium text-text-primary truncate">
+                            {emp.name} {emp.surname}
+                          </p>
+                        </div>
+                      </td>
+                      <td className="data-td" style={{ padding: '6px 16px' }}>
+                        <p className="text-[12px] text-text-secondary truncate">{emp.position || '—'}</p>
+                      </td>
+                      <td className="data-td" style={{ padding: '6px 16px' }}>
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => excuseClockIn(emp.id)}
+                            disabled={noClockLoading === emp.id || markAbsentLoading !== null || markAllProgress !== null}
+                            className="h-8 px-2.5 text-[12px] font-medium rounded-lg border transition-opacity disabled:opacity-50"
+                            style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-primary)', backgroundColor: 'var(--color-surface)' }}
+                          >
+                            {noClockLoading === emp.id ? '…' : 'No clock-in'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => markAbsent(emp.id)}
+                            disabled={markAbsentLoading !== null || noClockLoading !== null || markAllProgress !== null}
+                            className="h-8 px-2.5 text-[12px] font-medium rounded-lg border transition-opacity disabled:opacity-50"
+                            style={{ borderColor: '#d97706', color: '#d97706', backgroundColor: 'rgba(217,119,6,0.08)' }}
+                          >
+                            {markAbsentLoading === emp.id ? '…' : 'Mark Absent'}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              </div>
+              <AttendancePager page={unsignedCurrent} pages={unsignedPages} total={notSignedInList.length} onPage={setUnsignedPage} />
             </div>
           )}
         </div>
@@ -688,6 +833,41 @@ export default function OverviewPage() {
         </div>
 
       </div>
+    </div>
+  )
+}
+
+function AttendancePager({
+  page,
+  pages,
+  total,
+  onPage,
+}: {
+  page: number
+  pages: number
+  total: number
+  onPage: (page: number) => void
+}) {
+  if (total <= ATTENDANCE_PAGE_SIZE) return null
+  return (
+    <div className="flex items-center justify-end gap-2 px-4 py-2 border-t border-divider">
+      <button
+        type="button"
+        disabled={page <= 1}
+        onClick={() => onPage(page - 1)}
+        className="btn-outlined h-7 px-2.5 text-[12px] disabled:opacity-40"
+      >
+        Previous
+      </button>
+      <span className="text-[12px] text-text-secondary">{page} of {pages}</span>
+      <button
+        type="button"
+        disabled={page >= pages}
+        onClick={() => onPage(page + 1)}
+        className="btn-outlined h-7 px-2.5 text-[12px] disabled:opacity-40"
+      >
+        Next
+      </button>
     </div>
   )
 }
