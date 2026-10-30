@@ -37,7 +37,7 @@ export type PayrollGeneratePreview = {
   detailLines: string[]
 }
 
-function hasPayRate(emp: PayrollEmployeeLike): boolean {
+function hasPayRate(emp: Pick<PayrollEmployeeLike, 'monthly_salary' | 'hourly_rate' | 'daily_rate'>): boolean {
   return (emp.monthly_salary ?? 0) > 0 || (emp.hourly_rate ?? 0) > 0 || (emp.daily_rate ?? 0) > 0
 }
 
@@ -79,10 +79,29 @@ export function isEligibleForPeriod(
   periodStart: string,
   periodEnd: string
 ): boolean {
-  if (!isEligibleForPayroll(emp)) return false
+  if (!emp.is_active) return false
+  if (emp.employment_date && emp.employment_date > periodEnd) return false
+  if (emp.termination_date && emp.termination_date < periodStart) return false
+  const contractor = emp.worker_type === 'contractor' || emp.worker_type === 'subcontractor'
+  if (contractor && !hasPayRate(emp)) return false
+  return true
+}
+
+/** An active employee whose employment overlaps this month, whether or not they have a payslip. */
+export function isOnPayrollRoster(
+  emp: Pick<PayrollEmployeeLike, 'is_active' | 'worker_type' | 'employment_date' | 'termination_date'>,
+  periodStart: string,
+  periodEnd: string
+): boolean {
+  if (!emp.is_active) return false
+  if (emp.worker_type === 'contractor' || emp.worker_type === 'subcontractor') return false
   if (emp.employment_date && emp.employment_date > periodEnd) return false
   if (emp.termination_date && emp.termination_date < periodStart) return false
   return true
+}
+
+export function payrollRosterGap(): string {
+  return 'This month’s payslip is being added from the employee record.'
 }
 
 export function buildPayrollGeneratePreview(
@@ -117,12 +136,16 @@ export function buildPayrollGeneratePreview(
     if (existingEmployeeIds.has(emp.id)) refresh++
 
     const info = assessPayrollReadiness(emp, { companyHasDefaultTemplate })
-    if (!hasPayRate(emp)) missingRates++
+    const onRoster = isOnPayrollRoster(emp, periodStart, periodEnd)
+    if (!hasPayRate(emp)) {
+      missingRates++
+      if (onRoster) details.push(`${emp.name} ${emp.surname}: no pay rate yet. A payslip is still created.`)
+    }
     if (!emp.shift_template_id) missingShift++
     if (!hasBanking(emp)) missingBank++
     if (emp.worker_type === 'contractor' || emp.worker_type === 'subcontractor') contractor++
 
-    if (info.isReady || hasPayRate(emp)) ready++
+    if (info.isReady || hasPayRate(emp) || onRoster) ready++
     else details.push(`${emp.name} ${emp.surname}: ${info.issues.join(', ')}`)
   }
 

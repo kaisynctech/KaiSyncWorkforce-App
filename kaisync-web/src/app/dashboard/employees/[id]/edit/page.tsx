@@ -29,6 +29,7 @@ import {
   setEmployeeActive,
   updateEmployee,
 } from '@/lib/employees'
+import { refreshCurrentPendingPayslip } from '@/lib/payroll'
 import type { Branch, ShiftTemplate, Employee } from '@/types/database'
 
 const ACCOUNT_TYPES = ['Cheque', 'Savings', 'Transmission']
@@ -277,6 +278,7 @@ export default function EditEmployeePage({
       setError(updated.message)
       return
     }
+    void refreshCurrentPendingPayslip(supabase, companyId, id)
 
     const extraSaved = await saveExtraBranches(
       supabase,

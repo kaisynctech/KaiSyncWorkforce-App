@@ -12,6 +12,13 @@ import { createSupplyRfqFromQuote } from '@/lib/supply-rfq'
 import { downloadQuotePdf, openQuoteMailto, quotePdfBase64 } from '@/lib/quote-pdf'
 import { sendQuoteEmailViaResend } from '@/lib/send-quote-email'
 import { companyLetterhead, type Letterhead } from '@/lib/letterhead'
+import {
+  companyQuoteVat,
+  loadedQuoteVat,
+  quoteMoney,
+  vatPercentLabel,
+  type QuoteVatChoice,
+} from '@/lib/quote-vat'
 import SimpleQuoteLineRow from './SimpleQuoteLineRow'
 import RateCardPicker, { type RateCardSelection } from './RateCardPicker'
 
@@ -92,6 +99,8 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   const [notes,       setNotes]       = useState('')
   const [dealId,      setDealId]      = useState<string | null>(null)
   const [jobId,       setJobId]       = useState<string | null>(null)
+  const [vatOn,       setVatOn]       = useState(true)
+  const [vatRate,     setVatRate]     = useState(0.15)
 
   // ── Lines ─────────────────────────────────────────────────────────────────
   const [lines, setLines] = useState<SimpleQuoteLine[]>([blankLine()])
@@ -141,6 +150,9 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   const jobIdRef      = useRef<string | null>(null)
   const linesRef      = useRef<SimpleQuoteLine[]>([blankLine()])
   const quoteNumberRef = useRef<string | null>(null)
+  const vatOnRef      = useRef(true)
+  const vatRateRef    = useRef(0.15)
+  const companyVatRef = useRef<QuoteVatChoice>({ vatOn: true, vatRate: 0.15 })
 
   // Keep refs in sync with state on every render
   quoteIdRef.current     = quoteId
@@ -155,6 +167,8 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   jobIdRef.current       = jobId
   linesRef.current       = lines
   quoteNumberRef.current = quoteNumber
+  vatOnRef.current       = vatOn
+  vatRateRef.current     = vatRate
 
   // ── Resolve auth on mount ──────────────────────────────────────────────────
   useEffect(() => {
@@ -166,11 +180,21 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
       employeeIdRef.current = m.employeeId
       const { data: company } = await supabase
         .from('companies')
-        .select('name')
+        .select('name, is_vat_registered, default_vat_rate')
         .eq('id', m.companyId)
         .maybeSingle()
-      if (company && (company as { name?: string }).name) {
-        setCompanyName((company as { name: string }).name)
+      const row = company as { name?: string; is_vat_registered?: boolean; default_vat_rate?: number } | null
+      if (row?.name) setCompanyName(row.name)
+      const choice = companyQuoteVat({
+        isVatRegistered: row?.is_vat_registered,
+        defaultVatRate: row?.default_vat_rate,
+      })
+      companyVatRef.current = choice
+      if (!quoteIdRef.current) {
+        setVatOn(choice.vatOn)
+        setVatRate(choice.vatRate)
+        vatOnRef.current = choice.vatOn
+        vatRateRef.current = choice.vatRate
       }
       setAuthReady(true)
     })
@@ -277,6 +301,16 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         setLines(mapped)
         linesRef.current = mapped
       }
+
+      const loaded = loadedQuoteVat({
+        lineRates: ((lData ?? []) as Record<string, unknown>[]).map(row => Number(row.vat_rate ?? 0)),
+        subtotal: Number((qData as { subtotal?: number } | null)?.subtotal ?? 0),
+        company: companyVatRef.current,
+      })
+      setVatOn(loaded.vatOn)
+      setVatRate(loaded.vatRate)
+      vatOnRef.current = loaded.vatOn
+      vatRateRef.current = loaded.vatRate
     } else if (preJobId || preDealId || preClientId) {
       // Prefill from deep-link (e.g. Jobs → New quote)
       if (preClientId) {
@@ -324,8 +358,10 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
       const newStatus = overrideStatus ?? statusRef.current
       const ls = linesRef.current
       const lineSubtotal = ls.reduce((s, l) => s + l.total, 0)
-      const lineVat = lineSubtotal * 0.15
-      const lineTotal = lineSubtotal + lineVat
+      const money = quoteMoney(lineSubtotal, vatOnRef.current, vatRateRef.current)
+      const lineVat = money.vat
+      const lineTotal = money.total
+      const rate = money.vatRate
 
       // Upsert quote header
       const payload: Record<string, unknown> = {
@@ -394,9 +430,9 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
             markup_percent:    0,
             subtotal_cost:     0,
             subtotal_sell:     l.total,
-            vat_rate:          0.15,
-            vat_amount:        l.total * 0.15,
-            line_total:        l.total * 1.15,
+            vat_rate:          rate,
+            vat_amount:        l.total * rate,
+            line_total:        l.total * (1 + rate),
             is_optional:       false,
             is_excluded:       false,
             item_type:         'material',
@@ -442,6 +478,11 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   }
   function updateJob(v: string | null) {
     setJobId(v); jobIdRef.current = v; scheduleAutoSave()
+  }
+  function updateVatOn(on: boolean) {
+    setVatOn(on)
+    vatOnRef.current = on
+    scheduleAutoSave()
   }
 
   // ── Line operations ────────────────────────────────────────────────────────
@@ -548,9 +589,14 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         unit_price: l.unit_price,
         total: l.total,
       })),
-      subtotal: linesRef.current.reduce((s, l) => s + l.total, 0),
-      vat: linesRef.current.reduce((s, l) => s + l.total, 0) * 0.15,
-      total: linesRef.current.reduce((s, l) => s + l.total, 0) * 1.15,
+      ...(() => {
+        const money = quoteMoney(
+          linesRef.current.reduce((s, l) => s + l.total, 0),
+          vatOnRef.current,
+          vatRateRef.current,
+        )
+        return { subtotal: money.subtotal, vat: money.vat, total: money.total, vatRate: money.vatRate }
+      })(),
     }
   }
 
@@ -721,8 +767,11 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
 
     const ls = linesRef.current.filter(l => l.description.trim() || l.total > 0)
     const lineSubtotal = ls.reduce((s, l) => s + l.total, 0)
-    const lineVat = lineSubtotal * 0.15
-    const lineTotal = lineSubtotal + lineVat
+    const money = quoteMoney(lineSubtotal, vatOnRef.current, vatRateRef.current)
+    const lineVat = money.vat
+    const lineTotal = money.total
+    const rate = money.vatRate
+    const taxType = rate > 0 ? 'standard' : 'exempt'
     const issue = new Date().toISOString().slice(0, 10)
 
     const { data: inv, error: invErr } = await supabase
@@ -738,13 +787,13 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         status: 'draft',
         currency: 'ZAR',
         subtotal: lineSubtotal,
-        vat_rate: 0.15,
+        vat_rate: rate,
         vat_amount: lineVat,
         total_amount: lineTotal,
         amount_paid: 0,
         balance_due: lineTotal,
         is_vat_inclusive: false,
-        tax_type: 'standard',
+        tax_type: taxType,
         issue_date: issue,
         due_date: null,
         created_by: eid,
@@ -764,7 +813,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
       const { error: lineErr } = await supabase.from('finance_invoice_lines').insert(
         ls.map((l, i) => {
           const sub = l.total
-          const vatAmt = sub * 0.15
+          const vatAmt = sub * rate
           return {
             company_id: cid,
             invoice_id: invId,
@@ -773,11 +822,11 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
             quantity: l.qty,
             unit_price: l.unit_price,
             subtotal: sub,
-            vat_rate: 0.15,
+            vat_rate: rate,
             vat_amount: vatAmt,
             total_amount: sub + vatAmt,
             is_vat_inclusive: false,
-            tax_type: 'standard',
+            tax_type: taxType,
           }
         }),
       )
@@ -821,8 +870,11 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
 
   // ── Computed totals ────────────────────────────────────────────────────────
   const subtotal = lines.reduce((s, l) => s + l.total, 0)
-  const vat      = subtotal * 0.15
-  const total    = subtotal + vat
+  const money = quoteMoney(subtotal, vatOn, vatRate)
+  const vat = money.vat
+  const total = money.total
+  const linkedProject = projects.find(p => p.id === dealId)
+  const linkedJob = jobs.find(j => j.id === jobId)
 
   // ── Client dropdown ────────────────────────────────────────────────────────
   const filteredClients = clients
@@ -923,22 +975,13 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
               <span className="material-icons text-[15px]">picture_as_pdf</span>
               PDF
             </button>
-            <button
-              type="button"
-              onClick={() => void handleCreateRfqFromQuote()}
-              disabled={saveState === 'saving' || rfqBusy}
-              className="h-9 px-4 rounded-lg border border-divider text-[13px] text-text-secondary font-medium hover:bg-surface-elevated transition-colors disabled:opacity-50"
-              title="Create a Supply RFQ from this quote’s lines"
-            >
-              {rfqBusy ? 'Opening RFQ…' : 'Create RFQ'}
-            </button>
             {status !== 'accepted' && status !== 'declined' && (
               <>
                 <button
                   type="button"
                   onClick={() => setShowSendModal(true)}
                   disabled={saveState === 'saving'}
-                  className="h-9 px-4 rounded-lg border border-divider text-[13px] text-text-secondary font-medium hover:bg-surface-elevated transition-colors disabled:opacity-50"
+                  className="h-9 px-4 rounded-lg bg-primary text-white text-[13px] font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
                 >
                   Send quote
                 </button>
@@ -946,10 +989,9 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
                   type="button"
                   onClick={() => setShowAcceptModal(true)}
                   disabled={saveState === 'saving'}
-                  className="h-9 px-5 rounded-lg bg-primary text-white text-[13px] font-medium hover:bg-primary/90 transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                  className="h-9 px-4 rounded-lg border border-divider text-[13px] text-text-secondary font-medium hover:bg-surface-elevated transition-colors disabled:opacity-50"
                 >
                   Mark accepted
-                  <span className="material-icons text-[15px]">check</span>
                 </button>
               </>
             )}
@@ -1087,24 +1129,23 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         </div>
 
         {/* ── Optional project / job link ── */}
-        <div className="rounded-xl border border-divider bg-surface overflow-hidden">
-          <button
-            type="button"
-            onClick={() => setLinkOpen(v => !v)}
-            className="w-full flex items-center justify-between px-5 py-3 text-left hover:bg-surface-elevated transition-colors"
-          >
-            <div>
-              <p className="text-[13px] font-medium text-text-primary">Link to project or job</p>
-              <p className="text-[11px] text-text-secondary mt-0.5">
-                Optional — leave blank for a plain inventory or services sale
-              </p>
-            </div>
-            <span className="material-icons text-text-secondary text-[20px]">
-              {linkOpen ? 'expand_less' : 'expand_more'}
-            </span>
-          </button>
+        <div>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]">
+            <button
+              type="button"
+              onClick={() => setLinkOpen(v => !v)}
+              className="text-primary font-medium hover:underline"
+            >
+              {linkOpen ? 'Hide project and job' : 'Link a project or job'}
+            </button>
+            {!linkOpen && (linkedProject || linkedJob) && (
+              <span className="text-text-secondary">
+                {[linkedProject?.title, linkedJob?.title].filter(Boolean).join(' · ')}
+              </span>
+            )}
+          </div>
           {linkOpen && (
-            <div className="px-5 pb-5 grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-divider pt-4">
+            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-[11px] text-text-secondary uppercase tracking-wide mb-1.5">
                   Project
@@ -1204,17 +1245,47 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
 
         {/* ── Totals ── */}
         <div className="flex justify-end">
-          <div className="w-72 rounded-xl border border-divider overflow-hidden">
+          <div className="w-full max-w-md rounded-xl border border-divider overflow-hidden">
             <div className="flex justify-between items-center px-5 py-3 border-b border-divider">
-              <span className="text-[13px] text-text-secondary">Subtotal (excl. VAT)</span>
+              <span className="text-[13px] text-text-secondary">{vatOn ? 'Subtotal (excl. VAT)' : 'Subtotal'}</span>
               <span className="text-[13px] text-text-primary font-medium tabular-nums">{fmtR(subtotal)}</span>
             </div>
-            <div className="flex justify-between items-center px-5 py-3 border-b border-divider">
-              <span className="text-[13px] text-text-secondary">VAT (15%)</span>
-              <span className="text-[13px] text-text-primary tabular-nums">{fmtR(vat)}</span>
+            <div className="flex justify-between items-center gap-3 px-5 py-3 border-b border-divider">
+              <span className="text-[13px] text-text-secondary">
+                {vatOn ? `VAT (${vatPercentLabel(vatRate)}%)` : 'VAT'}
+              </span>
+              <div className="flex items-center gap-2">
+                <div className="flex rounded-lg border border-divider overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => updateVatOn(true)}
+                    className={cn(
+                      'h-7 px-2.5 text-[12px] font-medium',
+                      vatOn ? 'bg-primary text-white' : 'text-text-secondary hover:bg-surface-elevated',
+                    )}
+                  >
+                    VAT on
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => updateVatOn(false)}
+                    className={cn(
+                      'h-7 px-2.5 text-[12px] font-medium',
+                      !vatOn ? 'bg-primary text-white' : 'text-text-secondary hover:bg-surface-elevated',
+                    )}
+                  >
+                    No VAT
+                  </button>
+                </div>
+                <span className="text-[13px] text-text-primary tabular-nums w-24 text-right">
+                  {vatOn ? fmtR(vat) : '—'}
+                </span>
+              </div>
             </div>
             <div className="flex justify-between items-center px-5 py-4 bg-surface-elevated">
-              <span className="text-[14px] text-text-primary font-semibold">Total (incl. VAT)</span>
+              <span className="text-[14px] text-text-primary font-semibold">
+                {vatOn ? 'Total (incl. VAT)' : 'Total'}
+              </span>
               <span className="text-[15px] text-text-primary font-bold tabular-nums">{fmtR(total)}</span>
             </div>
           </div>
@@ -1234,6 +1305,20 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
             placeholder="Payment terms, warranty, scope exclusions…"
             className="w-full px-4 py-3 text-[13px] text-text-primary bg-surface resize-none focus:outline-none placeholder-text-secondary/40"
           />
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-[13px] text-text-secondary">
+            Ask suppliers what they will charge for these lines.
+          </p>
+          <button
+            type="button"
+            onClick={() => void handleCreateRfqFromQuote()}
+            disabled={saveState === 'saving' || rfqBusy}
+            className="h-8 px-3 rounded-lg border border-divider text-[12px] text-text-secondary font-medium hover:bg-surface-elevated transition-colors disabled:opacity-50"
+          >
+            {rfqBusy ? 'Opening RFQ…' : 'Create RFQ'}
+          </button>
         </div>
 
       </div>
@@ -1411,7 +1496,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
                   onClick={() => void handleCreateRfqFromQuote()}
                   className="h-10 px-4 rounded-lg border border-divider text-left text-[13px] font-medium text-text-primary hover:bg-surface-elevated transition-colors disabled:opacity-50"
                 >
-                  Create RFQ
+                  Ask suppliers for prices
                 </button>
               )}
               <button

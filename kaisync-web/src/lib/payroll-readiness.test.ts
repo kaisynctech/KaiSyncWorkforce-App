@@ -79,6 +79,29 @@ describe('isEligibleForPeriod / buildPayrollGeneratePreview', () => {
     )
     expect(preview.refreshCount).toBe(1)
     expect(preview.duplicateCount).toBe(0)
-    expect(preview.readyCount).toBe(1)
+    expect(preview.readyCount).toBe(2)
+    expect(preview.missingRatesCount).toBe(1)
+    expect(preview.detailLines.some(line => line.startsWith('Bob') && line.includes('no pay rate'))).toBe(true)
+  })
+
+  it('still creates a payslip for an employee who has no pay rate yet', () => {
+    expect(
+      isEligibleForPeriod(
+        { ...base, monthly_salary: 0, hourly_rate: 0, daily_rate: 0 },
+        '2026-08-01',
+        '2026-08-31'
+      )
+    ).toBe(true)
+  })
+
+  it('keeps a contractor with no rate off the employee roster note', () => {
+    const preview = buildPayrollGeneratePreview(
+      [{ ...base, id: 'c1', name: 'Cara', worker_type: 'contractor', monthly_salary: 0, hourly_rate: 0, daily_rate: 0 }],
+      '2026-08-01',
+      '2026-08-31',
+      new Set()
+    )
+    expect(preview.missingRatesCount).toBe(0)
+    expect(preview.detailLines).toHaveLength(0)
   })
 })
