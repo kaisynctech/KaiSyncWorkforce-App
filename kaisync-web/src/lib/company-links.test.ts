@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { groupLinks, inviteUrl, linkErrorMessage, myRecordNoun, relationWords, statusWords, type CompanyLink } from './company-links'
+import { groupLinks, startTab, inviteUrl, linkErrorMessage, myRecordNoun, relationWords, statusWords, type CompanyLink } from './company-links'
 
 describe('company links words', () => {
   it('builds the invite address from the site and token', () => {
@@ -50,5 +50,11 @@ describe('Clients and Contractors tabs', () => {
     expect(g.waiting).toEqual([])
     expect(g.open.map(l => l.id)).toEqual(['3', '5'])
     expect(g.ended.map(l => l.id)).toEqual(['4'])
+  })
+
+  it('opens the tab that needs attention first', () => {
+    expect(startTab(links)).toBe('clients')
+    expect(startTab(links.filter(l => l.my_role === 'customer'))).toBe('contractors')
+    expect(startTab([])).toBe('clients')
   })
 })

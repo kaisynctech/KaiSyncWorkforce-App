@@ -1,12 +1,12 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { SearchPicker } from '@/components/SearchPicker'
 import {
-  decideLink, disconnectLink, groupLinks, listLinks, myRecordNoun, myUnlinkedRecords, relationWords, statusWords,
+  decideLink, disconnectLink, groupLinks, startTab, listLinks, myRecordNoun, myUnlinkedRecords, relationWords, statusWords,
   type CompanyLink, type LinkTab,
 } from '@/lib/company-links'
 
@@ -31,6 +31,7 @@ export default function LinkedCompaniesPage() {
   const [chosen, setChosen] = useState('')
   const [showEnded, setShowEnded] = useState(false)
   const [tab, setTab] = useState<LinkTab>('clients')
+  const tabChosen = useRef(false)
 
   const load = useCallback(async () => {
     const supabase = createClient()
@@ -38,7 +39,12 @@ export default function LinkedCompaniesPage() {
     if (!member) { setError('Your account is not linked to a company.'); setLoading(false); return }
     setCompanyId(member.companyId)
     const res = await listLinks(supabase, member.companyId)
-    if (!res.ok) { setError(res.message); setLinks([]) } else { setError(null); setLinks(res.data) }
+    if (!res.ok) { setError(res.message); setLinks([]) } else {
+      setError(null)
+      setLinks(res.data)
+      // First visit: open the tab that needs attention, or the one that has companies.
+      if (!tabChosen.current) setTab(startTab(res.data))
+    }
     setLoading(false)
   }, [])
 
@@ -156,7 +162,7 @@ export default function LinkedCompaniesPage() {
                 key={t.id}
                 role="tab"
                 aria-selected={active}
-                onClick={() => { setTab(t.id); setAccepting(null); setShowEnded(false) }}
+                onClick={() => { tabChosen.current = true; setTab(t.id); setAccepting(null); setShowEnded(false) }}
                 className={`px-4 py-2 -mb-px border-b-2 text-[13px] inline-flex items-center gap-2 ${active ? 'border-primary text-primary font-semibold' : 'border-transparent text-text-secondary hover:text-text-primary'}`}
               >
                 {t.label}

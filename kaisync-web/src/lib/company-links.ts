@@ -172,3 +172,13 @@ export function groupLinks(links: CompanyLink[], tab: LinkTab) {
     ended: mine.filter(l => l.status === 'declined' || l.status === 'disconnected'),
   }
 }
+
+/** The tab to open first: one with a request waiting for you, else one with companies, else Clients. */
+export function startTab(links: CompanyLink[]): LinkTab {
+  const c = groupLinks(links, 'clients')
+  const k = groupLinks(links, 'contractors')
+  if (c.waiting.length) return 'clients'
+  if (k.waiting.length) return 'contractors'
+  if (!c.open.length && k.open.length) return 'contractors'
+  return 'clients'
+}
