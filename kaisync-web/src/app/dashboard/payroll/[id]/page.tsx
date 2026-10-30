@@ -23,6 +23,7 @@ import { companyLetterhead } from '@/lib/letterhead'
 import { executeWithStepUp } from '@/lib/step-up'
 import { StepUpDialog } from '@/components/step-up-dialog'
 import { isUnpaidLeave } from '@/lib/payroll/leave-days'
+import { payableOvertimeHours } from '@/lib/payroll/overtime-late-offset'
 import { calculateMonthlyPaye, type PayeAllowances } from '@/lib/payroll/sars-paye'
 import { computeLeaveSummary, type LeaveSummary } from '@/lib/leave-policy'
 import { loadPayrollSettings } from '@/lib/payroll-settings'
@@ -215,31 +216,41 @@ function absencePayWasChosen(audit: PayrollAuditEntry[] | null | undefined): boo
   return (audit ?? []).some(entry => (entry.detail ?? '').includes('absence pay'))
 }
 
-function SessionTable({ rows, payForDate, calculationForRow, totalLabel, totalValue }: {
+const dayCell = 'px-1.5 py-[3px] text-[11px] leading-4 whitespace-nowrap align-middle'
+const dayHead = 'px-1.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-text-secondary whitespace-nowrap bg-surface-elevated'
+
+function SessionTable({ rows, payForDate, calculationForRow, totalLabel, totalValue, lateOffset }: {
   rows: PunchSessionRow[]
   payForDate?: (row: PunchSessionRow) => ReactNode
   calculationForRow?: (row: PunchSessionRow) => string
   totalLabel?: string
   totalValue?: string
+  lateOffset?: {
+    checked: (row: PunchSessionRow) => boolean
+    onChange: (row: PunchSessionRow, checked: boolean) => void
+    hoursFor: (row: PunchSessionRow) => number
+    disabled: boolean
+  }
 }) {
-  if (rows.length === 0) return <p className="text-[13px] text-text-secondary">None in this month.</p>
-  const columnCount = 9 + (payForDate ? 1 : 0) + (calculationForRow ? 1 : 0)
+  if (rows.length === 0) return <p className="text-[12px] text-text-secondary">None in this month.</p>
+  const columnCount = 9 + (payForDate ? 1 : 0) + (calculationForRow ? 1 : 0) + (lateOffset ? 1 : 0)
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-[13px]" style={{ minWidth: calculationForRow ? 1180 : payForDate ? 1080 : 980 }}>
-        <thead>
-          <tr className="border-b border-divider bg-surface-elevated">
-            {payForDate && <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Pay</th>}
-            <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Date</th>
-            <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Time In</th>
-            <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">In Location</th>
-            <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Time Out</th>
-            <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Out Location</th>
-            <th className="text-right px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Reg</th>
-            <th className="text-right px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">OT</th>
-            <th className="text-right px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Total</th>
-            {calculationForRow && <th className="text-right px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Calculation</th>}
-            <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Notes</th>
+      <table className="w-full" style={{ minWidth: (calculationForRow ? 980 : payForDate ? 860 : 760) + (lateOffset ? 120 : 0) }}>
+        <thead className="sticky top-0 z-10">
+          <tr className="border-b border-divider">
+            {payForDate && <th className={`${dayHead} text-left`}>Pay</th>}
+            <th className={`${dayHead} text-left`}>Date</th>
+            <th className={`${dayHead} text-left`}>Time in</th>
+            <th className={`${dayHead} text-left`}>In location</th>
+            <th className={`${dayHead} text-left`}>Time out</th>
+            <th className={`${dayHead} text-left`}>Out location</th>
+            <th className={`${dayHead} text-right`}>Reg</th>
+            <th className={`${dayHead} text-right`}>OT</th>
+            {lateOffset && <th className={`${dayHead} text-left`}>Late</th>}
+            <th className={`${dayHead} text-right`}>Total</th>
+            {calculationForRow && <th className={`${dayHead} text-right`}>Calculation</th>}
+            <th className={`${dayHead} text-left`}>Notes</th>
           </tr>
         </thead>
         <tbody>
@@ -248,11 +259,12 @@ function SessionTable({ rows, payForDate, calculationForRow, totalLabel, totalVa
             const late = lateFlag(row)
             const early = earlyFlag(row)
             const notes = [late, early, row.notes ?? row.statusNote ?? ''].filter(Boolean).join(' · ')
+            const overtimeShown = lateOffset ? lateOffset.hoursFor(row) : row.overtimeHours
             return (
               <tr key={`${row.clockInPunchId ?? row.clockIn.toISOString()}-${kind}`} className="border-b border-divider last:border-0">
-                {payForDate && <td className="px-4 py-3 whitespace-nowrap">{payForDate(row)}</td>}
-                <td className="px-4 py-3 text-text-secondary whitespace-nowrap">{fmtSessionDate(row.clockIn)}</td>
-                <td className={`px-4 py-3 font-medium whitespace-nowrap ${
+                {payForDate && <td className={dayCell}>{payForDate(row)}</td>}
+                <td className={`${dayCell} text-text-secondary`}>{fmtSessionDate(row.clockIn)}</td>
+                <td className={`${dayCell} font-medium ${
                   row.isAbsentDay ? 'text-error' : row.isLeaveDay ? 'text-warning' : row.isLate ? 'text-error' : 'text-success'
                 }`}>
                   {fmtSessionTime(row.clockIn, kind)}
@@ -261,35 +273,58 @@ function SessionTable({ rows, payForDate, calculationForRow, totalLabel, totalVa
                   )}
                   {late && <span className="block text-[10px] text-error font-semibold">{late}</span>}
                 </td>
-                <td className="px-4 py-3 text-text-secondary max-w-[160px] truncate">
-                  {row.isAbsentDay || row.isLeaveDay ? '—' : locationDisplay(row.clockInAddress, row.clockInLat, row.clockInLng, row.notes)}
+                <td className={`${dayCell} text-text-secondary`}>
+                  <span className="block max-w-[140px] truncate">
+                    {row.isAbsentDay || row.isLeaveDay ? '—' : locationDisplay(row.clockInAddress, row.clockInLat, row.clockInLng, row.notes)}
+                  </span>
                 </td>
-                <td className="px-4 py-3 text-text-primary whitespace-nowrap">
+                <td className={`${dayCell} text-text-primary`}>
                   {fmtSessionOut(row)}
                   {early && <span className="block text-[10px] text-warning font-semibold">{early}</span>}
                 </td>
-                <td className="px-4 py-3 text-text-secondary max-w-[160px] truncate">
-                  {row.isAbsentDay || row.isLeaveDay ? '—' : locationDisplay(row.clockOutAddress, row.clockOutLat, row.clockOutLng, row.notes)}
+                <td className={`${dayCell} text-text-secondary`}>
+                  <span className="block max-w-[140px] truncate">
+                    {row.isAbsentDay || row.isLeaveDay ? '—' : locationDisplay(row.clockOutAddress, row.clockOutLat, row.clockOutLng, row.notes)}
+                  </span>
                 </td>
-                <td className="px-4 py-3 text-right text-text-primary">{row.regularHours.toFixed(1)}</td>
-                <td className="px-4 py-3 text-right text-warning font-medium">
-                  {row.overtimeHours > 0 ? row.overtimeHours.toFixed(1) : '—'}
+                <td className={`${dayCell} text-right text-text-primary`}>{row.regularHours.toFixed(1)}</td>
+                <td className={`${dayCell} text-right text-warning font-medium`}>
+                  {overtimeShown > 0 ? overtimeShown.toFixed(1) : lateOffset && row.overtimeHours > 0 ? '0.0' : '—'}
                 </td>
-                <td className="px-4 py-3 text-right font-semibold text-text-primary">{totalHrsDisplay(row)}</td>
-                {calculationForRow && (
-                  <td className="px-4 py-3 text-right text-text-primary whitespace-nowrap">{calculationForRow(row)}</td>
+                {lateOffset && (
+                  <td className={dayCell}>
+                    {row.lateMinutes > 0 ? (
+                      <label className="inline-flex items-center gap-1 text-[11px] text-text-primary">
+                        <input
+                          type="checkbox"
+                          checked={lateOffset.checked(row)}
+                          disabled={lateOffset.disabled}
+                          onChange={event => lateOffset.onChange(row, event.target.checked)}
+                        />
+                        Subtract {(row.lateMinutes / 60).toFixed(1)}h
+                      </label>
+                    ) : (
+                      <span className="text-text-disabled">—</span>
+                    )}
+                  </td>
                 )}
-                <td className="px-4 py-3">
-                  <AttendanceNote note={notes} context={fmtSessionDate(row.clockIn)} />
+                <td className={`${dayCell} text-right font-semibold text-text-primary`}>{totalHrsDisplay(row)}</td>
+                {calculationForRow && (
+                  <td className={`${dayCell} text-right text-text-primary`}>{calculationForRow(row)}</td>
+                )}
+                <td className={dayCell}>
+                  <span className="block max-w-[160px] truncate">
+                    <AttendanceNote note={notes} context={fmtSessionDate(row.clockIn)} />
+                  </span>
                 </td>
               </tr>
             )
           })}
           {totalLabel && totalValue && (
             <tr className="border-t border-divider bg-surface-elevated">
-              <td className="px-4 py-3 font-semibold text-text-primary" colSpan={columnCount - (calculationForRow ? 2 : 1)}>{totalLabel}</td>
-              {calculationForRow && <td className="px-4 py-3 text-right font-semibold text-text-primary whitespace-nowrap">{totalValue}</td>}
-              <td className="px-4 py-3" />
+              <td className={`${dayCell} font-semibold text-text-primary`} colSpan={columnCount - (calculationForRow ? 2 : 1)}>{totalLabel}</td>
+              {calculationForRow && <td className={`${dayCell} text-right font-semibold text-text-primary`}>{totalValue}</td>}
+              <td className={dayCell} />
             </tr>
           )}
         </tbody>
@@ -320,6 +355,7 @@ export default function PayslipDetailPage() {
   const [payeAllowances, setPayeAllowances] = useState<PayeAllowances>({})
   const [companyTimezone, setCompanyTimezone] = useState('Africa/Johannesburg')
   const [unpaidAbsenceDates, setUnpaidAbsenceDates] = useState<string[]>([])
+  const [overtimeLateOffsetDates, setOvertimeLateOffsetDates] = useState<string[]>([])
   const autoApplied = useRef<string | null>(null)
   const absenceExplicit = useRef(false)
   const [weekdayHours, setWeekdayHours] = useState<string | null>(null)
@@ -789,6 +825,8 @@ export default function PayslipDetailPage() {
     const savedDates = (savedLines as { unpaidAbsenceDates?: unknown } | null)?.unpaidAbsenceDates
     absenceExplicit.current = Array.isArray(savedDates)
     setUnpaidAbsenceDates(absenceExplicit.current ? (savedDates as unknown[]).filter((day): day is string => typeof day === 'string') : [])
+    const savedOffset = (savedLines as { overtimeLateOffsetDates?: unknown } | null)?.overtimeLateOffsetDates
+    setOvertimeLateOffsetDates(Array.isArray(savedOffset) ? (savedOffset as unknown[]).filter((day): day is string => typeof day === 'string') : [])
 
     setLoading(false)
   }
@@ -868,6 +906,24 @@ export default function PayslipDetailPage() {
     if (!saved) return
     setEmploymentDateText(fmtDmy(iso))
     setPersonPay(current => ({ ...current, employment_date: iso }))
+  }
+
+  async function saveMonthlySalary(next: string) {
+    const amount = moneyValue(next)
+    setSalaryInput(moneyText(amount))
+    if (!payment || payment.status !== 'pending') {
+      const saved = await saveEmployee({ monthly_salary: amount })
+      if (!saved) {
+        setSalaryInput(moneyText(personPay.monthly_salary))
+        return
+      }
+      setPersonPay(current => ({ ...current, monthly_salary: amount }))
+      return
+    }
+    const nextLines = { ...lines, regular: moneyText(amount) }
+    setLines(nextLines)
+    setPersonPay(current => ({ ...current, monthly_salary: amount }))
+    await saveLines(nextLines)
   }
 
   async function saveHourlyRate(next: string) {
@@ -979,7 +1035,7 @@ export default function PayslipDetailPage() {
 
   async function saveLines(
     next: SlipLines,
-    flags?: { payFull?: boolean; waive?: boolean; unpaidAbsenceDates?: string[] },
+    flags?: { payFull?: boolean; waive?: boolean; unpaidAbsenceDates?: string[]; overtimeLateOffsetDates?: string[] },
     extras?: { earnings: PayslipExtraLine[]; deductions: PayslipExtraLine[]; meibcApplied: boolean },
   ) {
     if (!payment || payment.status !== 'pending') return
@@ -999,6 +1055,7 @@ export default function PayslipDetailPage() {
       loanBalance: moneyValue(next.loanBalance),
       unpaidLeave: moneyValue(next.unpaidLeave),
       unpaidAbsenceDates: flags?.unpaidAbsenceDates ?? unpaidAbsenceDates,
+      overtimeLateOffsetDates: flags?.overtimeLateOffsetDates ?? overtimeLateOffsetDates,
       extraEarnings: extra.earnings,
       extraDeductions: extra.deductions,
       meibcApplied: extra.meibcApplied,
@@ -1048,17 +1105,21 @@ export default function PayslipDetailPage() {
     setUnpaidAbsenceDates(dates)
     setWaivePenalties(payAll)
     setLines(nextLines)
-    void saveLines(nextLines, { waive: payAll, unpaidAbsenceDates: dates })
+    void saveLines(nextLines, { waive: payAll, unpaidAbsenceDates: dates, overtimeLateOffsetDates })
   }
 
   useEffect(() => {
     if (loading || daysLoading || !payment || payment.status !== 'pending') return
     const rate = moneyValue(overtimeRateText)
-    const hours = days
-      .filter(day => !day.isAbsentDay && !day.isLeaveDay && !day.isOpen)
-      .reduce((sum, day) => sum + day.overtimeHours, 0)
+    const closedDays = days.filter(day => !day.isAbsentDay && !day.isLeaveDay && !day.isOpen)
+    const rawHours = closedDays.reduce((sum, day) => sum + day.overtimeHours, 0)
+    const hours = closedDays.reduce((sum, day) => (
+      sum + payableOvertimeHours(day.overtimeHours, day.lateMinutes, overtimeLateOffsetDates.includes(dayKey(day)))
+    ), 0)
     const otAmount = hours > 0 && rate > 0 ? Math.round(hours * rate * 100) / 100 : 0
-    const syncKey = `${payment.id}|${otAmount}`
+    const offsetKey = [...overtimeLateOffsetDates].sort().join(',')
+    const syncKey = `${payment.id}|${otAmount}|${offsetKey}`
+    const offsetChangedPay = Math.abs(hours - rawHours) >= 0.005
     if (autoApplied.current === syncKey) return
     const saved = (payment as EmployeePayment & { payslip_lines?: Partial<PayslipLineAmounts> | null }).payslip_lines
     let next = { ...lines }
@@ -1072,7 +1133,7 @@ export default function PayslipDetailPage() {
         changed = true
       }
     }
-    if (otAmount > 0 && Math.abs(moneyValue(next.overtime) - otAmount) >= 0.01) {
+    if ((otAmount > 0 || offsetChangedPay) && Math.abs(moneyValue(next.overtime) - otAmount) >= 0.01) {
       next = { ...next, overtime: moneyText(otAmount) }
       changed = true
     }
@@ -1093,11 +1154,12 @@ export default function PayslipDetailPage() {
       next = { ...next, paye: moneyText(paye) }
       changed = true
     }
+    const offsetPersisted = Boolean(autoApplied.current?.startsWith(`${payment.id}|`) && !autoApplied.current.endsWith(`|${offsetKey}`))
     autoApplied.current = syncKey
-    if (!changed) return
+    if (!changed && !offsetPersisted) return
     setLines(next)
-    void saveLines(next, { unpaidAbsenceDates: dates, waive: dates.length === 0 })
-  }, [loading, daysLoading, days, payment, lines, overtimeRateText, dateOfBirth, payeAllowances, unpaidAbsenceDates, waivePenalties])
+    void saveLines(next, { unpaidAbsenceDates: dates, overtimeLateOffsetDates, waive: dates.length === 0 })
+  }, [loading, daysLoading, days, payment, lines, overtimeRateText, dateOfBirth, payeAllowances, unpaidAbsenceDates, overtimeLateOffsetDates, waivePenalties])
 
   async function downloadPdf() {
     if (!payment) return
@@ -1206,13 +1268,32 @@ export default function PayslipDetailPage() {
   const overtimeHourlyRate = moneyValue(overtimeRateText)
   const hourlyRateNow = moneyValue(hourlyRateText)
   const overtimeUsesFactor = Math.abs(overtimeHourlyRate - Math.round(hourlyRateNow * overtimeFactor * 100) / 100) < 0.02
+  const payableHours = (row: PunchSessionRow) => payableOvertimeHours(
+    row.overtimeHours,
+    row.lateMinutes,
+    overtimeLateOffsetDates.includes(dayKey(row)),
+  )
   const overtimeLinePay = (hours: number) => Math.round(hours * overtimeHourlyRate * 100) / 100
-  const overtimeTotalPay = Math.round(overtimeRows.reduce((sum, row) => sum + overtimeLinePay(row.overtimeHours), 0) * 100) / 100
-  const overtimeCalculation = (hours: number) => {
-    const amount = overtimeLinePay(hours)
-    const hourText = String(Math.round(hours * 100) / 100)
-    if (overtimeUsesFactor) return `${hourText}h × ${overtimeFactor} × ${fmtR(hourlyRateNow)} = ${fmtR(amount)}`
-    return `${hourText}h × ${fmtR(overtimeHourlyRate)} = ${fmtR(amount)}`
+  const overtimeTotalPay = Math.round(overtimeRows.reduce((sum, row) => sum + overtimeLinePay(payableHours(row)), 0) * 100) / 100
+  const overtimeCalculation = (row: PunchSessionRow) => {
+    const payable = payableHours(row)
+    const amount = overtimeLinePay(payable)
+    const hourText = String(Math.round(payable * 100) / 100)
+    const lateHours = Math.round((row.lateMinutes / 60) * 100) / 100
+    const offset = overtimeLateOffsetDates.includes(dayKey(row)) && row.lateMinutes > 0 && payable !== row.overtimeHours
+    const prefix = offset ? `${String(Math.round(row.overtimeHours * 100) / 100)}h − ${lateHours}h late → ` : ''
+    if (overtimeUsesFactor) return `${prefix}${hourText}h × ${overtimeFactor} × ${fmtR(hourlyRateNow)} = ${fmtR(amount)}`
+    return `${prefix}${hourText}h × ${fmtR(overtimeHourlyRate)} = ${fmtR(amount)}`
+  }
+  const payableOvertimeTotal = days
+    .filter(day => !day.isAbsentDay && !day.isLeaveDay && !day.isOpen)
+    .reduce((sum, day) => sum + payableHours(day), 0)
+  function toggleLateOffset(row: PunchSessionRow, on: boolean) {
+    const date = dayKey(row)
+    const nextDates = on
+      ? Array.from(new Set([...overtimeLateOffsetDates, date]))
+      : overtimeLateOffsetDates.filter(item => item !== date)
+    setOvertimeLateOffsetDates(nextDates)
   }
   const absentRows = days.filter(day => day.isAbsentDay)
   const leaveDayRows = days.filter(day => day.isLeaveDay)
@@ -1393,27 +1474,82 @@ export default function PayslipDetailPage() {
               </tr>
               <tr className="bg-surface-card">
                 <td className="data-td text-text-primary text-[13px]">Overtime hours</td>
-                <td className="data-td text-right text-[13px]">{(daysLoading ? (payment.overtime_hours ?? 0) : days.filter(day => !day.isAbsentDay && !day.isLeaveDay && !day.isOpen).reduce((sum, day) => sum + day.overtimeHours, 0)).toFixed(1)}h</td>
+                <td className="data-td text-right text-[13px]">{(daysLoading ? (payment.overtime_hours ?? 0) : payableOvertimeTotal).toFixed(1)}h</td>
               </tr>
             </tbody>
           </table>
         </div>
 
-        <div className="card p-4 space-y-3">
+        <div className="card px-3 py-2 flex flex-wrap items-center gap-x-4 gap-y-2">
+          <label className="flex items-center gap-1.5 text-[11px] text-text-secondary">
+            Salary
+            <span className="text-text-primary">R</span>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={salaryInput}
+              disabled={!canEdit}
+              onChange={e => setSalaryInput(e.target.value)}
+              onBlur={e => { void saveMonthlySalary(e.target.value) }}
+              aria-label="Salary"
+              className="h-7 w-28 rounded-md border border-border bg-surface-elevated px-2 text-[12px] text-text-primary outline-none disabled:opacity-60"
+            />
+          </label>
+          <label className="flex items-center gap-1.5 text-[11px] text-text-secondary">
+            Hourly rate
+            <span className="text-text-primary">R</span>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={hourlyRateText}
+              disabled={!canEdit}
+              onChange={e => setHourlyRateText(e.target.value)}
+              onBlur={e => { void saveHourlyRate(e.target.value) }}
+              aria-label="Hourly rate"
+              className="h-7 w-24 rounded-md border border-border bg-surface-elevated px-2 text-[12px] text-text-primary outline-none disabled:opacity-60"
+            />
+          </label>
+          <label className="flex items-center gap-1.5 text-[11px] text-text-secondary">
+            Overtime rate
+            <span className="text-text-primary">R</span>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={overtimeRateText}
+              disabled={!canEdit}
+              onChange={e => setOvertimeRateText(e.target.value)}
+              onBlur={e => { void saveOvertimeRate(e.target.value) }}
+              aria-label="Overtime rate"
+              className="h-7 w-24 rounded-md border border-border bg-surface-elevated px-2 text-[12px] text-text-primary outline-none disabled:opacity-60"
+            />
+            <span className="text-text-disabled">per hour</span>
+          </label>
+        </div>
+
+        <div className="card px-3 py-2 space-y-2">
           <div>
             <p className="section-label">OVERTIME</p>
-            <p className="text-[12px] text-text-secondary mt-1">
+            <p className="text-[11px] text-text-secondary mt-1">
               {daysLoading
                 ? 'Loading this pay period…'
-                : `${overtimeRows.length} day${overtimeRows.length === 1 ? '' : 's'} with overtime. Rate ${overtimeFactor} · ${fmtR(overtimeHourlyRate)} per hour.`}
+                : `${overtimeRows.length} day${overtimeRows.length === 1 ? '' : 's'} with overtime. Tick Subtract on a late day to take that lateness off the overtime.`}
             </p>
           </div>
           {!daysLoading && (
             <SessionTable
               rows={overtimeRows}
-              calculationForRow={row => overtimeCalculation(row.overtimeHours)}
+              calculationForRow={overtimeCalculation}
               totalLabel="Total overtime"
               totalValue={fmtR(overtimeTotalPay)}
+              lateOffset={{
+                checked: row => overtimeLateOffsetDates.includes(dayKey(row)),
+                onChange: toggleLateOffset,
+                hoursFor: payableHours,
+                disabled: !canEdit,
+              }}
             />
           )}
         </div>
@@ -1585,15 +1721,8 @@ export default function PayslipDetailPage() {
               <tbody>
                 <tr className="border-b border-divider">
                   <td className="py-2 pr-3 text-[13px] text-text-secondary whitespace-nowrap w-[168px]">Employee name</td>
-                  <td className="py-2 pr-4">
+                  <td className="py-2 pr-4" colSpan={3}>
                     <input type="text" value={fullName} onChange={e => setFullName(e.target.value)} onBlur={e => { void saveName(e.target.value) }} placeholder="Name and surname" className={slipField} />
-                  </td>
-                  <td className="py-2 pr-3 pl-4 text-[13px] text-text-secondary whitespace-nowrap border-l border-divider w-[150px]">Rate</td>
-                  <td className="py-2 w-[11rem]">
-                    <span className="inline-flex items-center gap-1 w-full">
-                      <span className="text-[13px] text-text-secondary">R</span>
-                      <input type="number" min="0" step="0.01" value={hourlyRateText} onChange={e => setHourlyRateText(e.target.value)} onBlur={e => { void saveHourlyRate(e.target.value) }} placeholder="0.00" className={slipField} />
-                    </span>
                   </td>
                 </tr>
                 <tr className="border-b border-divider">
@@ -1620,15 +1749,8 @@ export default function PayslipDetailPage() {
                 </tr>
                 <tr className="border-b border-divider">
                   <td className="py-2 pr-3 text-[13px] text-text-secondary whitespace-nowrap">Employment date</td>
-                  <td className="py-2 pr-4">
+                  <td className="py-2 pr-4" colSpan={3}>
                     <input type="text" value={employmentDateText} onChange={e => setEmploymentDateText(e.target.value)} onBlur={e => { void saveEmploymentDate(e.target.value) }} placeholder="01-10-2026" className={slipField} />
-                  </td>
-                  <td className="py-2 pr-3 pl-4 text-[13px] text-text-secondary whitespace-nowrap border-l border-divider">Overtime rate</td>
-                  <td className="py-2">
-                    <span className="inline-flex items-center gap-1 w-full">
-                      <span className="text-[13px] text-text-secondary">R</span>
-                      <input type="number" min="0" step="0.01" value={overtimeRateText} onChange={e => setOvertimeRateText(e.target.value)} onBlur={e => { void saveOvertimeRate(e.target.value) }} placeholder="0.00" className={slipField} />
-                    </span>
                   </td>
                 </tr>
                 <tr className="border-b border-divider">
