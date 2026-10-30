@@ -416,7 +416,7 @@ export default function Sidebar({
     const { revokeCodeSession } = await import('@/lib/auth/session')
     const { clearAllAuthLocalState } = await import('@/lib/auth/code-session')
     await revokeCodeSession(supabase)
-    await supabase.auth.signOut()
+    await supabase.auth.signOut({ scope: 'local' })
     clearAllAuthLocalState()
     router.push('/auth/id-entry')
     router.refresh()

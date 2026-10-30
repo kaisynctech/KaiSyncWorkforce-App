@@ -80,7 +80,7 @@ export async function signInWithCode(
   if (user) {
     const linked = await getCurrentJwtEmployee(supabase)
     if (!linked || linked.id !== session.employee_id) {
-      await supabase.auth.signOut()
+      await supabase.auth.signOut({ scope: 'local' })
     }
   }
   return session

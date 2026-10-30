@@ -141,7 +141,7 @@ export default function IdEntryPage() {
       }
       if (!employee) {
         setError('No account found for this email. Contact your administrator.')
-        await supabase.auth.signOut()
+        await supabase.auth.signOut({ scope: 'local' })
         return
       }
 

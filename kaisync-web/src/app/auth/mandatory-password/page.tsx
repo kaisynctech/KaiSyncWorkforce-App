@@ -120,7 +120,7 @@ export default function MandatoryPasswordPage() {
           disabled={loading}
           onClick={async () => {
             const supabase = createClient()
-            await supabase.auth.signOut()
+            await supabase.auth.signOut({ scope: 'local' })
             router.replace(AUTH_ROUTES.idEntry)
           }}
           className="w-full text-center text-[13px] text-slate-400 hover:text-slate-200 transition-colors"
