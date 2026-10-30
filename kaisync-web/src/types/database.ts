@@ -164,7 +164,7 @@ export interface Client {
   id: string
   company_id: string
   name: string
-  /** Set while this client is joined to its own KaiSync company (Linked companies). */
+  /** Another KaiSync company this record stands for (also used by the platform billing link; for Linked companies use company_link_list). */
   linked_company_id?: string | null
   client_code: string | null
   portal_enabled?: boolean | null
@@ -448,7 +448,7 @@ export interface Contractor {
   id: string
   company_id: string
   name: string
-  /** Set while this contractor is joined to its own KaiSync company (Linked companies). */
+  /** Another KaiSync company this record stands for (also used by the platform billing link; for Linked companies use company_link_list). */
   linked_company_id?: string | null
   contractor_code: string | null
   partner_kind?: string | null

@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/ResponsiveDataView'
 import type { Client, ClientActionItem } from '@/types/database'
 import { LinkedBadge, LinkedOnlyToggle } from '@/components/LinkedBadge'
+import { activeLinkedRecordIds } from '@/lib/company-links'
 import * as XLSX from 'xlsx'
 import { localISODate } from '@/lib/utils'
 
@@ -49,6 +50,7 @@ export default function ClientsPage() {
   const [search, setSearch] = useState('')
   const [searchDebounced, setSearchDebounced] = useState('')
   const [linkedOnly, setLinkedOnly] = useState(false)
+  const [linkedIds, setLinkedIds] = useState<Set<string>>(new Set())
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [total, setTotal] = useState(0)
@@ -96,7 +98,10 @@ export default function ClientsPage() {
       .eq('company_id', cId)
       .order('name')
 
-    if (linkedOnly) query = query.not('linked_company_id', 'is', null)
+    // Joined to another KaiSync company through Linked companies (active links only).
+    const linkedSet = await activeLinkedRecordIds(supabase, cId, 'provider')
+    setLinkedIds(linkedSet)
+    if (linkedOnly) query = query.in('id', linkedSet.size ? [...linkedSet] : ['00000000-0000-0000-0000-000000000000'])
     if (searchDebounced) {
       const q = escapeIlike(searchDebounced)
       query = query.or(
@@ -522,7 +527,7 @@ export default function ClientsPage() {
                         onClick={() => router.push(`/dashboard/clients/${c.id}`)}
                         className="bg-surface hover:bg-background cursor-pointer border-b border-divider last:border-0 transition-colors">
                         <td className="data-td text-text-primary text-[13px]">
-                          <span className="flex items-center gap-1 min-w-0"><span className="truncate">{c.name}</span><LinkedBadge linked={!!c.linked_company_id} /></span>
+                          <span className="flex items-center gap-1 min-w-0"><span className="truncate">{c.name}</span><LinkedBadge linked={linkedIds.has(c.id)} /></span>
                         </td>
                         <td className="data-td text-text-primary font-medium text-[12px]">{c.client_code ?? '—'}</td>
                         <td className="data-td text-text-secondary text-[12px]">
@@ -569,7 +574,7 @@ export default function ClientsPage() {
                 <>
                   {clients.map(c => (
                     <DataCard key={c.id} onClick={() => router.push(`/dashboard/clients/${c.id}`)}>
-                      <DataCardTitle>{c.name} <LinkedBadge linked={!!c.linked_company_id} /></DataCardTitle>
+                      <DataCardTitle>{c.name} <LinkedBadge linked={linkedIds.has(c.id)} /></DataCardTitle>
                       <DataCardMeta>
                         {c.client_code ?? '—'} · {CLIENT_TYPE_LABELS[c.type ?? ''] ?? c.type ?? '—'}
                       </DataCardMeta>

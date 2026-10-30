@@ -22,6 +22,7 @@ import {
 } from '@/lib/list-pagination'
 import type { Contractor, ContractorActionItem } from '@/types/database'
 import { LinkedBadge, LinkedOnlyToggle } from '@/components/LinkedBadge'
+import { activeLinkedRecordIds } from '@/lib/company-links'
 import * as XLSX from 'xlsx'
 import { localISODate } from '@/lib/utils'
 
@@ -78,6 +79,7 @@ export default function ContractorsPage() {
   const [kpis, setKpis] = useState<ContractorKpis>({ active: 0, pendingCompliance: 0, pendingPayments: 0 })
   const [searchDebounced, setSearchDebounced] = useState('')
   const [linkedOnly, setLinkedOnly] = useState(false)
+  const [linkedIds, setLinkedIds] = useState<Set<string>>(new Set())
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [total, setTotal] = useState(0)
@@ -123,7 +125,10 @@ export default function ContractorsPage() {
 
     if (filter === 'active') listQuery = listQuery.eq('is_active', true)
     if (filter === 'inactive') listQuery = listQuery.eq('is_active', false)
-    if (linkedOnly) listQuery = listQuery.not('linked_company_id', 'is', null)
+    // Joined to another KaiSync company through Linked companies (active links only).
+    const linkedSet = await activeLinkedRecordIds(supabase, member.companyId, 'customer')
+    setLinkedIds(linkedSet)
+    if (linkedOnly) listQuery = listQuery.in('id', linkedSet.size ? [...linkedSet] : ['00000000-0000-0000-0000-000000000000'])
     if (searchDebounced) {
       const q = escapeIlike(searchDebounced)
       listQuery = listQuery.or(`name.ilike.%${q}%,contact_person.ilike.%${q}%,contractor_code.ilike.%${q}%`)
@@ -531,7 +536,7 @@ export default function ContractorsPage() {
                       className="bg-surface hover:bg-background cursor-pointer border-b border-divider last:border-0 transition-colors"
                     >
                       <td className="px-3 py-3 text-text-primary font-medium">
-                        <span className="flex items-center gap-1 min-w-0" style={{ maxWidth: 205 }}><span className="truncate">{c.name}</span><LinkedBadge linked={!!c.linked_company_id} /></span>
+                        <span className="flex items-center gap-1 min-w-0" style={{ maxWidth: 205 }}><span className="truncate">{c.name}</span><LinkedBadge linked={linkedIds.has(c.id)} /></span>
                       </td>
                       <td className="px-3 py-3 text-text-secondary font-mono">{c.contractor_code ?? '—'}</td>
                       <td className="px-3 py-3 text-text-secondary">
@@ -585,7 +590,7 @@ export default function ContractorsPage() {
                     <DataCard key={c.id} onClick={() => router.push(`/dashboard/contractors/${c.id}`)}>
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <DataCardTitle>{c.name} <LinkedBadge linked={!!c.linked_company_id} /></DataCardTitle>
+                          <DataCardTitle>{c.name} <LinkedBadge linked={linkedIds.has(c.id)} /></DataCardTitle>
                           <DataCardMeta className="font-mono">{c.contractor_code ?? '—'}</DataCardMeta>
                         </div>
                         <StatusBadge {...status} />

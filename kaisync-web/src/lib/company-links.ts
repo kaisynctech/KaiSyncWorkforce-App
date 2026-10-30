@@ -211,3 +211,10 @@ export function startTab(links: CompanyLink[]): LinkTab {
   if (!c.open.length && k.open.length) return 'contractors'
   return 'clients'
 }
+
+/** Ids of my records (clients for 'provider', contractors for 'customer') with an active link. */
+export async function activeLinkedRecordIds(supabase: SupabaseClient, companyId: string, myRole: LinkRole): Promise<Set<string>> {
+  const res = await listLinks(supabase, companyId)
+  if (!res.ok) return new Set()
+  return new Set(res.data.filter(l => l.status === 'active' && l.my_role === myRole && l.my_record_id).map(l => l.my_record_id as string))
+}
