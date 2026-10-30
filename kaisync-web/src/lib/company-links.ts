@@ -118,6 +118,35 @@ export function acceptInvite(supabase: SupabaseClient, companyId: string, token:
   })
 }
 
+/** Make an invite and email it to the other company (edge function send_link_invite). */
+export async function emailInvite(supabase: SupabaseClient, params: {
+  companyId: string; myRole: LinkRole; recordId: string; email: string; origin: string; note?: string
+}): Promise<Result<{ token: string; expires_at: string; recipient_email: string }>> {
+  const email = params.email.trim()
+  if (!isEmail(email)) return { ok: false, message: 'Type a valid email address.' }
+  const { data, error } = await supabase.functions.invoke('send_link_invite', {
+    body: {
+      company_id: params.companyId, my_role: params.myRole, record_id: params.recordId,
+      recipient_email: email, origin: params.origin, note: params.note?.trim() || undefined,
+    },
+  })
+  if (error) {
+    // The function answers with { message } on a refusal; show that rather than the HTTP wording.
+    let message = error.message
+    try {
+      const ctx = (error as { context?: Response }).context
+      const body = ctx ? await ctx.json() : null
+      if (body?.message) message = String(body.message)
+    } catch { /* keep the first message */ }
+    return { ok: false, message: linkErrorMessage(message) }
+  }
+  return { ok: true, data: data as { token: string; expires_at: string; recipient_email: string } }
+}
+
+export function isEmail(value: string): boolean {
+  return /^[^\s@<>"',;]+@[^\s@<>"',;]+\.[^\s@<>"',;]{2,}$/.test(value.trim())
+}
+
 export async function listLinks(supabase: SupabaseClient, companyId: string): Promise<Result<CompanyLink[]>> {
   const res = await call<CompanyLink[] | null>(supabase, 'company_link_list', { p_company_id: companyId })
   return res.ok ? { ok: true, data: res.data ?? [] } : res

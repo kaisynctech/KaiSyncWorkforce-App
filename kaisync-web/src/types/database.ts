@@ -164,6 +164,8 @@ export interface Client {
   id: string
   company_id: string
   name: string
+  /** Set while this client is joined to its own KaiSync company (Linked companies). */
+  linked_company_id?: string | null
   client_code: string | null
   portal_enabled?: boolean | null
   client_code_expires_at?: string | null
@@ -446,6 +448,8 @@ export interface Contractor {
   id: string
   company_id: string
   name: string
+  /** Set while this contractor is joined to its own KaiSync company (Linked companies). */
+  linked_company_id?: string | null
   contractor_code: string | null
   partner_kind?: string | null
   registration_number?: string | null
@@ -600,6 +604,9 @@ export interface AppNotification {
   body: string
   is_read: boolean
   created_at: string
+  ref_type?: string | null
+  ref_id?: string | null
+  data?: Record<string, unknown> | null
 }
 
 export interface IncidentReport {

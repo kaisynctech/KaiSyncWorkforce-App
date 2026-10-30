@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import {
-  createInvite, decideLink, disconnectLink, inviteUrl, linkForRecord, requestLink, searchCompanies,
+  createInvite, decideLink, disconnectLink, emailInvite, inviteUrl, linkForRecord, requestLink, searchCompanies,
   relationWords, statusWords, type LinkCompany, type LinkRole, type RecordLink,
 } from '@/lib/company-links'
 
@@ -30,6 +30,10 @@ export function CompanyLinkPanel({ companyId, myRole, recordId }: Props) {
   const [results, setResults] = useState<LinkCompany[] | null>(null)
   const [invite, setInvite] = useState<{ url: string; expires: string } | null>(null)
   const [copied, setCopied] = useState(false)
+  const [emailOpen, setEmailOpen] = useState(false)
+  const [email, setEmail] = useState('')
+  const [emailNote, setEmailNote] = useState('')
+  const [emailed, setEmailed] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     const res = await linkForRecord(createClient(), companyId, myRole, recordId)
@@ -71,6 +75,20 @@ export function CompanyLinkPanel({ companyId, myRole, recordId }: Props) {
   async function makeInvite() {
     const data = await run(() => createInvite(createClient(), companyId, myRole, recordId))
     if (data) {
+      setInvite({ url: inviteUrl(window.location.origin, data.token), expires: new Date(data.expires_at).toLocaleDateString() })
+      setCopied(false)
+    }
+  }
+
+  async function sendEmail() {
+    const data = await run(() => emailInvite(createClient(), {
+      companyId, myRole, recordId, email, note: emailNote, origin: window.location.origin,
+    }))
+    if (data) {
+      setEmailed(data.recipient_email)
+      setEmail('')
+      setEmailNote('')
+      setEmailOpen(false)
       setInvite({ url: inviteUrl(window.location.origin, data.token), expires: new Date(data.expires_at).toLocaleDateString() })
       setCopied(false)
     }
@@ -165,7 +183,37 @@ export function CompanyLinkPanel({ companyId, myRole, recordId }: Props) {
               />
               <button disabled={busy} onClick={() => void search()} className="btn-outlined h-9 px-3 text-[13px]">Search</button>
               <button disabled={busy} onClick={() => void makeInvite()} className="btn-outlined h-9 px-3 text-[13px]">Make invite link</button>
+              <button disabled={busy} onClick={() => { setEmailOpen(v => !v); setEmailed(null) }} aria-expanded={emailOpen} className="btn-outlined h-9 px-3 text-[13px]">Email an invite</button>
             </div>
+            {emailOpen && (
+              <div className="rounded-md border border-divider p-3 space-y-2 bg-surface-elevated/40">
+                <p className="text-text-secondary">We email a one-use invite link to someone at the other company (owner, HR or admin). It comes from KaiSync with your company&apos;s name, and replies go to your company email.</p>
+                <div className="flex gap-2 flex-wrap">
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void sendEmail() } }}
+                    placeholder="name@theircompany.co.za"
+                    aria-label="Their email address"
+                    className="flex-1 min-w-[220px] h-9 px-3 rounded-md border border-border bg-surface text-text-primary focus:outline-none"
+                  />
+                  <button disabled={busy || !email.trim()} onClick={() => void sendEmail()} className="btn-primary h-9 px-3 text-[13px] disabled:opacity-50">
+                    {busy ? 'Sending…' : 'Send invite'}
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  value={emailNote}
+                  maxLength={500}
+                  onChange={e => setEmailNote(e.target.value)}
+                  placeholder="Short note (optional)"
+                  aria-label="Short note"
+                  className="w-full h-9 px-3 rounded-md border border-border bg-surface text-text-primary focus:outline-none"
+                />
+              </div>
+            )}
+            {emailed && <p className="text-success">Invite emailed to {emailed}. The same link is below if you want to send it another way.</p>}
             {results && (
               results.length === 0 ? (
                 <p className="text-text-secondary">No KaiSync company found. Try another spelling, or send an invite link.</p>

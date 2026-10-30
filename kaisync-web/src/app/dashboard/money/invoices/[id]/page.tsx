@@ -10,6 +10,7 @@ import { downloadInvoicePdf, openInvoiceMailto } from '@/lib/invoice-pdf'
 import { companyLetterhead, type Letterhead } from '@/lib/letterhead'
 import type { FinanceInvoice, FinanceInvoiceLine } from '@/lib/finance-types'
 import { localISODate } from '@/lib/utils'
+import { signWorkforceMedia } from '@/lib/media-read'
 
 // ─── Extended types ────────────────────────────────────────────────────────────
 
@@ -253,6 +254,14 @@ function MoneyInvoiceDetailInner() {
       invoice_number: invoiceNumber,
     }).eq('id', inv.id)
     return !error
+  }
+
+  /** Proofs sent from a linked company keep only the storage path; open a short-lived signed link. */
+  async function openProofFile(path: string) {
+    const tab = window.open('', '_blank')
+    const url = await signWorkforceMedia(createClient(), path, 300)
+    if (url && tab) tab.location.href = url
+    else { tab?.close(); setErr('Could not open the file.') }
   }
 
   async function reviewProof(proofId: string, status: 'accepted' | 'rejected') {
@@ -569,7 +578,7 @@ function MoneyInvoiceDetailInner() {
         {proofs.length > 0 && (
           <div className="bg-surface-card border border-divider rounded-xl overflow-hidden">
             <p className="px-4 py-2.5 text-[12px] font-semibold text-text-secondary uppercase tracking-wide border-b border-divider">
-              Tenant payment proofs
+              Payment proofs
             </p>
             <ul className="divide-y divide-divider">
               {proofs.map(p => (
@@ -581,11 +590,15 @@ function MoneyInvoiceDetailInner() {
                       {p.reference ? ` · ref ${p.reference}` : ''}
                       {p.amount != null ? ` · ${fmtMoney(p.amount)}` : ''}
                     </p>
-                    {p.file_url && (
+                    {p.file_url ? (
                       <a href={p.file_url} target="_blank" rel="noreferrer" className="text-[12px] text-primary hover:underline">
                         View file
                       </a>
-                    )}
+                    ) : p.storage_path ? (
+                      <button type="button" onClick={() => void openProofFile(p.storage_path)} className="text-[12px] text-primary hover:underline">
+                        View file
+                      </button>
+                    ) : null}
                   </div>
                   {p.status === 'submitted' && (
                     <div className="flex gap-2">

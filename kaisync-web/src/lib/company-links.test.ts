@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { groupLinks, startTab, inviteUrl, linkErrorMessage, myRecordNoun, relationWords, statusWords, type CompanyLink } from './company-links'
+import { groupLinks, isEmail, startTab, inviteUrl, linkErrorMessage, myRecordNoun, relationWords, statusWords, type CompanyLink } from './company-links'
 
 describe('company links words', () => {
   it('builds the invite address from the site and token', () => {
@@ -56,5 +56,16 @@ describe('Clients and Contractors tabs', () => {
     expect(startTab(links)).toBe('clients')
     expect(startTab(links.filter(l => l.my_role === 'customer'))).toBe('contractors')
     expect(startTab([])).toBe('clients')
+  })
+})
+
+describe('email invite', () => {
+  it('accepts normal addresses and refuses the rest', () => {
+    expect(isEmail('nyari@company.co.za')).toBe(true)
+    expect(isEmail('  a.b+x@ex.com ')).toBe(true)
+    expect(isEmail('not an email')).toBe(false)
+    expect(isEmail('a@b')).toBe(false)
+    expect(isEmail('a@b.c')).toBe(false)
+    expect(isEmail('a,b@c.com')).toBe(false)
   })
 })

@@ -3,7 +3,9 @@
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import Link from 'next/link'
 import type { AppNotification, LeaveRequest, IncidentReport, PaymentApproval } from '@/types/database'
+import { linkedAlertHref } from '@/lib/linked-extras'
 
 const SEVERITY_COLORS: Record<string, { bg: string; fg: string }> = {
   critical: { bg: '#FEE2E2', fg: '#991B1B' },
@@ -95,6 +97,9 @@ export default function NotificationsPage() {
                     <p className="font-semibold text-[14px] text-text-primary">{n.title}</p>
                     <p className="text-text-secondary text-[12px]">{n.body}</p>
                     <p className="text-primary text-[10px]">{fmtDate(n.created_at)}</p>
+                    {linkedAlertHref(n) && (
+                      <Link href={linkedAlertHref(n)!} className="inline-block text-primary text-[12px] font-semibold hover:underline">Open</Link>
+                    )}
                   </div>
                 </div>
               ))}

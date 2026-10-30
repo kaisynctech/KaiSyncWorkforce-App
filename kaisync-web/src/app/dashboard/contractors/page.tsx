@@ -21,6 +21,7 @@ import {
   totalPages,
 } from '@/lib/list-pagination'
 import type { Contractor, ContractorActionItem } from '@/types/database'
+import { LinkedBadge, LinkedOnlyToggle } from '@/components/LinkedBadge'
 import * as XLSX from 'xlsx'
 import { localISODate } from '@/lib/utils'
 
@@ -76,6 +77,7 @@ export default function ContractorsPage() {
   const [perms, setPerms] = useState<PermissionSet | null>(null)
   const [kpis, setKpis] = useState<ContractorKpis>({ active: 0, pendingCompliance: 0, pendingPayments: 0 })
   const [searchDebounced, setSearchDebounced] = useState('')
+  const [linkedOnly, setLinkedOnly] = useState(false)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [total, setTotal] = useState(0)
@@ -88,7 +90,7 @@ export default function ContractorsPage() {
     return () => clearTimeout(t)
   }, [searchText])
 
-  useEffect(() => { setPage(1) }, [searchDebounced, filter, pageSize])
+  useEffect(() => { setPage(1) }, [searchDebounced, filter, pageSize, linkedOnly])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -121,6 +123,7 @@ export default function ContractorsPage() {
 
     if (filter === 'active') listQuery = listQuery.eq('is_active', true)
     if (filter === 'inactive') listQuery = listQuery.eq('is_active', false)
+    if (linkedOnly) listQuery = listQuery.not('linked_company_id', 'is', null)
     if (searchDebounced) {
       const q = escapeIlike(searchDebounced)
       listQuery = listQuery.or(`name.ilike.%${q}%,contact_person.ilike.%${q}%,contractor_code.ilike.%${q}%`)
@@ -179,7 +182,7 @@ export default function ContractorsPage() {
     const { data: { session } } = await supabase.auth.getSession()
     setSessionToken(session?.access_token ?? null)
     setLoading(false)
-  }, [page, pageSize, filter, searchDebounced])
+  }, [page, pageSize, filter, searchDebounced, linkedOnly])
 
   useEffect(() => { void load() }, [load])
 
@@ -381,6 +384,7 @@ export default function ContractorsPage() {
               </button>
             ))}
           </div>
+          <LinkedOnlyToggle value={linkedOnly} onChange={setLinkedOnly} />
           <div className="flex items-center gap-1.5 h-8 px-2 bg-surface border border-border rounded-sm flex-1 min-w-0">
             <span className="material-icons text-text-disabled text-[16px]">search</span>
             <input
@@ -527,7 +531,7 @@ export default function ContractorsPage() {
                       className="bg-surface hover:bg-background cursor-pointer border-b border-divider last:border-0 transition-colors"
                     >
                       <td className="px-3 py-3 text-text-primary font-medium">
-                        <span className="block truncate" style={{ maxWidth: 185 }}>{c.name}</span>
+                        <span className="flex items-center gap-1 min-w-0" style={{ maxWidth: 205 }}><span className="truncate">{c.name}</span><LinkedBadge linked={!!c.linked_company_id} /></span>
                       </td>
                       <td className="px-3 py-3 text-text-secondary font-mono">{c.contractor_code ?? '—'}</td>
                       <td className="px-3 py-3 text-text-secondary">
@@ -581,7 +585,7 @@ export default function ContractorsPage() {
                     <DataCard key={c.id} onClick={() => router.push(`/dashboard/contractors/${c.id}`)}>
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <DataCardTitle>{c.name}</DataCardTitle>
+                          <DataCardTitle>{c.name} <LinkedBadge linked={!!c.linked_company_id} /></DataCardTitle>
                           <DataCardMeta className="font-mono">{c.contractor_code ?? '—'}</DataCardMeta>
                         </div>
                         <StatusBadge {...status} />

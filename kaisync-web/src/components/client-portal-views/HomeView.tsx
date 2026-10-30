@@ -10,7 +10,8 @@ import { ClientPortalStatement } from '@/components/ClientPortalStatement'
 import { ClientPortalBanking } from '@/components/ClientPortalBanking'
 import { ClientPortalCompliance } from '@/components/ClientPortalCompliance'
 import { PortalComplianceReminder } from '@/components/PortalComplianceReminder'
-import { usePortalHref, usePortalMode, usePortalSession } from '@/lib/client-portal/portal-mode'
+import { LinkedPaymentProof } from '@/components/LinkedPaymentProof'
+import { usePortalCanAct, usePortalHref, usePortalMode, usePortalSession } from '@/lib/client-portal/portal-mode'
 import { getInvoiceForPdf, getPartyComplianceDocuments, listDocumentRequests, listInvoices, listJobs, listMessageInbox, listProjects } from '@/lib/client-portal/api'
 import { getDealMessagesReadAt, type ClientPortalSession } from '@/lib/client-portal/session'
 import { fmtDate, fmtDateTime, projectStatusLabel } from '@/lib/client-portal/format'
@@ -321,6 +322,9 @@ function MessagesTab({ inbox }: { inbox: MessageInboxItem[] }) {
 function InvoicesTab({ invoices, outstanding, session }: { invoices: PortalInvoice[]; outstanding: number; session: ClientPortalSession }) {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [pdfError, setPdfError] = useState<string | null>(null)
+  const [proofFor, setProofFor] = useState<string | null>(null)
+  const linkedMode = usePortalMode().kind === 'linked'
+  const canAct = usePortalCanAct()
   async function pdf(id: string) {
     setBusyId(id)
     setPdfError(null)
@@ -355,10 +359,11 @@ function InvoicesTab({ invoices, outstanding, session }: { invoices: PortalInvoi
                 <Th>Issued</Th>
                 <Th>Due</Th>
                 <Th>PDF</Th>
+                {linkedMode && <Th>Proof of payment</Th>}
               </tr>
             </thead>
             <tbody>
-              {invoices.map(inv => (
+              {invoices.flatMap(inv => [
                 <tr key={inv.id} className="border-divider border-t">
                   <td className="px-3 py-3 text-text-primary font-medium whitespace-nowrap">{inv.invoice_number || '—'}</td>
                   <td className="px-3 py-3 text-text-primary capitalize whitespace-nowrap">{inv.status.replace(/_/g, ' ')}</td>
@@ -378,8 +383,32 @@ function InvoicesTab({ invoices, outstanding, session }: { invoices: PortalInvoi
                       {busyId === inv.id ? '…' : 'Download'}
                     </button>
                   </td>
-                </tr>
-              ))}
+                  {linkedMode && (
+                    <td className="px-3 py-3 whitespace-nowrap">
+                      <button
+                        type="button"
+                        onClick={() => setProofFor(proofFor === inv.id ? null : inv.id)}
+                        aria-expanded={proofFor === inv.id}
+                        className="text-primary text-[12px] font-semibold hover:underline"
+                      >
+                        {proofFor === inv.id ? 'Close' : canAct && isInvoiceOutstanding(inv.status) ? 'Send proof' : 'View'}
+                      </button>
+                    </td>
+                  )}
+                </tr>,
+                linkedMode && proofFor === inv.id ? (
+                  <tr key={`${inv.id}-proof`} className="bg-surface-elevated/40">
+                    <td colSpan={8} className="px-3 py-3">
+                      <LinkedPaymentProof
+                        invoiceId={inv.id}
+                        invoiceNumber={inv.invoice_number}
+                        balance={inv.balance_due}
+                        canSend={canAct && isInvoiceOutstanding(inv.status)}
+                      />
+                    </td>
+                  </tr>
+                ) : null,
+              ])}
             </tbody>
           </table>
         </div>
