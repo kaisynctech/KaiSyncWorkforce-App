@@ -5,7 +5,7 @@ import Link from 'next/link'
 export type PayrollSection = 'payslips' | 'bank' | 'settings'
 
 const TABS: { id: PayrollSection; label: string; href: string }[] = [
-  { id: 'payslips', label: 'Payslips', href: '/dashboard/payroll' },
+  { id: 'payslips', label: 'Payslips', href: '/dashboard/payroll?tab=payslips' },
   { id: 'bank', label: 'Bank & tax', href: '/dashboard/payroll?tab=bank' },
   { id: 'settings', label: 'Settings', href: '/dashboard/payroll/settings' },
 ]
