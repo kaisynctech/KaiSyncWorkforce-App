@@ -587,39 +587,6 @@ export default function PayrollPage() {
                   onClick={() => setStatusFilter(s)}
                 />
               ))}
-              <div className="flex items-center gap-1 w-44 shrink-0 h-7 bg-surface border border-border rounded-md px-2">
-                <span className="material-icons text-text-secondary text-[14px]">search</span>
-                <input
-                  placeholder="Search employee"
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  className="flex-1 min-w-0 bg-transparent text-text-primary text-[11px] h-7 outline-none placeholder:text-text-disabled"
-                />
-              </div>
-              <button
-                onClick={() => void openGenerate()}
-                disabled={generating || isLocked}
-                className="h-7 px-2 text-[11px] rounded-md bg-surface-dark border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
-              >
-                {generating
-                  ? genProgress ? `${genProgress.done.toLocaleString()}/${genProgress.total.toLocaleString()}` : 'Working…'
-                  : pendingCount > 0 ? 'Update payslips' : 'Create payslips'}
-              </button>
-              <button
-                onClick={approveAll}
-                disabled={approving}
-                className="btn-primary h-7 px-2 text-[11px] disabled:opacity-50"
-              >
-                {approving ? 'Approving…' : 'Approve all'}
-              </button>
-              <button
-                onClick={releaseAll}
-                disabled={releasing}
-                className="h-7 px-2 text-[11px] rounded-md border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
-                style={{ backgroundColor: '#4C1D95', color: '#C4B5FD', borderColor: '#7C3AED' }}
-              >
-                {releasing ? 'Releasing…' : 'Release all'}
-              </button>
             </div>
             <p className="text-[11px] text-text-secondary">
               Pending <span className="text-text-primary font-medium">{fmtR(pendingGross)}</span>
@@ -709,6 +676,44 @@ export default function PayrollPage() {
             </section>
           </div>
         </div>
+      )}
+
+      {section === 'payslips' && (
+      <div className="shrink-0 flex flex-wrap items-center justify-end gap-1.5 px-3 py-1 bg-surface border-b border-divider">
+        <div className="flex items-center gap-1 w-44 shrink-0 h-7 bg-surface border border-border rounded-md px-2">
+          <span className="material-icons text-text-secondary text-[14px]">search</span>
+          <input
+            placeholder="Search employee"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="flex-1 min-w-0 bg-transparent text-text-primary text-[11px] h-7 outline-none placeholder:text-text-disabled"
+          />
+        </div>
+        <button
+          onClick={() => void openGenerate()}
+          disabled={generating || isLocked}
+          className="h-7 px-2 text-[11px] rounded-md bg-surface-dark border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
+        >
+          {generating
+            ? genProgress ? `${genProgress.done.toLocaleString()}/${genProgress.total.toLocaleString()}` : 'Working…'
+            : pendingCount > 0 ? 'Update payslips' : 'Create payslips'}
+        </button>
+        <button
+          onClick={approveAll}
+          disabled={approving}
+          className="btn-primary h-7 px-2 text-[11px] disabled:opacity-50"
+        >
+          {approving ? 'Approving…' : 'Approve all'}
+        </button>
+        <button
+          onClick={releaseAll}
+          disabled={releasing}
+          className="h-7 px-2 text-[11px] rounded-md border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
+          style={{ backgroundColor: '#4C1D95', color: '#C4B5FD', borderColor: '#7C3AED' }}
+        >
+          {releasing ? 'Releasing…' : 'Release all'}
+        </button>
+      </div>
       )}
 
       {section === 'payslips' && (
