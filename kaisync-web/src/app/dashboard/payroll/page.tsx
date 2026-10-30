@@ -25,7 +25,7 @@ import {
   releasePayslipToEmployee,
   unlockPayrollPeriod,
 } from '@/lib/payroll'
-import type { PayrollGeneratePreview } from '@/lib/payroll-readiness'
+import { isOnPayrollRoster, payrollRosterGap, type PayrollGeneratePreview } from '@/lib/payroll-readiness'
 import { formatBankPaymentFile, type BankFormat } from '@/lib/payroll/bank-export'
 import { buildForTaxYear, taxYearFor, toCsvRows } from '@/lib/payroll/irp5'
 
@@ -57,6 +57,19 @@ type PayrollRecord = {
     tax_number?:     string | null
     account_type:    string | null
   }
+}
+
+type PayrollRosterPerson = {
+  id: string
+  name: string
+  surname: string
+  is_active: boolean
+  worker_type: string | null
+  employment_date: string | null
+  termination_date: string | null
+  monthly_salary: number | null
+  hourly_rate: number | null
+  daily_rate: number | null
 }
 
 type StatusFilter = 'all' | 'pending' | 'approved' | 'paid'
@@ -106,6 +119,7 @@ export default function PayrollPage() {
   const companyIdRef = useRef<string | null>(null)
 
   const [payments,     setPayments]     = useState<PayrollRecord[]>([])
+  const [roster,       setRoster]       = useState<PayrollRosterPerson[]>([])
   const [loading,      setLoading]      = useState(true)
   const [error,        setError]        = useState<string | null>(null)
   const [success,      setSuccess]      = useState<string | null>(null)
@@ -160,7 +174,7 @@ export default function PayrollPage() {
 
     const cid = companyIdRef.current!
 
-    const [{ data: paymentsData, error: payErr }, { data: locks, error: lockErr }] = await Promise.all([
+    const [{ data: paymentsData, error: payErr }, { data: locks, error: lockErr }, { data: people, error: peopleErr }] = await Promise.all([
       supabase
         .from('payment_approvals')
         .select('*, employee:employees(name, surname, employee_number, bank_name, bank_account, bank_branch_code, id_number, tax_number, account_type)')
@@ -172,11 +186,17 @@ export default function PayrollPage() {
         .from('payroll_period_locks')
         .select('period_start, period_end')
         .eq('company_id', cid),
+      supabase
+        .from('employees')
+        .select('id, name, surname, is_active, worker_type, employment_date, termination_date, monthly_salary, hourly_rate, daily_rate')
+        .eq('company_id', cid)
+        .eq('is_active', true),
     ])
 
     if (payErr || lockErr) {
       setError(payErr?.message ?? lockErr?.message ?? 'Failed to load payroll')
       setPayments([])
+      setRoster([])
       setLoading(false)
       return
     }
@@ -188,6 +208,8 @@ export default function PayrollPage() {
     // and would time out for a large company). Payslips update when someone presses "Update payslips".
 
     setPayments(rows)
+    setRoster(peopleErr ? [] : (people ?? []) as PayrollRosterPerson[])
+    if (peopleErr) setError(peopleErr.message)
     setLoading(false)
   }
 
@@ -453,6 +475,14 @@ export default function PayrollPage() {
     return an.localeCompare(bn) || (a.period_start ?? '').localeCompare(b.period_start ?? '')
   })
 
+  const coveredIds = new Set(payments.map(p => p.employee_id))
+  const uncovered = roster.filter(person => isOnPayrollRoster(person, dateFrom, dateTo) && !coveredIds.has(person.id))
+  const missingPeople = (statusFilter === 'all' ? uncovered : []).filter(person => {
+    if (!search) return true
+    const name = `${person.name} ${person.surname}`.toLowerCase()
+    return name.includes(search.toLowerCase())
+  }).sort((a, b) => `${a.surname} ${a.name}`.localeCompare(`${b.surname} ${b.name}`, 'en'))
+
   const pendingGross  = filtered.filter(p => p.status === 'pending')
     .reduce((s, p) => s + (p.gross_pay ?? 0), 0)
   const approvedGross = filtered.filter(p => p.status === 'approved' || p.status === 'paid')
@@ -525,6 +555,12 @@ export default function PayrollPage() {
               Net <span className="text-text-primary font-medium">{fmtR(approvedNet)}</span>
               <span className="mx-1.5 text-text-disabled">·</span>
               {filtered.length === 1 ? '1 payslip' : `${filtered.length} payslips`} in view
+              {uncovered.length > 0 && (
+                <span className="text-warning">
+                  <span className="mx-1.5 text-text-disabled">·</span>
+                  {uncovered.length === 1 ? '1 employee is not on a payslip' : `${uncovered.length} employees are not on a payslip`}
+                </span>
+              )}
             </p>
             <div className="flex items-center gap-1 flex-1 min-w-[180px] bg-surface border border-border rounded-md px-2">
               <span className="material-icons text-text-secondary text-[16px]">search</span>
@@ -661,10 +697,11 @@ export default function PayrollPage() {
               <tbody>
                 {loading ? (
                   <tr><td colSpan={8} className="text-center py-10 text-text-secondary text-[13px]">Loading…</td></tr>
-                ) : filtered.length === 0 ? (
+                ) : filtered.length === 0 && missingPeople.length === 0 ? (
                   <tr><td colSpan={8} className="text-center py-10 text-text-secondary text-[13px]">No payslips found.</td></tr>
                 ) : (
-                  filtered.map(p => {
+                  <>
+                  {filtered.map(p => {
                     const emp     = p.employee
                     const empName = emp ? `${emp.name} ${emp.surname}` : '—'
                     return (
@@ -727,7 +764,36 @@ export default function PayrollPage() {
                         </td>
                       </tr>
                     )
-                  })
+                  })}
+                  {missingPeople.map(person => (
+                    <tr
+                      key={person.id}
+                      onClick={() => router.push(`/dashboard/employees/${person.id}`)}
+                      className="bg-surface-card border-b border-divider cursor-pointer hover:bg-background transition-colors"
+                    >
+                      <td className="data-td text-text-primary text-sm font-medium">{person.name} {person.surname}</td>
+                      <td className="data-td text-text-secondary text-sm">{payrollRosterGap(person)}</td>
+                      <td className="data-td text-sm text-right text-text-disabled">—</td>
+                      <td className="data-td text-sm text-right text-text-disabled">—</td>
+                      <td className="data-td text-sm text-right text-text-disabled">—</td>
+                      <td className="data-td">
+                        <StatusBadge label="No payslip" bg="#F3F4F6" fg="#374151" />
+                      </td>
+                      <td className="data-td text-[11px] text-text-disabled">—</td>
+                      <td className="data-td">
+                        <div className="flex justify-end" onClick={e => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            onClick={() => router.push(`/dashboard/employees/${person.id}`)}
+                            className="bg-surface-dark text-text-primary h-9 px-2 text-[12px] rounded-md hover:bg-border transition-colors"
+                          >
+                            Open employee
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  </>
                 )}
               </tbody>
             </table>
@@ -735,7 +801,7 @@ export default function PayrollPage() {
           mobile={
             loading ? (
               <p className="text-center py-10 text-text-secondary text-[13px]">Loading…</p>
-            ) : filtered.length === 0 ? (
+            ) : filtered.length === 0 && missingPeople.length === 0 ? (
               <p className="text-center py-10 text-text-secondary text-[13px]">No payslips found.</p>
             ) : (
               <>
@@ -790,6 +856,17 @@ export default function PayrollPage() {
                     </DataCard>
                   )
                 })}
+                {missingPeople.map(person => (
+                  <DataCard key={person.id} onClick={() => router.push(`/dashboard/employees/${person.id}`)}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <DataCardTitle>{person.name} {person.surname}</DataCardTitle>
+                        <DataCardMeta>{payrollRosterGap(person)}</DataCardMeta>
+                      </div>
+                      <StatusBadge label="No payslip" bg="#F3F4F6" fg="#374151" />
+                    </div>
+                  </DataCard>
+                ))}
               </>
             )
           }

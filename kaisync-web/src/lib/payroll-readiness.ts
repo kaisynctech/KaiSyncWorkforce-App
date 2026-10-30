@@ -37,7 +37,7 @@ export type PayrollGeneratePreview = {
   detailLines: string[]
 }
 
-function hasPayRate(emp: PayrollEmployeeLike): boolean {
+function hasPayRate(emp: Pick<PayrollEmployeeLike, 'monthly_salary' | 'hourly_rate' | 'daily_rate'>): boolean {
   return (emp.monthly_salary ?? 0) > 0 || (emp.hourly_rate ?? 0) > 0 || (emp.daily_rate ?? 0) > 0
 }
 
@@ -85,6 +85,25 @@ export function isEligibleForPeriod(
   return true
 }
 
+/** An active employee whose employment overlaps this month, whether or not they have a payslip. */
+export function isOnPayrollRoster(
+  emp: Pick<PayrollEmployeeLike, 'is_active' | 'worker_type' | 'employment_date' | 'termination_date'>,
+  periodStart: string,
+  periodEnd: string
+): boolean {
+  if (!emp.is_active) return false
+  if (emp.worker_type === 'contractor' || emp.worker_type === 'subcontractor') return false
+  if (emp.employment_date && emp.employment_date > periodEnd) return false
+  if (emp.termination_date && emp.termination_date < periodStart) return false
+  return true
+}
+
+export function payrollRosterGap(emp: Pick<PayrollEmployeeLike, 'monthly_salary' | 'hourly_rate' | 'daily_rate'>): string {
+  return hasPayRate(emp)
+    ? 'No payslip yet. Press Update payslips.'
+    : 'No pay rate, so Update payslips leaves this person off.'
+}
+
 export function buildPayrollGeneratePreview(
   employees: PayrollEmployeeLike[],
   periodStart: string,
@@ -107,6 +126,10 @@ export function buildPayrollGeneratePreview(
   for (const emp of employees.filter(e => e.is_active)) {
     if (!isEligibleForPeriod(emp, periodStart, periodEnd)) {
       notInPeriod++
+      if (isOnPayrollRoster(emp, periodStart, periodEnd) && !hasPayRate(emp)) {
+        missingRates++
+        details.push(`${emp.name} ${emp.surname}: no pay rate, so no payslip is created`)
+      }
       continue
     }
     if (lockedEmployeeIds.has(emp.id)) {
