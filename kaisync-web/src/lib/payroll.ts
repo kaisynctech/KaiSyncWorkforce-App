@@ -346,6 +346,8 @@ export type PayslipLineAmounts = {
   unpaidLeave: number
   /** Absent dates in this month that are not paid. */
   unpaidAbsenceDates?: string[]
+  /** Overtime days where lateness is taken off that day's overtime. */
+  overtimeLateOffsetDates?: string[]
   extraEarnings?: { id: string; label: string; amount: number }[]
   extraDeductions?: { id: string; label: string; amount: number }[]
   meibcApplied?: boolean

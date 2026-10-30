@@ -161,11 +161,15 @@ function totalsFromLines(raw: Record<string, unknown>, companyId?: string, emp?:
   const unpaidAbsenceDates = Array.isArray(source.unpaidAbsenceDates)
     ? source.unpaidAbsenceDates.filter((day): day is string => typeof day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(day))
     : []
+  const overtimeLateOffsetDates = Array.isArray(source.overtimeLateOffsetDates)
+    ? source.overtimeLateOffsetDates.filter((day): day is string => typeof day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(day))
+    : undefined
   const gross = Math.round((regular + overtime + bonus + incentive + refund + sumExtra(extraEarnings)) * 100) / 100
   const deductions = Math.round((uif + paye + loanDeduction + unpaidLeave + sumExtra(extraDeductions)) * 100) / 100
   const net = Math.round(Math.max(0, gross - deductions) * 100) / 100
   const saved = {
     regular, overtime, bonus, incentive, refund, uif, paye, loanDeduction, loanBalance, unpaidLeave, unpaidAbsenceDates,
+    ...(overtimeLateOffsetDates ? { overtimeLateOffsetDates } : {}),
     extraEarnings, extraDeductions, meibcApplied: source.meibcApplied === true,
     employeeDeductionsApplied: source.employeeDeductionsApplied === true,
   }
@@ -778,7 +782,7 @@ async function handleGenerate(
               manual_paye_override: carried.paye,
               earnings_breakdown: carried.earnings,
               deductions_breakdown: carried.deductionLines,
-              payslip_lines: { ...carried.saved, unpaidAbsenceDates: [] },
+              payslip_lines: { ...carried.saved, unpaidAbsenceDates: [], overtimeLateOffsetDates: [] },
               pay_full_base_salary: priorSlip?.pay_full_base_salary ?? false,
               waive_penalties: priorSlip?.waive_penalties ?? false,
             }
@@ -973,7 +977,7 @@ async function handleSaveLines(
 
   const { data: payment, error: payErr } = await admin
     .from('payment_approvals')
-    .select('id, employee_id, company_id, status, period_start, period_end, audit_log')
+    .select('id, employee_id, company_id, status, period_start, period_end, audit_log, payslip_lines')
     .eq('id', paymentId)
     .eq('company_id', companyId)
     .maybeSingle()
@@ -999,6 +1003,14 @@ async function handleSaveLines(
     .maybeSingle()
   if (empErr) return json({ ok: false, error: empErr.message }, 500)
   const totals = totalsFromLines(body.lines, companyId, emp as EmployeeDeductionFields | null)
+  const existingLines = payment.payslip_lines && typeof payment.payslip_lines === 'object' && !Array.isArray(payment.payslip_lines)
+    ? payment.payslip_lines as Record<string, unknown>
+    : null
+  const existingOffset = existingLines?.overtimeLateOffsetDates
+  const keptOffset = !Array.isArray(body.lines.overtimeLateOffsetDates) && Array.isArray(existingOffset)
+    ? existingOffset.filter((day): day is string => typeof day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(day))
+    : null
+  const savedLines = keptOffset ? { ...totals.saved, overtimeLateOffsetDates: keptOffset } : totals.saved
 
   const daily = Number(emp?.daily_rate) || 0
   const hourly = Number(emp?.hourly_rate) || 0
@@ -1043,7 +1055,7 @@ async function handleSaveLines(
       manual_paye_override: totals.paye,
       earnings_breakdown: totals.earnings,
       deductions_breakdown: totals.deductionLines,
-      payslip_lines: totals.saved,
+      payslip_lines: savedLines,
       pay_full_base_salary: body.overrides?.payFullBaseSalary ?? false,
       waive_penalties: body.overrides?.waivePenalties ?? false,
       audit_log: [
