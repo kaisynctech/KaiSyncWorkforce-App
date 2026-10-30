@@ -95,10 +95,23 @@ function CompactChip({ label, active, onClick }: { label: string; active: boolea
     <button
       type="button"
       onClick={onClick}
-      className={`h-7 px-2 text-[11px] rounded-md border ${active ? 'bg-primary text-white border-primary' : 'bg-surface-dark text-text-secondary border-border'}`}
+      className={`h-7 px-2.5 text-[11px] rounded-md border ${active ? 'bg-primary text-white border-primary' : 'bg-surface-dark text-text-secondary border-border'}`}
     >
       {label}
     </button>
+  )
+}
+
+function PayrollMoneyCard({ label, amount, detail, accent }: { label: string; amount: string; detail: string; accent: string }) {
+  return (
+    <div
+      className="min-w-[9.25rem] rounded-lg border border-divider bg-surface-card px-2.5 py-1.5"
+      style={{ borderLeftWidth: 3, borderLeftColor: accent }}
+    >
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-text-secondary">{label}</p>
+      <p className="text-[13px] font-semibold tabular-nums text-text-primary leading-5">{amount}</p>
+      <p className="text-[10px] text-text-secondary leading-4">{detail}</p>
+    </div>
   )
 }
 
@@ -540,71 +553,122 @@ export default function PayrollPage() {
   return (
     <div className="h-full flex flex-col">
       {/* ── Header ── */}
-      <div className="px-3 py-1.5 border-b border-divider shrink-0 bg-surface space-y-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <h1 className="text-[14px] font-semibold text-text-primary">Payroll</h1>
-          <PayrollTabs active={section} className="" />
+      <div className="px-3 py-2 border-b border-divider shrink-0 bg-surface">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0 flex flex-col gap-2.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-[14px] font-semibold text-text-primary">Payroll</h1>
+              <PayrollTabs active={section} className="" />
+            </div>
+
+            {section === 'payslips' && (
+              <>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                  <input
+                    id="payroll-month"
+                    type="month"
+                    aria-label="Month"
+                    value={month}
+                    onChange={e => { setSuccess(null); setMonth(e.target.value) }}
+                    className="h-7 shrink-0 rounded-md border border-border bg-surface-elevated px-2 text-[12px] text-text-primary"
+                    style={{ width: 148, maxWidth: 148, flex: '0 0 148px' }}
+                  />
+                  <span className="text-[11px] text-text-secondary whitespace-nowrap">{dateFrom} to {dateTo}</span>
+                  <button
+                    type="button"
+                    onClick={() => void toggleLock()}
+                    className="h-7 shrink-0 px-2.5 text-[11px] rounded-md border border-border bg-surface-dark text-text-primary hover:opacity-80"
+                  >
+                    {isLocked ? 'Unlock period' : 'Lock period'}
+                  </button>
+                  <span className="text-[11px] text-text-secondary whitespace-nowrap">{isLocked ? 'Locked' : 'Open'}</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-1.5">
+                    {(['all', 'pending', 'approved', 'paid'] as StatusFilter[]).map(s => (
+                      <CompactChip
+                        key={s}
+                        label={s.charAt(0).toUpperCase() + s.slice(1)}
+                        active={statusFilter === s}
+                        onClick={() => setStatusFilter(s)}
+                      />
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-1 w-48 shrink-0 h-7 bg-surface border border-border rounded-md px-2">
+                    <span className="material-icons text-text-secondary text-[14px]">search</span>
+                    <input
+                      placeholder="Search employee"
+                      value={search}
+                      onChange={e => setSearch(e.target.value)}
+                      className="flex-1 min-w-0 bg-transparent text-text-primary text-[11px] h-7 outline-none placeholder:text-text-disabled"
+                    />
+                  </div>
+                  <button
+                    onClick={() => void openGenerate()}
+                    disabled={generating || isLocked}
+                    className="h-7 px-2.5 text-[11px] rounded-md bg-surface-dark border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
+                  >
+                    {generating
+                      ? genProgress ? `${genProgress.done.toLocaleString()}/${genProgress.total.toLocaleString()}` : 'Working…'
+                      : pendingCount > 0 ? 'Update payslips' : 'Create payslips'}
+                  </button>
+                  <button
+                    onClick={approveAll}
+                    disabled={approving}
+                    className="btn-primary h-7 px-2.5 text-[11px] disabled:opacity-50"
+                  >
+                    {approving ? 'Approving…' : 'Approve all'}
+                  </button>
+                  <button
+                    onClick={releaseAll}
+                    disabled={releasing}
+                    className="h-7 px-2.5 text-[11px] rounded-md border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
+                    style={{ backgroundColor: '#4C1D95', color: '#C4B5FD', borderColor: '#7C3AED' }}
+                  >
+                    {releasing ? 'Releasing…' : 'Release all'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+
+          {section === 'payslips' && (
+            <div className="flex shrink-0 gap-2">
+              <PayrollMoneyCard
+                label="Pending"
+                amount={fmtR(pendingGross)}
+                detail={pendingCount === 1 ? '1 open' : `${pendingCount} open`}
+                accent="#CA8A04"
+              />
+              <PayrollMoneyCard
+                label="Approved"
+                amount={fmtR(approvedGross)}
+                detail="Approved and paid"
+                accent="#16A34A"
+              />
+              <PayrollMoneyCard
+                label="Net"
+                amount={fmtR(approvedNet)}
+                detail={filtered.length === 1 ? '1 payslip' : `${filtered.length} payslips`}
+                accent="#2563EB"
+              />
+            </div>
+          )}
         </div>
 
         {success && (
-          <p className="text-success text-[12px] font-medium">{success}</p>
+          <p className="text-success text-[12px] font-medium mt-2">{success}</p>
         )}
         {error && error !== 'not_linked' && (
-          <p className="text-error text-[12px] font-medium">{error}</p>
+          <p className="text-error text-[12px] font-medium mt-2">{error}</p>
         )}
         {isLocked && (
-          <p className="text-error text-[12px] font-medium">Period is locked. Recalculation and overrides are disabled.</p>
+          <p className="text-error text-[12px] font-medium mt-2">Period is locked. Recalculation and overrides are disabled.</p>
         )}
-
-        {section === 'payslips' && (
-          <>
-            <div className="flex flex-nowrap items-center gap-2 overflow-x-auto">
-              <input
-                id="payroll-month"
-                type="month"
-                aria-label="Month"
-                value={month}
-                onChange={e => { setSuccess(null); setMonth(e.target.value) }}
-                className="h-7 shrink-0 rounded-md border border-border bg-surface-elevated px-2 text-[12px] text-text-primary"
-                style={{ width: 148, maxWidth: 148, flex: '0 0 148px' }}
-              />
-              <span className="text-[11px] text-text-secondary whitespace-nowrap shrink-0">{dateFrom} to {dateTo}</span>
-              <button
-                type="button"
-                onClick={() => void toggleLock()}
-                className="h-7 shrink-0 px-2 text-[11px] rounded-md border border-border bg-surface-dark text-text-primary hover:opacity-80"
-              >
-                {isLocked ? 'Unlock period' : 'Lock period'}
-              </button>
-              <span className="text-[11px] text-text-secondary whitespace-nowrap shrink-0">{isLocked ? 'Locked' : 'Open'}</span>
-            </div>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {(['all', 'pending', 'approved', 'paid'] as StatusFilter[]).map(s => (
-                <CompactChip
-                  key={s}
-                  label={s.charAt(0).toUpperCase() + s.slice(1)}
-                  active={statusFilter === s}
-                  onClick={() => setStatusFilter(s)}
-                />
-              ))}
-            </div>
-            <p className="text-[11px] text-text-secondary">
-              Pending <span className="text-text-primary font-medium">{fmtR(pendingGross)}</span>
-              <span className="text-text-disabled"> ({pendingCount})</span>
-              <span className="mx-1.5 text-text-disabled">·</span>
-              Approved <span className="text-text-primary font-medium">{fmtR(approvedGross)}</span>
-              <span className="mx-1.5 text-text-disabled">·</span>
-              Net <span className="text-text-primary font-medium">{fmtR(approvedNet)}</span>
-              <span className="mx-1.5 text-text-disabled">·</span>
-              {filtered.length === 1 ? '1 payslip' : `${filtered.length} payslips`}
-              {uncovered.length > 0 && (
-                <span className="text-warning">
-                  <span className="mx-1.5 text-text-disabled">·</span>
-                  {uncovered.length === 1 ? '1 employee is not on a payslip' : `${uncovered.length} employees are not on a payslip`}
-                </span>
-              )}
-            </p>
-          </>
+        {section === 'payslips' && uncovered.length > 0 && (
+          <p className="text-warning text-[11px] mt-2">
+            {uncovered.length === 1 ? '1 employee is not on a payslip' : `${uncovered.length} employees are not on a payslip`}
+          </p>
         )}
       </div>
 
@@ -676,44 +740,6 @@ export default function PayrollPage() {
             </section>
           </div>
         </div>
-      )}
-
-      {section === 'payslips' && (
-      <div className="shrink-0 flex flex-wrap items-center justify-end gap-1.5 px-3 py-1 bg-surface border-b border-divider">
-        <div className="flex items-center gap-1 w-44 shrink-0 h-7 bg-surface border border-border rounded-md px-2">
-          <span className="material-icons text-text-secondary text-[14px]">search</span>
-          <input
-            placeholder="Search employee"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="flex-1 min-w-0 bg-transparent text-text-primary text-[11px] h-7 outline-none placeholder:text-text-disabled"
-          />
-        </div>
-        <button
-          onClick={() => void openGenerate()}
-          disabled={generating || isLocked}
-          className="h-7 px-2 text-[11px] rounded-md bg-surface-dark border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
-        >
-          {generating
-            ? genProgress ? `${genProgress.done.toLocaleString()}/${genProgress.total.toLocaleString()}` : 'Working…'
-            : pendingCount > 0 ? 'Update payslips' : 'Create payslips'}
-        </button>
-        <button
-          onClick={approveAll}
-          disabled={approving}
-          className="btn-primary h-7 px-2 text-[11px] disabled:opacity-50"
-        >
-          {approving ? 'Approving…' : 'Approve all'}
-        </button>
-        <button
-          onClick={releaseAll}
-          disabled={releasing}
-          className="h-7 px-2 text-[11px] rounded-md border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
-          style={{ backgroundColor: '#4C1D95', color: '#C4B5FD', borderColor: '#7C3AED' }}
-        >
-          {releasing ? 'Releasing…' : 'Release all'}
-        </button>
-      </div>
       )}
 
       {section === 'payslips' && (
