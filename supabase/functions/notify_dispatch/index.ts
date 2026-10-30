@@ -124,8 +124,8 @@ Deno.serve(async (req: Request) => {
   const { data: ok } = await admin.rpc("notify_dispatch_secret_ok", { p_secret: secret });
   if (ok !== true) return json({ error: "Not allowed" }, 401);
 
-  const resendKey = Deno.env.get("RESEND_API_KEY") ?? "";
-  const fromEnv = Deno.env.get("NOTIFY_FROM_EMAIL") ?? "KaiSync <no-reply@kaiflow.app>";
+  const resendKey = (Deno.env.get("RESEND_API_KEY") ?? "").trim();
+  const fromEnv = (Deno.env.get("NOTIFY_FROM_EMAIL") ?? "").trim() || "KaiSync <no-reply@kaisyncworkforce.com>";
   const fromAddress = (fromEnv.match(/<([^>]+)>/)?.[1] ?? fromEnv).trim();
   const twSid = Deno.env.get("TWILIO_ACCOUNT_SID") ?? "";
   const twToken = Deno.env.get("TWILIO_AUTH_TOKEN") ?? "";

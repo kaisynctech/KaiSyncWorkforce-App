@@ -54,8 +54,8 @@ Deno.serve(async (req: Request) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const resendKey = Deno.env.get("RESEND_API_KEY") ?? "";
-    const from = Deno.env.get("NOTIFY_FROM_EMAIL") ?? "KaiSync <no-reply@kaiflow.app>";
+    const resendKey = (Deno.env.get("RESEND_API_KEY") ?? "").trim();
+    const from = (Deno.env.get("NOTIFY_FROM_EMAIL") ?? "").trim() || "KaiSync <no-reply@kaisyncworkforce.com>";
     if (!resendKey) return json({ error: "email_not_configured", message: "Email is not set up yet." }, 503);
 
     const userClient = createClient(supabaseUrl, anonKey, { global: { headers: { Authorization: authHeader } } });
