@@ -19,6 +19,7 @@ import {
   vatPercentLabel,
   type QuoteVatChoice,
 } from '@/lib/quote-vat'
+import { escapeIlike } from '@/lib/list-pagination'
 import SimpleQuoteLineRow from './SimpleQuoteLineRow'
 import RateCardPicker, { type RateCardSelection } from './RateCardPicker'
 
@@ -36,7 +37,22 @@ export interface SimpleQuoteLine {
   sort_order:         number
 }
 
-type ClientRow = { id: string; name: string; email?: string | null }
+type ClientRow = {
+  id: string
+  name: string
+  email?: string | null
+  legal_name?: string | null
+  client_code?: string | null
+  contact_person?: string | null
+}
+
+const CLIENT_PICK_COLUMNS = 'id, name, email, legal_name, client_code, contact_person'
+
+function clientPickDetail(row: ClientRow): string {
+  return [row.legal_name && row.legal_name !== row.name ? row.legal_name : null, row.client_code, row.contact_person]
+    .filter(Boolean)
+    .join(' · ')
+}
 type LinkOpt = { id: string; title: string; label?: string | null }
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 
@@ -107,6 +123,8 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
 
   // ── Clients list ──────────────────────────────────────────────────────────
   const [clients,        setClients]        = useState<ClientRow[]>([])
+  const [chosenClient,   setChosenClient]   = useState<ClientRow | null>(null)
+  const [clientListError, setClientListError] = useState<string | null>(null)
   const [clientSearch,   setClientSearch]   = useState('')
   const [clientDropOpen, setClientDropOpen] = useState(false)
   const [addingClient,   setAddingClient]   = useState(false)
@@ -150,6 +168,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   const jobIdRef      = useRef<string | null>(null)
   const linesRef      = useRef<SimpleQuoteLine[]>([blankLine()])
   const quoteNumberRef = useRef<string | null>(null)
+  const clientSearchSeq = useRef(0)
   const vatOnRef      = useRef(true)
   const vatRateRef    = useRef(0.15)
   const companyVatRef = useRef<QuoteVatChoice>({ vatOn: true, vatRate: 0.15 })
@@ -207,16 +226,54 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
     void companyLetterhead(supabase, companyId).then(setLetterhead)
   }, [authReady, companyId]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (!companyId) return
+    const handle = setTimeout(() => { void searchClients(companyId, clientSearch) }, 200)
+    return () => clearTimeout(handle)
+  }, [companyId, clientSearch]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function rememberClient(cid: string, clientRowId: string | null) {
+    if (!clientRowId) return
+    const { data } = await supabase
+      .from('clients')
+      .select(CLIENT_PICK_COLUMNS)
+      .eq('company_id', cid)
+      .eq('id', clientRowId)
+      .maybeSingle()
+    if (!data) return
+    const row = data as ClientRow
+    setChosenClient(row)
+    setClientSearch(row.name)
+  }
+
+  async function searchClients(cid: string, term: string) {
+    const seq = ++clientSearchSeq.current
+    let query = supabase
+      .from('clients')
+      .select(CLIENT_PICK_COLUMNS)
+      .eq('company_id', cid)
+      .order('name')
+      .limit(40)
+    const q = term.trim()
+    if (q) {
+      const escaped = escapeIlike(q)
+      query = query.or(
+        `name.ilike.%${escaped}%,email.ilike.%${escaped}%,legal_name.ilike.%${escaped}%,client_code.ilike.%${escaped}%,contact_person.ilike.%${escaped}%`,
+      )
+    }
+    const { data, error } = await query
+    if (seq !== clientSearchSeq.current) return
+    if (error) {
+      setClientListError(error.message)
+      setClients([])
+      return
+    }
+    setClientListError(null)
+    setClients((data ?? []) as ClientRow[])
+  }
+
   async function loadData(cid: string) {
-    // Load clients, projects, jobs in parallel
-    const [{ data: cData }, { data: pData }, { data: jData }] = await Promise.all([
-      supabase
-        .from('clients')
-        .select('id, name, email')
-        .eq('company_id', cid)
-        .eq('is_active', true)
-        .order('name')
-        .limit(200),
+    const [{ data: pData }, { data: jData }] = await Promise.all([
       supabase
         .from('client_deals')
         .select('id, title, project_code')
@@ -230,7 +287,6 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         .order('created_at', { ascending: false })
         .limit(200),
     ])
-    setClients((cData ?? []) as ClientRow[])
     setProjects(
       ((pData ?? []) as { id: string; title: string; project_code: string | null }[]).map(p => ({
         id: p.id,
@@ -281,9 +337,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         setJobId(jid);             jobIdRef.current = jid
         if (did || jid) setLinkOpen(true)
 
-        // Pre-fill client search input from loaded clients
-        const match = (cData ?? []).find((c: ClientRow) => c.id === cid2)
-        if (match) setClientSearch((match as ClientRow).name)
+        await rememberClient(cid, cid2)
       }
 
       if (lData && lData.length > 0) {
@@ -316,8 +370,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
       if (preClientId) {
         setClientId(preClientId)
         clientIdRef.current = preClientId
-        const match = (cData ?? []).find((c: ClientRow) => c.id === preClientId)
-        if (match) setClientSearch(match.name)
+        await rememberClient(cid, preClientId)
       }
       if (preDealId) {
         setDealId(preDealId)
@@ -463,8 +516,9 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   function updateTitle(v: string) {
     setTitle(v); titleRef.current = v; scheduleAutoSave()
   }
-  function selectClient(id: string | null, name: string) {
+  function selectClient(id: string | null, name: string, row?: ClientRow | null) {
     setClientId(id); clientIdRef.current = id
+    setChosenClient(row ?? null)
     setClientSearch(name); scheduleAutoSave()
   }
   function updateValidUntil(v: string) {
@@ -548,14 +602,13 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         company_id: companyId,
         name:       newClientName.trim(),
         email:      newClientEmail.trim() || null,
-        is_active:  true,
       })
-      .select('id, name, email')
+      .select(CLIENT_PICK_COLUMNS)
       .maybeSingle()
     if (data) {
       const c = data as ClientRow
       setClients(prev => [...prev, c].sort((a, b) => a.name.localeCompare(b.name)))
-      selectClient(c.id, c.name)
+      selectClient(c.id, c.name, c)
     }
     setCreatingClient(false)
     setAddingClient(false)
@@ -571,7 +624,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   }
 
   function buildPdfInput() {
-    const client = clients.find(c => c.id === clientIdRef.current)
+    const client = chosenClient?.id === clientIdRef.current ? chosenClient : clients.find(c => c.id === clientIdRef.current)
     return {
       quote_number: quoteNumberRef.current,
       title: titleRef.current.trim() || 'Untitled quote',
@@ -877,11 +930,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   const linkedJob = jobs.find(j => j.id === jobId)
 
   // ── Client dropdown ────────────────────────────────────────────────────────
-  const filteredClients = clients
-    .filter(c => c.name.toLowerCase().includes(clientSearch.toLowerCase()))
-    .slice(0, 8)
-
-  const clientName = clients.find(c => c.id === clientId)?.name ?? ''
+  const clientName = chosenClient?.id === clientId ? chosenClient.name : (clients.find(c => c.id === clientId)?.name ?? '')
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -1034,21 +1083,27 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
             {/* Client dropdown */}
             {clientDropOpen && !addingClient && (
               <div className="absolute left-0 top-full mt-1 z-50 w-full bg-surface border border-divider rounded-xl shadow-xl py-1 max-h-48 overflow-y-auto">
-                {filteredClients.map(c => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onMouseDown={() => { selectClient(c.id, c.name); setClientDropOpen(false) }}
-                    className={cn(
-                      'w-full text-left px-3 py-2 text-[13px] hover:bg-surface-elevated transition-colors',
-                      c.id === clientId ? 'text-primary font-medium' : 'text-text-primary',
-                    )}
-                  >
-                    {c.name}
-                  </button>
-                ))}
-                {filteredClients.length === 0 && clientSearch.trim() && (
-                  <p className="px-3 py-2 text-[12px] text-text-secondary">No clients found</p>
+                {clients.map(c => {
+                  const detail = clientPickDetail(c)
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onMouseDown={() => { selectClient(c.id, c.name, c); setClientDropOpen(false) }}
+                      className={cn(
+                        'w-full text-left px-3 py-2 text-[13px] hover:bg-surface-elevated transition-colors',
+                        c.id === clientId ? 'text-primary font-medium' : 'text-text-primary',
+                      )}
+                    >
+                      <span className="block">{c.name}</span>
+                      {detail && <span className="block text-[11px] text-text-secondary">{detail}</span>}
+                    </button>
+                  )
+                })}
+                {clients.length === 0 && (
+                  <p className="px-3 py-2 text-[12px] text-text-secondary">
+                    {clientListError ?? (clientSearch.trim() ? 'No clients found' : 'No clients yet')}
+                  </p>
                 )}
                 <div className="border-t border-divider mt-1 pt-1">
                   <button
@@ -1340,7 +1395,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
             <p className="text-[13px] text-text-secondary mb-4">
               Download the PDF, open an email to{' '}
               <span className="font-medium text-text-primary">
-                {clients.find(c => c.id === clientId)?.email?.trim() || clientName || 'the client'}
+                {(chosenClient?.id === clientId ? chosenClient.email : clients.find(c => c.id === clientId)?.email)?.trim() || clientName || 'the client'}
               </span>
               , then mark the quote as sent.
               {dealId ? ' Linked project clients will see this quote in the portal once sent.' : ''}
