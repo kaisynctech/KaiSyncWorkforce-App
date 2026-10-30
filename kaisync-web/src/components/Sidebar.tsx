@@ -68,6 +68,7 @@ const NAV_SECTIONS: NavSection[] = [
       { label: 'Projects',         href: '/dashboard/projects',          icon: 'folder',      flag: 'projects' },
       { label: 'Jobs',             href: '/dashboard/jobs',              icon: 'work',        flag: 'jobs' },
       { label: 'Contractors',      href: '/dashboard/contractors',       icon: 'engineering', flag: 'contractors' },
+      { label: 'Linked companies', href: '/dashboard/linked-companies',  icon: 'link',        flag: 'clients' },
       { label: 'Incidents',        href: '/dashboard/incidents',         icon: 'warning',     flag: 'incidents' },
       { label: 'Compliance Packs', href: '/dashboard/compliance-packs', icon: 'verified',    flag: 'compliancePacks' },
       { label: 'Inventory & Services', href: '/dashboard/inventory',       icon: 'inventory_2', flag: 'inventory' },

@@ -33,6 +33,7 @@ import { ContractorInvoicesTab } from '@/components/ContractorInvoicesTab'
 import { ComplianceGradeBox } from '@/components/ComplianceGradeBox'
 import { KpiTile } from '@/components/ui/KpiTile'
 import { DocFilterChip } from '@/components/ui/DocFilterChip'
+import { CompanyLinkPanel } from '@/components/CompanyLinkPanel'
 import type {
   Contractor, ComplianceDocument, JobContractor, Job, IncidentReport,
   ContractorTeamMember, PendingBankingUpdate, Project, ContractorCompliancePack, Employee,
@@ -950,6 +951,9 @@ function ContractorDetailInner() {
         {/* ── INFORMATION ── */}
         {tab === 'Information' && (
           <div className="flex-1 overflow-y-auto p-4 space-y-4 w-full">
+            {contractor?.company_id && (
+              <CompanyLinkPanel companyId={contractor.company_id} myRole="customer" recordId={contractorId} />
+            )}
             <SectionCard title="COMPANY DETAILS">
               <FormField label="Company / trading name *">
                 <input type="text" value={name} onChange={e => setName(e.target.value)}
