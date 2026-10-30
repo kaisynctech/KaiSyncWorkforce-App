@@ -5,6 +5,7 @@
 import { jsPDF } from 'jspdf'
 import { localISODate } from '@/lib/utils'
 import { drawLetterhead, finishDocument, letterheadFromRow, showsBank, type Letterhead } from '@/lib/letterhead'
+import { vatPercentLabel } from '@/lib/quote-vat'
 
 export type QuotePdfLine = {
   description: string
@@ -28,6 +29,8 @@ export type QuotePdfInput = {
   subtotal: number
   vat: number
   total: number
+  /** Fraction, for example 0.15. Zero means the quote has no VAT. */
+  vatRate?: number
   /** Company letterhead (logo, details, banking). Falls back to the company name only. */
   letterhead?: Letterhead | null
 }
@@ -113,10 +116,13 @@ export function buildQuotePdf(input: QuotePdfInput): jsPDF {
   doc.line(120, y, right, y)
   y += 7
 
+  const rate = input.vatRate ?? (input.subtotal > 0 ? input.vat / input.subtotal : 0)
+  const vatOn = rate > 0.0001
+  const vatLabel = vatOn ? `VAT (${vatPercentLabel(rate)}%)` : 'VAT'
   const totals = [
-    ['Subtotal (excl. VAT)', money(input.subtotal)],
-    ['VAT (15%)', money(input.vat)],
-    ['Total (incl. VAT)', money(input.total)],
+    [vatOn ? 'Subtotal (excl. VAT)' : 'Subtotal', money(input.subtotal)],
+    [vatLabel, vatOn ? money(input.vat) : 'No VAT'],
+    [vatOn ? 'Total (incl. VAT)' : 'Total', money(input.total)],
   ] as const
 
   for (let i = 0; i < totals.length; i++) {
