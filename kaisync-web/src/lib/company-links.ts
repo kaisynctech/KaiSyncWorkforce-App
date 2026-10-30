@@ -160,3 +160,15 @@ export function statusWords(link: Pick<CompanyLink, 'status' | 'waiting_on_me'>)
     default: return 'Disconnected'
   }
 }
+
+export type LinkTab = 'clients' | 'contractors'
+
+/** Links grouped for the Clients / Contractors tabs, each split into waiting, open and ended. */
+export function groupLinks(links: CompanyLink[], tab: LinkTab) {
+  const mine = links.filter(l => (tab === 'clients' ? l.my_role === 'provider' : l.my_role === 'customer'))
+  return {
+    waiting: mine.filter(l => l.status === 'pending' && l.waiting_on_me),
+    open: mine.filter(l => l.status === 'active' || (l.status === 'pending' && !l.waiting_on_me)),
+    ended: mine.filter(l => l.status === 'declined' || l.status === 'disconnected'),
+  }
+}

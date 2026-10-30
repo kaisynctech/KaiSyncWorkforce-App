@@ -6,9 +6,14 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { SearchPicker } from '@/components/SearchPicker'
 import {
-  decideLink, disconnectLink, listLinks, myRecordNoun, myUnlinkedRecords, relationWords, statusWords,
-  type CompanyLink,
+  decideLink, disconnectLink, groupLinks, listLinks, myRecordNoun, myUnlinkedRecords, relationWords, statusWords,
+  type CompanyLink, type LinkTab,
 } from '@/lib/company-links'
+
+const TABS: { id: LinkTab; label: string; empty: string; how: string }[] = [
+  { id: 'clients', label: 'Clients', empty: 'No clients linked yet.', how: 'To link one, open the client and use the KaiSync link card.' },
+  { id: 'contractors', label: 'Contractors', empty: 'No contractors linked yet.', how: 'To link one, open the contractor and use the KaiSync link card.' },
+]
 
 function recordHref(link: CompanyLink): string | null {
   if (!link.my_record_id) return null
@@ -25,6 +30,7 @@ export default function LinkedCompaniesPage() {
   const [records, setRecords] = useState<{ id: string; name: string }[]>([])
   const [chosen, setChosen] = useState('')
   const [showEnded, setShowEnded] = useState(false)
+  const [tab, setTab] = useState<LinkTab>('clients')
 
   const load = useCallback(async () => {
     const supabase = createClient()
@@ -72,9 +78,8 @@ export default function LinkedCompaniesPage() {
     await load()
   }
 
-  const waiting = links.filter(l => l.status === 'pending' && l.waiting_on_me)
-  const open = links.filter(l => l.status === 'active' || (l.status === 'pending' && !l.waiting_on_me))
-  const ended = links.filter(l => l.status === 'declined' || l.status === 'disconnected')
+  const { waiting, open, ended } = groupLinks(links, tab)
+  const current = TABS.find(t => t.id === tab) ?? TABS[0]
 
   function row(link: CompanyLink) {
     const href = recordHref(link)
@@ -139,8 +144,30 @@ export default function LinkedCompaniesPage() {
       <div className="flex-1 overflow-y-auto p-4 space-y-4 text-[13px]">
         <p className="text-text-secondary max-w-3xl">
           Clients and contractors that also use KaiSync. A link joins your record and theirs, so you work together
-          inside KaiSync without portals or copies. To link one, open the client or contractor and use the KaiSync link card.
+          inside KaiSync without portals or copies.
         </p>
+        <div className="flex gap-1 border-b border-divider" role="tablist" aria-label="Linked companies">
+          {TABS.map(t => {
+            const g = groupLinks(links, t.id)
+            const count = g.waiting.length + g.open.length
+            const active = t.id === tab
+            return (
+              <button
+                key={t.id}
+                role="tab"
+                aria-selected={active}
+                onClick={() => { setTab(t.id); setAccepting(null); setShowEnded(false) }}
+                className={`px-4 py-2 -mb-px border-b-2 text-[13px] inline-flex items-center gap-2 ${active ? 'border-primary text-primary font-semibold' : 'border-transparent text-text-secondary hover:text-text-primary'}`}
+              >
+                {t.label}
+                <span className="text-[11px] px-1.5 rounded-full bg-surface-elevated text-text-secondary">{count}</span>
+                {g.waiting.length > 0 && (
+                  <span className="w-2 h-2 rounded-full bg-warning" title={`${g.waiting.length} waiting for you`} aria-label={`${g.waiting.length} waiting for you`} />
+                )}
+              </button>
+            )
+          })}
+        </div>
         {error && <p className="text-error">{error}</p>}
         {loading ? (
           <p className="text-text-secondary">Loading…</p>
@@ -156,10 +183,10 @@ export default function LinkedCompaniesPage() {
             )}
             <section className="bg-surface border border-divider rounded-lg overflow-hidden">
               <div className="px-4 py-2.5 border-b border-divider bg-surface-elevated">
-                <p className="text-[11px] font-semibold text-text-secondary tracking-wider uppercase">Linked and requested ({open.length})</p>
+                <p className="text-[11px] font-semibold text-text-secondary tracking-wider uppercase">{current.label}: linked and requested ({open.length})</p>
               </div>
               {open.length === 0 ? (
-                <p className="px-4 py-6 text-text-secondary text-center">No linked companies yet.</p>
+                <p className="px-4 py-6 text-text-secondary text-center">{current.empty} {current.how}</p>
               ) : (
                 <ul className="divide-y divide-divider">{open.map(row)}</ul>
               )}

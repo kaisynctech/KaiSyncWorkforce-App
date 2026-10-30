@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { inviteUrl, linkErrorMessage, myRecordNoun, relationWords, statusWords } from './company-links'
+import { groupLinks, inviteUrl, linkErrorMessage, myRecordNoun, relationWords, statusWords, type CompanyLink } from './company-links'
 
 describe('company links words', () => {
   it('builds the invite address from the site and token', () => {
@@ -25,5 +25,30 @@ describe('company links words', () => {
     expect(linkErrorMessage('INVITE_EXPIRED')).toMatch(/expired/)
     expect(linkErrorMessage('ALREADY_LINKED_OR_WAITING')).toMatch(/already linked/)
     expect(linkErrorMessage('')).toMatch(/Something went wrong/)
+  })
+})
+
+describe('Clients and Contractors tabs', () => {
+  const base = { other: { id: 'o', name: 'X', legal_name: null, logo_path: null }, my_record_id: null, my_record_name: null, created_at: '', decided_at: null, ended_at: null }
+  const links = [
+    { ...base, id: '1', status: 'active', my_role: 'provider', waiting_on_me: false },
+    { ...base, id: '2', status: 'pending', my_role: 'provider', waiting_on_me: true },
+    { ...base, id: '3', status: 'active', my_role: 'customer', waiting_on_me: false },
+    { ...base, id: '4', status: 'disconnected', my_role: 'customer', waiting_on_me: false },
+    { ...base, id: '5', status: 'pending', my_role: 'customer', waiting_on_me: false },
+  ] as CompanyLink[]
+
+  it('puts companies that are my clients under Clients', () => {
+    const g = groupLinks(links, 'clients')
+    expect(g.waiting.map(l => l.id)).toEqual(['2'])
+    expect(g.open.map(l => l.id)).toEqual(['1'])
+    expect(g.ended).toEqual([])
+  })
+
+  it('puts companies that are my contractors under Contractors', () => {
+    const g = groupLinks(links, 'contractors')
+    expect(g.waiting).toEqual([])
+    expect(g.open.map(l => l.id)).toEqual(['3', '5'])
+    expect(g.ended.map(l => l.id)).toEqual(['4'])
   })
 })
