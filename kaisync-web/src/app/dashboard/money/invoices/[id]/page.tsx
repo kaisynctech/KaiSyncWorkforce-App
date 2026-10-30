@@ -10,7 +10,7 @@ import { downloadInvoicePdf, openInvoiceMailto } from '@/lib/invoice-pdf'
 import { companyLetterhead, type Letterhead } from '@/lib/letterhead'
 import type { FinanceInvoice, FinanceInvoiceLine } from '@/lib/finance-types'
 import { localISODate } from '@/lib/utils'
-import { signWorkforceMedia } from '@/lib/media-read'
+import { signWorkforceMediaMany } from '@/lib/media-read'
 
 // ─── Extended types ────────────────────────────────────────────────────────────
 
@@ -188,7 +188,14 @@ function MoneyInvoiceDetailInner() {
     setInv(invoice as Invoice | null)
     setLines((lineRows ?? []) as FinanceInvoiceLine[])
     setTxRows((transactions ?? []) as Transaction[])
-    setProofs((proofRows ?? []) as PaymentProof[])
+    // Proofs sent from a linked company keep only the storage path: sign a link for those.
+    const proofList = (proofRows ?? []) as PaymentProof[]
+    const unsigned = proofList.filter(p => !p.file_url && p.storage_path).map(p => p.storage_path)
+    if (unsigned.length) {
+      const signed = await signWorkforceMediaMany(supabase, unsigned).catch(() => new Map<string, string>())
+      for (const p of proofList) if (!p.file_url && p.storage_path) p.file_url = signed.get(p.storage_path.trim()) ?? null
+    }
+    setProofs(proofList)
     setCompanyName((company as { name?: string } | null)?.name ?? 'KaiSync')
     setClientEmail((invoice as { clients?: { email?: string | null } | null } | null)?.clients?.email ?? null)
 
@@ -254,14 +261,6 @@ function MoneyInvoiceDetailInner() {
       invoice_number: invoiceNumber,
     }).eq('id', inv.id)
     return !error
-  }
-
-  /** Proofs sent from a linked company keep only the storage path; open a short-lived signed link. */
-  async function openProofFile(path: string) {
-    const tab = window.open('', '_blank')
-    const url = await signWorkforceMedia(createClient(), path, 300)
-    if (url && tab) tab.location.href = url
-    else { tab?.close(); setErr('Could not open the file.') }
   }
 
   async function reviewProof(proofId: string, status: 'accepted' | 'rejected') {
@@ -590,15 +589,11 @@ function MoneyInvoiceDetailInner() {
                       {p.reference ? ` · ref ${p.reference}` : ''}
                       {p.amount != null ? ` · ${fmtMoney(p.amount)}` : ''}
                     </p>
-                    {p.file_url ? (
+                    {p.file_url && (
                       <a href={p.file_url} target="_blank" rel="noreferrer" className="text-[12px] text-primary hover:underline">
                         View file
                       </a>
-                    ) : p.storage_path ? (
-                      <button type="button" onClick={() => void openProofFile(p.storage_path)} className="text-[12px] text-primary hover:underline">
-                        View file
-                      </button>
-                    ) : null}
+                    )}
                   </div>
                   {p.status === 'submitted' && (
                     <div className="flex gap-2">

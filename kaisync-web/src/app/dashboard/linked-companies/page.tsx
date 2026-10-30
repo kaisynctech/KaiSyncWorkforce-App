@@ -315,7 +315,7 @@ export default function LinkedCompaniesPage() {
                       <td className="px-4 py-3 text-text-primary whitespace-nowrap">{w.provider}</td>
                       <td className="px-4 py-3">
                         <Link href={workHref(w)} className="text-primary hover:underline">
-                          <span className="text-text-secondary capitalize">{w.kind}: </span>{w.title || '—'}
+                          {w.kind !== 'invoice' && <span className="text-text-secondary capitalize">{w.kind}: </span>}{w.title || '—'}
                         </Link>
                       </td>
                       <td className="px-4 py-3 text-text-secondary whitespace-nowrap">{w.ref || '—'}</td>
