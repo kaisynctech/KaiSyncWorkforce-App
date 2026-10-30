@@ -25,7 +25,7 @@ import {
   unlockPayrollPeriod,
 } from '@/lib/payroll'
 import { isOnPayrollRoster, payrollRosterGap, type PayrollGeneratePreview } from '@/lib/payroll-readiness'
-import { formatBankPaymentFile, type BankFormat } from '@/lib/payroll/bank-export'
+import { formatBankPaymentFile, resolveBankPaymentReference, type BankFormat } from '@/lib/payroll/bank-export'
 import { buildForTaxYear, taxYearFor, toCsvRows } from '@/lib/payroll/irp5'
 
 // Matches actual `payment_approvals` table columns
@@ -162,6 +162,8 @@ export default function PayrollPage() {
   const [genPreview,   setGenPreview]   = useState<PayrollGeneratePreview | null>(null)
   const [showGenModal, setShowGenModal] = useState(false)
   const [bankFormat,   setBankFormat]   = useState<BankFormat>('generic')
+  const [bankReference, setBankReference] = useState(() => `SALARY ${monthBounds(currentMonthValue()).start}`)
+  const bankReferenceEdited = useRef(false)
   const [stepUpOpen,   setStepUpOpen]   = useState(false)
   const [stepUpBusy,   setStepUpBusy]   = useState(false)
   const [stepUpError,  setStepUpError]  = useState<string | null>(null)
@@ -188,6 +190,11 @@ export default function PayrollPage() {
 
   // Reload whenever the date range changes
   useEffect(() => { loadPayroll(dateFrom, dateTo) }, [dateFrom, dateTo])
+
+  useEffect(() => {
+    if (bankReferenceEdited.current) return
+    setBankReference(`SALARY ${dateFrom}`)
+  }, [dateFrom])
 
   async function loadPayroll(from: string, to: string) {
     setLoading(true)
@@ -423,7 +430,7 @@ export default function PayrollPage() {
           branchCode: emp?.bank_branch_code ?? '',
           accountNumber: emp?.bank_account ?? '',
           netPay: p.net_pay ?? 0,
-          reference: `SALARY ${p.period_start}`,
+          reference: resolveBankPaymentReference(bankReference, dateFrom),
           idNumber: emp?.id_number ?? null,
         }
       })
@@ -703,6 +710,20 @@ export default function PayrollPage() {
                   Approved and paid payslips with a net amount, in the bank layout you choose.
                 </p>
               </div>
+              <label className="block">
+                <span className="text-[11px] text-text-secondary">Payment reference</span>
+                <input
+                  value={bankReference}
+                  maxLength={30}
+                  aria-label="Payment reference"
+                  onChange={e => {
+                    bankReferenceEdited.current = true
+                    setBankReference(e.target.value)
+                  }}
+                  className="mt-1 h-9 w-full px-2 text-[12px] rounded-md bg-surface-dark border border-border text-text-primary"
+                />
+                <span className="block mt-1 text-[11px] text-text-secondary">Shown on each payment. Up to 30 characters.</span>
+              </label>
               <select
                 value={bankFormat}
                 onChange={e => setBankFormat(e.target.value as BankFormat)}

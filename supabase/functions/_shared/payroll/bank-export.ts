@@ -20,6 +20,20 @@ export type BankPaymentRow = {
 
 export type BankFormat = 'generic' | 'fnb' | 'absa' | 'standard_bank'
 
+/** Banks often reject a statement reference longer than this. */
+export const BANK_PAYMENT_REFERENCE_MAX = 30
+
+export function defaultBankPaymentReference(periodStart: string): string {
+  return `SALARY ${periodStart}`
+}
+
+/** Use the typed reference. A blank value keeps the salary-and-month default. */
+export function resolveBankPaymentReference(input: string, periodStart: string): string {
+  const cleaned = input.replace(/[\u0000-\u001F]+/g, ' ').replace(/\s+/g, ' ').trim()
+  const value = cleaned || defaultBankPaymentReference(periodStart)
+  return value.slice(0, BANK_PAYMENT_REFERENCE_MAX)
+}
+
 function f2(n: number): string {
   return n.toFixed(2)
 }
