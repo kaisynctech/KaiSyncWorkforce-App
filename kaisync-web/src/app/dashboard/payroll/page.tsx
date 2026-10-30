@@ -590,50 +590,15 @@ export default function PayrollPage() {
                   </button>
                   <span className="text-[11px] text-text-secondary whitespace-nowrap">{isLocked ? 'Locked' : 'Open'}</span>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="flex items-center gap-1.5">
-                    {(['all', 'pending', 'approved', 'paid'] as StatusFilter[]).map(s => (
-                      <CompactChip
-                        key={s}
-                        label={s.charAt(0).toUpperCase() + s.slice(1)}
-                        active={statusFilter === s}
-                        onClick={() => setStatusFilter(s)}
-                      />
-                    ))}
-                  </div>
-                  <div className="flex items-center gap-1 w-48 shrink-0 h-7 bg-surface border border-border rounded-md px-2">
-                    <span className="material-icons text-text-secondary text-[14px]">search</span>
-                    <input
-                      placeholder="Search employee"
-                      value={search}
-                      onChange={e => setSearch(e.target.value)}
-                      className="flex-1 min-w-0 bg-transparent text-text-primary text-[11px] h-7 outline-none placeholder:text-text-disabled"
+                <div className="flex items-center gap-1.5">
+                  {(['all', 'pending', 'approved', 'paid'] as StatusFilter[]).map(s => (
+                    <CompactChip
+                      key={s}
+                      label={s.charAt(0).toUpperCase() + s.slice(1)}
+                      active={statusFilter === s}
+                      onClick={() => setStatusFilter(s)}
                     />
-                  </div>
-                  <button
-                    onClick={() => void openGenerate()}
-                    disabled={generating || isLocked}
-                    className="h-7 px-2.5 text-[11px] rounded-md bg-surface-dark border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
-                  >
-                    {generating
-                      ? genProgress ? `${genProgress.done.toLocaleString()}/${genProgress.total.toLocaleString()}` : 'Working…'
-                      : pendingCount > 0 ? 'Update payslips' : 'Create payslips'}
-                  </button>
-                  <button
-                    onClick={approveAll}
-                    disabled={approving}
-                    className="btn-primary h-7 px-2.5 text-[11px] disabled:opacity-50"
-                  >
-                    {approving ? 'Approving…' : 'Approve all'}
-                  </button>
-                  <button
-                    onClick={releaseAll}
-                    disabled={releasing}
-                    className="h-7 px-2.5 text-[11px] rounded-md border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
-                    style={{ backgroundColor: '#4C1D95', color: '#C4B5FD', borderColor: '#7C3AED' }}
-                  >
-                    {releasing ? 'Releasing…' : 'Release all'}
-                  </button>
+                  ))}
                 </div>
               </>
             )}
@@ -761,6 +726,44 @@ export default function PayrollPage() {
             </section>
           </div>
         </div>
+      )}
+
+      {section === 'payslips' && (
+      <div className="shrink-0 flex flex-wrap items-center gap-2 px-3 py-1.5 bg-surface border-b border-divider">
+        <div className="flex items-center gap-1 h-7 min-w-[220px] flex-1 max-w-md bg-surface border border-border rounded-md px-2">
+          <span className="material-icons text-text-secondary text-[14px]">search</span>
+          <input
+            placeholder="Search employee"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="flex-1 min-w-0 bg-transparent text-text-primary text-[11px] h-7 outline-none placeholder:text-text-disabled"
+          />
+        </div>
+        <button
+          onClick={() => void openGenerate()}
+          disabled={generating || isLocked}
+          className="h-7 px-2.5 text-[11px] rounded-md bg-surface-dark border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
+        >
+          {generating
+            ? genProgress ? `${genProgress.done.toLocaleString()}/${genProgress.total.toLocaleString()}` : 'Working…'
+            : pendingCount > 0 ? 'Update payslips' : 'Create payslips'}
+        </button>
+        <button
+          onClick={approveAll}
+          disabled={approving}
+          className="btn-primary h-7 px-2.5 text-[11px] disabled:opacity-50"
+        >
+          {approving ? 'Approving…' : 'Approve all'}
+        </button>
+        <button
+          onClick={releaseAll}
+          disabled={releasing}
+          className="h-7 px-2.5 text-[11px] rounded-md border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
+          style={{ backgroundColor: '#4C1D95', color: '#C4B5FD', borderColor: '#7C3AED' }}
+        >
+          {releasing ? 'Releasing…' : 'Release all'}
+        </button>
+      </div>
       )}
 
       {section === 'payslips' && (
