@@ -264,6 +264,8 @@ export default function ProjectsPage() {
     )
   }
 
+  const centreItems = actionItems.filter(item => item.action_type !== 'invoice_overdue' && item.action_type !== 'quotation_pending')
+
   const rangeLabel = total === 0
     ? '0 projects'
     : `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}`
@@ -379,19 +381,19 @@ export default function ProjectsPage() {
 
       {/* Action Centre */}
       <div className="mx-3 mb-2 bg-surface rounded-lg border border-divider overflow-hidden shrink-0">
-        <div className={`flex items-center gap-2 px-3 py-1.5 ${actionItems.length > 0 ? 'border-b border-divider' : ''}`}>
+        <div className={`flex items-center gap-2 px-3 py-1.5 ${centreItems.length > 0 ? 'border-b border-divider' : ''}`}>
           <span className="material-icons text-primary text-[16px]">bolt</span>
           <span className="font-semibold text-[11px] text-primary uppercase tracking-wider">Action Centre</span>
           <span className="text-text-secondary text-[11px] ml-1">
-            {actionItems.length > 0 ? `${actionItems.length} pending` : 'Up to date'}
+            {centreItems.length > 0 ? `${centreItems.length} pending` : 'Up to date'}
           </span>
           <button onClick={() => void load()} className="ml-auto text-text-secondary text-[11px] h-6 px-2 hover:text-text-primary transition-colors">
             ↻ Refresh
           </button>
         </div>
-        {actionItems.length > 0 && (
+        {centreItems.length > 0 && (
           <div className="max-h-[88px] overflow-y-auto">
-            {actionItems.map(item => {
+            {centreItems.map(item => {
               const colors = ACTION_TYPE_COLORS[item.action_type] ?? getDefaultColor()
               return (
                 <div

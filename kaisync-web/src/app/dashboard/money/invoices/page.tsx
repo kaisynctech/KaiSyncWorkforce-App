@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { fmtMoney } from '@/lib/finance-calc'
+import { MoneyNotices, type MoneyNotice } from '@/components/money/MoneyNotices'
 import type { FinanceInvoice } from '@/lib/finance-types'
 import {
   ResponsiveDataView,
@@ -58,6 +59,7 @@ function MoneyInvoicesInner() {
   const dealFilter = searchParams.get('deal_id') ?? searchParams.get('project_id')
 
   const [rows, setRows]       = useState<InvoiceRow[]>([])
+  const [notices, setNotices] = useState<MoneyNotice[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch]   = useState('')
   const [status, setStatus]   = useState('all')
@@ -86,8 +88,32 @@ function MoneyInvoicesInner() {
     if (jobFilter) q = q.eq('job_id', jobFilter)
     if (dealFilter) q = q.or(`deal_id.eq.${dealFilter},project_id.eq.${dealFilter}`)
 
-    const { data } = await q
+    const [listRes, actionRes] = await Promise.all([
+      q,
+      (supabase.rpc as unknown as (
+        name: string,
+        args: Record<string, unknown>,
+      ) => Promise<{ data: Array<{
+        ref_id: string
+        client_name: string
+        action_type: string
+        summary: string
+        created_at: string
+      }> | null }>)('hr_get_client_action_items', { p_company_id: member.companyId }),
+    ])
+    const data = listRes.data
     setRows((data ?? []) as unknown as InvoiceRow[])
+    setNotices((actionRes.data ?? [])
+      .filter(item => item.action_type.startsWith('invoice_'))
+      .map(item => ({
+        id: `${item.action_type}-${item.ref_id}`,
+        label: item.action_type === 'invoice_overdue' ? 'Invoice overdue' : 'Invoice outstanding',
+        title: item.client_name || 'Client',
+        detail: item.summary,
+        when: item.created_at,
+        tone: item.action_type === 'invoice_overdue' ? 'red' as const : 'amber' as const,
+        onOpen: () => router.push(`/dashboard/money/invoices/${item.ref_id}`),
+      })))
 
     const labels: { client?: string; job?: string; deal?: string } = {}
     if (clientFilter) {
@@ -180,6 +206,8 @@ function MoneyInvoicesInner() {
           </div>
         )}
       </div>
+
+      <MoneyNotices items={notices} />
 
       <div className="flex-1 overflow-auto">
         {loading ? (

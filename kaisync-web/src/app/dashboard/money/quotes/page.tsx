@@ -7,6 +7,7 @@ import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { fmtMoney } from '@/lib/finance-calc'
 import { KpiTile } from '@/components/ui/KpiTile'
 import { quoteStatusLabel } from '@/lib/contractor-portal/quotes'
+import { MoneyNotices, type MoneyNotice } from '@/components/money/MoneyNotices'
 import type { CommercialQuote } from '@/types/database'
 import { cn } from '@/lib/utils'
 import {
@@ -118,6 +119,7 @@ function QuotesPageInner() {
   const [loading, setLoading] = useState(true)
   const [sales, setSales] = useState<SalesRow[]>([])
   const [incoming, setIncoming] = useState<IncomingRow[]>([])
+  const [notices, setNotices] = useState<MoneyNotice[]>([])
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE)
   const [filterLabels, setFilterLabels] = useState<{ client?: string; job?: string; deal?: string }>({})
@@ -158,7 +160,12 @@ function QuotesPageInner() {
     if (jobFilter) salesQ = salesQ.eq('job_id', jobFilter)
     if (dealFilter) salesQ = salesQ.eq('deal_id', dealFilter)
 
-    const [salesRes, incomingRes] = await Promise.all([
+    const rpc = supabase.rpc as unknown as (
+      name: string,
+      args: Record<string, unknown>,
+    ) => Promise<{ data: Array<Record<string, string | null>> | null }>
+
+    const [salesRes, incomingRes, contractorActions, projectActions] = await Promise.all([
       salesQ,
       supabase
         .from('contractor_quotes')
@@ -169,10 +176,38 @@ function QuotesPageInner() {
         .neq('status', 'draft')
         .order('created_at', { ascending: false })
         .limit(300),
+      rpc('hr_get_contractor_action_items', { p_company_id: member.companyId }),
+      rpc('hr_get_project_action_items', { p_company_id: member.companyId }),
     ])
 
     setSales((salesRes.data ?? []) as unknown as SalesRow[])
     setIncoming((incomingRes.data ?? []) as unknown as IncomingRow[])
+    const quoteNotices: MoneyNotice[] = []
+    for (const item of contractorActions.data ?? []) {
+      if (item.action_type !== 'quote_pending' || !item.ref_id || !item.contractor_id) continue
+      quoteNotices.push({
+        id: `quote-${item.ref_id}`,
+        label: 'Quote to review',
+        title: item.contractor_name || 'Contractor',
+        detail: item.summary ?? '',
+        when: item.created_at,
+        tone: 'blue',
+        onOpen: () => router.push(`/dashboard/contractors/${item.contractor_id}?tab=Quotes&focusType=quote_pending&focus=${item.ref_id}`),
+      })
+    }
+    for (const item of projectActions.data ?? []) {
+      if (item.action_type !== 'quotation_pending' || !item.project_id) continue
+      quoteNotices.push({
+        id: `quotation-${item.ref_id}`,
+        label: 'Quotation to send',
+        title: item.project_title || 'Project',
+        detail: item.summary ?? '',
+        when: item.created_at,
+        tone: 'blue',
+        onOpen: () => router.push(`/dashboard/projects/${item.project_id}?tab=quotation`),
+      })
+    }
+    setNotices(quoteNotices)
 
     const labels: { client?: string; job?: string; deal?: string } = {}
     if (clientFilter) {
@@ -334,6 +369,8 @@ function QuotesPageInner() {
           )}
         </div>
       </div>
+
+      <MoneyNotices items={notices} />
 
       <div className="flex gap-1 px-4 pt-3 border-b border-divider bg-surface shrink-0">
         {(
