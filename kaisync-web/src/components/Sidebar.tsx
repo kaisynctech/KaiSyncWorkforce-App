@@ -119,8 +119,13 @@ const NAV_SECTIONS: NavSection[] = [
     label: 'Insights',
     icon: 'bar_chart',
     items: [
-      { label: 'Reports',               href: '/dashboard/reports',                       icon: 'bar_chart',   flag: 'reports' },
-      { label: 'Project Profitability', href: '/dashboard/reports/project-profitability', icon: 'trending_up', flag: 'reports' },
+      { label: 'Overview',              href: '/dashboard/reports',                       icon: 'space_dashboard',        flag: 'reports' },
+      { label: 'People & attendance',   href: '/dashboard/reports/people',                icon: 'groups',                 flag: 'reports' },
+      { label: 'Jobs & operations',     href: '/dashboard/reports/jobs',                  icon: 'construction',           flag: 'reports' },
+      { label: 'Sales & money',         href: '/dashboard/reports/money',                 icon: 'payments',               flag: 'reports' },
+      { label: 'Payroll',               href: '/dashboard/reports/payroll',               icon: 'account_balance_wallet', flag: 'reports' },
+      { label: 'Report library',        href: '/dashboard/reports/library',               icon: 'library_books',          flag: 'reports' },
+      { label: 'Project Profitability', href: '/dashboard/reports/project-profitability', icon: 'trending_up',            flag: 'reports' },
     ],
   },
 ]
@@ -139,6 +144,8 @@ function itemVisible(item: NavItem, flags: HrNavFlags, isOwner: boolean): boolea
 }
 
 function isItemActive(pathname: string, href: string): boolean {
+  // Insights overview sits above its own dashboards: only light it up on the overview itself.
+  if (href === '/dashboard/reports') return pathname === href
   return pathname === href || pathname.startsWith(`${href}/`)
 }
 

@@ -1,913 +1,220 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
-import {
-  ResponsiveContainer, LineChart, Line, BarChart, Bar,
-  XAxis, YAxis, Tooltip, CartesianGrid,
-} from 'recharts'
-import { createClient } from '@/lib/supabase/client'
-import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
-import {
-  buildPhase2Snapshot,
-  fetchIncidentsExportRows,
-  fetchInventoryExportRows,
-  fetchJobsExportRows,
-  fetchPaymentsExportRows,
-  isPhase2Tab,
-} from '@/lib/reports-snapshots'
+import { useMemo } from 'react'
+import Link from 'next/link'
+import { useExporter, useInsights, useInsightsRpc } from '@/components/insights/InsightsContext'
+import { useDownloads } from '@/components/insights/useDownloads'
+import { d, kpiTable, Loadable, n, pointTitle, rollUp } from '@/components/insights/dash'
+import { AttentionRow, Card, ChartCard, RAMP, SegmentedBar, SERIES, STATUS, StatTile, TrendChart } from '@/components/insights/viz'
+import { count, countShort, hours, money, moneyShort, pct, signedPct, words } from '@/lib/insights/format'
+import { describeRange, eachDay, grainFor, pointLabel, previousRange } from '@/lib/insights/period'
+import type { TableSpec } from '@/lib/insights/table'
+import type { HomeResult } from '@/lib/insights/types'
 
-type Preset = '7d' | '30d' | 'month' | 'year'
-type TabKey = 'executive' | 'financial' | 'payroll' | 'workforce' | 'operational' |
-  'incidents' | 'inventory' | 'contractors' | 'clients' | 'property' | 'telemetry' | 'exports' |
-  'commercial'
+const SEVERITY: Record<string, string> = { low: RAMP[2], medium: STATUS.warning, high: STATUS.serious, critical: STATUS.critical }
 
-const TABS: { key: TabKey; label: string }[] = [
-  { key: 'executive',   label: 'Executive' },
-  { key: 'financial',   label: 'Financial' },
-  { key: 'payroll',     label: 'Payroll' },
-  { key: 'workforce',   label: 'Workforce' },
-  { key: 'operational', label: 'Operational' },
-  { key: 'incidents',   label: 'Incidents' },
-  { key: 'inventory',   label: 'Inventory' },
-  { key: 'contractors', label: 'Contractors' },
-  { key: 'clients',     label: 'Clients' },
-  { key: 'property',    label: 'Property' },
-  { key: 'telemetry',   label: 'Telemetry' },
-  { key: 'exports',     label: 'Exports' },
-  { key: 'commercial',  label: '✦ Commercial' },
-]
+export default function InsightsOverviewPage() {
+  const { filters } = useInsights()
+  const { data, loading, error } = useInsightsRpc<HomeResult>('insights_home')
+  const { csv, pdf } = useDownloads()
+  const compare = describeRange(previousRange(filters.range))
+  const grain = grainFor(filters.range)
+  const moneyGrain = grain === 'month' ? 'month' : 'week'
 
-// RPC names — all use signature (p_company_id uuid, p_from date, p_to date) → jsonb
-const RPC_MAP: Partial<Record<TabKey, string>> = {
-  executive:   'hr_get_executive_snapshot',
-  financial:   'hr_get_financial_snapshot',
-  payroll:     'hr_get_payroll_snapshot',
-  workforce:   'hr_get_workforce_snapshot',
-  operational: 'hr_get_operational_snapshot',
-  incidents:   'hr_get_incidents_snapshot',
-  inventory:   'hr_get_inventory_snapshot',
-  contractors: 'hr_get_contractors_snapshot',
-  clients:     'hr_get_clients_snapshot',
-  property:    'hr_get_property_snapshot',
-  telemetry:   'hr_get_telemetry_snapshot',
-}
+  const people = data?.people
+  const jobs = data?.jobs
+  const mon = data?.money
+  const pay = data?.payroll
 
-// ─── Formatters ───────────────────────────────────────────────────────────────
+  const presence = useMemo(() => {
+    const byDay = new Map((people?.daily ?? []).map(r => [r.d, r]))
+    const daily = eachDay(filters.range).map(day => ({ d: day, present: n(byDay.get(day)?.present), late: n(byDay.get(day)?.late) }))
+    const rolled = rollUp(daily, 'd', grain, ['present', 'late'])
+    return grain === 'day' ? rolled : (rolled.map(r => ({ ...r, present: Math.round(n(r.present) / Math.max(1, n(r._days))) })) as Record<string, unknown>[])
+  }, [people, filters.range, grain])
 
-const fmtR = (n: number | null | undefined) =>
-  n == null ? 'R —' : `R ${n.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  const moneyTrend = useMemo(() => {
+    const rows = moneyGrain === 'week' && mon?.weekly ? mon.weekly.map(r => ({ x: r.week, ...r })) : (mon?.monthly ?? []).map(r => ({ x: r.month, ...r }))
+    return rows.map(r => ({ x: r.x, invoiced: n(r.invoiced), collected: n(r.collected) }))
+  }, [mon, moneyGrain])
 
-const fmtN = (n: number | null | undefined) =>
-  n == null ? '—' : n.toLocaleString('en-ZA')
+  const jobTrend = useMemo(() => rollUp(jobs?.weekly ?? [], 'week', grain === 'month' ? 'month' : 'day', ['opened', 'completed']), [jobs, grain])
 
-function getPeriod(preset: Preset): { start: string; end: string } {
-  const now = new Date()
-  const end = now.toISOString().split('T')[0]
-  if (preset === '7d') {
-    const d = new Date(now); d.setDate(d.getDate() - 7)
-    return { start: d.toISOString().split('T')[0], end }
-  }
-  if (preset === '30d') {
-    const d = new Date(now); d.setDate(d.getDate() - 30)
-    return { start: d.toISOString().split('T')[0], end }
-  }
-  if (preset === 'month') {
-    return { start: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`, end }
-  }
-  // SA tax year starts March 1
-  const y = now.getMonth() >= 2 ? now.getFullYear() : now.getFullYear() - 1
-  return { start: `${y}-03-01`, end }
-}
+  const summary = useMemo(() => {
+    if (!people || !jobs || !mon || !pay) return null
+    const P = people.kpis, Pp = people.previous, J = jobs.kpis, Jp = jobs.previous, M = mon.kpis, Mp = mon.previous, Y = pay.kpis, Yp = pay.previous
+    return kpiTable('Business summary', [
+      { measure: 'Attendance rate', now: pct(P.attendance_rate), before: pct(Pp.attendance_rate), change: signedPct(d(P, Pp, 'attendance_rate')) },
+      { measure: 'Late arrivals (days)', now: count(P.late_days), before: count(Pp.late_days), change: signedPct(d(P, Pp, 'late_days')) },
+      { measure: 'Hours worked', now: hours(P.hours), before: hours(Pp.hours), change: signedPct(d(P, Pp, 'hours')) },
+      { measure: 'Jobs completed', now: count(J.completed), before: count(Jp.completed), change: signedPct(d(J, Jp, 'completed')) },
+      { measure: 'Value of completed jobs', now: money(J.completed_value), before: money(Jp.completed_value), change: signedPct(d(J, Jp, 'completed_value')) },
+      { measure: 'Jobs finished on time', now: pct(J.on_time_rate), before: pct(Jp.on_time_rate), change: signedPct(d(J, Jp, 'on_time_rate')) },
+      { measure: 'Invoiced', now: money(M.invoiced), before: money(Mp.invoiced), change: signedPct(d(M, Mp, 'invoiced')) },
+      { measure: 'Collected', now: money(M.collected), before: money(Mp.collected), change: signedPct(d(M, Mp, 'collected')) },
+      { measure: 'Quote win rate', now: pct(M.win_rate), before: pct(Mp.win_rate), change: signedPct(d(M, Mp, 'win_rate')) },
+      { measure: 'Gross pay', now: money(Y.gross), before: money(Yp.gross), change: signedPct(d(Y, Yp, 'gross')) },
+      { measure: 'Net pay', now: money(Y.net), before: money(Yp.net), change: signedPct(d(Y, Yp, 'net')) },
+      { measure: 'Incidents reported', now: count(data?.incidents.reported), before: count(data?.incidents.previous), change: signedPct(d({ v: data?.incidents.reported }, { v: data?.incidents.previous }, 'v')) },
+    ])
+  }, [people, jobs, mon, pay, data])
 
-function presetLabel(p: Preset) {
-  const { start, end } = getPeriod(p)
-  return `${start} → ${end}`
-}
-
-// ─── Shared UI components ─────────────────────────────────────────────────────
-
-function Kpi({ title, value, caption }: { title: string; value: string; caption?: string }) {
-  return (
-    <div className="bg-surface-card border border-divider rounded-xl p-3 flex flex-col gap-0.5">
-      <p className="text-[10px] text-text-secondary uppercase tracking-wide">{title}</p>
-      <p className="text-base font-bold text-text-primary leading-tight">{value}</p>
-      {caption && <p className="text-[10px] text-text-secondary">{caption}</p>}
-    </div>
-  )
-}
-
-function ChartBox({ title, data, dataKey, type = 'line', height = 140 }: {
-  title: string; data: Record<string, unknown>[]; dataKey: string
-  type?: 'line' | 'bar'; height?: number
-}) {
-  return (
-    <div className="bg-surface-card border border-divider rounded-xl p-4 mt-4">
-      <p className="text-xs font-semibold text-text-secondary mb-3">{title}</p>
-      {data.length === 0 ? (
-        <div className="flex items-center justify-center text-text-secondary text-xs" style={{ height }}>
-          No data for this period
-        </div>
-      ) : (
-        <ResponsiveContainer width="100%" height={height}>
-          {type === 'bar' ? (
-            <BarChart data={data}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-              <XAxis dataKey="label" tick={{ fontSize: 10 }} />
-              <YAxis tick={{ fontSize: 10 }} />
-              <Tooltip />
-              <Bar dataKey={dataKey} fill="#3B82F6" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          ) : (
-            <LineChart data={data}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-              <XAxis dataKey="label" tick={{ fontSize: 10 }} />
-              <YAxis tick={{ fontSize: 10 }} />
-              <Tooltip />
-              <Line type="monotone" dataKey={dataKey} stroke="#3B82F6" strokeWidth={2} dot={false} />
-            </LineChart>
-          )}
-        </ResponsiveContainer>
-      )}
-    </div>
-  )
-}
-
-type RpcData = Record<string, unknown>
-
-// ─── Data hook ────────────────────────────────────────────────────────────────
-
-function useTabData(preset: Preset, activeTab: TabKey, companyId: string | null) {
-  const [data, setData]       = useState<RpcData | null>(null)
-  const [loading, setLoading] = useState(false)
-
-  const fetch = useCallback(async () => {
-    const rpc = RPC_MAP[activeTab]
-    if (!rpc || activeTab === 'exports' || !companyId) return
-    setLoading(true)
-    const { start, end } = getPeriod(preset)
-    const supabase = createClient()
-    try {
-      const { data: d } = await supabase.rpc(rpc, {
-        p_company_id: companyId,
-        p_from:       start,
-        p_to:         end,
-      })
-      const rpcData = (d as RpcData | null) ?? null
-      if (rpcData && Object.keys(rpcData).length > 0) {
-        setData(rpcData)
-      } else if (isPhase2Tab(activeTab)) {
-        // builds these client-side; use until Phase 2 RPCs are deployed
-        const built = await buildPhase2Snapshot(supabase, activeTab, companyId, start, end)
-        setData(built)
-      } else {
-        setData(rpcData)
-      }
-    } catch {
-      if (isPhase2Tab(activeTab)) {
-        try {
-          const built = await buildPhase2Snapshot(supabase, activeTab, companyId, start, end)
-          setData(built)
-        } catch {
-          setData(null)
-        }
-      } else {
-        setData(null)
-      }
+  const attentionT = useMemo<TableSpec<{ item: string; value: string }> | null>(() => {
+    if (!data) return null
+    return {
+      title: 'Needs attention now',
+      columns: [{ key: 'item', label: 'Item', width: 3 }, { key: 'value', label: 'Now' }],
+      rows: [
+        { item: 'Jobs past their planned end date', value: count(data.jobs.overdue_now) },
+        { item: 'Open jobs', value: count(data.jobs.open_now) },
+        { item: 'Money overdue from clients', value: money(data.money.ageing.overdue) },
+        { item: 'Open incidents', value: count(data.incidents.open_now) },
+        { item: 'Payslips waiting for approval', value: count(data.payroll.kpis.pending) },
+        { item: 'People clocked in right now', value: count(data.on_site_now) },
+      ],
     }
-    setLoading(false)
-  }, [preset, activeTab, companyId])
+  }, [data])
 
-  useEffect(() => { fetch() }, [fetch])
-
-  return { data, loading, refresh: fetch }
-}
-
-// ─── Tab components ───────────────────────────────────────────────────────────
-
-// Executive — shows totals from our RPC: total_employees, on_site_today,
-// open_jobs, pending_leave, total_hours, total_payroll + two trend charts
-function ExecTab({ data }: { data: RpcData | null }) {
-  const d            = data ?? {}
-  const chartRevenue = (d.revenue_trend    as Record<string, unknown>[] | null) ?? []
-  const chartAttend  = (d.attendance_trend as Record<string, unknown>[] | null) ?? []
-
-  return (
-    <div className="space-y-4">
-      <div>
-        <p className="section-label mb-2">WORKFORCE</p>
-        <div className="grid grid-cols-2 gap-2.5">
-          <Kpi title="Total Employees"  value={fmtN(d.total_employees as number)} />
-          <Kpi title="On Site Today"    value={fmtN(d.on_site_today   as number)} />
-          <Kpi title="Open Jobs"        value={fmtN(d.open_jobs       as number)} />
-          <Kpi title="Pending Leave"    value={fmtN(d.pending_leave   as number)} />
-        </div>
-      </div>
-      <div>
-        <p className="section-label mb-2">FINANCIALS</p>
-        <div className="grid grid-cols-2 gap-2.5">
-          <Kpi title="Hours Logged"     value={`${(d.total_hours as number ?? 0).toFixed(1)}h`} />
-          <Kpi title="Payroll Total"    value={fmtR(d.total_payroll   as number)} />
-        </div>
-      </div>
-      <ChartBox title="Payroll trend"   data={chartRevenue} dataKey="value" type="bar" />
-      <ChartBox title="Attendance trend" data={chartAttend}  dataKey="value" type="line" />
-    </div>
-  )
-}
-
-// Financial
-function FinancialTab({ data }: { data: RpcData | null }) {
-  const d = data ?? {}
-  const hasData = Object.keys(d).length > 0
-  if (!hasData) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 gap-2">
-        <span className="material-icons text-[40px] text-text-disabled">bar_chart</span>
-        <p className="text-[14px] text-text-secondary font-semibold">No financial data for this period</p>
-      </div>
-    )
-  }
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-2.5">
-        <Kpi title="Revenue"     value={fmtR(d.revenue     as number)} />
-        <Kpi title="Outstanding" value={fmtR(d.outstanding as number)} />
-        <Kpi title="Payables"    value={fmtR(d.payables    as number)} />
-        <Kpi title="Profit"      value={fmtR(d.profit      as number)} />
-      </div>
-      <ChartBox title="Revenue vs Expenses" data={(d.revenue_vs_expenses as Record<string, unknown>[] | null) ?? []} dataKey="value" type="bar" height={160} />
-    </div>
-  )
-}
-
-// Payroll — shows totals from our RPC + payroll_by_employee table
-function PayrollTab({ data }: { data: RpcData | null }) {
-  const d    = data ?? {}
-  const rows = (d.payroll_by_employee as Record<string, unknown>[] | null) ?? []
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-2.5">
-        <Kpi title="Total Gross"       value={fmtR(d.total_gross        as number)} />
-        <Kpi title="Total Net"         value={fmtR(d.total_net          as number)} />
-        <Kpi title="Total Deductions"  value={fmtR(d.total_deductions   as number)} />
-        <Kpi title="Total Hours"       value={`${(d.total_hours as number ?? 0).toFixed(1)}h`} />
-        <Kpi title="Payslips"          value={fmtN(d.payslip_count      as number)} />
-        <Kpi title="Approved"          value={fmtN(d.approved_count     as number)} />
-      </div>
-      {rows.length > 0 && (
-        <div className="overflow-x-auto">
-          <table className="w-full" style={{ minWidth: 400 }}>
-            <thead>
-              <tr className="bg-surface-elevated">
-                <th className="data-th text-left">Employee</th>
-                <th className="data-th text-right">Gross</th>
-                <th className="data-th text-right">Net</th>
-                <th className="data-th text-right">Hours</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, i) => (
-                <tr key={i} className="bg-surface-card border-b border-divider last:border-0">
-                  <td className="data-td text-sm text-text-primary">{r.employee_name as string}</td>
-                  <td className="data-td text-sm text-text-secondary text-right">{fmtR(r.gross as number)}</td>
-                  <td className="data-td text-sm text-text-secondary text-right">{fmtR(r.net   as number)}</td>
-                  <td className="data-td text-sm text-text-secondary text-right">{(r.hours as number ?? 0).toFixed(1)}h</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {rows.length === 0 && data !== null && (
-        <p className="text-[13px] text-text-disabled text-center py-4">No payroll records for this period</p>
-      )}
-    </div>
-  )
-}
-
-// Workforce — total_employees, leave_days_taken, leave_pending + two trend charts
-function WorkforceTab({ data }: { data: RpcData | null }) {
-  const d = data ?? {}
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-2.5">
-        <Kpi title="Total Employees"  value={fmtN(d.total_employees  as number)} />
-        <Kpi title="Pending Leave"    value={fmtN(d.leave_pending    as number)} />
-        <Kpi title="Leave Days Taken" value={fmtN(d.leave_days_taken as number)} caption="approved this period" />
-      </div>
-      <ChartBox title="Attendance trend" data={(d.attendance_trend as Record<string, unknown>[] | null) ?? []} dataKey="value" type="line" />
-      <ChartBox title="Leave trend"      data={(d.leave_trend      as Record<string, unknown>[] | null) ?? []} dataKey="value" type="bar" height={120} />
-    </div>
-  )
-}
-
-// Operational — total/completed/open jobs, incidents + completion trend chart
-function OperationalTab({ data }: { data: RpcData | null }) {
-  const d = data ?? {}
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-2.5">
-        <Kpi title="Total Jobs"       value={fmtN(d.total_jobs      as number)} caption="created this period" />
-        <Kpi title="Completed"        value={fmtN(d.completed_jobs  as number)} />
-        <Kpi title="Open / Active"    value={fmtN(d.open_jobs       as number)} />
-        <Kpi title="Incidents"        value={fmtN(d.total_incidents as number)} />
-      </div>
-      <ChartBox title="Job completion trend" data={(d.completion_trend as Record<string, unknown>[] | null) ?? []} dataKey="value" type="bar" />
-    </div>
-  )
-}
-
-// Incidents
-function IncidentsTab({ data }: { data: RpcData | null }) {
-  const d    = data ?? {}
-  const list = (d.recent as Record<string, unknown>[] | null) ?? []
-  const hasData = Object.keys(d).length > 0
-  if (!hasData) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 gap-2">
-        <span className="material-icons text-[40px] text-text-disabled">warning</span>
-        <p className="text-[14px] text-text-secondary font-semibold">No incidents in this period</p>
-      </div>
-    )
-  }
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-3 gap-2">
-        <Kpi title="Open"     value={fmtN(d.open     as number)} />
-        <Kpi title="Resolved" value={fmtN(d.resolved as number)} />
-        <Kpi title="Critical" value={fmtN(d.critical as number)} />
-      </div>
-      {list.map((inc, i) => (
-        <div key={i} className="card p-3">
-          <p className="text-[13px] font-medium text-text-primary line-clamp-2">{inc.description as string}</p>
-          <p className="text-[11px] text-text-secondary mt-0.5">{inc.severity as string} · {inc.status as string}</p>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-// Inventory
-function InventoryTab({ data }: { data: RpcData | null }) {
-  const d    = data ?? {}
-  const rows = (d.top_items as Record<string, unknown>[] | null) ?? []
-  const hasData = Object.keys(d).length > 0
-  if (!hasData) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 gap-2">
-        <span className="material-icons text-[40px] text-text-disabled">inventory_2</span>
-        <p className="text-[14px] text-text-secondary font-semibold">No inventory data</p>
-      </div>
-    )
-  }
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-2.5">
-        <Kpi title="Total Items" value={fmtN(d.total_items as number)} />
-        <Kpi title="Low Stock"   value={fmtN(d.low_stock   as number)} />
-        <Kpi title="Stock Value" value={fmtR(d.stock_value as number)} />
-        <Kpi title="On Jobs"     value={fmtN(d.on_jobs     as number)} />
-      </div>
-      {rows.length > 0 && (
-        <div className="overflow-x-auto">
-          <table className="w-full" style={{ minWidth: 360 }}>
-            <thead>
-              <tr className="bg-surface-elevated">
-                <th className="data-th text-left">Item</th>
-                <th className="data-th text-right">Qty</th>
-                <th className="data-th text-right">Value</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, i) => (
-                <tr key={i} className="bg-surface-card border-b border-divider last:border-0">
-                  <td className="data-td text-sm text-text-primary">{r.name  as string}</td>
-                  <td className="data-td text-sm text-text-secondary text-right">{fmtN(r.qty   as number)}</td>
-                  <td className="data-td text-sm text-text-secondary text-right">{fmtR(r.value as number)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// Contractors
-function ContractorsTab({ data }: { data: RpcData | null }) {
-  const d    = data ?? {}
-  const rows = (d.payment_summary as Record<string, unknown>[] | null) ?? []
-  const hasData = Object.keys(d).length > 0
-  if (!hasData) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 gap-2">
-        <span className="material-icons text-[40px] text-text-disabled">badge</span>
-        <p className="text-[14px] text-text-secondary font-semibold">No contractor data</p>
-      </div>
-    )
-  }
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-3 gap-2">
-        <Kpi title="Active"              value={fmtN(d.active              as number)} />
-        <Kpi title="Pending Compliance"  value={fmtN(d.pending_compliance  as number)} />
-        <Kpi title="Pending Payments"    value={fmtN(d.pending_payments    as number)} />
-      </div>
-      {rows.length > 0 && (
-        <div className="overflow-x-auto">
-          <table className="w-full" style={{ minWidth: 360 }}>
-            <thead>
-              <tr className="bg-surface-elevated">
-                <th className="data-th text-left">Contractor</th>
-                <th className="data-th text-right">Agreed</th>
-                <th className="data-th text-right">Paid</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, i) => (
-                <tr key={i} className="bg-surface-card border-b border-divider last:border-0">
-                  <td className="data-td text-sm text-text-primary">{r.name    as string}</td>
-                  <td className="data-td text-sm text-text-secondary text-right">{fmtR(r.agreed as number)}</td>
-                  <td className="data-td text-sm text-text-secondary text-right">{fmtR(r.paid   as number)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// Clients
-function ClientsTab({ data }: { data: RpcData | null }) {
-  const d = data ?? {}
-  const rows = (d.top_clients as Record<string, unknown>[] | null) ?? []
-  const hasData = Object.keys(d).length > 0
-  if (!hasData) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 gap-2">
-        <span className="material-icons text-[40px] text-text-disabled">business</span>
-        <p className="text-[14px] text-text-secondary font-semibold">No client data</p>
-      </div>
-    )
-  }
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
-        <Kpi title="Total" value={fmtN(d.total as number)} />
-        <Kpi title="Portal enabled" value={fmtN(d.portal_enabled as number)} />
-        <Kpi title="Active deals" value={fmtN(d.active_deals as number)} />
-        <Kpi title="Open jobs" value={fmtN(d.open_jobs as number)} />
-        <Kpi title="Outstanding" value={fmtR(d.outstanding_balance as number)} />
-      </div>
-      {rows.length > 0 && (
-        <div className="overflow-x-auto">
-          <table className="w-full" style={{ minWidth: 360 }}>
-            <thead>
-              <tr className="bg-surface-elevated">
-                <th className="data-th text-left">Client</th>
-                <th className="data-th text-right">Balance</th>
-                <th className="data-th text-right">Jobs</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, i) => (
-                <tr key={i} className="bg-surface-card border-b border-divider last:border-0">
-                  <td className="data-td text-sm text-text-primary">{r.name as string}</td>
-                  <td className="data-td text-sm text-text-secondary text-right">{fmtR(r.balance as number)}</td>
-                  <td className="data-td text-sm text-text-secondary text-right">{fmtN(r.jobs as number)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// Property
-function PropertyTab({ data }: { data: RpcData | null }) {
-  const d       = data ?? {}
-  const hasData = Object.keys(d).length > 0
-  if (!hasData) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 gap-2">
-        <span className="material-icons text-[40px] text-text-disabled">apartment</span>
-        <p className="text-[14px] text-text-secondary font-semibold">No property data</p>
-      </div>
-    )
-  }
-  return (
-    <div className="grid grid-cols-2 gap-2.5">
-      <Kpi title="Total Sites"          value={fmtN(d.total_sites          as number)} />
-      <Kpi title="Active Sites"         value={fmtN(d.active_sites         as number)} />
-      <Kpi title="Occupied Units"       value={fmtN(d.occupied_units       as number)} />
-      <Kpi title="Vacant"               value={fmtN(d.vacant               as number)} />
-      <Kpi title="Active Leases"        value={fmtN(d.active_leases        as number)} />
-      <Kpi title="Rent Arrears #"       value={fmtN(d.arrears_invoices     as number)} />
-      <Kpi title="Rent Arrears Total"   value={fmtR(d.arrears_total        as number)} />
-      <Kpi title="Expiring Compliance"  value={fmtN(d.expiring_compliance  as number)} />
-    </div>
-  )
-}
-
-// Telemetry
-function TelemetryTab({ data }: { data: RpcData | null }) {
-  const d       = data ?? {}
-  const hasData = Object.keys(d).length > 0
-  if (!hasData) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 gap-2">
-        <span className="material-icons text-[40px] text-text-disabled">analytics</span>
-        <p className="text-[14px] text-text-secondary font-semibold">No telemetry data</p>
-      </div>
-    )
-  }
-  const pairs: [string, string][] = [
-    ['Realtime Status',    (d.realtime_status as string)     ?? '—'],
-    ['Offline Queue',      fmtN(d.offline_queue as number)],
-    ['Error Rate',         d.error_rate != null ? `${d.error_rate}%` : '—'],
-    ['Active Connections', fmtN(d.active_connections as number)],
-  ]
-  return (
-    <div className="card p-4 space-y-2">
-      {pairs.map(([k, v]) => (
-        <div key={k} className="grid grid-cols-[1fr_auto] items-center py-1.5 border-b border-divider last:border-0">
-          <span className="text-sm text-text-secondary">{k}</span>
-          <span className="text-sm font-medium text-text-primary">{v}</span>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-// ─── CSV export helpers ───────────────────────────────────────────────────────
-
-function downloadCSV(content: string, filename: string) {
-  const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' })
-  const url  = URL.createObjectURL(blob)
-  const a    = document.createElement('a')
-  a.href     = url
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(url)
-}
-
-function empName(employees: unknown): string {
-  const emp = (Array.isArray(employees) ? employees[0] : employees) as
-    | { name?: string; surname?: string }
-    | null
-    | undefined
-  if (!emp) return ''
-  return `${emp.name ?? ''} ${emp.surname ?? ''}`.trim()
-}
-
-// Exports tab — client CSV 
-function ExportsTab({ companyId, preset }: { companyId: string | null; preset: Preset }) {
-  const [busy, setBusy] = useState<string | null>(null)
-
-  async function exportPayrollCSV() {
-    if (!companyId) return
-    setBusy('payroll')
-    const supabase = createClient()
-    const { start, end } = getPeriod(preset)
-    try {
-      const { data } = await supabase.rpc('hr_get_payroll_snapshot', {
-        p_company_id: companyId, p_from: start, p_to: end,
-      })
-      const rows = ((data as RpcData | null)?.payroll_by_employee as Record<string, unknown>[] | null) ?? []
-      if (rows.length === 0) {
-        const payments = await fetchPaymentsExportRows(supabase, companyId, start, end)
-        const csv = [
-          'Employee,Gross (R),Net (R),Status,Period Start,Period End',
-          ...payments.map(r => {
-            const name = empName(r.employees)
-            return `"${name}",${r.gross_pay},${r.net_pay},${r.status},${r.period_start},${r.period_end}`
-          }),
-        ].join('\n')
-        downloadCSV(csv, `payments_${start}_${end}.csv`)
-      } else {
-        const csv = [
-          'Employee,Gross (R),Net (R),Hours',
-          ...rows.map(r => `"${r.employee_name}",${r.gross},${r.net},${(r.hours as number ?? 0).toFixed(2)}`),
-        ].join('\n')
-        downloadCSV(csv, `payroll_${start}_${end}.csv`)
-      }
-    } catch {}
-    setBusy(null)
-  }
-
-  async function exportAttendanceCSV() {
-    if (!companyId) return
-    setBusy('attendance')
-    const supabase = createClient()
-    const { start, end } = getPeriod(preset)
-    try {
-      const { data: punches } = await supabase
-        .from('time_punches')
-        .select('date_time, type, address, employees(name, surname)')
-        .eq('company_id', companyId)
-        .gte('date_time', `${start}T00:00:00`)
-        .lte('date_time', `${end}T23:59:59`)
-        .order('date_time', { ascending: false })
-        .limit(2000)
-      const csv = [
-        'Employee,Type,DateTime,Address',
-        ...(punches ?? []).map(r => {
-          const name = empName(r.employees)
-          return `"${name}",${r.type},"${r.date_time}","${r.address ?? ''}"`
-        }),
-      ].join('\n')
-      downloadCSV(csv, `attendance_${start}_${end}.csv`)
-    } catch {}
-    setBusy(null)
-  }
-
-  async function exportIncidentsCSV() {
-    if (!companyId) return
-    setBusy('incidents')
-    const supabase = createClient()
-    const { start, end } = getPeriod(preset)
-    try {
-      const rows = await fetchIncidentsExportRows(supabase, companyId, start, end)
-      const csv = [
-        'Employee,Description,Severity,Status,Created',
-        ...rows.map(r => {
-          const name = empName(r.employees)
-          const status = r.is_closed ? 'closed' : (r.status ?? 'open')
-          const desc = String(r.description ?? '').replace(/"/g, '""')
-          return `"${name}","${desc}",${r.severity},${status},${r.created_at}`
-        }),
-      ].join('\n')
-      downloadCSV(csv, `incidents_${start}_${end}.csv`)
-    } catch {}
-    setBusy(null)
-  }
-
-  async function exportInventoryCSV() {
-    if (!companyId) return
-    setBusy('inventory')
-    const supabase = createClient()
-    try {
-      const rows = await fetchInventoryExportRows(supabase, companyId)
-      const csv = [
-        'Name,SKU,Qty On Hand,Unit Cost,Reorder Level,Supplier',
-        ...rows.map(r =>
-          `"${r.name ?? ''}","${r.sku ?? ''}",${r.quantity_on_hand ?? 0},${r.unit_cost ?? 0},${r.reorder_level ?? 0},"${r.supplier ?? ''}"`,
-        ),
-      ].join('\n')
-      downloadCSV(csv, `inventory_export.csv`)
-    } catch {}
-    setBusy(null)
-  }
-
-  async function exportJobsCSV() {
-    if (!companyId) return
-    setBusy('jobs')
-    const supabase = createClient()
-    const { start, end } = getPeriod(preset)
-    try {
-      const rows = await fetchJobsExportRows(supabase, companyId, start, end)
-      const csv = [
-        'Title,Client,Status,Priority,Start,End,Estimated Cost',
-        ...rows.map(r => {
-          const clientRaw = r.clients as unknown
-          const clientObj = (Array.isArray(clientRaw) ? clientRaw[0] : clientRaw) as { name?: string } | null
-          const client = clientObj?.name ?? ''
-          return `"${r.title}","${client}",${r.status},${r.priority},${r.scheduled_start ?? ''},${r.scheduled_end ?? ''},${r.estimated_cost ?? ''}`
-        }),
-      ].join('\n')
-      downloadCSV(csv, `jobs_${start}_${end}.csv`)
-    } catch {}
-    setBusy(null)
-  }
-
-  const EXPORTS: { label: string; key: string; action: () => void; available: boolean }[] = [
-    { label: 'Export Payroll / Payments CSV', key: 'payroll',    action: exportPayrollCSV,    available: true },
-    { label: 'Export Attendance CSV',         key: 'attendance', action: exportAttendanceCSV, available: true },
-    { label: 'Export Incidents CSV',          key: 'incidents',  action: exportIncidentsCSV,  available: true },
-    { label: 'Export Inventory CSV',          key: 'inventory',  action: exportInventoryCSV,  available: true },
-    { label: 'Export Jobs CSV',               key: 'jobs',       action: exportJobsCSV,       available: true },
-    { label: 'Export P&L PDF',                key: 'pl',         action: () => {},            available: false },
-  ]
+  useExporter(summary && attentionT ? {
+    csv: () => csv('Business summary', [summary, attentionT]),
+    pdf: () => pdf('Business summary', [
+      { kind: 'kpis', items: [
+        { label: 'Attendance rate', value: pct(people?.kpis.attendance_rate), sub: `${signedPct(d(people?.kpis, people?.previous, 'attendance_rate'))} vs previous` },
+        { label: 'Jobs completed', value: count(jobs?.kpis.completed), sub: `${moneyShort(jobs?.kpis.completed_value)} of work` },
+        { label: 'Invoiced', value: moneyShort(mon?.kpis.invoiced), sub: `${moneyShort(mon?.kpis.collected)} collected` },
+        { label: 'Gross pay', value: moneyShort(pay?.kpis.gross), sub: `${count(pay?.kpis.people)} people` },
+      ] },
+      { kind: 'columns', title: moneyGrain === 'week' ? 'Invoiced and collected each week' : 'Invoiced and collected each month',
+        labels: moneyTrend.map(r => pointLabel(r.x, moneyGrain)),
+        series: [
+          { name: 'Invoiced', color: SERIES[0], values: moneyTrend.map(r => r.invoiced) },
+          { name: 'Collected', color: SERIES[1], values: moneyTrend.map(r => r.collected) },
+        ], format: v => moneyShort(v) },
+      { kind: 'table', table: summary },
+      { kind: 'table', table: attentionT },
+    ]),
+  } : null, [summary, attentionT, csv, pdf])
 
   return (
-    <div className="flex flex-col gap-2">
-      {!companyId && (
-        <p className="text-[13px] text-text-disabled text-center py-4">Loading…</p>
-      )}
-      {companyId && EXPORTS.map(e => (
-        <button
-          key={e.key}
-          onClick={e.action}
-          disabled={!e.available || busy === e.key}
-          className="btn-outlined h-11 w-full text-[13px] flex items-center gap-2 justify-center disabled:opacity-50"
-        >
-          <span className="material-icons text-[16px]">
-            {busy === e.key ? 'hourglass_empty' : 'download'}
-          </span>
-          {busy === e.key ? 'Generating…' : e.label}
-          {!e.available && <span className="text-[11px] text-text-disabled ml-1">(deferred)</span>}
-        </button>
-      ))}
-    </div>
-  )
-}
+    <Loadable loading={loading} error={error} hasData={!!data}>
+      {data && people && jobs && mon && pay && (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+            <StatTile hero href="/dashboard/reports/people" label="Attendance rate" icon="how_to_reg" value={pct(people.kpis.attendance_rate)}
+              delta={d(people.kpis, people.previous, 'attendance_rate')} compare={compare} spark={presence.map(r => n(r.present))} />
+            <StatTile hero href="/dashboard/reports/jobs" label="Jobs completed" icon="task_alt" value={count(jobs.kpis.completed)}
+              delta={d(jobs.kpis, jobs.previous, 'completed')} compare={compare} spark={jobTrend.map(r => n(r.completed))} />
+            <StatTile hero href="/dashboard/reports/money" label="Invoiced" icon="receipt_long" value={moneyShort(mon.kpis.invoiced)}
+              delta={d(mon.kpis, mon.previous, 'invoiced')} compare={compare} spark={moneyTrend.map(r => r.invoiced)} />
+            <StatTile hero href="/dashboard/reports/payroll" label="Gross pay" icon="payments" value={moneyShort(pay.kpis.gross)}
+              delta={d(pay.kpis, pay.previous, 'gross')} goodWhenUp={null} compare={compare} spark={(pay.monthly ?? []).map(r => n(r.gross))} />
+          </div>
 
-// ─── Commercial Summary Panel ─────────────────────────────────────────────────
-// Minimal entry point tab — full intelligence lives at /dashboard/reports/commercial
-
-function CommercialSummaryPanel({ companyId }: { companyId: string | null }) {
-  const [netCash,  setNetCash]  = useState<number | null>(null)
-  const [winRate,  setWinRate]  = useState<number | null>(null)
-  const [pipeline, setPipeline] = useState<number | null>(null)
-  const [overdue,  setOverdue]  = useState<number | null>(null)
-  const [loading,  setLoading]  = useState(false)
-
-  useEffect(() => {
-    if (!companyId) return
-    setLoading(true)
-    const supabase = createClient()
-    Promise.all([
-      supabase.from('cash_flow_forecast')
-        .select('net_cash_flow')
-        .eq('company_id', companyId),
-      supabase.from('quote_win_loss_summary')
-        .select('win_rate_percent,pipeline_value')
-        .eq('company_id', companyId)
-        .maybeSingle(),
-      supabase.from('client_payment_intelligence')
-        .select('overdue_amount')
-        .eq('company_id', companyId),
-    ]).then(([cf, wl, ci]) => {
-      const net = (cf.data ?? []).reduce((s: number, r: Record<string, unknown>) => s + (Number(r.net_cash_flow) ?? 0), 0)
-      setNetCash(net)
-      setWinRate((wl.data as { win_rate_percent?: number } | null)?.win_rate_percent ?? null)
-      setPipeline((wl.data as { pipeline_value?: number } | null)?.pipeline_value ?? null)
-      const ov = (ci.data ?? []).reduce((s: number, r: Record<string, unknown>) => s + (Number(r.overdue_amount) ?? 0), 0)
-      setOverdue(ov)
-      setLoading(false)
-    }).catch(() => setLoading(false))
-  }, [companyId])
-
-  const fmtR = (n: number | null) =>
-    n == null ? '—' : `R ${n.toLocaleString('en-ZA', { maximumFractionDigits: 0 })}`
-
-  const kpis = [
-    { title: '12-Week Net Cash', value: fmtR(netCash),  icon: 'account_balance_wallet' },
-    { title: 'Quote Win Rate',   value: winRate != null ? `${winRate.toFixed(1)}%` : '—', icon: 'request_quote' },
-    { title: 'Quote Pipeline',   value: fmtR(pipeline), icon: 'trending_up' },
-    { title: 'Overdue Invoices', value: fmtR(overdue),  icon: 'warning_amber' },
-  ]
-
-  return (
-    <div className="space-y-5">
-      {/* Intro card */}
-      <div
-        className="rounded-2xl p-4 border flex items-start gap-3"
-        style={{ background: 'linear-gradient(135deg,rgba(59,130,246,0.08),rgba(99,102,241,0.06))', borderColor: 'rgba(59,130,246,0.25)' }}
-      >
-        <span className="material-icons text-[28px] shrink-0 mt-0.5" style={{ color: '#3B82F6' }}>
-          insights
-        </span>
-        <div>
-          <p className="text-[15px] font-semibold text-text-primary">Commercial Intelligence</p>
-          <p className="text-[12px] text-text-secondary mt-0.5 leading-snug">
-            Cash flow forecasts, client payment analytics, quote win/loss stats, and project cost
-            variance — all in one place.
-          </p>
-        </div>
-      </div>
-
-      {/* Quick KPIs */}
-      {loading ? (
-        <p className="text-center text-text-secondary text-[13px] py-4">Loading…</p>
-      ) : (
-        <div className="grid grid-cols-2 gap-2.5">
-          {kpis.map(k => (
-            <div key={k.title} className="bg-surface-card border border-divider rounded-xl p-3 flex items-start gap-2">
-              <span className="material-icons text-[18px] text-text-disabled mt-0.5">{k.icon}</span>
-              <div>
-                <p className="text-[10px] text-text-secondary uppercase tracking-wide">{k.title}</p>
-                <p className="text-[15px] font-bold text-text-primary">{k.value}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* CTA */}
-      <a
-        href="/dashboard/reports/commercial"
-        className="btn-primary w-full h-11 flex items-center justify-center gap-2 text-[13px] rounded-xl no-underline"
-        style={{ textDecoration: 'none' }}
-      >
-        <span className="material-icons text-[16px]">open_in_new</span>
-        Open Full Commercial Intelligence
-      </a>
-    </div>
-  )
-}
-
-// ─── Page ─────────────────────────────────────────────────────────────────────
-
-export default function ReportsPage() {
-  const [preset,    setPreset]    = useState<Preset>('30d')
-  const [activeTab, setActiveTab] = useState<TabKey>('executive')
-  const [companyId, setCompanyId] = useState<string | null>(null)
-
-  // Resolve company ID once on mount
-  useEffect(() => {
-    async function resolve() {
-      const supabase = createClient()
-      const member   = await resolveCurrentMember(supabase)
-      if (member) setCompanyId(member.companyId)
-    }
-    resolve()
-  }, [])
-
-  const { data, loading, refresh } = useTabData(preset, activeTab, companyId)
-
-  const TAB_CONTENT: Record<TabKey, React.ReactNode> = {
-    executive:   <ExecTab               data={data} />,
-    financial:   <FinancialTab          data={data} />,
-    payroll:     <PayrollTab            data={data} />,
-    workforce:   <WorkforceTab          data={data} />,
-    operational: <OperationalTab        data={data} />,
-    incidents:   <IncidentsTab          data={data} />,
-    inventory:   <InventoryTab          data={data} />,
-    contractors: <ContractorsTab        data={data} />,
-    clients:     <ClientsTab            data={data} />,
-    property:    <PropertyTab           data={data} />,
-    telemetry:   <TelemetryTab          data={data} />,
-    exports:     <ExportsTab            companyId={companyId} preset={preset} />,
-    commercial:  <CommercialSummaryPanel companyId={companyId} />,
-  }
-
-  return (
-    <div className="h-full flex flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-divider shrink-0 bg-surface">
-        <h1 className="text-[20px] font-semibold text-text-primary">Reports</h1>
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-4">
-
-        {/* Date preset bar */}
-        <div className="flex flex-col gap-2 mb-3">
-          <p className="text-xs text-text-secondary">{presetLabel(preset)}</p>
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-            {(['7d', '30d', 'month', 'year'] as Preset[]).map(p => (
-              <button
-                key={p}
-                onClick={() => setPreset(p)}
-                className="h-[32px] px-2.5 text-[11px] rounded-lg border border-divider whitespace-nowrap shrink-0 font-medium transition-colors"
-                style={preset === p
-                  ? { backgroundColor: '#1E3A5F', color: '#fff', borderColor: '#1E3A5F' }
-                  : { backgroundColor: 'var(--color-surface-card)', color: 'var(--color-text-secondary)' }
-                }
-              >
-                {p === '7d' ? '7d' : p === '30d' ? '30d' : p === 'month' ? 'Month' : 'Year'}
-              </button>
-            ))}
-            <button
-              onClick={refresh}
-              className="h-[32px] px-2.5 text-[11px] rounded-lg border border-divider whitespace-nowrap shrink-0 font-medium bg-surface-card text-text-secondary hover:opacity-80"
+          <div className="grid lg:grid-cols-3 gap-4 mt-4">
+            <ChartCard
+              className="lg:col-span-2"
+              title={moneyGrain === 'week' ? 'Invoiced and collected each week' : 'Invoiced and collected each month'}
+              legend={[{ label: 'Invoiced', color: SERIES[0] }, { label: 'Collected', color: SERIES[1] }]}
+              action={<Link href="/dashboard/reports/money" className="text-[12px] font-medium text-primary hover:underline mr-1">Open</Link>}
             >
-              ↻ Refresh
-            </button>
+              <TrendChart
+                data={moneyTrend}
+                xKey="x"
+                series={[
+                  { key: 'invoiced', name: 'Invoiced', color: SERIES[0], kind: 'bar' },
+                  { key: 'collected', name: 'Collected', color: SERIES[1], kind: 'bar' },
+                ]}
+                yFormat={v => moneyShort(v)}
+                xFormat={x => pointLabel(x, moneyGrain)}
+                tipTitle={x => pointTitle(x, moneyGrain)}
+                height={250}
+              />
+            </ChartCard>
+            <Card className="p-4 sm:p-5">
+              <h3 className="text-[14px] font-semibold text-text-primary">Needs attention now</h3>
+              <p className="text-[12px] text-text-secondary mb-2">As things stand today</p>
+              <AttentionRow icon="event_busy" tone={jobs.overdue_now ? 'critical' : 'neutral'} label="Jobs past their planned end date" value={count(jobs.overdue_now)} href="/dashboard/jobs" />
+              <AttentionRow icon="request_page" tone={n(mon.ageing.overdue) > 0 ? 'serious' : 'neutral'} label="Money overdue from clients" value={moneyShort(mon.ageing.overdue)} href="/dashboard/reports/money" />
+              <AttentionRow icon="health_and_safety" tone={data.incidents.open_now ? 'warning' : 'neutral'} label="Open incidents" value={count(data.incidents.open_now)} href="/dashboard/incidents" />
+              <AttentionRow icon="pending_actions" tone={pay.kpis.pending ? 'warning' : 'neutral'} label="Payslips waiting for approval" value={count(pay.kpis.pending)} href="/dashboard/payroll" />
+              <AttentionRow icon="construction" tone="neutral" label="Open jobs" value={count(jobs.open_now)} href="/dashboard/jobs" />
+              <AttentionRow icon="login" tone="neutral" label="People clocked in right now" value={count(data.on_site_now)} href="/dashboard/attendance" />
+            </Card>
           </div>
-        </div>
 
-        {/* Tab bar */}
-        <div className="bg-surface-card border border-divider rounded-xl p-1 mb-4 overflow-x-auto">
-          <div className="flex gap-0.5">
-            {TABS.map(t => (
-              <button
-                key={t.key}
-                onClick={() => setActiveTab(t.key)}
-                className="text-sm px-3 py-1 rounded-lg whitespace-nowrap transition-colors shrink-0"
-                style={activeTab === t.key
-                  ? { backgroundColor: '#3B82F6', color: '#fff' }
-                  : { backgroundColor: 'transparent', color: '#6B7280' }
-                }
-              >
-                {t.label}
-              </button>
-            ))}
+          <div className="grid lg:grid-cols-2 gap-4 mt-4">
+            <ChartCard
+              title={grain === 'day' ? 'People at work each day' : `Average people at work per day, by ${grain}`}
+              subtitle={`Out of ${count(people.kpis.headcount)} people`}
+              action={<Link href="/dashboard/reports/people" className="text-[12px] font-medium text-primary hover:underline mr-1">Open</Link>}
+            >
+              <TrendChart
+                data={presence}
+                xKey="d"
+                series={[{ key: 'present', name: 'At work', color: SERIES[0], kind: grain === 'day' ? 'area' : 'bar' }]}
+                yFormat={v => countShort(v)}
+                xFormat={x => pointLabel(x, grain)}
+                tipTitle={x => pointTitle(x, grain)}
+                footer={r => `${count(r.late)} late`}
+                height={220}
+              />
+            </ChartCard>
+            <ChartCard
+              title={grain === 'month' ? 'Jobs opened and completed each month' : 'Jobs opened and completed each week'}
+              legend={[{ label: 'Opened', color: SERIES[1] }, { label: 'Completed', color: SERIES[0] }]}
+              action={<Link href="/dashboard/reports/jobs" className="text-[12px] font-medium text-primary hover:underline mr-1">Open</Link>}
+            >
+              <TrendChart
+                data={jobTrend}
+                xKey="week"
+                series={[
+                  { key: 'opened', name: 'Opened', color: SERIES[1], kind: 'bar' },
+                  { key: 'completed', name: 'Completed', color: SERIES[0], kind: 'bar' },
+                ]}
+                yFormat={v => countShort(v)}
+                xFormat={x => pointLabel(x, grain === 'month' ? 'month' : 'week')}
+                tipTitle={x => pointTitle(x, grain === 'month' ? 'month' : 'week')}
+                height={220}
+              />
+            </ChartCard>
           </div>
-        </div>
 
-        {/* Tab content */}
-        {loading ? (
-          <p className="text-text-secondary text-[13px] text-center py-8">Loading…</p>
-        ) : (
-          TAB_CONTENT[activeTab]
-        )}
-      </div>
-    </div>
+          <div className="grid lg:grid-cols-3 gap-4 mt-4">
+            <ChartCard title="Money owed to you" subtitle={`${moneyShort(mon.ageing.outstanding)} in total, as at today`}>
+              <SegmentedBar parts={mon.ageing.buckets.map((b, i) => ({
+                label: b.name, value: n(b.amount), color: [RAMP[1], RAMP[2], RAMP[3], RAMP[5], RAMP[6]][i] ?? RAMP[4],
+                display: moneyShort(b.amount), dark: i < 2,
+              }))} />
+            </ChartCard>
+            <ChartCard title="Incidents" subtitle={`${count(data.incidents.reported)} reported in the period · ${count(data.incidents.open_now)} still open`}>
+              {data.incidents.by_severity.length ? (
+                <SegmentedBar parts={data.incidents.by_severity.map(s => ({
+                  label: words(s.name), value: n(s.count), color: SEVERITY[s.name] ?? RAMP[3], display: count(s.count), dark: s.name === 'medium' || s.name === 'low',
+                }))} />
+              ) : <p className="text-[13px] text-text-secondary py-6 text-center">No incidents reported in this period.</p>}
+            </ChartCard>
+            <Card className="p-4 sm:p-5">
+              <h3 className="text-[14px] font-semibold text-text-primary">Ready-made reports</h3>
+              <p className="text-[12px] text-text-secondary mb-3">Tables you can print or open in a spreadsheet</p>
+              <div className="flex flex-col gap-1">
+                {[
+                  ['Attendance register', 'attendance-register'],
+                  ['Late arrivals', 'late-arrivals'],
+                  ['Jobs completed', 'jobs-completed'],
+                  ['Debtors ageing', 'debtors-ageing'],
+                  ['Payroll summary', 'payroll-summary'],
+                ].map(([label, key]) => (
+                  <Link key={key} href={`/dashboard/reports/library/${key}`} className="flex items-center gap-2 py-1.5 text-[13px] text-text-primary hover:underline no-underline">
+                    <span className="material-icons text-[17px] text-slate-400">description</span>{label}
+                  </Link>
+                ))}
+                <Link href="/dashboard/reports/library" className="text-[12.5px] font-medium text-primary hover:underline mt-1">All reports →</Link>
+              </div>
+            </Card>
+          </div>
+
+        </>
+      )}
+    </Loadable>
   )
 }
