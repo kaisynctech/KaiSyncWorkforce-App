@@ -24,7 +24,13 @@ $$;
 
 CREATE OR REPLACE FUNCTION public._ins_prev(p_from date, p_to date)
 RETURNS TABLE (prev_from date, prev_to date) LANGUAGE sql IMMUTABLE AS $$
-  SELECT p_from - (p_to - p_from + 1), p_from - 1
+  -- Whole calendar months compare with the same number of months before (October with September);
+  -- any other range compares with the same number of days immediately before.
+  SELECT CASE WHEN extract(day FROM p_from) = 1 AND p_to + 1 = date_trunc('month', p_to + 1)::date
+              THEN (p_from - ((date_part('year', age(p_to + 1, p_from)) * 12 + date_part('month', age(p_to + 1, p_from)))::int
+                     * interval '1 month'))::date
+              ELSE p_from - (p_to - p_from + 1) END,
+         p_from - 1
 $$;
 
 -- ── People & attendance ──────────────────────────────────────────────────────────────────
@@ -119,14 +125,14 @@ BEGIN
         FROM (SELECT d, count(*) present, count(*) FILTER (WHERE late) late, sum(hours) hours, sum(overtime) overtime
               FROM pd GROUP BY d) x), '[]'::jsonb),
       'by_department', coalesce((SELECT jsonb_agg(x ORDER BY x.hours DESC) FROM (
-         SELECT coalesce(e.department, 'No department') AS name, count(DISTINCT e.id) headcount,
+         SELECT coalesce(nullif(btrim(e.department), ''), 'No department') AS name, count(DISTINCT e.id) headcount,
                 count(pd.employee_id) present_days, count(pd.employee_id) FILTER (WHERE pd.late) late_days,
                 round(coalesce(sum(pd.hours), 0), 1) hours, round(coalesce(sum(pd.overtime), 0), 1) overtime
          FROM employees e LEFT JOIN pd ON pd.employee_id = e.id
          WHERE e.company_id = p_co AND e.is_active AND (p_branch IS NULL OR e.branch = p_branch) AND (p_dept IS NULL OR e.department = p_dept)
          GROUP BY 1) x), '[]'::jsonb),
       'by_branch', coalesce((SELECT jsonb_agg(x ORDER BY x.hours DESC) FROM (
-         SELECT coalesce(e.branch, 'No site') AS name, count(DISTINCT e.id) headcount,
+         SELECT coalesce(nullif(btrim(e.branch), ''), 'No site') AS name, count(DISTINCT e.id) headcount,
                 count(pd.employee_id) present_days, count(pd.employee_id) FILTER (WHERE pd.late) late_days,
                 round(coalesce(sum(pd.hours), 0), 1) hours, round(coalesce(sum(pd.overtime), 0), 1) overtime
          FROM employees e LEFT JOIN pd ON pd.employee_id = e.id
@@ -164,9 +170,9 @@ BEGIN
         ORDER BY p.employee_id, p.date_time DESC) x WHERE x.type = 'in'),
     'pending_leave', (SELECT count(*) FROM leave_requests WHERE company_id = p_company_id AND status = 'pending'),
     'branches', coalesce((SELECT jsonb_agg(b ORDER BY b) FROM (SELECT DISTINCT branch b FROM employees
-        WHERE company_id = p_company_id AND is_active AND branch IS NOT NULL) x), '[]'::jsonb),
+        WHERE company_id = p_company_id AND is_active AND btrim(branch) <> '') x), '[]'::jsonb),
     'departments', coalesce((SELECT jsonb_agg(b ORDER BY b) FROM (SELECT DISTINCT department b FROM employees
-        WHERE company_id = p_company_id AND is_active AND department IS NOT NULL) x), '[]'::jsonb));
+        WHERE company_id = p_company_id AND is_active AND btrim(department) <> '') x), '[]'::jsonb));
 END $$;
 
 -- Attendance register: one row per person for the period.
@@ -355,6 +361,16 @@ BEGIN
               AND transaction_date BETWEEN p_from AND p_to
           UNION ALL SELECT date_trunc('month', accepted_at AT TIME ZONE 'Africa/Johannesburg')::date, 0, 0, total_amount FROM commercial_quotes
             WHERE company_id = p_co AND accepted_at >= f AND accepted_at < t) u GROUP BY m) x), '[]'::jsonb),
+    'weekly', coalesce((SELECT jsonb_agg(jsonb_build_object('week', m, 'invoiced', i, 'collected', c, 'won', w) ORDER BY m) FROM (
+        SELECT m, sum(i) i, sum(c) c, sum(w) w FROM (
+          SELECT date_trunc('week', issue_date)::date m, total_amount i, 0 c, 0 w FROM finance_invoices
+            WHERE company_id = p_co AND issue_date BETWEEN p_from AND p_to AND status NOT IN ('draft', 'cancelled', 'voided')
+              AND coalesce(invoice_type, 'standard') NOT IN ('rent', 'stay')
+          UNION ALL SELECT date_trunc('week', transaction_date)::date, 0, amount, 0 FROM finance_transactions
+            WHERE company_id = p_co AND transaction_type = 'invoice' AND direction = 'incoming' AND source_table = 'finance_invoices'
+              AND transaction_date BETWEEN p_from AND p_to
+          UNION ALL SELECT date_trunc('week', accepted_at AT TIME ZONE 'Africa/Johannesburg')::date, 0, 0, total_amount FROM commercial_quotes
+            WHERE company_id = p_co AND accepted_at >= f AND accepted_at < t) u GROUP BY m) x), '[]'::jsonb),
     'by_client', coalesce((SELECT jsonb_agg(x ORDER BY x.invoiced DESC) FROM (
         SELECT coalesce(c.name, 'No client') AS name, round(sum(i.total_amount), 2) invoiced, count(*) invoices,
                round(sum(i.amount_paid), 2) paid
@@ -414,16 +430,17 @@ BEGIN
 END $$;
 
 -- ── Payroll ──────────────────────────────────────────────────────────────────────────────
--- Payslips whose pay period overlaps the range (the old report needed the whole period inside it,
--- so a 1–31 October payslip never showed in "last 30 days").
+-- Payslips whose pay period ENDS inside the range (the old report needed the whole period inside it,
+-- so a 1–31 October payslip never showed in "last 30 days"; counting overlap instead double-counted
+-- a month next to the range). Each payslip belongs to the month its period ends.
 CREATE OR REPLACE FUNCTION public._ins_payroll(p_co uuid, p_from date, p_to date, p_branch text, p_dept text, p_full boolean)
 RETURNS jsonb LANGUAGE sql STABLE SET search_path = public AS $$
   WITH pay AS MATERIALIZED (
-    SELECT p.employee_id, p.period_start, p.status, p.gross_pay::numeric gross, p.net_pay::numeric net, p.deductions::numeric deductions,
+    SELECT p.employee_id, p.period_end, p.status, p.gross_pay::numeric gross, p.net_pay::numeric net, p.deductions::numeric deductions,
            p.overtime_pay::numeric overtime_pay, p.overtime_hours::numeric overtime_hours,
-           coalesce(e.department, 'No department') department, coalesce(e.branch, 'No site') branch
+           coalesce(nullif(btrim(e.department), ''), 'No department') department, coalesce(nullif(btrim(e.branch), ''), 'No site') branch
     FROM payment_approvals p JOIN employees e ON e.id = p.employee_id
-    WHERE p.company_id = p_co AND p.status <> 'rejected' AND p.period_start <= p_to AND p.period_end >= p_from
+    WHERE p.company_id = p_co AND p.status <> 'rejected' AND p.period_end BETWEEN p_from AND p_to
       AND (p_branch IS NULL OR e.branch = p_branch) AND (p_dept IS NULL OR e.department = p_dept)),
   k AS (SELECT jsonb_build_object(
     'gross', round(coalesce(sum(gross), 0), 2), 'net', round(coalesce(sum(net), 0), 2),
@@ -435,7 +452,7 @@ RETURNS jsonb LANGUAGE sql STABLE SET search_path = public AS $$
   SELECT CASE WHEN NOT p_full THEN jsonb_build_object('kpis', (SELECT j FROM k)) ELSE jsonb_build_object(
     'kpis', (SELECT j FROM k),
     'monthly', coalesce((SELECT jsonb_agg(jsonb_build_object('month', m, 'gross', g, 'net', n, 'deductions', dd, 'overtime_pay', o, 'people', pp) ORDER BY m) FROM (
-        SELECT date_trunc('month', period_start)::date m, round(sum(gross), 2) g, round(sum(net), 2) n, round(sum(deductions), 2) dd,
+        SELECT date_trunc('month', period_end)::date m, round(sum(gross), 2) g, round(sum(net), 2) n, round(sum(deductions), 2) dd,
                round(sum(overtime_pay), 2) o, count(DISTINCT employee_id) pp FROM pay GROUP BY 1) x), '[]'::jsonb),
     'by_department', coalesce((SELECT jsonb_agg(x ORDER BY x.gross DESC) FROM (
         SELECT department AS name, count(DISTINCT employee_id) people, round(sum(gross), 2) gross, round(sum(net), 2) net,
@@ -458,9 +475,9 @@ BEGIN
     'previous', _ins_payroll(p_company_id, pv.prev_from, pv.prev_to, nullif(p_branch, ''), nullif(p_department, ''), false) -> 'kpis',
     'period', jsonb_build_object('from', p_from, 'to', p_to, 'prev_from', pv.prev_from, 'prev_to', pv.prev_to),
     'branches', coalesce((SELECT jsonb_agg(b ORDER BY b) FROM (SELECT DISTINCT branch b FROM employees
-        WHERE company_id = p_company_id AND is_active AND branch IS NOT NULL) x), '[]'::jsonb),
+        WHERE company_id = p_company_id AND is_active AND btrim(branch) <> '') x), '[]'::jsonb),
     'departments', coalesce((SELECT jsonb_agg(b ORDER BY b) FROM (SELECT DISTINCT department b FROM employees
-        WHERE company_id = p_company_id AND is_active AND department IS NOT NULL) x), '[]'::jsonb));
+        WHERE company_id = p_company_id AND is_active AND btrim(department) <> '') x), '[]'::jsonb));
 END $$;
 
 -- ── Insights home ───────────────────────────────────────────────────────────────────────
