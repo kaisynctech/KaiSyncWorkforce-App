@@ -60,20 +60,25 @@ export function BillingPayments({ companyId }: { companyId: string }) {
     let alive = true
     const p = new URLSearchParams(window.location.search)
     const back = p.get('payfast')
+    const ref = p.get('ref')
     void (async () => {
-      const first = await load()
+      await load()
       if (!alive || !back) return
-      if (back === 'cancelled') { setMsg({ tone: 'warn', text: 'Nothing was paid or saved — you cancelled on PayFast.' }); return }
-      setMsg({ tone: 'ok', text: 'Thank you. Confirming with PayFast…' })
-      const before = JSON.stringify([first?.card, first?.open_bills?.length])
-      for (let i = 0; i < 10 && alive; i++) {
-        await new Promise(r => setTimeout(r, 2000))
-        const now = await load()
-        if (JSON.stringify([now?.card, now?.open_bills?.length]) !== before) {
-          setMsg({ tone: 'ok', text: 'Done — PayFast confirmed it.' })
-          break
+      if (back === 'cancelled') { setMsg({ tone: 'warn', text: 'Nothing was paid or saved — you cancelled on PayFast.' }) }
+      else {
+        setMsg({ tone: 'ok', text: 'Thank you. Confirming with PayFast…' })
+        // PayFast tells our server separately; ask for this payment's own status until it is settled.
+        for (let i = 0; i < 15 && alive; i++) {
+          const { data: status } = ref
+            ? await createClient().rpc('billing_checkout_status', { p_checkout_id: ref })
+            : { data: null }
+          if (status === 'complete') { await load(); setMsg({ tone: 'ok', text: 'Done — PayFast confirmed it.' }); break }
+          if (status === 'failed' || status === 'cancelled') {
+            await load(); setMsg({ tone: 'error', text: 'PayFast did not accept this. Nothing was charged; please try again.' }); break
+          }
+          if (i === 14) { await load(); setMsg({ tone: 'warn', text: 'PayFast has not confirmed yet. This can take a few minutes; refresh in a moment.' }) }
+          else await new Promise(r => setTimeout(r, 2000))
         }
-        if (i === 9) setMsg({ tone: 'warn', text: 'PayFast has not confirmed yet. This can take a few minutes; refresh in a moment.' })
       }
       const url = new URL(window.location.href)
       url.searchParams.delete('payfast'); url.searchParams.delete('ref')

@@ -23,14 +23,9 @@ export type PayFastConfig = {
 
 export function payfastConfig(): PayFastConfig | null {
   const mode = (Deno.env.get("PAYFAST_MODE") ?? "sandbox").trim() === "live" ? "live" : "sandbox";
-  let merchantId = (Deno.env.get("PAYFAST_MERCHANT_ID") ?? "").trim();
-  let merchantKey = (Deno.env.get("PAYFAST_MERCHANT_KEY") ?? "").trim();
-  let passphrase = (Deno.env.get("PAYFAST_PASSPHRASE") ?? "").trim();
-  // Testing: PayFast's own published sandbox account (in their SDK readme), used until our own
-  // details are entered. Test cards only; no real money can move through the sandbox.
-  if (mode === "sandbox" && !merchantId) {
-    merchantId = "10000100"; merchantKey = "46f0cd694581a"; passphrase = "jt7NOE43FZPn";
-  }
+  const merchantId = (Deno.env.get("PAYFAST_MERCHANT_ID") ?? "").trim();
+  const merchantKey = (Deno.env.get("PAYFAST_MERCHANT_KEY") ?? "").trim();
+  const passphrase = (Deno.env.get("PAYFAST_PASSPHRASE") ?? "").trim();
   if (!merchantId || !merchantKey || !passphrase) return null;
   const host = mode === "live" ? "https://www.payfast.co.za" : "https://sandbox.payfast.co.za";
   return {
@@ -142,7 +137,8 @@ export async function chargeSavedCard(
   return {
     ok,
     status: res.status,
-    message: String(data.message ?? raw?.status ?? `PayFast answered ${res.status}`),
+    message: ok ? String(data.message ?? "OK")
+      : `${String(data.message ?? raw?.status ?? "PayFast answered " + res.status)} ${JSON.stringify(raw ?? {}).slice(0, 400)}`.trim(),
     pfPaymentId: data.pf_payment_id ? String(data.pf_payment_id) : null,
     raw,
   };
