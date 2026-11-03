@@ -132,14 +132,7 @@ function NewMoneyInvoiceInner() {
 
     const rate = Number(vatRate) / 100
     const calc = calculateVatExclusive(Number(amount) || 0, rate)
-    let invoiceNumber: string | null = null
-    if (send) {
-      const { data: num } = await (supabase.rpc as unknown as (
-        name: string,
-        args: Record<string, unknown>,
-      ) => Promise<{ data: string | null }>)('generate_invoice_number', { p_company_id: member.companyId })
-      invoiceNumber = num ?? null
-    }
+    // The database gives a sent invoice its number in the same save (no gaps, no duplicates).
 
     const now = new Date().toISOString()
     const isRent = Boolean(leaseId)
@@ -153,7 +146,7 @@ function NewMoneyInvoiceInner() {
         project_id: dealId || null,
         lease_id: leaseId || null,
         site_id: siteId || null,
-        invoice_number: invoiceNumber,
+        invoice_number: null,
         status: send ? 'sent' : 'draft',
         sent_at: send ? now : null,
         currency: 'ZAR',

@@ -247,18 +247,10 @@ function MoneyInvoiceDetailInner() {
     if (!inv || !companyId) return false
     const supabase = createClient()
     const now = new Date().toISOString()
-    let invoiceNumber = inv.invoice_number
-    if (!invoiceNumber) {
-      const { data: num } = await (supabase.rpc as unknown as (
-        name: string,
-        args: Record<string, unknown>,
-      ) => Promise<{ data: string | null }>)('generate_invoice_number', { p_company_id: companyId })
-      invoiceNumber = num ?? null
-    }
+    // The database gives the invoice its number as it is sent (no gaps, no duplicates).
     const { error } = await supabase.from('finance_invoices').update({
       status: 'sent',
       sent_at: now,
-      invoice_number: invoiceNumber,
     }).eq('id', inv.id)
     return !error
   }

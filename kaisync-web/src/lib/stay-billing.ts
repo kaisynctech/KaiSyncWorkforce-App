@@ -170,12 +170,7 @@ export async function createStayCheckoutInvoice(
   const room = unit?.unit_number ? `Room ${unit.unit_number}` : 'Room'
   const description = `${room} · ${guest || 'Guest'} · ${charge.nights} night${charge.nights === 1 ? '' : 's'} (${input.stay.check_in_date} → ${input.stay.check_out_date})`
 
-  const { data: num } = await (supabase.rpc as unknown as (
-    name: string,
-    args: Record<string, unknown>,
-  ) => Promise<{ data: string | null }>)('generate_invoice_number', {
-    p_company_id: input.companyId,
-  })
+  // The database numbers the invoice as it is saved (status 'sent'): no gaps, no duplicates.
 
   const today = localISODate()
   const now = new Date().toISOString()
@@ -186,7 +181,7 @@ export async function createStayCheckoutInvoice(
       client_id: null,
       stay_id: input.stay.id,
       site_id: input.stay.site_id,
-      invoice_number: num ?? null,
+      invoice_number: null,
       status: 'sent',
       sent_at: now,
       currency: input.stay.currency || 'ZAR',

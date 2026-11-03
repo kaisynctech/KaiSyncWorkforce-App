@@ -258,16 +258,7 @@ export async function createRentInvoiceForLease(
   const calc = calculateVatExclusive(rent, rate)
   const send = input.send !== false
 
-  let invoiceNumber: string | null = null
-  if (send) {
-    const { data: num } = await (supabase.rpc as unknown as (
-      name: string,
-      args: Record<string, unknown>,
-    ) => Promise<{ data: string | null }>)('generate_invoice_number', {
-      p_company_id: input.companyId,
-    })
-    invoiceNumber = num ?? null
-  }
+  // The database numbers the invoice when it is saved as sent (no gaps, no duplicates).
 
   const payerNote =
     input.lease.payer_type && input.lease.payer_type !== 'self'
@@ -297,7 +288,7 @@ export async function createRentInvoiceForLease(
       client_id: input.clientId,
       lease_id: input.lease.id,
       site_id: input.lease.site_id,
-      invoice_number: invoiceNumber,
+      invoice_number: null,
       status: send ? 'sent' : 'draft',
       sent_at: send ? now : null,
       currency: input.lease.currency || 'ZAR',
