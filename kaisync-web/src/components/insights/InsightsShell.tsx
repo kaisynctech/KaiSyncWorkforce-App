@@ -1,9 +1,7 @@
 'use client'
 
 import { useState, type ReactNode } from 'react'
-import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { cn } from '@/lib/utils'
 import { describeRange, previousRange } from '@/lib/insights/period'
 import { DateRangePicker } from './DateRangePicker'
 import { InsightsProvider, useInsights } from './InsightsContext'
@@ -36,6 +34,8 @@ function Frame({ pathname, children }: { pathname: string; children: ReactNode }
   const [failed, setFailed] = useState(false)
   const prev = previousRange(filters.range)
   const active = (href: string) => (href === '/dashboard/reports' ? pathname === href : pathname.startsWith(href))
+  // The sidebar is the navigation; the heading just says where you are.
+  const current = TABS.find(t => active(t.href))
 
   const run = async (kind: 'csv' | 'pdf') => {
     const fn = kind === 'csv' ? exporter?.csv : exporter?.pdf
@@ -49,30 +49,19 @@ function Frame({ pathname, children }: { pathname: string; children: ReactNode }
   return (
     <div className="h-full flex flex-col bg-background">
       <div className="bg-surface border-b border-divider shrink-0">
-        <div className="px-4 sm:px-6 pt-4 flex items-end justify-between gap-3 flex-wrap">
+        <div className="px-4 sm:px-6 py-4 flex items-end justify-between gap-3 flex-wrap">
           <div>
-            <h1 className="text-[22px] font-semibold text-text-primary leading-tight">Insights</h1>
+            {current && current.href !== '/dashboard/reports' && (
+              <p className="text-[11.5px] font-medium text-text-secondary uppercase tracking-wide">Insights</p>
+            )}
+            <h1 className="text-[22px] font-semibold text-text-primary leading-tight">
+              {current && current.href !== '/dashboard/reports' ? current.label : 'Insights'}
+            </h1>
             <p className="text-[12.5px] text-text-secondary mt-0.5">
               {describeRange(filters.range)} <span className="text-slate-300 mx-1">·</span> compared with {describeRange(prev)}
             </p>
           </div>
         </div>
-        <nav className="px-2 sm:px-4 mt-2 flex gap-1 overflow-x-auto" aria-label="Insights sections">
-          {TABS.map(t => (
-            <Link
-              key={t.href}
-              href={t.href}
-              className={cn(
-                'flex items-center gap-1.5 px-3 h-10 text-[13px] whitespace-nowrap border-b-2 -mb-px no-underline transition-colors',
-                active(t.href) ? 'border-[#1E3A5F] text-text-primary font-semibold' : 'border-transparent text-text-secondary hover:text-text-primary',
-              )}
-              aria-current={active(t.href) ? 'page' : undefined}
-            >
-              <span className="material-icons text-[17px]">{t.icon}</span>
-              {t.label}
-            </Link>
-          ))}
-        </nav>
       </div>
 
       <div className="flex-1 overflow-y-auto">
