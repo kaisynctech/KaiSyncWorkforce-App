@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import Sidebar from '@/components/Sidebar'
 import EmployeeSidebar from '@/components/EmployeeSidebar'
 import { DashboardCompanyProvider } from '@/components/DashboardCompanyContext'
+import { BillingLockBanner } from '@/components/BillingLockBanner'
 import { MODULES_UPDATED_EVENT, type ModulesUpdatedDetail } from '@/lib/module-events'
 import { DashboardBootstrapProvider } from '@/components/DashboardBootstrapContext'
 import { getCodeSession, getEmpContext, clearCodeSession } from '@/lib/auth/code-session'
@@ -274,6 +275,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden bg-background transition-[padding] duration-200"
               style={{ paddingLeft: 'var(--sidebar-panel-w, 0px)' }}
             >
+              <BillingLockBanner companyId={company?.id} />
               {children}
             </main>
           </div>

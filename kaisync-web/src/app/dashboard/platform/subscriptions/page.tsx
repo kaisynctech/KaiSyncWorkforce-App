@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { searchPlatformCompanies, setCompanyPrice } from '@/lib/platform-api'
 import type { PlatformCompany } from '@/lib/platform-types'
+import { PlatformBillingPanel } from '@/components/platform/PlatformBillingPanel'
 
 function fmtMoney(n: number) {
   return `R ${Number(n ?? 0).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -89,6 +90,7 @@ export default function PlatformSubscriptionsPage() {
 
   return (
     <div className="h-full flex flex-col">
+      <PlatformBillingPanel />
       <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-divider shrink-0 flex-wrap">
         <div>
           <p className="text-[13px] text-text-secondary">Amount owed (active + trialing)</p>

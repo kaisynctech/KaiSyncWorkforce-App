@@ -18,6 +18,7 @@ import { EMPLOYEE_SAFE_SELECT } from '@/lib/employee-columns'
 import { EmployeeNumberSettingsCard } from '@/components/settings/EmployeeNumberSettingsCard'
 import type { Company, Employee, SecuritySettings, AuditEvent } from '@/types/database'
 import { formatZar, loadCompanyBillingSummary, type BillingSummary } from '@/lib/billing'
+import { BillingPayments } from '@/components/settings/BillingPayments'
 import { checkQuoteEmailConfigured } from '@/lib/send-quote-email'
 import type { CommercialAutomationRule, AutomationRuleExecution } from '@/types/commercial'
 import { forwardGeocode, reverseGeocode } from '@/lib/geo-location'
@@ -920,6 +921,7 @@ export default function SettingsPage() {
             {billingError && (
               <p className="text-[13px] text-danger">{billingError}</p>
             )}
+            {companyId && billing?.billable !== false && <BillingPayments companyId={companyId} />}
             {billing && !billingLoading && (
               <>
                 <div className="rounded-lg border border-border bg-surface-elevated p-4">
