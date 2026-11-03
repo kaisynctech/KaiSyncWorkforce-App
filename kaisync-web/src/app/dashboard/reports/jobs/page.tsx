@@ -5,7 +5,7 @@ import { useExporter, useInsights, useInsightsRpc } from '@/components/insights/
 import { useDownloads } from '@/components/insights/useDownloads'
 import { d, kpiTable, Loadable, n, pointTitle, rollUp, SectionTitle } from '@/components/insights/dash'
 import { AttentionRow, Card, ChartCard, ColumnChart, RankedBars, SegmentedBar, SERIES, StatTile, TrendChart } from '@/components/insights/viz'
-import { count, countShort, days, moneyShort, pct, signedPct, words } from '@/lib/insights/format'
+import { count, countShort, days, dec1, moneyShort, pct, plural, signedPct, vsPrevious, words } from '@/lib/insights/format'
 import { describeRange, grainFor, pointLabel, previousRange } from '@/lib/insights/period'
 import type { TableSpec } from '@/lib/insights/table'
 import type { JobsResult } from '@/lib/insights/types'
@@ -37,7 +37,7 @@ export default function JobsInsightsPage() {
       { measure: 'Jobs opened', now: count(k.opened), before: count(p.opened), change: signedPct(d(k, p, 'opened')) },
       { measure: 'Finished on time', now: pct(k.on_time_rate), before: pct(p.on_time_rate), change: signedPct(d(k, p, 'on_time_rate')) },
       { measure: 'Average days to complete', now: days(k.avg_days_to_complete), before: days(p.avg_days_to_complete), change: signedPct(d(k, p, 'avg_days_to_complete')) },
-      { measure: 'Average hours to respond', now: `${count(k.avg_hours_to_respond)} h`, before: `${count(p.avg_hours_to_respond)} h`, change: signedPct(d(k, p, 'avg_hours_to_respond')) },
+      { measure: 'Average hours to respond', now: `${dec1(k.avg_hours_to_respond)} h`, before: `${dec1(p.avg_hours_to_respond)} h`, change: signedPct(d(k, p, 'avg_hours_to_respond')) },
       { measure: 'Callbacks', now: pct(k.callback_rate), before: pct(p.callback_rate), change: signedPct(d(k, p, 'callback_rate')) },
       { measure: 'Cancelled', now: count(k.cancelled), before: count(p.cancelled), change: signedPct(d(k, p, 'cancelled')) },
     ])
@@ -102,8 +102,8 @@ export default function JobsInsightsPage() {
     csv: () => csv('Jobs and operations', [tables.summary, tables.trendT, tables.open, tables.clients, tables.techs, tables.services, tables.prio]),
     pdf: () => pdf('Jobs and operations', [
       { kind: 'kpis', items: [
-        { label: 'Jobs completed', value: count(k?.completed), sub: `${signedPct(d(k, p, 'completed'))} vs previous` },
-        { label: 'Completed value', value: moneyShort(k?.completed_value), sub: `${signedPct(d(k, p, 'completed_value'))} vs previous` },
+        { label: 'Jobs completed', value: count(k?.completed), sub: vsPrevious(d(k, p, 'completed')) },
+        { label: 'Completed value', value: moneyShort(k?.completed_value), sub: vsPrevious(d(k, p, 'completed_value')) },
         { label: 'Finished on time', value: pct(k?.on_time_rate) },
         { label: 'Open right now', value: count(data?.open_now), sub: `${count(data?.overdue_now)} overdue · ${count(data?.unassigned_now)} unassigned` },
       ] },
@@ -132,17 +132,17 @@ export default function JobsInsightsPage() {
       {data && k && (
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <StatTile hero label="Jobs completed" icon="task_alt" value={count(k.completed)} delta={d(k, p, 'completed')} compare={compare}
+            <StatTile hero className="col-span-2 lg:col-span-1" label="Jobs completed" icon="task_alt" value={count(k.completed)} delta={d(k, p, 'completed')} compare={compare}
               spark={trend.map(r => n(r.completed))} />
             <StatTile label="Value of completed jobs" icon="paid" value={moneyShort(k.completed_value)} delta={d(k, p, 'completed_value')} compare={compare} />
             <StatTile label="Finished on time" icon="alarm_on" value={pct(k.on_time_rate)} delta={d(k, p, 'on_time_rate')} compare={compare}
               hint="Completed by the planned end date" />
-            <StatTile label="Average days to complete" icon="hourglass_bottom" value={k.avg_days_to_complete == null ? '—' : `${k.avg_days_to_complete}`}
+            <StatTile label="Average days to complete" icon="hourglass_bottom" value={dec1(k.avg_days_to_complete)}
               delta={d(k, p, 'avg_days_to_complete')} goodWhenUp={false} compare={compare} />
           </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-3">
             <StatTile label="Jobs opened" icon="add_task" value={count(k.opened)} delta={d(k, p, 'opened')} goodWhenUp={null} compare={compare} />
-            <StatTile label="Hours to first response" icon="bolt" value={k.avg_hours_to_respond == null ? '—' : `${k.avg_hours_to_respond}`}
+            <StatTile label="Hours to first response" icon="bolt" value={dec1(k.avg_hours_to_respond)}
               delta={d(k, p, 'avg_hours_to_respond')} goodWhenUp={false} compare={compare} />
             <StatTile label="Callbacks" icon="replay" value={pct(k.callback_rate)} delta={d(k, p, 'callback_rate')} goodWhenUp={false} compare={compare}
               hint="Jobs that needed a return visit" />
@@ -187,8 +187,8 @@ export default function JobsInsightsPage() {
             </ChartCard>
             <ChartCard title="Jobs completed by technician" table={tables?.techs}>
               <RankedBars emptyText="No completed jobs with a technician" items={data.by_technician.map(t => ({
-                label: t.name, value: n(t.completed), display: `${count(t.completed)} jobs`,
-                sub: `${t.avg_days == null ? '—' : `${t.avg_days} days avg`}${t.callbacks ? ` · ${t.callbacks} callback${t.callbacks === 1 ? '' : 's'}` : ''}`,
+                label: t.name, value: n(t.completed), display: plural(t.completed, 'job', 'jobs'),
+                sub: `${t.avg_days == null ? '—' : `${dec1(t.avg_days)} days avg`}${t.callbacks ? ` · ${t.callbacks} callback${t.callbacks === 1 ? '' : 's'}` : ''}`,
                 href: `/dashboard/employees/${t.employee_id}`, title: t.department ?? undefined,
               }))} />
             </ChartCard>
@@ -209,7 +209,7 @@ export default function JobsInsightsPage() {
                 data={priority.filter(r => r.avg_days != null) as unknown as Record<string, unknown>[]}
                 xKey="label"
                 series={[{ key: 'avg', name: 'Average days', color: SERIES[0] }]}
-                yFormat={v => (Number.isInteger(v) ? String(v) : v.toFixed(1))}
+                yFormat={v => (Number.isInteger(v) ? String(v) : dec1(v))}
               />
             </ChartCard>
           </div>

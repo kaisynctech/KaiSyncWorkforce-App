@@ -5,7 +5,7 @@ import { useExporter, useInsights, useInsightsRpc, useOrgFilters } from '@/compo
 import { useDownloads } from '@/components/insights/useDownloads'
 import { d, kpiTable, Loadable, n, SectionTitle } from '@/components/insights/dash'
 import { ChartCard, RankedBars, SegmentedBar, SERIES, STATUS, StatTile, TrendChart } from '@/components/insights/viz'
-import { count, hours, money, moneyShort, signedPct } from '@/lib/insights/format'
+import { count, hours, money, moneyShort, signedPct, vsPrevious } from '@/lib/insights/format'
 import { describeRange, pointLabel, previousRange } from '@/lib/insights/period'
 import type { TableSpec } from '@/lib/insights/table'
 import type { PayrollResult } from '@/lib/insights/types'
@@ -86,7 +86,7 @@ export default function PayrollInsightsPage() {
     csv: () => csv('Payroll summary', [tables.summary, tables.monthT, tables.dept, tables.site]),
     pdf: () => pdf('Payroll summary', [
       { kind: 'kpis', items: [
-        { label: 'Gross pay', value: moneyShort(k?.gross), sub: `${signedPct(d(k, p, 'gross'))} vs previous` },
+        { label: 'Gross pay', value: moneyShort(k?.gross), sub: vsPrevious(d(k, p, 'gross')) },
         { label: 'Net pay', value: moneyShort(k?.net) },
         { label: 'Deductions', value: moneyShort(k?.deductions) },
         { label: 'People paid', value: count(k?.people), sub: `${count(k?.payslips)} payslips` },
@@ -116,7 +116,7 @@ export default function PayrollInsightsPage() {
       {data && k && (
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <StatTile hero label="Gross pay" icon="payments" value={moneyShort(k.gross)} delta={d(k, p, 'gross')} goodWhenUp={null} compare={compare}
+            <StatTile hero className="col-span-2 lg:col-span-1" label="Gross pay" icon="payments" value={moneyShort(k.gross)} delta={d(k, p, 'gross')} goodWhenUp={null} compare={compare}
               spark={monthly.map(m => m.gross)} />
             <StatTile label="Net pay" icon="account_balance_wallet" value={moneyShort(k.net)} delta={d(k, p, 'net')} goodWhenUp={null} compare={compare} />
             <StatTile label="Deductions" icon="request_quote" value={moneyShort(k.deductions)} delta={d(k, p, 'deductions')} goodWhenUp={null} compare={compare}

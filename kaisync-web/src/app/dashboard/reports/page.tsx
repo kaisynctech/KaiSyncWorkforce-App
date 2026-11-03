@@ -6,7 +6,7 @@ import { useExporter, useInsights, useInsightsRpc } from '@/components/insights/
 import { useDownloads } from '@/components/insights/useDownloads'
 import { d, kpiTable, Loadable, n, pointTitle, rollUp } from '@/components/insights/dash'
 import { AttentionRow, Card, ChartCard, RAMP, SegmentedBar, SERIES, STATUS, StatTile, TrendChart } from '@/components/insights/viz'
-import { count, countShort, hours, money, moneyShort, pct, signedPct, words } from '@/lib/insights/format'
+import { count, countShort, hours, money, moneyShort, pct, signedPct, vsPrevious, words } from '@/lib/insights/format'
 import { describeRange, eachDay, grainFor, pointLabel, previousRange } from '@/lib/insights/period'
 import type { TableSpec } from '@/lib/insights/table'
 import type { HomeResult } from '@/lib/insights/types'
@@ -79,7 +79,7 @@ export default function InsightsOverviewPage() {
     csv: () => csv('Business summary', [summary, attentionT]),
     pdf: () => pdf('Business summary', [
       { kind: 'kpis', items: [
-        { label: 'Attendance rate', value: pct(people?.kpis.attendance_rate), sub: `${signedPct(d(people?.kpis, people?.previous, 'attendance_rate'))} vs previous` },
+        { label: 'Attendance rate', value: pct(people?.kpis.attendance_rate), sub: vsPrevious(d(people?.kpis, people?.previous, 'attendance_rate')) },
         { label: 'Jobs completed', value: count(jobs?.kpis.completed), sub: `${moneyShort(jobs?.kpis.completed_value)} of work` },
         { label: 'Invoiced', value: moneyShort(mon?.kpis.invoiced), sub: `${moneyShort(mon?.kpis.collected)} collected` },
         { label: 'Gross pay', value: moneyShort(pay?.kpis.gross), sub: `${count(pay?.kpis.people)} people` },
@@ -101,7 +101,7 @@ export default function InsightsOverviewPage() {
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
             <StatTile hero href="/dashboard/reports/people" label="Attendance rate" icon="how_to_reg" value={pct(people.kpis.attendance_rate)}
-              delta={d(people.kpis, people.previous, 'attendance_rate')} compare={compare} spark={presence.map(r => n(r.present))} />
+              delta={d(people.kpis, people.previous, 'attendance_rate')} compare={compare} spark={presence.filter(r => n(r.present) >= n(people.kpis.headcount) * 0.2).map(r => n(r.present))} />
             <StatTile hero href="/dashboard/reports/jobs" label="Jobs completed" icon="task_alt" value={count(jobs.kpis.completed)}
               delta={d(jobs.kpis, jobs.previous, 'completed')} compare={compare} spark={jobTrend.map(r => n(r.completed))} />
             <StatTile hero href="/dashboard/reports/money" label="Invoiced" icon="receipt_long" value={moneyShort(mon.kpis.invoiced)}

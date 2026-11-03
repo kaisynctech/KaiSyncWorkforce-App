@@ -4,7 +4,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { count, hours, money, moneyShort, pct } from '@/lib/insights/format'
+import { count, dec1, hours, money, moneyShort, pct } from '@/lib/insights/format'
 import type { PdfKpi } from '@/lib/insights/pdf'
 import type { TableSpec } from '@/lib/insights/table'
 import type {
@@ -250,7 +250,7 @@ export const REPORTS: ReportDef[] = [
         kpis: [
           { label: 'Jobs completed', value: count(d.kpis.completed) },
           { label: 'Technicians', value: count(d.by_technician.length) },
-          { label: 'Average days to complete', value: d.kpis.avg_days_to_complete == null ? '—' : String(d.kpis.avg_days_to_complete) },
+          { label: 'Average days to complete', value: dec1(d.kpis.avg_days_to_complete) },
           { label: 'Callback rate', value: pct(d.kpis.callback_rate) },
         ],
         tables: [{

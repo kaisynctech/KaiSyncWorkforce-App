@@ -15,13 +15,13 @@ export const isNum = (v: unknown): boolean =>
 /** R 1 120 143,20 */
 export function money(v: unknown): string {
   if (!isNum(v)) return '—'
-  return `R ${n2.format(num(v))}`
+  return `R\u00a0${n2.format(num(v))}`
 }
 
 /** R 1 120 143 */
 export function moneyWhole(v: unknown): string {
   if (!isNum(v)) return '—'
-  return `R ${n0.format(Math.round(num(v)))}`
+  return `R\u00a0${n0.format(Math.round(num(v)))}`
 }
 
 /** R 4.26m, R 535k, R 9 410 — for tiles and axes. */
@@ -30,11 +30,12 @@ export function moneyShort(v: unknown): string {
   const n = num(v)
   const a = Math.abs(n)
   const sign = n < 0 ? '-' : ''
-  if (a >= 1e9) return `${sign}R ${trim(a / 1e9, 2)}bn`
-  if (a >= 1e6) return `${sign}R ${trim(a / 1e6, 2)}m`
-  if (a >= 1e5) return `${sign}R ${Math.round(a / 1e3)}k`
-  if (a >= 1e4) return `${sign}R ${trim(a / 1e3, 1)}k`
-  return `${sign}R ${n0.format(Math.round(a))}`
+  const R = `${sign}R\u00a0`
+  if (a >= 1e9) return `${R}${trim(a / 1e9, 2)}bn`
+  if (a >= 1e6) return `${R}${trim(a / 1e6, 2)}m`
+  if (a >= 1e5) return `${R}${Math.round(a / 1e3)}k`
+  if (a >= 1e4) return `${R}${trim(a / 1e3, 1)}k`
+  return `${R}${n0.format(Math.round(a))}`
 }
 
 const trimFmt = [0, 1, 2].map(d => new Intl.NumberFormat('en-ZA', { maximumFractionDigits: d }))
@@ -50,6 +51,22 @@ export function countShort(v: unknown): string {
   if (a >= 1e6) return `${trim(n / 1e6, 1)}m`
   if (a >= 1e4) return `${trim(n / 1e3, 1)}k`
   return n0.format(n)
+}
+
+/** One decimal, South African style (6,4). */
+export function dec1(v: unknown): string {
+  return isNum(v) ? n1.format(num(v)) : '—'
+}
+
+/** "1 job", "3 jobs". */
+export function plural(v: unknown, one: string, many: string): string {
+  const n = num(v)
+  return `${n0.format(n)} ${n === 1 ? one : many}`
+}
+
+/** "+4,2% vs previous", or nothing when there is no earlier figure to compare with. */
+export function vsPrevious(delta: number | null | undefined): string | undefined {
+  return delta == null || !Number.isFinite(delta) ? undefined : `${signedPct(delta)} vs previous`
 }
 
 export function count(v: unknown): string {

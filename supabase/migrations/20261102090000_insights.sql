@@ -501,7 +501,7 @@ BEGIN
        'previous', _ins_jobs(p_company_id, pv.prev_from, pv.prev_to, false) -> 'kpis',
        'open_now', (SELECT count(*) FROM jobs WHERE company_id = p_company_id AND status IN ('open', 'scheduled', 'in_progress')),
        'overdue_now', (SELECT count(*) FROM jobs WHERE company_id = p_company_id AND status IN ('open', 'scheduled', 'in_progress') AND scheduled_end < now())),
-    'money', jsonb_build_object('kpis', v_money -> 'kpis', 'monthly', v_money -> 'monthly',
+    'money', jsonb_build_object('kpis', v_money -> 'kpis', 'monthly', v_money -> 'monthly', 'weekly', v_money -> 'weekly',
        'previous', _ins_money(p_company_id, pv.prev_from, pv.prev_to, false) -> 'kpis', 'ageing', _ins_ageing(p_company_id) - 'debtors'),
     'payroll', jsonb_build_object('kpis', v_pay -> 'kpis', 'monthly', v_pay -> 'monthly',
        'previous', _ins_payroll(p_company_id, pv.prev_from, pv.prev_to, NULL, NULL, false) -> 'kpis'),

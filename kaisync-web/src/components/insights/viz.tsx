@@ -120,7 +120,7 @@ export function EmptyChart({ height = 220, text = 'Nothing recorded in this peri
  * sparkline. `goodWhenUp` null means the change is neither good nor bad (shown in grey).
  */
 export function StatTile({
-  label, value, delta, goodWhenUp = true, compare, spark, hero, href, hint, icon,
+  label, value, delta, goodWhenUp = true, compare, spark, hero, href, hint, icon, className,
 }: {
   label: string
   value: string
@@ -132,6 +132,7 @@ export function StatTile({
   href?: string
   hint?: string
   icon?: string
+  className?: string
 }) {
   const body = (
     <div className={cn(
@@ -143,7 +144,7 @@ export function StatTile({
         <span className="truncate">{label}</span>
       </div>
       <div className="flex items-end justify-between gap-2">
-        <div className={cn('font-semibold text-text-primary leading-none tracking-tight', hero ? 'text-[44px] sm:text-[52px] mt-1' : 'text-[24px] mt-1')}>
+        <div className={cn('font-semibold text-text-primary leading-none tracking-tight whitespace-nowrap min-w-0', hero ? 'text-[36px] sm:text-[40px] 2xl:text-[48px] mt-1' : 'text-[22px] sm:text-[24px] mt-1')}>
           {value}
         </div>
         {spark && spark.length > 1 && <Sparkline values={spark} />}
@@ -151,7 +152,9 @@ export function StatTile({
       <DeltaLine delta={delta} goodWhenUp={goodWhenUp} compare={compare} hint={hint} />
     </div>
   )
-  return href ? <Link href={href} className="block h-full no-underline">{body}</Link> : body
+  return href
+    ? <Link href={href} className={cn('block h-full no-underline', className)}>{body}</Link>
+    : <div className={cn('h-full', className)}>{body}</div>
 }
 
 function DeltaLine({ delta, goodWhenUp, compare, hint }: { delta?: number | null; goodWhenUp?: boolean | null; compare?: string; hint?: string }) {
@@ -237,7 +240,7 @@ export function TrendChart({
 }) {
   if (!data.length) return <EmptyChart height={height} />
   const bars = series.filter(s => s.kind === 'bar').length
-  const interval = data.length > 16 ? Math.ceil(data.length / 10) - 1 : 0
+  const interval = data.length > 8 ? 'preserveStartEnd' as const : 0
   return (
     <div style={{ height }} className="w-full -ml-1">
       <ResponsiveContainer width="100%" height="100%">
@@ -258,7 +261,7 @@ export function TrendChart({
             tickLine={false}
             axisLine={{ stroke: '#D1D5DB' }}
             interval={interval}
-            minTickGap={8}
+            minTickGap={22}
           />
           <YAxis
             tickFormatter={(v: number) => yFormat(v)}
@@ -426,7 +429,7 @@ export function SegmentedBar({ parts, total }: { parts: Part[]; total?: number }
               style={{ width: `${share}%`, background: p.color }}
               title={`${p.label}: ${p.display} (${share.toFixed(1)}%)`}
             >
-              {share >= 9 && (
+              {share >= 14 && (
                 <span className="text-[11px] font-semibold truncate" style={{ color: p.dark ? '#0b0b0b' : '#fff' }}>
                   {Math.round(share)}%
                 </span>
@@ -472,7 +475,7 @@ export function CalendarHeat({ days, scaleLabel }: { days: HeatDay[]; scaleLabel
     if (hi - lo < 0.0001) return RAMP.length - 2
     return Math.min(RAMP.length - 1, Math.max(1, Math.round(((v - lo) / (hi - lo)) * (RAMP.length - 2)) + 1))
   }
-  const cell = weeks.length > 30 ? 11 : 15
+  const cell = weeks.length > 30 ? 11 : weeks.length > 16 ? 15 : weeks.length > 8 ? 20 : 26
   return (
     <div>
       <div className="flex gap-2 overflow-x-auto pb-1">
@@ -571,7 +574,8 @@ export function DataTable<Row>({
               value={q}
               onChange={e => { setQ(e.target.value); setPage(0) }}
               placeholder="Search this report"
-              className="input pl-9 h-9 text-[13px]"
+              className="input h-9 text-[13px]"
+              style={{ paddingLeft: 36 }}
             />
           </div>
           <p className="text-[12px] text-text-secondary">
@@ -609,7 +613,7 @@ export function DataTable<Row>({
                   const numeric = isNumericKind(c.kind)
                   return (
                     <td key={c.key} className={cn(pad, numeric ? 'text-right tabular-nums whitespace-nowrap' : 'text-left', 'text-text-primary')}>
-                      {displayCell(c.kind, cellValue(c, r))}
+                      <span className={displayCell(c.kind, cellValue(c, r)).length <= 14 ? 'whitespace-nowrap' : undefined}>{displayCell(c.kind, cellValue(c, r))}</span>
                     </td>
                   )
                 })}

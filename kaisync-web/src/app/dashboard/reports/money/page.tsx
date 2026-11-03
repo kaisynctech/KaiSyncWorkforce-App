@@ -5,7 +5,7 @@ import { useExporter, useInsights, useInsightsRpc } from '@/components/insights/
 import { useDownloads } from '@/components/insights/useDownloads'
 import { d, kpiTable, Loadable, n, pointTitle, SectionTitle } from '@/components/insights/dash'
 import { AttentionRow, ChartCard, ColumnChart, MUTED_FILL, RAMP, RankedBars, SegmentedBar, SERIES, STATUS, StatTile, TrendChart } from '@/components/insights/viz'
-import { count, money, moneyShort, pct, signedPct, words } from '@/lib/insights/format'
+import { count, dec1, money, moneyShort, pct, signedPct, vsPrevious, words } from '@/lib/insights/format'
 import { describeRange, grainFor, pointLabel, previousRange, todaySA } from '@/lib/insights/period'
 import type { TableSpec } from '@/lib/insights/table'
 import type { Debtor, MoneyResult } from '@/lib/insights/types'
@@ -39,7 +39,7 @@ export default function MoneyInsightsPage() {
       { measure: 'Invoiced', now: money(k.invoiced), before: money(p.invoiced), change: signedPct(d(k, p, 'invoiced')) },
       { measure: 'Collected', now: money(k.collected), before: money(p.collected), change: signedPct(d(k, p, 'collected')) },
       { measure: 'Invoices issued', now: count(k.invoices), before: count(p.invoices), change: signedPct(d(k, p, 'invoices')) },
-      { measure: 'Average days to pay', now: count(k.avg_days_to_pay), before: count(p.avg_days_to_pay), change: signedPct(d(k, p, 'avg_days_to_pay')) },
+      { measure: 'Average days to pay', now: dec1(k.avg_days_to_pay), before: dec1(p.avg_days_to_pay), change: signedPct(d(k, p, 'avg_days_to_pay')) },
       { measure: 'Quotes sent', now: `${count(k.quotes_sent)} (${moneyShort(k.quotes_sent_value)})`, before: `${count(p.quotes_sent)} (${moneyShort(p.quotes_sent_value)})`, change: signedPct(d(k, p, 'quotes_sent_value')) },
       { measure: 'Quotes won', now: `${count(k.quotes_won)} (${moneyShort(k.quotes_won_value)})`, before: `${count(p.quotes_won)} (${moneyShort(p.quotes_won_value)})`, change: signedPct(d(k, p, 'quotes_won_value')) },
       { measure: 'Quote win rate', now: pct(k.win_rate), before: pct(p.win_rate), change: signedPct(d(k, p, 'win_rate')) },
@@ -109,8 +109,8 @@ export default function MoneyInsightsPage() {
     csv: () => csv('Sales and money', [tables.summary, tables.trendT, tables.ageing, tables.debtors, tables.clients, tables.quotes, tables.lost]),
     pdf: () => pdf('Sales and money', [
       { kind: 'kpis', items: [
-        { label: 'Invoiced', value: moneyShort(k?.invoiced), sub: `${signedPct(d(k, p, 'invoiced'))} vs previous` },
-        { label: 'Collected', value: moneyShort(k?.collected), sub: `${signedPct(d(k, p, 'collected'))} vs previous` },
+        { label: 'Invoiced', value: moneyShort(k?.invoiced), sub: vsPrevious(d(k, p, 'invoiced')) },
+        { label: 'Collected', value: moneyShort(k?.collected), sub: vsPrevious(d(k, p, 'collected')) },
         { label: 'Owed to you now', value: moneyShort(data?.ageing.outstanding), sub: `${moneyShort(data?.ageing.overdue)} overdue` },
         { label: 'Quote win rate', value: pct(k?.win_rate), sub: `${count(k?.quotes_won)} won · ${count(k?.quotes_lost)} lost` },
       ] },
@@ -140,13 +140,13 @@ export default function MoneyInsightsPage() {
       {data && k && (
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <StatTile hero label="Invoiced" icon="receipt_long" value={moneyShort(k.invoiced)} delta={d(k, p, 'invoiced')} compare={compare}
+            <StatTile hero className="col-span-2 lg:col-span-1" label="Invoiced" icon="receipt_long" value={moneyShort(k.invoiced)} delta={d(k, p, 'invoiced')} compare={compare}
               spark={trend.map(r => r.invoiced)} />
             <StatTile label="Collected" icon="savings" value={moneyShort(k.collected)} delta={d(k, p, 'collected')} compare={compare}
               hint={`${count(k.invoices)} invoices issued`} />
             <StatTile label="Owed to you now" icon="account_balance" value={moneyShort(data.ageing.outstanding)}
               hint={`${moneyShort(data.ageing.overdue)} of it overdue`} href="/dashboard/finance/invoices" />
-            <StatTile label="Average days to pay" icon="update" value={k.avg_days_to_pay == null ? '—' : `${k.avg_days_to_pay}`}
+            <StatTile label="Average days to pay" icon="update" value={dec1(k.avg_days_to_pay)}
               delta={d(k, p, 'avg_days_to_pay')} goodWhenUp={false} compare={compare} />
           </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-3">

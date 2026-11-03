@@ -61,8 +61,8 @@ describe('periods', () => {
 describe('formats', () => {
   it('formats money the South African way', () => {
     expect(money(1120143.2).replace(/\s/g, ' ')).toBe('R 1 120 143,20')
-    expect(moneyShort(4260000)).toBe('R 4,26m')
-    expect(moneyShort(535710)).toBe('R 536k')
+    expect(moneyShort(4260000)).toBe('R\u00a04,26m') // never breaks between R and the number
+    expect(moneyShort(535710).replace(/\s/g, ' ')).toBe('R 536k')
     expect(moneyShort(9410).replace(/\s/g, ' ')).toBe('R 9 410')
     expect(moneyShort(null)).toBe('—')
     expect(countShort(57414.8)).toBe('57,4k')

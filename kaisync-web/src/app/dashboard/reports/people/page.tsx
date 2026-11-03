@@ -5,7 +5,7 @@ import { useExporter, useInsights, useInsightsRpc, useOrgFilters } from '@/compo
 import { useDownloads } from '@/components/insights/useDownloads'
 import { d, kpiTable, Loadable, n, pointTitle, rollUp, SectionTitle } from '@/components/insights/dash'
 import { CalendarHeat, ChartCard, RankedBars, SegmentedBar, SERIES, STATUS, StatTile, TrendChart } from '@/components/insights/viz'
-import { count, countShort, dayLong, hours, pct, signedPct } from '@/lib/insights/format'
+import { count, countShort, dayLong, hours, pct, plural, signedPct, vsPrevious } from '@/lib/insights/format'
 import { describeRange, eachDay, grainFor, pointLabel, previousRange } from '@/lib/insights/period'
 import type { TableSpec } from '@/lib/insights/table'
 import type { PeopleGroup, PeopleResult } from '@/lib/insights/types'
@@ -123,10 +123,10 @@ export default function PeopleInsightsPage() {
     csv: () => csv('People and attendance', [tables.summary, tables.dailyT, tables.dept, tables.site, tables.late, tables.ot, tables.leave]),
     pdf: () => pdf('People and attendance', [
       { kind: 'kpis', items: [
-        { label: 'Attendance rate', value: pct(k?.attendance_rate), sub: `${signedPct(d(k, p, 'attendance_rate'))} vs previous` },
+        { label: 'Attendance rate', value: pct(k?.attendance_rate), sub: vsPrevious(d(k, p, 'attendance_rate')) },
         { label: 'Late arrivals', value: count(k?.late_days), sub: `${pct(k?.late_rate)} of days at work` },
-        { label: 'Hours worked', value: hours(k?.hours), sub: `${signedPct(d(k, p, 'hours'))} vs previous` },
-        { label: 'Overtime', value: hours(k?.overtime_hours), sub: `${signedPct(d(k, p, 'overtime_hours'))} vs previous` },
+        { label: 'Hours worked', value: hours(k?.hours), sub: vsPrevious(d(k, p, 'hours')) },
+        { label: 'Overtime', value: hours(k?.overtime_hours), sub: vsPrevious(d(k, p, 'overtime_hours')) },
       ] },
       { kind: 'columns', title: grain === 'day' ? 'People at work each day' : 'Average people at work per day', labels: series.map(r => pointLabel(String(r.d), grain)),
         series: [{ name: 'At work', color: SERIES[0], values: series.map(r => n(r.present)) }], format: v => countShort(v) },
@@ -151,7 +151,7 @@ export default function PeopleInsightsPage() {
       {data && k && (
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <StatTile hero label="Attendance rate" icon="how_to_reg" value={pct(k.attendance_rate)} delta={d(k, p, 'attendance_rate')} compare={compare}
+            <StatTile hero className="col-span-2 lg:col-span-1" label="Attendance rate" icon="how_to_reg" value={pct(k.attendance_rate)} delta={d(k, p, 'attendance_rate')} compare={compare}
               spark={heat.filter(h => h.value != null).map(h => n(h.value))} />
             <StatTile label="Late arrivals" icon="schedule" value={count(k.late_days)} delta={d(k, p, 'late_days')} goodWhenUp={false} compare={compare}
               hint={`${pct(k.late_rate)} of days at work · ${count(k.avg_minutes_late)} min on average`} />
@@ -238,7 +238,7 @@ export default function PeopleInsightsPage() {
           <div className="grid lg:grid-cols-3 gap-4">
             <ChartCard title="Most late arrivals" table={tables?.late}>
               <RankedBars color={SERIES[1]} emptyText="Nobody was late" items={data.top_late.map(r => ({
-                label: r.name, value: n(r.late_days), display: `${count(r.late_days)} days`, sub: `${count(r.minutes_late)} min`,
+                label: r.name, value: n(r.late_days), display: plural(r.late_days, 'day', 'days'), sub: `${count(r.minutes_late)} min`,
                 href: `/dashboard/employees/${r.employee_id}`, title: r.department ?? undefined,
               }))} />
             </ChartCard>
@@ -250,7 +250,7 @@ export default function PeopleInsightsPage() {
             </ChartCard>
             <ChartCard title="Leave taken by type" subtitle="Approved leave days in the period" table={tables?.leave}>
               <RankedBars color={SERIES[2]} emptyText="No leave taken" items={data.leave_by_type.map(r => ({
-                label: r.type, value: n(r.days), display: `${count(r.days)} days`,
+                label: r.type, value: n(r.days), display: plural(r.days, 'day', 'days'),
               }))} />
             </ChartCard>
           </div>

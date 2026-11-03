@@ -43,7 +43,7 @@ export function DateRangePicker({ preset, range, onPreset, onCustom }: {
         <span className="material-icons text-[18px] text-slate-400">expand_more</span>
       </button>
       {open && (
-        <div className="absolute z-30 mt-1.5 left-0 w-[290px] rounded-2xl border border-divider bg-white shadow-xl overflow-hidden" role="dialog" aria-label="Choose a period">
+        <div className="absolute z-30 mt-1.5 left-0 w-[330px] rounded-2xl border border-divider bg-white shadow-xl overflow-hidden" role="dialog" aria-label="Choose a period">
           <ul className="py-1.5">
             {PRESETS.map(p => (
               <li key={p.key}>
