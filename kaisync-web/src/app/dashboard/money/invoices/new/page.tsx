@@ -38,6 +38,8 @@ function NewMoneyInvoiceInner() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [leaseHint, setLeaseHint] = useState<string | null>(null)
+  // The company's VAT setting decides whether this invoice can carry VAT at all.
+  const [companyVat, setCompanyVat] = useState<{ registered: boolean; hasNumber: boolean } | null>(null)
 
   useEffect(() => {
     const fromQuery = searchParams.get('clientId') ?? searchParams.get('client_id')
@@ -57,7 +59,7 @@ function NewMoneyInvoiceInner() {
       const supabase = createClient()
       const member = await resolveCurrentMember(supabase)
       if (!member) return
-      const [{ data: clientRows }, { data: jobRows }] = await Promise.all([
+      const [{ data: clientRows }, { data: jobRows }, { data: co }] = await Promise.all([
         supabase
           .from('clients')
           .select('id, name')
@@ -69,7 +71,20 @@ function NewMoneyInvoiceInner() {
           .eq('company_id', member.companyId)
           .order('created_at', { ascending: false })
           .limit(200),
+        supabase
+          .from('companies')
+          .select('is_vat_registered, vat_number, default_vat_rate')
+          .eq('id', member.companyId)
+          .maybeSingle(),
       ])
+      const vat = co as { is_vat_registered?: boolean | null; vat_number?: string | null; default_vat_rate?: number | null } | null
+      const registered = vat?.is_vat_registered === true
+      setCompanyVat({ registered, hasNumber: !!vat?.vat_number?.trim() })
+      if (!searchParams.get('lease_id')) {
+        const rate = Number(vat?.default_vat_rate ?? 0.15)
+        const pct = rate > 1 ? rate : rate * 100
+        setVatRate(registered ? String(Math.round((pct || 15) * 100) / 100) : '0')
+      }
       setClients((clientRows ?? []) as ClientOpt[])
       setJobs((jobRows ?? []) as JobOpt[])
 
@@ -130,7 +145,7 @@ function NewMoneyInvoiceInner() {
       return
     }
 
-    const rate = Number(vatRate) / 100
+    const rate = companyVat && !companyVat.registered ? 0 : Number(vatRate) / 100
     const calc = calculateVatExclusive(Number(amount) || 0, rate)
     // The database gives a sent invoice its number in the same save (no gaps, no duplicates).
 
@@ -237,14 +252,34 @@ function NewMoneyInvoiceInner() {
       <label className="block text-[12px] text-text-secondary">Description
         <input value={description} onChange={e => setDescription(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
       </label>
-      <div className="grid grid-cols-2 gap-3">
-        <label className="block text-[12px] text-text-secondary">Amount (ex VAT)
-          <input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
-        </label>
-        <label className="block text-[12px] text-text-secondary">VAT %
-          <input type="number" step="0.01" value={vatRate} onChange={e => setVatRate(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
-        </label>
-      </div>
+      {companyVat && !companyVat.registered ? (
+        <>
+          <label className="block text-[12px] text-text-secondary">Amount
+            <input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+          </label>
+          <p className="text-[12px] text-text-secondary">
+            No VAT: your company is not VAT-registered, so this is a plain invoice.{' '}
+            <Link href="/dashboard/settings?tab=general" className="text-primary hover:underline">Change in Settings</Link>
+          </p>
+        </>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block text-[12px] text-text-secondary">Amount (excl. VAT)
+              <input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+            </label>
+            <label className="block text-[12px] text-text-secondary">VAT %
+              <input type="number" step="0.01" value={vatRate} onChange={e => setVatRate(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+            </label>
+          </div>
+          {companyVat && !companyVat.hasNumber && (
+            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12.5px] text-amber-900">
+              Your company is marked VAT-registered but has no VAT number. A tax invoice must show it —{' '}
+              <Link href="/dashboard/settings?tab=general" className="font-semibold underline">add it in Settings</Link>.
+            </p>
+          )}
+        </>
+      )}
       <div className="flex gap-2 justify-end">
         <button onClick={() => router.back()} className="btn-outlined h-10 px-4 text-[13px]">Cancel</button>
         <button onClick={() => void save(false)} disabled={busy} className="btn-outlined h-10 px-4 text-[13px] disabled:opacity-50">Save draft</button>

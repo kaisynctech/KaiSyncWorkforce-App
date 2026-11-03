@@ -29,6 +29,7 @@ function NewFinanceInvoiceInner() {
   const [vatRate, setVatRate] = useState('15')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [vatRegistered, setVatRegistered] = useState<boolean | null>(null)
 
   useEffect(() => {
     const fromQuery = searchParams.get('clientId')
@@ -40,12 +41,17 @@ function NewFinanceInvoiceInner() {
       const supabase = createClient()
       const member = await resolveCurrentMember(supabase)
       if (!member) return
-      const { data } = await supabase
-        .from('clients')
-        .select('id, name')
-        .eq('company_id', member.companyId)
-        .order('name')
+      const [{ data }, { data: co }] = await Promise.all([
+        supabase.from('clients').select('id, name').eq('company_id', member.companyId).order('name'),
+        supabase.from('companies').select('is_vat_registered, default_vat_rate').eq('id', member.companyId).maybeSingle(),
+      ])
       setClients((data ?? []) as ClientOpt[])
+      // Not VAT-registered → no VAT on the invoice.
+      const vat = co as { is_vat_registered?: boolean | null; default_vat_rate?: number | null } | null
+      const registered = vat?.is_vat_registered === true
+      setVatRegistered(registered)
+      const r = Number(vat?.default_vat_rate ?? 0.15)
+      setVatRate(registered ? String(Math.round(((r > 1 ? r : r * 100) || 15) * 100) / 100) : '0')
     })()
   }, [])
 
@@ -56,7 +62,7 @@ function NewFinanceInvoiceInner() {
     const member = await resolveCurrentMember(supabase)
     if (!member) { setBusy(false); return }
 
-    const rate = Number(vatRate) / 100
+    const rate = vatRegistered === false ? 0 : Number(vatRate) / 100
     const calc = calculateVatExclusive(Number(amount) || 0, rate)
     const { data: inv, error: e } = await supabase
       .from('finance_invoices')
@@ -127,12 +133,14 @@ function NewFinanceInvoiceInner() {
         <input value={description} onChange={e => setDescription(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
       </label>
       <div className="grid grid-cols-2 gap-3">
-        <label className="block text-[12px] text-text-secondary">Amount (ex VAT)
+        <label className="block text-[12px] text-text-secondary">{vatRegistered === false ? 'Amount' : 'Amount (excl. VAT)'}
           <input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
         </label>
-        <label className="block text-[12px] text-text-secondary">VAT %
-          <input type="number" step="0.01" value={vatRate} onChange={e => setVatRate(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
-        </label>
+        {vatRegistered !== false && (
+          <label className="block text-[12px] text-text-secondary">VAT %
+            <input type="number" step="0.01" value={vatRate} onChange={e => setVatRate(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+          </label>
+        )}
       </div>
       <div className="flex gap-2 justify-end">
         <button onClick={() => router.back()} className="btn-outlined h-10 px-4 text-[13px]">Cancel</button>

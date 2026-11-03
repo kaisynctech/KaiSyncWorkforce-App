@@ -169,9 +169,15 @@ function CreditNoteDetailInner() {
         )}
 
         <div className="bg-surface-card border border-divider rounded-xl p-4 space-y-2 text-[13px]">
-          <div className="flex justify-between"><span className="text-text-secondary">Subtotal</span><span>{fmtMoney(cn.subtotal)}</span></div>
-          <div className="flex justify-between"><span className="text-text-secondary">VAT</span><span>{fmtMoney(cn.vat_amount)}</span></div>
-          <div className="flex justify-between font-semibold border-t border-divider pt-2"><span>Total</span><span>{fmtMoney(cn.total_amount)}</span></div>
+          {Math.abs(Number(cn.vat_amount) || 0) > 0.004 ? (
+            <>
+              <div className="flex justify-between"><span className="text-text-secondary">Total excl. VAT</span><span>{fmtMoney(cn.subtotal)}</span></div>
+              <div className="flex justify-between"><span className="text-text-secondary">VAT</span><span>{fmtMoney(cn.vat_amount)}</span></div>
+              <div className="flex justify-between font-semibold border-t border-divider pt-2"><span>Total incl. VAT</span><span>{fmtMoney(cn.total_amount)}</span></div>
+            </>
+          ) : (
+            <div className="flex justify-between font-semibold"><span>Total</span><span>{fmtMoney(cn.total_amount)}</span></div>
+          )}
         </div>
       </div>
 

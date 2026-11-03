@@ -804,6 +804,9 @@ export async function getInvoiceForPdf(
     notes: strN(r.notes),
     client_name: strN(r.client_name),
     client_email: strN(r.client_email),
+    client_legal_name: strN(r.client_legal_name),
+    client_address: strN(r.client_address),
+    client_vat_number: strN(r.client_vat_number),
     company_name: str(r.company_name),
     lines: lines.map(l => ({
       description: str(l.description),

@@ -254,6 +254,7 @@ export function CompanyProfileSettings({ company, isOwner, isHrOrAbove, onSaved 
               <input className={input} value={form.vat_number} maxLength={30} placeholder="VAT number" disabled={!form.is_vat_registered || readOnly}
                 onChange={e => set('vat_number', e.target.value)} />
             </div>
+            <VatHint registered={form.is_vat_registered} vatNumber={form.vat_number} />
           </F>
           <F label="Phone">
             <input className={input} type="tel" value={form.contact_phone} maxLength={40} onChange={e => set('contact_phone', e.target.value)} />
@@ -332,4 +333,27 @@ export function CompanyProfileSettings({ company, isOwner, isHrOrAbove, onSaved 
       )}
     </>
   )
+}
+
+/** What the VAT setting means for invoices, and a gentle check of the number (SA VAT numbers: 10 digits, starting with 4). */
+function VatHint({ registered, vatNumber }: { registered: boolean; vatNumber: string }) {
+  const n = vatNumber.replace(/\s+/g, '')
+  if (!registered) {
+    return <p className="mt-1.5 text-[12px] text-text-secondary">Not VAT-registered: invoices are plain invoices with no VAT.</p>
+  }
+  if (!n) {
+    return (
+      <p className="mt-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[12px] text-amber-900">
+        Add your VAT number. Tax invoices must show it.
+      </p>
+    )
+  }
+  if (!/^4\d{9}$/.test(n)) {
+    return (
+      <p className="mt-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[12px] text-amber-900">
+        South African VAT numbers are 10 digits starting with 4. Please check it (a number starting with 9 is usually the income tax number).
+      </p>
+    )
+  }
+  return <p className="mt-1.5 text-[12px] text-text-secondary">VAT-registered: invoices that charge VAT are titled “Tax invoice” and show this number.</p>
 }

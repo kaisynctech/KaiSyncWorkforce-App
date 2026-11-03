@@ -24,6 +24,8 @@ export type Letterhead = {
   legalName: string | null
   registrationNumber: string | null
   vatNumber: string | null
+  /** The company is registered for VAT (Settings → Company). Decides "Tax invoice" and whether VAT shows at all. */
+  vatRegistered: boolean
   address: string | null
   postalAddress: string | null
   phone: string | null
@@ -65,6 +67,7 @@ export function letterheadFromRow(row: Record<string, unknown> | null | undefine
     legalName: s(r.legal_name),
     registrationNumber: s(r.registration_number),
     vatNumber: vatOn ? s(r.vat_number) : null,
+    vatRegistered: vatOn,
     address: s(r.address),
     postalAddress: s(r.postal_address),
     phone: s(r.contact_phone ?? r.phone),

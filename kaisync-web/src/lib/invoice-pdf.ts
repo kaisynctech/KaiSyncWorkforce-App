@@ -21,6 +21,11 @@ export type InvoicePdfInput = {
   notes: string | null
   client_name: string | null
   client_email: string | null
+  /** Registered name, when it differs from the trading name. */
+  client_legal_name?: string | null
+  /** Billing (or physical) address — required on a full tax invoice (over R5,000). */
+  client_address?: string | null
+  client_vat_number?: string | null
   company_name: string
   lines: InvoicePdfLine[]
   subtotal: number
@@ -34,6 +39,27 @@ export type InvoicePdfInput = {
 
 function money(n: number): string {
   return `R ${n.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+/** VAT appears only when the company is VAT-registered and this invoice actually charges VAT. */
+export function invoiceShowsVat(lh: Pick<Letterhead, 'vatRegistered'>, vat: number): boolean {
+  return lh.vatRegistered && Math.abs(vat) > 0.004
+}
+
+/** The client lines under "Bill to": registered name, address, VAT number (tax invoices only), email. */
+export function billToLines(
+  input: Pick<InvoicePdfInput, 'client_name' | 'client_legal_name' | 'client_address' | 'client_vat_number' | 'client_email'>,
+  vatShown: boolean,
+): string[] {
+  const out: string[] = []
+  const name = input.client_name?.trim().toLowerCase()
+  const legal = input.client_legal_name?.trim()
+  if (legal && legal.toLowerCase() !== name) out.push(legal)
+  const address = input.client_address?.trim()
+  if (address) out.push(...address.split(/\r?\n/).map(x => x.trim()).filter(Boolean).slice(0, 5))
+  if (vatShown && input.client_vat_number?.trim()) out.push(`VAT no. ${input.client_vat_number.trim()}`)
+  if (input.client_email?.trim()) out.push(input.client_email.trim())
+  return out
 }
 
 function fmtDate(d: string | null | undefined): string {
@@ -50,8 +76,11 @@ export function buildInvoicePdf(input: InvoicePdfInput): jsPDF {
   const left = 18
   const right = 192
   const lh = input.letterhead ?? letterheadFromRow({ name: input.company_name }, input.company_name)
+  // South African rules: only a VAT-registered supplier charging VAT issues a "Tax invoice"; anyone else
+  // issues a plain "Invoice" that does not mention VAT at all.
+  const vatShown = invoiceShowsVat(lh, input.vat)
   let y = drawLetterhead(doc, lh, {
-    title: lh.vatNumber ? 'Tax invoice' : 'Invoice',
+    title: vatShown ? 'Tax invoice' : 'Invoice',
     meta: [
       ['Invoice no.', input.invoice_number ?? 'Draft'],
       ['Date', fmtDate(input.issue_date)],
@@ -73,9 +102,10 @@ export function buildInvoicePdf(input: InvoicePdfInput): jsPDF {
   doc.setFont('helvetica', 'normal')
   doc.setTextColor(51, 65, 85)
   y += 5
-  if (input.client_email?.trim()) {
-    doc.text(input.client_email.trim(), left, y)
-    y += 5
+  for (const line of billToLines(input, vatShown)) {
+    const wrapped = doc.splitTextToSize(line, 100) as string[]
+    doc.text(wrapped, left, y)
+    y += wrapped.length * 4.6
   }
   y += 5
 
@@ -86,7 +116,7 @@ export function buildInvoicePdf(input: InvoicePdfInput): jsPDF {
   doc.setTextColor(100, 116, 139)
   doc.text('Description', left + 1, y)
   doc.text('Qty', 118, y, { align: 'right' })
-  doc.text('Price', 145, y, { align: 'right' })
+  doc.text(vatShown ? 'Price excl. VAT' : 'Price', 145, y, { align: 'right' })
   doc.text('Total', right - 1, y, { align: 'right' })
   y += 7
 
@@ -112,15 +142,18 @@ export function buildInvoicePdf(input: InvoicePdfInput): jsPDF {
   doc.line(120, y, right, y)
   y += 7
 
-  const totals: [string, string, boolean][] = [
-    ['Subtotal', money(input.subtotal), false],
-    ...(Number(input.vat) > 0 ? [['VAT', money(input.vat), false] as [string, string, boolean]] : []),
-    ['Total', money(input.total), true],
-    ['Paid', money(input.amount_paid), false],
-    ['Balance due', money(input.balance_due), true],
-  ]
+  const rate = input.subtotal > 0 ? input.vat / input.subtotal : 0
+  const totals: [string, string, boolean][] = vatShown
+    ? [
+        ['Total excl. VAT', money(input.subtotal), false],
+        [`VAT (${Math.round(rate * 1000) / 10}%)`, money(input.vat), false],
+        ['Total incl. VAT', money(input.total), true],
+      ]
+    : [['Total', money(input.total), true]]
+  totals.push(['Paid', money(input.amount_paid), false], ['Balance due', money(input.balance_due), true])
 
-  for (const [label, value, bold] of totals) {
+  for (let i = 0; i < totals.length; i++) {
+    const [label, value, bold] = totals[i]
     doc.setFont('helvetica', bold ? 'bold' : 'normal')
     doc.setFontSize(bold ? 10 : 9)
     doc.setTextColor(bold ? 15 : 100, bold ? 23 : 116, bold ? 42 : 139)

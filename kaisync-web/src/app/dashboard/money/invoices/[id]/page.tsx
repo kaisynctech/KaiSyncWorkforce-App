@@ -165,7 +165,7 @@ function MoneyInvoiceDetailInner() {
 
     const [{ data: invoice }, { data: lineRows }, { data: transactions }, { data: company }, { data: proofRows }] = await Promise.all([
       supabase.from('finance_invoices')
-        .select('*, clients(name, email), client_deals!finance_invoices_deal_id_fkey(title), jobs(title, job_code)')
+        .select('*, clients(name, email, legal_name, address, billing_address, vat_number), client_deals!finance_invoices_deal_id_fkey(title), jobs(title, job_code)')
         .eq('id', id)
         .maybeSingle(),
       supabase.from('finance_invoice_lines')
@@ -226,6 +226,14 @@ function MoneyInvoiceDetailInner() {
       notes: inv.notes,
       client_name: (inv.clients as { name?: string } | null)?.name ?? null,
       client_email: clientEmail,
+      ...(() => {
+        const c = inv.clients as { legal_name?: string | null; address?: string | null; billing_address?: string | null; vat_number?: string | null } | null
+        return {
+          client_legal_name: c?.legal_name ?? null,
+          client_address: c?.billing_address?.trim() || c?.address?.trim() || null,
+          client_vat_number: c?.vat_number ?? null,
+        }
+      })(),
       company_name: companyName,
       letterhead,
       lines: lines.map(l => ({
@@ -456,6 +464,8 @@ function MoneyInvoiceDetailInner() {
   }
 
   const clientName = (inv.clients as { name: string } | null)?.name ?? '—'
+  // VAT shows only when this invoice charges it (a company that is not VAT-registered never does).
+  const showVat = Math.abs(Number(inv.vat_amount) || 0) > 0.004
   const projectTitle = (inv.client_deals as { title: string } | null)?.title
   const jobLabel = inv.jobs
     ? (inv.jobs.job_code ? `${inv.jobs.job_code} · ${inv.jobs.title}` : inv.jobs.title)
@@ -464,7 +474,6 @@ function MoneyInvoiceDetailInner() {
   const canMarkSent = inv.status === 'draft'
   const canVoid = !['voided', 'paid', 'cancelled'].includes(inv.status)
   const canCreditNote = ['sent', 'paid', 'partially_paid'].includes(inv.status)
-  const showVat = Number(inv.vat_amount) > 0
 
   return (
     <div className="h-full overflow-y-auto">
@@ -542,18 +551,20 @@ function MoneyInvoiceDetailInner() {
 
         {/* Totals */}
         <div className="bg-surface-card border border-divider rounded-xl p-4 space-y-2">
-          <div className="flex justify-between text-[13px]">
-            <span className="text-text-secondary">Subtotal</span>
-            <span className="text-text-primary">{fmtMoney(inv.subtotal)}</span>
-          </div>
           {showVat && (
-            <div className="flex justify-between text-[13px]">
-              <span className="text-text-secondary">VAT</span>
-              <span className="text-text-primary">{fmtMoney(inv.vat_amount)}</span>
-            </div>
+            <>
+              <div className="flex justify-between text-[13px]">
+                <span className="text-text-secondary">Total excl. VAT</span>
+                <span className="text-text-primary">{fmtMoney(inv.subtotal)}</span>
+              </div>
+              <div className="flex justify-between text-[13px]">
+                <span className="text-text-secondary">VAT</span>
+                <span className="text-text-primary">{fmtMoney(inv.vat_amount)}</span>
+              </div>
+            </>
           )}
-          <div className="flex justify-between text-[13px] border-t border-divider pt-2">
-            <span className="font-semibold text-text-primary">Total</span>
+          <div className={`flex justify-between text-[13px] ${showVat ? 'border-t border-divider pt-2' : ''}`}>
+            <span className="font-semibold text-text-primary">{showVat ? 'Total incl. VAT' : 'Total'}</span>
             <span className="font-semibold text-text-primary">{fmtMoney(inv.total_amount)}</span>
           </div>
           <div className="flex justify-between text-[13px]">
