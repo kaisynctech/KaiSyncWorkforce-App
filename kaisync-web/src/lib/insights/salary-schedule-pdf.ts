@@ -23,6 +23,8 @@ export function salaryScheduleTitle(r: DateRange): string {
 
 export function buildSalarySchedulePdf(input: {
   companyName: string
+  /** Company logo from the letterhead, when the company has one. */
+  logo?: { dataUrl: string; width: number; height: number } | null
   title: string
   subtitle?: string
   table: TableSpec<any> // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -37,10 +39,22 @@ export function buildSalarySchedulePdf(input: {
   widths.reduce((x, w) => { xs.push(x); return x + w }, left)
 
   let y = top
+  let nameX = left
+  if (input.logo) {
+    // Logo top left, fitted inside 40 × 14 mm, company name beside it.
+    const scale = Math.min(40 / input.logo.width, 14 / input.logo.height)
+    const w = input.logo.width * scale, h = input.logo.height * scale
+    try {
+      const kind = /image\/jpe?g/.test(input.logo.dataUrl) ? 'JPEG' : 'PNG'
+      doc.addImage(input.logo.dataUrl, kind, left, y - 6, w, h)
+      nameX = left + w + 4
+      y = y - 6 + Math.max(h, 8) - 2
+    } catch { /* a broken logo is left out */ }
+  }
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(12)
   doc.setTextColor(0, 0, 0)
-  doc.text(pdfText(input.companyName), left, y)
+  doc.text(pdfText(input.companyName), nameX, y)
   doc.text(pdfText(input.title), right, y, { align: 'right' })
   y += 4.5
   if (input.subtitle) {
