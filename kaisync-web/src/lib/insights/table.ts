@@ -5,7 +5,8 @@
 
 import { count, csvNumber, dayShort, days, hours, money, pct, words } from './format'
 
-export type ColKind = 'text' | 'money' | 'count' | 'pct' | 'hours' | 'days' | 'day' | 'yesno' | 'minutes' | 'words'
+/** 'amount' is money that shows blank when it is zero (salary schedules). */
+export type ColKind = 'text' | 'money' | 'amount' | 'count' | 'pct' | 'hours' | 'days' | 'day' | 'yesno' | 'minutes' | 'words'
 
 export type Column<Row> = {
   key: string
@@ -31,7 +32,7 @@ export function cellValue<Row>(col: Column<Row>, row: Row): unknown {
 }
 
 export function isNumericKind(kind: ColKind | undefined): boolean {
-  return kind === 'money' || kind === 'count' || kind === 'pct' || kind === 'hours' || kind === 'days' || kind === 'minutes'
+  return kind === 'money' || kind === 'amount' || kind === 'count' || kind === 'pct' || kind === 'hours' || kind === 'days' || kind === 'minutes'
 }
 
 /** How a cell reads on screen and in the PDF. */
@@ -39,6 +40,7 @@ export function displayCell(kind: ColKind | undefined, v: unknown): string {
   if (v == null || v === '') return '—'
   switch (kind) {
     case 'money': return money(v)
+    case 'amount': return Number(v) === 0 ? '' : money(v)
     case 'count': return count(v)
     case 'pct': return pct(v)
     case 'hours': return hours(v)
@@ -55,7 +57,7 @@ export function displayCell(kind: ColKind | undefined, v: unknown): string {
 export function csvCell(kind: ColKind | undefined, v: unknown): string {
   if (v == null) return ''
   switch (kind) {
-    case 'money': return csvNumber(v, 2)
+    case 'money': case 'amount': return csvNumber(v, 2)
     case 'count': case 'minutes': return csvNumber(v)
     case 'pct': case 'hours': case 'days': return csvNumber(v)
     case 'yesno': return v === true ? 'Yes' : v === false ? 'No' : ''

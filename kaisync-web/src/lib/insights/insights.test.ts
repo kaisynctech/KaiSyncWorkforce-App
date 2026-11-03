@@ -135,3 +135,24 @@ describe('pdf', () => {
     expect(doc.getNumberOfPages()).toBeGreaterThan(1)
   })
 })
+
+import { buildSalarySchedulePdf, salaryScheduleTitle } from './salary-schedule-pdf'
+import { SALARY_SCHEDULE_COLUMNS } from '@/components/insights/reports'
+
+describe('salary schedule', () => {
+  it('names the month like the paper schedule', () => {
+    expect(salaryScheduleTitle({ from: '2026-09-01', to: '2026-09-30' })).toBe('SEPTEMBER SALARY SCHEDULE 2026')
+    expect(salaryScheduleTitle({ from: '2026-10-05', to: '2026-11-03' })).toBe('SALARY SCHEDULE 5 Oct – 3 Nov 2026')
+  })
+  it('leaves zero amounts blank and carries on over pages', () => {
+    expect(displayCell('amount', 0)).toBe('')
+    expect(displayCell('amount', 14000).replace(/\s/g, ' ')).toBe('R 14 000,00')
+    const rows = Array.from({ length: 70 }, (_, i) => ({
+      employee_id: String(i), name: `PERSON ${i}`, code: null, department: null, branch: null, payslips: 1, status: 'paid' as const,
+      salary: 9000, overtime: i % 3 ? 0 : 342.94, other_payments: 0, other_deductions: 0, paye: 183.75, uif: 90, meibc: 0,
+      total_paid: 8726.25, gross: 9000,
+    }))
+    const doc = buildSalarySchedulePdf({ companyName: 'Test', title: 'SEPTEMBER SALARY SCHEDULE 2026', table: { title: 'x', columns: SALARY_SCHEDULE_COLUMNS, rows, totals: { salary: 630000 } } })
+    expect(doc.getNumberOfPages()).toBe(3)
+  })
+})

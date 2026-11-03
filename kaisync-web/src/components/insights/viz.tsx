@@ -240,7 +240,7 @@ export function TrendChart({
 }) {
   if (!data.length) return <EmptyChart height={height} />
   const bars = series.filter(s => s.kind === 'bar').length
-  const interval = data.length > 8 ? 'preserveStartEnd' as const : 0
+  const interval = data.length > 14 ? 'preserveStartEnd' as const : 0
   return (
     <div style={{ height }} className="w-full -ml-1">
       <ResponsiveContainer width="100%" height="100%">

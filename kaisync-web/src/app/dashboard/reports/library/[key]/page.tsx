@@ -31,7 +31,7 @@ function WithOrg({ def }: { def: ReportDef }) {
 }
 
 function Report({ def }: { def: ReportDef }) {
-  const { companyId, filters, refreshKey, setOptions } = useInsights()
+  const { companyId, companyName, filters, refreshKey, setOptions } = useInsights()
   const { csv, pdf } = useDownloads()
   const [out, setOut] = useState<ReportOutput | null>(null)
   const [loading, setLoading] = useState(true)
@@ -60,11 +60,21 @@ function Report({ def }: { def: ReportDef }) {
 
   useExporter(out ? {
     csv: () => csv(def.title, out.tables, { asAt }),
-    pdf: () => pdf(def.title, [
+    pdf: def.pdfLayout === 'salary-schedule' ? async () => {
+      const { buildSalarySchedulePdf, salaryScheduleTitle } = await import('@/lib/insights/salary-schedule-pdf')
+      const title = salaryScheduleTitle(filters.range)
+      const scope = [filters.branch, filters.department].filter(Boolean).join(' · ')
+      buildSalarySchedulePdf({
+        companyName,
+        title,
+        subtitle: scope || undefined,
+        table: out.tables[0],
+      }).save(`${title.replace(/[^\w]+/g, '_')}.pdf`)
+    } : () => pdf(def.title, [
       ...(out.kpis?.length ? [{ kind: 'kpis' as const, items: out.kpis }] : []),
       ...out.tables.map(t => ({ kind: 'table' as const, table: t })),
     ], { compare: false, asAt }),
-  } : null, [out, def, csv, pdf, asAt])
+  } : null, [out, def, csv, pdf, asAt, filters.range, filters.branch, filters.department, companyName])
 
   return (
     <div>

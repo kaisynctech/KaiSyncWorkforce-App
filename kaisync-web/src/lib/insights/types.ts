@@ -92,3 +92,10 @@ export type CompletedJobRow = {
   service: string | null; priority: string | null; opened: string | null; closed: string | null
   days: number | null; on_time: boolean | null; callback: boolean | null; value: number | null
 }
+
+export type SalaryScheduleRow = {
+  employee_id: string; name: string; code: string | null; department: string | null; branch: string | null
+  payslips: number; status: 'pending' | 'approved' | 'paid'
+  salary: number; overtime: number; other_payments: number; other_deductions: number
+  paye: number; uif: number; meibc: number; total_paid: number; gross: number
+}

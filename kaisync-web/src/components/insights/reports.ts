@@ -8,7 +8,7 @@ import { count, dec1, hours, money, moneyShort, pct } from '@/lib/insights/forma
 import type { PdfKpi } from '@/lib/insights/pdf'
 import type { TableSpec } from '@/lib/insights/table'
 import type {
-  CompletedJobRow, JobsResult, LateRow, MoneyResult, PayrollResult, PeopleResult, RegisterRow,
+  CompletedJobRow, SalaryScheduleRow, JobsResult, LateRow, MoneyResult, PayrollResult, PeopleResult, RegisterRow,
 } from '@/lib/insights/types'
 
 export type ReportFilters = { from: string; to: string; branch: string; department: string }
@@ -25,6 +25,8 @@ export type ReportDef = {
   /** Shows the position today rather than for the period. */
   asAt?: boolean
   load: (sb: SupabaseClient, companyId: string, f: ReportFilters) => Promise<ReportOutput>
+  /** Its own PDF layout instead of the standard report. */
+  pdfLayout?: 'salary-schedule'
 }
 
 async function call<T>(sb: SupabaseClient, fn: string, companyId: string, f: ReportFilters, org: boolean): Promise<T> {
@@ -34,6 +36,19 @@ async function call<T>(sb: SupabaseClient, fn: string, companyId: string, f: Rep
   if (error) throw new Error(error.message)
   return data as T
 }
+
+/** The salary schedule's columns, in the order payroll offices use. */
+export const SALARY_SCHEDULE_COLUMNS: TableSpec<SalaryScheduleRow>['columns'] = [
+  { key: 'name', label: 'Employee name', width: 2.4 },
+  { key: 'salary', label: 'Salary', kind: 'amount', width: 1.3 },
+  { key: 'overtime', label: 'Overtime amount', kind: 'amount', width: 1.2 },
+  { key: 'other_payments', label: 'Other payments', kind: 'amount', width: 1.2 },
+  { key: 'other_deductions', label: 'Deductions', kind: 'amount', width: 1.2 },
+  { key: 'paye', label: 'PAYE', kind: 'amount', width: 1.2 },
+  { key: 'uif', label: 'UIF deductions', kind: 'amount', width: 1.2 },
+  { key: 'meibc', label: 'MEIBC', kind: 'amount', width: 1.1 },
+  { key: 'total_paid', label: 'Total amount paid', kind: 'amount', width: 1.4 },
+]
 
 const sum = <T,>(rows: T[], key: keyof T) => Math.round(rows.reduce((a, r) => a + (Number(r[key]) || 0), 0) * 100) / 100
 
@@ -147,6 +162,36 @@ export const REPORTS: ReportDef[] = [
           { title: 'By site', columns: groupCols('Site'), rows: d.by_branch },
           { title: 'Most overtime', columns: [{ key: 'name', label: 'Person', width: 2 }, { key: 'department', label: 'Department', width: 1.6 }, { key: 'overtime', label: 'Overtime', kind: 'hours' }], rows: d.top_overtime },
         ],
+      }
+    },
+  },
+  {
+    key: 'salary-schedule',
+    title: 'Salary schedule',
+    description: 'One line per person: salary, overtime, other payments, deductions, PAYE, UIF, MEIBC and the amount paid. Pick the month in the period filter.',
+    section: 'Payroll', icon: 'request_quote', org: true, pdfLayout: 'salary-schedule',
+    async load(sb, id, f) {
+      const [rows, options] = await Promise.all([call<SalaryScheduleRow[]>(sb, 'insights_salary_schedule', id, f, true), orgOptions(sb, id, f)])
+      const r = rows ?? []
+      return {
+        options,
+        kpis: [
+          { label: 'People paid', value: count(r.length) },
+          { label: 'Salaries', value: moneyShort(sum(r, 'salary')) },
+          { label: 'PAYE + UIF + MEIBC', value: moneyShort(sum(r, 'paye') + sum(r, 'uif') + sum(r, 'meibc')) },
+          { label: 'Total amount paid', value: moneyShort(sum(r, 'total_paid')) },
+        ],
+        tables: [{
+          title: 'Salary schedule',
+          columns: SALARY_SCHEDULE_COLUMNS,
+          rows: r,
+          totals: {
+            salary: sum(r, 'salary'), overtime: sum(r, 'overtime'), other_payments: sum(r, 'other_payments'),
+            other_deductions: sum(r, 'other_deductions'), paye: sum(r, 'paye'), uif: sum(r, 'uif'), meibc: sum(r, 'meibc'),
+            total_paid: sum(r, 'total_paid'),
+          },
+          note: 'Payslips whose pay period ends in the period; rejected payslips are left out. Deductions = everything other than PAYE, UIF and MEIBC (loans, union, pension, medical aid, unpaid leave).',
+        } satisfies TableSpec<SalaryScheduleRow>],
       }
     },
   },
