@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { Suspense, useCallback, useEffect, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -674,6 +675,14 @@ function MoneyInvoiceDetailInner() {
               >
                 Mark Sent
               </button>
+              {!inv.lease_id && (
+                <Link
+                  href={`/dashboard/money/invoices/${inv.id}/edit`}
+                  className="btn-outlined h-9 px-4 text-[13px] flex items-center gap-1.5"
+                >
+                  <span className="material-icons text-[16px]">edit</span>Edit
+                </Link>
+              )}
             </>
           )}
           <button

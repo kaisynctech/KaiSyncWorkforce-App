@@ -20,8 +20,8 @@ import {
   type QuoteVatChoice,
 } from '@/lib/quote-vat'
 import { escapeIlike } from '@/lib/list-pagination'
-import SimpleQuoteLineRow from './SimpleQuoteLineRow'
-import RateCardPicker, { type RateCardSelection } from './RateCardPicker'
+import { LineItemsEditor } from '@/components/money/LineItemsEditor'
+import { asItemType, lineQty, lineTotal, loadPickItems, type EditorLine, type ItemType, type PickItem } from '@/lib/line-items'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -35,6 +35,10 @@ export interface SimpleQuoteLine {
   total:              number           // computed: qty × unit_price
   catalogue_item_id:  string | null
   sort_order:         number
+  /** Where the line came from: a job service (fixed price), catalogue, inventory, or the user's own line. */
+  item_type:          ItemType
+  source_id:          string | null
+  hint?:              string | null
 }
 
 type ClientRow = {
@@ -79,6 +83,8 @@ function blankLine(): SimpleQuoteLine {
     total:             0,
     catalogue_item_id: null,
     sort_order:        0,
+    item_type:         'custom',
+    source_id:         null,
   }
 }
 
@@ -119,7 +125,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   const [vatRate,     setVatRate]     = useState(0.15)
 
   // ── Lines ─────────────────────────────────────────────────────────────────
-  const [lines, setLines] = useState<SimpleQuoteLine[]>([blankLine()])
+  const [lines, setLines] = useState<SimpleQuoteLine[]>([])
 
   // ── Clients list ──────────────────────────────────────────────────────────
   const [clients,        setClients]        = useState<ClientRow[]>([])
@@ -138,7 +144,6 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   const [linkOpen,   setLinkOpen]   = useState(false)
 
   // ── UI ────────────────────────────────────────────────────────────────────
-  const [showRatePicker,  setShowRatePicker]  = useState(false)
   const [saveState,       setSaveState]       = useState<SaveState>('idle')
   const [showSendModal,   setShowSendModal]   = useState(false)
   const [sendBusy,        setSendBusy]        = useState(false)
@@ -166,7 +171,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   const statusRef     = useRef('draft')
   const dealIdRef     = useRef<string | null>(null)
   const jobIdRef      = useRef<string | null>(null)
-  const linesRef      = useRef<SimpleQuoteLine[]>([blankLine()])
+  const linesRef      = useRef<SimpleQuoteLine[]>([])
   const quoteNumberRef = useRef<string | null>(null)
   const clientSearchSeq = useRef(0)
   const vatOnRef      = useRef(true)
@@ -351,6 +356,8 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
           total:             Number(row.quantity ?? 1) * Number(row.unit_sell_price ?? 0),
           catalogue_item_id: (row.catalogue_item_id as string | null) ?? null,
           sort_order:        Number(row.sort_order ?? 0),
+          item_type:         row.job_service_id ? 'service' : row.inventory_item_id ? 'inventory' : row.catalogue_item_id ? 'catalogue' : 'custom',
+          source_id:         ((row.job_service_id ?? row.inventory_item_id ?? row.catalogue_item_id) as string | null) ?? null,
         }))
         setLines(mapped)
         linesRef.current = mapped
@@ -478,7 +485,10 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
             quantity:          l.qty,
             unit:              l.unit,
             unit_sell_price:   l.unit_price,
-            catalogue_item_id: l.catalogue_item_id,
+            catalogue_item_id: l.item_type === 'catalogue' ? l.source_id ?? l.catalogue_item_id : l.catalogue_item_id,
+            job_service_id:    l.item_type === 'service' ? l.source_id : null,
+            inventory_item_id: l.item_type === 'inventory' ? l.source_id : null,
+            source_type:       l.item_type === 'inventory' ? 'inventory' : l.item_type === 'catalogue' ? 'catalogue' : 'manual',
             cost_price:        0,
             markup_percent:    0,
             subtotal_cost:     0,
@@ -488,7 +498,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
             line_total:        l.total * (1 + rate),
             is_optional:       false,
             is_excluded:       false,
-            item_type:         'material',
+            item_type:         l.item_type === 'service' ? 'labour' : 'material',
           }))
         )
       }
@@ -545,6 +555,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
       const next = prev.map(l => {
         if (l.tempId !== tempId) return l
         const merged = { ...l, ...patch }
+        if (merged.item_type === 'service') merged.qty = 1
         merged.total = merged.qty * merged.unit_price
         return merged
       })
@@ -563,32 +574,55 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
     scheduleAutoSave()
   }
 
-  function addBlankLine() {
-    setLines(prev => {
-      const next = [...prev, blankLine()]
-      linesRef.current = next
-      return next
-    })
-    // No auto-save on blank add — let typing trigger it
-  }
+  // ── Items editor (shared with invoices) ─────────────────────────────────────
+  const [pickItems, setPickItems] = useState<PickItem[]>([])
+  const [pickLoading, setPickLoading] = useState(true)
 
-  function addFromRateCard(result: RateCardSelection) {
-    const line: SimpleQuoteLine = {
-      id:                null,
-      tempId:            crypto.randomUUID(),
-      description:       result.name,
-      qty:               1,
-      unit:              result.unit,
-      unit_price:        result.unit_price,
-      total:             result.unit_price,
-      catalogue_item_id: result.catalogue_item_id,
-      sort_order:        0,
-    }
-    setLines(prev => {
-      const next = [...prev, line]
-      linesRef.current = next
-      return next
+  // Services (with this client's agreed prices), catalogue and inventory for the picker.
+  useEffect(() => {
+    if (!companyId) return
+    let alive = true
+    setPickLoading(true)
+    loadPickItems(supabase, companyId, clientId || null)
+      .then(r => { if (alive) setPickItems(r) })
+      .catch(() => { if (alive) setPickItems([]) })
+      .finally(() => { if (alive) setPickLoading(false) })
+    return () => { alive = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId, clientId])
+
+  const editorLines: EditorLine[] = lines.map(l => ({
+    key: l.tempId,
+    type: l.item_type,
+    sourceId: l.source_id,
+    description: l.description,
+    qty: l.qty,
+    unitPrice: l.unit_price,
+    unit: l.unit,
+    hint: l.hint ?? null,
+  }))
+
+  function handleEditorChange(next: EditorLine[]) {
+    const byKey = new Map(linesRef.current.map(l => [l.tempId, l]))
+    const mapped: SimpleQuoteLine[] = next.map((e, i) => {
+      const prev = byKey.get(e.key)
+      return {
+        id:                prev?.id ?? null,
+        tempId:            e.key,
+        description:       e.description,
+        qty:               lineQty(e),
+        unit:              e.unit || prev?.unit || 'each',
+        unit_price:        e.unitPrice,
+        total:             lineTotal(e),
+        catalogue_item_id: e.type === 'catalogue' ? e.sourceId : prev?.catalogue_item_id ?? null,
+        sort_order:        i,
+        item_type:         e.type,
+        source_id:         e.sourceId,
+        hint:              e.hint ?? null,
+      }
     })
+    setLines(mapped)
+    linesRef.current = mapped
     scheduleAutoSave()
   }
 
@@ -818,6 +852,23 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
     setActionBusy(true)
     setActionError(null)
 
+    // One invoice per accepted quote: open the one already made (unless it was voided or cancelled).
+    const { data: existing } = await supabase
+      .from('finance_invoices')
+      .select('id')
+      .eq('company_id', cid)
+      .eq('quote_id', qid)
+      .not('status', 'in', '(voided,cancelled)')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (existing) {
+      setActionBusy(false)
+      setShowWhatsNext(false)
+      router.push(`/dashboard/money/invoices/${(existing as { id: string }).id}`)
+      return
+    }
+
     const ls = linesRef.current.filter(l => l.description.trim() || l.total > 0)
     const lineSubtotal = ls.reduce((s, l) => s + l.total, 0)
     const money = quoteMoney(lineSubtotal, vatOnRef.current, vatRateRef.current)
@@ -880,6 +931,9 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
             total_amount: sub + vatAmt,
             is_vat_inclusive: false,
             tax_type: taxType,
+            item_type: l.item_type,
+            source_id: l.source_id,
+            unit: l.unit || null,
           }
         }),
       )
@@ -892,7 +946,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
 
     setActionBusy(false)
     setShowWhatsNext(false)
-    router.push(`/dashboard/money/invoices/${invId}?whats_next=1`)
+    router.push(`/dashboard/money/invoices/${invId}/edit`)
   }
 
   async function handleCreateRfqFromQuote() {
@@ -1055,6 +1109,29 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
             )}
           </div>
         </div>
+
+        {status === 'accepted' && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4">
+            <div className="flex items-center gap-3">
+              <span className="w-10 h-10 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0">
+                <span className="material-icons text-[20px]">check</span>
+              </span>
+              <div>
+                <p className="text-[14.5px] font-semibold text-emerald-900">Quote accepted{clientName ? ` by ${clientName}` : ''}</p>
+                <p className="text-[12.5px] text-emerald-800">Turn it into an invoice: every line, price and the client come across.</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              disabled={actionBusy}
+              onClick={() => void handleCreateInvoiceFromQuote()}
+              className="h-11 px-5 rounded-xl bg-emerald-600 text-white text-[14px] font-semibold flex items-center gap-2 hover:bg-emerald-700 disabled:opacity-60"
+            >
+              <span className="material-icons text-[18px]">receipt_long</span>
+              {actionBusy ? 'Opening…' : 'Create invoice'}
+            </button>
+          </div>
+        )}
 
         {actionError && !showWhatsNext && !showAcceptModal && (
           <p className="text-[12px] text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
@@ -1247,56 +1324,8 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
           )}
         </div>
 
-        {/* ── Lines ── */}
-        <div className="rounded-xl border border-divider overflow-hidden">
-
-          {/* Column headers */}
-          <div
-            className="grid gap-2 px-4 py-2.5 bg-surface-elevated border-b border-divider text-[11px] text-text-secondary uppercase tracking-wide"
-            style={{ gridTemplateColumns: '1.5rem 1fr 5rem 6rem 7.5rem 5.5rem 1.5rem' }}
-          >
-            <span />
-            <span>Description</span>
-            <span className="text-right">Qty</span>
-            <span>Unit</span>
-            <span className="text-right">Unit price</span>
-            <span className="text-right">Total</span>
-            <span />
-          </div>
-
-          {/* Line rows */}
-          <div className="divide-y divide-divider">
-            {lines.map(line => (
-              <SimpleQuoteLineRow
-                key={line.tempId}
-                line={line}
-                isOnly={lines.length === 1}
-                onUpdate={patch => updateLine(line.tempId, patch)}
-                onRemove={() => removeLine(line.tempId)}
-              />
-            ))}
-          </div>
-
-          {/* Add line / From rate card */}
-          <div className="flex gap-2 px-4 py-3 border-t border-divider">
-            <button
-              type="button"
-              onClick={addBlankLine}
-              className="flex items-center gap-1.5 h-8 px-3 rounded-lg border border-divider text-[12px] text-text-secondary hover:bg-surface-elevated hover:border-primary/30 hover:text-primary transition-colors"
-            >
-              <span className="material-icons text-[15px]">add</span>
-              Add line
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowRatePicker(true)}
-              className="flex items-center gap-1.5 h-8 px-3 rounded-lg border border-divider text-[12px] text-text-secondary hover:bg-surface-elevated hover:border-primary/30 hover:text-primary transition-colors"
-            >
-              <span className="material-icons text-[15px]">grid_view</span>
-              From catalogue
-            </button>
-          </div>
-        </div>
+        {/* ── Items ── */}
+        <LineItemsEditor lines={editorLines} onChange={handleEditorChange} items={pickItems} itemsLoading={pickLoading} />
 
         {/* ── Totals ── */}
         <div className="flex justify-end">
@@ -1377,15 +1406,6 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         </div>
 
       </div>
-
-      {/* ── Rate card picker ── */}
-      {showRatePicker && companyId && (
-        <RateCardPicker
-          companyId={companyId}
-          onSelect={addFromRateCard}
-          onClose={() => setShowRatePicker(false)}
-        />
-      )}
 
       {/* ── Send quote ── */}
       {showSendModal && (

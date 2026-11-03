@@ -1,0 +1,285 @@
+'use client'
+
+// Rent invoices from a lease: one amount, no VAT by default (residential rent is exempt).
+
+import { useEffect, useState } from 'react'
+import Link from 'next/link'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
+import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import { calculateVatExclusive, roundFinancial } from '@/lib/finance-calc'
+import { isFunderPayer, payerTypeLabel, resolveRentBillToClientId } from '@/lib/lease-billing'
+import { localISODate } from '@/lib/utils'
+
+type ClientOpt = { id: string; name: string }
+type JobOpt = { id: string; title: string; job_code: string | null }
+
+/** The simple one-amount form, kept for rent invoices raised from a lease (lease_id in the address). */
+export function RentInvoiceForm() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const [clients, setClients] = useState<ClientOpt[]>([])
+  const [jobs, setJobs] = useState<JobOpt[]>([])
+  const [clientId, setClientId] = useState(() => searchParams.get('clientId') ?? searchParams.get('client_id') ?? '')
+  const [jobId, setJobId] = useState(() => searchParams.get('job_id') ?? '')
+  const [dealId, setDealId] = useState(() => searchParams.get('deal_id') ?? searchParams.get('project_id') ?? '')
+  const [leaseId, setLeaseId] = useState(() => searchParams.get('lease_id') ?? '')
+  const [siteId, setSiteId] = useState(() => searchParams.get('site_id') ?? '')
+  const [issueDate, setIssueDate] = useState(() => localISODate())
+  const [dueDate, setDueDate] = useState('')
+  const [description, setDescription] = useState('Professional services')
+  const [amount, setAmount] = useState('0')
+  const [vatRate, setVatRate] = useState('15')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [leaseHint, setLeaseHint] = useState<string | null>(null)
+  // The company's VAT setting decides whether this invoice can carry VAT at all.
+  const [companyVat, setCompanyVat] = useState<{ registered: boolean; hasNumber: boolean } | null>(null)
+
+  useEffect(() => {
+    const fromQuery = searchParams.get('clientId') ?? searchParams.get('client_id')
+    if (fromQuery) setClientId(fromQuery)
+    const fromJob = searchParams.get('job_id')
+    if (fromJob) setJobId(fromJob)
+    const fromDeal = searchParams.get('deal_id') ?? searchParams.get('project_id')
+    if (fromDeal) setDealId(fromDeal)
+    const fromLease = searchParams.get('lease_id')
+    if (fromLease) setLeaseId(fromLease)
+    const fromSite = searchParams.get('site_id')
+    if (fromSite) setSiteId(fromSite)
+  }, [searchParams])
+
+  useEffect(() => {
+    void (async () => {
+      const supabase = createClient()
+      const member = await resolveCurrentMember(supabase)
+      if (!member) return
+      const [{ data: clientRows }, { data: jobRows }, { data: co }] = await Promise.all([
+        supabase
+          .from('clients')
+          .select('id, name')
+          .eq('company_id', member.companyId)
+          .order('name'),
+        supabase
+          .from('jobs')
+          .select('id, title, job_code')
+          .eq('company_id', member.companyId)
+          .order('created_at', { ascending: false })
+          .limit(200),
+        supabase
+          .from('companies')
+          .select('is_vat_registered, vat_number, default_vat_rate')
+          .eq('id', member.companyId)
+          .maybeSingle(),
+      ])
+      const vat = co as { is_vat_registered?: boolean | null; vat_number?: string | null; default_vat_rate?: number | null } | null
+      const registered = vat?.is_vat_registered === true
+      setCompanyVat({ registered, hasNumber: !!vat?.vat_number?.trim() })
+      if (!searchParams.get('lease_id')) {
+        const rate = Number(vat?.default_vat_rate ?? 0.15)
+        const pct = rate > 1 ? rate : rate * 100
+        setVatRate(registered ? String(Math.round((pct || 15) * 100) / 100) : '0')
+      }
+      setClients((clientRows ?? []) as ClientOpt[])
+      setJobs((jobRows ?? []) as JobOpt[])
+
+      const lid = searchParams.get('lease_id')
+      if (!lid) return
+      const { data: lease } = await supabase
+        .from('property_leases')
+        .select('id, site_id, unit_id, tenant_client_id, tenant_name, rent_amount, currency, payment_frequency, start_date, end_date, payer_type, sponsor_name, payer_client_id, units(unit_number), sites(name, client_id)')
+        .eq('id', lid)
+        .eq('company_id', member.companyId)
+        .maybeSingle()
+      if (!lease) return
+      setLeaseId(lease.id)
+      setSiteId(lease.site_id)
+      const siteClientId = (lease as { sites?: { client_id?: string | null } | null }).sites?.client_id ?? null
+      const billTo = resolveRentBillToClientId(lease, siteClientId)
+      if (billTo) setClientId(billTo)
+      if (lease.rent_amount != null) setAmount(String(lease.rent_amount))
+      setVatRate('0')
+      const unitNo = (lease as { units?: { unit_number?: string } | null }).units?.unit_number
+      const siteName = (lease as { sites?: { name?: string } | null }).sites?.name
+      const period = new Intl.DateTimeFormat('en-ZA', { month: 'long', year: 'numeric' }).format(new Date())
+      const funder = isFunderPayer(lease.payer_type)
+      const desc = [
+        funder ? `Rent (billed to ${payerTypeLabel(lease.payer_type)}${lease.sponsor_name ? `: ${lease.sponsor_name}` : ''})` : 'Rent',
+        siteName,
+        unitNo ? `Unit ${unitNo}` : null,
+        lease.tenant_name && funder ? `Occupant ${lease.tenant_name}` : null,
+        period,
+        lease.payment_frequency,
+      ].filter(Boolean).join(' · ')
+      setDescription(desc)
+      const endOfMonth = new Date()
+      endOfMonth.setMonth(endOfMonth.getMonth() + 1, 0)
+      setDueDate(endOfMonth.toISOString().slice(0, 10))
+      setLeaseHint(
+        funder && !lease.payer_client_id
+          ? 'Bursary/sponsor lease has no bill-to client — set payer client on the lease, or select the funder client here.'
+          : billTo
+            ? (funder
+              ? `Prefill from lease — billing ${payerTypeLabel(lease.payer_type)}${lease.sponsor_name ? ` (${lease.sponsor_name})` : ''}.`
+              : 'Prefill from lease (rent invoice).')
+            : 'Lease has no billable client — select the billable client before saving.',
+      )
+    })()
+  }, [searchParams])
+
+  async function save(send: boolean) {
+    setBusy(true)
+    setError(null)
+    const supabase = createClient()
+    const member = await resolveCurrentMember(supabase)
+    if (!member) { setBusy(false); return }
+
+    if (leaseId && !clientId) {
+      setError('Rent invoices need a client (link tenant client on the lease, or select one here).')
+      setBusy(false)
+      return
+    }
+
+    const rate = companyVat && !companyVat.registered ? 0 : Number(vatRate) / 100
+    const calc = calculateVatExclusive(Number(amount) || 0, rate)
+    // The database gives a sent invoice its number in the same save (no gaps, no duplicates).
+
+    const now = new Date().toISOString()
+    const isRent = Boolean(leaseId)
+    const { data: inv, error: e } = await supabase
+      .from('finance_invoices')
+      .insert({
+        company_id: member.companyId,
+        client_id: clientId || null,
+        job_id: jobId || null,
+        deal_id: dealId || null,
+        project_id: dealId || null,
+        lease_id: leaseId || null,
+        site_id: siteId || null,
+        invoice_number: null,
+        status: send ? 'sent' : 'draft',
+        sent_at: send ? now : null,
+        currency: 'ZAR',
+        subtotal: calc.subtotal,
+        vat_rate: rate,
+        vat_amount: calc.vatAmount,
+        total_amount: calc.totalAmount,
+        amount_paid: 0,
+        balance_due: calc.totalAmount,
+        is_vat_inclusive: false,
+        tax_type: 'standard',
+        issue_date: issueDate,
+        due_date: dueDate || null,
+        created_by: member.employeeId,
+        invoice_type: isRent ? 'rent' : 'standard',
+      })
+      .select('id')
+      .single()
+
+    if (e || !inv) {
+      setError(e?.message ?? 'Failed to create invoice')
+      setBusy(false)
+      return
+    }
+
+    await supabase.from('finance_invoice_lines').insert({
+      invoice_id: inv.id,
+      company_id: member.companyId,
+      line_no: 1,
+      description: description.trim() || 'Line item',
+      quantity: 1,
+      unit_price: roundFinancial(Number(amount) || 0),
+      vat_rate: rate,
+      vat_amount: calc.vatAmount,
+      subtotal: calc.subtotal,
+      total_amount: calc.totalAmount,
+      is_vat_inclusive: false,
+      tax_type: 'standard',
+    })
+
+    const q = send ? '' : '?whats_next=1'
+    router.replace(`/dashboard/money/invoices/${inv.id}${q}`)
+  }
+
+  return (
+    <div className="h-full overflow-y-auto p-4 max-w-lg mx-auto space-y-4">
+      <h1 className="text-[18px] font-semibold text-text-primary">
+        {leaseId ? 'New rent invoice' : 'New Invoice'}
+      </h1>
+      {leaseHint && <p className="text-[12px] text-text-secondary">{leaseHint}</p>}
+      {error && <p className="text-[13px] text-error">{error}</p>}
+      <label className="block text-[12px] text-text-secondary">Client
+        <select value={clientId} onChange={e => setClientId(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background">
+          <option value="">Select client…</option>
+          {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+      </label>
+      {!leaseId && (
+        <label className="block text-[12px] text-text-secondary">Job (optional)
+          <select value={jobId} onChange={e => setJobId(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background">
+            <option value="">— None —</option>
+            {jobs.map(j => (
+              <option key={j.id} value={j.id}>
+                {j.job_code ? `${j.job_code} · ${j.title}` : j.title}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {jobId && !leaseId && (
+        <Link href={`/dashboard/jobs/${jobId}`} className="text-[12px] text-primary hover:underline">
+          Open job
+        </Link>
+      )}
+      {siteId && (
+        <Link href={`/dashboard/properties/${siteId}?tab=leases`} className="text-[12px] text-primary hover:underline block">
+          Back to property leases
+        </Link>
+      )}
+      <div className="grid grid-cols-2 gap-3">
+        <label className="block text-[12px] text-text-secondary">Issue date
+          <input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+        </label>
+        <label className="block text-[12px] text-text-secondary">Due date
+          <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+        </label>
+      </div>
+      <label className="block text-[12px] text-text-secondary">Description
+        <input value={description} onChange={e => setDescription(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+      </label>
+      {companyVat && !companyVat.registered ? (
+        <>
+          <label className="block text-[12px] text-text-secondary">Amount
+            <input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+          </label>
+          <p className="text-[12px] text-text-secondary">
+            No VAT: your company is not VAT-registered, so this is a plain invoice.{' '}
+            <Link href="/dashboard/settings?tab=general" className="text-primary hover:underline">Change in Settings</Link>
+          </p>
+        </>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block text-[12px] text-text-secondary">Amount (excl. VAT)
+              <input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+            </label>
+            <label className="block text-[12px] text-text-secondary">VAT %
+              <input type="number" step="0.01" value={vatRate} onChange={e => setVatRate(e.target.value)} className="mt-1 w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+            </label>
+          </div>
+          {companyVat && !companyVat.hasNumber && (
+            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12.5px] text-amber-900">
+              Your company is marked VAT-registered but has no VAT number. A tax invoice must show it —{' '}
+              <Link href="/dashboard/settings?tab=general" className="font-semibold underline">add it in Settings</Link>.
+            </p>
+          )}
+        </>
+      )}
+      <div className="flex gap-2 justify-end">
+        <button onClick={() => router.back()} className="btn-outlined h-10 px-4 text-[13px]">Cancel</button>
+        <button onClick={() => void save(false)} disabled={busy} className="btn-outlined h-10 px-4 text-[13px] disabled:opacity-50">Save draft</button>
+        <button onClick={() => void save(true)} disabled={busy} className="btn-primary h-10 px-4 text-[13px] disabled:opacity-50">{busy ? '…' : 'Save & send'}</button>
+      </div>
+    </div>
+  )
+}

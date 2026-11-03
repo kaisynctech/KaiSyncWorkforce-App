@@ -1,0 +1,136 @@
+/**
+ * Line items shared by quotes and invoices.
+ * A line comes from one of four places: a job service (fixed price, no quantity), the catalogue (price list),
+ * inventory (stock; leaves stock when an invoice is sent) or the user's own line.
+ */
+
+import type { SupabaseClient } from '@supabase/supabase-js'
+
+export type ItemType = 'service' | 'catalogue' | 'inventory' | 'custom'
+
+export type EditorLine = {
+  key: string
+  type: ItemType
+  /** job_services / quote_catalogue_items / inventory_items id; null for the user's own line. */
+  sourceId: string | null
+  description: string
+  qty: number
+  unitPrice: number
+  unit: string
+  /** Small grey hint after the name, e.g. "Client price" or "12 in stock". */
+  hint?: string | null
+}
+
+export type PickItem = {
+  key: string
+  type: ItemType
+  sourceId: string
+  name: string
+  price: number
+  unit: string
+  /** Shown under the name in the picker. */
+  detail: string
+  /** Shown after the name once on the document. */
+  hint: string | null
+}
+
+export const ITEM_KIND: Record<ItemType, { label: string; dot: string; fg: string; bg: string }> = {
+  service: { label: 'Service', dot: '#7C3AED', fg: '#6D28D9', bg: '#F5F3FF' },
+  catalogue: { label: 'Catalogue', dot: '#2563EB', fg: '#1D4ED8', bg: '#EFF6FF' },
+  inventory: { label: 'Inventory', dot: '#D97706', fg: '#B45309', bg: '#FFFBEB' },
+  custom: { label: 'Own line', dot: '#6B7280', fg: '#374151', bg: '#F3F4F6' },
+}
+
+/** A service is one fixed price: its quantity is always 1. */
+export function lineQty(l: Pick<EditorLine, 'type' | 'qty'>): number {
+  return l.type === 'service' ? 1 : Math.max(0, Number(l.qty) || 0)
+}
+
+export function lineTotal(l: Pick<EditorLine, 'type' | 'qty' | 'unitPrice'>): number {
+  return Math.round(lineQty(l) * (Number(l.unitPrice) || 0) * 100) / 100
+}
+
+export function linesSubtotal(lines: Pick<EditorLine, 'type' | 'qty' | 'unitPrice'>[]): number {
+  return Math.round(lines.reduce((s, l) => s + lineTotal(l), 0) * 100) / 100
+}
+
+/** Lines worth saving: something described or priced. */
+export function meaningfulLines<T extends Pick<EditorLine, 'description' | 'unitPrice'>>(lines: T[]): T[] {
+  return lines.filter(l => l.description.trim() || Number(l.unitPrice) > 0)
+}
+
+export function newKey(): string {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `k${Date.now()}${Math.random()}`
+}
+
+export function lineFromPick(p: PickItem): EditorLine {
+  return { key: newKey(), type: p.type, sourceId: p.sourceId, description: p.name, qty: 1, unitPrice: p.price, unit: p.unit, hint: p.hint }
+}
+
+export function blankEditorLine(): EditorLine {
+  return { key: newKey(), type: 'custom', sourceId: null, description: '', qty: 1, unitPrice: 0, unit: 'each', hint: null }
+}
+
+export function asItemType(v: unknown): ItemType {
+  return v === 'service' || v === 'catalogue' || v === 'inventory' ? v : 'custom'
+}
+
+export function filterPicks(items: PickItem[], tab: ItemType | 'all', query: string): PickItem[] {
+  const q = query.trim().toLowerCase()
+  return items.filter(i => (tab === 'all' || i.type === tab) && (!q || i.name.toLowerCase().includes(q) || i.detail.toLowerCase().includes(q)))
+}
+
+const num = (v: unknown) => {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : 0
+}
+
+/** Everything that can go on a quote or invoice for this company (and client: agreed service prices win). */
+export async function loadPickItems(
+  supabase: SupabaseClient,
+  companyId: string,
+  clientId: string | null,
+): Promise<PickItem[]> {
+  const [services, agreed, catalogue, stock] = await Promise.all([
+    supabase.from('job_services').select('id, name, category, default_price').eq('company_id', companyId).eq('is_active', true).order('sort_order').order('name'),
+    clientId
+      ? supabase.from('client_job_services').select('service_id, agreed_price').eq('client_id', clientId)
+      : Promise.resolve({ data: [] as { service_id: string; agreed_price: number | null }[] }),
+    supabase.from('quote_catalogue_items').select('id, name, unit, item_type, sell_price, code').eq('company_id', companyId).eq('is_active', true).order('name').limit(1000),
+    supabase.from('inventory_items').select('id, name, sku, unit_of_measure, selling_price, quantity_on_hand').eq('company_id', companyId).eq('is_active', true).order('name').limit(1000),
+  ])
+  const agreedBy = new Map<string, number>()
+  for (const a of ((agreed as { data: unknown }).data ?? []) as { service_id: string; agreed_price: number | null }[]) {
+    if (a.agreed_price != null) agreedBy.set(a.service_id, num(a.agreed_price))
+  }
+  const out: PickItem[] = []
+  for (const s of (services.data ?? []) as { id: string; name: string; category: string | null; default_price: number | null }[]) {
+    const clientPrice = agreedBy.get(s.id)
+    out.push({
+      key: `s:${s.id}`, type: 'service', sourceId: s.id, name: s.name, unit: 'job',
+      price: clientPrice ?? num(s.default_price),
+      detail: [clientPrice != null ? 'Client price' : 'Company price', s.category].filter(Boolean).join(' · '),
+      hint: clientPrice != null ? 'Client price' : null,
+    })
+  }
+  for (const c of (catalogue.data ?? []) as { id: string; name: string; unit: string | null; item_type: string | null; sell_price: number | null; code: string | null }[]) {
+    out.push({
+      key: `c:${c.id}`, type: 'catalogue', sourceId: c.id, name: c.name, unit: c.unit || 'each', price: num(c.sell_price),
+      detail: [c.code, c.unit ? `per ${c.unit}` : null].filter(Boolean).join(' · ') || 'Catalogue',
+      hint: c.unit && c.unit !== 'each' ? `per ${c.unit}` : null,
+    })
+  }
+  for (const i of (stock.data ?? []) as { id: string; name: string; sku: string | null; unit_of_measure: string | null; selling_price: number | null; quantity_on_hand: number | null }[]) {
+    const onHand = num(i.quantity_on_hand)
+    out.push({
+      key: `i:${i.id}`, type: 'inventory', sourceId: i.id, name: i.name, unit: i.unit_of_measure || 'each', price: num(i.selling_price),
+      detail: [i.sku, `${onHand.toLocaleString('en-ZA')} in stock`].filter(Boolean).join(' · '),
+      hint: `${onHand.toLocaleString('en-ZA')} in stock`,
+    })
+  }
+  return out
+}
+
+export function formatRand(n: number): string {
+  return `R ${(Number(n) || 0).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}

@@ -19,6 +19,10 @@ type QuoteRow = {
 }
 
 type QuoteLineRow = {
+  job_service_id: string | null
+  inventory_item_id: string | null
+  catalogue_item_id: string | null
+  unit: string | null
   description: string
   quantity: number
   unit_sell_price: number
@@ -83,7 +87,7 @@ export async function createInvoiceFromAcceptedQuote(
 
   const { data: lineData, error: lineReadError } = await supabase
     .from('commercial_quote_lines')
-    .select('description, quantity, unit_sell_price, subtotal_sell, vat_rate, vat_amount, line_total, is_excluded, sort_order')
+    .select('description, quantity, unit, unit_sell_price, subtotal_sell, vat_rate, vat_amount, line_total, is_excluded, sort_order, job_service_id, inventory_item_id, catalogue_item_id')
     .eq('quote_id', row.id)
     .eq('company_id', opts.companyId)
     .order('sort_order', { ascending: true })
@@ -143,6 +147,10 @@ export async function createInvoiceFromAcceptedQuote(
       total_amount: Number(line.line_total),
       is_vat_inclusive: false,
       tax_type: 'standard',
+      // Keep where the line came from, so inventory leaves stock when this invoice is sent.
+      item_type: line.job_service_id ? 'service' : line.inventory_item_id ? 'inventory' : line.catalogue_item_id ? 'catalogue' : 'custom',
+      source_id: line.job_service_id ?? line.inventory_item_id ?? line.catalogue_item_id ?? null,
+      unit: line.unit ?? null,
     }))
     : [{
       company_id: opts.companyId,
