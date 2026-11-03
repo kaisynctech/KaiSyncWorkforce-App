@@ -446,7 +446,8 @@ export default function Sidebar({
   return (
     <>
       {/* ── TOP NAV BAR ─────────────────────────────────────────────── */}
-      <header className="flex items-stretch h-12 lg:h-[42px] shrink-0 bg-[#0C111D] border-b border-white/8 z-30 overflow-x-auto">
+      <header className="flex items-stretch h-12 lg:h-[42px] shrink-0 bg-[#0C111D] border-b border-white/8 z-30">
+        <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto">
 
         <button
           type="button"
@@ -522,8 +523,7 @@ export default function Sidebar({
             />
           )}
         </div>
-
-        <div className="flex-1" />
+        </div>
 
         {/* ── Right icon buttons: Notifications, Settings ── */}
         {!platformOnly && (

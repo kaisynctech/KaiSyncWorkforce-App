@@ -112,17 +112,15 @@ export function buildInvoicePdf(input: InvoicePdfInput): jsPDF {
   doc.line(120, y, right, y)
   y += 7
 
-  const totals = [
-    ['Subtotal', money(input.subtotal)],
-    ['VAT', money(input.vat)],
-    ['Total', money(input.total)],
-    ['Paid', money(input.amount_paid)],
-    ['Balance due', money(input.balance_due)],
-  ] as const
+  const totals: [string, string, boolean][] = [
+    ['Subtotal', money(input.subtotal), false],
+    ...(Number(input.vat) > 0 ? [['VAT', money(input.vat), false] as [string, string, boolean]] : []),
+    ['Total', money(input.total), true],
+    ['Paid', money(input.amount_paid), false],
+    ['Balance due', money(input.balance_due), true],
+  ]
 
-  for (let i = 0; i < totals.length; i++) {
-    const [label, value] = totals[i]
-    const bold = i === 2 || i === totals.length - 1
+  for (const [label, value, bold] of totals) {
     doc.setFont('helvetica', bold ? 'bold' : 'normal')
     doc.setFontSize(bold ? 10 : 9)
     doc.setTextColor(bold ? 15 : 100, bold ? 23 : 116, bold ? 42 : 139)

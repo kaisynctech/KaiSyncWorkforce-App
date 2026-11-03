@@ -303,6 +303,8 @@ export default function ContractorsPage() {
     }
   }
 
+  const centreItems = actionItems.filter(item => item.action_type !== 'quote_pending')
+
   if (error === 'not_linked') return (
     <div className="flex items-center justify-center h-full">
       <div className="text-center space-y-2">
@@ -416,19 +418,17 @@ export default function ContractorsPage() {
 
       {/* Action Centre */}
       <div className="mx-3 mb-2 bg-surface rounded-lg border border-divider overflow-hidden shrink-0">
-        <div className={`flex items-center gap-2 px-3 py-1.5 ${actionItems.length > 0 ? 'border-b border-divider' : ''}`}>
+        <div className={`flex items-center gap-2 px-3 py-1.5 ${centreItems.length > 0 ? 'border-b border-divider' : ''}`}>
           <span className="material-icons text-primary text-[16px]">bolt</span>
           <span className="font-semibold text-[11px] text-primary uppercase tracking-wider">Action Centre</span>
           <span className="text-text-secondary text-[11px] ml-1">
-            {actionItems.length > 0 ? `${actionItems.length} pending` : 'Up to date'}
+            {centreItems.length > 0 ? `${centreItems.length} pending` : 'Up to date'}
           </span>
-          {actionItems.length > 0 && (() => {
-            const quotes   = actionItems.filter(i => i.action_type === 'quote_pending').length
-            const banking  = actionItems.filter(i => i.action_type === 'banking_pending').length
-            const expiring = actionItems.filter(i => i.action_type === 'document_expiring').length
+          {centreItems.length > 0 && (() => {
+            const banking  = centreItems.filter(i => i.action_type === 'banking_pending').length
+            const expiring = centreItems.filter(i => i.action_type === 'document_expiring').length
             return (
               <div className="flex items-center gap-1 ml-1">
-                {quotes   > 0 && <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-[#DBEAFE] text-[#1E40AF]">{quotes}Q</span>}
                 {banking  > 0 && <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-[#FEF3C7] text-[#92400E]">{banking}B</span>}
                 {expiring > 0 && <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-[#FEE2E2] text-[#991B1B]">{expiring}D</span>}
               </div>
@@ -438,9 +438,9 @@ export default function ContractorsPage() {
             ↻ Refresh
           </button>
         </div>
-        {actionItems.length > 0 && (
+        {centreItems.length > 0 && (
           <div className="max-h-[88px] overflow-y-auto">
-            {actionItems.map(item => {
+            {centreItems.map(item => {
               const colors = ACTION_TYPE_COLORS[item.action_type] ?? getDefaultColor()
               return (
                 <div key={`${item.action_type}-${item.ref_id}`}

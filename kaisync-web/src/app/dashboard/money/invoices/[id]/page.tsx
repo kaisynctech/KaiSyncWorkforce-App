@@ -472,6 +472,7 @@ function MoneyInvoiceDetailInner() {
   const canMarkSent = inv.status === 'draft'
   const canVoid = !['voided', 'paid', 'cancelled'].includes(inv.status)
   const canCreditNote = ['sent', 'paid', 'partially_paid'].includes(inv.status)
+  const showVat = Number(inv.vat_amount) > 0
 
   return (
     <div className="h-full overflow-y-auto">
@@ -527,7 +528,7 @@ function MoneyInvoiceDetailInner() {
                     <th className="data-th text-left">Description</th>
                     <th className="data-th text-right">Qty</th>
                     <th className="data-th text-right">Unit Price</th>
-                    <th className="data-th text-right">VAT</th>
+                    {showVat && <th className="data-th text-right">VAT</th>}
                     <th className="data-th text-right">Total</th>
                   </tr>
                 </thead>
@@ -537,7 +538,7 @@ function MoneyInvoiceDetailInner() {
                       <td className="data-td text-[13px] text-text-primary">{l.description}</td>
                       <td className="data-td text-[13px] text-text-secondary text-right">{l.quantity}</td>
                       <td className="data-td text-[13px] text-text-secondary text-right">{fmtMoney(l.unit_price)}</td>
-                      <td className="data-td text-[13px] text-text-secondary text-right">{fmtMoney(l.vat_amount)}</td>
+                      {showVat && <td className="data-td text-[13px] text-text-secondary text-right">{fmtMoney(l.vat_amount)}</td>}
                       <td className="data-td text-[13px] text-text-primary font-medium text-right">{fmtMoney(l.total_amount)}</td>
                     </tr>
                   ))}
@@ -553,10 +554,12 @@ function MoneyInvoiceDetailInner() {
             <span className="text-text-secondary">Subtotal</span>
             <span className="text-text-primary">{fmtMoney(inv.subtotal)}</span>
           </div>
-          <div className="flex justify-between text-[13px]">
-            <span className="text-text-secondary">VAT</span>
-            <span className="text-text-primary">{fmtMoney(inv.vat_amount)}</span>
-          </div>
+          {showVat && (
+            <div className="flex justify-between text-[13px]">
+              <span className="text-text-secondary">VAT</span>
+              <span className="text-text-primary">{fmtMoney(inv.vat_amount)}</span>
+            </div>
+          )}
           <div className="flex justify-between text-[13px] border-t border-divider pt-2">
             <span className="font-semibold text-text-primary">Total</span>
             <span className="font-semibold text-text-primary">{fmtMoney(inv.total_amount)}</span>
