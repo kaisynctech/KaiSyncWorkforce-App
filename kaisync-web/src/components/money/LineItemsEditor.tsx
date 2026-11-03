@@ -18,6 +18,8 @@ type Props = {
   items: PickItem[]
   itemsLoading?: boolean
   readOnly?: boolean
+  /** Open the picker straight away (a new document). Defaults to "when there are no lines yet". */
+  startOpen?: boolean
 }
 
 const TABS: { key: ItemType | 'all'; label: string }[] = [
@@ -32,8 +34,8 @@ function parseMoney(text: string): number {
   return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : 0
 }
 
-export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly }: Props) {
-  const [pickerOpen, setPickerOpen] = useState(lines.length === 0 && !readOnly)
+export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly, startOpen }: Props) {
+  const [pickerOpen, setPickerOpen] = useState((startOpen ?? lines.length === 0) && !readOnly)
   const [tab, setTab] = useState<ItemType | 'all'>('all')
   const [query, setQuery] = useState('')
   const [priceDraft, setPriceDraft] = useState<Record<string, string>>({})

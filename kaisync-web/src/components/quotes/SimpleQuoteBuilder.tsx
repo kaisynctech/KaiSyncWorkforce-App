@@ -1325,7 +1325,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         </div>
 
         {/* ── Items ── */}
-        <LineItemsEditor lines={editorLines} onChange={handleEditorChange} items={pickItems} itemsLoading={pickLoading} />
+        <LineItemsEditor lines={editorLines} onChange={handleEditorChange} items={pickItems} itemsLoading={pickLoading} startOpen={!initialQuoteId} />
 
         {/* ── Totals ── */}
         <div className="flex justify-end">
