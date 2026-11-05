@@ -91,7 +91,9 @@ ${co?.document_footer ? `<div style="margin-top:8px">${esc(co.document_footer)}<
 </td></tr></table>
 </td></tr></table></body></html>`;
     const text = paras.map((p) => p.replace(/<[^>]+>/g, "")).join("\n\n") + `\n\nKind regards,\n${companyName}`;
-    const fromAddress = (from.match(/<([^>]+)>/)?.[1] ?? from).trim();
+    // The company's own address once its domain is verified (Settings → Email), otherwise ours.
+    const { data: ownSender } = await admin.rpc("company_sender_address", { p_company_id: client.company_id });
+    const fromAddress = (typeof ownSender === "string" && ownSender) || (from.match(/<([^>]+)>/)?.[1] ?? from).trim();
     // Replies go to the company's email (Settings → Company profile); if that's empty, to the person who sent it.
     const valid = (e: unknown) => { const v = String(e ?? "").trim(); return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v) ? v : ""; };
     const replyTo = valid(co?.contact_email) || valid(user.email);

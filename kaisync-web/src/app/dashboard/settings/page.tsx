@@ -1,6 +1,7 @@
 'use client'
 
 import { CompanyProfileSettings } from '@/components/settings/CompanyProfileSettings'
+import { EmailDomainSettings } from '@/components/settings/EmailDomainSettings'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -906,6 +907,7 @@ export default function SettingsPage() {
           onSaved={next => { setCompany(prev => (prev ? { ...prev, ...next } : prev)); setCompanyName(next.name) }}
         />
       )}
+      {activeTab === 'general' && companyId && <EmailDomainSettings companyId={companyId} canEdit={isHrOrAbove} />}
 
       {activeTab === 'billing' && isHrOrAbove && (
         <Section title="Subscription" icon="payments">

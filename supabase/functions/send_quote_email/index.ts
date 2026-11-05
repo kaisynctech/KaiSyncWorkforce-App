@@ -214,7 +214,9 @@ Deno.serve(async (req: Request) => {
     const htmlBody = quoteEmailHtml(co, logoUrl, quote.quote_number ?? null, quote.title ?? null, onlineUrl);
 
     // Sender shows the company's name; replies go to the company's contact email.
-    const fromAddress = (from.match(/<([^>]+)>/)?.[1] ?? from).trim();
+    // The company's own address once its domain is verified (Settings → Email), otherwise ours.
+    const { data: ownSender } = await admin.rpc("company_sender_address", { p_company_id: emp.company_id });
+    const fromAddress = (typeof ownSender === "string" && ownSender) || (from.match(/<([^>]+)>/)?.[1] ?? from).trim();
     const safeName = companyName.replace(/["<>\r\n]/g, "").slice(0, 80);
     const fromBranded = `"${safeName}" <${fromAddress}>`;
     // Replies go to the company's email; if that's empty, to the person who sent it.

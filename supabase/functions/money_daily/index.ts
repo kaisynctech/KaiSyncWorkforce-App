@@ -69,8 +69,11 @@ const toText = (paras: string[], name: string) =>
 const button = (href: string, label: string) =>
   `<a href="${esc(href)}" style="display:inline-block;background:#1E3A5F;color:#ffffff;text-decoration:none;font-weight:bold;padding:12px 22px;border-radius:8px">${esc(label)}</a>`;
 
-async function send(resendKey: string, fromAddress: string, co: Company, to: string, subject: string, html: string, text: string) {
+async function send(admin: SupabaseClient, resendKey: string, defaultFrom: string, co: Company, to: string, subject: string, html: string, text: string) {
   const name = String(co.name ?? "").trim() || "Our company";
+  // The company's own address once its domain is verified (Settings → Email), otherwise ours.
+  const { data: ownSender } = await admin.rpc("company_sender_address", { p_company_id: co.id });
+  const fromAddress = (typeof ownSender === "string" && ownSender) || defaultFrom;
   const replyTo = valid(co.contact_email);
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -141,7 +144,7 @@ Deno.serve(async (req: Request) => {
       "If you have any questions, simply reply to this email.",
     ];
     const subject = `Invoice ${num} from ${String(co.name ?? "").trim() || "us"}`;
-    const sent = await send(resendKey, fromAddress, co, to, subject, emailHtml(admin, co, paras), toText(paras, String(co.name ?? "")) + `\n\nView and pay online: ${url}`);
+    const sent = await send(admin, resendKey, fromAddress, co, to, subject, emailHtml(admin, co, paras), toText(paras, String(co.name ?? "")) + `\n\nView and pay online: ${url}`);
     await admin.from("document_emails").insert({
       company_id: r.company_id, kind: "invoice", doc_id: inv.id, recipient_email: to, subject,
       status: sent.ok ? "sent" : "failed", error_message: sent.error, provider_message_id: sent.id, sent_by: null,
@@ -195,7 +198,7 @@ ${rows.join("")}
           "We would appreciate payment at your earliest convenience. If you have already paid, please ignore this note or reply with your proof of payment.",
         ];
         const subject = `Payment reminder — ${rand(total)} overdue`;
-        const sent = await send(resendKey, fromAddress, co, to, subject, emailHtml(admin, co, paras), toText(paras, String(co.name ?? "")));
+        const sent = await send(admin, resendKey, fromAddress, co, to, subject, emailHtml(admin, co, paras), toText(paras, String(co.name ?? "")));
         await admin.from("statement_reminders").insert({
           company_id: co.id, client_id: clientId, sent_by: null, recipient_email: to, balance: total, overdue: total,
           status: sent.ok ? "sent" : "failed", error_message: sent.error, provider_message_id: sent.id, automatic: true,

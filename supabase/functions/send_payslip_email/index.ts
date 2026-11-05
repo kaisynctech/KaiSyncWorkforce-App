@@ -55,7 +55,9 @@ Deno.serve(async (req: Request) => {
     const resendKey = (Deno.env.get("RESEND_API_KEY") ?? "").trim();
     if (!resendKey) return json({ error: "email_not_configured", message: "Email sending is not set up." }, 503);
     const from = (Deno.env.get("NOTIFY_FROM_EMAIL") ?? "").trim() || "no-reply@kaisyncworkforce.com";
-    const fromAddress = (from.match(/<([^>]+)>/)?.[1] ?? from).trim();
+    // The company's own address once its domain is verified (Settings → Email), otherwise ours.
+    const { data: ownSender } = await admin.rpc("company_sender_address", { p_company_id: pay.company_id });
+    const fromAddress = (typeof ownSender === "string" && ownSender) || (from.match(/<([^>]+)>/)?.[1] ?? from).trim();
 
     const [{ data: emp }, { data: co }] = await Promise.all([
       admin.from("employees").select("name, surname, email").eq("id", pay.employee_id).maybeSingle(),
