@@ -163,7 +163,7 @@ export async function saveNewContacts(
   const { error } = await supabase.from('client_contacts').insert(fresh.map(email => ({
     company_id: opts.companyId, client_id: opts.clientId, email, include_in_emails: true, sort_order: ++order,
     // A readable name from the address ("thandi.mokoena@…" → "Thandi Mokoena"); it can be renamed on the client.
-    name: email.split('@')[0].split(/[._-]+/).filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join(' ') || email,
+    name: email.split('@')[0].split(/[._+-]+/).filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join(' ') || email,
   })))
   return error ? 0 : fresh.length
 }
