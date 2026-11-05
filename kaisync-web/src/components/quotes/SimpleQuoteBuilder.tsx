@@ -149,6 +149,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   const [sendBusy,        setSendBusy]        = useState(false)
   const [showAcceptModal, setShowAcceptModal] = useState(false)
   const [showWhatsNext,   setShowWhatsNext]   = useState(false)
+  const [sentNote,        setSentNote]        = useState<string | null>(null)
   const [automationDealId, setAutomationDealId] = useState<string | null>(null)
   const [automationRfqId,  setAutomationRfqId]  = useState<string | null>(null)
   const [automationNote,   setAutomationNote]   = useState<string | null>(null)
@@ -714,7 +715,8 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
       statusRef.current = 'sent'
       setShowSendModal(false)
       setSendBusy(false)
-      setShowWhatsNext(true)
+      // Sent is not accepted: the client accepts online or you press Mark accepted.
+      setSentNote(`Emailed to ${pdf.client_email}. They can accept it online from the email, or press Mark accepted when they confirm.`)
       return
     }
 
@@ -1131,6 +1133,16 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
               {actionBusy ? 'Opening…' : 'Create invoice'}
             </button>
           </div>
+        )}
+
+        {sentNote && !actionError && (
+          <p className="text-[12px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 flex items-start gap-2">
+            <span className="material-icons text-[15px]">mark_email_read</span>
+            <span className="flex-1">{sentNote}</span>
+            <button type="button" aria-label="Dismiss" onClick={() => setSentNote(null)} className="text-emerald-700 hover:text-emerald-900">
+              <span className="material-icons text-[15px]">close</span>
+            </button>
+          </p>
         )}
 
         {actionError && !showWhatsNext && !showAcceptModal && (
