@@ -85,6 +85,7 @@ const NAV_SECTIONS: NavSection[] = [
       { label: 'New quote',         href: '/dashboard/money/quotes/new',          icon: 'add_circle',      flag: 'commercial', group: 'Client' },
       { label: 'Invoices',          href: '/dashboard/money/invoices',            icon: 'receipt_long',    flag: 'commercial', group: 'Client' },
       { label: 'Credit Notes',      href: '/dashboard/money/credit-notes',        icon: 'undo',            flag: 'commercial', group: 'Client' },
+      { label: 'Recurring invoices', href: '/dashboard/money/recurring',          icon: 'event_repeat',    flag: 'commercial', group: 'Client' },
       { label: 'Inventory & Services', href: '/dashboard/inventory',               icon: 'inventory_2',     flag: 'commercial', group: 'Client' },
       { label: 'RFQs',              href: '/dashboard/supply/rfqs',               icon: 'compare_arrows',  flag: 'commercial', group: 'Procurement' },
       { label: 'Purchase Orders',   href: '/dashboard/supply/purchase-orders',    icon: 'shopping_cart',   flag: 'commercial', group: 'Procurement' },

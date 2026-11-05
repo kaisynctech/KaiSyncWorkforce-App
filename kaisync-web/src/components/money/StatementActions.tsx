@@ -36,15 +36,17 @@ export function RemindButton({ clientId, clientName, companyId, lastReminded, on
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null)
   const [companyEmail, setCompanyEmail] = useState<string | null>(null)
+  const [autoOff, setAutoOff] = useState(false)
 
   async function openDialog() {
     setResult(null); setMessage(''); setOpen(true)
     const supabase = createClient()
     const [{ data }, { data: co }] = await Promise.all([
-      supabase.from('clients').select('email').eq('id', clientId).maybeSingle(),
+      supabase.from('clients').select('email, auto_reminders_off').eq('id', clientId).maybeSingle(),
       supabase.from('companies').select('contact_email').eq('id', companyId).maybeSingle(),
     ])
     setEmail(((data as { email?: string | null } | null)?.email ?? '').trim())
+    setAutoOff(Boolean((data as { auto_reminders_off?: boolean } | null)?.auto_reminders_off))
     setCompanyEmail(((co as { contact_email?: string | null } | null)?.contact_email ?? '').trim())
   }
 
@@ -94,6 +96,15 @@ export function RemindButton({ clientId, clientName, companyId, lastReminded, on
             <label className="flex flex-col gap-1.5 text-[12px] font-medium text-text-secondary">Add a note (optional)
               <textarea rows={3} value={message} onChange={e => setMessage(e.target.value)} placeholder="e.g. Please use your account number as the payment reference."
                 className="rounded-xl border border-divider px-3 py-2 text-[14px] bg-background text-text-primary resize-none focus:outline-none focus:border-primary/60" />
+            </label>
+            <label className="flex items-center gap-2 text-[12.5px] text-text-secondary">
+              <input type="checkbox" checked={autoOff} onChange={async e => {
+                const v = e.target.checked
+                setAutoOff(v)
+                const { error } = await createClient().from('clients').update({ auto_reminders_off: v }).eq('id', clientId)
+                if (error) { setAutoOff(!v); setResult({ ok: false, text: error.message }) }
+              }} />
+              No automatic reminders for {clientName}
             </label>
             {result && <p className={`text-[13px] ${result.ok ? 'text-emerald-700' : 'text-error'}`}>{result.text}</p>}
             <div className="flex justify-end gap-2">

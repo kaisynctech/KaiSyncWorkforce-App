@@ -19,6 +19,7 @@ import { DateRangePicker } from '@/components/insights/DateRangePicker'
 import { ColumnChart } from '@/components/insights/viz'
 import { ExpensesManager } from '@/components/money/ExpensesManager'
 import { RemindButton, StatementButton } from '@/components/money/StatementActions'
+import { AutoRemindersCard } from '@/components/money/AutoReminders'
 
 type Tab = 'overview' | 'totals' | 'clients' | 'suppliers' | 'contractors' | 'payroll' | 'expenses'
 const TABS: { key: Tab; label: string }[] = [
@@ -438,10 +439,12 @@ function Clients({ o, companyId }: { o: MoneyOverview; companyId: string }) {
   const c = o.clients
   const [reminded, setReminded] = useState<Record<string, string>>({})
   const loadReminded = useCallback(async () => {
-    const { data } = await createClient().from('statement_reminders').select('client_id, created_at')
+    const { data } = await createClient().from('statement_reminders').select('client_id, created_at, automatic')
       .eq('company_id', companyId).eq('status', 'sent').order('created_at', { ascending: false }).limit(500)
     const m: Record<string, string> = {}
-    for (const r of (data ?? []) as { client_id: string; created_at: string }[]) if (!m[r.client_id]) m[r.client_id] = day(r.created_at)
+    for (const r of (data ?? []) as { client_id: string; created_at: string; automatic?: boolean }[]) {
+      if (!m[r.client_id]) m[r.client_id] = `${day(r.created_at)}${r.automatic ? ' (auto)' : ''}`
+    }
     setReminded(m)
   }, [companyId])
   useEffect(() => { void loadReminded() }, [loadReminded])
@@ -454,6 +457,7 @@ function Clients({ o, companyId }: { o: MoneyOverview; companyId: string }) {
         <Kpi label="Received this period" value={R(c.received)} />
         <Kpi label="Average days to pay" value={c.avg_days_to_pay != null ? `${c.avg_days_to_pay} days` : '—'} note="Invoices paid in the last year" />
       </KpiRow>
+      <AutoRemindersCard companyId={companyId} />
       {c.accounts.length === 0 ? <Empty text="No client owes you anything right now." /> : (
         <Table minWidth={1000} head={[{ label: 'Client' }, { label: 'Owes you', right: true }, { label: 'Not due', right: true }, { label: '1–30 days', right: true },
           { label: '31–60 days', right: true }, { label: '60+ days', right: true }, { label: 'Last paid' }, { label: '' }]}>
