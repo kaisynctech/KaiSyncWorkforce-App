@@ -572,12 +572,19 @@ function MoneyInvoiceDetailInner() {
             <span className="text-text-secondary">Amount Paid</span>
             <span className="text-green-600 font-medium">{fmtMoney(inv.amount_paid)}</span>
           </div>
+          {['voided', 'cancelled'].includes(inv.status) ? (
+          <div className="flex justify-between text-[15px] border-t border-divider pt-2">
+            <span className="font-bold text-text-primary">Balance Due</span>
+            <span className="font-bold text-text-secondary">Nothing — {inv.status === 'voided' ? 'voided' : 'cancelled'}</span>
+          </div>
+          ) : (
           <div className="flex justify-between text-[15px] border-t border-divider pt-2">
             <span className="font-bold text-text-primary">Balance Due</span>
             <span className={`font-bold ${(inv.balance_due ?? 0) > 0 ? 'text-red-600' : 'text-green-600'}`}>
               {fmtMoney(inv.balance_due)}
             </span>
           </div>
+          )}
         </div>
 
         {/* Tenant payment proofs */}

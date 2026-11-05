@@ -18,6 +18,7 @@ import { moneyShort } from '@/lib/insights/format'
 import { DateRangePicker } from '@/components/insights/DateRangePicker'
 import { ColumnChart } from '@/components/insights/viz'
 import { ExpensesManager } from '@/components/money/ExpensesManager'
+import { RemindButton, StatementButton } from '@/components/money/StatementActions'
 
 type Tab = 'overview' | 'totals' | 'clients' | 'suppliers' | 'contractors' | 'payroll' | 'expenses'
 const TABS: { key: Tab; label: string }[] = [
@@ -137,9 +138,9 @@ function MoneyInner() {
           <>
             {tab === 'overview' && <Overview o={data} goto={setTab} />}
             {tab === 'totals' && <Totals o={data} />}
-            {tab === 'clients' && <Clients o={data} />}
-            {tab === 'suppliers' && <Suppliers o={data} />}
-            {tab === 'contractors' && <Contractors o={data} />}
+            {tab === 'clients' && <Clients o={data} companyId={companyId} />}
+            {tab === 'suppliers' && <Suppliers o={data} companyId={companyId} />}
+            {tab === 'contractors' && <Contractors o={data} companyId={companyId} />}
             {tab === 'payroll' && <Payroll o={data} />}
             {tab === 'expenses' && <ExpensesManager companyId={companyId} vatRegistered={data.vat_registered} onChanged={() => void load()} />}
           </>
@@ -433,8 +434,17 @@ function Totals({ o }: { o: MoneyOverview }) {
 
 /* ── Accounts ────────────────────────────────────────────────────────────────────────────────────── */
 
-function Clients({ o }: { o: MoneyOverview }) {
+function Clients({ o, companyId }: { o: MoneyOverview; companyId: string }) {
   const c = o.clients
+  const [reminded, setReminded] = useState<Record<string, string>>({})
+  const loadReminded = useCallback(async () => {
+    const { data } = await createClient().from('statement_reminders').select('client_id, created_at')
+      .eq('company_id', companyId).eq('status', 'sent').order('created_at', { ascending: false }).limit(500)
+    const m: Record<string, string> = {}
+    for (const r of (data ?? []) as { client_id: string; created_at: string }[]) if (!m[r.client_id]) m[r.client_id] = day(r.created_at)
+    setReminded(m)
+  }, [companyId])
+  useEffect(() => { void loadReminded() }, [loadReminded])
   return (
     <div className="flex flex-col gap-4">
       <KpiRow>
@@ -445,7 +455,7 @@ function Clients({ o }: { o: MoneyOverview }) {
         <Kpi label="Average days to pay" value={c.avg_days_to_pay != null ? `${c.avg_days_to_pay} days` : '—'} note="Invoices paid in the last year" />
       </KpiRow>
       {c.accounts.length === 0 ? <Empty text="No client owes you anything right now." /> : (
-        <Table head={[{ label: 'Client' }, { label: 'Owes you', right: true }, { label: 'Not due', right: true }, { label: '1–30 days', right: true },
+        <Table minWidth={1000} head={[{ label: 'Client' }, { label: 'Owes you', right: true }, { label: 'Not due', right: true }, { label: '1–30 days', right: true },
           { label: '31–60 days', right: true }, { label: '60+ days', right: true }, { label: 'Last paid' }, { label: '' }]}>
           {c.accounts.map(a => (
             <tr key={a.client_id ?? a.name} className="border-t border-divider/70">
@@ -455,9 +465,20 @@ function Clients({ o }: { o: MoneyOverview }) {
               <td className="px-4 py-3 text-right tabular-nums text-amber-700">{dash(a.d30)}</td>
               <td className="px-4 py-3 text-right tabular-nums text-orange-700">{dash(a.d60)}</td>
               <td className="px-4 py-3 text-right tabular-nums text-red-700">{dash(a.d90)}</td>
-              <td className="px-4 py-3 text-text-secondary">{day(a.last_paid)}</td>
+              <td className="px-4 py-3 text-text-secondary">
+                {day(a.last_paid)}
+                {a.client_id && reminded[a.client_id] && <span className="block text-[11px] text-amber-700">Reminded {reminded[a.client_id]}</span>}
+              </td>
               <td className="px-4 py-3 text-right whitespace-nowrap">
-                {a.client_id && <Link href={`/dashboard/clients/${a.client_id}`} className="inline-flex items-center h-8 px-3 rounded-lg bg-primary/10 text-primary text-[12px] font-semibold">Open account</Link>}
+                {a.client_id && (
+                  <span className="inline-flex gap-1.5">
+                    <StatementButton kind="client" id={a.client_id} name={a.name} companyId={companyId} />
+                    <RemindButton clientId={a.client_id} clientName={a.name} companyId={companyId} lastReminded={reminded[a.client_id]} onSent={() => void loadReminded()} />
+                    <Link href={`/dashboard/clients/${a.client_id}`} aria-label={`Open ${a.name}`} className="inline-flex items-center justify-center h-8 w-8 rounded-lg text-text-secondary hover:bg-surface-elevated">
+                      <span className="material-icons text-[18px]">chevron_right</span>
+                    </Link>
+                  </span>
+                )}
               </td>
             </tr>
           ))}
@@ -467,7 +488,7 @@ function Clients({ o }: { o: MoneyOverview }) {
   )
 }
 
-function Suppliers({ o }: { o: MoneyOverview }) {
+function Suppliers({ o, companyId }: { o: MoneyOverview; companyId: string }) {
   const s = o.suppliers
   return (
     <div className="flex flex-col gap-4">
@@ -489,7 +510,12 @@ function Suppliers({ o }: { o: MoneyOverview }) {
               <td className="px-4 py-3 text-right tabular-nums text-red-700">{dash(a.overdue)}</td>
               <td className="px-4 py-3 text-text-secondary">{a.open_bills || '—'}</td>
               <td className="px-4 py-3 text-text-secondary">{day(a.last_paid)}</td>
-              <td className="px-4 py-3 text-right"><Link href="/dashboard/finance/supplier-invoices" className="inline-flex items-center h-8 px-3 rounded-lg bg-primary/10 text-primary text-[12px] font-semibold">Bills</Link></td>
+              <td className="px-4 py-3 text-right whitespace-nowrap">
+                <span className="inline-flex gap-1.5">
+                  {a.supplier_id && <StatementButton kind="supplier" id={a.supplier_id} name={a.name} companyId={companyId} />}
+                  <Link href="/dashboard/finance/supplier-invoices" className="inline-flex items-center h-8 px-3 rounded-lg bg-primary/10 text-primary text-[12px] font-semibold">Bills</Link>
+                </span>
+              </td>
             </tr>
           ))}
         </Table>
@@ -498,7 +524,7 @@ function Suppliers({ o }: { o: MoneyOverview }) {
   )
 }
 
-function Contractors({ o }: { o: MoneyOverview }) {
+function Contractors({ o, companyId }: { o: MoneyOverview; companyId: string }) {
   const c = o.contractors
   return (
     <div className="flex flex-col gap-4">
@@ -520,7 +546,12 @@ function Contractors({ o }: { o: MoneyOverview }) {
               <td className="px-4 py-3 text-right tabular-nums text-violet-700">{dash(a.waiting)}</td>
               <td className="px-4 py-3 text-right tabular-nums text-text-secondary">{dash(a.retention)}</td>
               <td className="px-4 py-3 text-right whitespace-nowrap">
-                {a.contractor_id && <Link href={`/dashboard/contractors/${a.contractor_id}`} className="inline-flex items-center h-8 px-3 rounded-lg bg-violet-50 text-violet-700 text-[12px] font-semibold">Open</Link>}
+                {a.contractor_id && (
+                  <span className="inline-flex gap-1.5">
+                    <StatementButton kind="contractor" id={a.contractor_id} name={a.name} companyId={companyId} />
+                    <Link href={`/dashboard/contractors/${a.contractor_id}`} className="inline-flex items-center h-8 px-3 rounded-lg bg-violet-50 text-violet-700 text-[12px] font-semibold">Open</Link>
+                  </span>
+                )}
               </td>
             </tr>
           ))}
