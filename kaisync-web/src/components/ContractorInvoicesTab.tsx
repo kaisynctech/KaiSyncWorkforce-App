@@ -1,5 +1,6 @@
 'use client'
 
+import { PayoutRemittanceButton, RemittanceBatchBanner } from '@/components/money/PayoutRemittance'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
@@ -61,6 +62,7 @@ export function ContractorInvoicesTab({
   const [busyId, setBusyId] = useState<string | null>(null)
   const [employeeId, setEmployeeId] = useState<string | null>(null)
   const [actorName, setActorName] = useState<string>('User')
+  const [justPaid, setJustPaid] = useState<{ id: string; name: string }[]>([])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -173,6 +175,7 @@ export function ContractorInvoicesTab({
       }
       await markContractorPayoutPaid(supabase, row.id, 'eft', employeeId, actorName)
       await load()
+      setJustPaid([{ id: row.id, name: 'This contractor' }])
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Mark paid failed')
     } finally {
@@ -182,6 +185,7 @@ export function ContractorInvoicesTab({
 
   return (
     <div className="p-4 space-y-4">
+      <RemittanceBatchBanner key={justPaid.map(p => p.id).join()} payouts={justPaid} onDone={() => setJustPaid([])} />
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
           <p className="section-label">PAYOUTS / INVOICES</p>
@@ -303,6 +307,9 @@ export function ContractorInvoicesTab({
                               >
                                 Mark paid
                               </button>
+                            )}
+                            {r.payout_status === 'paid' && (
+                              <PayoutRemittanceButton compact payoutId={r.id} companyId={companyId} contractorName="The contractor" />
                             )}
                           </div>
                         </td>

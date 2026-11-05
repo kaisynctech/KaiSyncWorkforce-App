@@ -7,7 +7,10 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { fmtMoney } from '@/lib/finance-calc'
 import { recordInvoicePayment } from '@/lib/finance-api'
-import { downloadInvoicePdf, openInvoiceMailto } from '@/lib/invoice-pdf'
+import { buildInvoicePdf, downloadInvoicePdf } from '@/lib/invoice-pdf'
+import { pdfBase64 } from '@/lib/document-pdf'
+import { EmailDocumentDialog, type EmailPdf } from '@/components/money/EmailDocumentDialog'
+import { emailedLabel, loadDocumentEmails, type DocumentEmailLog } from '@/lib/money/document-email'
 import { companyLetterhead, type Letterhead } from '@/lib/letterhead'
 import type { FinanceInvoice, FinanceInvoiceLine } from '@/lib/finance-types'
 import { localISODate } from '@/lib/utils'
@@ -120,6 +123,7 @@ function MoneyInvoiceDetailInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const openWhatsNext = searchParams.get('whats_next') === '1'
+  const openEmail = searchParams.get('email') === '1'
 
   const [inv, setInv]       = useState<Invoice | null>(null)
   const [lines, setLines]   = useState<FinanceInvoiceLine[]>([])
@@ -139,6 +143,11 @@ function MoneyInvoiceDetailInner() {
   const [showWhatsNext, setShowWhatsNext] = useState(openWhatsNext)
   const [whatsNextMode, setWhatsNextMode] = useState<'draft' | 'sent' | 'paid'>('draft')
   const [busy, setBusy]         = useState(false)
+  const [emailKind, setEmailKind] = useState<'invoice' | 'receipt' | null>(openEmail ? 'invoice' : null)
+  const [emailLog, setEmailLog] = useState<DocumentEmailLog[]>([])
+  // True while finishing "Send by email": closing the email dialog then shows What's next.
+  const [sendFlow, setSendFlow] = useState(openEmail)
+  const [justPaid, setJustPaid] = useState(false)
   const [err, setErr]           = useState<string | null>(null)
 
   // Record Payment form
@@ -199,6 +208,7 @@ function MoneyInvoiceDetailInner() {
     setProofs(proofList)
     setCompanyName((company as { name?: string } | null)?.name ?? 'KaiSync')
     setClientEmail((invoice as { clients?: { email?: string | null } | null } | null)?.clients?.email ?? null)
+    setEmailLog(await loadDocumentEmails(supabase, id, ['invoice', 'receipt']))
 
     if (invoice) {
       const bal = (invoice as Invoice).balance_due ?? 0
@@ -303,8 +313,9 @@ function MoneyInvoiceDetailInner() {
       )
       setShowPay(false)
       await load()
-      setWhatsNextMode('paid')
-      setShowWhatsNext(true)
+      // Offer the client a receipt straight away.
+      setJustPaid(true)
+      setEmailKind('receipt')
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Failed to record payment')
     }
@@ -324,7 +335,8 @@ function MoneyInvoiceDetailInner() {
     setBusy(false)
   }
 
-  async function handleSendWithMailto() {
+  /** Mark the invoice sent (it gets its number), then open the email dialog. */
+  async function handleSendByEmail() {
     if (!inv) return
     setBusy(true)
     setErr(null)
@@ -335,18 +347,16 @@ function MoneyInvoiceDetailInner() {
       return
     }
     await load()
-    const pdf = buildPdfInput()
-    if (pdf) {
-      downloadInvoicePdf(pdf)
-      openInvoiceMailto({
-        to: clientEmail,
-        invoiceNumber: pdf.invoice_number,
-        companyName,
-      })
-    }
-    setWhatsNextMode('sent')
-    setShowWhatsNext(true)
     setBusy(false)
+    setSendFlow(true)
+    setEmailKind('invoice')
+  }
+
+  async function invoiceEmailPdf(): Promise<EmailPdf | null> {
+    const pdf = buildPdfInput()
+    if (!pdf) return null
+    const safe = (pdf.invoice_number || 'invoice').replace(/[^\w.-]+/g, '_')
+    return { base64: pdfBase64(buildInvoicePdf(pdf)), filename: `Invoice_${safe}.pdf` }
   }
 
   function handleDownloadPdf() {
@@ -668,12 +678,12 @@ function MoneyInvoiceDetailInner() {
           {canMarkSent && (
             <>
               <button
-                onClick={() => void handleSendWithMailto()}
+                onClick={() => void handleSendByEmail()}
                 disabled={busy}
                 className="btn-primary h-9 px-4 text-[13px] flex items-center gap-1.5 disabled:opacity-50"
               >
                 <span className="material-icons text-[16px]">send</span>
-                {busy ? 'Sending…' : 'Send (PDF + email)'}
+                {busy ? 'Sending…' : 'Send by email'}
               </button>
               <button
                 onClick={() => void handleMarkSent()}
@@ -691,6 +701,22 @@ function MoneyInvoiceDetailInner() {
                 </Link>
               )}
             </>
+          )}
+          {!canMarkSent && !['voided', 'cancelled'].includes(inv.status) && (
+            <button
+              onClick={() => setEmailKind('invoice')}
+              className="btn-outlined h-9 px-4 text-[13px] flex items-center gap-1.5"
+            >
+              <span className="material-icons text-[16px]">forward_to_inbox</span>Email invoice
+            </button>
+          )}
+          {Number(inv.amount_paid ?? 0) > 0 && txRows.length > 0 && (
+            <button
+              onClick={() => setEmailKind('receipt')}
+              className="btn-outlined h-9 px-4 text-[13px] flex items-center gap-1.5"
+            >
+              <span className="material-icons text-[16px]">receipt</span>Email receipt
+            </button>
           )}
           <button
             onClick={handleDownloadPdf}
@@ -727,7 +753,41 @@ function MoneyInvoiceDetailInner() {
         {err && !showPay && !showVoid && !showCN && (
           <p className="text-[12px] text-red-600">{err}</p>
         )}
+        {emailLog.length > 0 && (
+          <div className="text-[12px] text-text-secondary flex flex-col gap-0.5">
+            {emailLog.slice(0, 3).map(l => (
+              <span key={l.id} className={l.status === 'failed' ? 'text-error' : ''}>
+                <span className="material-icons text-[13px] align-[-2px] mr-1">{l.kind === 'receipt' ? 'receipt' : 'mail'}</span>
+                {l.kind === 'receipt' ? 'Receipt: ' : ''}{emailedLabel(l)}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
+
+      {emailKind && companyId && (
+        <EmailDocumentDialog
+          open
+          onClose={() => {
+            const wasPayment = emailKind === 'receipt'
+            setEmailKind(null)
+            if (openEmail) router.replace(`/dashboard/money/invoices/${id}`)
+            if (sendFlow) { setSendFlow(false); setWhatsNextMode('sent'); setShowWhatsNext(true) }
+            else if (wasPayment && justPaid) { setJustPaid(false); setWhatsNextMode('paid'); setShowWhatsNext(true) }
+          }}
+          kind={emailKind}
+          docId={inv.id}
+          companyId={companyId}
+          title={emailKind === 'invoice' ? `Email invoice ${inv.invoice_number ?? ''}`.trim() : 'Email a payment receipt'}
+          description={emailKind === 'invoice'
+            ? `${clientName} gets the invoice with the PDF attached and the amount due.`
+            : `${clientName} gets a thank-you receipt for their latest payment and the balance left.`}
+          defaultTo={clientEmail}
+          getPdf={emailKind === 'invoice' ? invoiceEmailPdf : undefined}
+          attachmentLabel={emailKind === 'invoice' ? `Invoice_${inv.invoice_number ?? 'draft'}.pdf` : undefined}
+          onSent={() => { void loadDocumentEmails(createClient(), id, ['invoice', 'receipt']).then(setEmailLog) }}
+        />
+      )}
 
       {/* What's next? */}
       {showWhatsNext && (
@@ -745,10 +805,10 @@ function MoneyInvoiceDetailInner() {
                   <button
                     type="button"
                     disabled={busy}
-                    onClick={() => { setShowWhatsNext(false); void handleSendWithMailto() }}
+                    onClick={() => { setShowWhatsNext(false); void handleSendByEmail() }}
                     className="h-10 px-4 rounded-lg bg-primary text-white text-left text-[13px] font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
                   >
-                    Send (PDF + email)
+                    Send by email
                   </button>
                   <button
                     type="button"

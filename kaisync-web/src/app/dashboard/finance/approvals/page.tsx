@@ -1,5 +1,6 @@
 'use client'
 
+import { RemittanceBatchBanner } from '@/components/money/PayoutRemittance'
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
@@ -28,6 +29,7 @@ export default function FinanceApprovalsPage() {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<string | null>(null)
   const [actor, setActor] = useState<{ id: string; name: string } | null>(null)
+  const [justPaid, setJustPaid] = useState<{ id: string; name: string; kind: 'remittance_contractor' | 'remittance_supplier' }[]>([])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -85,6 +87,7 @@ export default function FinanceApprovalsPage() {
   return (
     <div className="h-full overflow-y-auto p-4 space-y-6">
       <h1 className="text-[18px] font-semibold text-text-primary">Finance Approvals</h1>
+      <div className="-mx-4 -mt-3"><RemittanceBatchBanner key={justPaid.map(p => p.id).join()} payouts={justPaid} onDone={() => setJustPaid([])} /></div>
 
       {loading ? (
         <p className="text-[13px] text-text-secondary">Loading…</p>
@@ -132,6 +135,7 @@ export default function FinanceApprovalsPage() {
                         const supabase = createClient()
                         await approveSupplierInvoice(supabase, r.id, actor!.id, actor!.name)
                         await markSupplierPaid(supabase, r.id, Number(r.balance_due || r.total_amount), 'eft', actor!.id, actor!.name)
+                        setJustPaid(prev => [...prev, { id: r.id, name, kind: 'remittance_supplier' }])
                       })}
                       className="h-8 px-3 rounded-md text-[12px] bg-primary text-white"
                     >
@@ -191,6 +195,7 @@ export default function FinanceApprovalsPage() {
                         }
                         if (needsApprove) await approveContractorPayout(supabase, r.id, actor!.id, actor!.name)
                         await markContractorPayoutPaid(supabase, r.id, 'eft', actor!.id, actor!.name)
+                        setJustPaid(prev => [...prev, { id: r.id, name, kind: 'remittance_contractor' }])
                       })}
                       className="h-8 px-3 rounded-md text-[12px] bg-primary text-white"
                     >

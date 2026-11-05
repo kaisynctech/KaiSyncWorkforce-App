@@ -6,6 +6,10 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { fmtMoney, roundFinancial } from '@/lib/finance-calc'
 import type { PurchaseOrder, PurchaseOrderLine, ThreeWayMatchLine } from '@/types/commercial'
+import { companyLetterhead } from '@/lib/letterhead'
+import { buildDocumentPdf, money, pdfBase64, pdfDate } from '@/lib/document-pdf'
+import { EmailDocumentDialog } from '@/components/money/EmailDocumentDialog'
+import { emailedLabel, loadDocumentEmails, type DocumentEmailLog } from '@/lib/money/document-email'
 
 interface Supplier { id: string; name: string; email: string | null }
 interface Deal { id: string; title: string }
@@ -57,6 +61,8 @@ export default function PoBuilder({ poId }: { poId?: string }) {
   const [showRejectModal, setShowRejectModal] = useState(false)
   const [showLinkInvModal, setShowLinkInvModal] = useState(false)
   const [showWhatsNext, setShowWhatsNext] = useState(false)
+  const [emailOpen, setEmailOpen] = useState(false)
+  const [emailLog, setEmailLog] = useState<DocumentEmailLog[]>([])
 
   // Fields
   const [supplierId, setSupplierId] = useState(preSupplier ?? '')
@@ -221,6 +227,54 @@ export default function PoBuilder({ poId }: { poId?: string }) {
   }, { subtotal: 0, vat: 0, total: 0 })
 
   const isReadonly = po && (po.status === 'cancelled' || po.status === 'received')
+  const canEmailPo = !!po && ['approved', 'sent', 'partially_received', 'received'].includes(po.status)
+
+  useEffect(() => {
+    if (!po?.id) return
+    void loadDocumentEmails(createClient(), po.id, ['purchase_order']).then(setEmailLog)
+  }, [po?.id])
+
+  async function buildPoPdf() {
+    if (!po || !companyId) return null
+    const lh = await companyLetterhead(createClient(), companyId)
+    const supplier = suppliers.find(x => x.id === (po.supplier_id ?? supplierId))
+    const vat = Number(po.vat_amount ?? 0)
+    const doc = buildDocumentPdf({
+      letterhead: lh,
+      title: 'Purchase order',
+      meta: [
+        ['PO no.', po.po_number ?? 'Draft'],
+        ['Date', pdfDate(po.approved_at ?? po.created_at)],
+        ...(po.required_delivery_date ? [['Deliver by', pdfDate(po.required_delivery_date)] as [string, string]] : []),
+      ],
+      toLabel: 'Supplier',
+      toName: supplier?.name ?? '—',
+      toLines: [supplier?.email ?? ''],
+      lines: lines.map(l => {
+        const qty = Number(l.quantity_ordered) || 0
+        const up = Number(l.unit_price) || 0
+        return { description: l.description, qty, unit: l.unit, unit_price: up, total: roundFinancial(qty * up) }
+      }),
+      totals: vat > 0.004
+        ? [['Total excl. VAT', money(Number(po.subtotal ?? 0)), false], ['VAT', money(vat), false], ['Total incl. VAT', money(Number(po.total_amount ?? 0)), true]]
+        : [['Total', money(Number(po.total_amount ?? 0)), true]],
+      notesHeading: 'Delivery and terms',
+      notes: [
+        po.delivery_address ? `Deliver to: ${po.delivery_address}` : '',
+        po.notes ?? '',
+        po.terms_and_conditions ?? '',
+        `Please quote ${po.po_number ?? 'this PO number'} on your invoice.`,
+      ].filter(Boolean).join('\n\n'),
+      reference: po.po_number,
+    })
+    const safe = (po.po_number || 'draft').replace(/[^\w.-]+/g, '_')
+    return { doc, filename: `Purchase_order_${safe}.pdf` }
+  }
+
+  async function downloadPoPdf() {
+    const built = await buildPoPdf()
+    built?.doc.save(built.filename)
+  }
 
   async function save(newStatus?: string) {
     if (!companyId) return
@@ -428,6 +482,11 @@ export default function PoBuilder({ poId }: { poId?: string }) {
             {po?.status === 'approved' && (
               <button onClick={() => save('sent')} disabled={saving} className="btn-primary h-9 px-4 text-[13px] disabled:opacity-50">Mark as Sent</button>
             )}
+            {canEmailPo && (
+              <button onClick={() => setEmailOpen(true)} className={`${po?.status === 'approved' ? 'btn-primary' : 'btn-secondary'} h-9 px-4 text-[13px] flex items-center gap-1`}>
+                <span className="material-icons text-[18px]">forward_to_inbox</span>Email to supplier
+              </button>
+            )}
             {(po?.status === 'sent' || po?.status === 'approved' || po?.status === 'partially_received') && (
               <button onClick={() => router.push(`/dashboard/supply/goods-received/new?po_id=${po.id}`)}
                 className="btn-secondary h-9 px-4 text-[13px] flex items-center gap-1">
@@ -439,7 +498,41 @@ export default function PoBuilder({ poId }: { poId?: string }) {
         )}
       </div>
 
+      {canEmailPo && (
+        <div className="px-4 pt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-text-secondary">
+          <button type="button" onClick={() => void downloadPoPdf()} className="inline-flex items-center gap-1 text-primary hover:underline">
+            <span className="material-icons text-[15px]">picture_as_pdf</span>Download PDF
+          </button>
+          {emailLog.slice(0, 2).map(l => <span key={l.id} className={l.status === 'failed' ? 'text-error' : ''}>{emailedLabel(l)}</span>)}
+        </div>
+      )}
       {error && <div className="mx-4 mt-2 p-2 rounded bg-error/10 text-error text-[12px]">{error}</div>}
+      {emailOpen && po && companyId && (
+        <EmailDocumentDialog
+          open
+          onClose={() => setEmailOpen(false)}
+          kind="purchase_order"
+          docId={po.id}
+          companyId={companyId}
+          title={`Email purchase order ${po.po_number ?? ''}`.trim()}
+          description={`${suppliers.find(x => x.id === po.supplier_id)?.name ?? 'The supplier'} gets the purchase order with the PDF attached.${po.status === 'approved' ? ' It is then marked as sent.' : ''}`}
+          defaultTo={suppliers.find(x => x.id === po.supplier_id)?.email}
+          getPdf={async () => {
+            const built = await buildPoPdf()
+            return built ? { base64: pdfBase64(built.doc), filename: built.filename } : null
+          }}
+          attachmentLabel={`Purchase_order_${po.po_number ?? 'draft'}.pdf`}
+          onSent={async () => {
+            const supabase = createClient()
+            if (po.status === 'approved') {
+              const now = new Date().toISOString()
+              const { error: upErr } = await supabase.from('purchase_orders').update({ status: 'sent', sent_at: now, updated_at: now }).eq('id', po.id)
+              if (!upErr) setPo({ ...po, status: 'sent', sent_at: now })
+            }
+            setEmailLog(await loadDocumentEmails(supabase, po.id, ['purchase_order']))
+          }}
+        />
+      )}
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-success text-white px-4 py-2 rounded-lg shadow-lg text-[13px] z-50 pointer-events-none">
           {toast}

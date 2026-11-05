@@ -14,6 +14,7 @@ import {
 import { isContractorKind } from '@/lib/partner-kinds'
 import type { ContractorPayout } from '@/lib/finance-types'
 import { localISODate } from '@/lib/utils'
+import { PayoutRemittanceButton, RemittanceBatchBanner } from '@/components/money/PayoutRemittance'
 
 type ContractorOpt = {
   id: string
@@ -38,6 +39,7 @@ export default function ContractorPayoutsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [actor, setActor] = useState<{ id: string; name: string } | null>(null)
+  const [justPaid, setJustPaid] = useState<{ id: string; name: string }[]>([])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -127,9 +129,13 @@ export default function ContractorPayoutsPage() {
     if (!confirmBatchContractorPayoutRisks(flagged, 'Mark paid')) return
 
     setBusy(true)
+    const paid: { id: string; name: string }[] = []
     for (const id of selected) {
       await markContractorPayoutPaid(supabase, id, 'eft', actor.id, actor.name)
+      const row = rows.find(r => r.id === id)
+      paid.push({ id, name: (row?.contractors as { name?: string } | null)?.name ?? 'Contractor' })
     }
+    setJustPaid(paid)
     setSelected(new Set())
     setBusy(false)
     await load()
@@ -165,6 +171,7 @@ export default function ContractorPayoutsPage() {
           <button onClick={() => setShowAdd(true)} className="btn-primary h-9 px-3 text-[13px]">+ Payout</button>
         </div>
       </div>
+      <RemittanceBatchBanner key={justPaid.map(p => p.id).join()} payouts={justPaid} onDone={() => setJustPaid([])} />
       <div className="flex-1 overflow-auto">
         {loading ? (
           <p className="text-center text-[13px] text-text-secondary py-10">Loading…</p>
@@ -178,6 +185,7 @@ export default function ContractorPayoutsPage() {
                 <th className="data-th text-left">Approval</th>
                 <th className="data-th text-right">Net</th>
                 <th className="data-th text-left">Date</th>
+                <th className="data-th"></th>
               </tr>
             </thead>
             <tbody>
@@ -193,10 +201,15 @@ export default function ContractorPayoutsPage() {
                   <td className="data-td text-[12px] capitalize">{r.approval_status}</td>
                   <td className="data-td text-[13px] text-right">{fmtMoney(netPayable(r))}</td>
                   <td className="data-td text-[12px] text-text-secondary">{r.payout_date ?? r.created_at?.slice(0, 10)}</td>
+                  <td className="data-td text-right">
+                    {r.payout_status === 'paid' && companyId && (
+                      <PayoutRemittanceButton compact payoutId={r.id} companyId={companyId} contractorName={(r.contractors as { name?: string } | null)?.name ?? 'The contractor'} />
+                    )}
+                  </td>
                 </tr>
               ))}
               {rows.length === 0 && (
-                <tr><td colSpan={6} className="text-center text-[13px] text-text-secondary py-10">No payouts</td></tr>
+                <tr><td colSpan={7} className="text-center text-[13px] text-text-secondary py-10">No payouts</td></tr>
               )}
             </tbody>
           </table>

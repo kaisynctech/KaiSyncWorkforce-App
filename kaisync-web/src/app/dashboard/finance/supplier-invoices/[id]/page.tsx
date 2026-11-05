@@ -7,6 +7,8 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { fmtMoney } from '@/lib/finance-calc'
 import type { SupplierInvoice, SupplierInvoiceLine } from '@/lib/finance-types'
+import { EmailDocumentDialog } from '@/components/money/EmailDocumentDialog'
+import { emailedLabel, loadDocumentEmails, type DocumentEmailLog } from '@/lib/money/document-email'
 
 interface LinkedPo { id: string; po_number: string | null; total_amount: number; status: string }
 interface UnlinkedPo { id: string; po_number: string | null; total_amount: number }
@@ -24,6 +26,10 @@ export default function SupplierInvoiceDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  const [companyId, setCompanyId] = useState<string | null>(null)
+  const [supplierEmail, setSupplierEmail] = useState<string | null>(null)
+  const [emailOpen, setEmailOpen] = useState(false)
+  const [emailLog, setEmailLog] = useState<DocumentEmailLog[]>([])
 
   function showToast(msg: string) { setToast(msg); setTimeout(() => setToast(null), 3000) }
 
@@ -33,11 +39,12 @@ export default function SupplierInvoiceDetailPage() {
     const supabase = createClient()
     const member = await resolveCurrentMember(supabase)
     if (!member) { setError('not_linked'); setLoading(false); return }
+    setCompanyId(member.companyId)
 
     const [{ data: inv, error: invErr }, { data: lineRows, error: lineErr }] = await Promise.all([
       supabase
         .from('supplier_invoices')
-        .select('*, contractors!supplier_invoices_supplier_id_fkey(name)')
+        .select('*, contractors!supplier_invoices_supplier_id_fkey(name, email)')
         .eq('id', invoiceId)
         .eq('company_id', member.companyId)
         .maybeSingle(),
@@ -56,6 +63,8 @@ export default function SupplierInvoiceDetailPage() {
     if (lineErr) setError(lineErr.message)
     const typedInv = inv as SupplierInvoice & { po_id?: string | null; project_id?: string | null }
     setInvoice(typedInv)
+    setSupplierEmail((typedInv.contractors as { email?: string | null } | null)?.email ?? null)
+    setEmailLog(await loadDocumentEmails(supabase, invoiceId, ['remittance_supplier']))
     setLines((lineRows ?? []) as SupplierInvoiceLine[])
 
     // Load linked PO if present
@@ -123,7 +132,9 @@ export default function SupplierInvoiceDetailPage() {
     }
     setPaying(false)
     showToast('Payment recorded.')
-    void load()
+    await load()
+    // Let the supplier know they've been paid.
+    setEmailOpen(true)
   }
 
   useEffect(() => { void load() }, [load])
@@ -176,9 +187,32 @@ export default function SupplierInvoiceDetailPage() {
               Paid
             </span>
           )}
+          {Number(invoice.amount_paid ?? 0) > 0 && (
+            <button onClick={() => setEmailOpen(true)} className="btn-secondary h-9 px-3 text-[12px] flex items-center gap-1">
+              <span className="material-icons text-[16px]">forward_to_inbox</span>Email remittance
+            </button>
+          )}
         </div>
       </div>
 
+      {emailLog.length > 0 && (
+        <div className="px-4 pt-2 text-[12px] text-text-secondary flex flex-col gap-0.5">
+          {emailLog.slice(0, 2).map(l => <span key={l.id} className={l.status === 'failed' ? 'text-error' : ''}>Remittance: {emailedLabel(l)}</span>)}
+        </div>
+      )}
+      {emailOpen && companyId && (
+        <EmailDocumentDialog
+          open
+          onClose={() => setEmailOpen(false)}
+          kind="remittance_supplier"
+          docId={invoice.id}
+          companyId={companyId}
+          title="Email remittance advice"
+          description={`${supplierName} gets a note that you've paid ${fmtMoney(Number(invoice.amount_paid ?? 0))}${invoice.invoice_number ? ` for invoice ${invoice.invoice_number}` : ''}.`}
+          defaultTo={supplierEmail}
+          onSent={() => { void loadDocumentEmails(createClient(), invoice.id, ['remittance_supplier']).then(setEmailLog) }}
+        />
+      )}
       {error && error !== 'not_linked' && (
         <p className="px-4 py-2 text-[12px] text-error">{error}</p>
       )}

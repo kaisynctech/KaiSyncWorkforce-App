@@ -68,7 +68,6 @@ ${contacts ? `<div>${contacts}</div>` : ""}
 ${c.document_footer ? `<div style="margin-top:8px">${esc(c.document_footer)}</div>` : ""}
 </td></tr>
 </table>
-<div style="color:#94A3B8;font-size:11px;margin-top:12px">Sent with KaiSync</div>
 </td></tr></table></body></html>`;
 }
 
@@ -192,7 +191,9 @@ Deno.serve(async (req: Request) => {
     const fromAddress = (from.match(/<([^>]+)>/)?.[1] ?? from).trim();
     const safeName = companyName.replace(/["<>\r\n]/g, "").slice(0, 80);
     const fromBranded = `"${safeName}" <${fromAddress}>`;
-    const replyTo = (co.contact_email ?? "").trim();
+    // Replies go to the company's email; if that's empty, to the person who sent it.
+    const validEmail = (e: unknown) => { const v = String(e ?? "").trim(); return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v) ? v : ""; };
+    const replyTo = validEmail(co.contact_email) || validEmail(user.email);
 
     const resendRes = await fetch("https://api.resend.com/emails", {
       method: "POST",

@@ -213,7 +213,7 @@ export function InvoiceBuilder({ invoiceId }: { invoiceId?: string | null }) {
       const { error: se } = await supabase.from('finance_invoices').update({ status: 'sent', sent_at: new Date().toISOString() }).eq('id', id)
       if (se) { setError(se.message); setBusy(null); return }
     }
-    router.replace(`/dashboard/money/invoices/${id}${send ? '' : '?whats_next=1'}`)
+    router.replace(`/dashboard/money/invoices/${id}${send ? '?email=1' : '?whats_next=1'}`)
   }, [companyId, clientId, lines, jobId, subtotal, rate, vatAmount, total, issueDate, dueDate, notes, invoiceId, dealId, employeeId, router])
 
   if (!loaded) return <p className="text-center text-[13px] text-text-secondary py-10">Loading…</p>
@@ -340,6 +340,7 @@ export function InvoiceBuilder({ invoiceId }: { invoiceId?: string | null }) {
               <p className="text-[12px] leading-relaxed text-text-secondary">
                 Sending gives the invoice its number, adds it to {client ? `${client.name}’s` : 'the client’s'} statement
                 {lines.some(l => l.type === 'inventory') ? ' and takes the inventory items out of stock' : ''}.
+                {' '}You can then email it straight to the client.
               </p>
               {vat.registered && !vat.hasNumber && (
                 <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-900">
