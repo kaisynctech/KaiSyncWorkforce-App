@@ -80,7 +80,7 @@ const NAV_SECTIONS: NavSection[] = [
     label: 'Money',
     icon: 'account_balance_wallet',
     items: [
-      { label: 'Finance',           href: '/dashboard/finance',                   icon: 'account_balance', flag: 'finance',    group: 'Finance' },
+      { label: 'Money overview',    href: '/dashboard/money',                     icon: 'account_balance', flag: 'finance',    group: 'Finance' },
       { label: 'Quotes',            href: '/dashboard/money/quotes',              icon: 'request_quote',   flag: 'commercial', group: 'Client' },
       { label: 'New quote',         href: '/dashboard/money/quotes/new',          icon: 'add_circle',      flag: 'commercial', group: 'Client' },
       { label: 'Invoices',          href: '/dashboard/money/invoices',            icon: 'receipt_long',    flag: 'commercial', group: 'Client' },
@@ -91,6 +91,7 @@ const NAV_SECTIONS: NavSection[] = [
       { label: 'Goods Received',    href: '/dashboard/supply/goods-received',     icon: 'local_shipping',  flag: 'commercial', group: 'Procurement' },
       { label: 'Supplier Invoices', href: '/dashboard/finance/supplier-invoices', icon: 'receipt',         flag: 'commercial', group: 'Procurement' },
       { label: 'Suppliers',         href: '/dashboard/supply/suppliers',          icon: 'storefront',      flag: 'commercial', group: 'Procurement' },
+      { label: 'Subscriptions',     href: '/dashboard/money/subscriptions',       icon: 'autorenew',       flag: 'finance',    group: 'Procurement' },
     ],
   },
   {
@@ -146,6 +147,8 @@ function itemVisible(item: NavItem, flags: HrNavFlags, isOwner: boolean): boolea
 function isItemActive(pathname: string, href: string): boolean {
   // Insights overview sits above its own dashboards: only light it up on the overview itself.
   if (href === '/dashboard/reports') return pathname === href
+  // Money overview sits above quotes, invoices and the rest of Money.
+  if (href === '/dashboard/money') return pathname === href
   return pathname === href || pathname.startsWith(`${href}/`)
 }
 

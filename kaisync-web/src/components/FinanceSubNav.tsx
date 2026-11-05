@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 
 const ITEMS = [
-  { href: '/dashboard/finance', label: 'Hub', exact: true },
+  { href: '/dashboard/money', label: 'Money overview', exact: true },
   { href: '/dashboard/finance/invoices', label: 'Invoices' },
   { href: '/dashboard/finance/supplier-invoices', label: 'Suppliers' },
   { href: '/dashboard/finance/contractor-payouts', label: 'Payouts' },
