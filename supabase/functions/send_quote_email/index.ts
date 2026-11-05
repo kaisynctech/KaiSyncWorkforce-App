@@ -35,8 +35,14 @@ type Company = {
   document_footer: string | null;
 };
 
+// Links in emails point at the site the office used (test site or live), never anywhere else.
+const SITE_OK = /^https:\/\/((www\.)?kaisyncworkforce\.com|kaisyncwebsite-[a-z0-9-]+-kaisynctechs-projects\.vercel\.app)$/;
+// No site given (an older app) → no link, so nobody gets a link to a page that isn't there yet.
+const siteUrl = (v: unknown): string | null => { const u = String(v ?? "").trim().replace(/\/+$/, ""); return SITE_OK.test(u) ? u : null; };
+const newToken = () => btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32)))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
 /** Branded quote email: company logo and name on top, contact details and footer note below. */
-function quoteEmailHtml(c: Company, logoUrl: string | null, quoteNumber: string | null, title: string | null): string {
+function quoteEmailHtml(c: Company, logoUrl: string | null, quoteNumber: string | null, title: string | null, onlineUrl: string | null = null): string {
   const name = esc(c.name || "Our company");
   const ids = [
     c.registration_number ? `Reg. no. ${esc(c.registration_number)}` : "",
@@ -57,6 +63,8 @@ function quoteEmailHtml(c: Company, logoUrl: string | null, quoteNumber: string 
 <tr><td style="padding:24px 28px;color:#0F172A;font-size:14px;line-height:1.6">
 <p style="margin:0 0 12px">Hello,</p>
 <p style="margin:0 0 12px">Please find attached our quotation${quoteNumber ? ` <strong>${esc(quoteNumber)}</strong>` : ""}${title ? ` for <strong>${esc(title)}</strong>` : ""}.</p>
+${onlineUrl ? `<p style="margin:18px 0 6px"><a href="${esc(onlineUrl)}" style="display:inline-block;background:#1E3A5F;color:#ffffff;text-decoration:none;font-weight:bold;padding:12px 22px;border-radius:8px">View &amp; accept online</a></p>
+<p style="margin:0 0 14px;font-size:12px;color:#64748B">Open the quote, then accept or decline it with one click.</p>` : ""}
 <p style="margin:0 0 12px">If you have any questions, simply reply to this email.</p>
 <p style="margin:16px 0 0">Kind regards,<br><strong>${name}</strong></p>
 </td></tr>
@@ -85,6 +93,7 @@ type Body = {
   subject?: string;
   pdf_base64?: string;
   filename?: string;
+  site_url?: string;
 };
 
 Deno.serve(async (req: Request) => {
@@ -176,16 +185,33 @@ Deno.serve(async (req: Request) => {
       : null;
     const companyName = (co.name ?? "").trim() || "KaiSync";
 
+    // The client's private link: view the quote, accept or decline it online.
+    let onlineUrl: string | null = null;
+    const site = siteUrl(body.site_url);
+    if (site) {
+      const { data: existing } = await admin.from("document_links").select("token")
+        .eq("doc_id", quote.id).eq("kind", "quote").gt("expires_at", new Date(Date.now() + 30 * 86400000).toISOString())
+        .order("created_at", { ascending: false }).limit(1).maybeSingle();
+      let token = existing?.token as string | undefined;
+      if (!token) {
+        token = newToken();
+        const { error: linkErr } = await admin.from("document_links").insert({ token, company_id: emp.company_id, kind: "quote", doc_id: quote.id });
+        if (linkErr) token = undefined;
+      }
+      if (token) onlineUrl = `${site}/d/${token}`;
+    }
+
     const textBody = [
       "Hello,",
       "",
       `Please find attached our quotation${quote.quote_number ? ` (${quote.quote_number})` : ""}.`,
+      ...(onlineUrl ? ["", `View, accept or decline it online: ${onlineUrl}`] : []),
       "",
       "Kind regards,",
       companyName,
       [co.contact_phone, co.contact_email, co.website].filter(Boolean).join(" · "),
     ].filter((l, i, a) => l !== "" || i < a.length - 1).join("\n");
-    const htmlBody = quoteEmailHtml(co, logoUrl, quote.quote_number ?? null, quote.title ?? null);
+    const htmlBody = quoteEmailHtml(co, logoUrl, quote.quote_number ?? null, quote.title ?? null, onlineUrl);
 
     // Sender shows the company's name; replies go to the company's contact email.
     const fromAddress = (from.match(/<([^>]+)>/)?.[1] ?? from).trim();

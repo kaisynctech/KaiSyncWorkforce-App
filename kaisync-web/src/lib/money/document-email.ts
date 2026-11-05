@@ -16,6 +16,8 @@ export async function sendDocumentEmail(
     body: {
       kind: opts.kind, doc_id: opts.docId, recipient_email: opts.recipient, message: opts.message ?? '',
       pdf_base64: opts.pdfBase64 ?? '', filename: opts.filename ?? '',
+      // Online links in the email open on this same site (test or live).
+      site_url: typeof window !== 'undefined' ? window.location.origin : '',
     },
   })
   const body = data as { ok?: boolean; message?: string; recipient_email?: string } | null

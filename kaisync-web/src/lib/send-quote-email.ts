@@ -40,6 +40,8 @@ export async function sendQuoteEmailViaResend(
       recipient_email: args.recipientEmail?.trim() || undefined,
       filename: args.filename,
       subject: args.subject,
+      // Online links in the email open on this same site (test or live).
+      site_url: typeof window !== 'undefined' ? window.location.origin : undefined,
     },
   })
 

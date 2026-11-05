@@ -10,6 +10,7 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith('/client-portal')
     || pathname.startsWith('/contractor-portal')
     || pathname.startsWith('/tenant-portal')
+    || pathname.startsWith('/d/')
   ) {
     return NextResponse.next({ request })
   }

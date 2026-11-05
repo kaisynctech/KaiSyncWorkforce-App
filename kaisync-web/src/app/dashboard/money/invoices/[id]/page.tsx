@@ -146,6 +146,7 @@ function MoneyInvoiceDetailInner() {
   const [busy, setBusy]         = useState(false)
   const [emailKind, setEmailKind] = useState<'invoice' | 'receipt' | null>(openEmail ? 'invoice' : null)
   const [emailLog, setEmailLog] = useState<DocumentEmailLog[]>([])
+  const [viewedAt, setViewedAt] = useState<string | null>(null)
   // True while finishing "Send by email": closing the email dialog then shows What's next.
   const [sendFlow, setSendFlow] = useState(openEmail)
   const [justPaid, setJustPaid] = useState(false)
@@ -210,6 +211,8 @@ function MoneyInvoiceDetailInner() {
     setCompanyName((company as { name?: string } | null)?.name ?? 'KaiSync')
     setClientEmail((invoice as { clients?: { email?: string | null } | null } | null)?.clients?.email ?? null)
     setEmailLog(await loadDocumentEmails(supabase, id, ['invoice', 'receipt']))
+    const { data: linkStatus } = await supabase.rpc('document_link_status', { p_doc_id: id })
+    setViewedAt((linkStatus as { last_viewed_at?: string | null } | null)?.last_viewed_at ?? null)
 
     if (invoice) {
       const bal = (invoice as Invoice).balance_due ?? 0
@@ -757,8 +760,14 @@ function MoneyInvoiceDetailInner() {
         {err && !showPay && !showVoid && !showCN && (
           <p className="text-[12px] text-red-600">{err}</p>
         )}
-        {emailLog.length > 0 && (
+        {(emailLog.length > 0 || viewedAt) && (
           <div className="text-[12px] text-text-secondary flex flex-col gap-0.5">
+            {viewedAt && (
+              <span className="text-emerald-700">
+                <span className="material-icons text-[13px] align-[-2px] mr-1">visibility</span>
+                Client opened the online invoice · {new Date(viewedAt).toLocaleString('en-ZA', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+              </span>
+            )}
             {emailLog.slice(0, 3).map(l => (
               <span key={l.id} className={l.status === 'failed' ? 'text-error' : ''}>
                 <span className="material-icons text-[13px] align-[-2px] mr-1">{l.kind === 'receipt' ? 'receipt' : 'mail'}</span>

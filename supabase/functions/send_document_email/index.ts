@@ -27,6 +27,27 @@ const day = (d: unknown) => {
 };
 const b = (s: string) => `<strong>${esc(s)}</strong>`;
 
+// Links in emails point at the site the office used (test site or live), never anywhere else.
+const SITE_OK = /^https:\/\/((www\.)?kaisyncworkforce\.com|kaisyncwebsite-[a-z0-9-]+-kaisynctechs-projects\.vercel\.app)$/;
+// No site given (an older app) → no link, so nobody gets a link to a page that isn't there yet.
+const siteUrl = (v: unknown): string | null => { const u = String(v ?? "").trim().replace(/\/+$/, ""); return SITE_OK.test(u) ? u : null; };
+const newToken = () => btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32)))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+/** The client's private online link for this document (reused while it has more than 30 days left). */
+async function documentLink(admin: SupabaseClient, companyId: string, kind: "invoice" | "quote", docId: string, site: string): Promise<string> {
+  const { data: existing } = await admin.from("document_links").select("token")
+    .eq("doc_id", docId).eq("kind", kind).gt("expires_at", new Date(Date.now() + 30 * 86400000).toISOString())
+    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+  let token = existing?.token as string | undefined;
+  if (!token) {
+    token = newToken();
+    await admin.from("document_links").insert({ token, company_id: companyId, kind, doc_id: docId });
+  }
+  return `${site}/d/${token}`;
+}
+const button = (href: string, label: string) =>
+  `<a href="${esc(href)}" style="display:inline-block;background:#1E3A5F;color:#ffffff;text-decoration:none;font-weight:bold;padding:12px 22px;border-radius:8px">${esc(label)}</a>`;
+
 type Kind = "invoice" | "credit_note" | "receipt" | "purchase_order" | "remittance_supplier" | "remittance_contractor";
 const KINDS: Kind[] = ["invoice", "credit_note", "receipt", "purchase_order", "remittance_supplier", "remittance_contractor"];
 const NEEDS_PDF: Kind[] = ["invoice", "credit_note", "purchase_order"];
@@ -150,7 +171,7 @@ Deno.serve(async (req: Request) => {
     if (!user) return json({ error: "Invalid session" }, 401);
 
     const body = (await req.json().catch(() => ({}))) as {
-      kind?: string; doc_id?: string; recipient_email?: string; message?: string; pdf_base64?: string; filename?: string;
+      kind?: string; doc_id?: string; recipient_email?: string; message?: string; pdf_base64?: string; filename?: string; site_url?: string;
     };
     const kind = String(body.kind ?? "") as Kind;
     if (!KINDS.includes(kind)) return json({ error: "kind required" }, 400);
@@ -181,9 +202,13 @@ Deno.serve(async (req: Request) => {
     const companyName = String(co?.name ?? "").trim() || "Our company";
     const logoUrl = co?.brand_logo_path ? admin.storage.from("company-branding").getPublicUrl(co.brand_logo_path).data.publicUrl : null;
     const note = String(body.message ?? "").trim().slice(0, 1500);
+    // Invoices carry a private link: view online, download the PDF, see the banking details, send proof of payment.
+    const site = siteUrl(body.site_url);
+    const onlineUrl = kind === "invoice" && site ? await documentLink(admin, built.companyId, "invoice", docId, site) : null;
     const paras = [
       built.greetName ? `Hello ${esc(built.greetName)},` : "Hello,",
       ...built.paras,
+      ...(onlineUrl ? [`${button(onlineUrl, "View & pay online")}<br><span style="font-size:12px;color:#64748B">See the invoice, our banking details, and send us your proof of payment.</span>`] : []),
       ...(note ? [esc(note).replace(/\n/g, "<br>")] : []),
       "If you have any questions, simply reply to this email.",
     ];
@@ -204,7 +229,7 @@ ${co?.legal_name && co.legal_name !== companyName ? `<div>${esc(co.legal_name)}<
 ${co?.document_footer ? `<div style="margin-top:8px">${esc(co.document_footer)}</div>` : ""}
 </td></tr></table>
 </td></tr></table></body></html>`;
-    const text = paras.map((p) => p.replace(/<br>/g, "\n").replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'")).join("\n\n") + `\n\nKind regards,\n${companyName}`;
+    const text = paras.map((p) => p.replace(/<br>/g, "\n").replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'")).join("\n\n") + (onlineUrl ? `\n\nView and pay online: ${onlineUrl}` : "") + `\n\nKind regards,\n${companyName}`;
     const subject = built.subject(companyName);
     const replyTo = valid(co?.contact_email) || valid(user.email);
     const filename = String(body.filename ?? "Document.pdf").replace(/[^\w.\-]+/g, "_");
