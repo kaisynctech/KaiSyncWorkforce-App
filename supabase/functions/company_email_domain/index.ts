@@ -6,7 +6,8 @@
 //   add    → { domain, local } register the domain with Resend; returns the DNS records to add
 //   check  → ask Resend to check the DNS records now; returns the new status
 //   remove → stop using the domain (emails go back to the KaiSync address)
-// Env: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, RESEND_API_KEY (needs domain access)
+// Env: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, RESEND_DOMAINS_KEY (full access, for domains)
+//      or RESEND_API_KEY as the fallback (a send-only key gets a friendly "not switched on yet").
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
@@ -51,7 +52,8 @@ Deno.serve(async (req: Request) => {
     if (!hr) return fail("Only the owner, HR and admins can change this.", 403);
 
     const admin = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
-    const key = (Deno.env.get("RESEND_API_KEY") ?? "").trim();
+    // A full-access key just for managing domains; the normal key (send-only) is the fallback.
+    const key = (Deno.env.get("RESEND_DOMAINS_KEY") ?? Deno.env.get("RESEND_API_KEY") ?? "").trim();
     if (!key) return fail("Email sending is not set up.", 503);
     const { data: co } = await admin.from("companies")
       .select("email_domain, email_domain_id, email_domain_status, email_domain_records, email_domain_checked_at, email_from_local")
@@ -88,7 +90,7 @@ Deno.serve(async (req: Request) => {
       const r = await resend("/domains", "POST", key, { name: domain, region: "eu-west-1" });
       if (!r.ok) {
         const msg = String(r.out.message ?? r.out.name ?? `Error ${r.status}`);
-        if (r.status === 401 || /restricted|permission/i.test(msg)) return fail("Our email key can only send emails, not add domains. KaiSync needs a full-access email key first.", 503);
+        if (r.status === 401 || /restricted|permission/i.test(msg)) return fail("Sending from your own domain is not switched on yet. Please contact KaiSync support.", 503);
         if (/limit|plan/i.test(msg)) return fail("KaiSync has reached its email plan's limit on domains. Please contact KaiSync support.", 503);
         if (/already/i.test(msg)) return fail("That domain is already registered with the email provider. Please contact KaiSync support.", 409);
         return fail(`The domain could not be added: ${msg}`, 502);

@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS public.recurring_invoices (
   last_run_at timestamptz,
   last_invoice_id uuid,
   last_error text,
-  created_by uuid,
+  created_by uuid DEFAULT auth.uid(),
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -156,3 +156,6 @@ BEGIN
 END $$;
 REVOKE ALL ON FUNCTION public.recurring_run_now(uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.recurring_run_now(uuid) TO authenticated;
+
+-- Who set it up (tables created before this default existed).
+ALTER TABLE public.recurring_invoices ALTER COLUMN created_by SET DEFAULT auth.uid();
