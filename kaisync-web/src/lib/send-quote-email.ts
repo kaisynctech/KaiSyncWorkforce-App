@@ -3,6 +3,7 @@
  * Falls back to caller when not configured — never invents secrets.
  */
 
+import { invokePreview, type EmailPreview } from '@/lib/email-preview'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 export type QuoteEmailSendResult =
@@ -33,6 +34,8 @@ export async function sendQuoteEmailViaResend(
     cc?: string[]
     filename?: string
     subject?: string
+    /** The user's edited message (see draftEdits); leave out for the standard wording. */
+    bodyText?: string
   },
 ): Promise<QuoteEmailSendResult> {
   const { data, error } = await supabase.functions.invoke('send_quote_email', {
@@ -43,6 +46,7 @@ export async function sendQuoteEmailViaResend(
       cc: args.cc ?? [],
       filename: args.filename,
       subject: args.subject,
+      ...(args.bodyText ? { body_text: args.bodyText } : {}),
       // Online links in the email open on this same site (test or live).
       site_url: typeof window !== 'undefined' ? window.location.origin : undefined,
     },
@@ -90,4 +94,14 @@ export async function sendQuoteEmailViaResend(
   }
 
   return { ok: false, reason: 'invoke_error', message: 'Unknown send response' }
+}
+
+/** The quote email as it will arrive, without sending it. */
+export function previewQuoteEmail(
+  supabase: SupabaseClient,
+  args: { quoteId: string; recipientEmail: string; cc: string[]; edits?: { subject?: string; body_text?: string } },
+): Promise<EmailPreview | { error: string }> {
+  return invokePreview(supabase, 'send_quote_email', {
+    quote_id: args.quoteId, recipient_email: args.recipientEmail, cc: args.cc, ...(args.edits ?? {}),
+  })
 }

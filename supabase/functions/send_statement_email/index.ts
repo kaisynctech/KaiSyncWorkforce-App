@@ -2,12 +2,14 @@
 //
 // Emails a client their statement of account (PDF attached) as a friendly payment reminder. It comes from
 // the person who sends it, with replies going to them (see _shared/sender.ts); optional CC (up to 10). Owner, HR and admins only (checked with client_statement).
-// Logged in statement_reminders.
+// Body { preview: true } returns the email without sending; an edited { subject, body_text } replaces the
+// standard wording (see _shared/compose.ts). Logged in statement_reminders.
 // Env: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, RESEND_API_KEY, NOTIFY_FROM_EMAIL (optional)
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { cleanCc, senderFor, signOffHtml, signOffText, validEmail } from "../_shared/sender.ts";
+import { editedSubject, editedText, htmlToText, textToParas } from "../_shared/compose.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -23,6 +25,7 @@ const rand = (n: number) => "R " + n.toLocaleString("en-ZA", { minimumFractionDi
 type Body = {
   client_id?: string; recipient_email?: string; cc?: unknown; pdf_base64?: string; filename?: string;
   balance?: number; overdue?: number; message?: string;
+  preview?: boolean; subject?: string; body_text?: string;
 };
 
 Deno.serve(async (req: Request) => {
@@ -39,7 +42,8 @@ Deno.serve(async (req: Request) => {
     const body = (await req.json().catch(() => ({}))) as Body;
     const clientId = String(body.client_id ?? "");
     if (!/^[0-9a-f-]{36}$/i.test(clientId)) return json({ error: "client_id required" }, 400);
-    if (!body.pdf_base64?.trim()) return json({ error: "pdf_base64 required" }, 400);
+    const preview = body.preview === true;
+    if (!body.pdf_base64?.trim() && !preview) return json({ error: "pdf_base64 required" }, 400);
 
     // Permission: the same check as the statement itself (owner, HR, admins of this client's company).
     const { error: permErr } = await userClient.rpc("client_statement", { p_client_id: clientId });
@@ -52,7 +56,7 @@ Deno.serve(async (req: Request) => {
     const { data: client } = await admin.from("clients").select("id, company_id, name, email, contact_person").eq("id", clientId).maybeSingle();
     if (!client) return json({ error: "Client not found" }, 404);
     const recipient = (body.recipient_email ?? client.email ?? "").trim();
-    if (!validEmail(recipient)) return json({ error: "recipient_email required", message: "Enter the client's email address." }, 400);
+    if (!validEmail(recipient) && !preview) return json({ error: "recipient_email required", message: "Enter the client's email address." }, 400);
     const cc = cleanCc(body.cc, recipient);
 
     const { data: co } = await admin.from("companies")
@@ -68,15 +72,16 @@ Deno.serve(async (req: Request) => {
     const overdue = Number(body.overdue ?? 0);
     const greeting = client.contact_person ? `Hello ${client.contact_person},` : "Hello,";
     const note = (body.message ?? "").trim().slice(0, 1500);
-    const paras = [
-      greeting,
-      `Please find attached your statement of account with ${companyName}.`,
+    const standard = [
+      `Please find attached your statement of account with ${esc(companyName)}.`,
       balance > 0
         ? `The balance on your account is <strong>${esc(rand(balance))}</strong>${overdue > 0 ? `, of which <strong>${esc(rand(overdue))}</strong> is overdue` : ""}. We would appreciate payment at your earliest convenience.`
         : "Your account is up to date. Thank you!",
       ...(note ? [esc(note).replace(/\n/g, "<br>")] : []),
       "If you have already paid, or something doesn’t look right, simply reply to this email.",
     ];
+    const edited = editedText(body.body_text);
+    const paras = [esc(greeting), ...(edited ? textToParas(edited, esc) : standard)];
     const head = logoUrl
       ? `<img src="${esc(logoUrl)}" alt="${esc(companyName)}" style="max-height:56px;max-width:220px;display:block">`
       : `<div style="font-size:20px;font-weight:700;color:#0F172A">${esc(companyName)}</div>`;
@@ -94,8 +99,15 @@ ${co?.legal_name && co.legal_name !== companyName ? `<div>${esc(co.legal_name)}<
 ${co?.document_footer ? `<div style="margin-top:8px">${esc(co.document_footer)}</div>` : ""}
 </td></tr></table>
 </td></tr></table></body></html>`;
-    const text = paras.map((p) => p.replace(/<[^>]+>/g, "")).join("\n\n") + `\n\n${signOffText(sender, companyName)}`;
-    const subject = balance > 0 ? `Statement of account — ${rand(balance)} outstanding` : "Statement of account";
+    const text = paras.map(htmlToText).join("\n\n") + `\n\n${signOffText(sender, companyName)}`;
+    const defaultSubject = balance > 0 ? `Statement of account — ${rand(balance)} outstanding` : "Statement of account";
+    const subject = editedSubject(body.subject) ?? defaultSubject;
+    if (preview) {
+      return json({
+        ok: true, preview: true, from: sender.from, reply_to: sender.replyTo, to: recipient, cc,
+        subject, default_subject: defaultSubject, body_text: standard.map(htmlToText).join("\n\n"), html,
+      });
+    }
     const filename = (body.filename ?? "Statement.pdf").replace(/[^\w.\-]+/g, "_");
 
     const res = await fetch("https://api.resend.com/emails", {
@@ -104,7 +116,7 @@ ${co?.document_footer ? `<div style="margin-top:8px">${esc(co.document_footer)}<
       body: JSON.stringify({
         from: sender.from,
         to: [recipient], ...(cc.length ? { cc } : {}), ...(sender.replyTo ? { reply_to: sender.replyTo } : {}), subject, html, text,
-        attachments: [{ filename, content: body.pdf_base64.replace(/^data:application\/pdf;base64,/, "") }],
+        attachments: [{ filename, content: (body.pdf_base64 ?? "").replace(/^data:application\/pdf;base64,/, "") }],
       }),
     });
     const out = await res.json().catch(() => ({})) as { id?: string; message?: string };

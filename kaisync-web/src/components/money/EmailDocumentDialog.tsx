@@ -7,9 +7,11 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { emailedLabel, loadDocumentEmails, sendDocumentEmail, SEND_MODE, type DocumentEmailKind, type DocumentEmailLog } from '@/lib/money/document-email'
+import { emailedLabel, loadDocumentEmails, previewDocumentEmail, sendDocumentEmail, SEND_MODE, type DocumentEmailKind, type DocumentEmailLog } from '@/lib/money/document-email'
 import { emptyRecipients, isEmail, RecipientsInput, saveNewContacts, type Recipients } from '@/components/email/RecipientsInput'
 import { SenderNote } from '@/components/email/SenderNote'
+import { EmailComposer } from '@/components/email/EmailComposer'
+import { draftEdits, type EmailDraft } from '@/lib/email-preview'
 
 export type EmailPdf = { base64: string; filename: string }
 
@@ -35,7 +37,7 @@ export function EmailDocumentDialog({
 }) {
   // The dialog is mounted when it opens, so the address starts from defaultTo.
   const [rcpt, setRcpt] = useState<Recipients>(() => emptyRecipients(defaultTo))
-  const [message, setMessage] = useState('')
+  const [draft, setDraft] = useState<EmailDraft | null>(null)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null)
   const [history, setHistory] = useState<DocumentEmailLog[]>([])
@@ -55,7 +57,7 @@ export function EmailDocumentDialog({
       if (getPdf && !pdf) throw new Error('Could not make the PDF.')
       const supabase = createClient()
       const r = await sendDocumentEmail(supabase, {
-        kind, docId, recipient: rcpt.to.trim(), cc: rcpt.cc, message, pdfBase64: pdf?.base64 ?? null, filename: pdf?.filename ?? null,
+        kind, docId, recipient: rcpt.to.trim(), cc: rcpt.cc, edits: draftEdits(draft), pdfBase64: pdf?.base64 ?? null, filename: pdf?.filename ?? null,
       })
       if (r.ok) {
         const saved = rcpt.saveNew && clientId
@@ -74,7 +76,7 @@ export function EmailDocumentDialog({
   if (!open) return null
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 whitespace-normal" role="dialog" aria-modal="true" aria-label={title}>
-      <div className="bg-surface-card rounded-2xl shadow-2xl w-full max-w-md p-6 flex flex-col gap-4 text-left max-h-[92vh] overflow-y-auto">
+      <div className="bg-surface-card rounded-2xl shadow-2xl w-full max-w-xl p-6 flex flex-col gap-4 text-left max-h-[92vh] overflow-y-auto">
         <div className="flex items-start justify-between gap-3">
           <div>
             <h3 className="text-[16px] font-semibold text-text-primary">{title}</h3>
@@ -89,10 +91,8 @@ export function EmailDocumentDialog({
         {!rcpt.to.trim() && !result && (
           <p className="text-[12px] text-amber-800 -mt-1">No email address on file. Type one in.</p>
         )}
-        <label className="flex flex-col gap-1.5 text-[12px] font-medium text-text-secondary">Add a note (optional)
-          <textarea rows={3} value={message} onChange={e => setMessage(e.target.value)}
-            className="rounded-xl border border-divider px-3 py-2 text-[14px] bg-background text-text-primary resize-none focus:outline-none focus:border-primary/60" />
-        </label>
+        <EmailComposer draft={draft} onDraft={setDraft} disabled={busy || !!result?.ok}
+          load={edits => previewDocumentEmail(createClient(), { kind, docId, recipient: rcpt.to.trim(), cc: rcpt.cc, edits })} />
         {attachmentLabel && (
           <p className="text-[12px] text-text-secondary flex items-center gap-1.5 -mt-1">
             <span className="material-icons text-[16px]">attach_file</span>{attachmentLabel}

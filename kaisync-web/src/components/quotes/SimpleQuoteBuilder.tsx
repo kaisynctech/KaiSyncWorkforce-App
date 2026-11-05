@@ -10,7 +10,9 @@ import { createProject } from '@/lib/projects'
 import { createJob } from '@/lib/jobs'
 import { createSupplyRfqFromQuote } from '@/lib/supply-rfq'
 import { downloadQuotePdf, openQuoteMailto, quotePdfBase64 } from '@/lib/quote-pdf'
-import { sendQuoteEmailViaResend } from '@/lib/send-quote-email'
+import { previewQuoteEmail, sendQuoteEmailViaResend } from '@/lib/send-quote-email'
+import { EmailComposer } from '@/components/email/EmailComposer'
+import { draftEdits, type EmailDraft } from '@/lib/email-preview'
 import { emptyRecipients, isEmail, RecipientsInput, saveNewContacts, type Recipients } from '@/components/email/RecipientsInput'
 import { SenderNote } from '@/components/email/SenderNote'
 import { companyLetterhead, type Letterhead } from '@/lib/letterhead'
@@ -153,6 +155,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   const [showWhatsNext,   setShowWhatsNext]   = useState(false)
   const [sentNote,        setSentNote]        = useState<string | null>(null)
   const [sendRcpt,        setSendRcpt]        = useState<Recipients>(emptyRecipients())
+  const [sendDraft,       setSendDraft]       = useState<EmailDraft | null>(null)
   const [automationDealId, setAutomationDealId] = useState<string | null>(null)
   const [automationRfqId,  setAutomationRfqId]  = useState<string | null>(null)
   const [automationNote,   setAutomationNote]   = useState<string | null>(null)
@@ -711,8 +714,9 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
       pdfBase64: quotePdfBase64(pdf),
       recipientEmail: to,
       cc: sendRcpt.cc,
+      bodyText: draftEdits(sendDraft).body_text,
       filename: `Quote_${(pdf.quote_number || 'draft').replace(/[^\w.-]+/g, '_')}.pdf`,
-      subject: `Quote ${pdf.quote_number ?? ''} – ${pdf.title || 'Quotation'}`.trim(),
+      subject: draftEdits(sendDraft).subject ?? `Quote ${pdf.quote_number ?? ''} – ${pdf.title || 'Quotation'}`.trim(),
     })
 
     if (resend.ok) {
@@ -1093,10 +1097,13 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
               <>
                 <button
                   type="button"
-                  onClick={() => {
+                  onClick={async () => {
                     const email = (chosenClient?.id === clientId ? chosenClient.email : clients.find(c => c.id === clientId)?.email) ?? ''
                     setSendRcpt(emptyRecipients(email))
+                    setSendDraft(null)
                     setActionError(null)
+                    // The preview reads the saved quote, so save the latest changes first.
+                    if (!(await doSave())) return
                     setShowSendModal(true)
                   }}
                   disabled={saveState === 'saving'}
@@ -1436,7 +1443,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
       {/* ── Send quote ── */}
       {showSendModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="relative bg-surface rounded-xl shadow-2xl w-full max-w-md mx-4 p-6 max-h-[92vh] overflow-y-auto">
+          <div className="relative bg-surface rounded-xl shadow-2xl w-full max-w-xl mx-4 p-6 max-h-[92vh] overflow-y-auto">
             <h3 className="text-[15px] font-semibold text-text-primary mb-1">Send quote</h3>
             <p className="text-[13px] text-text-secondary mb-3">
               {clientName || 'The client'} gets the quote PDF and a link to accept it online.
@@ -1448,6 +1455,10 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
                 <RecipientsInput value={sendRcpt} onChange={setSendRcpt} companyId={companyId} clientId={clientId}
                   clientEmail={(chosenClient?.id === clientId ? chosenClient.email : clients.find(c => c.id === clientId)?.email) ?? null}
                   disabled={sendBusy} />
+              )}
+              {quoteId && (
+                <EmailComposer draft={sendDraft} onDraft={setSendDraft} disabled={sendBusy}
+                  load={edits => previewQuoteEmail(supabase, { quoteId, recipientEmail: sendRcpt.to.trim(), cc: sendRcpt.cc, edits })} />
               )}
               {actionError && <p className="text-[12px] text-error">{actionError}</p>}
             </div>

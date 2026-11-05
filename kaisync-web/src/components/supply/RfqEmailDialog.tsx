@@ -8,7 +8,9 @@
 
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { sendDocumentEmail } from '@/lib/money/document-email'
+import { previewDocumentEmail, sendDocumentEmail } from '@/lib/money/document-email'
+import { EmailComposer } from '@/components/email/EmailComposer'
+import { draftEdits, type EmailDraft } from '@/lib/email-preview'
 import { emptyRecipients, isEmail, RecipientsInput, type Recipients } from '@/components/email/RecipientsInput'
 import { SenderNote } from '@/components/email/SenderNote'
 
@@ -29,7 +31,7 @@ export function RfqEmailDialog({ companyId, rfqLabel, targets, onClose, onOpenMa
     on: Boolean(t.email) && (t.status === 'pending' || t.status === 'draft'),
   })))
   const [cc, setCc] = useState<Recipients>(emptyRecipients())
-  const [message, setMessage] = useState('')
+  const [draft, setDraft] = useState<EmailDraft | null>(null)
   const [busy, setBusy] = useState(false)
   const [sentAny, setSentAny] = useState(false)
 
@@ -42,7 +44,7 @@ export function RfqEmailDialog({ companyId, rfqLabel, targets, onClose, onOpenMa
     const supabase = createClient()
     for (const r of rows) {
       if (!r.on || r.result?.ok) continue
-      const res = await sendDocumentEmail(supabase, { kind: 'rfq', docId: r.id, recipient: r.to.trim(), cc: cc.cc, message })
+      const res = await sendDocumentEmail(supabase, { kind: 'rfq', docId: r.id, recipient: r.to.trim(), cc: cc.cc, edits: draftEdits(draft) })
       if (res.ok) setSentAny(true)
       setRows(rs => rs.map(x => x.id === r.id ? { ...x, result: res.ok ? { ok: true, text: 'Sent' } : { ok: false, text: res.message } } : x))
     }
@@ -51,7 +53,7 @@ export function RfqEmailDialog({ companyId, rfqLabel, targets, onClose, onOpenMa
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 whitespace-normal" role="dialog" aria-modal="true" aria-label="Email RFQ to suppliers">
-      <div className="bg-surface-card rounded-2xl shadow-2xl w-full max-w-lg p-6 flex flex-col gap-4 text-left max-h-[92vh] overflow-y-auto">
+      <div className="bg-surface-card rounded-2xl shadow-2xl w-full max-w-xl p-6 flex flex-col gap-4 text-left max-h-[92vh] overflow-y-auto">
         <div className="flex items-start justify-between gap-3">
           <div>
             <h3 className="text-[16px] font-semibold text-text-primary">Email {rfqLabel}</h3>
@@ -87,10 +89,14 @@ export function RfqEmailDialog({ companyId, rfqLabel, targets, onClose, onOpenMa
         </div>
 
         <RecipientsInput value={cc} onChange={setCc} companyId={companyId} ccOnly disabled={busy || done} />
-        <label className="flex flex-col gap-1.5 text-[12px] font-medium text-text-secondary">Add a note (optional)
-          <textarea rows={3} value={message} disabled={busy || done} onChange={e => setMessage(e.target.value)}
-            className="rounded-xl border border-divider px-3 py-2 text-[14px] bg-background text-text-primary resize-none focus:outline-none focus:border-primary/60" />
-        </label>
+        {rows[0] && (
+          <EmailComposer draft={draft} onDraft={setDraft} disabled={busy || done}
+            note={`This is ${(chosen[0] ?? rows[0]).supplierName}'s copy. Each supplier gets their own, greeted by name.`}
+            load={edits => {
+              const first = chosen[0] ?? rows[0]
+              return previewDocumentEmail(createClient(), { kind: 'rfq', docId: first.id, recipient: first.to.trim(), cc: cc.cc, edits })
+            }} />
+        )}
 
         <div className="flex flex-wrap items-center justify-between gap-2">
           <button type="button" onClick={onOpenMailApp} disabled={busy} className="text-[12px] text-text-secondary underline hover:text-text-primary disabled:opacity-50">

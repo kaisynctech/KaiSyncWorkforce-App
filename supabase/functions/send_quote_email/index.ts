@@ -5,10 +5,13 @@
 // Env: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY,
 //      RESEND_API_KEY, NOTIFY_FROM_EMAIL (optional)
 // Body { check: true } → { configured, from } without sending.
+// Body { preview: true } → the email (subject, editable message text, HTML) without sending; an edited
+// { subject, body_text } replaces the standard wording (see _shared/compose.ts).
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { cleanCc, senderFor, signOffHtml, signOffText, validEmail } from "../_shared/sender.ts";
+import { editedSubject, editedText, htmlToText, textToParas } from "../_shared/compose.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -44,7 +47,7 @@ const siteUrl = (v: unknown): string | null => { const u = String(v ?? "").trim(
 const newToken = () => btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32)))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
 /** Branded quote email: company logo and name on top, contact details and footer note below. */
-function quoteEmailHtml(c: Company, logoUrl: string | null, quoteNumber: string | null, title: string | null, onlineUrl: string | null, signOff: string): string {
+function quoteEmailHtml(c: Company, logoUrl: string | null, greeting: string, paras: string[], onlineUrl: string | null, signOff: string): string {
   const name = esc(c.name || "Our company");
   const ids = [
     c.registration_number ? `Reg. no. ${esc(c.registration_number)}` : "",
@@ -63,11 +66,10 @@ function quoteEmailHtml(c: Company, logoUrl: string | null, quoteNumber: string 
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#ffffff;border-radius:10px;overflow:hidden">
 <tr><td style="padding:24px 28px;border-bottom:3px solid #1E3A5F">${head}</td></tr>
 <tr><td style="padding:24px 28px;color:#0F172A;font-size:14px;line-height:1.6">
-<p style="margin:0 0 12px">Hello,</p>
-<p style="margin:0 0 12px">Please find attached our quotation${quoteNumber ? ` <strong>${esc(quoteNumber)}</strong>` : ""}${title ? ` for <strong>${esc(title)}</strong>` : ""}.</p>
+<p style="margin:0 0 12px">${esc(greeting)}</p>
+${paras.map((p) => `<p style="margin:0 0 12px">${p}</p>`).join("\n")}
 ${onlineUrl ? `<p style="margin:18px 0 6px"><a href="${esc(onlineUrl)}" style="display:inline-block;background:#1E3A5F;color:#ffffff;text-decoration:none;font-weight:bold;padding:12px 22px;border-radius:8px">View &amp; accept online</a></p>
 <p style="margin:0 0 14px;font-size:12px;color:#64748B">Open the quote, then accept or decline it with one click.</p>` : ""}
-<p style="margin:0 0 12px">If you have any questions, simply reply to this email.</p>
 <p style="margin:16px 0 0">${signOff}</p>
 </td></tr>
 <tr><td style="padding:16px 28px;background:#F8FAFC;color:#64748B;font-size:12px;line-height:1.6">
@@ -97,6 +99,8 @@ type Body = {
   pdf_base64?: string;
   filename?: string;
   site_url?: string;
+  preview?: boolean;
+  body_text?: string;
 };
 
 Deno.serve(async (req: Request) => {
@@ -148,7 +152,8 @@ Deno.serve(async (req: Request) => {
 
     const quoteId = body.quote_id;
     if (!quoteId) return json({ error: "quote_id required" }, 400);
-    if (!body.pdf_base64?.trim()) return json({ error: "pdf_base64 required" }, 400);
+    const preview = body.preview === true;
+    if (!body.pdf_base64?.trim() && !preview) return json({ error: "pdf_base64 required" }, 400);
 
     const { data: quote } = await admin
       .from("commercial_quotes")
@@ -159,24 +164,20 @@ Deno.serve(async (req: Request) => {
 
     if (!quote) return json({ error: "Quote not found" }, 404);
 
+    const { data: client } = quote.client_id
+      ? await admin.from("clients").select("email, contact_person").eq("id", quote.client_id).maybeSingle()
+      : { data: null };
     let recipient = (body.recipient_email ?? "").trim();
-    if (!recipient && quote.client_id) {
-      const { data: client } = await admin
-        .from("clients")
-        .select("email")
-        .eq("id", quote.client_id)
-        .maybeSingle();
-      recipient = (client?.email ?? "").trim();
-    }
-    if (!validEmail(recipient)) return json({ error: "recipient_email required", message: "Enter a valid email address to send it to." }, 400);
+    if (!recipient) recipient = (client?.email ?? "").trim();
+    if (!validEmail(recipient) && !preview) return json({ error: "recipient_email required", message: "Enter a valid email address to send it to." }, 400);
     const cc = cleanCc(body.cc, recipient);
 
-    const subject = (body.subject ?? "").trim()
-      || `Quote ${quote.quote_number ?? ""} – ${quote.title || "Quotation"}`.trim();
+    const defaultSubject = `Quote ${quote.quote_number ?? ""} – ${quote.title || "Quotation"}`.trim();
+    const subject = editedSubject(body.subject) ?? defaultSubject;
     const filename = (body.filename ?? `Quote_${quote.quote_number ?? "draft"}.pdf`)
       .replace(/[^\w.\-]+/g, "_");
 
-    const pdfBase64 = body.pdf_base64.replace(/^data:application\/pdf;base64,/, "");
+    const pdfBase64 = (body.pdf_base64 ?? "").replace(/^data:application\/pdf;base64,/, "");
 
     const { data: company } = await admin
       .from("companies")
@@ -195,7 +196,10 @@ Deno.serve(async (req: Request) => {
     // The client's private link: view the quote, accept or decline it online.
     let onlineUrl: string | null = null;
     const site = siteUrl(body.site_url);
-    if (site) {
+    if (site && preview) {
+      // A preview shows where the button goes without creating the client's private link yet.
+      onlineUrl = `${site}/d/preview`;
+    } else if (site) {
       const { data: existing } = await admin.from("document_links").select("token")
         .eq("doc_id", quote.id).eq("kind", "quote").gt("expires_at", new Date(Date.now() + 30 * 86400000).toISOString())
         .order("created_at", { ascending: false }).limit(1).maybeSingle();
@@ -208,16 +212,27 @@ Deno.serve(async (req: Request) => {
       if (token) onlineUrl = `${site}/d/${token}`;
     }
 
+    const greeting = client?.contact_person ? `Hello ${client.contact_person},` : "Hello,";
+    const standard = [
+      `Please find attached our quotation${quote.quote_number ? ` <strong>${esc(quote.quote_number)}</strong>` : ""}${quote.title ? ` for <strong>${esc(quote.title)}</strong>` : ""}.`,
+      "If you have any questions, simply reply to this email.",
+    ];
+    const edited = editedText(body.body_text);
+    const paras = edited ? textToParas(edited, esc) : standard;
     const textBody = [
-      "Hello,",
-      "",
-      `Please find attached our quotation${quote.quote_number ? ` (${quote.quote_number})` : ""}.`,
-      ...(onlineUrl ? ["", `View, accept or decline it online: ${onlineUrl}`] : []),
-      "",
+      greeting,
+      ...paras.map(htmlToText),
+      ...(onlineUrl ? [`View, accept or decline it online: ${onlineUrl}`] : []),
       signOffText(sender, companyName),
       [co.contact_phone, co.contact_email, co.website].filter(Boolean).join(" · "),
-    ].filter((l, i, a) => l !== "" || i < a.length - 1).join("\n");
-    const htmlBody = quoteEmailHtml(co, logoUrl, quote.quote_number ?? null, quote.title ?? null, onlineUrl, signOffHtml(esc, sender, companyName));
+    ].filter(Boolean).join("\n\n");
+    const htmlBody = quoteEmailHtml(co, logoUrl, greeting, paras, onlineUrl, signOffHtml(esc, sender, companyName));
+    if (preview) {
+      return json({
+        ok: true, preview: true, from: sender.from, reply_to: sender.replyTo, to: recipient, cc,
+        subject, default_subject: defaultSubject, body_text: standard.map(htmlToText).join("\n\n"), html: htmlBody,
+      });
+    }
 
 
     const resendRes = await fetch("https://api.resend.com/emails", {

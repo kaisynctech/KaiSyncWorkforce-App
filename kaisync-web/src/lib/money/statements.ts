@@ -3,6 +3,7 @@
  * contractor (payouts). Same PDF as the client portal's statement, on the company letterhead.
  */
 
+import { invokePreview, type EmailPreview } from '@/lib/email-preview'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { companyLetterhead } from '@/lib/letterhead'
 import { buildClientStatement, parseStatementEntries, type ClientStatement } from '@/lib/client-portal/statement'
@@ -84,14 +85,17 @@ export type ReminderResult = { ok: true; recipient: string } | { ok: false; mess
 /** Email the client their statement as a payment reminder (send_statement_email). */
 export async function sendStatementReminder(
   supabase: SupabaseClient,
-  opts: { clientId: string; clientName: string; companyId: string; recipient: string; cc?: string[]; message?: string },
+  opts: {
+    clientId: string; clientName: string; companyId: string; recipient: string; cc?: string[]; message?: string
+    edits?: { subject?: string; body_text?: string }
+  },
 ): Promise<ReminderResult> {
   const { doc, fileName, statement } = await statementPdf(supabase, { kind: 'client', id: opts.clientId, name: opts.clientName, companyId: opts.companyId })
   const pdf = doc.output('datauristring').split(',')[1] ?? ''
   const { data, error } = await supabase.functions.invoke('send_statement_email', {
     body: {
       client_id: opts.clientId, recipient_email: opts.recipient, cc: opts.cc ?? [], pdf_base64: pdf, filename: fileName,
-      balance: statement.balance, overdue: statement.overdue, message: opts.message ?? '',
+      balance: statement.balance, overdue: statement.overdue, message: opts.message ?? '', ...(opts.edits ?? {}),
     },
   })
   const body = data as { ok?: boolean; message?: string; recipient_email?: string } | null
@@ -102,4 +106,20 @@ export async function sendStatementReminder(
     if (ctx?.message) message = ctx.message
   } catch { /* keep message */ }
   return { ok: false, message }
+}
+
+/** The statement email as it will arrive, without sending it (the balance comes from the statement). */
+export async function previewStatementReminder(
+  supabase: SupabaseClient,
+  opts: { clientId: string; recipient: string; cc: string[]; edits?: { subject?: string; body_text?: string } },
+): Promise<EmailPreview | { error: string }> {
+  try {
+    const st = await loadStatement(supabase, 'client', opts.clientId)
+    return invokePreview(supabase, 'send_statement_email', {
+      client_id: opts.clientId, recipient_email: opts.recipient, cc: opts.cc,
+      balance: st.balance, overdue: st.overdue, ...(opts.edits ?? {}),
+    })
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : 'Could not load the statement.' }
+  }
 }

@@ -4,7 +4,9 @@
 
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { sendStatementReminder, statementPdf, type StatementKind } from '@/lib/money/statements'
+import { previewStatementReminder, sendStatementReminder, statementPdf, type StatementKind } from '@/lib/money/statements'
+import { EmailComposer } from '@/components/email/EmailComposer'
+import { draftEdits, type EmailDraft } from '@/lib/email-preview'
 import { emptyRecipients, isEmail, RecipientsInput, saveNewContacts, type Recipients } from '@/components/email/RecipientsInput'
 import { SenderNote } from '@/components/email/SenderNote'
 
@@ -36,13 +38,13 @@ export function RemindButton({ clientId, clientName, companyId, lastReminded, on
   // null until the client's email has loaded, so To/CC fill in from the right starting point.
   const [rcpt, setRcpt] = useState<Recipients | null>(null)
   const [clientEmail, setClientEmail] = useState('')
-  const [message, setMessage] = useState('')
+  const [draft, setDraft] = useState<EmailDraft | null>(null)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null)
   const [autoOff, setAutoOff] = useState(false)
 
   async function openDialog() {
-    setResult(null); setMessage(''); setRcpt(null); setOpen(true)
+    setResult(null); setDraft(null); setRcpt(null); setOpen(true)
     const { data } = await createClient().from('clients').select('email, auto_reminders_off').eq('id', clientId).maybeSingle()
     const e = ((data as { email?: string | null } | null)?.email ?? '').trim()
     setClientEmail(e)
@@ -55,7 +57,7 @@ export function RemindButton({ clientId, clientName, companyId, lastReminded, on
     setBusy(true); setResult(null)
     try {
       const supabase = createClient()
-      const r = await sendStatementReminder(supabase, { clientId, clientName, companyId, recipient: rcpt.to.trim(), cc: rcpt.cc, message })
+      const r = await sendStatementReminder(supabase, { clientId, clientName, companyId, recipient: rcpt.to.trim(), cc: rcpt.cc, edits: draftEdits(draft) })
       if (r.ok) {
         const saved = rcpt.saveNew ? await saveNewContacts(supabase, { companyId, clientId, clientEmail, emails: [rcpt.to, ...rcpt.cc] }) : 0
         setResult({ ok: true, text: `Sent to ${r.recipient}${rcpt.cc.length ? ` and ${rcpt.cc.length} in CC` : ''}.${saved ? ` ${saved} new contact${saved === 1 ? '' : 's'} saved.` : ''}` })
@@ -76,7 +78,7 @@ export function RemindButton({ clientId, clientName, companyId, lastReminded, on
       </button>
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 whitespace-normal" role="dialog" aria-modal="true" aria-label="Send statement reminder">
-          <div className="bg-surface-card rounded-2xl shadow-2xl w-full max-w-md p-6 flex flex-col gap-4 text-left max-h-[92vh] overflow-y-auto">
+          <div className="bg-surface-card rounded-2xl shadow-2xl w-full max-w-xl p-6 flex flex-col gap-4 text-left max-h-[92vh] overflow-y-auto">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h3 className="text-[16px] font-semibold text-text-primary">Send a reminder</h3>
@@ -91,10 +93,10 @@ export function RemindButton({ clientId, clientName, companyId, lastReminded, on
             {rcpt
               ? <RecipientsInput value={rcpt} onChange={setRcpt} companyId={companyId} clientId={clientId} clientEmail={clientEmail} disabled={busy || !!result?.ok} />
               : <p className="text-[12.5px] text-text-secondary">Loading…</p>}
-            <label className="flex flex-col gap-1.5 text-[12px] font-medium text-text-secondary">Add a note (optional)
-              <textarea rows={3} value={message} onChange={e => setMessage(e.target.value)} placeholder="e.g. Please use your account number as the payment reference."
-                className="rounded-xl border border-divider px-3 py-2 text-[14px] bg-background text-text-primary resize-none focus:outline-none focus:border-primary/60" />
-            </label>
+            {rcpt && (
+              <EmailComposer draft={draft} onDraft={setDraft} disabled={busy || !!result?.ok}
+                load={edits => previewStatementReminder(createClient(), { clientId, recipient: rcpt.to.trim(), cc: rcpt.cc, edits })} />
+            )}
             <label className="flex items-center gap-2 text-[12.5px] text-text-secondary">
               <input type="checkbox" checked={autoOff} onChange={async e => {
                 const v = e.target.checked

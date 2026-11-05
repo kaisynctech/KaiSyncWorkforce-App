@@ -1,6 +1,7 @@
 /** Email a document (send_document_email) and read its email history (document_emails). */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { invokePreview, type EmailPreview } from '@/lib/email-preview'
 
 export type DocumentEmailKind = 'invoice' | 'credit_note' | 'receipt' | 'purchase_order' | 'rfq' | 'remittance_supplier' | 'remittance_contractor'
 
@@ -16,11 +17,16 @@ export type DocumentEmailLog = { id: string; recipient_email: string; cc: string
 
 export async function sendDocumentEmail(
   supabase: SupabaseClient,
-  opts: { kind: DocumentEmailKind; docId: string; recipient: string; cc?: string[]; message?: string; pdfBase64?: string | null; filename?: string | null },
+  opts: {
+    kind: DocumentEmailKind; docId: string; recipient: string; cc?: string[]; message?: string; pdfBase64?: string | null; filename?: string | null
+    /** Only what the user edited (see draftEdits). */
+    edits?: { subject?: string; body_text?: string }
+  },
 ): Promise<DocumentEmailResult> {
   const { data, error } = await supabase.functions.invoke('send_document_email', {
     body: {
       kind: opts.kind, doc_id: opts.docId, recipient_email: opts.recipient, cc: opts.cc ?? [], message: opts.message ?? '',
+      ...(opts.edits ?? {}),
       pdf_base64: opts.pdfBase64 ?? '', filename: opts.filename ?? '',
       // Online links in the email open on this same site (test or live).
       site_url: typeof window !== 'undefined' ? window.location.origin : '',
@@ -34,6 +40,16 @@ export async function sendDocumentEmail(
     if (ctx?.message) message = ctx.message
   } catch { /* keep message */ }
   return { ok: false, message }
+}
+
+/** The email as it will arrive, without sending it. */
+export function previewDocumentEmail(
+  supabase: SupabaseClient,
+  opts: { kind: DocumentEmailKind; docId: string; recipient: string; cc: string[]; edits?: { subject?: string; body_text?: string } },
+): Promise<EmailPreview | { error: string }> {
+  return invokePreview(supabase, 'send_document_email', {
+    kind: opts.kind, doc_id: opts.docId, recipient_email: opts.recipient, cc: opts.cc, ...(opts.edits ?? {}),
+  })
 }
 
 export async function loadDocumentEmails(supabase: SupabaseClient, docId: string, kinds?: DocumentEmailKind[]): Promise<DocumentEmailLog[]> {

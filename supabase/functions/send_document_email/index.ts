@@ -4,6 +4,8 @@
 // or remittance advice (supplier bill / contractor payout paid). Invoices, credit notes, purchase orders and
 // RFQs come from the person who sends them (replies go to them); receipts and remittance advice come from
 // the company (replies go to the company email) — see _shared/sender.ts. Optional CC (up to 10).
+// Body { preview: true } returns the email (subject, editable message text, HTML) without sending; an edited
+// { subject, body_text } replaces the standard wording (see _shared/compose.ts).
 // The PDF (when there is one) is built in the browser and attached. Amounts in the email are read from the database, never trusted
 // from the browser. Office staff only (any active role except employee). Logged in document_emails.
 // Env: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, RESEND_API_KEY, NOTIFY_FROM_EMAIL (optional)
@@ -11,6 +13,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { cleanCc, senderFor, signOffHtml, signOffText, type SendMode } from "../_shared/sender.ts";
+import { editedSubject, editedText, htmlToText, textToParas } from "../_shared/compose.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -62,6 +65,7 @@ type Built = {
   companyId: string; to: string; greetName: string | null; subject: (company: string) => string;
   paras: string[]; // already HTML-escaped
   afterSent?: () => Promise<void>;
+  fixedAfter?: string[]; // HTML shown after the message and never edited (e.g. the RFQ items table)
 } | { error: string; status: number };
 
 async function build(admin: SupabaseClient, kind: Kind, id: string): Promise<Built> {
@@ -153,9 +157,8 @@ async function build(admin: SupabaseClient, kind: Kind, id: string): Promise<Bui
 <tr style="background:#F1F5F9"><td style="${cell};font-weight:bold">Item</td><td style="${cell};font-weight:bold;text-align:right">Qty</td><td style="${cell};font-weight:bold">Unit</td></tr>
 ${items.map((l) => `<tr><td style="${cell}">${esc(l.description)}${l.specifications ? `<br><span style="color:#64748B;font-size:12px">${esc(l.specifications)}</span>` : ""}</td><td style="${cell};text-align:right">${esc(Number(l.quantity ?? 0).toLocaleString("en-ZA"))}</td><td style="${cell}">${esc(l.unit ?? "")}</td></tr>`).join("")}
 </table>`;
-    const paras = [`Please send us your best price for the items below${num ? `, quoting our reference ${b(num)}` : ""}.`];
+    const paras = [`Please send us your best price for the items listed below${num ? `, quoting our reference ${b(num)}` : ""}.`];
     if (rfq.title) paras.push(`${b(String(rfq.title))}${rfq.description ? `<br>${esc(rfq.description).replace(/\n/g, "<br>")}` : ""}`);
-    paras.push(table);
     if (rfq.required_by_date) paras.push(`We need it by ${b(day(rfq.required_by_date))}.`);
     if (rfq.delivery_address) paras.push(`Delivery to: ${esc(rfq.delivery_address).replace(/\n/g, "<br>")}`);
     if (rfq.response_deadline) paras.push(`Please reply with your quote by ${b(day(rfq.response_deadline))}, including delivery time and how long your price is valid.`);
@@ -164,6 +167,7 @@ ${items.map((l) => `<tr><td style="${cell}">${esc(l.description)}${l.specificati
       companyId: r.company_id, to: valid(s.email), greetName: s.contact_person || s.name || null,
       subject: (co) => `Request for quotation${num ? ` ${num}` : ""}${rfq.title ? ` — ${String(rfq.title).slice(0, 80)}` : ""} (${co})`,
       paras,
+      fixedAfter: [table],
       afterSent: async () => {
         const now = new Date().toISOString();
         await admin.from("rfq_recipients").update({ status: "sent", sent_at: now }).eq("id", r.id).eq("status", "pending");
@@ -219,13 +223,15 @@ Deno.serve(async (req: Request) => {
 
     const body = (await req.json().catch(() => ({}))) as {
       kind?: string; doc_id?: string; recipient_email?: string; cc?: unknown; message?: string; pdf_base64?: string; filename?: string; site_url?: string;
+      preview?: boolean; subject?: string; body_text?: string;
     };
+    const preview = body.preview === true;
     const kind = String(body.kind ?? "") as Kind;
     if (!KINDS.includes(kind)) return json({ error: "kind required" }, 400);
     const docId = String(body.doc_id ?? "");
     if (!/^[0-9a-f-]{36}$/i.test(docId)) return json({ error: "doc_id required" }, 400);
     const pdf = String(body.pdf_base64 ?? "").replace(/^data:application\/pdf;base64,/, "").trim();
-    if (NEEDS_PDF.includes(kind) && !pdf) return json({ error: "pdf_base64 required" }, 400);
+    if (NEEDS_PDF.includes(kind) && !pdf && !preview) return json({ error: "pdf_base64 required" }, 400);
 
     const admin = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
     const built = await build(admin, kind, docId);
@@ -236,7 +242,7 @@ Deno.serve(async (req: Request) => {
     if (!role || role === "employee") return json({ error: "not_allowed", message: "You don't have permission to email this." }, 403);
 
     const recipient = valid(body.recipient_email) || built.to;
-    if (!recipient) return json({ error: "no_email", message: "Enter an email address to send it to." }, 400);
+    if (!recipient && !preview) return json({ error: "no_email", message: "Enter an email address to send it to." }, 400);
 
     const cc = cleanCc(body.cc, recipient);
 
@@ -254,13 +260,21 @@ Deno.serve(async (req: Request) => {
     const note = String(body.message ?? "").trim().slice(0, 1500);
     // Invoices carry a private link: view online, download the PDF, see the banking details, send proof of payment.
     const site = siteUrl(body.site_url);
-    const onlineUrl = kind === "invoice" && site ? await documentLink(admin, built.companyId, "invoice", docId, site) : null;
-    const paras = [
-      built.greetName ? `Hello ${esc(built.greetName)},` : "Hello,",
+    // A preview shows where the button goes without creating the client's private link yet.
+    const onlineUrl = kind === "invoice" && site
+      ? (preview ? `${site}/d/preview` : await documentLink(admin, built.companyId, "invoice", docId, site))
+      : null;
+    const standard = [
       ...built.paras,
-      ...(onlineUrl ? [`${button(onlineUrl, "View & pay online")}<br><span style="font-size:12px;color:#64748B">See the invoice, our banking details, and send us your proof of payment.</span>`] : []),
       ...(note ? [esc(note).replace(/\n/g, "<br>")] : []),
       "If you have any questions, simply reply to this email.",
+    ];
+    const edited = editedText(body.body_text);
+    const paras = [
+      built.greetName ? `Hello ${esc(built.greetName)},` : "Hello,",
+      ...(edited ? textToParas(edited, esc) : standard),
+      ...(built.fixedAfter ?? []),
+      ...(onlineUrl ? [`${button(onlineUrl, "View & pay online")}<br><span style="font-size:12px;color:#64748B">See the invoice, our banking details, and send us your proof of payment.</span>`] : []),
     ];
     const head = logoUrl
       ? `<img src="${esc(logoUrl)}" alt="${esc(companyName)}" style="max-height:56px;max-width:220px;display:block">`
@@ -279,8 +293,15 @@ ${co?.legal_name && co.legal_name !== companyName ? `<div>${esc(co.legal_name)}<
 ${co?.document_footer ? `<div style="margin-top:8px">${esc(co.document_footer)}</div>` : ""}
 </td></tr></table>
 </td></tr></table></body></html>`;
-    const text = paras.map((p) => p.replace(/<br>/g, "\n").replace(/<\/tr>/g, "\n").replace(/<\/td>/g, "  ").replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'")).join("\n\n") + (onlineUrl ? `\n\nView and pay online: ${onlineUrl}` : "") + `\n\n${signOffText(sender, companyName)}`;
-    const subject = built.subject(companyName);
+    const text = paras.map(htmlToText).join("\n\n") + (onlineUrl ? `\n\nView and pay online: ${onlineUrl}` : "") + `\n\n${signOffText(sender, companyName)}`;
+    const defaultSubject = built.subject(companyName);
+    const subject = editedSubject(body.subject) ?? defaultSubject;
+    if (preview) {
+      return json({
+        ok: true, preview: true, from: sender.from, reply_to: sender.replyTo, to: recipient, cc,
+        subject, default_subject: defaultSubject, body_text: standard.map(htmlToText).join("\n\n"), html,
+      });
+    }
     const filename = String(body.filename ?? "Document.pdf").replace(/[^\w.\-]+/g, "_");
 
     const res = await fetch("https://api.resend.com/emails", {
