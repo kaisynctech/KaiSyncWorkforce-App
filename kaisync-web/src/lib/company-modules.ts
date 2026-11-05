@@ -28,9 +28,11 @@ export const CompanyModuleKeys = {
 
 export type CompanyModuleKey = (typeof CompanyModuleKeys)[keyof typeof CompanyModuleKeys]
 
+/** New companies get every module except Farms and Property Management (switched on in Settings → Modules). */
 const DEFAULT_IF_MISSING: Record<string, boolean> = {
-  [CompanyModuleKeys.Paperless]: false,
   [CompanyModuleKeys.Farms]: false,
+  [CompanyModuleKeys.PropertyManagement]: false,
+  [CompanyModuleKeys.LegacyProperties]: false,
 }
 
 export type EnabledModules = Record<string, boolean> | null | undefined
@@ -53,11 +55,11 @@ export const COMPANY_MODULE_SPECS: ModuleSpec[] = [
   { key: CompanyModuleKeys.Scheduling, title: 'Scheduling', description: 'Recurring shift templates and assignments.', defaultIfMissing: true },
   { key: CompanyModuleKeys.Payroll, title: 'Payments', description: 'Salary, hourly rates, payment approvals.', defaultIfMissing: true },
   { key: CompanyModuleKeys.Incidents, title: 'Incidents', description: 'Incident reporting, tracking, and resolution.', defaultIfMissing: true },
-  { key: CompanyModuleKeys.Paperless, title: 'Paperless Forms', description: 'Custom forms and digital signatures.', defaultIfMissing: false },
+  { key: CompanyModuleKeys.Paperless, title: 'Paperless Forms', description: 'Custom forms and digital signatures.', defaultIfMissing: true },
   { key: CompanyModuleKeys.Farms, title: 'Farms', description: 'Farm register, livestock, plantings, production, diary, health, and feed logs.', defaultIfMissing: false },
   { key: CompanyModuleKeys.Employees, title: 'Employees', description: 'Employee records, assignments, and access controls.', defaultIfMissing: true },
   { key: CompanyModuleKeys.Contractors, title: 'Contractors', description: 'External service providers with their own scorecard.', defaultIfMissing: true },
-  { key: CompanyModuleKeys.PropertyManagement, title: 'Property Management', description: 'Portfolio of properties, units, residents, compliance — toward leases and tenant portal.', defaultIfMissing: true },
+  { key: CompanyModuleKeys.PropertyManagement, title: 'Property Management', description: 'Portfolio of properties, units, residents, compliance — toward leases and tenant portal.', defaultIfMissing: false },
   { key: CompanyModuleKeys.AssetCompliance, title: 'Asset Compliance', description: 'Inspection schedules and certificate expiry tracking.', defaultIfMissing: true },
   { key: CompanyModuleKeys.MyPa, title: 'My PA', description: 'Personal assistant tasks, reminders, and follow-ups.', defaultIfMissing: true },
   { key: CompanyModuleKeys.Leave, title: 'Leave', description: 'Employee leave applications, approvals, and payroll-ready export.', defaultIfMissing: true },
@@ -130,7 +132,7 @@ export const MAIN_MODULE_SPECS: MainModuleSpec[] = [
     title: 'Property Management',
     leadKey: CompanyModuleKeys.PropertyManagement,
     keys: [CompanyModuleKeys.PropertyManagement],
-    defaultIfMissing: true,
+    defaultIfMissing: false,
   },
   {
     id: 'farms',
@@ -172,7 +174,7 @@ export const MAIN_MODULE_SPECS: MainModuleSpec[] = [
     title: 'Paperless Forms',
     leadKey: CompanyModuleKeys.Paperless,
     keys: [CompanyModuleKeys.Paperless],
-    defaultIfMissing: false,
+    defaultIfMissing: true,
   },
 ]
 
