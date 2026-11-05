@@ -61,7 +61,7 @@ export function RemindButton({ clientId, clientName, companyId, lastReminded, on
         Remind
       </button>
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="Send statement reminder">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 whitespace-normal" role="dialog" aria-modal="true" aria-label="Send statement reminder">
           <div className="bg-surface-card rounded-2xl shadow-2xl w-full max-w-md p-6 flex flex-col gap-4 text-left">
             <div className="flex items-start justify-between gap-3">
               <div>
