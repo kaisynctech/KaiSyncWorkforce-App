@@ -13,6 +13,7 @@ import { emailedLabel, loadDocumentEmails, type DocumentEmailLog } from '@/lib/m
 
 type CreditNoteDetail = {
   id: string
+  client_id: string | null
   credit_note_number: string | null
   status: string
   reason_code: string | null
@@ -76,7 +77,7 @@ function CreditNoteDetailInner() {
     const [{ data }, { data: lineRows }] = await Promise.all([
       supabase
         .from('credit_notes')
-        .select('id, credit_note_number, status, reason_code, reason_notes, total_amount, subtotal, vat_amount, issue_date, invoice_id, clients(name, email, legal_name, address, billing_address), finance_invoices(invoice_number)')
+        .select('id, credit_note_number, status, reason_code, reason_notes, total_amount, subtotal, vat_amount, issue_date, invoice_id, client_id, clients(name, email, legal_name, address, billing_address), finance_invoices(invoice_number)')
         .eq('id', id)
         .eq('company_id', member.companyId)
         .maybeSingle(),
@@ -261,6 +262,7 @@ function CreditNoteDetailInner() {
           title={`Email credit note${cn.credit_note_number ? ` ${cn.credit_note_number}` : ''}`}
           description={`${cn.clients?.name ?? 'The client'} gets the credit note with the PDF attached.`}
           defaultTo={cn.clients?.email}
+          clientId={cn.client_id}
           getPdf={async () => {
             const built = await buildPdf()
             return built ? { base64: pdfBase64(built.doc), filename: built.filename } : null

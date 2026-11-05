@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { openRfqMailto } from '@/lib/rfq-mailto'
+import { RfqEmailDialog } from '@/components/supply/RfqEmailDialog'
 import type { Rfq, RfqLine, RfqRecipient } from '@/types/commercial'
 
 interface Supplier {
@@ -58,6 +59,7 @@ export default function RfqBuilder({ rfqId }: RfqBuilderProps) {
 
   // Recipients
   const [recipients, setRecipients] = useState<RfqRecipient[]>([])
+  const [emailOpen, setEmailOpen] = useState(false)
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [supplierSearch, setSupplierSearch] = useState('')
   const [showSupplierPicker, setShowSupplierPicker] = useState(false)
@@ -261,7 +263,15 @@ export default function RfqBuilder({ rfqId }: RfqBuilderProps) {
     }
   }
 
+  /** Save the latest items, then choose suppliers and email them (each gets their own email). */
   async function sendRfq() {
+    await save()
+    if (savedRfqId.current) setEmailOpen(true)
+  }
+
+  /** The old way: mark sent and open the user's own mail app with every supplier in BCC. */
+  async function openMailApp() {
+    setEmailOpen(false)
     if (!savedRfqId.current) {
       await save('sent')
     } else {
@@ -572,6 +582,22 @@ export default function RfqBuilder({ rfqId }: RfqBuilderProps) {
             </div>
           </div>
         </div>
+      )}
+
+      {emailOpen && companyId && (
+        <RfqEmailDialog
+          companyId={companyId}
+          rfqLabel={rfq?.rfq_number ?? 'RFQ'}
+          targets={recipients.map(r => {
+            const sup = r.supplier as { name?: string | null; email?: string | null } | null
+            return { id: r.id, supplierName: sup?.name ?? 'Supplier', email: sup?.email ?? null, status: r.status }
+          })}
+          onOpenMailApp={() => void openMailApp()}
+          onClose={sentAny => {
+            setEmailOpen(false)
+            if (sentAny) { showToast('RFQ emailed to suppliers.'); void load() }
+          }}
+        />
       )}
     </div>
   )

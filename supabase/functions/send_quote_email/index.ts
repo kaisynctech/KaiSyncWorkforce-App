@@ -1,12 +1,14 @@
 // supabase/functions/send_quote_email/index.ts
 //
-// Sends a Money quote PDF to the client via Resend and logs commercial_quote_sends.
+// Sends a Money quote PDF to the client via Resend and logs commercial_quote_sends. It comes from the
+// person who sends it, with replies going to them (see _shared/sender.ts); optional CC (up to 10).
 // Env: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY,
 //      RESEND_API_KEY, NOTIFY_FROM_EMAIL (optional)
 // Body { check: true } → { configured, from } without sending.
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { cleanCc, senderFor, signOffHtml, signOffText, validEmail } from "../_shared/sender.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -42,7 +44,7 @@ const siteUrl = (v: unknown): string | null => { const u = String(v ?? "").trim(
 const newToken = () => btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32)))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
 /** Branded quote email: company logo and name on top, contact details and footer note below. */
-function quoteEmailHtml(c: Company, logoUrl: string | null, quoteNumber: string | null, title: string | null, onlineUrl: string | null = null): string {
+function quoteEmailHtml(c: Company, logoUrl: string | null, quoteNumber: string | null, title: string | null, onlineUrl: string | null, signOff: string): string {
   const name = esc(c.name || "Our company");
   const ids = [
     c.registration_number ? `Reg. no. ${esc(c.registration_number)}` : "",
@@ -66,7 +68,7 @@ function quoteEmailHtml(c: Company, logoUrl: string | null, quoteNumber: string 
 ${onlineUrl ? `<p style="margin:18px 0 6px"><a href="${esc(onlineUrl)}" style="display:inline-block;background:#1E3A5F;color:#ffffff;text-decoration:none;font-weight:bold;padding:12px 22px;border-radius:8px">View &amp; accept online</a></p>
 <p style="margin:0 0 14px;font-size:12px;color:#64748B">Open the quote, then accept or decline it with one click.</p>` : ""}
 <p style="margin:0 0 12px">If you have any questions, simply reply to this email.</p>
-<p style="margin:16px 0 0">Kind regards,<br><strong>${name}</strong></p>
+<p style="margin:16px 0 0">${signOff}</p>
 </td></tr>
 <tr><td style="padding:16px 28px;background:#F8FAFC;color:#64748B;font-size:12px;line-height:1.6">
 ${c.legal_name && c.legal_name !== c.name ? `<div>${esc(c.legal_name)}</div>` : ""}
@@ -90,6 +92,7 @@ type Body = {
   check?: boolean;
   quote_id?: string;
   recipient_email?: string;
+  cc?: unknown;
   subject?: string;
   pdf_base64?: string;
   filename?: string;
@@ -165,7 +168,8 @@ Deno.serve(async (req: Request) => {
         .maybeSingle();
       recipient = (client?.email ?? "").trim();
     }
-    if (!recipient) return json({ error: "recipient_email required" }, 400);
+    if (!validEmail(recipient)) return json({ error: "recipient_email required", message: "Enter a valid email address to send it to." }, 400);
+    const cc = cleanCc(body.cc, recipient);
 
     const subject = (body.subject ?? "").trim()
       || `Quote ${quote.quote_number ?? ""} – ${quote.title || "Quotation"}`.trim();
@@ -184,6 +188,9 @@ Deno.serve(async (req: Request) => {
       ? admin.storage.from("company-branding").getPublicUrl(co.brand_logo_path).data.publicUrl
       : null;
     const companyName = (co.name ?? "").trim() || "KaiSync";
+    const sender = await senderFor(admin, { companyId: emp.company_id, companyName, companyEmail: co.contact_email, user,
+      // The previous app (no cc field) keeps the company sender until the new release is live.
+      mode: Array.isArray(body.cc) ? "personal" : "company" });
 
     // The client's private link: view the quote, accept or decline it online.
     let onlineUrl: string | null = null;
@@ -207,21 +214,11 @@ Deno.serve(async (req: Request) => {
       `Please find attached our quotation${quote.quote_number ? ` (${quote.quote_number})` : ""}.`,
       ...(onlineUrl ? ["", `View, accept or decline it online: ${onlineUrl}`] : []),
       "",
-      "Kind regards,",
-      companyName,
+      signOffText(sender, companyName),
       [co.contact_phone, co.contact_email, co.website].filter(Boolean).join(" · "),
     ].filter((l, i, a) => l !== "" || i < a.length - 1).join("\n");
-    const htmlBody = quoteEmailHtml(co, logoUrl, quote.quote_number ?? null, quote.title ?? null, onlineUrl);
+    const htmlBody = quoteEmailHtml(co, logoUrl, quote.quote_number ?? null, quote.title ?? null, onlineUrl, signOffHtml(esc, sender, companyName));
 
-    // Sender shows the company's name; replies go to the company's contact email.
-    // The company's own address once its domain is verified (Settings → Email), otherwise ours.
-    const { data: ownSender } = await admin.rpc("company_sender_address", { p_company_id: emp.company_id });
-    const fromAddress = (typeof ownSender === "string" && ownSender) || (from.match(/<([^>]+)>/)?.[1] ?? from).trim();
-    const safeName = companyName.replace(/["<>\r\n]/g, "").slice(0, 80);
-    const fromBranded = `"${safeName}" <${fromAddress}>`;
-    // Replies go to the company's email; if that's empty, to the person who sent it.
-    const validEmail = (e: unknown) => { const v = String(e ?? "").trim(); return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v) ? v : ""; };
-    const replyTo = validEmail(co.contact_email) || validEmail(user.email);
 
     const resendRes = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -230,9 +227,10 @@ Deno.serve(async (req: Request) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: fromBranded,
+        from: sender.from,
         to: [recipient],
-        ...(replyTo ? { reply_to: replyTo } : {}),
+        ...(cc.length ? { cc } : {}),
+        ...(sender.replyTo ? { reply_to: sender.replyTo } : {}),
         subject,
         text: textBody,
         html: htmlBody,
@@ -248,6 +246,7 @@ Deno.serve(async (req: Request) => {
         quote_id: quoteId,
         sent_by: emp.id,
         recipient_email: recipient,
+        cc,
         subject,
         status: "failed",
         error_message: errMsg,
@@ -260,6 +259,7 @@ Deno.serve(async (req: Request) => {
       quote_id: quoteId,
       sent_by: emp.id,
       recipient_email: recipient,
+      cc,
       subject,
       status: "sent",
       provider_message_id: resendJson.id ?? null,
@@ -276,6 +276,7 @@ Deno.serve(async (req: Request) => {
       ok: true,
       provider_message_id: resendJson.id ?? null,
       recipient_email: recipient,
+      cc,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

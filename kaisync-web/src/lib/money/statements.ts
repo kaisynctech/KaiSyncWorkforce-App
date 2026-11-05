@@ -84,13 +84,13 @@ export type ReminderResult = { ok: true; recipient: string } | { ok: false; mess
 /** Email the client their statement as a payment reminder (send_statement_email). */
 export async function sendStatementReminder(
   supabase: SupabaseClient,
-  opts: { clientId: string; clientName: string; companyId: string; recipient: string; message?: string },
+  opts: { clientId: string; clientName: string; companyId: string; recipient: string; cc?: string[]; message?: string },
 ): Promise<ReminderResult> {
   const { doc, fileName, statement } = await statementPdf(supabase, { kind: 'client', id: opts.clientId, name: opts.clientName, companyId: opts.companyId })
   const pdf = doc.output('datauristring').split(',')[1] ?? ''
   const { data, error } = await supabase.functions.invoke('send_statement_email', {
     body: {
-      client_id: opts.clientId, recipient_email: opts.recipient, pdf_base64: pdf, filename: fileName,
+      client_id: opts.clientId, recipient_email: opts.recipient, cc: opts.cc ?? [], pdf_base64: pdf, filename: fileName,
       balance: statement.balance, overdue: statement.overdue, message: opts.message ?? '',
     },
   })

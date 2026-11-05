@@ -29,6 +29,8 @@ export async function sendQuoteEmailViaResend(
     quoteId: string
     pdfBase64: string
     recipientEmail?: string | null
+    /** People copied in. Always sent (even empty) so the email goes out in the sender's name. */
+    cc?: string[]
     filename?: string
     subject?: string
   },
@@ -38,6 +40,7 @@ export async function sendQuoteEmailViaResend(
       quote_id: args.quoteId,
       pdf_base64: args.pdfBase64,
       recipient_email: args.recipientEmail?.trim() || undefined,
+      cc: args.cc ?? [],
       filename: args.filename,
       subject: args.subject,
       // Online links in the email open on this same site (test or live).

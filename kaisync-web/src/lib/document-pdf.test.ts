@@ -23,8 +23,10 @@ describe('document PDF', () => {
   })
 
   it('labels email history', () => {
-    const base = { id: '1', recipient_email: 'a@b.co', error_message: null, created_at: '2026-11-05T10:00:00Z', kind: 'invoice' as const }
+    const base = { id: '1', recipient_email: 'a@b.co', cc: [] as string[], error_message: null, created_at: '2026-11-05T10:00:00Z', kind: 'invoice' as const }
     expect(emailedLabel({ ...base, status: 'sent' })).toMatch(/^Emailed to a@b\.co · /)
     expect(emailedLabel({ ...base, status: 'failed' })).toMatch(/^Email to a@b\.co failed/)
+    expect(emailedLabel({ ...base, status: 'sent', cc: ['c@d.co'] })).toMatch(/^Emailed to a@b\.co \(cc c@d\.co\) · /)
+    expect(emailedLabel({ ...base, status: 'sent', cc: ['c@d.co', 'e@f.co'] })).toMatch(/\(cc 2 people\)/)
   })
 })

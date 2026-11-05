@@ -796,6 +796,7 @@ function MoneyInvoiceDetailInner() {
             ? `${clientName} gets the invoice with the PDF attached and the amount due.`
             : `${clientName} gets a thank-you receipt for their latest payment and the balance left.`}
           defaultTo={clientEmail}
+          clientId={inv.client_id ?? null}
           getPdf={emailKind === 'invoice' ? invoiceEmailPdf : undefined}
           attachmentLabel={emailKind === 'invoice' ? `Invoice_${inv.invoice_number ?? 'draft'}.pdf` : undefined}
           onSent={() => { void loadDocumentEmails(createClient(), id, ['invoice', 'receipt']).then(setEmailLog) }}

@@ -1,14 +1,16 @@
 // supabase/functions/send_document_email/index.ts
 //
-// Emails a document from the company: invoice, credit note, payment receipt, purchase order, or
-// remittance advice (supplier bill / contractor payout paid). Sent in the company's name; replies go to
-// the company's email, or to the person who sent it if the company has none. The PDF (when there is one)
-// is built in the browser and attached. Amounts in the email are read from the database, never trusted
+// Emails a document: invoice, credit note, payment receipt, purchase order, RFQ (one supplier per email),
+// or remittance advice (supplier bill / contractor payout paid). Invoices, credit notes, purchase orders and
+// RFQs come from the person who sends them (replies go to them); receipts and remittance advice come from
+// the company (replies go to the company email) — see _shared/sender.ts. Optional CC (up to 10).
+// The PDF (when there is one) is built in the browser and attached. Amounts in the email are read from the database, never trusted
 // from the browser. Office staff only (any active role except employee). Logged in document_emails.
 // Env: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, RESEND_API_KEY, NOTIFY_FROM_EMAIL (optional)
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { cleanCc, senderFor, signOffHtml, signOffText, type SendMode } from "../_shared/sender.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -48,13 +50,18 @@ async function documentLink(admin: SupabaseClient, companyId: string, kind: "inv
 const button = (href: string, label: string) =>
   `<a href="${esc(href)}" style="display:inline-block;background:#1E3A5F;color:#ffffff;text-decoration:none;font-weight:bold;padding:12px 22px;border-radius:8px">${esc(label)}</a>`;
 
-type Kind = "invoice" | "credit_note" | "receipt" | "purchase_order" | "remittance_supplier" | "remittance_contractor";
-const KINDS: Kind[] = ["invoice", "credit_note", "receipt", "purchase_order", "remittance_supplier", "remittance_contractor"];
+type Kind = "invoice" | "credit_note" | "receipt" | "purchase_order" | "rfq" | "remittance_supplier" | "remittance_contractor";
+const KINDS: Kind[] = ["invoice", "credit_note", "receipt", "purchase_order", "rfq", "remittance_supplier", "remittance_contractor"];
+const MODE: Record<Kind, SendMode> = {
+  invoice: "personal", credit_note: "personal", purchase_order: "personal", rfq: "personal",
+  receipt: "company", remittance_supplier: "company", remittance_contractor: "company",
+};
 const NEEDS_PDF: Kind[] = ["invoice", "credit_note", "purchase_order"];
 
 type Built = {
   companyId: string; to: string; greetName: string | null; subject: (company: string) => string;
   paras: string[]; // already HTML-escaped
+  afterSent?: () => Promise<void>;
 } | { error: string; status: number };
 
 async function build(admin: SupabaseClient, kind: Kind, id: string): Promise<Built> {
@@ -124,6 +131,46 @@ async function build(admin: SupabaseClient, kind: Kind, id: string): Promise<Bui
     paras.push(`Please quote ${b(num)} on your invoice.`);
     return { companyId: po.company_id, to: valid(s.email), greetName: s.contact_person || null, subject: (co) => `Purchase order ${num} from ${co}`, paras };
   }
+  if (kind === "rfq") {
+    // doc_id is the rfq_recipients row: each supplier gets its own email, so they don't see each other.
+    const { data: r } = await admin.from("rfq_recipients")
+      .select("id, company_id, rfq_id, status, supplier:contractors(name, contact_person, email)")
+      .eq("id", id).maybeSingle();
+    if (!r) return { error: "Supplier not found on this RFQ.", status: 404 };
+    const { data: rfq } = await admin.from("rfqs")
+      .select("id, rfq_number, title, status, description, delivery_address, required_by_date, response_deadline")
+      .eq("id", r.rfq_id).maybeSingle();
+    if (!rfq) return { error: "RFQ not found.", status: 404 };
+    if (["cancelled", "closed"].includes(String(rfq.status))) return { error: "This RFQ is closed.", status: 409 };
+    const { data: lines } = await admin.from("rfq_lines").select("description, quantity, unit, specifications")
+      .eq("rfq_id", rfq.id).order("sort_order");
+    const items = (lines ?? []).filter((l) => String(l.description ?? "").trim());
+    if (!items.length) return { error: "Add at least one item to the RFQ first.", status: 409 };
+    const s = (r.supplier ?? {}) as { name?: string; contact_person?: string; email?: string };
+    const num = String(rfq.rfq_number ?? "");
+    const cell = "padding:6px 8px;border-bottom:1px solid #E2E8F0;vertical-align:top";
+    const table = `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;font-size:13px">
+<tr style="background:#F1F5F9"><td style="${cell};font-weight:bold">Item</td><td style="${cell};font-weight:bold;text-align:right">Qty</td><td style="${cell};font-weight:bold">Unit</td></tr>
+${items.map((l) => `<tr><td style="${cell}">${esc(l.description)}${l.specifications ? `<br><span style="color:#64748B;font-size:12px">${esc(l.specifications)}</span>` : ""}</td><td style="${cell};text-align:right">${esc(Number(l.quantity ?? 0).toLocaleString("en-ZA"))}</td><td style="${cell}">${esc(l.unit ?? "")}</td></tr>`).join("")}
+</table>`;
+    const paras = [`Please send us your best price for the items below${num ? `, quoting our reference ${b(num)}` : ""}.`];
+    if (rfq.title) paras.push(`${b(String(rfq.title))}${rfq.description ? `<br>${esc(rfq.description).replace(/\n/g, "<br>")}` : ""}`);
+    paras.push(table);
+    if (rfq.required_by_date) paras.push(`We need it by ${b(day(rfq.required_by_date))}.`);
+    if (rfq.delivery_address) paras.push(`Delivery to: ${esc(rfq.delivery_address).replace(/\n/g, "<br>")}`);
+    if (rfq.response_deadline) paras.push(`Please reply with your quote by ${b(day(rfq.response_deadline))}, including delivery time and how long your price is valid.`);
+    else paras.push("Please include your delivery time and how long your price is valid.");
+    return {
+      companyId: r.company_id, to: valid(s.email), greetName: s.contact_person || s.name || null,
+      subject: (co) => `Request for quotation${num ? ` ${num}` : ""}${rfq.title ? ` — ${String(rfq.title).slice(0, 80)}` : ""} (${co})`,
+      paras,
+      afterSent: async () => {
+        const now = new Date().toISOString();
+        await admin.from("rfq_recipients").update({ status: "sent", sent_at: now }).eq("id", r.id).eq("status", "pending");
+        await admin.from("rfqs").update({ status: "sent", updated_at: now }).eq("id", rfq.id).eq("status", "draft");
+      },
+    };
+  }
   if (kind === "remittance_supplier") {
     const { data: si } = await admin.from("supplier_invoices")
       .select("id, company_id, invoice_number, bill_number, remittance_number, status, amount_paid, paid_at, supplier:contractors!supplier_invoices_supplier_id_fkey(name, contact_person, email)")
@@ -171,7 +218,7 @@ Deno.serve(async (req: Request) => {
     if (!user) return json({ error: "Invalid session" }, 401);
 
     const body = (await req.json().catch(() => ({}))) as {
-      kind?: string; doc_id?: string; recipient_email?: string; message?: string; pdf_base64?: string; filename?: string; site_url?: string;
+      kind?: string; doc_id?: string; recipient_email?: string; cc?: unknown; message?: string; pdf_base64?: string; filename?: string; site_url?: string;
     };
     const kind = String(body.kind ?? "") as Kind;
     if (!KINDS.includes(kind)) return json({ error: "kind required" }, 400);
@@ -191,17 +238,18 @@ Deno.serve(async (req: Request) => {
     const recipient = valid(body.recipient_email) || built.to;
     if (!recipient) return json({ error: "no_email", message: "Enter an email address to send it to." }, 400);
 
+    const cc = cleanCc(body.cc, recipient);
+
     const resendKey = (Deno.env.get("RESEND_API_KEY") ?? "").trim();
     if (!resendKey) return json({ error: "email_not_configured", message: "Email sending is not set up." }, 503);
-    const from = (Deno.env.get("NOTIFY_FROM_EMAIL") ?? "").trim() || "no-reply@kaisyncworkforce.com";
-    // The company's own address once its domain is verified (Settings → Email), otherwise ours.
-    const { data: ownSender } = await admin.rpc("company_sender_address", { p_company_id: built.companyId });
-    const fromAddress = (typeof ownSender === "string" && ownSender) || (from.match(/<([^>]+)>/)?.[1] ?? from).trim();
 
     const { data: co } = await admin.from("companies")
       .select("name, legal_name, contact_phone, contact_email, website, brand_logo_path, document_footer")
       .eq("id", built.companyId).maybeSingle();
     const companyName = String(co?.name ?? "").trim() || "Our company";
+    const sender = await senderFor(admin, { companyId: built.companyId, companyName, companyEmail: co?.contact_email ?? null, user,
+      // The previous app (no cc field) keeps the company sender until the new release is live.
+      mode: Array.isArray(body.cc) ? MODE[kind] : "company" });
     const logoUrl = co?.brand_logo_path ? admin.storage.from("company-branding").getPublicUrl(co.brand_logo_path).data.publicUrl : null;
     const note = String(body.message ?? "").trim().slice(0, 1500);
     // Invoices carry a private link: view online, download the PDF, see the banking details, send proof of payment.
@@ -224,35 +272,35 @@ Deno.serve(async (req: Request) => {
 <tr><td style="padding:24px 28px;border-bottom:3px solid #1E3A5F">${head}</td></tr>
 <tr><td style="padding:24px 28px;color:#0F172A;font-size:14px;line-height:1.6">
 ${paras.map((p) => `<p style="margin:0 0 12px">${p}</p>`).join("")}
-<p style="margin:16px 0 0">Kind regards,<br><strong>${esc(companyName)}</strong></p>
+<p style="margin:16px 0 0">${signOffHtml(esc, sender, companyName)}</p>
 </td></tr>
 <tr><td style="padding:16px 28px;background:#F8FAFC;color:#64748B;font-size:12px;line-height:1.6">
 ${co?.legal_name && co.legal_name !== companyName ? `<div>${esc(co.legal_name)}</div>` : ""}${contacts ? `<div>${contacts}</div>` : ""}
 ${co?.document_footer ? `<div style="margin-top:8px">${esc(co.document_footer)}</div>` : ""}
 </td></tr></table>
 </td></tr></table></body></html>`;
-    const text = paras.map((p) => p.replace(/<br>/g, "\n").replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'")).join("\n\n") + (onlineUrl ? `\n\nView and pay online: ${onlineUrl}` : "") + `\n\nKind regards,\n${companyName}`;
+    const text = paras.map((p) => p.replace(/<br>/g, "\n").replace(/<\/tr>/g, "\n").replace(/<\/td>/g, "  ").replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'")).join("\n\n") + (onlineUrl ? `\n\nView and pay online: ${onlineUrl}` : "") + `\n\n${signOffText(sender, companyName)}`;
     const subject = built.subject(companyName);
-    const replyTo = valid(co?.contact_email) || valid(user.email);
     const filename = String(body.filename ?? "Document.pdf").replace(/[^\w.\-]+/g, "_");
 
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${resendKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        from: `"${companyName.replace(/["<>\r\n]/g, "").slice(0, 80)}" <${fromAddress}>`,
-        to: [recipient], ...(replyTo ? { reply_to: replyTo } : {}), subject, html, text,
+        from: sender.from,
+        to: [recipient], ...(cc.length ? { cc } : {}), ...(sender.replyTo ? { reply_to: sender.replyTo } : {}), subject, html, text,
         ...(pdf ? { attachments: [{ filename, content: pdf }] } : {}),
       }),
     });
     const out = await res.json().catch(() => ({})) as { id?: string; message?: string };
     await admin.from("document_emails").insert({
-      company_id: built.companyId, kind, doc_id: docId, recipient_email: recipient, subject,
+      company_id: built.companyId, kind, doc_id: docId, recipient_email: recipient, cc, subject,
       status: res.ok ? "sent" : "failed", error_message: res.ok ? null : (out.message ?? `Resend ${res.status}`),
       provider_message_id: out.id ?? null, sent_by: user.id,
     });
     if (!res.ok) return json({ error: "send_failed", message: out.message ?? "The email could not be sent." }, 502);
-    return json({ ok: true, recipient_email: recipient });
+    await built.afterSent?.();
+    return json({ ok: true, recipient_email: recipient, cc, from: sender.from });
   } catch (e) {
     return json({ error: "unexpected", message: e instanceof Error ? e.message : String(e) }, 500);
   }

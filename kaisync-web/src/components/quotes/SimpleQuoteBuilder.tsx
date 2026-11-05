@@ -11,6 +11,8 @@ import { createJob } from '@/lib/jobs'
 import { createSupplyRfqFromQuote } from '@/lib/supply-rfq'
 import { downloadQuotePdf, openQuoteMailto, quotePdfBase64 } from '@/lib/quote-pdf'
 import { sendQuoteEmailViaResend } from '@/lib/send-quote-email'
+import { emptyRecipients, isEmail, RecipientsInput, saveNewContacts, type Recipients } from '@/components/email/RecipientsInput'
+import { SenderNote } from '@/components/email/SenderNote'
 import { companyLetterhead, type Letterhead } from '@/lib/letterhead'
 import {
   companyQuoteVat,
@@ -150,6 +152,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   const [showAcceptModal, setShowAcceptModal] = useState(false)
   const [showWhatsNext,   setShowWhatsNext]   = useState(false)
   const [sentNote,        setSentNote]        = useState<string | null>(null)
+  const [sendRcpt,        setSendRcpt]        = useState<Recipients>(emptyRecipients())
   const [automationDealId, setAutomationDealId] = useState<string | null>(null)
   const [automationRfqId,  setAutomationRfqId]  = useState<string | null>(null)
   const [automationNote,   setAutomationNote]   = useState<string | null>(null)
@@ -702,10 +705,12 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
       return
     }
     const pdf = buildPdfInput()
+    const to = sendRcpt.to.trim() || pdf.client_email || ''
     const resend = await sendQuoteEmailViaResend(supabase, {
       quoteId: qid,
       pdfBase64: quotePdfBase64(pdf),
-      recipientEmail: pdf.client_email,
+      recipientEmail: to,
+      cc: sendRcpt.cc,
       filename: `Quote_${(pdf.quote_number || 'draft').replace(/[^\w.-]+/g, '_')}.pdf`,
       subject: `Quote ${pdf.quote_number ?? ''} – ${pdf.title || 'Quotation'}`.trim(),
     })
@@ -715,8 +720,12 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
       statusRef.current = 'sent'
       setShowSendModal(false)
       setSendBusy(false)
+      const cid = clientIdRef.current
+      const saved = sendRcpt.saveNew && cid && companyIdRef.current
+        ? await saveNewContacts(supabase, { companyId: companyIdRef.current, clientId: cid, clientEmail: pdf.client_email, emails: [to, ...sendRcpt.cc] })
+        : 0
       // Sent is not accepted: the client accepts online or you press Mark accepted.
-      setSentNote(`Emailed to ${pdf.client_email}. They can accept it online from the email, or press Mark accepted when they confirm.`)
+      setSentNote(`Emailed to ${resend.recipient_email ?? to}${sendRcpt.cc.length ? ` (cc ${sendRcpt.cc.join(', ')})` : ''}.${saved ? ` ${saved} new contact${saved === 1 ? '' : 's'} saved.` : ''} They can accept it online from the email, or press Mark accepted when they confirm.`)
       return
     }
 
@@ -726,7 +735,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
 
     downloadQuotePdf(pdf)
     openQuoteMailto({
-      to: pdf.client_email,
+      to: to || pdf.client_email,
       quoteNumber: pdf.quote_number,
       title: pdf.title,
       companyName: companyName,
@@ -1084,7 +1093,12 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
               <>
                 <button
                   type="button"
-                  onClick={() => setShowSendModal(true)}
+                  onClick={() => {
+                    const email = (chosenClient?.id === clientId ? chosenClient.email : clients.find(c => c.id === clientId)?.email) ?? ''
+                    setSendRcpt(emptyRecipients(email))
+                    setActionError(null)
+                    setShowSendModal(true)
+                  }}
                   disabled={saveState === 'saving'}
                   className="h-9 px-4 rounded-lg bg-primary text-white text-[13px] font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
                 >
@@ -1422,25 +1436,30 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
       {/* ── Send quote ── */}
       {showSendModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="relative bg-surface rounded-xl shadow-2xl w-full max-w-md mx-4 p-6">
-            <h3 className="text-[15px] font-semibold text-text-primary mb-2">Send quote</h3>
-            <p className="text-[13px] text-text-secondary mb-4">
-              Download the PDF, open an email to{' '}
-              <span className="font-medium text-text-primary">
-                {(chosenClient?.id === clientId ? chosenClient.email : clients.find(c => c.id === clientId)?.email)?.trim() || clientName || 'the client'}
-              </span>
-              , then mark the quote as sent.
-              {dealId ? ' Linked project clients will see this quote in the portal once sent.' : ''}
+          <div className="relative bg-surface rounded-xl shadow-2xl w-full max-w-md mx-4 p-6 max-h-[92vh] overflow-y-auto">
+            <h3 className="text-[15px] font-semibold text-text-primary mb-1">Send quote</h3>
+            <p className="text-[13px] text-text-secondary mb-3">
+              {clientName || 'The client'} gets the quote PDF and a link to accept it online.
+              {dealId ? ' Linked project clients will also see it in the portal.' : ''}
             </p>
+            <div className="flex flex-col gap-3 mb-4">
+              {companyId && <SenderNote companyId={companyId} mode="personal" />}
+              {companyId && (
+                <RecipientsInput value={sendRcpt} onChange={setSendRcpt} companyId={companyId} clientId={clientId}
+                  clientEmail={(chosenClient?.id === clientId ? chosenClient.email : clients.find(c => c.id === clientId)?.email) ?? null}
+                  disabled={sendBusy} />
+              )}
+              {actionError && <p className="text-[12px] text-error">{actionError}</p>}
+            </div>
             <div className="flex flex-col gap-2 mb-5">
               <button
                 type="button"
-                disabled={sendBusy}
+                disabled={sendBusy || !isEmail(sendRcpt.to)}
                 onClick={() => void handleSendWithMailto()}
                 className="h-10 px-4 rounded-lg bg-primary text-white text-left text-[13px] font-medium hover:bg-primary/90 transition-colors flex items-center gap-2 disabled:opacity-50"
               >
                 <span className="material-icons text-[18px]">send</span>
-                {sendBusy ? 'Preparing…' : 'Download PDF, email & mark sent'}
+                {sendBusy ? 'Sending…' : 'Email quote & mark sent'}
               </button>
               <button
                 type="button"
