@@ -1093,7 +1093,7 @@ function ClientDetailInner() {
       setError(result.message)
       return
     }
-    router.push(`/dashboard/money/invoices/${result.invoiceId}`)
+    router.push(`/dashboard/money/invoices/${result.invoiceId}/edit`)
   }
 
   function selectTab(t: ClientTab) {

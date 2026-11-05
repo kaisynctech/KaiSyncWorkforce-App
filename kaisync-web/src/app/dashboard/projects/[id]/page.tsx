@@ -303,7 +303,7 @@ export default function ProjectDetailPage() {
       setError(result.message)
       return
     }
-    router.push(`/dashboard/money/invoices/${result.invoiceId}`)
+    router.push(`/dashboard/money/invoices/${result.invoiceId}/edit`)
   }
 
   async function handleSendQuotation() {
