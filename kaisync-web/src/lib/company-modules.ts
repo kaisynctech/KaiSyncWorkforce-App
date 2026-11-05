@@ -24,6 +24,8 @@ export const CompanyModuleKeys = {
   Settings: 'settings',
   Farms: 'farms',
   LegacyProperties: 'properties',
+  /** Money: quotes, invoices, credit notes, suppliers and purchasing, finance. */
+  Money: 'money',
 } as const
 
 export type CompanyModuleKey = (typeof CompanyModuleKeys)[keyof typeof CompanyModuleKeys]
@@ -65,6 +67,7 @@ export const COMPANY_MODULE_SPECS: ModuleSpec[] = [
   { key: CompanyModuleKeys.Leave, title: 'Leave', description: 'Employee leave applications, approvals, and payroll-ready export.', defaultIfMissing: true },
   { key: CompanyModuleKeys.Messaging, title: 'Messaging', description: 'In-app team messaging between employees and management.', defaultIfMissing: true },
   { key: CompanyModuleKeys.Settings, title: 'Settings', description: 'Company profile, module controls, and system preferences.', defaultIfMissing: true },
+  { key: CompanyModuleKeys.Money, title: 'Money', description: 'Quotes, invoices, credit notes, suppliers, purchasing and finance.', defaultIfMissing: true },
 ]
 
 /**
@@ -79,12 +82,33 @@ export type MainModuleSpec = {
   /** Key used to decide current on/off state. */
   leadKey: string
   defaultIfMissing: boolean
+  /** What switching it on gives you. */
+  description: string
+  /** Billed on top of the base subscription. */
+  extraCharge?: boolean
 }
 
 export const MAIN_MODULE_SPECS: MainModuleSpec[] = [
   {
+    id: 'my_pa',
+    title: 'My PA',
+    description: 'Tasks, reminders and follow-ups.',
+    leadKey: CompanyModuleKeys.MyPa,
+    keys: [CompanyModuleKeys.MyPa],
+    defaultIfMissing: true,
+  },
+  {
+    id: 'messaging',
+    title: 'Messages',
+    description: 'Team messaging between employees and management.',
+    leadKey: CompanyModuleKeys.Messaging,
+    keys: [CompanyModuleKeys.Messaging],
+    defaultIfMissing: true,
+  },
+  {
     id: 'workforce',
     title: 'Workforce',
+    description: 'Employees, teams, leave, attendance, scheduling, payroll and forms.',
     leadKey: CompanyModuleKeys.Employees,
     keys: [
       CompanyModuleKeys.Employees,
@@ -92,89 +116,58 @@ export const MAIN_MODULE_SPECS: MainModuleSpec[] = [
       CompanyModuleKeys.Attendance,
       CompanyModuleKeys.Scheduling,
       CompanyModuleKeys.Payroll,
+      CompanyModuleKeys.Paperless,
     ],
     defaultIfMissing: true,
   },
   {
     id: 'operations',
-    title: 'Jobs & Projects',
+    title: 'Operations',
+    description: 'Clients, projects, jobs, contractors, incidents, compliance, inventory and assets.',
     leadKey: CompanyModuleKeys.Ticketing,
-    keys: [CompanyModuleKeys.Ticketing],
-    defaultIfMissing: true,
-  },
-  {
-    id: 'clients',
-    title: 'Clients',
-    leadKey: CompanyModuleKeys.Clients,
-    keys: [CompanyModuleKeys.Clients],
-    defaultIfMissing: true,
-  },
-  {
-    id: 'contractors',
-    title: 'Contractors',
-    leadKey: CompanyModuleKeys.Contractors,
-    keys: [CompanyModuleKeys.Contractors],
-    defaultIfMissing: true,
-  },
-  {
-    id: 'supply',
-    title: 'Supply & Assets',
-    leadKey: CompanyModuleKeys.Inventory,
     keys: [
+      CompanyModuleKeys.Ticketing,
+      CompanyModuleKeys.Clients,
+      CompanyModuleKeys.Contractors,
+      CompanyModuleKeys.Incidents,
       CompanyModuleKeys.Inventory,
-      CompanyModuleKeys.Suppliers,
       CompanyModuleKeys.AssetCompliance,
     ],
     defaultIfMissing: true,
   },
   {
-    id: 'properties',
-    title: 'Property Management',
-    leadKey: CompanyModuleKeys.PropertyManagement,
-    keys: [CompanyModuleKeys.PropertyManagement],
-    defaultIfMissing: false,
-  },
-  {
-    id: 'farms',
-    title: 'Farms',
-    leadKey: CompanyModuleKeys.Farms,
-    keys: [CompanyModuleKeys.Farms],
-    defaultIfMissing: false,
-  },
-  {
-    id: 'incidents',
-    title: 'Incidents',
-    leadKey: CompanyModuleKeys.Incidents,
-    keys: [CompanyModuleKeys.Incidents],
+    id: 'money',
+    title: 'Money',
+    description: 'Quotes, invoices, credit notes, suppliers, purchasing and finance.',
+    leadKey: CompanyModuleKeys.Money,
+    keys: [CompanyModuleKeys.Money, CompanyModuleKeys.Suppliers],
     defaultIfMissing: true,
   },
   {
-    id: 'reports',
-    title: 'Reports',
+    id: 'insights',
+    title: 'Insights',
+    description: 'Dashboards and reports.',
     leadKey: CompanyModuleKeys.Reports,
     keys: [CompanyModuleKeys.Reports],
     defaultIfMissing: true,
   },
   {
-    id: 'my_pa',
-    title: 'My PA',
-    leadKey: CompanyModuleKeys.MyPa,
-    keys: [CompanyModuleKeys.MyPa],
-    defaultIfMissing: true,
+    id: 'properties',
+    title: 'Properties',
+    description: 'Properties, units, residents, student accommodation, guest houses and rent. Charged per property.',
+    leadKey: CompanyModuleKeys.PropertyManagement,
+    keys: [CompanyModuleKeys.PropertyManagement],
+    defaultIfMissing: false,
+    extraCharge: true,
   },
   {
-    id: 'messaging',
-    title: 'Messaging',
-    leadKey: CompanyModuleKeys.Messaging,
-    keys: [CompanyModuleKeys.Messaging],
-    defaultIfMissing: true,
-  },
-  {
-    id: 'paperless',
-    title: 'Paperless Forms',
-    leadKey: CompanyModuleKeys.Paperless,
-    keys: [CompanyModuleKeys.Paperless],
-    defaultIfMissing: true,
+    id: 'farms',
+    title: 'Farms',
+    description: 'Farms, livestock, plantings, production and farm logs. Charged per farm.',
+    leadKey: CompanyModuleKeys.Farms,
+    keys: [CompanyModuleKeys.Farms],
+    defaultIfMissing: false,
+    extraCharge: true,
   },
 ]
 
@@ -314,6 +307,7 @@ export function resolveHrNavFlags(enabledModules: EnabledModules, financeEntitle
   const attendance = isModuleEnabled(enabledModules, CompanyModuleKeys.Attendance)
   const scheduling = isModuleEnabled(enabledModules, CompanyModuleKeys.Scheduling)
   const payroll = isModuleEnabled(enabledModules, CompanyModuleKeys.Payroll)
+  const money = isModuleEnabled(enabledModules, CompanyModuleKeys.Money)
 
   return {
     employees,
@@ -340,10 +334,10 @@ export function resolveHrNavFlags(enabledModules: EnabledModules, financeEntitle
     timeTemplates: scheduling || employees,
     teamPunch: attendance,
     residents: properties,
-    // SaaS module.finance + payroll tenant module
-    finance: financeEntitled && payroll,
-    // Commercial engine — always visible; individual pages gate by quotes.view / invoices.view
-    commercial: true,
+    // Money module (and the plan's finance feature)
+    finance: financeEntitled && money,
+    // Quotes, invoices, purchasing — the Money module; pages also check quotes.view / invoices.view
+    commercial: money,
   }
 }
 

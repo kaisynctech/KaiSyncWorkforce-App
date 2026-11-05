@@ -1011,12 +1011,14 @@ export default function SettingsPage() {
         <Section title="Modules" icon="extension">
           <div className="flex flex-col gap-1">
             <p className="text-[13px] text-text-secondary mb-2">
-              Turn main modules on or off. Disabled modules are hidden from the sidebar and employee portal.
+              Each switch turns a whole section of the menu on or off, with everything under it. Overview is always on.
+              Properties and Farms are charged on top of the subscription.
             </p>
             {MAIN_MODULE_SPECS.map(spec => (
               <Toggle
                 key={spec.id}
-                label={spec.title}
+                label={spec.extraCharge ? `${spec.title} · extra charge` : spec.title}
+                description={spec.description}
                 checked={isMainModuleEnabled(enabledModules, spec)}
                 onChange={v => toggleMainModule(spec.id, v)}
                 disabled={!isHrOrAbove || modulesBusy}
