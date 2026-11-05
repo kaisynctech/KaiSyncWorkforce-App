@@ -197,7 +197,7 @@ export default function ContractorPayoutsPage() {
                     )}
                   </td>
                   <td className="data-td text-[13px]">{(r.contractors as { name: string } | null)?.name ?? '—'}</td>
-                  <td className="data-td text-[12px] capitalize">{r.payout_status}</td>
+                  <td className="data-td text-[12px] capitalize">{r.payout_status}{r.remittance_number && <span className="normal-case text-text-secondary"> · {r.remittance_number}</span>}</td>
                   <td className="data-td text-[12px] capitalize">{r.approval_status}</td>
                   <td className="data-td text-[13px] text-right">{fmtMoney(netPayable(r))}</td>
                   <td className="data-td text-[12px] text-text-secondary">{r.payout_date ?? r.created_at?.slice(0, 10)}</td>

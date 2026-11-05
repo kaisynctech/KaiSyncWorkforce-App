@@ -162,9 +162,11 @@ export default function SupplierInvoiceDetailPage() {
           </Link>
           <div className="min-w-0">
             <h1 className="text-[18px] font-semibold text-text-primary truncate">
-              {invoice.invoice_number || 'Supplier invoice'}
+              {invoice.bill_number ?? 'Supplier bill'}
+              {invoice.invoice_number && <span className="ml-2 text-[13px] font-normal text-text-secondary">Supplier's invoice {invoice.invoice_number}</span>}
             </h1>
             <p className="text-[12px] text-text-secondary">
+              {invoice.remittance_number && <>Paid · remittance {invoice.remittance_number} · </>}
               {supplierName} · <span className="capitalize">{invoice.status.replace(/_/g, ' ')}</span>
               {' · '}Approval: {invoice.approval_status}
             </p>

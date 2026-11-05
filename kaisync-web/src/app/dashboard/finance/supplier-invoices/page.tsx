@@ -228,8 +228,9 @@ function SupplierInvoicesPageInner() {
           <table className="w-full" style={{ minWidth: 800 }}>
             <thead>
               <tr className="bg-surface-elevated border-b border-divider">
+                <th className="data-th text-left">Bill</th>
                 <th className="data-th text-left">Supplier</th>
-                <th className="data-th text-left">Number</th>
+                <th className="data-th text-left">Their invoice</th>
                 <th className="data-th text-left">Status</th>
                 <th className="data-th text-left">Approval</th>
                 <th className="data-th text-right">Total</th>
@@ -243,8 +244,9 @@ function SupplierInvoicesPageInner() {
                   className="border-b border-divider cursor-pointer hover:bg-background"
                   onClick={() => router.push(`/dashboard/finance/supplier-invoices/${r.id}`)}
                 >
+                  <td className="data-td text-[13px] font-medium text-primary">{r.bill_number ?? '—'}</td>
                   <td className="data-td text-[13px]">{(r.contractors as { name: string } | null)?.name ?? '—'}</td>
-                  <td className="data-td text-[13px] text-primary">{r.invoice_number || '—'}</td>
+                  <td className="data-td text-[13px] text-text-secondary">{r.invoice_number || '—'}</td>
                   <td className="data-td text-[12px] capitalize">{r.status.replace(/_/g, ' ')}</td>
                   <td className="data-td text-[12px] capitalize">{r.approval_status}</td>
                   <td className="data-td text-[13px] text-right">{fmtMoney(r.total_amount)}</td>
@@ -252,7 +254,7 @@ function SupplierInvoicesPageInner() {
                 </tr>
               ))}
               {rows.length === 0 && (
-                <tr><td colSpan={6} className="text-center text-[13px] text-text-secondary py-10">No supplier invoices</td></tr>
+                <tr><td colSpan={7} className="text-center text-[13px] text-text-secondary py-10">No supplier invoices</td></tr>
               )}
             </tbody>
           </table>

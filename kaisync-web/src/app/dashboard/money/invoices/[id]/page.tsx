@@ -39,6 +39,7 @@ type Transaction = {
   transaction_date: string
   payment_method: string | null
   reference: string | null
+  receipt_number?: string | null
   notes: string | null
   created_at: string
 }
@@ -650,6 +651,7 @@ function MoneyInvoiceDetailInner() {
                 <thead>
                   <tr className="bg-surface-elevated border-b border-divider">
                     <th className="data-th text-left">Date</th>
+                    <th className="data-th text-left">Receipt</th>
                     <th className="data-th text-left">Method</th>
                     <th className="data-th text-left">Reference</th>
                     <th className="data-th text-right">Amount</th>
@@ -659,6 +661,7 @@ function MoneyInvoiceDetailInner() {
                   {txRows.map(t => (
                     <tr key={t.id} className="border-b border-divider last:border-0">
                       <td className="data-td text-[13px] text-text-secondary">{t.transaction_date}</td>
+                      <td className="data-td text-[13px] font-medium text-text-primary">{t.receipt_number ?? '—'}</td>
                       <td className="data-td text-[13px] text-text-secondary capitalize">
                         {(t.payment_method ?? '—').replace(/_/g, ' ')}
                       </td>

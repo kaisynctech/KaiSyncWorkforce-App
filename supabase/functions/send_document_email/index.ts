@@ -59,16 +59,17 @@ async function build(admin: SupabaseClient, kind: Kind, id: string): Promise<Bui
       };
     }
     const { data: tx } = await admin.from("finance_transactions")
-      .select("amount, transaction_date, created_at")
+      .select("amount, transaction_date, created_at, receipt_number")
       .eq("source_table", "finance_invoices").eq("source_id", id).eq("direction", "incoming")
       .order("created_at", { ascending: false }).limit(1).maybeSingle();
     if (!tx) return { error: "No payment has been recorded on this invoice yet.", status: 409 };
     const bal = Number(inv.balance_due ?? 0);
     return {
       companyId: inv.company_id, to: valid(c.email), greetName: c.contact_person || null,
-      subject: (co) => `Payment received — thank you (${num})`,
+      subject: (co) => `Receipt${tx.receipt_number ? ` ${tx.receipt_number}` : ""} — payment received, thank you (${num})`,
       paras: [
         `Thank you — we received your payment of ${b(rand(tx.amount))} on ${b(day(tx.transaction_date ?? tx.created_at))} for invoice ${b(num)}.`,
+        ...(tx.receipt_number ? [`Your receipt number is ${b(String(tx.receipt_number))}.`] : []),
         bal > 0.004 ? `The balance still owing on this invoice is ${b(rand(bal))}.` : "This invoice is now paid in full.",
       ],
     };
@@ -104,7 +105,7 @@ async function build(admin: SupabaseClient, kind: Kind, id: string): Promise<Bui
   }
   if (kind === "remittance_supplier") {
     const { data: si } = await admin.from("supplier_invoices")
-      .select("id, company_id, invoice_number, status, amount_paid, paid_at, supplier:contractors!supplier_invoices_supplier_id_fkey(name, contact_person, email)")
+      .select("id, company_id, invoice_number, bill_number, remittance_number, status, amount_paid, paid_at, supplier:contractors!supplier_invoices_supplier_id_fkey(name, contact_person, email)")
       .eq("id", id).maybeSingle();
     if (!si) return { error: "Bill not found.", status: 404 };
     if (!(Number(si.amount_paid ?? 0) > 0)) return { error: "Record the payment before sending remittance advice.", status: 409 };
@@ -112,16 +113,17 @@ async function build(admin: SupabaseClient, kind: Kind, id: string): Promise<Bui
     const num = si.invoice_number ? String(si.invoice_number) : "";
     return {
       companyId: si.company_id, to: valid(s.email), greetName: s.contact_person || null,
-      subject: (co) => `Remittance advice from ${co}${num ? ` — your invoice ${num}` : ""}`,
+      subject: (co) => `Remittance advice${si.remittance_number ? ` ${si.remittance_number}` : ""} from ${co}${num ? ` — your invoice ${num}` : ""}`,
       paras: [
         `We've paid ${b(rand(si.amount_paid))}${num ? ` for your invoice ${b(num)}` : ""}${si.paid_at ? ` on ${b(day(si.paid_at))}` : ""}.`,
+        ...(si.remittance_number ? [`Payment reference: ${b(String(si.remittance_number))}${si.bill_number ? ` (our ref ${esc(si.bill_number)})` : ""}.`] : []),
         "Please allow a day or two for it to reflect in your account, depending on your bank.",
       ],
     };
   }
   // remittance_contractor
   const { data: p } = await admin.from("contractor_payouts")
-    .select("id, company_id, payout_status, total_amount, retention_amount, paid_at, payout_date, job:jobs(job_code, title), contractor:contractors(name, contact_person, email)")
+    .select("id, company_id, payout_status, remittance_number, total_amount, retention_amount, paid_at, payout_date, job:jobs(job_code, title), contractor:contractors(name, contact_person, email)")
     .eq("id", id).maybeSingle();
   if (!p) return { error: "Payout not found.", status: 404 };
   if (p.payout_status !== "paid") return { error: "Mark the payout as paid before sending remittance advice.", status: 409 };
@@ -130,9 +132,10 @@ async function build(admin: SupabaseClient, kind: Kind, id: string): Promise<Bui
   const net = Number(p.total_amount ?? 0) - Number(p.retention_amount ?? 0);
   const jobText = [job.job_code, job.title].filter(Boolean).join(" — ");
   const paras = [`We've paid ${b(rand(net))}${jobText ? ` for ${b(jobText)}` : ""}${p.paid_at || p.payout_date ? ` on ${b(day(p.paid_at ?? p.payout_date))}` : ""}.`];
+  if (p.remittance_number) paras.push(`Payment reference: ${b(String(p.remittance_number))}.`);
   if (Number(p.retention_amount ?? 0) > 0) paras.push(`${b(rand(p.retention_amount))} is held back as retention, as agreed.`);
   paras.push("Please allow a day or two for it to reflect in your account, depending on your bank.");
-  return { companyId: p.company_id, to: valid(c.email), greetName: c.contact_person || c.name || null, subject: (co) => `Remittance advice from ${co}`, paras };
+  return { companyId: p.company_id, to: valid(c.email), greetName: c.contact_person || c.name || null, subject: (co) => `Remittance advice${p.remittance_number ? ` ${p.remittance_number}` : ""} from ${co}`, paras };
 }
 
 Deno.serve(async (req: Request) => {

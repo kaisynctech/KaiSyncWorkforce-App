@@ -51,6 +51,10 @@ export type SupplierInvoice = {
   supplier_id: string | null
   po_id?: string | null
   invoice_number: string | null
+  /** Our own number for the bill (BILL0001). */
+  bill_number?: string | null
+  /** Remittance advice number once paid (REM0001). */
+  remittance_number?: string | null
   subtotal: number
   vat_rate: number
   vat_amount: number
@@ -100,6 +104,7 @@ export type ContractorPayout = {
   approval_status: string
   payout_date: string | null
   paid_at: string | null
+  remittance_number?: string | null
   notes: string | null
   created_at: string
   contractors?: { name: string; bank_account?: string | null; bank_name?: string | null } | null
