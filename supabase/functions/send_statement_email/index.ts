@@ -89,11 +89,12 @@ ${paras.map((p) => `<p style="margin:0 0 12px">${p}</p>`).join("")}
 ${co?.legal_name && co.legal_name !== companyName ? `<div>${esc(co.legal_name)}</div>` : ""}${contacts ? `<div>${contacts}</div>` : ""}
 ${co?.document_footer ? `<div style="margin-top:8px">${esc(co.document_footer)}</div>` : ""}
 </td></tr></table>
-<div style="color:#94A3B8;font-size:11px;margin-top:12px">Sent with KaiSync</div>
 </td></tr></table></body></html>`;
     const text = paras.map((p) => p.replace(/<[^>]+>/g, "")).join("\n\n") + `\n\nKind regards,\n${companyName}`;
     const fromAddress = (from.match(/<([^>]+)>/)?.[1] ?? from).trim();
-    const replyTo = String(co?.contact_email ?? "").trim();
+    // Replies go to the company's email (Settings → Company profile); if that's empty, to the person who sent it.
+    const valid = (e: unknown) => { const v = String(e ?? "").trim(); return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v) ? v : ""; };
+    const replyTo = valid(co?.contact_email) || valid(user.email);
     const subject = balance > 0 ? `Statement of account — ${rand(balance)} outstanding` : "Statement of account";
     const filename = (body.filename ?? "Statement.pdf").replace(/[^\w.\-]+/g, "_");
 

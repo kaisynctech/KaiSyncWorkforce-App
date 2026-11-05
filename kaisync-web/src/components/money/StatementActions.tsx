@@ -35,11 +35,17 @@ export function RemindButton({ clientId, clientName, companyId, lastReminded, on
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null)
+  const [companyEmail, setCompanyEmail] = useState<string | null>(null)
 
   async function openDialog() {
     setResult(null); setMessage(''); setOpen(true)
-    const { data } = await createClient().from('clients').select('email').eq('id', clientId).maybeSingle()
+    const supabase = createClient()
+    const [{ data }, { data: co }] = await Promise.all([
+      supabase.from('clients').select('email').eq('id', clientId).maybeSingle(),
+      supabase.from('companies').select('contact_email').eq('id', companyId).maybeSingle(),
+    ])
     setEmail(((data as { email?: string | null } | null)?.email ?? '').trim())
+    setCompanyEmail(((co as { contact_email?: string | null } | null)?.contact_email ?? '').trim())
   }
 
   async function send() {
@@ -67,13 +73,19 @@ export function RemindButton({ clientId, clientName, companyId, lastReminded, on
               <div>
                 <h3 className="text-[16px] font-semibold text-text-primary">Send a reminder</h3>
                 <p className="text-[12.5px] text-text-secondary mt-0.5">
-                  {clientName} gets a friendly email with their statement attached. Replies come to your company email.
+                  {clientName} gets a friendly email from {companyEmail ? 'your company' : 'you'}, with their statement attached.
+                  {companyEmail ? <> Replies go to <span className="font-medium text-text-primary">{companyEmail}</span>.</> : ' Replies go to your own login email.'}
                 </p>
               </div>
               <button type="button" aria-label="Close" onClick={() => setOpen(false)} className="w-8 h-8 rounded-lg text-text-secondary hover:bg-surface-elevated flex items-center justify-center shrink-0">
                 <span className="material-icons text-[18px]">close</span>
               </button>
             </div>
+            {companyEmail === '' && (
+              <p className="text-[12px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                Your company has no email address yet. Add one in <a href="/dashboard/settings?tab=general" className="font-semibold underline">Settings → General</a> so client replies go to the company, not to you.
+              </p>
+            )}
             {lastReminded && <p className="text-[12px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">Last reminder sent {lastReminded}.</p>}
             <label className="flex flex-col gap-1.5 text-[12px] font-medium text-text-secondary">Send to
               <input value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="accounts@client.co.za"
