@@ -397,7 +397,8 @@ function MoneyInvoiceDetailInner() {
         company_id: companyId,
         invoice_id: inv.id,
         client_id: inv.client_id ?? null,
-        status: 'draft',
+        // Issued straight away: the database gives it its number (CN0001) as it is saved.
+        status: 'approved',
         reason_code: cnReasonCode,
         reason_notes: cnReasonNotes || null,
         currency: inv.currency ?? 'ZAR',
@@ -435,7 +436,7 @@ function MoneyInvoiceDetailInner() {
           entry_type: 'credit_note',
           source_table: 'credit_notes',
           source_id: cn.id,
-          reference_number: (cn as { credit_note_number?: string | null }).credit_note_number ?? 'CN-DRAFT',
+          reference_number: (cn as { credit_note_number?: string | null }).credit_note_number ?? null,
           description: `Credit note issued against ${inv.invoice_number ?? inv.id}`,
           debit: 0,
           credit: inv.total_amount,

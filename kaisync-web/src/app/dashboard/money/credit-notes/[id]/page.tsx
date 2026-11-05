@@ -165,7 +165,7 @@ function CreditNoteDetailInner() {
             <span className="material-icons text-[16px]">arrow_back</span>Credit notes
           </button>
           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[12px] font-medium capitalize ${badge}`}>
-            {cn.status.replace(/_/g, ' ')}
+            {cn.status === 'approved' ? 'issued' : cn.status.replace(/_/g, ' ')}
           </span>
         </div>
 
@@ -275,7 +275,7 @@ function CreditNoteDetailInner() {
           <div className="relative bg-surface rounded-xl shadow-2xl w-full max-w-md mx-4 p-6">
             <h3 className="text-[15px] font-semibold text-text-primary mb-1">What&apos;s next?</h3>
             <p className="text-[13px] text-text-secondary mb-5">
-              Credit note created as a draft. Return to the invoice or stay here.
+              {cn.credit_note_number ? `Credit note ${cn.credit_note_number} issued.` : 'Credit note created.'} Email it to the client, or go back to the invoice.
             </p>
             <div className="flex flex-col gap-2">
               <button
