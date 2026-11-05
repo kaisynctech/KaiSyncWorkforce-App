@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { PayrollTabs } from '@/components/payroll/PayrollTabs'
 import { createClient } from '@/lib/supabase/client'
+import { emailPayslip, payslipEmailSummary } from '@/lib/payroll/payslip-email'
+import { PayslipEmailNotice, type PayslipEmailSummary } from '@/components/payroll/PayslipEmailNotice'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { StepUpDialog } from '@/components/step-up-dialog'
@@ -150,6 +152,7 @@ export default function PayrollPage() {
   const [loading,      setLoading]      = useState(true)
   const [error,        setError]        = useState<string | null>(null)
   const [success,      setSuccess]      = useState<string | null>(null)
+  const [emailNotice,  setEmailNotice]  = useState<PayslipEmailSummary | null>(null)
   const [month,        setMonth]        = useState(currentMonthValue)
   const { start: dateFrom, end: dateTo } = monthBounds(month)
   const [search,       setSearch]       = useState('')
@@ -327,9 +330,15 @@ export default function PayrollPage() {
     if (!cid) return
     setError(null)
     const supabase = createClient()
+    setEmailNotice(null)
     const result = await releasePayslipToEmployee(supabase, cid, id)
     if (!result.ok) setError(result.message)
-    else setSuccess('Payslip released to employee')
+    else {
+      setSuccess('Payslip released — emailing it to the employee…')
+      const summary = payslipEmailSummary([await emailPayslip(supabase, id)])
+      setSuccess(summary.text)
+      setEmailNotice(summary)
+    }
     await loadPayroll(dateFrom, dateTo)
   }
 
@@ -374,13 +383,23 @@ export default function PayrollPage() {
     setReleasing(true)
     setError(null)
     const supabase = createClient()
+    setEmailNotice(null)
     const failures: string[] = []
+    const released: string[] = []
     for (const p of releasable) {
       const result = await releasePayslipToEmployee(supabase, cid, p.id)
       if (!result.ok) failures.push(result.message)
+      else released.push(p.id)
     }
     if (failures.length) setError(failures[0])
-    else setSuccess(`Released ${releasable.length} payslip${releasable.length !== 1 ? 's' : ''}`)
+    if (released.length) {
+      setSuccess(`Released ${released.length} payslip${released.length !== 1 ? 's' : ''} — emailing them to employees…`)
+      const results = []
+      for (const id of released) results.push(await emailPayslip(supabase, id))
+      const summary = payslipEmailSummary(results)
+      setSuccess(summary.text)
+      setEmailNotice(summary)
+    }
     await loadPayroll(dateFrom, dateTo)
     setReleasing(false)
   }
@@ -631,6 +650,7 @@ export default function PayrollPage() {
         {success && (
           <p className="text-success text-[12px] font-medium mt-2">{success}</p>
         )}
+        <PayslipEmailNotice summary={emailNotice} onClose={() => setEmailNotice(null)} />
         {error && error !== 'not_linked' && (
           <p className="text-error text-[12px] font-medium mt-2">{error}</p>
         )}

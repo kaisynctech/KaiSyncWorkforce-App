@@ -19,6 +19,8 @@ import {
   type PayslipExtraLine,
 } from '@/lib/payslip-extra-lines'
 import { downloadPayslipTemplatePdf, imageUrlToDataUrl } from '@/lib/payslip-pdf'
+import { emailPayslip, payslipEmailSummary } from '@/lib/payroll/payslip-email'
+import { PayslipEmailNotice, type PayslipEmailSummary } from '@/components/payroll/PayslipEmailNotice'
 import { companyLetterhead } from '@/lib/letterhead'
 import { executeWithStepUp } from '@/lib/step-up'
 import { StepUpDialog } from '@/components/step-up-dialog'
@@ -414,6 +416,9 @@ export default function PayslipDetailPage() {
   const [stepUpError, setStepUpError] = useState<string | null>(null)
   const [stepUpMessage, setStepUpMessage] = useState('Re-enter your password to save these bank details. This opens a 15-minute verification window.')
   const [releasing, setReleasing] = useState(false)
+  const [emailing, setEmailing] = useState(false)
+  const [emailMsg, setEmailMsg] = useState<string | null>(null)
+  const [emailNotice, setEmailNotice] = useState<PayslipEmailSummary | null>(null)
   const stepUpResolverRef = useRef<((password: string | null) => void) | null>(null)
   const [leaveLines, setLeaveLines] = useState<{ start: string; end: string; type: string; unpaid: boolean }[]>([])
 
@@ -1213,6 +1218,19 @@ export default function PayslipDetailPage() {
     })
   }
 
+  async function sendPayslipEmail() {
+    if (!payment) return
+    setEmailing(true)
+    setEmailNotice(null)
+    setEmailMsg(null)
+    const result = await emailPayslip(createClient(), payment.id)
+    setEmailing(false)
+    if (result.status === 'sent') {
+      setEmailMsg(`Emailed to ${result.recipient}.`)
+      setAuditEntries(current => [...current, { action: 'emailed', detail: `Emailed to ${result.recipient}`, at: new Date().toISOString() }])
+    } else setEmailNotice(payslipEmailSummary([result]))
+  }
+
   async function releaseThisPayslip() {
     if (!payment || payment.status === 'rejected' || payment.shared_with_employee) return
     setReleasing(true)
@@ -1237,6 +1255,7 @@ export default function PayslipDetailPage() {
     }
     setPayment(current => current ? { ...current, status: current.status === 'pending' ? 'approved' : current.status, shared_with_employee: true } : current)
     setAuditEntries(current => [...current, { action: 'released', detail: 'Shared with employee', at: new Date().toISOString() }])
+    await sendPayslipEmail()
   }
 
   if (loading) {
@@ -1988,7 +2007,19 @@ export default function PayslipDetailPage() {
           >
             {payment.shared_with_employee ? 'Released' : releasing ? 'Releasing…' : 'Release payslip'}
           </button>
+          {payment.shared_with_employee && (
+            <button
+              type="button"
+              onClick={() => { void sendPayslipEmail() }}
+              disabled={emailing}
+              className="h-9 px-4 rounded-md border border-border bg-surface text-[13px] font-medium text-text-primary hover:border-primary disabled:opacity-50"
+            >
+              {emailing ? 'Emailing…' : 'Email payslip'}
+            </button>
+          )}
         </div>
+        {emailMsg && <p className="text-success text-[12px] font-medium text-right">{emailMsg}</p>}
+        <PayslipEmailNotice summary={emailNotice} onClose={() => setEmailNotice(null)} />
 
         {/* Audit Trail */}
         {auditEntries.length > 0 && (

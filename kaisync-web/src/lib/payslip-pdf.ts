@@ -266,6 +266,12 @@ export async function imageUrlToDataUrl(url: string): Promise<string | null> {
 
 /** Payslip PDF in the same layout as the on-screen slip, with the company logo. */
 export function downloadPayslipTemplatePdf(input: PayslipTemplatePdfInput): void {
+  const { doc, fileName } = buildPayslipTemplatePdf(input)
+  doc.save(fileName)
+}
+
+/** Build the payslip PDF without saving it (for emailing). */
+export function buildPayslipTemplatePdf(input: PayslipTemplatePdfInput): { doc: jsPDF; fileName: string } {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' })
   const left = 14
   const right = 196
@@ -436,5 +442,5 @@ export function downloadPayslipTemplatePdf(input: PayslipTemplatePdfInput): void
 
   const safe = (input.employeeName || 'Employee').replace(/[^a-z0-9]+/gi, '_').slice(0, 40)
   const month = (input.periodStart || '').slice(0, 7) || 'period'
-  doc.save(`Payslip_${safe}_${month}.pdf`)
+  return { doc, fileName: `Payslip_${safe}_${month}.pdf` }
 }
