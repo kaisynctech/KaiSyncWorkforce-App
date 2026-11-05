@@ -10,7 +10,7 @@ import { parseExtraLines } from '@/lib/payslip-extra-lines'
 
 export type PayslipEmailResult =
   | { status: 'sent'; recipient: string }
-  | { status: 'no_email'; employeeId: string; employeeName: string }
+  | { status: 'no_email'; paymentId: string; employeeId: string; employeeName: string }
   | { status: 'failed'; employeeId: string | null; employeeName: string; message: string }
 
 type PaymentRow = {
@@ -42,7 +42,7 @@ export async function emailPayslip(supabase: SupabaseClient, paymentId: string):
   const e = (person ?? {}) as PersonRow
   const employeeName = `${e.name ?? ''} ${e.surname ?? ''}`.trim() || 'Employee'
   const email = (e.email ?? '').trim()
-  if (!EMAIL_RE.test(email)) return { status: 'no_email', employeeId: p.employee_id, employeeName }
+  if (!EMAIL_RE.test(email)) return { status: 'no_email', paymentId: p.id, employeeId: p.employee_id, employeeName }
 
   try {
     const co = company as { name?: string | null; address?: string | null } | null
@@ -104,11 +104,11 @@ export async function emailPayslip(supabase: SupabaseClient, paymentId: string):
 /** One line for after a release: "Emailed 18 of 20 payslips." plus who couldn't be emailed. */
 export function payslipEmailSummary(results: PayslipEmailResult[]): {
   text: string
-  noEmail: { id: string; name: string }[]
+  noEmail: { id: string; paymentId: string; name: string }[]
   failed: { id: string | null; name: string; message: string }[]
 } {
   const sent = results.filter(r => r.status === 'sent').length
-  const noEmail = results.flatMap(r => r.status === 'no_email' ? [{ id: r.employeeId, name: r.employeeName }] : [])
+  const noEmail = results.flatMap(r => r.status === 'no_email' ? [{ id: r.employeeId, paymentId: r.paymentId, name: r.employeeName }] : [])
   const failed = results.flatMap(r => r.status === 'failed' ? [{ id: r.employeeId, name: r.employeeName, message: r.message }] : [])
   const n = results.length
   const text = n === 1

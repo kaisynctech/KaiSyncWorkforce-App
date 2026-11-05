@@ -394,6 +394,7 @@ export default function PayslipDetailPage() {
   const [companyAddress, setCompanyAddress] = useState('')
   const [homeAddress, setHomeAddress] = useState('')
   const [fullName, setFullName] = useState('')
+  const [empEmail, setEmpEmail] = useState('')
   const [employeeNumber, setEmployeeNumber] = useState('')
   const [employeeIdNumber, setEmployeeIdNumber] = useState('')
   const [incomeTaxNumber, setIncomeTaxNumber] = useState('')
@@ -672,7 +673,7 @@ export default function PayslipDetailPage() {
     const [{ data: person, error: personErr }, { data: company, error: companyErr }] = await Promise.all([
       supabase
         .from('employees')
-        .select('name, surname, monthly_salary, hourly_rate, daily_rate, daily_hours, work_days_weekly, uif_fixed_amount, uif_rate_percent, uif_exempt, employment_date, termination_date, date_of_birth, pay_full_monthly_salary, bank_name, bank_branch_code, bank_account, account_type, employee_number, id_number, tax_number, overtime_rate, overtime_hourly_rate, paid_leave_balance, sick_leave_balance, address, medical_aid_deduction, medical_aid_dependants, pension_deduction, union_deduction')
+        .select('name, surname, email, monthly_salary, hourly_rate, daily_rate, daily_hours, work_days_weekly, uif_fixed_amount, uif_rate_percent, uif_exempt, employment_date, termination_date, date_of_birth, pay_full_monthly_salary, bank_name, bank_branch_code, bank_account, account_type, employee_number, id_number, tax_number, overtime_rate, overtime_hourly_rate, paid_leave_balance, sick_leave_balance, address, medical_aid_deduction, medical_aid_dependants, pension_deduction, union_deduction')
         .eq('id', p.employee_id)
         .eq('company_id', p.company_id)
         .maybeSingle(),
@@ -725,6 +726,7 @@ export default function PayslipDetailPage() {
       setBankBranch(row.bank_branch_code ?? '')
       setBankAccount(row.bank_account ?? '')
       setFullName(`${row.name ?? ''} ${row.surname ?? ''}`.replace(/\s+/g, ' ').trim())
+      setEmpEmail(((row as { email?: string | null }).email ?? '').trim())
       setEmployeeNumber(row.employee_number ?? '')
       setEmployeeIdNumber(row.id_number ?? '')
       setIncomeTaxNumber((row as PersonPay & { tax_number?: string | null }).tax_number ?? '')
@@ -869,6 +871,17 @@ export default function PayslipDetailPage() {
     const surname = splitAt < 0 ? '' : trimmed.slice(splitAt + 1)
     const saved = await saveEmployee({ name, surname })
     if (saved) setFullName(trimmed)
+  }
+
+  async function saveEmail(next: string) {
+    const trimmed = next.trim()
+    setEmpEmail(trimmed)
+    if (trimmed && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmed)) {
+      setErrorMsg('Enter a valid email address, like name@company.co.za.')
+      return
+    }
+    const saved = await saveEmployee({ email: trimmed || null })
+    if (saved && trimmed) setEmailNotice(null)
   }
 
   async function saveEmployeeNumber(next: string) {
@@ -1745,6 +1758,12 @@ export default function PayslipDetailPage() {
                   </td>
                 </tr>
                 <tr className="border-b border-divider">
+                  <td className="py-2 pr-3 text-[13px] text-text-secondary whitespace-nowrap">Email address</td>
+                  <td className="py-2 pr-4" colSpan={3}>
+                    <input id="payslip-employee-email" type="email" value={empEmail} onChange={e => setEmpEmail(e.target.value)} onBlur={e => { void saveEmail(e.target.value) }} placeholder="Add an email so the payslip can be emailed" className={`${slipField}${empEmail ? '' : ' placeholder:text-amber-700'}`} />
+                  </td>
+                </tr>
+                <tr className="border-b border-divider">
                   <td className="py-2 pr-3 text-[13px] text-text-secondary align-middle">Employee address</td>
                   <td className="py-2 pr-4" colSpan={3}>
                     <input type="text" value={homeAddress} onChange={e => setHomeAddress(e.target.value)} onBlur={e => { void saveAddress(e.target.value) }} placeholder="Street, suburb, city" className={slipField} />
@@ -2019,7 +2038,7 @@ export default function PayslipDetailPage() {
           )}
         </div>
         {emailMsg && <p className="text-success text-[12px] font-medium text-right">{emailMsg}</p>}
-        <PayslipEmailNotice summary={emailNotice} onClose={() => setEmailNotice(null)} />
+        <PayslipEmailNotice summary={emailNotice} onClose={() => setEmailNotice(null)} emailFieldId="payslip-employee-email" />
 
         {/* Audit Trail */}
         {auditEntries.length > 0 && (
