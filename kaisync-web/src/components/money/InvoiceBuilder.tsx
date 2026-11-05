@@ -297,7 +297,7 @@ export function InvoiceBuilder({ invoiceId }: { invoiceId?: string | null }) {
               </div>
             </div>
 
-            <LineItemsEditor lines={lines} onChange={setLines} items={items} itemsLoading={itemsLoading} />
+            <LineItemsEditor lines={lines} onChange={setLines} items={items} itemsLoading={itemsLoading} startOpen={!invoiceId} />
 
             <div className="bg-surface-card border border-divider rounded-2xl p-5">
               <label className="flex flex-col gap-2 text-[11.5px] font-semibold uppercase tracking-wider text-text-secondary">Notes for the client
