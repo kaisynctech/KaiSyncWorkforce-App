@@ -166,7 +166,7 @@ export default function SupplierInvoiceDetailPage() {
               {invoice.invoice_number && <span className="ml-2 text-[13px] font-normal text-text-secondary">Supplier's invoice {invoice.invoice_number}</span>}
             </h1>
             <p className="text-[12px] text-text-secondary">
-              {invoice.remittance_number && <>Paid · remittance {invoice.remittance_number} · </>}
+              {invoice.remittance_number && <>Remittance {invoice.remittance_number} · </>}
               {supplierName} · <span className="capitalize">{invoice.status.replace(/_/g, ' ')}</span>
               {' · '}Approval: {invoice.approval_status}
             </p>
