@@ -130,6 +130,18 @@ async function syncInvoice(ctx: Ctx, id: string) {
     await saveDocLink(ctx, 'invoice', id, link.xero_id, link.xero_number, link.xero_status)
     return  // already final in Xero: leave it alone
   }
+  if (link) {
+    // Xero won't take new lines once payments or credits are applied: only check the total then.
+    const cur = await xero(ctx.token, `/Invoices/${link.xero_id}`)
+    const xi = cur.ok ? cur.data.Invoices?.[0] : null
+    if (xi && money(xi.AmountPaid) + money(xi.AmountCredited) > 0) {
+      await saveDocLink(ctx, 'invoice', id, link.xero_id, xi.InvoiceNumber ?? link.xero_number, xi.Status)
+      if (Math.abs(money(xi.Total) - money(inv.total_amount)) > 0.05) {
+        throw new Error(`${inv.invoice_number} already has payments in Xero, so it can't be changed from KaiSync. Xero's total is R${money(xi.Total)}, KaiSync's is R${money(inv.total_amount)}: adjust it in Xero (or issue a credit note).`)
+      }
+      return
+    }
+  }
   const payload = {
     ...(link ? { InvoiceID: link.xero_id } : {}),
     Type: 'ACCREC', Contact: { ContactID: contactId }, InvoiceNumber: inv.invoice_number,
