@@ -13,6 +13,7 @@ import {
   totalPages,
 } from '@/lib/list-pagination'
 import { KpiTile } from '@/components/ui/KpiTile'
+import { XeroMark, useXeroStatuses } from '@/components/xero/XeroMark'
 import type { Contractor } from '@/types/database'
 
 type SupplierKpis = {
@@ -213,6 +214,8 @@ export default function SuppliersPage() {
 
   useEffect(() => { void load() }, [load])
 
+  const xero = useXeroStatuses(xeroConnected ? companyId : null, 'supplier', suppliers.map(s => s.id))
+
   async function pushToXero(e: React.MouseEvent, supplierId: string) {
     e.stopPropagation()
     if (!canEdit || !companyId || !sessionToken || xeroPushing) return
@@ -224,7 +227,7 @@ export default function SuppliersPage() {
         body: JSON.stringify({ company_id: companyId, record_id: supplierId, record_type: 'contractor' }),
       })
       const data = await resp.json()
-      if (data.ok) setXeroLinked(prev => new Set([...prev, supplierId]))
+      if (data.ok) { setXeroLinked(prev => new Set([...prev, supplierId])); void xero.reload() }
     } finally {
       setXeroPushing(null)
     }
@@ -431,8 +434,9 @@ export default function SuppliersPage() {
                   </td>
                   {xeroConnected && (
                     <td className="data-td text-center" onClick={e => e.stopPropagation()}>
-                      {xeroLinked.has(s.id) ? (
-                        <span className="text-green-400 text-[18px]" title="Synced to Xero">✓</span>
+                      {xeroLinked.has(s.id) || xero.statuses?.[s.id] ? (
+                        <XeroMark companyId={companyId} kind="supplier" id={s.id} canSend={canEdit}
+                          state={xero.statuses?.[s.id] ?? { s: 'synced' }} connected onChanged={() => void xero.reload()} />
                       ) : canEdit ? (
                         <button
                           onClick={e => void pushToXero(e, s.id)}

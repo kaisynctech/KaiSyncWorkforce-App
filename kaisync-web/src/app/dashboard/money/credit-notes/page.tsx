@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { fmtMoney } from '@/lib/finance-calc'
+import { XeroMark, useXeroStatuses } from '@/components/xero/XeroMark'
 
 type CreditNoteRow = {
   id: string
@@ -38,12 +39,15 @@ export default function CreditNotesPage() {
   const router = useRouter()
   const [rows, setRows]       = useState<CreditNoteRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [companyId, setCompanyId] = useState<string | null>(null)
+  const xero = useXeroStatuses(companyId, 'credit_note', rows.slice(0, 300).map(r => r.id))
 
   const load = useCallback(async () => {
     setLoading(true)
     const supabase = createClient()
     const member = await resolveCurrentMember(supabase)
     if (!member) { setLoading(false); return }
+    setCompanyId(member.companyId)
     const { data } = await supabase
       .from('credit_notes')
       .select('id, credit_note_number, status, reason_code, total_amount, issue_date, clients(name), finance_invoices(invoice_number)')
@@ -88,7 +92,12 @@ export default function CreditNotesPage() {
                   onClick={() => router.push(`/dashboard/money/credit-notes/${r.id}`)}
                 >
                   <td className="data-td text-[13px] font-medium text-text-primary">
-                    {r.credit_note_number || <span className="text-text-disabled italic">draft</span>}
+                    <span className="inline-flex items-center gap-1.5">
+                      {r.credit_note_number || <span className="text-text-disabled italic">draft</span>}
+                      {r.status === 'approved' && (
+                        <XeroMark companyId={companyId} kind="credit_note" id={r.id} state={xero.statuses?.[r.id]} connected={xero.connected} onChanged={() => void xero.reload()} />
+                      )}
+                    </span>
                   </td>
                   <td className="data-td text-[13px] text-text-secondary">
                     {(r.finance_invoices as { invoice_number: string | null } | null)?.invoice_number ?? '—'}

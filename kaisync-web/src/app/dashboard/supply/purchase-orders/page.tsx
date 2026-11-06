@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { fmtMoney } from '@/lib/finance-calc'
+import { XeroMark, useXeroStatuses } from '@/components/xero/XeroMark'
 import type { PurchaseOrder, PoStatus } from '@/types/commercial'
 
 const STATUS_COLOURS: Record<PoStatus, string> = {
@@ -44,6 +45,7 @@ export default function PurchaseOrdersPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [companyId, setCompanyId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -51,6 +53,7 @@ export default function PurchaseOrdersPage() {
     const supabase = createClient()
     const member = await resolveCurrentMember(supabase)
     if (!member) { setError('Not linked to a company'); setLoading(false); return }
+    setCompanyId(member.companyId)
 
     const { data, error: err } = await supabase
       .from('purchase_orders')
@@ -66,6 +69,8 @@ export default function PurchaseOrdersPage() {
   useEffect(() => { void load() }, [load])
 
   const filtered = pos.filter(p => statusFilter === 'all' || p.status === statusFilter)
+  // A PO reaches Xero as a bill once it is fully received.
+  const xero = useXeroStatuses(companyId, 'po', filtered.slice(0, 300).map(p => p.id))
 
   return (
     <div className="h-full flex flex-col">
@@ -121,7 +126,13 @@ export default function PurchaseOrdersPage() {
                 return (
                   <tr key={po.id} className="border-b border-divider hover:bg-surface-elevated/50 cursor-pointer"
                     onClick={() => router.push(`/dashboard/supply/purchase-orders/${po.id}`)}>
-                    <td className="data-td text-[13px] font-mono font-medium">{po.po_number ?? 'Draft'}</td>
+                    <td className="data-td text-[13px] font-mono font-medium">
+                      <span className="inline-flex items-center gap-1.5">{po.po_number ?? 'Draft'}
+                        {xero.statuses?.[po.id] && (
+                          <XeroMark companyId={companyId} kind="po" id={po.id} state={xero.statuses[po.id]} connected={xero.connected} onChanged={() => void xero.reload()} />
+                        )}
+                      </span>
+                    </td>
                     <td className="data-td text-[13px] text-text-secondary">{(po.supplier as { name: string } | null)?.name ?? '—'}</td>
                     <td className="data-td text-[13px] text-right font-medium">{fmtMoney(po.total_amount)}</td>
                     <td className="data-td">

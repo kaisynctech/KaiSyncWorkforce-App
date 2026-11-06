@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/ResponsiveDataView'
 import type { Client, ClientActionItem } from '@/types/database'
 import { LinkedBadge, LinkedOnlyToggle } from '@/components/LinkedBadge'
+import { XeroMark, useXeroStatuses } from '@/components/xero/XeroMark'
 import { activeLinkedRecordIds } from '@/lib/company-links'
 import * as XLSX from 'xlsx'
 import { localISODate } from '@/lib/utils'
@@ -266,6 +267,8 @@ export default function ClientsPage() {
     router.push(`/dashboard/clients/${item.client_id}`)
   }
 
+  const xero = useXeroStatuses(xeroConnected ? companyId : null, 'client', clients.map(c => c.id))
+
   async function pushToXero(e: React.MouseEvent, clientId: string) {
     e.stopPropagation()
     if (!canEdit || !companyId || !sessionToken || xeroPushing) return
@@ -278,7 +281,7 @@ export default function ClientsPage() {
         body: JSON.stringify({ company_id: companyId, record_id: clientId, record_type: 'client' }),
       })
       const data = await resp.json().catch(() => ({} as { ok?: boolean; error?: string }))
-      if (data.ok) setXeroLinked(prev => new Set([...prev, clientId]))
+      if (data.ok) { setXeroLinked(prev => new Set([...prev, clientId])); void xero.reload() }
       else setXeroMsg(data.error ?? `Xero push failed (${resp.status})`)
     } catch {
       setXeroMsg('Xero push failed — network or server error')
@@ -540,8 +543,9 @@ export default function ClientsPage() {
                         <td className="data-td text-text-secondary text-[12px]">{c.phone ?? '—'}</td>
                         {xeroConnected && (
                           <td className="data-td text-center" onClick={e => e.stopPropagation()}>
-                            {xeroLinked.has(c.id) ? (
-                              <span className="text-green-400 text-[18px]" title="Synced to Xero">✓</span>
+                            {xeroLinked.has(c.id) || xero.statuses?.[c.id] ? (
+                              <XeroMark companyId={companyId} kind="client" id={c.id} canSend={canEdit}
+                                state={xero.statuses?.[c.id] ?? { s: 'synced' }} connected onChanged={() => void xero.reload()} />
                             ) : canEdit ? (
                               <button
                                 onClick={e => pushToXero(e, c.id)}

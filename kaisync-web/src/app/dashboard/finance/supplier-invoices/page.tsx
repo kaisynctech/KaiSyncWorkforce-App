@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { calculateVatExclusive, fmtMoney, roundFinancial } from '@/lib/finance-calc'
 import { isSupplierKind } from '@/lib/partner-kinds'
+import { XeroMark, useXeroStatuses } from '@/components/xero/XeroMark'
 import type { SupplierInvoice } from '@/lib/finance-types'
 
 type SupplierOpt = { id: string; name: string }
@@ -34,6 +35,7 @@ function SupplierInvoicesPageInner() {
   const [dueDate, setDueDate] = useState('')
   const [busy, setBusy] = useState(false)
   const [companyId, setCompanyId] = useState<string | null>(null)
+  const xero = useXeroStatuses(companyId, 'supplier_invoice', rows.slice(0, 300).map(r => r.id))
   const [employeeId, setEmployeeId] = useState<string | null>(null)
   const [prefillApplied, setPrefillApplied] = useState(false)
 
@@ -244,7 +246,14 @@ function SupplierInvoicesPageInner() {
                   className="border-b border-divider cursor-pointer hover:bg-background"
                   onClick={() => router.push(`/dashboard/finance/supplier-invoices/${r.id}`)}
                 >
-                  <td className="data-td text-[13px] font-medium text-primary">{r.bill_number ?? '—'}</td>
+                  <td className="data-td text-[13px] font-medium text-primary">
+                    <span className="inline-flex items-center gap-1.5">{r.bill_number ?? '—'}
+                      {(r.approval_status === 'approved' || xero.statuses?.[r.id]) && (
+                        <XeroMark companyId={companyId} kind="supplier_invoice" id={r.id} state={xero.statuses?.[r.id]} connected={xero.connected}
+                          canSend={r.approval_status === 'approved'} onChanged={() => void xero.reload()} />
+                      )}
+                    </span>
+                  </td>
                   <td className="data-td text-[13px]">{(r.contractors as { name: string } | null)?.name ?? '—'}</td>
                   <td className="data-td text-[13px] text-text-secondary">{r.invoice_number || '—'}</td>
                   <td className="data-td text-[12px] capitalize">{r.status.replace(/_/g, ' ')}</td>

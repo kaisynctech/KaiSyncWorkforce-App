@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { fmtMoney } from '@/lib/finance-calc'
 import { MoneyNotices, type MoneyNotice } from '@/components/money/MoneyNotices'
+import { XeroMark, useXeroStatuses } from '@/components/xero/XeroMark'
 import type { FinanceInvoice } from '@/lib/finance-types'
 import {
   ResponsiveDataView,
@@ -64,12 +65,14 @@ function MoneyInvoicesInner() {
   const [search, setSearch]   = useState('')
   const [status, setStatus]   = useState('all')
   const [filterLabels, setFilterLabels] = useState<{ client?: string; job?: string; deal?: string }>({})
+  const [companyId, setCompanyId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     const supabase = createClient()
     const member = await resolveCurrentMember(supabase)
     if (!member) { setLoading(false); return }
+    setCompanyId(member.companyId)
 
     let q = supabase
       .from('finance_invoices')
@@ -146,6 +149,12 @@ function MoneyInvoicesInner() {
     }
     return true
   })
+
+  const xero = useXeroStatuses(companyId, 'invoice', filtered.slice(0, 300).map(r => r.id))
+  const xeroMark = (r: InvoiceRow) => (
+    <XeroMark companyId={companyId} kind="invoice" id={r.id} state={xero.statuses?.[r.id]} connected={xero.connected}
+      canSend={!['draft', 'cancelled', 'voided'].includes(r.status)} onChanged={() => void xero.reload()} />
+  )
 
   const hasScopeFilter = !!(clientFilter || jobFilter || dealFilter)
 
@@ -236,7 +245,10 @@ function MoneyInvoicesInner() {
                       onClick={() => router.push(`/dashboard/money/invoices/${r.id}`)}
                     >
                       <td className="data-td text-[13px] font-medium text-text-primary">
-                        {r.invoice_number || <span className="text-text-disabled italic">draft</span>}
+                        <span className="inline-flex items-center gap-1.5">
+                          {r.invoice_number || <span className="text-text-disabled italic">draft</span>}
+                          {r.status !== 'draft' && xeroMark(r)}
+                        </span>
                       </td>
                       <td className="data-td text-[13px] text-text-secondary">
                         {(r.clients as { name: string } | null)?.name ?? '—'}
@@ -278,7 +290,7 @@ function MoneyInvoicesInner() {
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <DataCardTitle>
-                            {r.invoice_number || 'Draft'}
+                            <span className="inline-flex items-center gap-1.5">{r.invoice_number || 'Draft'}{r.status !== 'draft' && xeroMark(r)}</span>
                           </DataCardTitle>
                           <DataCardMeta>
                             {(r.clients as { name: string } | null)?.name ?? '—'}
