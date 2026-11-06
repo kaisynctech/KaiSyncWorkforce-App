@@ -148,7 +148,7 @@ async function syncInvoice(ctx: Ctx, id: string) {
     if (xi && money(xi.AmountPaid) + money(xi.AmountCredited) > 0) {
       await saveDocLink(ctx, 'invoice', id, link.xero_id, xi.InvoiceNumber ?? link.xero_number, xi.Status)
       if (Math.abs(money(xi.Total) - money(inv.total_amount)) > 0.05) {
-        throw new Error(`${inv.invoice_number} already has payments in Xero, so it can't be changed from KaiSync. Xero's total is R${money(xi.Total)}, KaiSync's is R${money(inv.total_amount)}: adjust it in Xero (or issue a credit note).`)
+        throw new Error(`${inv.invoice_number} already has payments in Xero, so it can't be changed from KaiSync. Xero's total is ${inv.currency || 'ZAR'} ${money(xi.Total)}, KaiSync's is ${inv.currency || 'ZAR'} ${money(inv.total_amount)}: adjust it in Xero (or issue a credit note).`)
       }
       return
     }
@@ -166,7 +166,7 @@ async function syncInvoice(ctx: Ctx, id: string) {
   await saveDocLink(ctx, 'invoice', id, x.InvoiceID, x.InvoiceNumber, x.Status)
   await keepXeroRate(ctx, 'finance_invoices', id, inv, x.CurrencyRate)
   if (Math.abs(money(x.Total) - money(inv.total_amount)) > 0.05) {
-    throw new Error(`Sent, but Xero's total (R${money(x.Total)}) differs from KaiSync's (R${money(inv.total_amount)}). Check the VAT rates on the lines.`)
+    throw new Error(`Sent, but Xero's total (${inv.currency || 'ZAR'} ${money(x.Total)}) differs from KaiSync's (${inv.currency || 'ZAR'} ${money(inv.total_amount)}). Check the VAT rates on the lines.`)
   }
 }
 
