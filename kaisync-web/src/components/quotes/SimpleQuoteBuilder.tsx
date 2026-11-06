@@ -25,6 +25,7 @@ import {
 } from '@/lib/quote-vat'
 import { escapeIlike } from '@/lib/list-pagination'
 import { LineItemsEditor } from '@/components/money/LineItemsEditor'
+import { formatCurrency } from '@/lib/currencies'
 import { asItemType, lineQty, lineTotal, loadPickItems, type EditorLine, type ItemType, type PickItem } from '@/lib/line-items'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -52,9 +53,10 @@ type ClientRow = {
   legal_name?: string | null
   client_code?: string | null
   contact_person?: string | null
+  currency?: string | null
 }
 
-const CLIENT_PICK_COLUMNS = 'id, name, email, legal_name, client_code, contact_person'
+const CLIENT_PICK_COLUMNS = 'id, name, email, legal_name, client_code, contact_person, currency'
 
 function clientPickDetail(row: ClientRow): string {
   return [row.legal_name && row.legal_name !== row.name ? row.legal_name : null, row.client_code, row.contact_person]
@@ -72,8 +74,8 @@ function todayPlus(days: number): string {
   return d.toISOString().slice(0, 10)
 }
 
-function fmtR(n: number): string {
-  return 'R ' + n.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+function fmtR(n: number, currency?: string | null): string {
+  return formatCurrency(n, currency)
 }
 
 function blankLine(): SimpleQuoteLine {
@@ -134,6 +136,11 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   // ── Clients list ──────────────────────────────────────────────────────────
   const [clients,        setClients]        = useState<ClientRow[]>([])
   const [chosenClient,   setChosenClient]   = useState<ClientRow | null>(null)
+  // The quote's currency: the client's (blank = the company's, rand). Kept on the quote when it is saved.
+  const [savedCurrency, setSavedCurrency] = useState<string | null>(null)
+  const quoteCurrency = chosenClient ? (chosenClient.currency || 'ZAR') : (savedCurrency || 'ZAR')
+  const quoteCurrencyRef = useRef('ZAR')
+  useEffect(() => { quoteCurrencyRef.current = quoteCurrency }, [quoteCurrency])
   const [clientListError, setClientListError] = useState<string | null>(null)
   const [clientSearch,   setClientSearch]   = useState('')
   const [clientDropOpen, setClientDropOpen] = useState(false)
@@ -339,6 +346,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         setTitle((q.title as string) ?? '')
         const cid2 = (q.client_id as string | null) ?? null
         setClientId(cid2);         clientIdRef.current = cid2
+        setSavedCurrency((q.currency as string | null) ?? null)
         const vu = (q.valid_until as string | null) ?? todayPlus(14)
         setValidUntil(vu);         validUntilRef.current = vu
         const n = (q.scope_notes as string | null) ?? ''
@@ -444,6 +452,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         subtotal:     lineSubtotal,
         vat_amount:   lineVat,
         total_amount: lineTotal,
+        currency:     quoteCurrencyRef.current,
         updated_at:   new Date().toISOString(),
       }
       if (!qid) payload.created_by = eid
@@ -667,6 +676,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   function buildPdfInput() {
     const client = chosenClient?.id === clientIdRef.current ? chosenClient : clients.find(c => c.id === clientIdRef.current)
     return {
+      currency: quoteCurrency,
       quote_number: quoteNumberRef.current,
       title: titleRef.current.trim() || 'Untitled quote',
       status: statusRef.current,
@@ -904,7 +914,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         quote_id: qid,
         invoice_number: null,
         status: 'draft',
-        currency: 'ZAR',
+        currency: quoteCurrencyRef.current,
         subtotal: lineSubtotal,
         vat_rate: rate,
         vat_amount: lineVat,
@@ -1358,14 +1368,14 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         </div>
 
         {/* ── Items ── */}
-        <LineItemsEditor lines={editorLines} onChange={handleEditorChange} items={pickItems} itemsLoading={pickLoading} startOpen={!initialQuoteId} />
+        <LineItemsEditor lines={editorLines} onChange={handleEditorChange} items={pickItems} itemsLoading={pickLoading} startOpen={!initialQuoteId} currency={quoteCurrency} />
 
         {/* ── Totals ── */}
         <div className="flex justify-end">
           <div className="w-full max-w-md rounded-xl border border-divider overflow-hidden">
             <div className="flex justify-between items-center px-5 py-3 border-b border-divider">
               <span className="text-[13px] text-text-secondary">{vatOn ? 'Subtotal (excl. VAT)' : 'Subtotal'}</span>
-              <span className="text-[13px] text-text-primary font-medium tabular-nums">{fmtR(subtotal)}</span>
+              <span className="text-[13px] text-text-primary font-medium tabular-nums">{fmtR(subtotal, quoteCurrency)}</span>
             </div>
             <div className="flex justify-between items-center gap-3 px-5 py-3 border-b border-divider">
               <span className="text-[13px] text-text-secondary">
@@ -1395,7 +1405,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
                   </button>
                 </div>
                 <span className="text-[13px] text-text-primary tabular-nums w-24 text-right">
-                  {vatOn ? fmtR(vat) : '—'}
+                  {vatOn ? fmtR(vat, quoteCurrency) : '—'}
                 </span>
               </div>
             </div>
@@ -1403,7 +1413,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
               <span className="text-[14px] text-text-primary font-semibold">
                 {vatOn ? 'Total (incl. VAT)' : 'Total'}
               </span>
-              <span className="text-[15px] text-text-primary font-bold tabular-nums">{fmtR(total)}</span>
+              <span className="text-[15px] text-text-primary font-bold tabular-nums">{fmtR(total, quoteCurrency)}</span>
             </div>
           </div>
         </div>

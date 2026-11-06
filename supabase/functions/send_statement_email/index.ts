@@ -20,7 +20,8 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", ...cors } });
 const esc = (s: unknown) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
-const rand = (n: number) => "R " + n.toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// The client's own currency: rand prints as "R", others as their code ("USD 1 250,00").
+const rand = (n: number, cur = "ZAR") => `${cur === "ZAR" ? "R" : cur} ` + n.toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 type Body = {
   client_id?: string; recipient_email?: string; cc?: unknown; pdf_base64?: string; filename?: string;
@@ -53,7 +54,8 @@ Deno.serve(async (req: Request) => {
     if (!resendKey) return json({ error: "email_not_configured", message: "Email sending is not set up." }, 503);
     const admin = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
 
-    const { data: client } = await admin.from("clients").select("id, company_id, name, email, contact_person").eq("id", clientId).maybeSingle();
+    const { data: client } = await admin.from("clients").select("id, company_id, name, email, contact_person, currency").eq("id", clientId).maybeSingle();
+    const cur = String((client as { currency?: string | null } | null)?.currency || "ZAR").toUpperCase();
     if (!client) return json({ error: "Client not found" }, 404);
     const recipient = (body.recipient_email ?? client.email ?? "").trim();
     if (!validEmail(recipient) && !preview) return json({ error: "recipient_email required", message: "Enter the client's email address." }, 400);
@@ -75,7 +77,7 @@ Deno.serve(async (req: Request) => {
     const standard = [
       `Please find attached your statement of account with ${esc(companyName)}.`,
       balance > 0
-        ? `The balance on your account is <strong>${esc(rand(balance))}</strong>${overdue > 0 ? `, of which <strong>${esc(rand(overdue))}</strong> is overdue` : ""}. We would appreciate payment at your earliest convenience.`
+        ? `The balance on your account is <strong>${esc(rand(balance, cur))}</strong>${overdue > 0 ? `, of which <strong>${esc(rand(overdue, cur))}</strong> is overdue` : ""}. We would appreciate payment at your earliest convenience.`
         : "Your account is up to date. Thank you!",
       ...(note ? [esc(note).replace(/\n/g, "<br>")] : []),
       "If you have already paid, or something doesn’t look right, simply reply to this email.",
@@ -100,7 +102,7 @@ ${co?.document_footer ? `<div style="margin-top:8px">${esc(co.document_footer)}<
 </td></tr></table>
 </td></tr></table></body></html>`;
     const text = paras.map(htmlToText).join("\n\n") + `\n\n${signOffText(sender, companyName)}`;
-    const defaultSubject = balance > 0 ? `Statement of account — ${rand(balance)} outstanding` : "Statement of account";
+    const defaultSubject = balance > 0 ? `Statement of account — ${rand(balance, cur)} outstanding` : "Statement of account";
     const subject = editedSubject(body.subject) ?? defaultSubject;
     if (preview) {
       return json({

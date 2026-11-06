@@ -44,8 +44,8 @@ export function publicLogoUrl(path: string | null | undefined): string | null {
   return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/company-branding/${p.split('/').map(encodeURIComponent).join('/')}`
 }
 
-export const randZA = (n: number | null | undefined) =>
-  `R ${Number(n ?? 0).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+export const randZA = (n: number | null | undefined, currency?: string | null) =>
+  `${!currency || currency.toUpperCase() === 'ZAR' ? 'R' : currency.toUpperCase()} ${Number(n ?? 0).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 export const dayZA = (d: string | null | undefined) =>
   d ? new Date(`${d.slice(0, 10)}T12:00:00`).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'

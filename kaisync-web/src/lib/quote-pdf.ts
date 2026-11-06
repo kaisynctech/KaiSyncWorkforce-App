@@ -33,10 +33,13 @@ export type QuotePdfInput = {
   vatRate?: number
   /** Company letterhead (logo, details, banking). Falls back to the company name only. */
   letterhead?: Letterhead | null
+  /** The quote's currency (ISO code). Rand prints as "R", others as their code ("USD 1 250,00"). */
+  currency?: string | null
 }
 
-function money(n: number): string {
-  return `R ${n.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+function money(n: number, currency?: string | null): string {
+  const c = (currency || 'ZAR').toUpperCase()
+  return `${c === 'ZAR' ? 'R' : c} ${n.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 function fmtDate(d: string | null | undefined): string {
@@ -106,8 +109,8 @@ export function buildQuotePdf(input: QuotePdfInput): jsPDF {
     doc.text(desc, left + 1, y)
     doc.text(String(line.qty), 118, y, { align: 'right' })
     doc.text(line.unit || 'each', 132, y)
-    doc.text(money(line.unit_price), 158, y, { align: 'right' })
-    doc.text(money(line.total), right - 1, y, { align: 'right' })
+    doc.text(money(line.unit_price, input.currency), 158, y, { align: 'right' })
+    doc.text(money(line.total, input.currency), right - 1, y, { align: 'right' })
     y += Math.max(6, desc.length * 4.5)
   }
 
@@ -120,9 +123,9 @@ export function buildQuotePdf(input: QuotePdfInput): jsPDF {
   const vatOn = rate > 0.0001
   const vatLabel = vatOn ? `VAT (${vatPercentLabel(rate)}%)` : 'VAT'
   const totals = [
-    [vatOn ? 'Subtotal (excl. VAT)' : 'Subtotal', money(input.subtotal)],
-    [vatLabel, vatOn ? money(input.vat) : 'No VAT'],
-    [vatOn ? 'Total (incl. VAT)' : 'Total', money(input.total)],
+    [vatOn ? 'Subtotal (excl. VAT)' : 'Subtotal', money(input.subtotal, input.currency)],
+    [vatLabel, vatOn ? money(input.vat, input.currency) : 'No VAT'],
+    [vatOn ? 'Total (incl. VAT)' : 'Total', money(input.total, input.currency)],
   ] as const
 
   for (let i = 0; i < totals.length; i++) {

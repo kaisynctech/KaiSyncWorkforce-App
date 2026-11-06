@@ -17,7 +17,7 @@ import { LineItemsEditor } from '@/components/money/LineItemsEditor'
 import { CurrencyPicker } from '@/components/money/CurrencyPicker'
 import { formatCurrency } from '@/lib/currencies'
 import {
-  asItemType, formatRand, lineQty, lineTotal, linesSubtotal, loadPickItems, meaningfulLines, newKey,
+  asItemType, lineQty, lineTotal, linesSubtotal, loadPickItems, meaningfulLines, newKey,
   type EditorLine, type PickItem,
 } from '@/lib/line-items'
 

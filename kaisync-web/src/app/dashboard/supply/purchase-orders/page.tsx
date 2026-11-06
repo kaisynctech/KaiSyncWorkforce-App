@@ -134,7 +134,7 @@ export default function PurchaseOrdersPage() {
                       </span>
                     </td>
                     <td className="data-td text-[13px] text-text-secondary">{(po.supplier as { name: string } | null)?.name ?? '—'}</td>
-                    <td className="data-td text-[13px] text-right font-medium">{fmtMoney(po.total_amount)}</td>
+                    <td className="data-td text-[13px] text-right font-medium">{fmtMoney(po.total_amount, (po as { currency?: string | null }).currency)}</td>
                     <td className="data-td">
                       <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${STATUS_COLOURS[po.status]}`}>
                         {STATUS_LABELS[po.status]}

@@ -92,7 +92,7 @@ export default function PoBuilder({ poId }: { poId?: string }) {
     setEmployeeId(member.employeeId)
 
     const [{ data: supps }, { data: dls }, { data: rfqRows }, { data: approveData }] = await Promise.all([
-      supabase.from('contractors').select('id, name, email').eq('company_id', member.companyId).eq('partner_kind', 'supplier').eq('is_active', true).order('name'),
+      supabase.from('contractors').select('id, name, email, currency').eq('company_id', member.companyId).eq('partner_kind', 'supplier').eq('is_active', true).order('name'),
       supabase.from('client_deals').select('id, title').eq('company_id', member.companyId).order('title'),
       supabase.from('rfqs').select('id, rfq_number, title').eq('company_id', member.companyId).order('created_at', { ascending: false }),
       supabase.rpc('user_has_permission', { p_company_id: member.companyId, p_key: 'purchase_orders.approve' }),
@@ -217,6 +217,8 @@ export default function PoBuilder({ poId }: { poId?: string }) {
   function removeLine(key: string) { setLines(ls => ls.filter(l => l.key !== key)) }
 
   // Totals
+  // The PO's currency: saved on the PO, otherwise the chosen supplier's (blank = rand).
+  const poCurrency = po?.currency || (suppliers.find(x => x.id === supplierId) as { currency?: string | null } | undefined)?.currency || 'ZAR'
   const totals = lines.reduce((acc, l) => {
     const qty = Number(l.quantity_ordered) || 0
     const up = Number(l.unit_price) || 0
@@ -669,7 +671,7 @@ export default function PoBuilder({ poId }: { poId?: string }) {
                             <input type="number" className="input h-8 text-[13px] w-14 text-right" value={l.vat_rate} disabled={!!isReadonly}
                               onChange={e => updateLine(l.key, 'vat_rate', e.target.value)} />
                           </td>
-                          <td className="data-td text-[13px] text-right font-medium">{fmtMoney(lineTotal)}</td>
+                          <td className="data-td text-[13px] text-right font-medium">{fmtMoney(lineTotal, poCurrency)}</td>
                           {!isReadonly && (
                             <td className="data-td">
                               <button onClick={() => removeLine(l.key)} className="text-text-secondary hover:text-error">
@@ -685,11 +687,11 @@ export default function PoBuilder({ poId }: { poId?: string }) {
               </div>
               {/* Totals */}
               <div className="max-w-xs ml-auto mt-3 space-y-1 text-[13px]">
-                <div className="flex justify-between"><span className="text-text-secondary">Subtotal</span><span>{fmtMoney(totals.subtotal)}</span></div>
-                <div className="flex justify-between"><span className="text-text-secondary">VAT</span><span>{fmtMoney(totals.vat)}</span></div>
-                <div className="flex justify-between font-semibold"><span>Total</span><span>{fmtMoney(totals.total)}</span></div>
+                <div className="flex justify-between"><span className="text-text-secondary">Subtotal</span><span>{fmtMoney(totals.subtotal, poCurrency)}</span></div>
+                <div className="flex justify-between"><span className="text-text-secondary">VAT</span><span>{fmtMoney(totals.vat, poCurrency)}</span></div>
+                <div className="flex justify-between font-semibold"><span>Total</span><span>{fmtMoney(totals.total, poCurrency)}</span></div>
                 {po && po.amount_received_value > 0 && (
-                  <div className="flex justify-between text-success"><span>Received value</span><span>{fmtMoney(po.amount_received_value)}</span></div>
+                  <div className="flex justify-between text-success"><span>Received value</span><span>{fmtMoney(po.amount_received_value, poCurrency)}</span></div>
                 )}
               </div>
             </div>
@@ -727,7 +729,7 @@ export default function PoBuilder({ poId }: { poId?: string }) {
                 <a key={inv.id} href={`/dashboard/finance/supplier-invoices/${inv.id}`}
                   className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-surface-elevated text-[13px]">
                   <span className="font-medium">{inv.invoice_number ?? 'Invoice'}</span>
-                  <span className="text-text-secondary">{fmtMoney(inv.total_amount)}</span>
+                  <span className="text-text-secondary">{fmtMoney(inv.total_amount, (inv as { currency?: string | null }).currency)}</span>
                   <span className="capitalize text-text-secondary">{inv.status}</span>
                 </a>
               ))}
@@ -898,7 +900,7 @@ function LinkInvoiceModal({ companyId, supplierId, onLink, onClose }: {
               <button key={inv.id} onClick={() => onLink(inv.id)}
                 className="w-full text-left px-3 py-2 rounded-lg hover:bg-surface-elevated text-[13px]">
                 <span className="font-medium">{inv.invoice_number ?? 'Invoice'}</span>
-                <span className="ml-2 text-text-secondary">{fmtMoney(inv.total_amount)}</span>
+                <span className="ml-2 text-text-secondary">{fmtMoney(inv.total_amount, (inv as { currency?: string | null }).currency)}</span>
                 <span className="ml-2 capitalize text-text-secondary">{inv.status}</span>
               </button>
             ))}

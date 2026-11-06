@@ -45,6 +45,10 @@ export async function statementPdf(
   ])
   const k = opts.kind
   const labels = LABELS[k]
+  // In the client's / supplier's own currency (rand prints as "R", others as their code).
+  const { data: party } = await supabase.from(k === 'client' ? 'clients' : 'contractors').select('currency').eq('id', opts.id).maybeSingle()
+  const cur = String((party as { currency?: string | null } | null)?.currency || 'ZAR').toUpperCase()
+  const formatRand = (n: number) => `${cur === 'ZAR' ? 'R' : cur} ${Number(n || 0).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   const summary: [string, string][] = k === 'client'
     ? [['Total invoiced', formatRand(st.totalInvoiced)], ['Total paid', formatRand(st.totalPaid)], ['Credit notes', formatRand(st.totalCredited)], ['Overdue', formatRand(st.overdue)]]
     : k === 'supplier'
