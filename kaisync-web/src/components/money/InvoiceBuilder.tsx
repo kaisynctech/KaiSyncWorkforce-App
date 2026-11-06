@@ -90,8 +90,7 @@ export function InvoiceBuilder({ invoiceId }: { invoiceId?: string | null }) {
       setClients((cl ?? []) as ClientOpt[])
       const { data: home } = await supabase.rpc('company_home_currency' as never, { p_company_id: member.companyId } as never)
       const hc = typeof home === 'string' && home ? home : 'ZAR'
-      setHomeCurrency(hc)
-      if (!invoiceId) setCurrency(hc)
+      setHomeCurrency(hc)   // the client's currency (or this) is applied by the effect below
       setJobs((jb ?? []) as JobOpt[])
 
       if (invoiceId) {
