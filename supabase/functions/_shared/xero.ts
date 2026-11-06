@@ -86,7 +86,10 @@ export async function xero(token: XeroToken, path: string, init: RequestInit = {
       ?? (resp.status === 401 || resp.status === 403 ? 'Xero refused access. Reconnect Xero in Settings → Integrations (it needs permission for invoices and payments).'
         : resp.status === 429 ? 'Xero is busy (too many requests). It will try again shortly.'
         : `Xero error ${resp.status}`)
-    return { ok: false, status: resp.status, data, error }
+    // Make Xero's currency refusal say what to do.
+    const cur = /not subscribed to currency ([A-Z]{3})/i.exec(error ?? '')
+    const friendly = cur ? `Xero doesn't have ${cur[1]} switched on. In Xero go to Accounting → Advanced → Currencies, add ${cur[1]}, then press Try again.` : error
+    return { ok: false, status: resp.status, data, error: friendly }
   }
   return { ok: false, status: 429, data: null, error: 'Xero is busy (too many requests). It will try again shortly.' }
 }

@@ -199,7 +199,7 @@ export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly
               )}
 
               <label className="flex items-center gap-1 h-8 rounded-lg border border-divider px-2 text-[12.5px] text-text-secondary bg-background focus-within:border-primary/60">
-                R
+                {!currency || currency === 'ZAR' ? 'R' : currency}
                 <input
                   value={draft ?? (l.unitPrice ? l.unitPrice.toFixed(2) : '')}
                   disabled={readOnly}
