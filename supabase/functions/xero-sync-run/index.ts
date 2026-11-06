@@ -32,7 +32,8 @@ async function taxType(ctx: Ctx, rate: number, side: 'sales' | 'purchases'): Pro
     if (!r.ok) throw new Error(r.error ?? 'Could not read VAT rates from Xero')
     ctx.taxRates = (r.data.TaxRates ?? []).filter((t: TaxRate) => t.Status === 'ACTIVE')
   }
-  const pct = Math.round(rate * 10000) / 100                       // 0.15 → 15
+  // Rates are stored as fractions (0.15) in most tables but as percentages (15) in some: accept both.
+  const pct = rate > 1 ? Math.round(rate * 100) / 100 : Math.round(rate * 10000) / 100
   const fits = ctx.taxRates!.filter(t => Math.abs(Number(t.EffectiveRate) - pct) < 0.001
     && (side === 'sales' ? t.CanApplyToRevenue !== false : t.CanApplyToExpenses !== false))
   if (pct === 0) {
@@ -41,7 +42,11 @@ async function taxType(ctx: Ctx, rate: number, side: 'sales' | 'purchases'): Pro
     return 'NONE'
   }
   const std = fits.find(t => (side === 'sales' ? /^OUTPUT/ : /^INPUT/).test(t.TaxType) && !/CAPITAL|IMPORT/i.test(t.Name)) ?? fits[0]
-  if (!std) throw new Error(`Xero has no ${pct}% VAT rate for ${side}. Add it in Xero → Settings → Tax rates.`)
+  if (!std) {
+    const have = ctx.taxRates!.filter(t => side === 'sales' ? t.CanApplyToRevenue !== false : t.CanApplyToExpenses !== false)
+      .map(t => `${t.Name} ${Number(t.EffectiveRate)}%`).slice(0, 8).join(', ')
+    throw new Error(`Xero has no ${pct}% VAT rate for ${side}. Add it in Xero → Accounting → Advanced → Tax rates.${have ? ` Xero has: ${have}.` : ''}`)
+  }
   return std.TaxType
 }
 
