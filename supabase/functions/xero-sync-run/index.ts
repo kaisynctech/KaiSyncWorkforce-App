@@ -18,7 +18,7 @@ const BACKOFF_MIN = [1, 5, 15, 60, 360]
 type Conn = {
   company_id: string; sales_account_code: string | null; purchases_account_code: string | null; bank_account_code: string | null
 }
-type Ctx = { admin: Admin; token: XeroToken; conn: Conn; taxRates?: TaxRate[] }
+type Ctx = { admin: Admin; token: XeroToken; conn: Conn; taxRates?: TaxRate[]; baseCurrency?: string }
 type TaxRate = { TaxType: string; Name: string; EffectiveRate: number; Status: string; CanApplyToRevenue?: boolean; CanApplyToExpenses?: boolean }
 
 class Skip extends Error {}   // job not needed (e.g. document dated before go-live): marked 'skipped', not an error
@@ -48,6 +48,16 @@ async function taxType(ctx: Ctx, rate: number, side: 'sales' | 'purchases'): Pro
     throw new Error(`Xero has no ${pct}% VAT rate for ${side}. Add it in Xero → Accounting → Advanced → Tax rates.${have ? ` Xero has: ${have}.` : ''}`)
   }
   return std.TaxType
+}
+
+/** Send a currency only when it differs from the Xero organisation's own (KaiSync documents are in rand). */
+async function currencyFor(ctx: Ctx, code: string | null | undefined): Promise<string | undefined> {
+  const c = (code || 'ZAR').toUpperCase()
+  if (ctx.baseCurrency === undefined) {
+    const r = await xero(ctx.token, '/Organisation')
+    ctx.baseCurrency = r.ok ? String(r.data.Organisations?.[0]?.BaseCurrency ?? '') : ''
+  }
+  return ctx.baseCurrency && ctx.baseCurrency.toUpperCase() === c ? undefined : c
 }
 
 async function docLink(ctx: Ctx, entity: string, recordId: string) {
@@ -125,7 +135,7 @@ async function syncInvoice(ctx: Ctx, id: string) {
     Type: 'ACCREC', Contact: { ContactID: contactId }, InvoiceNumber: inv.invoice_number,
     Date: day(inv.issue_date ?? inv.created_at), DueDate: day(inv.due_date ?? inv.issue_date ?? inv.created_at),
     LineAmountTypes: inv.is_vat_inclusive ? 'Inclusive' : 'Exclusive', Status: 'AUTHORISED',
-    CurrencyCode: inv.currency || undefined, LineItems: items,
+    CurrencyCode: await currencyFor(ctx, inv.currency), LineItems: items,
   }
   const r = await xero(ctx.token, '/Invoices', { method: 'POST', body: JSON.stringify({ Invoices: [payload] }) })
   const x = r.ok ? r.data.Invoices?.[0] : null
@@ -162,6 +172,7 @@ async function syncCreditNote(ctx: Ctx, id: string) {
     const r = await xero(ctx.token, '/CreditNotes', { method: 'POST', body: JSON.stringify({ CreditNotes: [{
       Type: 'ACCRECCREDIT', Contact: { ContactID: contactId }, CreditNoteNumber: cn.credit_note_number, Date: day(cn.issue_date ?? cn.created_at),
       LineAmountTypes: 'Exclusive', Status: 'AUTHORISED', LineItems: items, Reference: cn.reason_code ?? undefined,
+      CurrencyCode: await currencyFor(ctx, cn.currency),
     }] }) })
     const x = r.ok ? r.data.CreditNotes?.[0] : null
     if (!x?.CreditNoteID) throw new Error(r.error ?? 'Xero did not return the credit note')
@@ -171,7 +182,13 @@ async function syncCreditNote(ctx: Ctx, id: string) {
   // Allocate it to its invoice (only once, and never more than Xero says is still owed).
   if (cn.invoice_id && link.xero_status !== 'ALLOCATED') {
     const invLink = await docLink(ctx, 'invoice', cn.invoice_id)
-    if (!invLink) return  // invoice was never sent (before go-live): leave the credit unallocated for the accountant
+    if (!invLink) {
+      // Invoice from before go-live: leave the credit for the accountant to allocate. Otherwise wait for it.
+      const { data: inv } = await ctx.admin.from('finance_invoices').select('invoice_number, issue_date, created_at, status').eq('id', cn.invoice_id).maybeSingle()
+      const { data: c } = await ctx.admin.from('xero_connections').select('sync_from').eq('company_id', ctx.conn.company_id).maybeSingle()
+      if (!inv || ['draft', 'cancelled', 'voided'].includes(inv.status) || (c?.sync_from && day(inv.issue_date ?? inv.created_at) < c.sync_from)) return
+      throw new Error(`Credit note is in Xero; it will be allocated to ${inv.invoice_number ?? 'its invoice'} as soon as that invoice reaches Xero.`)
+    }
     const xi = await xero(ctx.token, `/Invoices/${invLink.xero_id}`)
     const owed = money(xi.ok ? xi.data.Invoices?.[0]?.AmountDue : 0)
     const amount = Math.min(money(cn.applied_amount) > 0 ? money(cn.applied_amount) : money(cn.total_amount), owed)
@@ -207,7 +224,7 @@ async function syncPayment(ctx: Ctx, ledgerId: string) {
 }
 
 // ── Bills: PO fully received, and supplier invoices ──
-async function pushBill(ctx: Ctx, opts: { billId?: string; supplierId: string; number: string; reference: string; date: string; due?: string | null;
+async function pushBill(ctx: Ctx, opts: { billId?: string; supplierId: string; number: string; reference: string; date: string; due?: string | null; currency?: string | null;
   status: 'DRAFT' | 'AUTHORISED'; inclusive: boolean; lines: Array<{ description: string; qty: number; price: number; rate: number }> }) {
   const contactId = await ensureContact(ctx.admin, ctx.token, ctx.conn.company_id, 'contractor', opts.supplierId)
   const purchases = need(ctx.conn.purchases_account_code, 'purchases')
@@ -217,6 +234,7 @@ async function pushBill(ctx: Ctx, opts: { billId?: string; supplierId: string; n
     ...(opts.billId ? { InvoiceID: opts.billId } : {}),
     Type: 'ACCPAY', Contact: { ContactID: contactId }, InvoiceNumber: opts.number, Reference: opts.reference,
     Date: opts.date, DueDate: opts.due ?? opts.date, LineAmountTypes: opts.inclusive ? 'Inclusive' : 'Exclusive', Status: opts.status, LineItems: items,
+    CurrencyCode: await currencyFor(ctx, opts.currency),
   }] }) })
   const x = r.ok ? r.data.Invoices?.[0] : null
   if (!x?.InvoiceID) throw new Error(r.error ?? 'Xero did not return the bill')
@@ -231,7 +249,7 @@ async function syncPoBill(ctx: Ctx, poId: string) {
   if (existing) return  // one bill per PO; supplier invoices update it
   const { data: lines } = await ctx.admin.from('purchase_order_lines').select('*').eq('po_id', poId).order('sort_order')
   const x = await pushBill(ctx, {
-    supplierId: po.supplier_id, number: po.po_number, reference: `PO ${po.po_number}`,
+    supplierId: po.supplier_id, number: po.po_number, reference: `PO ${po.po_number}`, currency: po.currency,
     date: day(po.actual_delivery_date ?? new Date().toISOString()), due: null, status: 'DRAFT', inclusive: false,
     lines: (lines ?? []).map(l => ({ description: l.description, qty: Number(l.quantity_received ?? l.quantity_ordered ?? 0), price: Number(l.unit_price ?? 0), rate: Number(l.vat_rate ?? 0) })),
   })
