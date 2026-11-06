@@ -43,8 +43,14 @@ Deno.serve(async (req: Request) => {
 
     // Only the organisations ticked in THIS sign-in (Xero lists every org the app was ever given otherwise).
     const authEvent = tokenClaims(tokens.access_token).authentication_event_id as string | undefined
-    const tenantsRes = await fetch(`https://api.xero.com/connections${authEvent ? `?authEventId=${encodeURIComponent(authEvent)}` : ''}`, { headers: { Authorization: `Bearer ${tokens.access_token}`, Accept: 'application/json' } })
-    const tenants = await tenantsRes.json().catch(() => [])
+    const getTenants = async (q: string) => {
+      const r = await fetch(`https://api.xero.com/connections${q}`, { headers: { Authorization: `Bearer ${tokens.access_token}`, Accept: 'application/json' } })
+      const d = await r.json().catch(() => [])
+      return Array.isArray(d) ? d : []
+    }
+    // Re-allowing an organisation that was already allowed adds nothing new to this sign-in: then use them all.
+    let tenants = authEvent ? await getTenants(`?authEventId=${encodeURIComponent(authEvent)}`) : []
+    if (!tenants.length) tenants = await getTenants('')
     // Prefer the organisation this company was connected to before (reconnecting must not switch books).
     const { data: prev } = await adminSb.from('xero_connections').select('tenant_id').eq('company_id', stateRow.company_id).maybeSingle()
     const list = Array.isArray(tenants) ? tenants.filter((t: { tenantType?: string }) => !t.tenantType || t.tenantType === 'ORGANISATION') : []
