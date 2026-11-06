@@ -1,5 +1,5 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
-import { createClient } from 'jsr:@supabase/supabase-js@2'
+import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2'
 
 /**
  * Clients and suppliers ↔ Xero contacts.
@@ -23,7 +23,7 @@ function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } })
 }
 
-type Admin = ReturnType<typeof createClient>
+type Admin = SupabaseClient<any, any, any>
 type XeroContact = {
   ContactID: string; Name: string; EmailAddress?: string; ContactStatus?: string
   IsCustomer?: boolean; IsSupplier?: boolean
@@ -160,7 +160,7 @@ Deno.serve(async (req: Request) => {
 
   try {
     const body = await req.json().catch(() => ({})) as {
-      company_id?: string; direction?: 'push' | 'pull'; record_id?: string; record_type?: Kind
+      company_id?: string; direction?: 'push' | 'pull' | 'accounts'; record_id?: string; record_type?: Kind
     }
     if (!body.company_id) return json({ error: 'Missing company_id' }, 400)
     if (body.record_id && !body.record_type) return json({ error: 'record_type required when record_id is set' }, 400)
@@ -178,6 +178,17 @@ Deno.serve(async (req: Request) => {
 
     const token = await getValidXeroToken(admin, body.company_id)
     if (!token) return json({ error: 'Xero is not connected (or the connection expired). Connect Xero in Settings → Integrations.' }, 400)
+
+    // ACCOUNTS: the company's Xero accounts, for the Settings dropdowns (sales, purchases, bank).
+    if (body.direction === 'accounts') {
+      const r = await xero(token, '/Accounts?where=' + encodeURIComponent('Status=="ACTIVE"'))
+      if (!r.ok) return json({ error: r.error }, 422)
+      const accounts = (r.data.Accounts ?? []).map((a: any) => ({
+        id: a.AccountID, code: a.Code ?? null, name: a.Name, type: a.Type, class: a.Class,
+        enable_payments: !!a.EnablePaymentsToAccount,
+      }))
+      return json({ ok: true, accounts })
+    }
 
     // ── PULL: link Xero contacts to existing clients/suppliers; create only those that don't exist ──
     if (body.direction === 'pull') {

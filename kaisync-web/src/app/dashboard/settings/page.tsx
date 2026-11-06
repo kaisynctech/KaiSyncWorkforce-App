@@ -31,6 +31,7 @@ import {
 } from '@/lib/branch-geofence'
 import { isHrOrAbove as accessIsHrOrAbove, isOwnerOrAdmin } from '@/lib/employee-taxonomy'
 import { getAnnualDays } from '@/lib/leave-policy'
+import { XeroSyncPanel } from '@/components/settings/XeroSyncPanel'
 import {
   getCompanyAnnualDays,
   leaveEntitlementFields,
@@ -779,7 +780,7 @@ export default function SettingsPage() {
       {
         method: 'POST',
         headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ company_id: companyId }),
+        body: JSON.stringify({ company_id: companyId, full: true }),
       },
     )
     const data = await res.json()
@@ -805,8 +806,10 @@ export default function SettingsPage() {
         body: JSON.stringify({ company_id: companyId }),
       },
     )
-    const data = await res.json()
-    setXeroMsg(res.ok ? `Synced ${data.synced} contacts to Xero.` : (data.error ?? 'Sync failed.'))
+    const data = await res.json().catch(() => ({}))
+    setXeroMsg(res.ok
+      ? `Sent ${data.synced ?? 0} clients and suppliers to Xero${data.linked_existing ? ` (${data.linked_existing} matched to contacts already in Xero, no duplicates)` : ''}.${data.failed_count ? ` ${data.failed_count} could not be sent: ${(data.failed ?? []).slice(0, 3).map((f: { name: string | null; error: string }) => `${f.name}: ${f.error}`).join('; ')}` : ''}`
+      : (data.error ?? 'Sync failed.'))
     setXeroSyncing(false)
   }
 
@@ -1529,7 +1532,7 @@ export default function SettingsPage() {
                   <p className="text-[12px] text-text-secondary">
                     {xeroConnected
                       ? `Connected to ${xeroConn?.tenant_name ?? 'Xero'}`
-                      : 'Sync contacts and push payroll to Xero'}
+                      : 'Clients, suppliers, invoices, bills, payments and payroll to Xero'}
                   </p>
                 </div>
                 {isOwner && (
@@ -1554,7 +1557,7 @@ export default function SettingsPage() {
                   <div className="flex items-center justify-between pt-2 border-t border-divider">
                     <div>
                       <p className="text-[13px] font-medium text-text-primary">Sync Contacts</p>
-                      <p className="text-[12px] text-text-secondary">Push employees and contractors to Xero</p>
+                      <p className="text-[12px] text-text-secondary">Send all clients and suppliers to Xero now (matches existing Xero contacts, no duplicates)</p>
                     </div>
                     <button
                       onClick={syncXeroContacts}
@@ -1596,6 +1599,10 @@ export default function SettingsPage() {
                     </div>
                   </div>
                 </>
+              )}
+
+              {xeroConnected && companyId && (
+                <XeroSyncPanel companyId={companyId} canManage={isOwner || isHrOrAbove} onReconnect={connectXero} />
               )}
 
               {xeroMsg && (
