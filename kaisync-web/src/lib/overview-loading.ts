@@ -38,8 +38,8 @@ export function readyCommercial(
 }
 
 /** Same reduction the Overview invoice tile used while it blocked the page. */
-export function sumOutstanding(rows: readonly { balance_due?: unknown }[]): number {
-  return rows.reduce((sum, row) => sum + Number(row.balance_due), 0)
+export function sumOutstanding(rows: readonly { balance_due?: unknown; exchange_rate?: unknown }[]): number {
+  return rows.reduce((sum, row) => sum + Number(row.balance_due) * (Number(row.exchange_rate) > 0 ? Number(row.exchange_rate) : 1), 0)
 }
 
 export function showCommercialFigures(phase: CommercialPhase): boolean {

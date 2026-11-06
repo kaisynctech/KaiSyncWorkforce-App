@@ -1,3 +1,4 @@
+import { toHome } from '@/lib/finance-calc'
 /**
  * Phase 2 report snapshots — client-side aggregation mirroring web parity
  * DomainAnalyticsService / FinancialAnalyticsService / TelemetryAnalyticsService.
@@ -67,13 +68,13 @@ async function buildFinancial(
     await Promise.all([
       supabase
         .from('finance_invoices')
-        .select('total_amount, balance_due, status, issue_date, amount_paid')
+        .select('total_amount, balance_due, status, issue_date, amount_paid, exchange_rate')
         .eq('company_id', companyId)
         .gte('issue_date', from)
         .lte('issue_date', to),
       supabase
         .from('supplier_invoices')
-        .select('total_amount, balance_due, status, created_at')
+        .select('total_amount, balance_due, status, created_at, exchange_rate')
         .eq('company_id', companyId)
         .gte('created_at', `${from}T00:00:00`)
         .lte('created_at', `${to}T23:59:59`),
@@ -96,19 +97,19 @@ async function buildFinancial(
 
   const revenue = inv
     .filter(i => i.status !== 'cancelled' && i.status !== 'draft')
-    .reduce((s, i) => s + Number(i.total_amount ?? 0), 0)
+    .reduce((s, i) => s + toHome(i.total_amount, i.exchange_rate), 0)
   const outstanding = inv
     .filter(i => ['sent', 'viewed', 'partially_paid', 'overdue'].includes(String(i.status)))
-    .reduce((s, i) => s + Number(i.balance_due ?? 0), 0)
+    .reduce((s, i) => s + toHome(i.balance_due, i.exchange_rate), 0)
   const supplierPayables = sup
     .filter(i => !['paid', 'cancelled'].includes(String(i.status)))
-    .reduce((s, i) => s + Number(i.balance_due ?? i.total_amount ?? 0), 0)
+    .reduce((s, i) => s + toHome(i.balance_due ?? i.total_amount, i.exchange_rate), 0)
   const contractorPayables = pay
     .filter(p => ['pending', 'approved'].includes(String(p.payout_status)))
     .reduce((s, p) => s + Number(p.total_amount ?? 0), 0)
   const payables = supplierPayables + contractorPayables
   const expenses =
-    sup.reduce((s, i) => s + Number(i.total_amount ?? 0), 0) +
+    sup.reduce((s, i) => s + toHome(i.total_amount, i.exchange_rate), 0) +
     pay
       .filter(p => {
         const d = p.payout_date ?? (p.created_at as string)?.slice(0, 10)
@@ -123,13 +124,13 @@ async function buildFinancial(
     if (!i.issue_date) continue
     const label = monthLabel(String(i.issue_date))
     const row = byMonth.get(label) ?? { revenue: 0, expenses: 0 }
-    row.revenue += Number(i.total_amount ?? 0)
+    row.revenue += toHome(i.total_amount, i.exchange_rate)
     byMonth.set(label, row)
   }
   for (const i of sup) {
     const label = monthLabel(String(i.created_at ?? from))
     const row = byMonth.get(label) ?? { revenue: 0, expenses: 0 }
-    row.expenses += Number(i.total_amount ?? 0)
+    row.expenses += toHome(i.total_amount, i.exchange_rate)
     byMonth.set(label, row)
   }
 

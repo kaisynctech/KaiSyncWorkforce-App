@@ -157,6 +157,16 @@ export function InvoiceBuilder({ invoiceId }: { invoiceId?: string | null }) {
   }, [clientId, clients, homeCurrency, currencyTouched])
   const foreign = currency !== homeCurrency
   const fxNum = Number(fxRate.replace(',', '.'))
+  // The European Central Bank's rate for the invoice date: used when no rate is typed (Xero's replaces it once sent).
+  const [dailyRate, setDailyRate] = useState<number | null>(null)
+  useEffect(() => {
+    if (!foreign) return
+    let live = true
+    void createClient().rpc('fx_rate', { p_from: currency, p_to: homeCurrency, p_day: issueDate || null })
+      .then(({ data }) => { if (live) setDailyRate(Number(data) > 0 ? Number(data) : null) })
+    return () => { live = false }
+  }, [foreign, currency, homeCurrency, issueDate])
+  const bookRate = fxNum > 0 ? fxNum : dailyRate
   const fmt = (n: number) => formatCurrency(n, currency)
 
   const rate = vat.registered && vatOn ? vat.rate : 0
@@ -351,9 +361,9 @@ export function InvoiceBuilder({ invoiceId }: { invoiceId?: string | null }) {
               {foreign && (
                 <label className="flex flex-col gap-1 text-[12px] text-text-secondary">
                   <span>Exchange rate (optional): 1 {currency} = ? {homeCurrency}</span>
-                  <input inputMode="decimal" value={fxRate} onChange={e => setFxRate(e.target.value)} placeholder="Leave empty to use Xero's rate"
+                  <input inputMode="decimal" value={fxRate} onChange={e => setFxRate(e.target.value)} placeholder={dailyRate ? `Leave empty to use today's rate (${dailyRate.toFixed(4)}) or Xero's` : "Leave empty to use Xero's rate"}
                     className="h-10 rounded-lg border border-divider px-3 text-[13.5px] bg-background text-text-primary focus:outline-none focus:border-primary/60" />
-                  {fxNum > 0 && <span>≈ {formatCurrency(round2(total * fxNum), homeCurrency)} in your books</span>}
+                  {bookRate && bookRate > 0 && <span>≈ {formatCurrency(round2(total * bookRate), homeCurrency)} in your books{fxNum > 0 ? '' : ' (daily rate)'}</span>}
                 </label>
               )}
               {vat.registered && (

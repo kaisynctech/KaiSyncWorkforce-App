@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { balanceDue, roundFinancial, type PaymentState, resolvePaymentState } from '@/lib/finance-calc'
+import { balanceDue, roundFinancial, toHome, type PaymentState, resolvePaymentState } from '@/lib/finance-calc'
 import type { FinanceDashboardKpis } from '@/lib/finance-types'
 
 function inWindow(d: string | null | undefined, from: string, to: string): boolean {
@@ -23,11 +23,11 @@ export async function loadFinanceDashboardKpis(
   ] = await Promise.all([
     supabase
       .from('finance_invoices')
-      .select('status, subtotal, balance_due, issue_date, vat_amount')
+      .select('id, status, subtotal, balance_due, issue_date, vat_amount, exchange_rate')
       .eq('company_id', companyId),
     supabase
       .from('supplier_invoices')
-      .select('status, approval_status, balance_due, total_amount, due_date, subtotal, vat_amount')
+      .select('id, status, approval_status, balance_due, total_amount, due_date, subtotal, vat_amount, exchange_rate')
       .eq('company_id', companyId),
     supabase
       .from('contractor_payouts')
@@ -35,7 +35,7 @@ export async function loadFinanceDashboardKpis(
       .eq('company_id', companyId),
     supabase
       .from('finance_transactions')
-      .select('direction, total_amount, transaction_date')
+      .select('direction, total_amount, transaction_date, source_table, source_id')
       .eq('company_id', companyId)
       .gte('transaction_date', from)
       .lte('transaction_date', to),
@@ -56,15 +56,15 @@ export async function loadFinanceDashboardKpis(
   const revenue = roundFinancial(
     inv
       .filter(i => inWindow(i.issue_date, from, to) && i.status !== 'cancelled' && i.status !== 'draft')
-      .reduce((s, i) => s + Number(i.subtotal ?? 0), 0),
+      .reduce((s, i) => s + toHome(i.subtotal, i.exchange_rate), 0),
   )
   const outstandingList = inv.filter(i => outstandingStatuses.has(String(i.status)))
-  const outstanding = roundFinancial(outstandingList.reduce((s, i) => s + Number(i.balance_due ?? 0), 0))
+  const outstanding = roundFinancial(outstandingList.reduce((s, i) => s + toHome(i.balance_due, i.exchange_rate), 0))
 
   const supplierPayables = roundFinancial(
     sup
       .filter(s => !['paid', 'cancelled'].includes(String(s.status)))
-      .reduce((s, i) => s + Number(i.balance_due ?? i.total_amount ?? 0), 0),
+      .reduce((s, i) => s + toHome(i.balance_due ?? i.total_amount, i.exchange_rate), 0),
   )
   const contractorPayables = roundFinancial(
     pay
@@ -73,18 +73,24 @@ export async function loadFinanceDashboardKpis(
   )
   const payables = roundFinancial(supplierPayables + contractorPayables)
 
+  // Payments are in their document's currency: use the document's rate.
+  const rateOf = new Map<string, unknown>([
+    ...inv.map(i => [`finance_invoices:${i.id}`, i.exchange_rate] as [string, unknown]),
+    ...sup.map(s => [`supplier_invoices:${s.id}`, s.exchange_rate] as [string, unknown]),
+  ])
+  const txHome = (t: (typeof tx)[number]) => toHome(t.total_amount, rateOf.get(`${t.source_table}:${t.source_id}`))
   const moneyIn = roundFinancial(
-    tx.filter(t => String(t.direction) === 'incoming').reduce((s, t) => s + Number(t.total_amount ?? 0), 0),
+    tx.filter(t => String(t.direction) === 'incoming').reduce((s, t) => s + txHome(t), 0),
   )
   const moneyOut = roundFinancial(
-    tx.filter(t => String(t.direction) !== 'incoming').reduce((s, t) => s + Number(t.total_amount ?? 0), 0),
+    tx.filter(t => String(t.direction) !== 'incoming').reduce((s, t) => s + txHome(t), 0),
   )
 
   const payrollCosts = roundFinancial((payroll ?? []).reduce((s, p) => s + Number(p.gross_pay ?? 0), 0))
   const windowSupplier = roundFinancial(
     sup
       .filter(s => s.due_date && inWindow(s.due_date, from, to) && s.status !== 'cancelled')
-      .reduce((s, i) => s + Number(i.subtotal ?? 0), 0),
+      .reduce((s, i) => s + toHome(i.subtotal, i.exchange_rate), 0),
   )
   const windowPayouts = roundFinancial(
     pay
@@ -96,12 +102,12 @@ export async function loadFinanceDashboardKpis(
   const outputVat = roundFinancial(
     inv
       .filter(i => inWindow(i.issue_date, from, to) && i.status !== 'draft' && i.status !== 'cancelled')
-      .reduce((s, i) => s + Number(i.vat_amount ?? 0), 0),
+      .reduce((s, i) => s + toHome(i.vat_amount, i.exchange_rate), 0),
   )
   const inputVat = roundFinancial(
     sup
       .filter(s => s.due_date && inWindow(s.due_date, from, to))
-      .reduce((s, i) => s + Number(i.vat_amount ?? 0), 0),
+      .reduce((s, i) => s + toHome(i.vat_amount, i.exchange_rate), 0),
   )
 
   const pendingApprovals =

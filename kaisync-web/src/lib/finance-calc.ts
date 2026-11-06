@@ -14,6 +14,12 @@ export type VatResult = {
   taxType: TaxType
 }
 
+/** An amount in the company's own currency: documents in another currency carry exchange_rate (rand per 1 unit). */
+export function toHome(amount: unknown, exchangeRate?: unknown): number {
+  const r = Number(exchangeRate)
+  return Number(amount ?? 0) * (r > 0 ? r : 1)
+}
+
 export function roundFinancial(value: number, decimals = 2): number {
   const f = 10 ** decimals
   return Math.round((value + Number.EPSILON) * f) / f // away-from-zero approx for money

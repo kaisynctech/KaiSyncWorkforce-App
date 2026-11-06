@@ -18,7 +18,7 @@ const BACKOFF_MIN = [1, 5, 15, 60, 360]
 type Conn = {
   company_id: string; sales_account_code: string | null; purchases_account_code: string | null; bank_account_code: string | null
 }
-type Ctx = { admin: Admin; token: XeroToken; conn: Conn; taxRates?: TaxRate[]; baseCurrency?: string }
+type Ctx = { admin: Admin; token: XeroToken; conn: Conn; taxRates?: TaxRate[]; baseCurrency?: string; homeCurrency?: string }
 type TaxRate = { TaxType: string; Name: string; EffectiveRate: number; Status: string; CanApplyToRevenue?: boolean; CanApplyToExpenses?: boolean }
 
 class Skip extends Error {}   // job not needed (e.g. document dated before go-live): marked 'skipped', not an error
@@ -68,6 +68,12 @@ function rateForXero(doc: { exchange_rate?: number | null; rate_source?: string 
 async function keepXeroRate(ctx: Ctx, table: string, id: string, doc: { rate_source?: string | null }, xeroRate: unknown) {
   const r = Number(xeroRate)
   if (doc.rate_source === 'manual' || !(r > 0) || Math.abs(r - 1) < 1e-9) return
+  // Xero's rate is against the Xero organisation's currency: only useful when that is the company's own.
+  if (ctx.homeCurrency === undefined) {
+    const { data } = await ctx.admin.rpc('company_home_currency', { p_company_id: ctx.conn.company_id })
+    ctx.homeCurrency = String(data ?? 'ZAR').toUpperCase()
+  }
+  if ((ctx.baseCurrency ?? '').toUpperCase() !== ctx.homeCurrency) return
   await ctx.admin.from(table).update({ exchange_rate: Math.round((1 / r) * 1e8) / 1e8, rate_source: 'xero' }).eq('id', id)
 }
 

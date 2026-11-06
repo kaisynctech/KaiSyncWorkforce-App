@@ -343,7 +343,7 @@ export default function OverviewPage() {
           .eq('company_id', cid)
           .in('status', ['draft', 'sent']),
         supabase.from('finance_invoices')
-          .select('balance_due')
+          .select('balance_due, exchange_rate')
           .eq('company_id', cid)
           .in('status', ['sent', 'partial'])
           .gt('balance_due', 0),
