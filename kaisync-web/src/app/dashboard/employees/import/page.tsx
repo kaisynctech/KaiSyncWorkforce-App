@@ -1,5 +1,7 @@
 'use client'
 
+import { ErrorWithUpgrade } from '@/components/billing/ErrorWithUpgrade'
+import { isPlanLimit } from '@/lib/supabase/read-only-fetch'
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import * as XLSX from 'xlsx'
@@ -298,7 +300,8 @@ export default function ImportEmployeesPage() {
           </div>
         </div>
 
-        {fatal && (
+        {fatal && isPlanLimit(fatal) && <ErrorWithUpgrade message={fatal} />}
+        {fatal && !isPlanLimit(fatal) && (
           <div role="alert" className="rounded-sm border border-error/40 bg-error-dark/30 p-3">
             <p className="text-[13px] text-error whitespace-pre-wrap">{fatal}</p>
           </div>

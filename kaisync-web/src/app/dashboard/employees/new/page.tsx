@@ -1,5 +1,6 @@
 'use client'
 
+import { ErrorWithUpgrade } from '@/components/billing/ErrorWithUpgrade'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -455,7 +456,7 @@ export default function CreateEmployeePage() {
         </div>
       </SectionCard>
 
-      {error && error !== 'not_linked' && <p className="text-error text-[13px] px-1">{error}</p>}
+      {error && error !== 'not_linked' && <ErrorWithUpgrade message={error} className="px-1" />}
 
       <button
         type="submit"

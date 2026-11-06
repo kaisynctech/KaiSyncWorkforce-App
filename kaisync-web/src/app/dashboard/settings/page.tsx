@@ -20,6 +20,7 @@ import { EmployeeNumberSettingsCard } from '@/components/settings/EmployeeNumber
 import type { Company, Employee, SecuritySettings, AuditEvent } from '@/types/database'
 import { formatZar, loadCompanyBillingSummary, type BillingSummary } from '@/lib/billing'
 import { BillingPayments } from '@/components/settings/BillingPayments'
+import { PlanPicker } from '@/components/settings/PlanPicker'
 import { checkQuoteEmailConfigured } from '@/lib/send-quote-email'
 import type { CommercialAutomationRule, AutomationRuleExecution } from '@/types/commercial'
 import { forwardGeocode, reverseGeocode } from '@/lib/geo-location'
@@ -915,7 +916,7 @@ export default function SettingsPage() {
             <p className="text-[13px] text-text-secondary">
               {billing?.billable === false
                 ? 'This is KaiSync’s own company. It is not billed.'
-                : 'Live monthly amount. Each box shows what is included, and the price per month after that.'}
+                : 'Your plan and the live amount. Each box shows what is included, and the price per month after that.'}
             </p>
             {billingLoading && (
               <p className="text-[13px] text-text-secondary">Calculating…</p>
@@ -924,16 +925,23 @@ export default function SettingsPage() {
               <p className="text-[13px] text-danger">{billingError}</p>
             )}
             {companyId && billing?.billable !== false && <BillingPayments companyId={companyId} />}
+            {billing && !billingLoading && companyId && billing.billable !== false && (
+              <PlanPicker companyId={companyId} summary={billing} canManage={isHrOrAbove} onChanged={() => void loadBilling(companyId)} />
+            )}
             {billing && !billingLoading && (
               <>
                 <div className="rounded-lg border border-border bg-surface-elevated p-4">
-                  <p className="text-[12px] text-text-secondary uppercase tracking-wide">Amount due monthly</p>
+                  <p className="text-[12px] text-text-secondary uppercase tracking-wide">
+                    {billing.billing_cycle === 'annual' ? 'Amount due yearly' : 'Amount due monthly'}
+                  </p>
                   <p className="text-[28px] font-semibold text-text-primary mt-1">
-                    {formatZar(Number(billing.monthly_charge))}
+                    {formatZar(Number(billing.cycle_total ?? billing.monthly_charge))}
                   </p>
                   <p className="text-[13px] text-text-secondary mt-1">
-                    {billing.plan_name} · status {billing.status}
-                    {billing.renewal_date ? ` · renews ${billing.renewal_date}` : ''}
+                    {billing.plan_name} · {billing.billing_cycle === 'annual' ? 'annual' : 'monthly'} · {billing.status === 'trialing' ? 'free trial' : `status ${billing.status}`}
+                    {billing.status === 'trialing' && billing.trial_ends_at ? ` · trial ends ${billing.trial_ends_at.slice(0, 10)}` : ''}
+                    {billing.status !== 'trialing' && billing.next_billing_date ? ` · next bill ${billing.next_billing_date}` : ''}
+                    {billing.billing_cycle === 'annual' && billing.annual_period_end ? ` · paid up to ${billing.annual_period_end}` : ''}
                   </p>
                 </div>
                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -943,6 +951,7 @@ export default function SettingsPage() {
                     included={billing.employees.included}
                     overage={billing.employees.overage}
                     unitPrice={billing.employees.unit_price}
+                    limit={billing.max_employees ?? null}
                     billable={billing.billable !== false}
                   />
                   <MeterCard
@@ -991,9 +1000,30 @@ export default function SettingsPage() {
                   {(billing.lines ?? []).filter(line => line.kind !== 'price_list').map((line, i) => (
                     <div key={i} className="flex items-center justify-between gap-3 text-[13px]">
                       <span className="text-text-secondary">{line.description}</span>
-                      <span className="font-medium text-text-primary shrink-0">{formatZar(Number(line.amount))}</span>
+                      <span className="font-medium text-text-primary shrink-0">{formatZar(Number(line.amount) * (billing.billing_cycle === 'annual' ? 12 : 1))}</span>
                     </div>
                   ))}
+                  {billing.billing_cycle === 'annual' && (
+                    <p className="text-[11.5px] text-text-secondary -mt-1">Amounts above are for 12 months.</p>
+                  )}
+                  {Number(billing.discount ?? 0) > 0 && (
+                    <div className="flex items-center justify-between gap-3 text-[13px]">
+                      <span className="text-emerald-700">{billing.discount_label ?? 'Annual discount'}</span>
+                      <span className="font-medium text-emerald-700 shrink-0">−{formatZar(Number(billing.discount))}</span>
+                    </div>
+                  )}
+                  {Number(billing.vat ?? 0) > 0 && (
+                    <div className="flex items-center justify-between gap-3 text-[13px]">
+                      <span className="text-text-secondary">VAT</span>
+                      <span className="font-medium text-text-primary shrink-0">{formatZar(Number(billing.vat))}</span>
+                    </div>
+                  )}
+                  {billing.cycle_total != null && (
+                    <div className="flex items-center justify-between gap-3 text-[13px] border-t border-divider pt-2 font-semibold">
+                      <span className="text-text-primary">Total {billing.billing_cycle === 'annual' ? 'per year' : 'per month'}</span>
+                      <span className="text-text-primary shrink-0">{formatZar(Number(billing.cycle_total))}</span>
+                    </div>
+                  )}
                 </div>
                 <button
                   type="button"
@@ -2039,6 +2069,7 @@ function MeterCard({
   included,
   overage,
   unitPrice,
+  limit = null,
   billable = true,
 }: {
   label: string
@@ -2046,9 +2077,24 @@ function MeterCard({
   included: number
   overage: number
   unitPrice: number
+  /** A hard limit (Starter: 15 employees). */
+  limit?: number | null
   billable?: boolean
 }) {
   const rate = formatZar(unitPrice)
+  if (limit != null) {
+    return (
+      <div className="rounded-lg border border-border p-3">
+        <p className="text-[12px] text-text-secondary">{label}</p>
+        <p className="text-[18px] font-semibold text-text-primary mt-0.5">
+          {count}<span className="text-[12px] font-normal text-text-secondary"> / up to {limit}</span>
+        </p>
+        <p className={`text-[11px] mt-1 ${count >= limit ? 'text-amber-700' : 'text-text-secondary'}`}>
+          {count >= limit ? 'Starter limit reached · move to Business for more' : `Starter limit · ${limit - count} left`}
+        </p>
+      </div>
+    )
+  }
   return (
     <div className="rounded-lg border border-border p-3">
       <p className="text-[12px] text-text-secondary">{label}</p>

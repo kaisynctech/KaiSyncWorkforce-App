@@ -8,6 +8,7 @@ import {
   setCompanySubscriptionStatus,
 } from '@/lib/platform-api'
 import type { PlatformCompany } from '@/lib/platform-types'
+import { changePlan, PLAN_LABEL, type BillingCycle, type PlanCode } from '@/lib/billing'
 
 function fmtMoney(n: number) {
   return `R ${Number(n ?? 0).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -59,6 +60,16 @@ export default function PlatformCompaniesPage() {
     setBusy(null)
   }
 
+  /** Platform admins can set any company's plan and cycle (same rules as the company's own Billing tab). */
+  async function setPlan(id: string, value: string) {
+    const [plan, cycle] = value.split(':') as [PlanCode, BillingCycle]
+    setBusy(id)
+    const r = await changePlan(createClient(), id, plan, cycle)
+    if (!r.ok) setError(r.message)
+    else await load()
+    setBusy(null)
+  }
+
   async function refresh(id: string) {
     setBusy(id)
     const supabase = createClient()
@@ -105,7 +116,18 @@ export default function PlatformCompaniesPage() {
                 <tr key={r.id} className="border-b border-divider">
                   <td className="data-td text-[13px] font-medium">{r.name}</td>
                   <td className="data-td text-[12px] font-mono text-text-secondary">{r.code}</td>
-                  <td className="data-td text-[12px]">{r.plan_code ?? '—'}</td>
+                  <td className="data-td text-[12px]">
+                    {r.is_platform_home ? '—' : (
+                      <select value={r.billing_plan ? `${r.billing_plan}:${r.billing_cycle}` : ''} disabled={busy === r.id}
+                        onChange={e => void setPlan(r.id, e.target.value)} aria-label={`Plan for ${r.name}`}
+                        className="h-7 rounded border border-border bg-background text-[12px] px-1">
+                        {(['starter', 'kaiflow_standard'] as PlanCode[]).flatMap(p => (['monthly', 'annual'] as BillingCycle[]).map(c => (
+                          <option key={`${p}:${c}`} value={`${p}:${c}`}>{PLAN_LABEL[p]} · {c === 'annual' ? 'Annual' : 'Monthly'}</option>
+                        )))}
+                      </select>
+                    )}
+                    {r.subscription_status === 'trialing' && <span className="block text-[11px] text-text-secondary">{r.plan_chosen ? 'Chosen, from trial end' : 'Trial · not chosen yet'}</span>}
+                  </td>
                   <td className="data-td text-[12px] capitalize">{r.subscription_status}</td>
                   <td className="data-td text-[13px] text-right">
                     {r.employee_count}/{r.employee_limit}

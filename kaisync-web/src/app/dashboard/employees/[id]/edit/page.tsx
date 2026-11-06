@@ -1,5 +1,6 @@
 'use client'
 
+import { ErrorWithUpgrade } from '@/components/billing/ErrorWithUpgrade'
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -458,7 +459,7 @@ export default function EditEmployeePage({
           </button>
         </div>
 
-        {error && <p className="text-error text-[13px]">{error}</p>}
+        <ErrorWithUpgrade message={error} />
         {inviteMsg && (
           <p className={cn(
             'text-[13px]',

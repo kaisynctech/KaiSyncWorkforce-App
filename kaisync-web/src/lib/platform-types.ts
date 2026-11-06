@@ -28,6 +28,10 @@ export type PlatformCompany = {
   name: string
   code: string
   plan_code: string | null
+  /** The plan the company is (or, during the trial, will be) billed on, and its cycle. */
+  billing_plan: string | null
+  billing_cycle: 'monthly' | 'annual'
+  plan_chosen: boolean
   subscription_status: string
   employee_count: number
   employee_limit: number

@@ -1,5 +1,6 @@
 'use client'
 
+import { ErrorWithUpgrade } from '@/components/billing/ErrorWithUpgrade'
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -1254,6 +1255,7 @@ export default function EmployeesPage() {
             </div>
           )}
 
+          {error && error !== 'not_linked' && <ErrorWithUpgrade message={error} className="mb-3" />}
           <div className="bg-surface rounded-lg border border-divider overflow-hidden">
             {pendingLoading ? (
               <div className="py-16 text-center text-[13px] text-text-disabled">Loading…</div>
