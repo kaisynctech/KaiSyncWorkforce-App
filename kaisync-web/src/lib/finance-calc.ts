@@ -1,3 +1,4 @@
+import { formatCurrency } from './currencies'
 /** Deterministic finance math — mirrors KaiFlow.Finance VatCalculator / FinanceCalculationHelper. */
 
 export type TaxType = 'standard' | 'zero_rated' | 'exempt' | 'no_vat'
@@ -118,7 +119,7 @@ export function resolvePaymentState(
   return 'unpaid'
 }
 
-export function fmtMoney(n: number | null | undefined): string {
-  if (n == null) return 'R —'
-  return `R ${n.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+/** Money for the screens. Rand by default ("R 1 250,00"); pass the document's currency for anything else. */
+export function fmtMoney(n: number | null | undefined, currency?: string | null): string {
+  return formatCurrency(n, currency)
 }

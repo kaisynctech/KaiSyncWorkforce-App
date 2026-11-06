@@ -77,7 +77,7 @@ function MoneyInvoicesInner() {
     let q = supabase
       .from('finance_invoices')
       .select(`
-        id, invoice_number, status,
+        id, invoice_number, status, currency,
         total_amount, amount_paid, balance_due,
         issue_date, due_date, paid_date,
         client_id, job_id, deal_id, project_id,
@@ -259,8 +259,8 @@ function MoneyInvoicesInner() {
                       <td className="data-td text-[13px] text-text-secondary">{r.issue_date ?? '—'}</td>
                       <td className="data-td text-[13px] text-text-secondary">{r.due_date ?? '—'}</td>
                       <td className="data-td"><StatusBadge status={r.status} /></td>
-                      <td className="data-td text-[13px] text-right text-text-primary">{fmtMoney(r.total_amount)}</td>
-                      <td className="data-td text-[13px] text-right font-medium text-text-primary">{fmtMoney(r.balance_due)}</td>
+                      <td className="data-td text-[13px] text-right text-text-primary">{fmtMoney(r.total_amount, r.currency)}</td>
+                      <td className="data-td text-[13px] text-right font-medium text-text-primary">{fmtMoney(r.balance_due, r.currency)}</td>
                     </tr>
                   ))}
                   {filtered.length === 0 && (
@@ -298,8 +298,8 @@ function MoneyInvoicesInner() {
                         </div>
                         <StatusBadge status={r.status} />
                       </div>
-                      <DataCardRow label="Total" value={fmtMoney(r.total_amount)} />
-                      <DataCardRow label="Balance" value={fmtMoney(r.balance_due)} />
+                      <DataCardRow label="Total" value={fmtMoney(r.total_amount, r.currency)} />
+                      <DataCardRow label="Balance" value={fmtMoney(r.balance_due, r.currency)} />
                       <DataCardRow label="Due" value={r.due_date ?? '—'} />
                     </DataCard>
                   ))}

@@ -251,6 +251,7 @@ function MoneyInvoiceDetailInner() {
       })(),
       company_name: companyName,
       letterhead,
+      currency: inv.currency,
       lines: lines.map(l => ({
         description: l.description,
         qty: l.quantity,
@@ -554,9 +555,9 @@ function MoneyInvoiceDetailInner() {
                     <tr key={l.id} className="border-b border-divider last:border-0">
                       <td className="data-td text-[13px] text-text-primary">{l.description}</td>
                       <td className="data-td text-[13px] text-text-secondary text-right">{l.quantity}</td>
-                      <td className="data-td text-[13px] text-text-secondary text-right">{fmtMoney(l.unit_price)}</td>
-                      {showVat && <td className="data-td text-[13px] text-text-secondary text-right">{fmtMoney(l.vat_amount)}</td>}
-                      <td className="data-td text-[13px] text-text-primary font-medium text-right">{fmtMoney(l.total_amount)}</td>
+                      <td className="data-td text-[13px] text-text-secondary text-right">{fmtMoney(l.unit_price, inv.currency)}</td>
+                      {showVat && <td className="data-td text-[13px] text-text-secondary text-right">{fmtMoney(l.vat_amount, inv.currency)}</td>}
+                      <td className="data-td text-[13px] text-text-primary font-medium text-right">{fmtMoney(l.total_amount, inv.currency)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -571,21 +572,29 @@ function MoneyInvoiceDetailInner() {
             <>
               <div className="flex justify-between text-[13px]">
                 <span className="text-text-secondary">Total excl. VAT</span>
-                <span className="text-text-primary">{fmtMoney(inv.subtotal)}</span>
+                <span className="text-text-primary">{fmtMoney(inv.subtotal, inv.currency)}</span>
               </div>
               <div className="flex justify-between text-[13px]">
                 <span className="text-text-secondary">VAT</span>
-                <span className="text-text-primary">{fmtMoney(inv.vat_amount)}</span>
+                <span className="text-text-primary">{fmtMoney(inv.vat_amount, inv.currency)}</span>
               </div>
             </>
           )}
           <div className={`flex justify-between text-[13px] ${showVat ? 'border-t border-divider pt-2' : ''}`}>
             <span className="font-semibold text-text-primary">{showVat ? 'Total incl. VAT' : 'Total'}</span>
-            <span className="font-semibold text-text-primary">{fmtMoney(inv.total_amount)}</span>
+            <span className="font-semibold text-text-primary">{fmtMoney(inv.total_amount, inv.currency)}</span>
           </div>
+          {inv.currency && inv.currency !== 'ZAR' && (
+            <div className="flex justify-between text-[12px] text-text-secondary">
+              <span>In your books</span>
+              <span>{(inv as { exchange_rate?: number | null }).exchange_rate
+                ? `${fmtMoney(Math.round(Number(inv.total_amount) * Number((inv as { exchange_rate?: number | null }).exchange_rate) * 100) / 100)} (1 ${inv.currency} = R ${Number((inv as { exchange_rate?: number | null }).exchange_rate).toFixed(4)}${(inv as { rate_source?: string | null }).rate_source === 'xero' ? ', Xero rate' : ''})`
+                : 'Rate set when it reaches Xero'}</span>
+            </div>
+          )}
           <div className="flex justify-between text-[13px]">
             <span className="text-text-secondary">Amount Paid</span>
-            <span className="text-green-600 font-medium">{fmtMoney(inv.amount_paid)}</span>
+            <span className="text-green-600 font-medium">{fmtMoney(inv.amount_paid, inv.currency)}</span>
           </div>
           {['voided', 'cancelled'].includes(inv.status) ? (
           <div className="flex justify-between text-[15px] border-t border-divider pt-2">
@@ -596,7 +605,7 @@ function MoneyInvoiceDetailInner() {
           <div className="flex justify-between text-[15px] border-t border-divider pt-2">
             <span className="font-bold text-text-primary">Balance Due</span>
             <span className={`font-bold ${(inv.balance_due ?? 0) > 0 ? 'text-red-600' : 'text-green-600'}`}>
-              {fmtMoney(inv.balance_due)}
+              {fmtMoney(inv.balance_due, inv.currency)}
             </span>
           </div>
           )}
@@ -616,7 +625,7 @@ function MoneyInvoiceDetailInner() {
                     <p className="text-[12px] text-text-secondary">
                       {p.submitted_at?.slice(0, 10)}
                       {p.reference ? ` · ref ${p.reference}` : ''}
-                      {p.amount != null ? ` · ${fmtMoney(p.amount)}` : ''}
+                      {p.amount != null ? ` · ${fmtMoney(p.amount, inv.currency)}` : ''}
                     </p>
                     {p.file_url && (
                       <a href={p.file_url} target="_blank" rel="noreferrer" className="text-[12px] text-primary hover:underline">
@@ -670,7 +679,7 @@ function MoneyInvoiceDetailInner() {
                       </td>
                       <td className="data-td text-[13px] text-text-secondary">{t.reference ?? '—'}</td>
                       <td className="data-td text-[13px] text-right font-medium text-text-primary">
-                        {fmtMoney(t.amount)}
+                        {fmtMoney(t.amount, inv.currency)}
                       </td>
                     </tr>
                   ))}
@@ -889,7 +898,7 @@ function MoneyInvoiceDetailInner() {
             <Field label="Payment Date">
               <input type="date" value={payDate} onChange={e => setPayDate(e.target.value)} className={inputCls} />
             </Field>
-            <Field label={`Amount (max ${fmtMoney(inv.balance_due)})`}>
+            <Field label={`Amount (max ${fmtMoney(inv.balance_due, inv.currency)})`}>
               <input
                 type="number"
                 step="0.01"
@@ -972,7 +981,7 @@ function MoneyInvoiceDetailInner() {
       {showCN && (
         <Modal title="Issue Credit Note" onClose={() => setShowCN(false)}>
           <p className="text-[13px] text-text-secondary">
-            A full credit note for {fmtMoney(inv.total_amount)} will be created against invoice{' '}
+            A full credit note for {fmtMoney(inv.total_amount, inv.currency)} will be created against invoice{' '}
             <span className="font-medium text-text-primary">{inv.invoice_number ?? inv.id}</span>.
           </p>
           <Field label="Reason Code">

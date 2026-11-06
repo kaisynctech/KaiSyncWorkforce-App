@@ -25,7 +25,8 @@ const json = (body: unknown, status = 200) =>
 const esc = (s: unknown) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 const valid = (e: unknown) => { const v = String(e ?? "").trim(); return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v) ? v : ""; };
-const rand = (n: unknown) => "R " + Number(n ?? 0).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// Rand prints as "R"; other currencies as their code ("USD 1 250,00").
+const rand = (n: unknown, cur?: string | null) => `${!cur || cur.toUpperCase() === "ZAR" ? "R" : cur.toUpperCase()} ` + Number(n ?? 0).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const day = (d: unknown) => {
   const s = String(d ?? "").slice(0, 10);
   return s ? new Date(`${s}T12:00:00Z`).toLocaleDateString("en-ZA", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }) : "";
@@ -71,7 +72,7 @@ type Built = {
 async function build(admin: SupabaseClient, kind: Kind, id: string): Promise<Built> {
   if (kind === "invoice" || kind === "receipt") {
     const { data: inv } = await admin.from("finance_invoices")
-      .select("id, company_id, invoice_number, status, total_amount, amount_paid, balance_due, due_date, client:clients(name, contact_person, email)")
+      .select("id, company_id, invoice_number, status, currency, total_amount, amount_paid, balance_due, due_date, client:clients(name, contact_person, email)")
       .eq("id", id).maybeSingle();
     if (!inv) return { error: "Invoice not found.", status: 404 };
     const c = (inv.client ?? {}) as { name?: string; contact_person?: string; email?: string };
@@ -83,9 +84,9 @@ async function build(admin: SupabaseClient, kind: Kind, id: string): Promise<Bui
         companyId: inv.company_id, to: valid(c.email), greetName: c.contact_person || null,
         subject: (co) => `Invoice ${num} from ${co}`,
         paras: [
-          `Please find attached invoice ${b(num)} for ${b(rand(inv.total_amount))}.`,
+          `Please find attached invoice ${b(num)} for ${b(rand(inv.total_amount, inv.currency))}.`,
           bal > 0.004
-            ? `The amount due is ${b(rand(bal))}${inv.due_date ? `, payable by ${b(day(inv.due_date))}` : ""}. Please use ${b(num)} as your payment reference.`
+            ? `The amount due is ${b(rand(bal, inv.currency))}${inv.due_date ? `, payable by ${b(day(inv.due_date))}` : ""}. Please use ${b(num)} as your payment reference.`
             : "This invoice has already been paid in full. Thank you!",
         ],
       };
@@ -100,15 +101,15 @@ async function build(admin: SupabaseClient, kind: Kind, id: string): Promise<Bui
       companyId: inv.company_id, to: valid(c.email), greetName: c.contact_person || null,
       subject: (co) => `Receipt${tx.receipt_number ? ` ${tx.receipt_number}` : ""} — payment received, thank you (${num})`,
       paras: [
-        `Thank you — we received your payment of ${b(rand(tx.amount))} on ${b(day(tx.transaction_date ?? tx.created_at))} for invoice ${b(num)}.`,
+        `Thank you — we received your payment of ${b(rand(tx.amount, inv.currency))} on ${b(day(tx.transaction_date ?? tx.created_at))} for invoice ${b(num)}.`,
         ...(tx.receipt_number ? [`Your receipt number is ${b(String(tx.receipt_number))}.`] : []),
-        bal > 0.004 ? `The balance still owing on this invoice is ${b(rand(bal))}.` : "This invoice is now paid in full.",
+        bal > 0.004 ? `The balance still owing on this invoice is ${b(rand(bal, inv.currency))}.` : "This invoice is now paid in full.",
       ],
     };
   }
   if (kind === "credit_note") {
     const { data: cn } = await admin.from("credit_notes")
-      .select("id, company_id, credit_note_number, status, total_amount, invoice:finance_invoices(invoice_number), client:clients(name, contact_person, email)")
+      .select("id, company_id, credit_note_number, status, currency, total_amount, invoice:finance_invoices(invoice_number), client:clients(name, contact_person, email)")
       .eq("id", id).maybeSingle();
     if (!cn) return { error: "Credit note not found.", status: 404 };
     if (String(cn.status) === "voided") return { error: "This credit note was voided.", status: 409 };
@@ -118,18 +119,18 @@ async function build(admin: SupabaseClient, kind: Kind, id: string): Promise<Bui
     return {
       companyId: cn.company_id, to: valid(c.email), greetName: c.contact_person || null,
       subject: (co) => `Credit note${num ? ` ${num}` : ""} from ${co}`,
-      paras: [`Please find attached credit note${num ? ` ${b(num)}` : ""} for ${b(rand(cn.total_amount))}${invNum ? ` against invoice ${b(invNum)}` : ""}.`],
+      paras: [`Please find attached credit note${num ? ` ${b(num)}` : ""} for ${b(rand(cn.total_amount, cn.currency))}${invNum ? ` against invoice ${b(invNum)}` : ""}.`],
     };
   }
   if (kind === "purchase_order") {
     const { data: po } = await admin.from("purchase_orders")
-      .select("id, company_id, po_number, status, total_amount, required_delivery_date, delivery_address, supplier:contractors!purchase_orders_supplier_id_fkey(name, contact_person, email)")
+      .select("id, company_id, po_number, status, currency, total_amount, required_delivery_date, delivery_address, supplier:contractors!purchase_orders_supplier_id_fkey(name, contact_person, email)")
       .eq("id", id).maybeSingle();
     if (!po) return { error: "Purchase order not found.", status: 404 };
     if (["draft", "cancelled", "rejected"].includes(String(po.status))) return { error: "Approve the purchase order before emailing it.", status: 409 };
     const s = (po.supplier ?? {}) as { contact_person?: string; email?: string };
     const num = String(po.po_number ?? "");
-    const paras = [`Please find attached our purchase order ${b(num)} for ${b(rand(po.total_amount))}.`];
+    const paras = [`Please find attached our purchase order ${b(num)} for ${b(rand(po.total_amount, po.currency))}.`];
     if (po.required_delivery_date) paras.push(`We need delivery by ${b(day(po.required_delivery_date))}.`);
     if (po.delivery_address) paras.push(`Deliver to: ${esc(po.delivery_address).replace(/\n/g, "<br>")}`);
     paras.push(`Please quote ${b(num)} on your invoice.`);
@@ -177,7 +178,7 @@ ${items.map((l) => `<tr><td style="${cell}">${esc(l.description)}${l.specificati
   }
   if (kind === "remittance_supplier") {
     const { data: si } = await admin.from("supplier_invoices")
-      .select("id, company_id, invoice_number, bill_number, remittance_number, status, amount_paid, paid_at, supplier:contractors!supplier_invoices_supplier_id_fkey(name, contact_person, email)")
+      .select("id, company_id, invoice_number, bill_number, remittance_number, status, currency, amount_paid, paid_at, supplier:contractors!supplier_invoices_supplier_id_fkey(name, contact_person, email)")
       .eq("id", id).maybeSingle();
     if (!si) return { error: "Bill not found.", status: 404 };
     if (!(Number(si.amount_paid ?? 0) > 0)) return { error: "Record the payment before sending remittance advice.", status: 409 };
@@ -187,7 +188,7 @@ ${items.map((l) => `<tr><td style="${cell}">${esc(l.description)}${l.specificati
       companyId: si.company_id, to: valid(s.email), greetName: s.contact_person || null,
       subject: (co) => `Remittance advice${si.remittance_number ? ` ${si.remittance_number}` : ""} from ${co}${num ? ` — your invoice ${num}` : ""}`,
       paras: [
-        `We've paid ${b(rand(si.amount_paid))}${num ? ` for your invoice ${b(num)}` : ""}${si.paid_at ? ` on ${b(day(si.paid_at))}` : ""}.`,
+        `We've paid ${b(rand(si.amount_paid, si.currency))}${num ? ` for your invoice ${b(num)}` : ""}${si.paid_at ? ` on ${b(day(si.paid_at))}` : ""}.`,
         ...(si.remittance_number ? [`Payment reference: ${b(String(si.remittance_number))}${si.bill_number ? ` (our ref ${esc(si.bill_number)})` : ""}.`] : []),
         "Please allow a day or two for it to reflect in your account, depending on your bank.",
       ],

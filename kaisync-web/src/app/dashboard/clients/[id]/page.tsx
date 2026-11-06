@@ -6,6 +6,7 @@ import { Fragment, Suspense, useEffect, useRef, useState, type DragEvent } from 
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { CurrencyPicker } from '@/components/money/CurrencyPicker'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import {
   CLIENT_TYPES,
@@ -1149,6 +1150,7 @@ function ClientDetailInner() {
       vat_number: client.vat_number?.trim() || null,
       billing_address: client.billing_address?.trim() || null,
       tax_exempt: Boolean(client.tax_exempt),
+      currency: client.currency || null,
     }
     const { error: e } = await supabase.from('clients').update(payload).eq('id', client.id)
     if (e) {
@@ -2098,7 +2100,7 @@ function ClientDetailInner() {
                     className="w-full h-9 px-3 border border-border rounded-md text-[13px] bg-background" />
                 </label>
                 <label className="space-y-1">
-                  <span className="text-[12px] text-text-secondary">Credit Limit (R)</span>
+                  <span className="text-[12px] text-text-secondary">Credit Limit ({client.currency || 'R'})</span>
                   <input type="number" value={client.credit_limit ?? 0}
                     onChange={e => setClient(prev => prev ? { ...prev, credit_limit: Number(e.target.value) } : prev)}
                     className="w-full h-9 px-3 border border-border rounded-md text-[13px] bg-background" />
@@ -2115,6 +2117,10 @@ function ClientDetailInner() {
                     onChange={e => setClient(prev => prev ? { ...prev, billing_address: e.target.value } : prev)}
                     className="w-full h-9 px-3 border border-border rounded-md text-[13px] bg-background" />
                 </label>
+                <div className="col-span-2">
+                  <CurrencyPicker value={client.currency ?? null} disabled={!canEdit} label="Currency (quotes, invoices and statements)"
+                    onChange={code => setClient(prev => prev ? { ...prev, currency: code } : prev)} />
+                </div>
               </div>
               <label className="flex items-center gap-2 text-[13px]">
                 <input type="checkbox" checked={client.tax_exempt ?? false}

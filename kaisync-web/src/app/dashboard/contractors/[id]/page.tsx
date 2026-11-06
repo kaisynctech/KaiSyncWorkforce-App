@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, Suspense, useRef, useMemo } from 'rea
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { CurrencyPicker } from '@/components/money/CurrencyPicker'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import {
   isContractorKind,
@@ -198,6 +199,7 @@ function ContractorDetailInner() {
   const [taxNumber, setTaxNumber] = useState('')
   const [isVatRegistered, setIsVatRegistered] = useState(false)
   const [vatNumber, setVatNumber] = useState('')
+  const [currency, setCurrency] = useState<string | null>(null)
   const [contactPerson, setContactPerson] = useState('')
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
@@ -325,6 +327,7 @@ function ContractorDetailInner() {
     setTaxNumber(cont.tax_number ?? '')
     setIsVatRegistered(cont.is_vat_registered ?? false)
     setVatNumber(cont.vat_number ?? '')
+    setCurrency((cont as { currency?: string | null }).currency ?? null)
     setContactPerson(cont.contact_person ?? '')
     setPhone(cont.phone ?? '')
     setEmail(cont.email ?? '')
@@ -437,6 +440,7 @@ function ContractorDetailInner() {
         tax_number:                  taxNumber.trim() || null,
         is_vat_registered:           isVatRegistered,
         vat_number:                  isVatRegistered ? (vatNumber.trim() || null) : null,
+        currency:                  currency,
         contact_person:              contactPerson.trim() || null,
         phone:                       phone.trim() || null,
         email:                       email.trim() || null,
@@ -1010,6 +1014,7 @@ function ContractorDetailInner() {
                 <input type="text" value={vatNumber} onChange={e => setVatNumber(e.target.value)}
                   placeholder="e.g. 4123456789" disabled={!isVatRegistered} className={entryClass} />
               </FormField>
+              <CurrencyPicker value={currency} onChange={setCurrency} label="Currency (POs and bills)" />
             </SectionCard>
 
             <SectionCard title="CONTRACTOR PORTAL">

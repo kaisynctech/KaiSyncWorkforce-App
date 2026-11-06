@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { CurrencyPicker } from '@/components/money/CurrencyPicker'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { SectionCard, FormField, entryClass } from '@/components/SectionCard'
 import { FormSelect } from '@/components/FormSelect'
@@ -61,6 +62,7 @@ export default function SupplierDetailPage() {
   const [taxNumber, setTaxNumber] = useState('')
   const [isVatRegistered, setIsVatRegistered] = useState(false)
   const [vatNumber, setVatNumber] = useState('')
+  const [currency, setCurrency] = useState<string | null>(null)
   const [contactPerson, setContactPerson] = useState('')
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
@@ -134,6 +136,7 @@ export default function SupplierDetailPage() {
     setTaxNumber(cont.tax_number ?? '')
     setIsVatRegistered(cont.is_vat_registered ?? false)
     setVatNumber(cont.vat_number ?? '')
+    setCurrency((cont as { currency?: string | null }).currency ?? null)
     setContactPerson(cont.contact_person ?? '')
     setPhone(cont.phone ?? '')
     setEmail(cont.email ?? '')
@@ -209,6 +212,7 @@ export default function SupplierDetailPage() {
         tax_number: taxNumber.trim() || null,
         is_vat_registered: isVatRegistered,
         vat_number: isVatRegistered ? (vatNumber.trim() || null) : null,
+        currency: currency,
         contact_person: contactPerson.trim() || null,
         phone: phone.trim() || null,
         email: email.trim() || null,
@@ -377,6 +381,7 @@ export default function SupplierDetailPage() {
                 <input type="text" value={vatNumber} onChange={e => setVatNumber(e.target.value)}
                   disabled={!isVatRegistered} className={entryClass} />
               </FormField>
+              <CurrencyPicker value={currency} onChange={setCurrency} label="Currency (POs and bills)" />
             </SectionCard>
 
             <SectionCard title="CONTACT">

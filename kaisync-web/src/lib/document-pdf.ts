@@ -20,10 +20,14 @@ export type DocumentPdfInput = {
   notesHeading?: string
   notes?: string | null
   reference?: string | null
+  /** Currency of the amounts (ISO code); rand when not given. */
+  currency?: string | null
 }
 
-export function money(n: number): string {
-  return `R ${Number(n || 0).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+/** Money for PDFs: rand prints as "R", other currencies as their code ("USD 1 250,00") so every font can print it. */
+export function money(n: number, currency?: string | null): string {
+  const c = (currency || 'ZAR').toUpperCase()
+  return `${c === 'ZAR' ? 'R' : c} ${Number(n || 0).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 export function pdfDate(d: string | null | undefined): string {
@@ -76,8 +80,8 @@ export function buildDocumentPdf(input: DocumentPdfInput): jsPDF {
     doc.text(desc, left + 1, y)
     doc.text(String(Number(line.qty) || 0), 118, y, { align: 'right' })
     doc.text((line.unit ?? '').slice(0, 10), 122, y)
-    doc.text(money(line.unit_price), 160, y, { align: 'right' })
-    doc.text(money(line.total), right - 1, y, { align: 'right' })
+    doc.text(money(line.unit_price, input.currency), 160, y, { align: 'right' })
+    doc.text(money(line.total, input.currency), right - 1, y, { align: 'right' })
     y += Math.max(6, desc.length * 4.5)
   }
 

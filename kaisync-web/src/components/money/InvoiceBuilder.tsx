@@ -14,12 +14,14 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { localISODate } from '@/lib/utils'
 import { LineItemsEditor } from '@/components/money/LineItemsEditor'
+import { CurrencyPicker } from '@/components/money/CurrencyPicker'
+import { formatCurrency } from '@/lib/currencies'
 import {
   asItemType, formatRand, lineQty, lineTotal, linesSubtotal, loadPickItems, meaningfulLines, newKey,
   type EditorLine, type PickItem,
 } from '@/lib/line-items'
 
-type ClientOpt = { id: string; name: string; email: string | null; payment_terms_days: number | null }
+type ClientOpt = { id: string; name: string; email: string | null; payment_terms_days: number | null; currency: string | null }
 type JobOpt = { id: string; title: string; job_code: string | null }
 
 function addDays(iso: string, days: number): string {
@@ -60,6 +62,11 @@ export function InvoiceBuilder({ invoiceId }: { invoiceId?: string | null }) {
   const [busy, setBusy] = useState<null | 'draft' | 'send'>(null)
   const [error, setError] = useState<string | null>(null)
   const [changingClient, setChangingClient] = useState(false)
+  // Currency: the client's (or the company's), with an optional exchange rate for foreign currencies.
+  const [homeCurrency, setHomeCurrency] = useState('ZAR')
+  const [currency, setCurrency] = useState('ZAR')
+  const [currencyTouched, setCurrencyTouched] = useState(false)
+  const [fxRate, setFxRate] = useState('')
 
   // Company, clients, jobs, and (when editing) the draft invoice.
   useEffect(() => {
@@ -71,7 +78,7 @@ export function InvoiceBuilder({ invoiceId }: { invoiceId?: string | null }) {
       setEmployeeId(member.employeeId)
       const [{ data: co }, { data: cl }, { data: jb }] = await Promise.all([
         supabase.from('companies').select('is_vat_registered, vat_number, default_vat_rate').eq('id', member.companyId).maybeSingle(),
-        supabase.from('clients').select('id, name, email, payment_terms_days').eq('company_id', member.companyId).order('name'),
+        supabase.from('clients').select('id, name, email, payment_terms_days, currency').eq('company_id', member.companyId).order('name'),
         supabase.from('jobs').select('id, title, job_code').eq('company_id', member.companyId).order('created_at', { ascending: false }).limit(200),
       ])
       const c = co as { is_vat_registered?: boolean | null; vat_number?: string | null; default_vat_rate?: number | null } | null
@@ -81,11 +88,15 @@ export function InvoiceBuilder({ invoiceId }: { invoiceId?: string | null }) {
       setVat({ registered, hasNumber: !!c?.vat_number?.trim(), rate })
       setVatOn(registered)
       setClients((cl ?? []) as ClientOpt[])
+      const { data: home } = await supabase.rpc('company_home_currency' as never, { p_company_id: member.companyId } as never)
+      const hc = typeof home === 'string' && home ? home : 'ZAR'
+      setHomeCurrency(hc)
+      if (!invoiceId) setCurrency(hc)
       setJobs((jb ?? []) as JobOpt[])
 
       if (invoiceId) {
         const [{ data: inv }, { data: ls }] = await Promise.all([
-          supabase.from('finance_invoices').select('id, status, client_id, job_id, issue_date, due_date, notes, vat_rate, vat_amount, invoice_number, quote_id').eq('id', invoiceId).eq('company_id', member.companyId).maybeSingle(),
+          supabase.from('finance_invoices').select('id, status, client_id, job_id, issue_date, due_date, notes, vat_rate, vat_amount, invoice_number, quote_id, currency, exchange_rate, rate_source').eq('id', invoiceId).eq('company_id', member.companyId).maybeSingle(),
           supabase.from('finance_invoice_lines').select('description, quantity, unit_price, item_type, source_id, unit').eq('invoice_id', invoiceId).order('line_no'),
         ])
         const i = inv as Record<string, unknown> | null
@@ -93,6 +104,8 @@ export function InvoiceBuilder({ invoiceId }: { invoiceId?: string | null }) {
         if (i.status !== 'draft') { router.replace(`/dashboard/money/invoices/${invoiceId}`); return }
         setClientId((i.client_id as string | null) ?? '')
         setJobId((i.job_id as string | null) ?? '')
+        if (i.currency) { setCurrency(String(i.currency)); setCurrencyTouched(true) }
+        if (i.rate_source === 'manual' && i.exchange_rate) setFxRate(String(i.exchange_rate))
         if (i.issue_date) setIssueDate(String(i.issue_date))
         if (i.due_date) { setDueDate(String(i.due_date)); setDueTouched(true) }
         setNotes((i.notes as string | null) ?? '')
@@ -137,6 +150,16 @@ export function InvoiceBuilder({ invoiceId }: { invoiceId?: string | null }) {
     setDueDate(addDays(issueDate, client?.payment_terms_days ?? 30))
   }, [issueDate, client?.payment_terms_days, dueTouched])
 
+  // A new client brings their currency (unless the currency was chosen by hand).
+  useEffect(() => {
+    if (currencyTouched) return
+    const c = clients.find(x => x.id === clientId)
+    setCurrency(c?.currency || homeCurrency)
+  }, [clientId, clients, homeCurrency, currencyTouched])
+  const foreign = currency !== homeCurrency
+  const fxNum = Number(fxRate.replace(',', '.'))
+  const fmt = (n: number) => formatCurrency(n, currency)
+
   const rate = vat.registered && vatOn ? vat.rate : 0
   const subtotal = useMemo(() => linesSubtotal(lines), [lines])
   const vatAmount = round2(subtotal * rate)
@@ -154,7 +177,9 @@ export function InvoiceBuilder({ invoiceId }: { invoiceId?: string | null }) {
     const header = {
       client_id: clientId,
       job_id: jobId || null,
-      currency: 'ZAR',
+      currency,
+      exchange_rate: foreign && fxNum > 0 ? fxNum : null,
+      rate_source: foreign && fxNum > 0 ? 'manual' : null,
       subtotal,
       vat_rate: rate,
       vat_amount: vatAmount,
@@ -214,7 +239,7 @@ export function InvoiceBuilder({ invoiceId }: { invoiceId?: string | null }) {
       if (se) { setError(se.message); setBusy(null); return }
     }
     router.replace(`/dashboard/money/invoices/${id}${send ? '?email=1' : '?whats_next=1'}`)
-  }, [companyId, clientId, lines, jobId, subtotal, rate, vatAmount, total, issueDate, dueDate, notes, invoiceId, dealId, employeeId, router])
+  }, [companyId, clientId, lines, jobId, subtotal, rate, vatAmount, total, issueDate, dueDate, notes, invoiceId, dealId, employeeId, router, currency, foreign, fxNum])
 
   if (!loaded) return <p className="text-center text-[13px] text-text-secondary py-10">Loading…</p>
 
@@ -297,7 +322,7 @@ export function InvoiceBuilder({ invoiceId }: { invoiceId?: string | null }) {
               </div>
             </div>
 
-            <LineItemsEditor lines={lines} onChange={setLines} items={items} itemsLoading={itemsLoading} startOpen={!invoiceId} />
+            <LineItemsEditor lines={lines} onChange={setLines} items={items} itemsLoading={itemsLoading} startOpen={!invoiceId} currency={currency} />
 
             <div className="bg-surface-card border border-divider rounded-2xl p-5">
               <label className="flex flex-col gap-2 text-[11.5px] font-semibold uppercase tracking-wider text-text-secondary">Notes for the client
@@ -313,15 +338,25 @@ export function InvoiceBuilder({ invoiceId }: { invoiceId?: string | null }) {
               <h2 className="text-[15px] font-semibold text-text-primary">Summary</h2>
               {rate > 0 ? (
                 <>
-                  <div className="flex justify-between text-[14px] text-text-secondary"><span>Total excl. VAT</span><span className="font-medium text-text-primary tabular-nums">{formatRand(subtotal)}</span></div>
-                  <div className="flex justify-between text-[14px] text-text-secondary"><span>VAT ({Math.round(rate * 1000) / 10}%)</span><span className="font-medium text-text-primary tabular-nums">{formatRand(vatAmount)}</span></div>
+                  <div className="flex justify-between text-[14px] text-text-secondary"><span>Total excl. VAT</span><span className="font-medium text-text-primary tabular-nums">{fmt(subtotal)}</span></div>
+                  <div className="flex justify-between text-[14px] text-text-secondary"><span>VAT ({Math.round(rate * 1000) / 10}%)</span><span className="font-medium text-text-primary tabular-nums">{fmt(vatAmount)}</span></div>
                   <div className="h-px bg-divider" />
                 </>
               ) : null}
               <div className="flex justify-between items-baseline gap-3">
                 <span className="text-[14px] font-semibold text-text-primary">{rate > 0 ? 'Total incl. VAT' : 'Total'}</span>
-                <span className="text-[26px] font-bold tracking-tight text-text-primary tabular-nums whitespace-nowrap">{formatRand(total)}</span>
+                <span className="text-[26px] font-bold tracking-tight text-text-primary tabular-nums whitespace-nowrap">{fmt(total)}</span>
               </div>
+              <CurrencyPicker value={currency} allowDefault={false} homeCurrency={homeCurrency} label="Currency"
+                onChange={c => { setCurrency(c ?? homeCurrency); setCurrencyTouched(true) }} />
+              {foreign && (
+                <label className="flex flex-col gap-1 text-[12px] text-text-secondary">
+                  <span>Exchange rate (optional): 1 {currency} = ? {homeCurrency}</span>
+                  <input inputMode="decimal" value={fxRate} onChange={e => setFxRate(e.target.value)} placeholder="Leave empty to use Xero's rate"
+                    className="h-10 rounded-lg border border-divider px-3 text-[13.5px] bg-background text-text-primary focus:outline-none focus:border-primary/60" />
+                  {fxNum > 0 && <span>≈ {formatCurrency(round2(total * fxNum), homeCurrency)} in your books</span>}
+                </label>
+              )}
               {vat.registered && (
                 <label className="flex items-center gap-2 text-[12.5px] text-text-secondary">
                   <input type="checkbox" className="accent-primary" checked={vatOn} onChange={e => setVatOn(e.target.checked)} />

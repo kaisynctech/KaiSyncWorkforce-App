@@ -35,10 +35,13 @@ export type InvoicePdfInput = {
   balance_due: number
   /** Company letterhead (logo, details, banking). Falls back to the company name only. */
   letterhead?: Letterhead | null
+  /** The invoice's currency (ISO code). Rand prints as "R", others as their code ("USD 1 250,00"). */
+  currency?: string | null
 }
 
-function money(n: number): string {
-  return `R ${n.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+function money(n: number, currency?: string | null): string {
+  const c = (currency || 'ZAR').toUpperCase()
+  return `${c === 'ZAR' ? 'R' : c} ${n.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 /** VAT appears only when the company is VAT-registered and this invoice actually charges VAT. */
@@ -132,8 +135,8 @@ export function buildInvoicePdf(input: InvoicePdfInput): jsPDF {
     const desc = doc.splitTextToSize(line.description.trim() || '—', 90)
     doc.text(desc, left + 1, y)
     doc.text(String(line.qty), 118, y, { align: 'right' })
-    doc.text(money(line.unit_price), 145, y, { align: 'right' })
-    doc.text(money(line.total), right - 1, y, { align: 'right' })
+    doc.text(money(line.unit_price, input.currency), 145, y, { align: 'right' })
+    doc.text(money(line.total, input.currency), right - 1, y, { align: 'right' })
     y += Math.max(6, desc.length * 4.5)
   }
 
@@ -145,12 +148,12 @@ export function buildInvoicePdf(input: InvoicePdfInput): jsPDF {
   const rate = input.subtotal > 0 ? input.vat / input.subtotal : 0
   const totals: [string, string, boolean][] = vatShown
     ? [
-        ['Total excl. VAT', money(input.subtotal), false],
-        [`VAT (${Math.round(rate * 1000) / 10}%)`, money(input.vat), false],
-        ['Total incl. VAT', money(input.total), true],
+        ['Total excl. VAT', money(input.subtotal, input.currency), false],
+        [`VAT (${Math.round(rate * 1000) / 10}%)`, money(input.vat, input.currency), false],
+        ['Total incl. VAT', money(input.total, input.currency), true],
       ]
-    : [['Total', money(input.total), true]]
-  totals.push(['Paid', money(input.amount_paid), false], ['Balance due', money(input.balance_due), true])
+    : [['Total', money(input.total, input.currency), true]]
+  totals.push(['Paid', money(input.amount_paid, input.currency), false], ['Balance due', money(input.balance_due, input.currency), true])
 
   for (let i = 0; i < totals.length; i++) {
     const [label, value, bold] = totals[i]

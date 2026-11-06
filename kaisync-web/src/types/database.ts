@@ -188,6 +188,8 @@ export interface Client {
   mobile?: string | null
   direct_line?: string | null
   fax?: string | null
+  /** Billing currency (ISO code); null = the company's own currency. */
+  currency?: string | null
 }
 
 export interface ClientContact {
@@ -481,6 +483,8 @@ export interface Contractor {
   payment_hold: boolean
   compliance_hold: boolean
   created_at: string
+  /** Billing currency (ISO code); null = the company's own currency. */
+  currency?: string | null
 }
 
 export interface ContractorTeamMember {

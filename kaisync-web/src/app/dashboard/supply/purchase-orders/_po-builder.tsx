@@ -240,6 +240,7 @@ export default function PoBuilder({ poId }: { poId?: string }) {
     const supplier = suppliers.find(x => x.id === (po.supplier_id ?? supplierId))
     const vat = Number(po.vat_amount ?? 0)
     const doc = buildDocumentPdf({
+      currency: po.currency,
       letterhead: lh,
       title: 'Purchase order',
       meta: [
@@ -256,8 +257,8 @@ export default function PoBuilder({ poId }: { poId?: string }) {
         return { description: l.description, qty, unit: l.unit, unit_price: up, total: roundFinancial(qty * up) }
       }),
       totals: vat > 0.004
-        ? [['Total excl. VAT', money(Number(po.subtotal ?? 0)), false], ['VAT', money(vat), false], ['Total incl. VAT', money(Number(po.total_amount ?? 0)), true]]
-        : [['Total', money(Number(po.total_amount ?? 0)), true]],
+        ? [['Total excl. VAT', money(Number(po.subtotal ?? 0), po.currency), false], ['VAT', money(vat, po.currency), false], ['Total incl. VAT', money(Number(po.total_amount ?? 0), po.currency), true]]
+        : [['Total', money(Number(po.total_amount ?? 0), po.currency), true]],
       notesHeading: 'Delivery and terms',
       notes: [
         po.delivery_address ? `Deliver to: ${po.delivery_address}` : '',

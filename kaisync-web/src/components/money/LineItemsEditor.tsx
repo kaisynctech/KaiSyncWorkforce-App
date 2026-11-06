@@ -14,6 +14,7 @@ import {
   ITEM_KIND, blankEditorLine, filterPicks, formatRand, lineFromPick, lineTotal,
   type EditorLine, type ItemType, type PickItem,
 } from '@/lib/line-items'
+import { formatCurrency } from '@/lib/currencies'
 
 type Props = {
   lines: EditorLine[]
@@ -23,6 +24,8 @@ type Props = {
   readOnly?: boolean
   /** Put the cursor in the empty line straight away (a new document). */
   startOpen?: boolean
+  /** The document's currency, for the line totals (catalogue prices stay in the company currency). */
+  currency?: string
 }
 
 const TABS: { key: ItemType; label: string }[] = [
@@ -62,7 +65,7 @@ function PickRow({ item, onPick, compact }: { item: PickItem; onPick: () => void
   )
 }
 
-export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly, startOpen }: Props) {
+export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly, startOpen, currency }: Props) {
   const [browseOpen, setBrowseOpen] = useState(false)
   const [tab, setTab] = useState<ItemType | null>(null)
   const [query, setQuery] = useState('')
@@ -212,7 +215,7 @@ export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly
                 />
               </label>
 
-              <span className="w-[104px] text-right text-[13.5px] font-semibold text-text-primary tabular-nums whitespace-nowrap">{formatRand(lineTotal(l))}</span>
+              <span className="w-[104px] text-right text-[13.5px] font-semibold text-text-primary tabular-nums whitespace-nowrap">{formatCurrency(lineTotal(l), currency)}</span>
               {!readOnly && (
                 <button type="button" aria-label="Remove line" onClick={() => remove(l.key)}
                   className="w-7 h-7 rounded-lg flex items-center justify-center text-text-secondary/60 hover:text-error hover:bg-error/10">

@@ -13,6 +13,7 @@ import { emailedLabel, loadDocumentEmails, type DocumentEmailLog } from '@/lib/m
 
 type CreditNoteDetail = {
   id: string
+  currency: string | null
   client_id: string | null
   credit_note_number: string | null
   status: string
@@ -77,7 +78,7 @@ function CreditNoteDetailInner() {
     const [{ data }, { data: lineRows }] = await Promise.all([
       supabase
         .from('credit_notes')
-        .select('id, credit_note_number, status, reason_code, reason_notes, total_amount, subtotal, vat_amount, issue_date, invoice_id, client_id, clients(name, email, legal_name, address, billing_address), finance_invoices(invoice_number)')
+        .select('id, credit_note_number, status, reason_code, reason_notes, currency, total_amount, subtotal, vat_amount, issue_date, invoice_id, client_id, clients(name, email, legal_name, address, billing_address), finance_invoices(invoice_number)')
         .eq('id', id)
         .eq('company_id', member.companyId)
         .maybeSingle(),
@@ -105,6 +106,7 @@ function CreditNoteDetailInner() {
     const vatShown = lh.vatRegistered && Math.abs(Number(cn.vat_amount) || 0) > 0.004
     const invNum = cn.finance_invoices?.invoice_number
     const doc = buildDocumentPdf({
+      currency: cn.currency,
       letterhead: lh,
       title: vatShown ? 'Tax credit note' : 'Credit note',
       meta: [
@@ -121,8 +123,8 @@ function CreditNoteDetailInner() {
       ],
       lines: lines.map(l => ({ description: l.description, qty: l.quantity, unit_price: l.unit_price, total: l.total_amount })),
       totals: vatShown
-        ? [['Total excl. VAT', money(cn.subtotal), false], ['VAT', money(cn.vat_amount), false], ['Total credit incl. VAT', money(cn.total_amount), true]]
-        : [['Total credit', money(cn.total_amount), true]],
+        ? [['Total excl. VAT', money(cn.subtotal, cn.currency), false], ['VAT', money(cn.vat_amount, cn.currency), false], ['Total credit incl. VAT', money(cn.total_amount, cn.currency), true]]
+        : [['Total credit', money(cn.total_amount, cn.currency), true]],
       notesHeading: 'Reason',
       notes: [cn.reason_code?.replace(/_/g, ' '), cn.reason_notes].filter(Boolean).join(' — ') || null,
       reference: cn.credit_note_number,
@@ -230,8 +232,8 @@ function CreditNoteDetailInner() {
                   <tr key={l.id} className="border-b border-divider last:border-0">
                     <td className="data-td text-[13px]">{l.description}</td>
                     <td className="data-td text-[13px] text-right">{l.quantity}</td>
-                    <td className="data-td text-[13px] text-right">{fmtMoney(l.unit_price)}</td>
-                    <td className="data-td text-[13px] text-right font-medium">{fmtMoney(l.total_amount)}</td>
+                    <td className="data-td text-[13px] text-right">{fmtMoney(l.unit_price, cn.currency)}</td>
+                    <td className="data-td text-[13px] text-right font-medium">{fmtMoney(l.total_amount, cn.currency)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -242,12 +244,12 @@ function CreditNoteDetailInner() {
         <div className="bg-surface-card border border-divider rounded-xl p-4 space-y-2 text-[13px]">
           {Math.abs(Number(cn.vat_amount) || 0) > 0.004 ? (
             <>
-              <div className="flex justify-between"><span className="text-text-secondary">Total excl. VAT</span><span>{fmtMoney(cn.subtotal)}</span></div>
-              <div className="flex justify-between"><span className="text-text-secondary">VAT</span><span>{fmtMoney(cn.vat_amount)}</span></div>
-              <div className="flex justify-between font-semibold border-t border-divider pt-2"><span>Total incl. VAT</span><span>{fmtMoney(cn.total_amount)}</span></div>
+              <div className="flex justify-between"><span className="text-text-secondary">Total excl. VAT</span><span>{fmtMoney(cn.subtotal, cn.currency)}</span></div>
+              <div className="flex justify-between"><span className="text-text-secondary">VAT</span><span>{fmtMoney(cn.vat_amount, cn.currency)}</span></div>
+              <div className="flex justify-between font-semibold border-t border-divider pt-2"><span>Total incl. VAT</span><span>{fmtMoney(cn.total_amount, cn.currency)}</span></div>
             </>
           ) : (
-            <div className="flex justify-between font-semibold"><span>Total</span><span>{fmtMoney(cn.total_amount)}</span></div>
+            <div className="flex justify-between font-semibold"><span>Total</span><span>{fmtMoney(cn.total_amount, cn.currency)}</span></div>
           )}
         </div>
       </div>
