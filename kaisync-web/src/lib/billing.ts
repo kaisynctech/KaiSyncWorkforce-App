@@ -56,10 +56,12 @@ export type BillingSummary = {
 }
 
 export function formatZar(amount: number): string {
+  // Whole rands stay whole (R 2 500); any cents always show two digits (R 220,50, not R 220,5).
+  const cents = Math.round(Math.abs(amount) * 100) % 100 !== 0
   return new Intl.NumberFormat('en-ZA', {
     style: 'currency',
     currency: 'ZAR',
-    minimumFractionDigits: 0,
+    minimumFractionDigits: cents ? 2 : 0,
     maximumFractionDigits: 2,
   }).format(amount)
 }
