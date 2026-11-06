@@ -247,7 +247,7 @@ function MoneyInvoicesInner() {
                       <td className="data-td text-[13px] font-medium text-text-primary">
                         <span className="inline-flex items-center gap-1.5">
                           {r.invoice_number || <span className="text-text-disabled italic">draft</span>}
-                          {r.status !== 'draft' && xeroMark(r)}
+                          {(xero.statuses?.[r.id] || !['draft', 'cancelled', 'voided'].includes(r.status)) && xeroMark(r)}
                         </span>
                       </td>
                       <td className="data-td text-[13px] text-text-secondary">
@@ -290,7 +290,7 @@ function MoneyInvoicesInner() {
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <DataCardTitle>
-                            <span className="inline-flex items-center gap-1.5">{r.invoice_number || 'Draft'}{r.status !== 'draft' && xeroMark(r)}</span>
+                            <span className="inline-flex items-center gap-1.5">{r.invoice_number || 'Draft'}{(xero.statuses?.[r.id] || !['draft', 'cancelled', 'voided'].includes(r.status)) && xeroMark(r)}</span>
                           </DataCardTitle>
                           <DataCardMeta>
                             {(r.clients as { name: string } | null)?.name ?? '—'}
