@@ -3,6 +3,10 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 
 const TOKEN_URL = 'https://identity.xero.com/connect/token'
 
+function tokenClaims(accessToken: string): Record<string, unknown> {
+  try { return JSON.parse(atob(accessToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))) } catch { return {} }
+}
+
 function tokenScopes(accessToken: string): string {
   try {
     const p = JSON.parse(atob(accessToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
@@ -37,7 +41,9 @@ Deno.serve(async (req: Request) => {
     const tokens = await tokenRes.json()
     const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString()
 
-    const tenantsRes = await fetch('https://api.xero.com/connections', { headers: { Authorization: `Bearer ${tokens.access_token}`, Accept: 'application/json' } })
+    // Only the organisations ticked in THIS sign-in (Xero lists every org the app was ever given otherwise).
+    const authEvent = tokenClaims(tokens.access_token).authentication_event_id as string | undefined
+    const tenantsRes = await fetch(`https://api.xero.com/connections${authEvent ? `?authEventId=${encodeURIComponent(authEvent)}` : ''}`, { headers: { Authorization: `Bearer ${tokens.access_token}`, Accept: 'application/json' } })
     const tenants = await tenantsRes.json().catch(() => [])
     // Prefer the organisation this company was connected to before (reconnecting must not switch books).
     const { data: prev } = await adminSb.from('xero_connections').select('tenant_id').eq('company_id', stateRow.company_id).maybeSingle()
