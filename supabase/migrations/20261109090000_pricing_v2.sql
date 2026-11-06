@@ -10,6 +10,12 @@
 -- ── 0. Backup of the plan rows ──────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS public.saas_plans_backup_20261106 AS SELECT * FROM public.saas_plans;
 ALTER TABLE public.saas_plans_backup_20261106 ENABLE ROW LEVEL SECURITY;
+-- Exact copies of the functions this replaces (rollback: EXECUTE each definition).
+CREATE TABLE IF NOT EXISTS public.pricing_v2_function_backup AS
+  SELECT p.proname::text AS name, pg_get_function_identity_arguments(p.oid) AS args, pg_get_functiondef(p.oid) AS definition, now() AS saved_at
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.proname IN ('kaiflow_sync_company_subscription', 'billing_create_due_bills', 'platform_search_companies');
+ALTER TABLE public.pricing_v2_function_backup ENABLE ROW LEVEL SECURITY;
 
 -- ── 1. Columns and settings ────────────────────────────────────────────────
 ALTER TABLE public.saas_plans ADD COLUMN IF NOT EXISTS max_employees integer
@@ -502,8 +508,7 @@ UPDATE public.saas_company_subscriptions s SET chosen_plan_id = (SELECT id FROM 
 -- ── Rollback ───────────────────────────────────────────────────────────────
 -- 1. Plans: UPDATE saas_plans p SET name=b.name, description=b.description, monthly_price=b.monthly_price, ... , is_active=b.is_active
 --    FROM saas_plans_backup_20261106 b WHERE b.id = p.id;
--- 2. Functions: re-run kaiflow_sync_company_subscription from 20261027170000_company_price_override.sql and
---    billing_create_due_bills from 20261104100000_billing_run.sql.
+-- 2. Functions: DO $$ DECLARE r record; BEGIN FOR r IN SELECT definition FROM pricing_v2_function_backup LOOP EXECUTE r.definition; END LOOP; END $$;
 -- 3. DROP TRIGGER trg_enforce_plan_employee_limit ON employees; platform_search_companies: re-run its
 --    previous version (only adds keys, so the old page keeps working either way).
 -- 4. Bills: CREATE UNIQUE INDEX on billing_bills (company_id, period_start) again (only monthly bills exist today).
