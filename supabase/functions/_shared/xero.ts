@@ -66,6 +66,7 @@ export async function xero(token: XeroToken, path: string, init: RequestInit = {
       headers: {
         Authorization: `Bearer ${token.access_token}`, 'xero-tenant-id': token.tenant_id, Accept: 'application/json',
         ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+        ...((init.headers ?? {}) as Record<string, string>),
       },
     })
     if (resp.status === 429 && attempt < 2) {

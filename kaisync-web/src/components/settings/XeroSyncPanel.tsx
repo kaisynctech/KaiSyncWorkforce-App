@@ -5,6 +5,8 @@
  * - If the connection was made before invoices/payments were supported, asks to reconnect (one click).
  * - Choose the Xero accounts (sales, purchases, bank) and the go-live date, then switch auto-sync on.
  * - Shows what's waiting, what failed (with Xero's own message) and lets you try again.
+ * - "Set up from Xero" suggests the accounts and checks VAT and currencies, then matches contacts both ways.
+ * - Payments made in Xero come back to KaiSync (every 10 minutes, or "Check Xero now").
  */
 
 import { useCallback, useEffect, useState } from 'react'
@@ -14,7 +16,10 @@ type Status = {
   connected: boolean; tenant_name?: string; can_sync_documents?: boolean; auto_sync?: boolean; sync_from?: string | null
   sales_account_code?: string | null; purchases_account_code?: string | null; bank_account_code?: string | null
   last_error?: string | null; waiting?: number; failed?: number; sent_today?: number
+  pull_from_xero?: boolean; pulled_at?: string | null; pull_error?: string | null; received_today?: number
 }
+type Setup = { organisation: string; suggested: { sales: string | null; purchases: string | null; bank: string | null }
+  checks: Array<{ ok: boolean; text: string }>; contacts: { clients: number; suppliers: number; already_linked: number } }
 type Account = { id: string; code: string | null; name: string; type: string; class: string }
 type Job = { id: string; entity: string; label: string | null; status: string; last_error: string | null; attempts: number; created_at: string; done_at: string | null }
 
@@ -24,6 +29,16 @@ const rpc = (supabase: ReturnType<typeof createClient>) => supabase.rpc.bind(sup
 const sel = 'h-10 rounded-lg border border-divider px-2.5 text-[13px] bg-background text-text-primary focus:outline-none focus:border-primary/60 w-full'
 const today = () => new Date(Date.now() + 2 * 3600e3).toISOString().slice(0, 10)
 
+async function callFn(name: string, body: Record<string, unknown>): Promise<{ ok: boolean; data: Record<string, unknown> }> {
+  const { data: { session } } = await createClient().auth.getSession()
+  const r = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/${name}`, {
+    method: 'POST', headers: { Authorization: `Bearer ${session?.access_token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  const data = await r.json().catch(() => ({})) as Record<string, unknown>
+  return { ok: r.ok && !data.error, data }
+}
+
 export function XeroSyncPanel({ companyId, canManage, onReconnect }: { companyId: string; canManage: boolean; onReconnect: () => void }) {
   const [status, setStatus] = useState<Status | null>(null)
   const [accounts, setAccounts] = useState<Account[] | null>(null)
@@ -32,6 +47,7 @@ export function XeroSyncPanel({ companyId, canManage, onReconnect }: { companyId
   const [form, setForm] = useState({ auto: false, from: today(), sales: '', purchases: '', bank: '' })
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [setup, setSetup] = useState<Setup | null>(null)
 
   const load = useCallback(async () => {
     const supabase = createClient()
@@ -80,6 +96,58 @@ export function XeroSyncPanel({ companyId, canManage, onReconnect }: { companyId
     void load()
   }
 
+  // ── Set up from Xero ──
+  async function startSetup() {
+    setBusy(true); setMsg(null)
+    const r = await callFn('xero-setup', { company_id: companyId })
+    setBusy(false)
+    if (!r.ok) { setMsg({ ok: false, text: String(r.data.error ?? 'Could not read Xero.') }); return }
+    const s = r.data as unknown as Setup
+    setSetup(s)
+    setForm(f => ({ ...f, sales: f.sales || s.suggested.sales || '', purchases: f.purchases || s.suggested.purchases || '', bank: f.bank || s.suggested.bank || '' }))
+  }
+  async function finishSetup() {
+    if (!form.sales || !form.purchases || !form.bank) { setMsg({ ok: false, text: 'Choose the sales, purchases and bank accounts first.' }); return }
+    setBusy(true); setMsg(null)
+    const { error } = await rpc(createClient())('xero_save_settings', {
+      p_company_id: companyId, p_auto_sync: true, p_sync_from: form.from || today(),
+      p_sales_account: form.sales, p_purchases_account: form.purchases, p_bank_account: form.bank,
+    })
+    if (error) { setBusy(false); setMsg({ ok: false, text: error.message }); return }
+    // Contacts: link or bring in Xero's, then send KaiSync's that Xero doesn't have. Nothing is duplicated.
+    const pull = await callFn('xero-sync-contacts', { company_id: companyId, direction: 'pull' })
+    const push = await callFn('xero-sync-contacts', { company_id: companyId, direction: 'push' })
+    setBusy(false)
+    const d1 = pull.data as { matched?: number; created?: number }
+    const d2 = push.data as { clients_pushed?: number; contractors_pushed?: number }
+    setSetup(null)
+    setMsg({ ok: pull.ok && push.ok, text: pull.ok && push.ok
+      ? `Xero is set up. Contacts: ${d1.matched ?? 0} matched, ${d1.created ?? 0} brought in from Xero, ${(d2.clients_pushed ?? 0) + (d2.contractors_pushed ?? 0)} sent to Xero. Documents dated ${form.from || today()} or later now go to Xero automatically.`
+      : `Settings saved, but contacts didn't finish: ${String(pull.data.error ?? push.data.error ?? '')} — press Finish setup again.` })
+    setForm(f => ({ ...f, auto: true }))
+    void load()
+  }
+
+  // ── Payments from Xero ──
+  async function setPull(on: boolean) {
+    setBusy(true)
+    await rpc(createClient())('xero_set_pull', { p_company_id: companyId, p_on: on })
+    setBusy(false)
+    void load()
+  }
+  async function checkNow() {
+    setBusy(true); setMsg(null)
+    const r = await callFn('xero-pull', { company_id: companyId })
+    setBusy(false)
+    const res = ((r.data.results ?? []) as Array<{ recorded: number; reversed: number; voided: number; skipped: string[]; error?: string }>)[0]
+    if (!r.ok || !res || res.error) { setMsg({ ok: false, text: String(res?.error ?? r.data.error ?? 'Could not check Xero.') }); return }
+    const parts = [`${res.recorded} payment${res.recorded === 1 ? '' : 's'} recorded`]
+    if (res.reversed) parts.push(`${res.reversed} removed`)
+    if (res.voided) parts.push(`${res.voided} invoice${res.voided === 1 ? '' : 's'} voided`)
+    setMsg({ ok: true, text: `Checked Xero: ${parts.join(', ')}.${res.skipped.length ? ` Not recorded: ${res.skipped.join(' · ')}` : ''}` })
+    void load()
+  }
+
   async function retry(jobId?: string) {
     setBusy(true)
     await rpc(createClient())('xero_retry', { p_company_id: companyId, p_job_id: jobId ?? null })
@@ -112,6 +180,30 @@ export function XeroSyncPanel({ companyId, canManage, onReconnect }: { companyId
           Clients and suppliers when saved · invoices when they leave Draft · approved credit notes · payments received · a bill when a purchase order is fully received (updated by the supplier&apos;s invoice) · approved supplier invoices and their payments.
         </p>
       </div>
+
+      {canManage && !setup && (
+        <button type="button" onClick={() => void startSetup()} disabled={busy}
+          className="self-start h-9 px-4 rounded-lg border border-primary text-primary text-[12.5px] font-semibold hover:bg-primary/5 disabled:opacity-50">
+          {status.auto_sync ? 'Check setup with Xero' : 'Set up from Xero'}
+        </button>
+      )}
+      {setup && (
+        <div className="rounded-xl border border-divider bg-surface-elevated/60 px-3.5 py-3 flex flex-col gap-2">
+          <p className="text-[13px] font-medium text-text-primary">Setup for {setup.organisation || 'your Xero organisation'}</p>
+          <ul className="flex flex-col gap-1 text-[12.5px]">
+            {setup.checks.map((c, i) => (
+              <li key={i} className={c.ok ? 'text-emerald-800' : 'text-amber-800'}>{c.ok ? '✓' : '⚠'} {c.text}</li>
+            ))}
+            <li className="text-text-secondary">• Contacts: {setup.contacts.clients} clients and {setup.contacts.suppliers} suppliers in KaiSync ({setup.contacts.already_linked} already linked). Matching ones are linked by name or email; the rest are added on each side — never twice.</li>
+          </ul>
+          <p className="text-[12px] text-text-secondary">Check the accounts below, then finish. Documents dated from the date below go to Xero automatically, and payments made in Xero come back.</p>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => void finishSetup()} disabled={busy}
+              className="h-9 px-4 rounded-lg bg-primary text-white text-[12.5px] font-semibold hover:bg-primary-dark disabled:opacity-50">{busy ? 'Setting up…' : 'Finish setup'}</button>
+            <button type="button" onClick={() => setSetup(null)} disabled={busy} className="h-9 px-3 text-[12.5px] text-text-secondary">Cancel</button>
+          </div>
+        </div>
+      )}
 
       {accErr && <p className="text-[12px] text-error">{accErr}</p>}
       <div className="grid gap-2.5 sm:grid-cols-3">
@@ -147,9 +239,24 @@ export function XeroSyncPanel({ companyId, canManage, onReconnect }: { companyId
       </div>
       <p className="text-[11.5px] text-text-secondary">Older documents are never sent, so nothing your accountant already captured is duplicated.</p>
 
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-2 text-[13px] text-text-primary">
+          <input type="checkbox" checked={status.pull_from_xero !== false} disabled={!canManage || busy} onChange={e => void setPull(e.target.checked)} className="w-4 h-4 accent-[var(--color-primary,#1E3A5F)]" />
+          Record payments made in Xero
+        </label>
+        {canManage && status.auto_sync && status.pull_from_xero !== false && (
+          <button type="button" onClick={() => void checkNow()} disabled={busy} className="text-[12.5px] text-primary underline disabled:opacity-50">Check Xero now</button>
+        )}
+        <span className="text-[11.5px] text-text-secondary">
+          {status.pulled_at ? `Last checked ${new Date(status.pulled_at).toLocaleString('en-ZA')}` : 'Checked every 10 minutes while automatic sync is on'}
+        </span>
+      </div>
+      {status.pull_error && <p className="text-[12px] text-amber-800">{status.pull_error}</p>}
+
       <div className="flex flex-wrap gap-2 text-[12px]">
         <span className="rounded-full bg-surface-elevated px-2.5 py-1">Waiting: {status.waiting ?? 0}</span>
         <span className="rounded-full bg-emerald-50 text-emerald-800 px-2.5 py-1">Sent today: {status.sent_today ?? 0}</span>
+        <span className="rounded-full bg-sky-50 text-sky-800 px-2.5 py-1">Payments from Xero today: {status.received_today ?? 0}</span>
         <span className={`rounded-full px-2.5 py-1 ${status.failed ? 'bg-red-50 text-error' : 'bg-surface-elevated'}`}>Needs attention: {status.failed ?? 0}</span>
         {!!status.failed && canManage && <button type="button" onClick={() => void retry()} disabled={busy} className="text-primary underline">Try all again</button>}
       </div>
