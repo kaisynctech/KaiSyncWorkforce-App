@@ -50,7 +50,8 @@ type IncomingRow = {
   contractors?: { name: string } | null
 }
 
-type BucketFilter = 'all' | 'outstanding' | 'accepted' | 'done'
+/** Toolbar status tabs — exact statuses (not the old Outstanding/Done buckets). */
+type StatusTab = 'all' | 'draft' | 'sent' | 'accepted' | 'declined' | 'submitted' | 'approved' | 'rejected'
 
 type TextCols = {
   number: string
@@ -88,12 +89,7 @@ const SALES_STATUS_COLORS: Record<CommercialQuote['status'], string> = {
   expired: 'bg-gray-100 text-gray-500',
 }
 
-const SALES_OUTSTANDING = new Set(['draft', 'internal_review', 'sent', 'viewed'])
-const SALES_DONE = new Set(['declined', 'expired'])
-
 const INCOMING_OUTSTANDING = new Set(['submitted', 'under_review', 'revision_requested'])
-const INCOMING_ACCEPTED = new Set(['approved'])
-const INCOMING_DONE = new Set(['rejected', 'converted', 'expired'])
 
 const SALES_STATUS_OPTIONS = [
   { id: 'draft', label: 'Draft' },
@@ -115,24 +111,88 @@ const INCOMING_STATUS_OPTIONS = [
   { id: 'expired', label: 'Expired' },
 ]
 
+/** Coloured status pills — colours match the status badges in the table. */
+const SALES_STATUS_TABS: {
+  id: StatusTab
+  label: string
+  match: string[] | null
+  idle: string
+  active: string
+}[] = [
+  {
+    id: 'all',
+    label: 'All',
+    match: null,
+    idle: 'border-divider text-text-primary hover:bg-surface-elevated',
+    active: 'bg-slate-800 text-white border-slate-800',
+  },
+  {
+    id: 'draft',
+    label: 'Draft',
+    match: ['draft'],
+    idle: 'border-slate-200 text-slate-700 hover:bg-slate-50',
+    active: 'bg-slate-700 text-white border-slate-700',
+  },
+  {
+    id: 'sent',
+    label: 'Sent',
+    match: ['sent'],
+    idle: 'border-amber-200 text-amber-700 hover:bg-amber-50',
+    active: 'bg-amber-500 text-white border-amber-500',
+  },
+  {
+    id: 'accepted',
+    label: 'Accepted',
+    match: ['accepted'],
+    idle: 'border-green-200 text-green-700 hover:bg-green-50',
+    active: 'bg-green-600 text-white border-green-600',
+  },
+  {
+    id: 'declined',
+    label: 'Declined',
+    match: ['declined'],
+    idle: 'border-red-200 text-red-700 hover:bg-red-50',
+    active: 'bg-red-600 text-white border-red-600',
+  },
+]
+
+const INCOMING_STATUS_TABS: typeof SALES_STATUS_TABS = [
+  {
+    id: 'all',
+    label: 'All',
+    match: null,
+    idle: 'border-divider text-text-primary hover:bg-surface-elevated',
+    active: 'bg-slate-800 text-white border-slate-800',
+  },
+  {
+    id: 'submitted',
+    label: 'Submitted',
+    match: ['submitted', 'under_review', 'revision_requested'],
+    idle: 'border-amber-200 text-amber-700 hover:bg-amber-50',
+    active: 'bg-amber-500 text-white border-amber-500',
+  },
+  {
+    id: 'approved',
+    label: 'Approved',
+    match: ['approved'],
+    idle: 'border-green-200 text-green-700 hover:bg-green-50',
+    active: 'bg-green-600 text-white border-green-600',
+  },
+  {
+    id: 'rejected',
+    label: 'Rejected',
+    match: ['rejected'],
+    idle: 'border-red-200 text-red-700 hover:bg-red-50',
+    active: 'bg-red-600 text-white border-red-600',
+  },
+]
+
 const TD = 'data-td !py-1.5 !px-2.5 text-[12px]'
 const TH = 'data-th !py-1.5 !px-2.5 text-[11px]'
 
 function fmt(d: string | null | undefined) {
   if (!d) return '—'
   return new Date(d).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })
-}
-
-function salesBucket(status: string): Exclude<BucketFilter, 'all'> {
-  if (status === 'accepted') return 'accepted'
-  if (SALES_DONE.has(status)) return 'done'
-  return 'outstanding'
-}
-
-function incomingBucket(status: string): Exclude<BucketFilter, 'all'> {
-  if (INCOMING_ACCEPTED.has(status)) return 'accepted'
-  if (INCOMING_DONE.has(status)) return 'done'
-  return 'outstanding'
 }
 
 function incomingBadgeClass(status: string): string {
@@ -221,7 +281,7 @@ function QuotesPageInner() {
   const dealFilter = searchParams.get('deal_id') ?? searchParams.get('project_id')
 
   const [tab, setTab] = useState<HubTab>('sales')
-  const [bucket, setBucket] = useState<BucketFilter>('all')
+  const [statusTab, setStatusTab] = useState<StatusTab>('all')
   const [search, setSearch] = useState('')
   const [searchD, setSearchD] = useState('')
   const [cols, setCols] = useState<TextCols>(EMPTY_COLS)
@@ -239,7 +299,7 @@ function QuotesPageInner() {
   }, [search])
 
   useEffect(() => {
-    setBucket(tab === 'incoming' ? 'outstanding' : 'all')
+    setStatusTab('all')
     setSearch('')
     setSearchD('')
     setCols(EMPTY_COLS)
@@ -248,7 +308,7 @@ function QuotesPageInner() {
 
   useEffect(() => {
     setPage(1)
-  }, [bucket, searchD, pageSize, cols])
+  }, [statusTab, searchD, pageSize, cols])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -448,30 +508,29 @@ function QuotesPageInner() {
     })
   }, [incoming, searchD, matchIncomingCols])
 
-  const bucketCounts = useMemo(() => {
+  const statusTabs = tab === 'sales' ? SALES_STATUS_TABS : INCOMING_STATUS_TABS
+
+  const statusCounts = useMemo(() => {
     const rows = tab === 'sales' ? salesBase : incomingBase
-    const bucketOf = tab === 'sales' ? salesBucket : incomingBucket
-    let outstanding = 0
-    let accepted = 0
-    let done = 0
-    for (const row of rows) {
-      const b = bucketOf(row.status)
-      if (b === 'outstanding') outstanding += 1
-      else if (b === 'accepted') accepted += 1
-      else done += 1
+    const counts: Record<string, number> = { all: rows.length }
+    for (const t of statusTabs) {
+      if (!t.match) continue
+      counts[t.id] = rows.filter(row => t.match!.includes(row.status)).length
     }
-    return { all: rows.length, outstanding, accepted, done }
-  }, [tab, salesBase, incomingBase])
+    return counts
+  }, [tab, salesBase, incomingBase, statusTabs])
 
   const filteredSales = useMemo(() => {
-    if (bucket === 'all') return salesBase
-    return salesBase.filter(row => salesBucket(row.status) === bucket)
-  }, [salesBase, bucket])
+    const t = SALES_STATUS_TABS.find(x => x.id === statusTab)
+    if (!t?.match) return salesBase
+    return salesBase.filter(row => t.match!.includes(row.status))
+  }, [salesBase, statusTab])
 
   const filteredIncoming = useMemo(() => {
-    if (bucket === 'all') return incomingBase
-    return incomingBase.filter(row => incomingBucket(row.status) === bucket)
-  }, [incomingBase, bucket])
+    const t = INCOMING_STATUS_TABS.find(x => x.id === statusTab)
+    if (!t?.match) return incomingBase
+    return incomingBase.filter(row => t.match!.includes(row.status))
+  }, [incomingBase, statusTab])
 
   const filtered = tab === 'sales' ? filteredSales : filteredIncoming
   const pages = totalPages(filtered.length, pageSize)
@@ -614,31 +673,26 @@ function QuotesPageInner() {
           Reset filters
         </button>
         <div className="flex gap-1 flex-wrap ml-auto">
-          {(
-            [
-              { id: 'all' as const, label: 'All', count: bucketCounts.all },
-              { id: 'outstanding' as const, label: 'Outstanding', count: bucketCounts.outstanding },
-              { id: 'accepted' as const, label: 'Accepted', count: bucketCounts.accepted },
-              { id: 'done' as const, label: 'Done', count: bucketCounts.done },
-            ] as const
-          ).map(f => (
-            <button
-              key={f.id}
-              type="button"
-              onClick={() => setBucket(f.id)}
-              className={cn(
-                'h-8 px-2.5 rounded-md text-[11px] font-medium border transition-colors',
-                bucket === f.id
-                  ? 'bg-primary text-white border-primary'
-                  : 'bg-surface border-divider text-text-secondary hover:bg-surface-elevated',
-              )}
-            >
-              {f.label}
-              <span className={cn('ml-1 tabular-nums', bucket === f.id ? 'text-white/80' : 'text-text-disabled')}>
-                ({f.count})
-              </span>
-            </button>
-          ))}
+          {statusTabs.map(f => {
+            const count = statusCounts[f.id] ?? 0
+            const on = statusTab === f.id
+            return (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => setStatusTab(f.id)}
+                className={cn(
+                  'h-8 px-2.5 rounded-md text-[11px] font-semibold border transition-colors bg-surface',
+                  on ? f.active : f.idle,
+                )}
+              >
+                {f.label}
+                <span className={cn('ml-1 tabular-nums font-medium', on ? 'text-white/85' : 'opacity-70')}>
+                  ({count})
+                </span>
+              </button>
+            )
+          })}
         </div>
         {hasScopeFilter && tab === 'sales' && (
           <div className="flex flex-wrap gap-1.5 items-center w-full">
