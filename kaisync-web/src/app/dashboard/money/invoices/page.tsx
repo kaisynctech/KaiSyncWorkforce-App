@@ -70,13 +70,20 @@ function MoneyInvoicesInner() {
   const load = useCallback(async () => {
     setLoading(true)
     const supabase = createClient()
-    const member = await resolveCurrentMember(supabase)
-    if (!member) { setLoading(false); return }
-    setCompanyId(member.companyId)
+    let companyIdForNotices: string | null = null
+    try {
+      const member = await resolveCurrentMember(supabase)
+      if (!member) {
+        setRows([])
+        setNotices([])
+        return
+      }
+      setCompanyId(member.companyId)
+      companyIdForNotices = member.companyId
 
-    let q = supabase
-      .from('finance_invoices')
-      .select(`
+      let q = supabase
+        .from('finance_invoices')
+        .select(`
         id, invoice_number, status, currency,
         total_amount, amount_paid, balance_due,
         issue_date, due_date, paid_date,
@@ -84,56 +91,89 @@ function MoneyInvoicesInner() {
         clients(name),
         client_deals!finance_invoices_deal_id_fkey(title)
       `)
-      .eq('company_id', member.companyId)
-      .order('created_at', { ascending: false })
+        .eq('company_id', member.companyId)
+        .order('created_at', { ascending: false })
 
-    if (clientFilter) q = q.eq('client_id', clientFilter)
-    if (jobFilter) q = q.eq('job_id', jobFilter)
-    if (dealFilter) q = q.or(`deal_id.eq.${dealFilter},project_id.eq.${dealFilter}`)
+      if (clientFilter) q = q.eq('client_id', clientFilter)
+      if (jobFilter) q = q.eq('job_id', jobFilter)
+      if (dealFilter) q = q.or(`deal_id.eq.${dealFilter},project_id.eq.${dealFilter}`)
 
-    const [listRes, actionRes] = await Promise.all([
-      q,
-      (supabase.rpc as unknown as (
-        name: string,
-        args: Record<string, unknown>,
-      ) => Promise<{ data: Array<{
+      const listRes = await q
+      if (listRes.error) {
+        console.error('finance_invoices list failed', listRes.error)
+        setRows([])
+      } else {
+        setRows((listRes.data ?? []) as unknown as InvoiceRow[])
+      }
+
+      const labels: { client?: string; job?: string; deal?: string } = {}
+      if (clientFilter) {
+        const { data: c } = await supabase.from('clients').select('name').eq('id', clientFilter).maybeSingle()
+        if (c?.name) labels.client = c.name
+      }
+      if (jobFilter) {
+        const { data: j } = await supabase.from('jobs').select('title, job_code').eq('id', jobFilter).maybeSingle()
+        if (j) labels.job = j.job_code ? `${j.job_code} · ${j.title}` : j.title
+      }
+      if (dealFilter) {
+        const { data: d } = await supabase
+          .from('client_deals')
+          .select('title, project_code')
+          .eq('id', dealFilter)
+          .maybeSingle()
+        if (d) labels.deal = d.project_code ? `${d.project_code} · ${d.title}` : d.title
+      }
+      setFilterLabels(labels)
+    } catch (err) {
+      console.error('invoices page load failed', err)
+      setRows([])
+      setNotices([])
+    } finally {
+      setLoading(false)
+    }
+
+    if (!companyIdForNotices) return
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const actionRes = await (supabase.rpc as any)('hr_get_client_action_items', {
+        p_company_id: companyIdForNotices,
+      })
+      const actionRaw = actionRes?.data as unknown
+      let actionList: Array<{
         ref_id: string
         client_name: string
         action_type: string
         summary: string
         created_at: string
-      }> | null }>)('hr_get_client_action_items', { p_company_id: member.companyId }),
-    ])
-    const data = listRes.data
-    setRows((data ?? []) as unknown as InvoiceRow[])
-    setNotices((actionRes.data ?? [])
-      .filter(item => item.action_type.startsWith('invoice_'))
-      .map(item => ({
-        id: `${item.action_type}-${item.ref_id}`,
-        label: item.action_type === 'invoice_overdue' ? 'Invoice overdue' : 'Invoice outstanding',
-        title: item.client_name || 'Client',
-        detail: item.summary,
-        when: item.created_at,
-        tone: item.action_type === 'invoice_overdue' ? 'red' as const : 'amber' as const,
-        onOpen: () => router.push(`/dashboard/money/invoices/${item.ref_id}`),
-      })))
-
-    const labels: { client?: string; job?: string; deal?: string } = {}
-    if (clientFilter) {
-      const { data: c } = await supabase.from('clients').select('name').eq('id', clientFilter).maybeSingle()
-      if (c?.name) labels.client = c.name
+      }> = []
+      if (Array.isArray(actionRaw)) {
+        actionList = actionRaw
+      } else if (typeof actionRaw === 'string') {
+        try {
+          const parsed = JSON.parse(actionRaw) as unknown
+          if (Array.isArray(parsed)) actionList = parsed as typeof actionList
+        } catch {
+          actionList = []
+        }
+      }
+      setNotices(
+        actionList
+          .filter(item => item.action_type?.startsWith('invoice_'))
+          .map(item => ({
+            id: `${item.action_type}-${item.ref_id}`,
+            label: item.action_type === 'invoice_overdue' ? 'Invoice overdue' : 'Invoice outstanding',
+            title: item.client_name || 'Client',
+            detail: item.summary,
+            when: item.created_at,
+            tone: item.action_type === 'invoice_overdue' ? ('red' as const) : ('amber' as const),
+            onOpen: () => router.push(`/dashboard/money/invoices/${item.ref_id}`),
+          })),
+      )
+    } catch (noticeErr) {
+      console.error('invoice action notices failed', noticeErr)
+      setNotices([])
     }
-    if (jobFilter) {
-      const { data: j } = await supabase.from('jobs').select('title, job_code').eq('id', jobFilter).maybeSingle()
-      if (j) labels.job = j.job_code ? `${j.job_code} · ${j.title}` : j.title
-    }
-    if (dealFilter) {
-      const { data: d } = await supabase.from('client_deals').select('title, project_code').eq('id', dealFilter).maybeSingle()
-      if (d) labels.deal = d.project_code ? `${d.project_code} · ${d.title}` : d.title
-    }
-    setFilterLabels(labels)
-    setLoading(false)
-  }, [clientFilter, jobFilter, dealFilter])
+  }, [clientFilter, jobFilter, dealFilter, router])
 
   useEffect(() => { void load() }, [load])
 

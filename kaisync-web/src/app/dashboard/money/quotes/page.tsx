@@ -97,6 +97,20 @@ function incomingBadgeClass(status: string): string {
   }
 }
 
+/** hr_*_action_items return json — may arrive as array or JSON string. */
+function asActionRows<T extends Record<string, unknown>>(raw: unknown): T[] {
+  if (Array.isArray(raw)) return raw as T[]
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw) as unknown
+      return Array.isArray(parsed) ? (parsed as T[]) : []
+    } catch {
+      return []
+    }
+  }
+  return []
+}
+
 export default function QuotesPage() {
   return (
     <Suspense fallback={<p className="text-center text-[13px] text-text-secondary py-10">Loading…</p>}>
@@ -143,88 +157,142 @@ function QuotesPageInner() {
   const load = useCallback(async () => {
     setLoading(true)
     const supabase = createClient()
-    const member = await resolveCurrentMember(supabase)
-    if (!member) {
-      setLoading(false)
-      return
-    }
+    let companyId: string | null = null
+    try {
+      const member = await resolveCurrentMember(supabase)
+      if (!member) {
+        setSales([])
+        setIncoming([])
+        setNotices([])
+        return
+      }
+      companyId = member.companyId
 
-    let salesQ = supabase
-      .from('commercial_quotes')
-      .select('id, quote_number, title, status, total_amount, valid_until, created_at, clients(name)')
-      .eq('company_id', member.companyId)
-      .order('created_at', { ascending: false })
-      .limit(300)
-
-    if (clientFilter) salesQ = salesQ.eq('client_id', clientFilter)
-    if (jobFilter) salesQ = salesQ.eq('job_id', jobFilter)
-    if (dealFilter) salesQ = salesQ.eq('deal_id', dealFilter)
-
-    const rpc = supabase.rpc as unknown as (
-      name: string,
-      args: Record<string, unknown>,
-    ) => Promise<{ data: Array<Record<string, string | null>> | null }>
-
-    const [salesRes, incomingRes, contractorActions, projectActions] = await Promise.all([
-      salesQ,
-      supabase
-        .from('contractor_quotes')
-        .select(
-          'id, title, quote_number, status, total_amount, submitted_at, created_at, contractor_id, contractors(name)',
-        )
+      let salesQ = supabase
+        .from('commercial_quotes')
+        .select('id, quote_number, title, status, total_amount, valid_until, created_at, clients(name)')
         .eq('company_id', member.companyId)
-        .neq('status', 'draft')
         .order('created_at', { ascending: false })
-        .limit(300),
-      rpc('hr_get_contractor_action_items', { p_company_id: member.companyId }),
-      rpc('hr_get_project_action_items', { p_company_id: member.companyId }),
-    ])
+        .limit(300)
 
-    setSales((salesRes.data ?? []) as unknown as SalesRow[])
-    setIncoming((incomingRes.data ?? []) as unknown as IncomingRow[])
-    const quoteNotices: MoneyNotice[] = []
-    for (const item of contractorActions.data ?? []) {
-      if (item.action_type !== 'quote_pending' || !item.ref_id || !item.contractor_id) continue
-      quoteNotices.push({
-        id: `quote-${item.ref_id}`,
-        label: 'Quote to review',
-        title: item.contractor_name || 'Contractor',
-        detail: item.summary ?? '',
-        when: item.created_at,
-        tone: 'blue',
-        onOpen: () => router.push(`/dashboard/contractors/${item.contractor_id}?tab=Quotes&focusType=quote_pending&focus=${item.ref_id}`),
-      })
-    }
-    for (const item of projectActions.data ?? []) {
-      if (item.action_type !== 'quotation_pending' || !item.project_id) continue
-      quoteNotices.push({
-        id: `quotation-${item.ref_id}`,
-        label: 'Quotation to send',
-        title: item.project_title || 'Project',
-        detail: item.summary ?? '',
-        when: item.created_at,
-        tone: 'blue',
-        onOpen: () => router.push(`/dashboard/projects/${item.project_id}?tab=quotation`),
-      })
-    }
-    setNotices(quoteNotices)
+      if (clientFilter) salesQ = salesQ.eq('client_id', clientFilter)
+      if (jobFilter) salesQ = salesQ.eq('job_id', jobFilter)
+      if (dealFilter) salesQ = salesQ.eq('deal_id', dealFilter)
 
-    const labels: { client?: string; job?: string; deal?: string } = {}
-    if (clientFilter) {
-      const { data: c } = await supabase.from('clients').select('name').eq('id', clientFilter).maybeSingle()
-      if (c?.name) labels.client = c.name
+      // Quote rows only — action-centre RPCs must not gate the table.
+      const [salesRes, incomingRes] = await Promise.all([
+        salesQ,
+        supabase
+          .from('contractor_quotes')
+          .select(
+            'id, title, quote_number, status, total_amount, submitted_at, created_at, contractor_id, contractors(name)',
+          )
+          .eq('company_id', member.companyId)
+          .neq('status', 'draft')
+          .order('created_at', { ascending: false })
+          .limit(300),
+      ])
+
+      if (salesRes.error) {
+        console.error('commercial_quotes list failed', salesRes.error)
+        setSales([])
+      } else {
+        setSales((salesRes.data ?? []) as unknown as SalesRow[])
+      }
+      if (incomingRes.error) {
+        console.error('contractor_quotes list failed', incomingRes.error)
+        setIncoming([])
+      } else {
+        setIncoming((incomingRes.data ?? []) as unknown as IncomingRow[])
+      }
+
+      const labels: { client?: string; job?: string; deal?: string } = {}
+      if (clientFilter) {
+        const { data: c } = await supabase.from('clients').select('name').eq('id', clientFilter).maybeSingle()
+        if (c?.name) labels.client = c.name
+      }
+      if (jobFilter) {
+        const { data: j } = await supabase.from('jobs').select('title, job_code').eq('id', jobFilter).maybeSingle()
+        if (j) labels.job = j.job_code ? `${j.job_code} · ${j.title}` : j.title
+      }
+      if (dealFilter) {
+        const { data: d } = await supabase
+          .from('client_deals')
+          .select('title, project_code')
+          .eq('id', dealFilter)
+          .maybeSingle()
+        if (d) labels.deal = d.project_code ? `${d.project_code} · ${d.title}` : d.title
+      }
+      setFilterLabels(labels)
+    } catch (err) {
+      console.error('quotes page load failed', err)
+      setSales([])
+      setIncoming([])
+      setNotices([])
+    } finally {
+      setLoading(false)
     }
-    if (jobFilter) {
-      const { data: j } = await supabase.from('jobs').select('title, job_code').eq('id', jobFilter).maybeSingle()
-      if (j) labels.job = j.job_code ? `${j.job_code} · ${j.title}` : j.title
+
+    if (!companyId) return
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rpc = supabase.rpc as any
+      const [contractorRes, projectRes] = await Promise.all([
+        rpc('hr_get_contractor_action_items', { p_company_id: companyId }),
+        rpc('hr_get_project_action_items', { p_company_id: companyId }),
+      ])
+
+      type ContractorAction = {
+        action_type?: string | null
+        ref_id?: string | null
+        contractor_id?: string | null
+        contractor_name?: string | null
+        summary?: string | null
+        created_at?: string | null
+      }
+      type ProjectAction = {
+        action_type?: string | null
+        ref_id?: string | null
+        project_id?: string | null
+        project_title?: string | null
+        summary?: string | null
+        created_at?: string | null
+      }
+
+      const quoteNotices: MoneyNotice[] = []
+      for (const item of asActionRows<ContractorAction>(contractorRes?.data)) {
+        if (item.action_type !== 'quote_pending' || !item.ref_id || !item.contractor_id) continue
+        quoteNotices.push({
+          id: `quote-${item.ref_id}`,
+          label: 'Quote to review',
+          title: item.contractor_name || 'Contractor',
+          detail: item.summary ?? '',
+          when: item.created_at ?? null,
+          tone: 'blue',
+          onOpen: () =>
+            router.push(
+              `/dashboard/contractors/${item.contractor_id}?tab=Quotes&focusType=quote_pending&focus=${item.ref_id}`,
+            ),
+        })
+      }
+      for (const item of asActionRows<ProjectAction>(projectRes?.data)) {
+        if (item.action_type !== 'quotation_pending' || !item.project_id) continue
+        quoteNotices.push({
+          id: `quotation-${item.ref_id}`,
+          label: 'Quotation to send',
+          title: item.project_title || 'Project',
+          detail: item.summary ?? '',
+          when: item.created_at ?? null,
+          tone: 'blue',
+          onOpen: () => router.push(`/dashboard/projects/${item.project_id}?tab=quotation`),
+        })
+      }
+      setNotices(quoteNotices)
+    } catch (noticeErr) {
+      console.error('quote action notices failed', noticeErr)
+      setNotices([])
     }
-    if (dealFilter) {
-      const { data: d } = await supabase.from('client_deals').select('title, project_code').eq('id', dealFilter).maybeSingle()
-      if (d) labels.deal = d.project_code ? `${d.project_code} · ${d.title}` : d.title
-    }
-    setFilterLabels(labels)
-    setLoading(false)
-  }, [clientFilter, jobFilter, dealFilter])
+  }, [clientFilter, jobFilter, dealFilter, router])
 
   useEffect(() => {
     void load()
