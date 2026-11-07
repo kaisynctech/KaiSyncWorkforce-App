@@ -56,13 +56,13 @@ export function ColumnHeaderFilter({
           setOpen(v => !v)
         }}
         className={cn(
-          'inline-flex items-center justify-center h-5 w-5 rounded shrink-0 transition-colors',
+          'inline-flex items-center justify-center h-3.5 w-3.5 rounded shrink-0 transition-colors',
           active
             ? 'text-primary bg-primary/10'
             : 'text-text-secondary/70 hover:text-text-primary hover:bg-surface',
         )}
       >
-        <span className="material-icons text-[14px] leading-none">filter_alt</span>
+        <span className="material-icons text-[11px] leading-none">filter_alt</span>
       </button>
       {open && (
         <div
