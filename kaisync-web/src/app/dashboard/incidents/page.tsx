@@ -69,13 +69,6 @@ type IncidentKpis = {
   unassigned: number
 }
 
-type ActionItem = {
-  id: string
-  label: string
-  severity: string
-  status: string
-}
-
 const fmtDate = (d: string) =>
   new Intl.DateTimeFormat('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(d))
 
@@ -112,7 +105,6 @@ export default function IncidentsPage() {
   const [total, setTotal] = useState(0)
   const [perms, setPerms] = useState<PermissionSet | null>(null)
   const [kpis, setKpis] = useState<IncidentKpis>({ open: 0, investigating: 0, critical: 0, unassigned: 0 })
-  const [actionItems, setActionItems] = useState<ActionItem[]>([])
 
   const canCreate = can(perms, PERM.incidentsCreate)
   const canEdit = can(perms, PERM.incidentsEdit)
@@ -165,19 +157,12 @@ export default function IncidentsPage() {
     }
     if (titleColDebounced) query = query.ilike('title', `%${escapeIlike(titleColDebounced)}%`)
 
-    const [pageRes, openRes, invRes, critRes, unasRes, acRes] = await Promise.all([
+    const [pageRes, openRes, invRes, critRes, unasRes] = await Promise.all([
       query.range(from, to),
       base().in('status', ['open', 'investigating']).or('is_closed.is.null,is_closed.eq.false'),
       base().eq('status', 'investigating'),
       base().ilike('severity', 'critical').in('status', ['open', 'investigating']),
       base().is('assignee_id', null).in('status', ['open', 'investigating']),
-      supabase
-        .from('incident_reports')
-        .select('id, title, description, severity, status, assignee_id, created_at')
-        .eq('company_id', member.companyId)
-        .in('status', ['open', 'investigating'])
-        .order('created_at', { ascending: true })
-        .limit(40),
     ])
 
     if (pageRes.error) {
@@ -195,18 +180,6 @@ export default function IncidentsPage() {
       critical: critRes.count ?? 0,
       unassigned: unasRes.count ?? 0,
     })
-
-    const acRows = (acRes.data ?? []) as IncidentRow[]
-    const items: ActionItem[] = []
-    for (const row of acRows) {
-      if ((row.severity ?? '').toLowerCase() === 'critical') {
-        items.push({ id: row.id, label: row.title ?? row.description ?? 'Critical incident', severity: row.severity, status: row.status })
-      } else if (!row.assignee_id) {
-        items.push({ id: row.id, label: row.title ?? row.description ?? 'Unassigned incident', severity: row.severity, status: row.status })
-      }
-      if (items.length >= 12) break
-    }
-    setActionItems(items)
 
     setLoading(false)
   }, [page, pageSize, statusFilter, scope, severityFilter, searchDebounced, titleColDebounced])
@@ -344,35 +317,6 @@ export default function IncidentsPage() {
       {error && error !== 'not_linked' && (
         <p className="mx-3 mb-2 text-[12px] text-error">{error}</p>
       )}
-
-      <div className="mx-3 mb-2 bg-surface rounded-lg border border-divider overflow-hidden shrink-0">
-        <div className={`flex items-center gap-2 px-3 py-1.5 ${actionItems.length > 0 ? 'border-b border-divider' : ''}`}>
-          <span className="material-icons text-primary text-[16px]">bolt</span>
-          <span className="font-semibold text-[11px] text-primary uppercase tracking-wider">Action Centre</span>
-          <span className="text-text-secondary text-[11px] ml-1">
-            {actionItems.length > 0 ? `${actionItems.length} pending` : 'Up to date'}
-          </span>
-          <button type="button" onClick={() => void load()} className="ml-auto text-text-secondary text-[11px] h-6 px-2 hover:text-text-primary transition-colors">
-            ↻ Refresh
-          </button>
-        </div>
-        {actionItems.length > 0 && (
-          <div className="max-h-[88px] overflow-y-auto">
-            {actionItems.map(item => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => router.push(`/dashboard/incidents/${item.id}`)}
-                className="w-full text-left px-3 py-1.5 border-t border-divider first:border-t-0 hover:bg-background transition-colors flex items-center gap-2"
-              >
-                <StatusBadge label={item.severity} bg={sevBg(item.severity)} fg={sevFg(item.severity)} />
-                <span className="text-[12px] text-text-primary truncate flex-1">{item.label}</span>
-                <span className="text-[11px] text-text-secondary capitalize">{item.status}</span>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
 
       <div className="flex-1 min-h-0 overflow-auto mx-3 mb-1 bg-surface border border-divider rounded-lg">
           {loading ? (

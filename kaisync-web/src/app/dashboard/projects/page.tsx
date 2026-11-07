@@ -20,7 +20,7 @@ import {
   DataCardRow,
 } from '@/components/ui/ResponsiveDataView'
 import { logProjectEvent } from '@/lib/project-events'
-import type { Project, ProjectActionItem } from '@/types/database'
+import type { Project } from '@/types/database'
 import { localISODate } from '@/lib/utils'
 import {
   StatusFilterTabs,
@@ -57,17 +57,6 @@ const STATUS_BADGE: Record<string, string> = {
   lost: 'bg-error-dark text-[#991B1B]',
 }
 
-const ACTION_TYPE_COLORS: Record<string, { bg: string; fg: string }> = {
-  invoice_overdue:    { bg: '#FEE2E2', fg: '#991B1B' },
-  deposit_due:        { bg: '#FEF3C7', fg: '#92400E' },
-  quotation_pending:  { bg: '#DBEAFE', fg: '#1E40AF' },
-  stale_deal:         { bg: '#E5E7EB', fg: '#374151' },
-  deal_stale:         { bg: '#E5E7EB', fg: '#374151' },
-  portal_message:     { bg: '#E0E7FF', fg: '#3730A3' },
-}
-
-function getDefaultColor() { return { bg: '#E5E7EB', fg: '#374151' } }
-
 const fmtCurrency = (n: number | null | undefined) =>
   n != null ? `R ${Number(n).toLocaleString('en-ZA', { minimumFractionDigits: 0 })}` : '—'
 
@@ -88,7 +77,6 @@ type ProjectKpis = {
 export default function ProjectsPage() {
   const router = useRouter()
   const [projects, setProjects] = useState<ProjectRow[]>([])
-  const [actionItems, setActionItems] = useState<ProjectActionItem[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [scope, setScope] = useState<'all' | 'mine'>('all')
@@ -178,9 +166,8 @@ export default function ProjectsPage() {
     if (colsDebounced.client) query = query.ilike('clients.name', `%${escapeIlike(colsDebounced.client)}%`)
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [listRes, aRes, snapRes] = await Promise.all([
+    const [listRes, snapRes] = await Promise.all([
       query.range(from, to),
-      (supabase.rpc as any)('hr_get_project_action_items', { p_company_id: member.companyId }),
       (supabase.rpc as any)('hr_get_projects_snapshot', {
         p_company_id: member.companyId,
         p_from: today,
@@ -195,18 +182,6 @@ export default function ProjectsPage() {
     } else {
       setProjects((listRes.data ?? []) as unknown as ProjectRow[])
       setTotal(listRes.count ?? 0)
-    }
-
-    if (aRes.error) {
-      setActionItems([])
-    } else {
-      const actionRaw = aRes.data
-      const actionList = Array.isArray(actionRaw)
-        ? actionRaw
-        : typeof actionRaw === 'string'
-          ? JSON.parse(actionRaw)
-          : []
-      setActionItems((actionList ?? []) as ProjectActionItem[])
     }
 
     const snap = (snapRes.data ?? {}) as {
@@ -256,46 +231,9 @@ export default function ProjectsPage() {
     }
   }
 
-  async function openActionItem(item: ProjectActionItem) {
-    if (item.action_type === 'invoice_overdue') {
-      router.push(`/dashboard/finance/invoices/${item.ref_id}`)
-      return
-    }
-    if (item.action_type === 'quotation_pending') {
-      router.push(`/dashboard/projects/${item.project_id}?tab=quotation`)
-      return
-    }
-    if (item.action_type === 'deposit_due') {
-      router.push(`/dashboard/projects/${item.project_id}?tab=payments`)
-      return
-    }
-    if (item.action_type === 'portal_message') {
-      const supabase = createClient()
-      const { data: msg } = await supabase
-        .from('app_messages')
-        .select('thread_id')
-        .eq('id', item.ref_id)
-        .maybeSingle()
-      const threadId = (msg as { thread_id?: string } | null)?.thread_id
-      if (threadId) {
-        router.push(`/dashboard/messages?threadId=${threadId}`)
-        return
-      }
-      router.push(`/dashboard/projects/${item.project_id}`)
-      return
-    }
-    if (item.action_type === 'deal_stale' || item.action_type === 'stale_deal') {
-      router.push(`/dashboard/projects/${item.project_id}?tab=pipeline`)
-      return
-    }
-    router.push(`/dashboard/projects/${item.project_id}`)
-  }
-
   const pages = totalPages(total, pageSize)
   const hasFilters = !!cols.code || !!cols.title || !!cols.client || !!search || statusFilter !== 'all'
   const patchCols = (patch: Partial<ColFilters>) => setCols(prev => ({ ...prev, ...patch }))
-  const fmtDate = (d: string) =>
-    new Intl.DateTimeFormat('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(d))
 
   if (loadError === 'not_linked') {
     return (
@@ -304,8 +242,6 @@ export default function ProjectsPage() {
       </div>
     )
   }
-
-  const centreItems = actionItems.filter(item => item.action_type !== 'invoice_overdue' && item.action_type !== 'quotation_pending')
 
   const rangeLabel = total === 0
     ? '0 projects'
@@ -395,57 +331,6 @@ export default function ProjectsPage() {
           {loadError}
         </div>
       )}
-
-      {/* Action Centre */}
-      <div className="mx-3 mb-2 bg-surface rounded-lg border border-divider overflow-hidden shrink-0">
-        <div className={`flex items-center gap-2 px-3 py-1.5 ${centreItems.length > 0 ? 'border-b border-divider' : ''}`}>
-          <span className="material-icons text-primary text-[16px]">bolt</span>
-          <span className="font-semibold text-[11px] text-primary uppercase tracking-wider">Action Centre</span>
-          <span className="text-text-secondary text-[11px] ml-1">
-            {centreItems.length > 0 ? `${centreItems.length} pending` : 'Up to date'}
-          </span>
-          <button onClick={() => void load()} className="ml-auto text-text-secondary text-[11px] h-6 px-2 hover:text-text-primary transition-colors">
-            ↻ Refresh
-          </button>
-        </div>
-        {centreItems.length > 0 && (
-          <div className="max-h-[88px] overflow-y-auto">
-            {centreItems.map(item => {
-              const colors = ACTION_TYPE_COLORS[item.action_type] ?? getDefaultColor()
-              return (
-                <div
-                  key={`${item.action_type}-${item.ref_id}`}
-                  className="flex flex-col sm:grid sm:items-center gap-1 px-3 py-1.5 border-t border-divider first:border-t-0"
-                  style={{ gridTemplateColumns: '120px 1fr 90px 70px' }}
-                >
-                  <span
-                    className="rounded-[5px] px-[6px] py-[3px] text-[10px] font-medium w-fit"
-                    style={{ backgroundColor: colors.bg, color: colors.fg }}
-                  >
-                    {item.action_type.replace(/_/g, ' ')}
-                  </span>
-                  <div className="overflow-hidden min-w-0">
-                    <p className="text-text-primary text-[12px] font-medium truncate">
-                      {item.project_code ? `${item.project_code} · ` : ''}{item.project_title ?? '—'}
-                    </p>
-                    <p className="text-text-secondary text-[11px] truncate">{item.summary}</p>
-                  </div>
-                  <div className="flex items-center justify-between sm:contents gap-2">
-                    <p className="text-text-secondary text-[11px] sm:text-right">{fmtDate(item.created_at)}</p>
-                    <button
-                      type="button"
-                      onClick={() => openActionItem(item)}
-                      className="text-primary text-[12px] h-7 sm:h-6 px-2 sm:text-right hover:opacity-70 transition-opacity"
-                    >
-                      Open →
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
 
       <div className="flex-1 min-h-0 overflow-auto mx-3 mb-1 bg-surface border border-divider rounded-lg">
         {loading ? (

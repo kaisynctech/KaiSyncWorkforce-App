@@ -20,7 +20,7 @@ import {
   DataCardMeta,
   DataCardRow,
 } from '@/components/ui/ResponsiveDataView'
-import type { Client, ClientActionItem } from '@/types/database'
+import type { Client } from '@/types/database'
 import { LinkedBadge, LinkedOnlyToggle } from '@/components/LinkedBadge'
 import { XeroMark, useXeroStatuses } from '@/components/xero/XeroMark'
 import { activeLinkedRecordIds } from '@/lib/company-links'
@@ -50,19 +50,9 @@ function colFilterPairs(c: Cols): Array<[string, string]> {
   return pairs.filter(([, v]) => v !== '')
 }
 
-const ACTION_TYPE_COLORS: Record<string, { bg: string; fg: string }> = {
-  invoice_overdue:     { bg: '#FEE2E2', fg: '#991B1B' },
-  invoice_outstanding: { bg: '#FEF3C7', fg: '#92400E' },
-  deal_attention:      { bg: '#DBEAFE', fg: '#1E40AF' },
-  portal_message:      { bg: '#E0E7FF', fg: '#3730A3' },
-}
-
-function getDefaultColor() { return { bg: '#E5E7EB', fg: '#374151' } }
-
 export default function ClientsPage() {
   const router = useRouter()
   const [clients, setClients] = useState<Client[]>([])
-  const [actionItems, setActionItems] = useState<ClientActionItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
@@ -146,11 +136,7 @@ export default function ClientsPage() {
       query = query.ilike(col, `%${escapeIlike(value)}%`)
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [listRes, aRes] = await Promise.all([
-      query.range(from, to),
-      (supabase.rpc as any)('hr_get_client_action_items', { p_company_id: cId }),
-    ])
+    const listRes = await query.range(from, to)
 
     if (listRes.error) {
       setError(listRes.error.message)
@@ -160,14 +146,6 @@ export default function ClientsPage() {
       setClients((listRes.data ?? []) as Client[])
       setTotal(listRes.count ?? 0)
     }
-
-    const actionRaw = aRes.data
-    const actionList = Array.isArray(actionRaw)
-      ? actionRaw
-      : typeof actionRaw === 'string'
-        ? JSON.parse(actionRaw)
-        : []
-    setActionItems((actionList ?? []) as ClientActionItem[])
 
     const { data: xStatus } = await (supabase.rpc as any)('get_xero_connection_status', { p_company_id: cId })
     setXeroConnected(xStatus?.connected ?? false)
@@ -183,9 +161,6 @@ export default function ClientsPage() {
   useEffect(() => { void load() }, [load])
 
   const pages = totalPages(total, pageSize)
-
-  const fmtDate = (d: string) =>
-    new Intl.DateTimeFormat('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(d))
 
   async function exportCsv() {
     if (!companyId) return
@@ -263,33 +238,6 @@ export default function ClientsPage() {
     XLSX.writeFile(wb, `clients_export_${localISODate()}.xlsx`)
   }
 
-  async function openActionItem(item: ClientActionItem) {
-    if (item.action_type.startsWith('invoice_')) {
-      router.push(`/dashboard/money/invoices/${item.ref_id}`)
-      return
-    }
-    if (item.action_type === 'deal_attention') {
-      router.push(`/dashboard/projects/${item.ref_id}`)
-      return
-    }
-    if (item.action_type === 'portal_message') {
-      const supabase = createClient()
-      const { data: msg } = await supabase
-        .from('app_messages')
-        .select('thread_id')
-        .eq('id', item.ref_id)
-        .maybeSingle()
-      const threadId = (msg as { thread_id?: string } | null)?.thread_id
-      if (threadId) {
-        router.push(`/dashboard/messages?threadId=${threadId}`)
-        return
-      }
-      router.push(`/dashboard/clients/${item.client_id}`)
-      return
-    }
-    router.push(`/dashboard/clients/${item.client_id}`)
-  }
-
   const xero = useXeroStatuses(xeroConnected ? companyId : null, 'client', clients.map(c => c.id))
 
   async function pushToXero(e: React.MouseEvent, clientId: string) {
@@ -363,8 +311,6 @@ export default function ClientsPage() {
       setXeroImporting(false)
     }
   }
-
-  const centreItems = actionItems.filter(item => !item.action_type.startsWith('invoice_'))
 
   if (error === 'not_linked') return (
     <div className="flex items-center justify-center h-full">
@@ -456,61 +402,6 @@ export default function ClientsPage() {
           <button onClick={() => setXeroMsg(null)} className="ml-2 opacity-60 hover:opacity-100">✕</button>
         </p>
       )}
-
-      {/* Action Centre */}
-      <div className="mx-4 mb-2 bg-surface rounded-lg border border-divider overflow-hidden shrink-0">
-        <div className={`flex items-center gap-2 px-3 py-1.5 ${centreItems.length > 0 ? 'border-b border-divider' : ''}`}>
-          <span className="material-icons text-primary text-[16px]">bolt</span>
-          <span className="font-semibold text-[11px] text-primary uppercase tracking-wider">Action Centre</span>
-          <span className="text-text-secondary text-[11px] ml-1">
-            {centreItems.length > 0 ? `${centreItems.length} pending` : 'Up to date'}
-          </span>
-          {centreItems.length > 0 && (() => {
-            const deals = centreItems.filter(i => i.action_type === 'deal_attention').length
-            const msgs = centreItems.filter(i => i.action_type === 'portal_message').length
-            return (
-              <div className="flex items-center gap-1 ml-1">
-                {deals > 0 && <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-[#DBEAFE] text-[#1E40AF]">{deals}P</span>}
-                {msgs > 0 && <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-[#E0E7FF] text-[#3730A3]">{msgs}M</span>}
-              </div>
-            )
-          })()}
-          <button onClick={() => void load()} className="ml-auto text-text-secondary text-[11px] h-6 px-2 hover:text-text-primary transition-colors">
-            ↻ Refresh
-          </button>
-        </div>
-        {centreItems.length > 0 && (
-        <div className="max-h-[88px] overflow-y-auto">
-            {centreItems.map(item => {
-              const colors = ACTION_TYPE_COLORS[item.action_type] ?? getDefaultColor()
-              return (
-                <div key={`${item.action_type}-${item.ref_id}`}
-                  className="flex flex-col sm:grid sm:items-center gap-1 px-3 py-1.5 border-t border-divider first:border-t-0"
-                  style={{ gridTemplateColumns: '110px 1fr 90px 70px' }}>
-                  <span className="rounded-[5px] px-[6px] py-[3px] text-[10px] font-medium w-fit"
-                    style={{ backgroundColor: colors.bg, color: colors.fg }}>
-                    {item.action_type.replace(/_/g, ' ')}
-                  </span>
-                  <div className="overflow-hidden min-w-0">
-                    <p className="text-text-primary text-[12px] font-medium truncate">{item.client_name ?? '—'}</p>
-                    <p className="text-text-secondary text-[11px] truncate">{item.summary}</p>
-                  </div>
-                  <div className="flex items-center justify-between sm:contents gap-2">
-                    <p className="text-text-secondary text-[11px] sm:text-right">{fmtDate(item.created_at)}</p>
-                    <button
-                      type="button"
-                      onClick={() => openActionItem(item)}
-                      className="text-primary text-[12px] h-7 sm:h-6 px-2 sm:text-right hover:opacity-70 transition-opacity"
-                    >
-                      Open →
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
-        </div>
-        )}
-      </div>
 
       <div className="flex-1 overflow-y-auto">
         <div className="mx-4 mb-4 bg-surface rounded-lg border border-divider overflow-hidden">

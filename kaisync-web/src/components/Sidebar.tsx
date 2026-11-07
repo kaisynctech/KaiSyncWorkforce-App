@@ -63,6 +63,7 @@ const NAV_SECTIONS: NavSection[] = [
     label: 'Operations',
     icon: 'work',
     items: [
+      { label: 'Action Centre',    href: '/dashboard/operations/action-centre', icon: 'bolt' },
       { label: 'Clients',          href: '/dashboard/clients',           icon: 'business',    flag: 'clients' },
       { label: 'Compliance',       href: '/dashboard/compliance',        icon: 'fact_check',  flag: 'clients' },
       { label: 'Projects',         href: '/dashboard/projects',          icon: 'folder',      flag: 'projects' },

@@ -20,7 +20,7 @@ import {
   pageRange,
   totalPages,
 } from '@/lib/list-pagination'
-import type { Contractor, ContractorActionItem } from '@/types/database'
+import type { Contractor } from '@/types/database'
 import { LinkedBadge, LinkedOnlyToggle } from '@/components/LinkedBadge'
 import { activeLinkedRecordIds } from '@/lib/company-links'
 import * as XLSX from 'xlsx'
@@ -57,18 +57,6 @@ function colFilterPairs(c: Cols): Array<[string, string]> {
   return pairs.filter(([, v]) => v !== '')
 }
 
-const ACTION_TYPE_COLORS: Record<string, { bg: string; fg: string }> = {
-  quote_pending:     { bg: '#DBEAFE', fg: '#1E40AF' },
-  banking_pending:   { bg: '#FEF3C7', fg: '#92400E' },
-  document_pending:  { bg: '#E5E7EB', fg: '#374151' },
-  document_expiring: { bg: '#FEE2E2', fg: '#991B1B' },
-  compliance:        { bg: '#FEE2E2', fg: '#991B1B' },
-  payment:           { bg: '#FEF3C7', fg: '#92400E' },
-  review:            { bg: '#DBEAFE', fg: '#1E40AF' },
-}
-
-function getDefaultColor() { return { bg: '#E5E7EB', fg: '#374151' } }
-
 function getBankingBadge(c: Contractor) {
   return c.banking_verified
     ? { bg: '#DCFCE7', fg: '#166534', label: 'Verified' }
@@ -86,7 +74,6 @@ function getStatusBadge(c: Contractor) {
 export default function ContractorsPage() {
   const router = useRouter()
   const [contractors, setContractors] = useState<Contractor[]>([])
-  const [actionItems, setActionItems] = useState<ContractorActionItem[]>([])
   const [loading, setLoading] = useState(true)
   const [searchText, setSearchText] = useState('')
   const [filter, setFilter] = useState<FilterValue>('active')
@@ -177,9 +164,8 @@ export default function ContractorsPage() {
       listQuery = listQuery.ilike(col, `%${escapeIlike(value)}%`)
     }
 
-    const [cRes, aRes, snapRes, activeRes] = await Promise.all([
+    const [cRes, snapRes, activeRes] = await Promise.all([
       listQuery.range(from, to),
-      supabase.rpc('hr_get_contractor_action_items', { p_company_id: member.companyId }),
       supabase.rpc('hr_get_contractors_snapshot', {
         p_company_id: member.companyId,
         p_from: today,
@@ -198,14 +184,6 @@ export default function ContractorsPage() {
 
     setContractors((cRes.data ?? []) as Contractor[])
     setTotal(cRes.count ?? 0)
-
-    const actionRaw = aRes.data
-    const actionList = Array.isArray(actionRaw)
-      ? actionRaw
-      : typeof actionRaw === 'string'
-        ? JSON.parse(actionRaw)
-        : []
-    setActionItems((actionList ?? []) as ContractorActionItem[])
 
     const snap = (snapRes.data ?? {}) as { active?: number }
     setActiveCount(activeRes.count ?? Number(snap.active ?? 0))
@@ -264,9 +242,6 @@ export default function ContractorsPage() {
     XLSX.utils.book_append_sheet(wb, ws, 'Contractors')
     XLSX.writeFile(wb, `contractors_export_${localISODate()}.xlsx`)
   }
-
-  const fmtDate = (d: string) =>
-    new Intl.DateTimeFormat('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(d))
 
   async function pushToXero(e: React.MouseEvent, contractorId: string) {
     e.stopPropagation()
@@ -339,8 +314,6 @@ export default function ContractorsPage() {
       setXeroImporting(false)
     }
   }
-
-  const centreItems = actionItems.filter(item => item.action_type !== 'quote_pending')
 
   if (error === 'not_linked') return (
     <div className="flex items-center justify-center h-full">
@@ -432,73 +405,6 @@ export default function ContractorsPage() {
           <button onClick={() => setXeroMsg(null)} className="ml-2 opacity-60 hover:opacity-100">✕</button>
         </p>
       )}
-
-      {/* Action Centre */}
-      <div className="mx-3 mb-2 bg-surface rounded-lg border border-divider overflow-hidden shrink-0">
-        <div className={`flex items-center gap-2 px-3 py-1.5 ${centreItems.length > 0 ? 'border-b border-divider' : ''}`}>
-          <span className="material-icons text-primary text-[16px]">bolt</span>
-          <span className="font-semibold text-[11px] text-primary uppercase tracking-wider">Action Centre</span>
-          <span className="text-text-secondary text-[11px] ml-1">
-            {centreItems.length > 0 ? `${centreItems.length} pending` : 'Up to date'}
-          </span>
-          {centreItems.length > 0 && (() => {
-            const banking  = centreItems.filter(i => i.action_type === 'banking_pending').length
-            const expiring = centreItems.filter(i => i.action_type === 'document_expiring').length
-            return (
-              <div className="flex items-center gap-1 ml-1">
-                {banking  > 0 && <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-[#FEF3C7] text-[#92400E]">{banking}B</span>}
-                {expiring > 0 && <span className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-[#FEE2E2] text-[#991B1B]">{expiring}D</span>}
-              </div>
-            )
-          })()}
-          <button onClick={load} className="ml-auto text-text-secondary text-[11px] h-6 px-2 hover:text-text-primary transition-colors">
-            ↻ Refresh
-          </button>
-        </div>
-        {centreItems.length > 0 && (
-          <div className="max-h-[88px] overflow-y-auto">
-            {centreItems.map(item => {
-              const colors = ACTION_TYPE_COLORS[item.action_type] ?? getDefaultColor()
-              return (
-                <div key={`${item.action_type}-${item.ref_id}`}
-                  className="flex flex-col sm:grid sm:items-center gap-1 px-3 py-1.5 border-t border-divider first:border-t-0"
-                  style={{ gridTemplateColumns: '110px 1fr 90px 70px' }}>
-                  <span className="rounded-[5px] px-[6px] py-[3px] text-[10px] font-medium w-fit"
-                    style={{ backgroundColor: colors.bg, color: colors.fg }}>
-                    {item.action_type.replace(/_/g, ' ')}
-                  </span>
-                  <div className="overflow-hidden min-w-0">
-                    <p className="text-text-primary text-[12px] font-medium truncate">{item.contractor_name ?? '—'}</p>
-                    <p className="text-text-secondary text-[11px] truncate">{item.summary}</p>
-                  </div>
-                  <div className="flex items-center justify-between sm:contents gap-2">
-                    <p className="text-text-secondary text-[11px] sm:text-right">{fmtDate(item.created_at)}</p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const tab =
-                          item.action_type === 'banking_pending' ? 'Payments'
-                            : item.action_type.startsWith('document_') ? 'Compliance'
-                              : item.action_type === 'quote_pending' ? 'Quotes'
-                                : 'Information'
-                        const params = new URLSearchParams({
-                          tab,
-                          focus: item.ref_id,
-                          focusType: item.action_type,
-                        })
-                        router.push(`/dashboard/contractors/${item.contractor_id}?${params.toString()}`)
-                      }}
-                      className="text-primary text-[12px] h-7 sm:h-6 px-2 sm:text-right hover:opacity-70 transition-opacity"
-                    >
-                      Open →
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
 
       {/* Contractors table */}
       <div className="flex-1 min-h-0 overflow-auto mx-3 mb-1 bg-surface border border-divider rounded-lg">

@@ -1,6 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import {
@@ -38,22 +39,6 @@ type AssetKpis = {
   retired: number
   warrantyExpiring: number
   unassigned: number
-}
-
-type AssetActionItem = {
-  id: string
-  asset_id: string
-  asset_label: string
-  action_type: string
-  title: string
-  detail: string
-}
-
-const ACTION_TYPE_COLORS: Record<string, { bg: string; fg: string }> = {
-  warranty_expired:  { bg: '#FEE2E2', fg: '#991B1B' },
-  warranty_expiring: { bg: '#FEF3C7', fg: '#92400E' },
-  out_of_service:    { bg: '#FEF3C7', fg: '#92400E' },
-  unassigned:        { bg: '#E5E7EB', fg: '#374151' },
 }
 
 const fmtDate = (d: string | null | undefined) => {
@@ -144,6 +129,17 @@ function empName(e: { name: string; surname: string } | null | undefined): strin
 }
 
 export default function AssetsPage() {
+  return (
+    <Suspense fallback={<p className="text-center text-[13px] text-text-secondary py-10">Loading…</p>}>
+      <AssetsInner />
+    </Suspense>
+  )
+}
+
+function AssetsInner() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const editParam = searchParams.get('edit')
   const [assets, setAssets] = useState<AssetRow[]>([])
   const [sites, setSites] = useState<Pick<Site, 'id' | 'name'>[]>([])
   const [units, setUnits] = useState<Pick<Unit, 'id' | 'site_id' | 'unit_number'>[]>([])
@@ -168,7 +164,6 @@ export default function AssetsPage() {
   const [kpis, setKpis] = useState<AssetKpis>({
     total: 0, active: 0, outOfService: 0, retired: 0, warrantyExpiring: 0, unassigned: 0,
   })
-  const [actionItems, setActionItems] = useState<AssetActionItem[]>([])
 
   const canEdit = can(perms, PERM.assetsEdit)
 
@@ -225,7 +220,7 @@ export default function AssetsPage() {
         assetScope().is('assigned_employee_id', null).neq('status', 'retired'),
         supabase
           .from('assets')
-          .select('id, label, status, warranty_expires, assigned_employee_id')
+          .select('warranty_expires')
           .eq('company_id', member.companyId)
           .neq('status', 'retired')
           .order('label')
@@ -234,13 +229,7 @@ export default function AssetsPage() {
 
     setPerms(await loadPermissions(supabase, member.companyId, meRes.data?.access_level))
 
-    const signals = (signalRes.data ?? []) as {
-      id: string
-      label: string | null
-      status: string
-      warranty_expires: string | null
-      assigned_employee_id: string | null
-    }[]
+    const signals = (signalRes.data ?? []) as { warranty_expires: string | null }[]
     const warrantySoonCount = signals.filter(a => isWarrantyExpiringSoon(a.warranty_expires)).length
 
     setKpis({
@@ -251,51 +240,6 @@ export default function AssetsPage() {
       warrantyExpiring: warrantySoonCount,
       unassigned: unassignedRes.count ?? 0,
     })
-
-    const actions: AssetActionItem[] = []
-    for (const a of signals) {
-      const label = a.label?.trim() || 'Untitled asset'
-      if (isWarrantyExpired(a.warranty_expires)) {
-        actions.push({
-          id: `${a.id}-wexp`,
-          asset_id: a.id,
-          asset_label: label,
-          action_type: 'warranty_expired',
-          title: 'Warranty expired',
-          detail: 'Review service / replace coverage',
-        })
-      } else if (isWarrantyExpiringSoon(a.warranty_expires)) {
-        actions.push({
-          id: `${a.id}-wsoon`,
-          asset_id: a.id,
-          asset_label: label,
-          action_type: 'warranty_expiring',
-          title: 'Warranty expiring',
-          detail: 'Expires within 30 days',
-        })
-      }
-      if (a.status === 'out_of_service') {
-        actions.push({
-          id: `${a.id}-oos`,
-          asset_id: a.id,
-          asset_label: label,
-          action_type: 'out_of_service',
-          title: 'Out of service',
-          detail: 'Asset unavailable for use',
-        })
-      }
-      if (!a.assigned_employee_id && a.status === 'active') {
-        actions.push({
-          id: `${a.id}-un`,
-          asset_id: a.id,
-          asset_label: label,
-          action_type: 'unassigned',
-          title: 'Unassigned custody',
-          detail: 'No employee assigned',
-        })
-      }
-    }
-    setActionItems(actions.slice(0, 25))
 
     const { from, to } = pageRange(page, pageSize)
     // Site column filter needs an inner join on the embedded site so the filter
@@ -347,6 +291,30 @@ export default function AssetsPage() {
   }, [page, pageSize, searchDebounced, colsDebounced, statusFilter])
 
   useEffect(() => { void load() }, [load])
+
+  // Deep link from the Operations Action Centre: /dashboard/assets?edit=<assetId> opens the
+  // same editor as clicking a row, then clears the param so a refresh does not re-open it.
+  useEffect(() => {
+    if (!editParam || !companyId) return
+    let cancelled = false
+    void (async () => {
+      const supabase = createClient()
+      const { data, error: qErr } = await supabase
+        .from('assets')
+        .select('*, sites(id, name), units(id, unit_number), assigned_employee:employees!assigned_employee_id(id, name, surname)')
+        .eq('id', editParam)
+        .eq('company_id', companyId)
+        .maybeSingle()
+      if (cancelled) return
+      router.replace('/dashboard/assets')
+      if (qErr) { setError(qErr.message); return }
+      if (!data) { setError('Asset not found.'); return }
+      setEditing(toDraft(data as unknown as AssetRow))
+      setIsNew(false)
+      setError(null)
+    })()
+    return () => { cancelled = true }
+  }, [editParam, companyId, router])
 
   async function save() {
     if (!canEdit) { setError('You do not have permission to edit assets.'); return }
@@ -460,48 +428,6 @@ export default function AssetsPage() {
           )}
         </div>
       </div>
-
-      {actionItems.length > 0 && (
-        <div className="mx-4 mt-3 card overflow-hidden">
-          <div className="px-3 py-2 border-b border-divider flex items-center justify-between">
-            <p className="text-[11px] font-semibold tracking-wider uppercase text-text-secondary">Action Centre</p>
-            <span className="text-[11px] text-text-disabled">{actionItems.length} item{actionItems.length !== 1 ? 's' : ''}</span>
-          </div>
-          <ul className="divide-y divide-divider max-h-48 overflow-y-auto">
-            {actionItems.map(item => {
-              const colors = ACTION_TYPE_COLORS[item.action_type] ?? { bg: '#E5E7EB', fg: '#374151' }
-              return (
-                <li
-                  key={item.id}
-                  className="px-3 py-2 flex items-center gap-3 cursor-pointer hover:bg-background transition-colors"
-                  onClick={() => {
-                    void (async () => {
-                      const row = assets.find(a => a.id === item.asset_id)
-                      if (row) { setEditing(toDraft(row)); setIsNew(false); setError(null); return }
-                      const supabase = createClient()
-                      const { data } = await supabase
-                        .from('assets')
-                        .select('*, sites(id, name), units(id, unit_number), assigned_employee:employees!assigned_employee_id(id, name, surname)')
-                        .eq('id', item.asset_id)
-                        .maybeSingle()
-                      if (data) { setEditing(toDraft(data as AssetRow)); setIsNew(false); setError(null) }
-                    })()
-                  }}
-                >
-                  <span className="text-[10px] px-2 py-0.5 rounded-lg shrink-0" style={{ backgroundColor: colors.bg, color: colors.fg }}>
-                    {item.title}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[13px] font-medium text-text-primary truncate">{item.asset_label}</p>
-                    <p className="text-[11px] text-text-secondary truncate">{item.detail}</p>
-                  </div>
-                  <span className="material-icons text-[16px] text-text-disabled">chevron_right</span>
-                </li>
-              )
-            })}
-          </ul>
-        </div>
-      )}
 
       <div className="flex items-center justify-between gap-2 px-4 py-2 border-b border-divider shrink-0 mt-2">
         <div className="flex items-center gap-2 flex-1 min-w-0 flex-wrap">
