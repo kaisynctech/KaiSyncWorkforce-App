@@ -29,7 +29,14 @@ import {
   MONEY_TH,
   MONEY_TD,
 } from '@/components/ui/StatusFilterTabs'
-import { TextHeaderFilter, ResetFiltersButton, statusTab } from '@/components/ui/MoneyListFilters'
+import {
+  TextHeaderFilter,
+  StatusHeaderFilter,
+  DateHeaderFilter,
+  MoneyHeaderFilter,
+  ResetFiltersButton,
+  statusTab,
+} from '@/components/ui/MoneyListFilters'
 import { areaOptions, listClientSites, listJobServices, listSiteAreas, type AreaOption } from '@/lib/job-services'
 import type { Job, JobStatus } from '@/types/database'
 
@@ -52,8 +59,57 @@ const STATUS_TABS = [
   statusTab('cancelled', 'Cancelled', ['cancelled'], 'red'),
 ]
 
-type ColFilters = { code: string; title: string; client: string }
-const EMPTY_COLS: ColFilters = { code: '', title: '', client: '' }
+type ColFilters = {
+  code: string
+  title: string
+  client: string
+  statuses: string[]
+  priorities: string[]
+  startFrom: string
+  startTo: string
+  endFrom: string
+  endTo: string
+  costMin: string
+  costMax: string
+}
+const EMPTY_COLS: ColFilters = {
+  code: '',
+  title: '',
+  client: '',
+  statuses: [],
+  priorities: [],
+  startFrom: '',
+  startTo: '',
+  endFrom: '',
+  endTo: '',
+  costMin: '',
+  costMax: '',
+}
+
+const STATUS_COL_OPTIONS = [
+  { id: 'open', label: 'Open' },
+  { id: 'scheduled', label: 'Scheduled' },
+  { id: 'in_progress', label: 'In progress' },
+  { id: 'completed', label: 'Completed' },
+  { id: 'cancelled', label: 'Cancelled' },
+]
+
+const PRIORITY_COL_OPTIONS = [
+  { id: 'high', label: 'High' },
+  { id: 'medium', label: 'Medium' },
+  { id: 'normal', label: 'Normal' },
+  { id: 'low', label: 'Low' },
+  { id: 'none', label: 'None' },
+]
+
+function colsActive(c: ColFilters) {
+  return !!(
+    c.code || c.title || c.client
+    || c.statuses.length || c.priorities.length
+    || c.startFrom || c.startTo || c.endFrom || c.endTo
+    || c.costMin || c.costMax
+  )
+}
 
 const STATUS_BADGES: Record<string, { label: string; cls: string }> = {
   open: { label: 'Open', cls: 'bg-[#DBEAFE] text-[#1D4ED8]' },
@@ -100,6 +156,14 @@ type JobListFilters = {
   colCode: string
   colTitle: string
   colClientIds: string[] | null
+  colStatuses: string[]
+  colPriorities: string[]
+  colStartFrom: string
+  colStartTo: string
+  colEndFrom: string
+  colEndTo: string
+  colCostMin: string
+  colCostMax: string
   /** Filter panel: one client, one site, an area (with the areas inside it), one service. */
   clientId: string
   siteId: string
@@ -118,6 +182,8 @@ function withJobFilters(query: any, filters: JobListFilters) {
     )
   }
   if (filters.statusFilter !== 'all') next = next.eq('status', filters.statusFilter)
+  if (filters.colStatuses.length > 0) next = next.in('status', filters.colStatuses)
+  if (filters.colPriorities.length > 0) next = next.in('priority', filters.colPriorities)
   if (filters.search) {
     const q = escapeIlike(filters.search)
     const parts = [`title.ilike.%${q}%`, `job_code.ilike.%${q}%`]
@@ -134,6 +200,16 @@ function withJobFilters(query: any, filters: JobListFilters) {
         ? filters.colClientIds
         : ['00000000-0000-0000-0000-000000000000'],
     )
+  }
+  if (filters.colStartFrom) next = next.gte('scheduled_start', filters.colStartFrom)
+  if (filters.colStartTo) next = next.lte('scheduled_start', `${filters.colStartTo}T23:59:59`)
+  if (filters.colEndFrom) next = next.gte('scheduled_end', filters.colEndFrom)
+  if (filters.colEndTo) next = next.lte('scheduled_end', `${filters.colEndTo}T23:59:59`)
+  if (filters.colCostMin !== '' && !Number.isNaN(Number(filters.colCostMin))) {
+    next = next.gte('estimated_cost', Number(filters.colCostMin))
+  }
+  if (filters.colCostMax !== '' && !Number.isNaN(Number(filters.colCostMax))) {
+    next = next.lte('estimated_cost', Number(filters.colCostMax))
   }
   if (filters.clientId) next = next.eq('client_id', filters.clientId)
   if (filters.siteId) next = next.eq('site_id', filters.siteId)
@@ -224,7 +300,13 @@ export default function JobsPage() {
     return () => clearTimeout(t)
   }, [cols])
 
-  useEffect(() => { setPage(1) }, [searchDebounced, colCode, colTitle, colClient, statusFilter, scope, pageSize, dateFrom, dateTo, dateFilter, clientFilter, siteFilter, areaFilter, serviceFilter])
+  useEffect(() => {
+    setPage(1)
+  }, [
+    searchDebounced, colCode, colTitle, colClient, cols.statuses, cols.priorities,
+    cols.startFrom, cols.startTo, cols.endFrom, cols.endTo, cols.costMin, cols.costMax,
+    statusFilter, scope, pageSize, dateFrom, dateTo, dateFilter, clientFilter, siteFilter, areaFilter, serviceFilter,
+  ])
 
   // Filter choices: clients and services when the filter panel opens; sites and areas for the chosen client and site.
   useEffect(() => {
@@ -268,7 +350,7 @@ export default function JobsPage() {
   const areaKey = areaIds.join(',')
   const activeFilterCount = [clientFilter, siteFilter, areaFilter, serviceFilter].filter(Boolean).length
     + (dateFilter ? 1 : 0)
-  const hasColumnFilters = !!(cols.code || cols.title || cols.client || search)
+  const hasColumnFilters = colsActive(cols) || !!search
 
   const loadJobs = useCallback(async () => {
     setLoading(true)
@@ -302,6 +384,14 @@ export default function JobsPage() {
       colCode,
       colTitle,
       colClientIds,
+      colStatuses: cols.statuses,
+      colPriorities: cols.priorities,
+      colStartFrom: cols.startFrom,
+      colStartTo: cols.startTo,
+      colEndFrom: cols.endFrom,
+      colEndTo: cols.endTo,
+      colCostMin: cols.costMin,
+      colCostMax: cols.costMax,
       clientId: clientFilter,
       siteId: siteFilter,
       areaIds: areaKey ? areaKey.split(',') : [],
@@ -320,6 +410,14 @@ export default function JobsPage() {
       colCode: '',
       colTitle: '',
       colClientIds: null,
+      colStatuses: [],
+      colPriorities: [],
+      colStartFrom: '',
+      colStartTo: '',
+      colEndFrom: '',
+      colEndTo: '',
+      colCostMin: '',
+      colCostMax: '',
       clientId: '',
       siteId: '',
       areaIds: [],
@@ -369,7 +467,11 @@ export default function JobsPage() {
       }
     }
     setLoading(false)
-  }, [scope, page, pageSize, searchDebounced, colCode, colTitle, colClient, statusFilter, dateFilter, dateFrom, dateTo, clientFilter, siteFilter, areaKey, serviceFilter])
+  }, [
+    scope, page, pageSize, searchDebounced, colCode, colTitle, colClient,
+    cols.statuses, cols.priorities, cols.startFrom, cols.startTo, cols.endFrom, cols.endTo, cols.costMin, cols.costMax,
+    statusFilter, dateFilter, dateFrom, dateTo, clientFilter, siteFilter, areaKey, serviceFilter,
+  ])
 
   useEffect(() => { void loadJobs() }, [loadJobs])
 
@@ -404,6 +506,14 @@ export default function JobsPage() {
       colCode,
       colTitle,
       colClientIds,
+      colStatuses: cols.statuses,
+      colPriorities: cols.priorities,
+      colStartFrom: cols.startFrom,
+      colStartTo: cols.startTo,
+      colEndFrom: cols.endFrom,
+      colEndTo: cols.endTo,
+      colCostMin: cols.costMin,
+      colCostMax: cols.costMax,
       clientId: clientFilter,
       siteId: siteFilter,
       areaIds,
@@ -667,11 +777,46 @@ export default function JobsPage() {
                         placeholder="Client name…"
                       />
                     </th>
-                    <th className={`${MONEY_TH} text-left w-[110px]`}>Status</th>
-                    <th className={`${MONEY_TH} text-left w-[100px]`}>Priority</th>
-                    <th className={`${MONEY_TH} text-left w-[110px]`}>Start</th>
-                    <th className={`${MONEY_TH} text-left w-[110px]`}>End</th>
-                    <th className={`${MONEY_TH} text-right w-[100px]`}>Cost</th>
+                    <th className={`${MONEY_TH} text-left w-[110px]`}>
+                      <StatusHeaderFilter
+                        label="Status"
+                        options={STATUS_COL_OPTIONS}
+                        selected={cols.statuses}
+                        onChange={next => setCols(c => ({ ...c, statuses: next }))}
+                      />
+                    </th>
+                    <th className={`${MONEY_TH} text-left w-[100px]`}>
+                      <StatusHeaderFilter
+                        label="Priority"
+                        options={PRIORITY_COL_OPTIONS}
+                        selected={cols.priorities}
+                        onChange={next => setCols(c => ({ ...c, priorities: next }))}
+                      />
+                    </th>
+                    <th className={`${MONEY_TH} text-left w-[110px]`}>
+                      <DateHeaderFilter
+                        label="Start"
+                        from={cols.startFrom}
+                        to={cols.startTo}
+                        onChange={({ from, to }) => setCols(c => ({ ...c, startFrom: from, startTo: to }))}
+                      />
+                    </th>
+                    <th className={`${MONEY_TH} text-left w-[110px]`}>
+                      <DateHeaderFilter
+                        label="End"
+                        from={cols.endFrom}
+                        to={cols.endTo}
+                        onChange={({ from, to }) => setCols(c => ({ ...c, endFrom: from, endTo: to }))}
+                      />
+                    </th>
+                    <th className={`${MONEY_TH} text-right w-[100px]`}>
+                      <MoneyHeaderFilter
+                        label="Cost"
+                        min={cols.costMin}
+                        max={cols.costMax}
+                        onChange={({ min, max }) => setCols(c => ({ ...c, costMin: min, costMax: max }))}
+                      />
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
