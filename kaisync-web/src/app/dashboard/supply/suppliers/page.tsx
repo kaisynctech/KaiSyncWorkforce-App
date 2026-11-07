@@ -1,9 +1,24 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import {
+  StatusFilterTabs,
+  TAB_ALL,
+  MONEY_TH,
+  MONEY_TD,
+  countByStatusTab,
+  filterByStatusTab,
+} from '@/components/ui/StatusFilterTabs'
+import {
+  TextHeaderFilter,
+  StatusHeaderFilter,
+  ResetFiltersButton,
+  matchText,
+  statusTab,
+} from '@/components/ui/MoneyListFilters'
 
 interface Supplier {
   id: string
@@ -15,11 +30,46 @@ interface Supplier {
   is_active: boolean
 }
 
+/** contractors has no status column — tabs filter on is_active via this derived status. */
+type SupplierRow = Supplier & { status: 'active' | 'inactive' }
+
+const STATUS_TABS = [
+  TAB_ALL,
+  statusTab('active', 'Active', ['active'], 'green'),
+  statusTab('inactive', 'Inactive', ['inactive'], 'slate'),
+]
+
+const STATUS_OPTIONS = [
+  { id: 'active', label: 'Active' },
+  { id: 'inactive', label: 'Inactive' },
+]
+
+type Cols = {
+  name: string
+  email: string
+  phone: string
+  vat: string
+  terms: string
+  statuses: string[]
+}
+
+const EMPTY_COLS: Cols = { name: '', email: '', phone: '', vat: '', terms: '', statuses: [] }
+
+function colsActive(c: Cols): boolean {
+  return !!(c.name || c.email || c.phone || c.vat || c.terms || c.statuses.length)
+}
+
+function termsLabel(s: Supplier): string {
+  return s.payment_terms != null ? `${s.payment_terms} days` : '—'
+}
+
 export default function SuppliersPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
+  const [statusTabId, setStatusTabId] = useState('all')
+  const [cols, setCols] = useState<Cols>(EMPTY_COLS)
   const [showDrawer, setShowDrawer] = useState(false)
   const [busy, setBusy] = useState(false)
   const [form, setForm] = useState({
@@ -49,10 +99,29 @@ export default function SuppliersPage() {
 
   useEffect(() => { void load() }, [load])
 
-  const filtered = suppliers.filter(s =>
-    !search || s.name.toLowerCase().includes(search.toLowerCase()) ||
-    (s.email ?? '').toLowerCase().includes(search.toLowerCase())
-  )
+  function patchCols(p: Partial<Cols>) { setCols(prev => ({ ...prev, ...p })) }
+
+  const base = useMemo<SupplierRow[]>(() => {
+    const q = search.trim().toLowerCase()
+    return suppliers
+      .map<SupplierRow>(s => ({ ...s, status: s.is_active ? 'active' : 'inactive' }))
+      .filter(s => {
+        if (!matchText(s.name, cols.name)) return false
+        if (!matchText(s.email, cols.email)) return false
+        if (!matchText(s.phone, cols.phone)) return false
+        if (!matchText(s.vat_number, cols.vat)) return false
+        if (!matchText(termsLabel(s), cols.terms)) return false
+        if (cols.statuses.length && !cols.statuses.includes(s.status)) return false
+        if (!q) return true
+        return s.name.toLowerCase().includes(q)
+          || (s.email ?? '').toLowerCase().includes(q)
+          || (s.phone ?? '').toLowerCase().includes(q)
+          || (s.vat_number ?? '').toLowerCase().includes(q)
+      })
+  }, [suppliers, cols, search])
+
+  const counts = useMemo(() => countByStatusTab(base, STATUS_TABS), [base])
+  const filtered = useMemo(() => filterByStatusTab(base, STATUS_TABS, statusTabId), [base, statusTabId])
 
   async function createSupplier() {
     if (!companyId || !form.name.trim()) return
@@ -78,13 +147,13 @@ export default function SuppliersPage() {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-divider shrink-0 bg-surface">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-divider shrink-0 bg-surface gap-3 flex-wrap">
         <div>
-          <h1 className="text-[18px] font-semibold text-text-primary">Suppliers</h1>
-          <p className="text-[12px] text-text-secondary">{filtered.length} supplier{filtered.length !== 1 ? 's' : ''}</p>
+          <h1 className="text-[18px] font-semibold text-text-primary leading-tight">Suppliers</h1>
+          <p className="text-[11px] text-text-secondary mt-0.5">{filtered.length} supplier{filtered.length !== 1 ? 's' : ''}</p>
         </div>
-        <button onClick={() => setShowDrawer(true)} className="btn-primary h-9 px-4 text-[13px] flex items-center gap-1">
-          <span className="material-icons text-[18px]">add</span>
+        <button onClick={() => setShowDrawer(true)} className="btn-primary h-8 px-3 text-[12px] flex items-center gap-1">
+          <span className="material-icons text-[16px]">add</span>
           New Supplier
         </button>
       </div>
@@ -93,62 +162,90 @@ export default function SuppliersPage() {
         <div className="mx-4 mt-3 p-2 rounded bg-error/10 text-error text-[12px]">{error}</div>
       )}
 
-      {/* Search */}
-      <div className="px-4 py-3 shrink-0">
+      <div className="flex gap-2 px-4 py-2 border-b border-divider bg-surface shrink-0 flex-wrap items-center">
         <input
           type="search"
-          placeholder="Search suppliers…"
+          placeholder="Search name, email, phone, or VAT…"
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="input h-9 text-[13px] w-full max-w-sm"
+          className="form-input h-8 flex-1 min-w-[180px] text-[12px]"
         />
+        <ResetFiltersButton
+          disabled={!colsActive(cols) && !search}
+          onReset={() => { setCols(EMPTY_COLS); setSearch('') }}
+        />
+        <StatusFilterTabs tabs={STATUS_TABS} value={statusTabId} counts={counts} onChange={setStatusTabId} />
       </div>
 
       {/* Table */}
-      <div className="flex-1 overflow-auto px-4">
+      <div className="flex-1 overflow-auto">
         {loading ? (
           <p className="text-[13px] text-text-secondary py-8 text-center">Loading…</p>
-        ) : filtered.length === 0 ? (
+        ) : suppliers.length === 0 ? (
           <div className="text-center py-16">
             <span className="material-icons text-[48px] text-text-secondary opacity-30">storefront</span>
             <p className="text-[13px] text-text-secondary mt-3">
-              {search ? 'No suppliers match your search.' : 'No suppliers yet. Add your first supplier to get started.'}
+              No suppliers yet. Add your first supplier to get started.
             </p>
           </div>
         ) : (
-          <table className="w-full" style={{ minWidth: 560 }}>
-            <thead>
+          <table className="w-full" style={{ minWidth: 640 }}>
+            <thead className="sticky top-0 z-10">
               <tr className="bg-surface-elevated border-b border-divider">
-                <th className="data-th text-left">Name</th>
-                <th className="data-th text-left">Email</th>
-                <th className="data-th text-left">Phone</th>
-                <th className="data-th text-left">VAT</th>
-                <th className="data-th text-left">Terms</th>
-                <th className="data-th text-left">Status</th>
+                <th className={`${MONEY_TH} text-left`}>
+                  <TextHeaderFilter label="Name" value={cols.name} onChange={v => patchCols({ name: v })} placeholder="Supplier name…" />
+                </th>
+                <th className={`${MONEY_TH} text-left`}>
+                  <TextHeaderFilter label="Email" value={cols.email} onChange={v => patchCols({ email: v })} placeholder="Email…" />
+                </th>
+                <th className={`${MONEY_TH} text-left`}>
+                  <TextHeaderFilter label="Phone" value={cols.phone} onChange={v => patchCols({ phone: v })} placeholder="Phone…" />
+                </th>
+                <th className={`${MONEY_TH} text-left`}>
+                  <TextHeaderFilter label="VAT" value={cols.vat} onChange={v => patchCols({ vat: v })} placeholder="VAT number…" />
+                </th>
+                <th className={`${MONEY_TH} text-left`}>
+                  <TextHeaderFilter label="Terms" value={cols.terms} onChange={v => patchCols({ terms: v })} placeholder="e.g. 30…" />
+                </th>
+                <th className={`${MONEY_TH} text-left`}>
+                  <StatusHeaderFilter
+                    label="Status"
+                    options={STATUS_OPTIONS}
+                    selected={cols.statuses}
+                    onChange={statuses => patchCols({ statuses })}
+                  />
+                </th>
               </tr>
             </thead>
             <tbody>
               {filtered.map(s => (
                 <tr key={s.id} className="border-b border-divider hover:bg-surface-elevated/50 cursor-pointer"
                   onClick={() => window.location.href = `/dashboard/supply/suppliers/${s.id}`}>
-                  <td className="data-td">
+                  <td className={MONEY_TD}>
                     <Link href={`/dashboard/supply/suppliers/${s.id}`}
-                      className="text-[13px] font-medium text-text-primary hover:text-primary"
+                      className="font-medium text-text-primary hover:text-primary"
                       onClick={e => e.stopPropagation()}>
                       {s.name}
                     </Link>
                   </td>
-                  <td className="data-td text-[13px] text-text-secondary">{s.email ?? '—'}</td>
-                  <td className="data-td text-[13px] text-text-secondary">{s.phone ?? '—'}</td>
-                  <td className="data-td text-[13px] text-text-secondary">{s.vat_number ?? '—'}</td>
-                  <td className="data-td text-[13px] text-text-secondary">{s.payment_terms != null ? `${s.payment_terms} days` : '—'}</td>
-                  <td className="data-td">
-                    <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${s.is_active ? 'bg-success/10 text-success' : 'bg-surface-elevated text-text-secondary'}`}>
+                  <td className={`${MONEY_TD} text-text-secondary`}>{s.email ?? '—'}</td>
+                  <td className={`${MONEY_TD} text-text-secondary`}>{s.phone ?? '—'}</td>
+                  <td className={`${MONEY_TD} text-text-secondary`}>{s.vat_number ?? '—'}</td>
+                  <td className={`${MONEY_TD} text-text-secondary`}>{termsLabel(s)}</td>
+                  <td className={MONEY_TD}>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase tracking-wide ${s.is_active ? 'bg-success/10 text-success' : 'bg-surface-elevated text-text-secondary'}`}>
                       {s.is_active ? 'Active' : 'Inactive'}
                     </span>
                   </td>
                 </tr>
               ))}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="text-center text-[13px] text-text-secondary py-14">
+                    No suppliers match these filters
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         )}

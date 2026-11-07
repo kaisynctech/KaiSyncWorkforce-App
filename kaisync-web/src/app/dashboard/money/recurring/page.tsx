@@ -5,12 +5,30 @@
  * with the client's View & pay link — by itself on the day it is due. Or keep each one as a draft to check.
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { LineItemsEditor } from '@/components/money/LineItemsEditor'
+import {
+  StatusFilterTabs,
+  TAB_ALL,
+  MONEY_TH,
+  MONEY_TD,
+  countByStatusTab,
+  filterByStatusTab,
+} from '@/components/ui/StatusFilterTabs'
+import {
+  TextHeaderFilter,
+  MoneyHeaderFilter,
+  DateHeaderFilter,
+  ResetFiltersButton,
+  matchText,
+  matchMoney,
+  inDateRange,
+  statusTab,
+} from '@/components/ui/MoneyListFilters'
 import {
   formatRand, linesSubtotal, loadPickItems, lineQty, meaningfulLines,
   type EditorLine, type PickItem,
@@ -30,6 +48,30 @@ type ClientOpt = { id: string; name: string; email: string | null }
 const FREQ_LABEL: Record<Frequency, string> = { weekly: 'Every week', monthly: 'Every month', quarterly: 'Every 3 months', yearly: 'Every year' }
 const day = (d: string | null | undefined) => d ? new Date(`${d.slice(0, 10)}T12:00:00`).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 
+/** recurring_invoices has a boolean `active` — tabs use this derived status (active / paused). */
+type RecurringRow = Recurring & { status: 'active' | 'paused'; total: number }
+
+const STATUS_TABS = [
+  TAB_ALL,
+  statusTab('active', 'Active', ['active'], 'green'),
+  statusTab('paused', 'Paused', ['paused'], 'amber'),
+]
+
+type Cols = {
+  client: string
+  title: string
+  nextFrom: string
+  nextTo: string
+  amountMin: string
+  amountMax: string
+}
+
+const EMPTY_COLS: Cols = { client: '', title: '', nextFrom: '', nextTo: '', amountMin: '', amountMax: '' }
+
+function colsActive(c: Cols): boolean {
+  return !!(c.client || c.title || c.nextFrom || c.nextTo || c.amountMin || c.amountMax)
+}
+
 export default function RecurringInvoicesPage() {
   const router = useRouter()
   const [companyId, setCompanyId] = useState<string | null>(null)
@@ -38,6 +80,9 @@ export default function RecurringInvoicesPage() {
   const [editing, setEditing] = useState<Recurring | 'new' | null>(null)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [statusTabId, setStatusTabId] = useState('all')
+  const [search, setSearch] = useState('')
+  const [cols, setCols] = useState<Cols>(EMPTY_COLS)
 
   const load = useCallback(async () => {
     const supabase = createClient()
@@ -69,73 +114,132 @@ export default function RecurringInvoicesPage() {
     else await load()
   }
 
+  function patchCols(p: Partial<Cols>) { setCols(prev => ({ ...prev, ...p })) }
+
+  const base = useMemo<RecurringRow[]>(() => {
+    const q = search.trim().toLowerCase()
+    return rows
+      .map<RecurringRow>(r => {
+        const sub = r.lines.reduce((s, l) => s + Math.round(Number(l.quantity) * Number(l.unit_price) * 100) / 100, 0)
+        const total = sub + Math.round(sub * Number(r.vat_rate) * 100) / 100
+        return { ...r, status: r.active ? 'active' : 'paused', total }
+      })
+      .filter(r => {
+        const client = r.clients?.name ?? ''
+        if (!matchText(client, cols.client)) return false
+        if (!matchText(r.title, cols.title)) return false
+        if (!matchMoney(r.total, cols.amountMin, cols.amountMax)) return false
+        if (!inDateRange(r.next_run, cols.nextFrom, cols.nextTo)) return false
+        if (!q) return true
+        return client.toLowerCase().includes(q) || r.title.toLowerCase().includes(q)
+      })
+  }, [rows, cols, search])
+
+  const counts = useMemo(() => countByStatusTab(base, STATUS_TABS), [base])
+  const filtered = useMemo(() => filterByStatusTab(base, STATUS_TABS, statusTabId), [base, statusTabId])
+
   if (editing && companyId) {
     return <RecurringEditor companyId={companyId} row={editing === 'new' ? null : editing}
       onDone={async saved => { setEditing(null); if (saved) { setMsg({ ok: true, text: 'Saved.' }); await load() } }} />
   }
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 flex flex-col gap-5">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Money</p>
-            <h1 className="text-[22px] font-semibold text-text-primary">Recurring invoices</h1>
-            <p className="text-[13px] text-text-secondary mt-0.5">Monthly service contracts, retainers and rentals: set once, invoiced and emailed by themselves.</p>
-          </div>
-          <button type="button" onClick={() => setEditing('new')} className="h-10 px-4 rounded-xl bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark flex items-center gap-1.5">
-            <span className="material-icons text-[18px]">add</span>New recurring invoice
-          </button>
+    <div className="h-full flex flex-col">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-divider shrink-0 bg-surface gap-3 flex-wrap">
+        <div>
+          <h1 className="text-[18px] font-semibold text-text-primary leading-tight">Recurring invoices</h1>
+          <p className="text-[11px] text-text-secondary mt-0.5">Monthly service contracts, retainers and rentals: set once, invoiced and emailed by themselves.</p>
         </div>
-        {msg && <p className={`text-[13px] ${msg.ok ? 'text-emerald-700' : 'text-error'}`}>{msg.text}</p>}
-        {loading ? <p className="text-[13px] text-text-secondary">Loading…</p> : rows.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-divider p-10 text-center">
+        <button type="button" onClick={() => setEditing('new')} className="btn-primary h-8 px-3 text-[12px] flex items-center gap-1">
+          <span className="material-icons text-[16px]">add</span>New recurring invoice
+        </button>
+      </div>
+
+      <div className="flex gap-2 px-4 py-2 border-b border-divider bg-surface shrink-0 flex-wrap items-center">
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search client or title…"
+          className="form-input h-8 flex-1 min-w-[180px] text-[12px]"
+        />
+        <ResetFiltersButton
+          disabled={!colsActive(cols) && !search}
+          onReset={() => { setCols(EMPTY_COLS); setSearch('') }}
+        />
+        <StatusFilterTabs tabs={STATUS_TABS} value={statusTabId} counts={counts} onChange={setStatusTabId} />
+      </div>
+
+      {msg && <p className={`px-4 pt-2 text-[12px] ${msg.ok ? 'text-emerald-700' : 'text-error'}`}>{msg.text}</p>}
+
+      <div className="flex-1 overflow-auto">
+        {loading ? <p className="text-center text-[13px] text-text-secondary py-10">Loading…</p> : rows.length === 0 ? (
+          <div className="m-4 rounded-2xl border border-dashed border-divider p-10 text-center">
             <span className="material-icons text-[40px] text-text-disabled">event_repeat</span>
             <p className="mt-2 text-[14px] font-medium text-text-primary">No recurring invoices yet</p>
             <p className="text-[12.5px] text-text-secondary">Create one for a client you bill the same amount every month.</p>
           </div>
         ) : (
-          <div className="rounded-2xl border border-divider bg-surface-card overflow-x-auto">
-            <table className="w-full text-[13px]" style={{ minWidth: 820 }}>
-              <thead className="bg-surface-elevated text-[11.5px] uppercase tracking-wide text-text-secondary">
-                <tr>
-                  <th className="px-4 py-2.5 text-left font-semibold">Client</th>
-                  <th className="px-4 py-2.5 text-left font-semibold">How often</th>
-                  <th className="px-4 py-2.5 text-left font-semibold">Next invoice</th>
-                  <th className="px-4 py-2.5 text-right font-semibold">Amount</th>
-                  <th className="px-4 py-2.5 text-left font-semibold">Sending</th>
-                  <th className="px-4 py-2.5" />
+          <table className="w-full" style={{ minWidth: 960 }}>
+            <thead className="sticky top-0 z-10">
+              <tr className="bg-surface-elevated border-b border-divider">
+                <th className={`${MONEY_TH} text-left`}>
+                  <TextHeaderFilter label="Client" value={cols.client} onChange={v => patchCols({ client: v })} placeholder="Client name…" />
+                </th>
+                <th className={`${MONEY_TH} text-left`}>
+                  <TextHeaderFilter label="Title" value={cols.title} onChange={v => patchCols({ title: v })} placeholder="Title…" />
+                </th>
+                <th className={`${MONEY_TH} text-left`}>How often</th>
+                <th className={`${MONEY_TH} text-left`}>
+                  <DateHeaderFilter
+                    label="Next invoice"
+                    from={cols.nextFrom}
+                    to={cols.nextTo}
+                    onChange={p => patchCols({ nextFrom: p.from, nextTo: p.to })}
+                  />
+                </th>
+                <th className={`${MONEY_TH} text-right`}>
+                  <MoneyHeaderFilter
+                    label="Amount"
+                    min={cols.amountMin}
+                    max={cols.amountMax}
+                    onChange={p => patchCols({ amountMin: p.min, amountMax: p.max })}
+                  />
+                </th>
+                <th className={`${MONEY_TH} text-left`}>Sending</th>
+                <th className={MONEY_TH} />
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(r => (
+                <tr key={r.id} className={`border-b border-divider hover:bg-surface-elevated transition-colors ${r.active ? '' : 'opacity-60'}`}>
+                  <td className={`${MONEY_TD} font-medium text-text-primary`}>{r.clients?.name ?? '—'}</td>
+                  <td className={`${MONEY_TD} text-text-primary`}>
+                    {r.title}{r.runs > 0 ? <span className="text-text-secondary"> · {r.runs} sent so far</span> : null}
+                    {r.last_error && <span className="block text-[11px] text-error">Last try failed: {r.last_error}</span>}
+                  </td>
+                  <td className={MONEY_TD}>{FREQ_LABEL[r.frequency]}{r.end_date ? <span className="block text-[11px] text-text-secondary">until {day(r.end_date)}</span> : null}</td>
+                  <td className={`${MONEY_TD} whitespace-nowrap`}>{r.active ? day(r.next_run) : <span className="text-text-secondary">Stopped</span>}</td>
+                  <td className={`${MONEY_TD} text-right font-semibold tabular-nums`}>{formatRand(r.total)}</td>
+                  <td className={MONEY_TD}>{r.auto_send ? 'Emailed automatically' : 'Draft for you to check'}</td>
+                  <td className={MONEY_TD}>
+                    <div className="flex justify-end gap-1.5 whitespace-nowrap">
+                      {r.last_invoice_id && <Link href={`/dashboard/money/invoices/${r.last_invoice_id}`} className="h-7 px-2 rounded-md text-[11px] text-primary hover:bg-primary/10 inline-flex items-center">Last invoice</Link>}
+                      {r.active && <button type="button" disabled={busyId === r.id} onClick={() => void runNow(r)} className="h-7 px-2 rounded-md border border-divider text-[11px] hover:bg-surface-elevated disabled:opacity-50">Create now</button>}
+                      <button type="button" onClick={() => setEditing(r)} className="h-7 px-2 rounded-md border border-divider text-[11px] hover:bg-surface-elevated">Edit</button>
+                      <button type="button" disabled={busyId === r.id} onClick={() => void setActive(r, !r.active)} className="h-7 px-2 rounded-md border border-divider text-[11px] hover:bg-surface-elevated disabled:opacity-50">{r.active ? 'Stop' : 'Restart'}</button>
+                    </div>
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {rows.map(r => {
-                  const sub = r.lines.reduce((s, l) => s + Math.round(Number(l.quantity) * Number(l.unit_price) * 100) / 100, 0)
-                  const total = sub + Math.round(sub * Number(r.vat_rate) * 100) / 100
-                  return (
-                    <tr key={r.id} className={`border-t border-divider/70 ${r.active ? '' : 'opacity-60'}`}>
-                      <td className="px-4 py-3">
-                        <span className="font-medium text-text-primary">{r.clients?.name ?? '—'}</span>
-                        <span className="block text-[11.5px] text-text-secondary">{r.title}{r.runs > 0 ? ` · ${r.runs} sent so far` : ''}</span>
-                        {r.last_error && <span className="block text-[11.5px] text-error">Last try failed: {r.last_error}</span>}
-                      </td>
-                      <td className="px-4 py-3">{FREQ_LABEL[r.frequency]}{r.end_date ? <span className="block text-[11.5px] text-text-secondary">until {day(r.end_date)}</span> : null}</td>
-                      <td className="px-4 py-3">{r.active ? day(r.next_run) : <span className="text-text-secondary">Stopped</span>}</td>
-                      <td className="px-4 py-3 text-right font-semibold tabular-nums">{formatRand(total)}</td>
-                      <td className="px-4 py-3 text-[12px]">{r.auto_send ? 'Emailed automatically' : 'Draft for you to check'}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex justify-end gap-1.5 whitespace-nowrap">
-                          {r.last_invoice_id && <Link href={`/dashboard/money/invoices/${r.last_invoice_id}`} className="h-8 px-2.5 rounded-lg text-[12px] text-primary hover:bg-primary/10 inline-flex items-center">Last invoice</Link>}
-                          {r.active && <button type="button" disabled={busyId === r.id} onClick={() => void runNow(r)} className="h-8 px-2.5 rounded-lg border border-divider text-[12px] hover:bg-surface-elevated disabled:opacity-50">Create now</button>}
-                          <button type="button" onClick={() => setEditing(r)} className="h-8 px-2.5 rounded-lg border border-divider text-[12px] hover:bg-surface-elevated">Edit</button>
-                          <button type="button" disabled={busyId === r.id} onClick={() => void setActive(r, !r.active)} className="h-8 px-2.5 rounded-lg border border-divider text-[12px] hover:bg-surface-elevated disabled:opacity-50">{r.active ? 'Stop' : 'Restart'}</button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+              ))}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="text-center text-[13px] text-text-secondary py-14">
+                    No recurring invoices match these filters
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         )}
       </div>
     </div>

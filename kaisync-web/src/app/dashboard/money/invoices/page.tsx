@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useCallback, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -16,6 +16,25 @@ import {
   DataCardMeta,
   DataCardRow,
 } from '@/components/ui/ResponsiveDataView'
+import {
+  StatusFilterTabs,
+  TAB_ALL,
+  MONEY_TH,
+  MONEY_TD,
+  countByStatusTab,
+  filterByStatusTab,
+} from '@/components/ui/StatusFilterTabs'
+import {
+  TextHeaderFilter,
+  MoneyHeaderFilter,
+  DateHeaderFilter,
+  StatusHeaderFilter,
+  ResetFiltersButton,
+  matchText,
+  matchMoney,
+  inDateRange,
+  statusTab,
+} from '@/components/ui/MoneyListFilters'
 
 type InvoiceRow = FinanceInvoice & {
   invoice_type?: string | null
@@ -23,22 +42,90 @@ type InvoiceRow = FinanceInvoice & {
 }
 
 const STATUS_BADGE: Record<string, string> = {
-  draft:            'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
-  sent:             'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
-  viewed:           'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
-  partially_paid:   'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
-  paid:             'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
-  overdue:          'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
-  voided:           'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400',
-  cancelled:        'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400',
+  draft: 'bg-slate-100 text-slate-700',
+  sent: 'bg-blue-100 text-blue-700',
+  viewed: 'bg-purple-100 text-purple-700',
+  partially_paid: 'bg-amber-100 text-amber-700',
+  paid: 'bg-green-100 text-green-700',
+  overdue: 'bg-red-100 text-red-700',
+  voided: 'bg-gray-100 text-gray-500',
+  cancelled: 'bg-gray-100 text-gray-500',
 }
 
-const ALL_STATUSES = ['draft', 'sent', 'viewed', 'partially_paid', 'paid', 'overdue', 'voided', 'cancelled']
+const STATUS_TABS = [
+  TAB_ALL,
+  statusTab('draft', 'Draft', ['draft'], 'slate'),
+  statusTab('sent', 'Sent', ['sent', 'viewed'], 'blue'),
+  statusTab('partial', 'Part paid', ['partially_paid'], 'amber'),
+  statusTab('paid', 'Paid', ['paid'], 'green'),
+  statusTab('overdue', 'Overdue', ['overdue'], 'red'),
+  statusTab('voided', 'Voided', ['voided', 'cancelled'], 'gray'),
+]
+
+const STATUS_OPTIONS = [
+  { id: 'draft', label: 'Draft' },
+  { id: 'sent', label: 'Sent' },
+  { id: 'viewed', label: 'Viewed' },
+  { id: 'partially_paid', label: 'Partially paid' },
+  { id: 'paid', label: 'Paid' },
+  { id: 'overdue', label: 'Overdue' },
+  { id: 'voided', label: 'Voided' },
+  { id: 'cancelled', label: 'Cancelled' },
+]
+
+type Cols = {
+  number: string
+  client: string
+  project: string
+  issueFrom: string
+  issueTo: string
+  dueFrom: string
+  dueTo: string
+  statuses: string[]
+  totalMin: string
+  totalMax: string
+  balanceMin: string
+  balanceMax: string
+}
+
+const EMPTY_COLS: Cols = {
+  number: '',
+  client: '',
+  project: '',
+  issueFrom: '',
+  issueTo: '',
+  dueFrom: '',
+  dueTo: '',
+  statuses: [],
+  totalMin: '',
+  totalMax: '',
+  balanceMin: '',
+  balanceMax: '',
+}
+
+function colsActive(c: Cols): boolean {
+  return !!(
+    c.number ||
+    c.client ||
+    c.project ||
+    c.issueFrom ||
+    c.issueTo ||
+    c.dueFrom ||
+    c.dueTo ||
+    c.statuses.length ||
+    c.totalMin ||
+    c.totalMax ||
+    c.balanceMin ||
+    c.balanceMax
+  )
+}
 
 function StatusBadge({ status }: { status: string }) {
   const cls = STATUS_BADGE[status] ?? 'bg-gray-100 text-gray-500'
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium capitalize ${cls}`}>
+    <span
+      className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${cls}`}
+    >
       {status.replace(/_/g, ' ')}
     </span>
   )
@@ -59,11 +146,12 @@ function MoneyInvoicesInner() {
   const jobFilter = searchParams.get('job_id')
   const dealFilter = searchParams.get('deal_id') ?? searchParams.get('project_id')
 
-  const [rows, setRows]       = useState<InvoiceRow[]>([])
+  const [rows, setRows] = useState<InvoiceRow[]>([])
   const [notices, setNotices] = useState<MoneyNotice[]>([])
   const [loading, setLoading] = useState(true)
-  const [search, setSearch]   = useState('')
-  const [status, setStatus]   = useState('all')
+  const [search, setSearch] = useState('')
+  const [statusTabId, setStatusTabId] = useState('all')
+  const [cols, setCols] = useState<Cols>(EMPTY_COLS)
   const [filterLabels, setFilterLabels] = useState<{ client?: string; job?: string; deal?: string }>({})
   const [companyId, setCompanyId] = useState<string | null>(null)
 
@@ -175,28 +263,50 @@ function MoneyInvoicesInner() {
     }
   }, [clientFilter, jobFilter, dealFilter, router])
 
-  useEffect(() => { void load() }, [load])
+  useEffect(() => {
+    void load()
+  }, [load])
 
-  const filtered = rows.filter(r => {
-    if (status !== 'all' && r.status !== status) return false
-    if (search) {
-      const q = search.toLowerCase()
+  const base = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return rows.filter(r => {
+      if (!matchText(r.invoice_number, cols.number)) return false
       const client = (r.clients as { name: string } | null)?.name ?? ''
+      if (!matchText(client, cols.client)) return false
+      const project = (r.client_deals as { title: string } | null)?.title ?? ''
+      if (!matchText(project, cols.project)) return false
+      if (!inDateRange(r.issue_date, cols.issueFrom, cols.issueTo)) return false
+      if (!inDateRange(r.due_date, cols.dueFrom, cols.dueTo)) return false
+      if (cols.statuses.length && !cols.statuses.includes(r.status)) return false
+      if (!matchMoney(r.total_amount, cols.totalMin, cols.totalMax)) return false
+      if (!matchMoney(r.balance_due, cols.balanceMin, cols.balanceMax)) return false
+      if (!q) return true
       return (
         (r.invoice_number ?? '').toLowerCase().includes(q) ||
-        client.toLowerCase().includes(q)
+        client.toLowerCase().includes(q) ||
+        project.toLowerCase().includes(q)
       )
-    }
-    return true
-  })
+    })
+  }, [rows, search, cols])
+
+  const statusCounts = useMemo(() => countByStatusTab(base, STATUS_TABS), [base])
+  const filtered = useMemo(() => filterByStatusTab(base, STATUS_TABS, statusTabId), [base, statusTabId])
 
   const xero = useXeroStatuses(companyId, 'invoice', filtered.slice(0, 300).map(r => r.id))
   const xeroMark = (r: InvoiceRow) => (
-    <XeroMark companyId={companyId} kind="invoice" id={r.id} state={xero.statuses?.[r.id]} connected={xero.connected}
-      canSend={!['draft', 'cancelled', 'voided'].includes(r.status)} onChanged={() => void xero.reload()} />
+    <XeroMark
+      companyId={companyId}
+      kind="invoice"
+      id={r.id}
+      state={xero.statuses?.[r.id]}
+      connected={xero.connected}
+      canSend={!['draft', 'cancelled', 'voided'].includes(r.status)}
+      onChanged={() => void xero.reload()}
+    />
   )
 
   const hasScopeFilter = !!(clientFilter || jobFilter || dealFilter)
+  const hasFilters = colsActive(cols) || !!search
 
   function clearScopeFilters() {
     router.replace('/dashboard/money/invoices')
@@ -204,51 +314,62 @@ function MoneyInvoicesInner() {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-divider shrink-0 bg-surface">
-        <h1 className="text-[18px] font-semibold text-text-primary">Invoices</h1>
-        <Link href="/dashboard/money/invoices/new" className="btn-primary h-9 px-3 text-[13px] flex items-center gap-1">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-divider shrink-0 bg-surface gap-3 flex-wrap">
+        <div>
+          <h1 className="text-[18px] font-semibold text-text-primary leading-tight">Invoices</h1>
+          <p className="text-[11px] text-text-secondary mt-0.5">Sales invoices you send to clients</p>
+        </div>
+        <Link
+          href="/dashboard/money/invoices/new"
+          className="btn-primary h-8 px-3 text-[12px] flex items-center gap-1"
+        >
           <span className="material-icons text-[16px]">add</span>Invoice
         </Link>
       </div>
+
+      <MoneyNotices items={notices} />
 
       <div className="flex gap-2 px-4 py-2 border-b border-divider shrink-0 flex-wrap bg-surface items-center">
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="Search number or client…"
-          className="h-9 px-3 border border-border rounded-md text-[13px] bg-background flex-1 min-w-[180px]"
+          className="form-input h-8 flex-1 min-w-[180px] text-[12px]"
         />
-        <select
-          value={status}
-          onChange={e => setStatus(e.target.value)}
-          className="h-9 px-3 border border-border rounded-md text-[13px] bg-background"
-        >
-          <option value="all">All statuses</option>
-          {ALL_STATUSES.map(s => (
-            <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>
-          ))}
-        </select>
+        <ResetFiltersButton
+          disabled={!hasFilters}
+          onReset={() => {
+            setCols(EMPTY_COLS)
+            setSearch('')
+          }}
+        />
+        <StatusFilterTabs
+          tabs={STATUS_TABS}
+          value={statusTabId}
+          counts={statusCounts}
+          onChange={setStatusTabId}
+        />
         {hasScopeFilter && (
-          <div className="flex flex-wrap gap-1.5 items-center">
+          <div className="flex flex-wrap gap-1.5 items-center w-full">
             {filterLabels.client && (
-              <span className="h-8 px-2.5 rounded-md bg-surface-elevated border border-divider text-[12px] text-text-primary flex items-center">
+              <span className="h-7 px-2 rounded-md bg-surface-elevated border border-divider text-[11px] text-text-primary flex items-center">
                 Client: {filterLabels.client}
               </span>
             )}
             {filterLabels.job && (
-              <span className="h-8 px-2.5 rounded-md bg-surface-elevated border border-divider text-[12px] text-text-primary flex items-center">
+              <span className="h-7 px-2 rounded-md bg-surface-elevated border border-divider text-[11px] text-text-primary flex items-center">
                 Job: {filterLabels.job}
               </span>
             )}
             {filterLabels.deal && (
-              <span className="h-8 px-2.5 rounded-md bg-surface-elevated border border-divider text-[12px] text-text-primary flex items-center">
+              <span className="h-7 px-2 rounded-md bg-surface-elevated border border-divider text-[11px] text-text-primary flex items-center">
                 Project: {filterLabels.deal}
               </span>
             )}
             <button
               type="button"
               onClick={clearScopeFilters}
-              className="h-8 px-2.5 text-[12px] text-primary hover:underline"
+              className="h-7 px-2 text-[11px] text-primary hover:underline"
             >
               Clear filters
             </button>
@@ -256,25 +377,81 @@ function MoneyInvoicesInner() {
         )}
       </div>
 
-      <MoneyNotices items={notices} />
-
       <div className="flex-1 overflow-auto">
         {loading ? (
-          <p className="text-center text-[13px] text-text-secondary py-10">Loading…</p>
+          <p className="text-center text-[12px] text-text-secondary py-10">Loading…</p>
         ) : (
           <ResponsiveDataView
             table={
               <table className="w-full" style={{ minWidth: 860 }}>
                 <thead>
-                  <tr className="bg-surface-elevated border-b border-divider sticky top-0">
-                    <th className="data-th text-left">Number</th>
-                    <th className="data-th text-left">Client</th>
-                    <th className="data-th text-left">Project</th>
-                    <th className="data-th text-left">Issue Date</th>
-                    <th className="data-th text-left">Due</th>
-                    <th className="data-th text-left">Status</th>
-                    <th className="data-th text-right">Total</th>
-                    <th className="data-th text-right">Balance</th>
+                  <tr className="bg-surface-elevated border-b border-divider sticky top-0 z-10">
+                    <th className={`${MONEY_TH} text-left`}>
+                      <TextHeaderFilter
+                        label="Number"
+                        value={cols.number}
+                        onChange={v => setCols(c => ({ ...c, number: v }))}
+                        placeholder="Invoice #…"
+                      />
+                    </th>
+                    <th className={`${MONEY_TH} text-left`}>
+                      <TextHeaderFilter
+                        label="Client"
+                        value={cols.client}
+                        onChange={v => setCols(c => ({ ...c, client: v }))}
+                        placeholder="Client…"
+                      />
+                    </th>
+                    <th className={`${MONEY_TH} text-left`}>
+                      <TextHeaderFilter
+                        label="Project"
+                        value={cols.project}
+                        onChange={v => setCols(c => ({ ...c, project: v }))}
+                        placeholder="Project…"
+                      />
+                    </th>
+                    <th className={`${MONEY_TH} text-left`}>
+                      <DateHeaderFilter
+                        label="Issue Date"
+                        from={cols.issueFrom}
+                        to={cols.issueTo}
+                        onChange={p => setCols(c => ({ ...c, issueFrom: p.from, issueTo: p.to }))}
+                      />
+                    </th>
+                    <th className={`${MONEY_TH} text-left`}>
+                      <DateHeaderFilter
+                        label="Due"
+                        from={cols.dueFrom}
+                        to={cols.dueTo}
+                        onChange={p => setCols(c => ({ ...c, dueFrom: p.from, dueTo: p.to }))}
+                      />
+                    </th>
+                    <th className={`${MONEY_TH} text-left`}>
+                      <StatusHeaderFilter
+                        label="Status"
+                        options={STATUS_OPTIONS}
+                        selected={cols.statuses}
+                        onChange={v => setCols(c => ({ ...c, statuses: v }))}
+                      />
+                    </th>
+                    <th className={`${MONEY_TH} text-right`}>
+                      <MoneyHeaderFilter
+                        label="Total"
+                        min={cols.totalMin}
+                        max={cols.totalMax}
+                        onChange={p => setCols(c => ({ ...c, totalMin: p.min, totalMax: p.max }))}
+                      />
+                    </th>
+                    <th className={`${MONEY_TH} text-right`}>
+                      <MoneyHeaderFilter
+                        label="Balance"
+                        min={cols.balanceMin}
+                        max={cols.balanceMax}
+                        onChange={p =>
+                          setCols(c => ({ ...c, balanceMin: p.min, balanceMax: p.max }))
+                        }
+                      />
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -284,29 +461,39 @@ function MoneyInvoicesInner() {
                       className="border-b border-divider hover:bg-surface-elevated cursor-pointer transition-colors"
                       onClick={() => router.push(`/dashboard/money/invoices/${r.id}`)}
                     >
-                      <td className="data-td text-[13px] font-medium text-text-primary">
+                      <td className={`${MONEY_TD} font-medium text-text-primary`}>
                         <span className="inline-flex items-center gap-1.5">
                           {r.invoice_number || <span className="text-text-disabled italic">draft</span>}
-                          {(xero.statuses?.[r.id] || !['draft', 'cancelled', 'voided'].includes(r.status)) && xeroMark(r)}
+                          {(xero.statuses?.[r.id] ||
+                            !['draft', 'cancelled', 'voided'].includes(r.status)) &&
+                            xeroMark(r)}
                         </span>
                       </td>
-                      <td className="data-td text-[13px] text-text-secondary">
+                      <td className={`${MONEY_TD} text-text-secondary`}>
                         {(r.clients as { name: string } | null)?.name ?? '—'}
                       </td>
-                      <td className="data-td text-[13px] text-text-secondary">
+                      <td className={`${MONEY_TD} text-text-secondary`}>
                         {(r.client_deals as { title: string } | null)?.title ?? '—'}
                       </td>
-                      <td className="data-td text-[13px] text-text-secondary">{r.issue_date ?? '—'}</td>
-                      <td className="data-td text-[13px] text-text-secondary">{r.due_date ?? '—'}</td>
-                      <td className="data-td"><StatusBadge status={r.status} /></td>
-                      <td className="data-td text-[13px] text-right text-text-primary">{fmtMoney(r.total_amount, r.currency)}</td>
-                      <td className="data-td text-[13px] text-right font-medium text-text-primary">{fmtMoney(r.balance_due, r.currency)}</td>
+                      <td className={`${MONEY_TD} text-text-secondary`}>{r.issue_date ?? '—'}</td>
+                      <td className={`${MONEY_TD} text-text-secondary`}>{r.due_date ?? '—'}</td>
+                      <td className={MONEY_TD}>
+                        <StatusBadge status={r.status} />
+                      </td>
+                      <td className={`${MONEY_TD} text-right text-text-primary`}>
+                        {fmtMoney(r.total_amount, r.currency)}
+                      </td>
+                      <td className={`${MONEY_TD} text-right font-medium text-text-primary`}>
+                        {fmtMoney(r.balance_due, r.currency)}
+                      </td>
                     </tr>
                   ))}
                   {filtered.length === 0 && (
                     <tr>
-                      <td colSpan={8} className="text-center text-[13px] text-text-secondary py-14">
-                        <span className="material-icons text-[32px] text-text-disabled block mb-1">receipt_long</span>
+                      <td colSpan={8} className="text-center text-[12px] text-text-secondary py-14">
+                        <span className="material-icons text-[32px] text-text-disabled block mb-1">
+                          receipt_long
+                        </span>
                         No invoices found
                       </td>
                     </tr>
@@ -316,8 +503,10 @@ function MoneyInvoicesInner() {
             }
             mobile={
               filtered.length === 0 ? (
-                <div className="text-center text-[13px] text-text-secondary py-14">
-                  <span className="material-icons text-[32px] text-text-disabled block mb-1">receipt_long</span>
+                <div className="text-center text-[12px] text-text-secondary py-14">
+                  <span className="material-icons text-[32px] text-text-disabled block mb-1">
+                    receipt_long
+                  </span>
                   No invoices found
                 </div>
               ) : (
@@ -330,7 +519,12 @@ function MoneyInvoicesInner() {
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <DataCardTitle>
-                            <span className="inline-flex items-center gap-1.5">{r.invoice_number || 'Draft'}{(xero.statuses?.[r.id] || !['draft', 'cancelled', 'voided'].includes(r.status)) && xeroMark(r)}</span>
+                            <span className="inline-flex items-center gap-1.5">
+                              {r.invoice_number || 'Draft'}
+                              {(xero.statuses?.[r.id] ||
+                                !['draft', 'cancelled', 'voided'].includes(r.status)) &&
+                                xeroMark(r)}
+                            </span>
                           </DataCardTitle>
                           <DataCardMeta>
                             {(r.clients as { name: string } | null)?.name ?? '—'}

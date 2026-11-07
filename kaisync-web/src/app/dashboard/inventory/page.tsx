@@ -8,20 +8,66 @@ import { getUnitLabel } from '@/lib/units'
 import ItemFormDrawer from '@/components/inventory/ItemFormDrawer'
 import StockAdjustmentModal from '@/components/inventory/StockAdjustmentModal'
 import type { CatalogueCondition, CatalogueItem, ItemType } from '@/types/inventory'
+import {
+  StatusFilterTabs,
+  MONEY_TH,
+  MONEY_TD,
+  TAB_ALL,
+  type StatusTabDef,
+} from '@/components/ui/StatusFilterTabs'
+import {
+  TextHeaderFilter,
+  MoneyHeaderFilter,
+  ResetFiltersButton,
+  matchText,
+  matchMoney,
+  statusTab,
+} from '@/components/ui/MoneyListFilters'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
 type Tab = 'all' | 'parts' | 'services' | 'materials' | 'labour' | 'brands' | 'conditions'
 
-const TABS: { key: Tab; label: string; type?: ItemType }[] = [
-  { key: 'all',       label: 'All' },
-  { key: 'parts',     label: 'Parts',     type: 'part' },
-  { key: 'services',  label: 'Services',  type: 'service' },
-  { key: 'materials', label: 'Materials', type: 'material' },
-  { key: 'labour',    label: 'Labour',    type: 'labour' },
-  { key: 'brands',    label: 'Brands' },
-  { key: 'conditions',label: 'Conditions' },
+const TYPE_BY_TAB: Partial<Record<Tab, ItemType>> = {
+  parts: 'part',
+  services: 'service',
+  materials: 'material',
+  labour: 'labour',
+}
+
+const TYPE_TABS: StatusTabDef[] = [
+  TAB_ALL,
+  statusTab('parts', 'Parts', ['part'], 'blue'),
+  statusTab('services', 'Services', ['service'], 'purple'),
+  statusTab('materials', 'Materials', ['material'], 'green'),
+  statusTab('labour', 'Labour', ['labour'], 'amber'),
 ]
+
+type ColFilters = {
+  name: string
+  sku: string
+  brand: string
+  condition: string
+  costMin: string
+  costMax: string
+  sellMin: string
+  sellMax: string
+}
+
+const EMPTY_COLS: ColFilters = {
+  name: '',
+  sku: '',
+  brand: '',
+  condition: '',
+  costMin: '',
+  costMax: '',
+  sellMin: '',
+  sellMax: '',
+}
+
+function colsActive(c: ColFilters) {
+  return !!(c.name || c.sku || c.brand || c.condition || c.costMin || c.costMax || c.sellMin || c.sellMax)
+}
 
 type DrawerMode = 'create' | 'edit' | 'duplicate'
 
@@ -54,6 +100,8 @@ export default function InventoryPage() {
   const [search,      setSearch]      = useState('')
   const [stockFilter, setStockFilter] = useState<'all' | 'low'>('all')
   const [showInactive,setShowInactive]= useState(false)
+  const [cols, setCols] = useState<ColFilters>(EMPTY_COLS)
+  const patchCols = (patch: Partial<ColFilters>) => setCols(c => ({ ...c, ...patch }))
 
   // ── Drawer ─────────────────────────────────────────────────────────────────
   const [drawerOpen, setDrawerOpen]   = useState(false)
@@ -112,11 +160,17 @@ export default function InventoryPage() {
 
   // ── Filtered items ─────────────────────────────────────────────────────────
   const filteredItems = useMemo(() => {
-    const typeFilter = TABS.find(t => t.key === tab)?.type
+    const typeFilter = TYPE_BY_TAB[tab]
     return items.filter(item => {
       if (!showInactive && !item.is_active) return false
       if (typeFilter && item.item_type !== typeFilter) return false
       if (stockFilter === 'low' && !(item.is_stockable && (item.qty_on_hand ?? 0) <= (item.reorder_point ?? Infinity))) return false
+      if (!matchText(item.name, cols.name)) return false
+      if (!matchText(item.sku ?? item.code, cols.sku)) return false
+      if (!matchText(item.brand, cols.brand)) return false
+      if (!matchText(item.condition?.name, cols.condition)) return false
+      if (!matchMoney(item.cost_price, cols.costMin, cols.costMax)) return false
+      if (!matchMoney(item.sell_price, cols.sellMin, cols.sellMax)) return false
       if (search) {
         const q = search.toLowerCase()
         const hit = [item.name, item.sku, item.code, item.brand, item.description]
@@ -125,9 +179,9 @@ export default function InventoryPage() {
       }
       return true
     })
-  }, [items, tab, search, stockFilter, showInactive])
+  }, [items, tab, search, stockFilter, showInactive, cols])
 
-  // Counts per tab
+  // Counts per type tab (active catalogue only unless Show inactive)
   const counts = useMemo(() => {
     const base = showInactive ? items : items.filter(i => i.is_active)
     return {
@@ -138,6 +192,9 @@ export default function InventoryPage() {
       labour:    base.filter(i => i.item_type === 'labour').length,
     }
   }, [items, showInactive])
+
+  const isMetaTab = tab === 'brands' || tab === 'conditions'
+  const hasFilters = colsActive(cols) || !!search || stockFilter !== 'all' || showInactive
 
   // ── Brands tab data ────────────────────────────────────────────────────────
   const brands = useMemo(() => {
@@ -195,80 +252,89 @@ export default function InventoryPage() {
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <div className="h-full flex flex-col">
 
       {/* ── Page header ── */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-divider shrink-0 bg-surface gap-3 flex-wrap">
         <div>
-          <h1 className="text-[20px] font-semibold text-text-primary">Inventory &amp; Services</h1>
-          <p className="text-[13px] text-text-secondary mt-0.5">Parts, services, materials and labour in one catalogue</p>
+          <h1 className="text-[18px] font-semibold text-text-primary leading-tight">Inventory &amp; Services</h1>
+          <p className="text-[11px] text-text-secondary mt-0.5">Parts, services, materials and labour in one catalogue</p>
         </div>
         <button
           onClick={openCreate}
-          className="flex items-center gap-2 h-9 px-4 rounded-lg bg-primary text-white text-[13px] font-medium hover:bg-primary/90 transition-colors"
+          className="btn-primary h-8 px-3 text-[12px] flex items-center gap-1"
         >
           <span className="material-icons text-[16px]">add</span>
           Add Item
         </button>
       </div>
 
-      {/* ── Tabs ── */}
-      <div className="flex items-center gap-0 border-b border-divider mb-4 overflow-x-auto">
-        {TABS.map(t => {
-          const count = t.type ? counts[t.key as keyof typeof counts] : undefined
-          return (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={cn(
-                'flex items-center gap-1.5 px-4 py-2.5 text-[13px] border-b-2 whitespace-nowrap transition-colors',
-                tab === t.key
-                  ? 'border-primary text-primary font-medium'
-                  : 'border-transparent text-text-secondary hover:text-text-primary',
-              )}
-            >
-              {t.label}
-              {count !== undefined && (
-                <span className={cn(
-                  'text-[10px] px-1.5 py-0.5 rounded-full',
-                  tab === t.key ? 'bg-primary/10 text-primary' : 'bg-surface-elevated text-text-secondary',
-                )}>
-                  {count}
-                </span>
-              )}
-            </button>
-          )
-        })}
-      </div>
-
-      {/* ── Filters (item tabs only) ── */}
-      {tab !== 'brands' && tab !== 'conditions' && (
-        <div className="flex flex-wrap items-center gap-3 mb-4">
-          <div className="relative flex-1 min-w-[200px] max-w-xs">
-            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 material-icons text-[16px] text-text-secondary">search</span>
+      {/* ── Toolbar: search + reset + type tabs (+ meta views) ── */}
+      <div className="flex gap-2 px-4 py-2 border-b border-divider shrink-0 flex-wrap bg-surface items-center">
+        {!isMetaTab && (
+          <>
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search name, SKU, brand…"
-              className="h-8 w-full rounded-md border border-divider bg-surface pl-8 pr-3 text-[12px] text-text-primary focus:outline-none focus:border-primary"
+              className="form-input h-8 flex-1 min-w-[180px] text-[12px]"
             />
-          </div>
+            <select
+              value={stockFilter}
+              onChange={e => setStockFilter(e.target.value as typeof stockFilter)}
+              className="h-8 rounded-md border border-divider bg-surface px-2.5 text-[11px] text-text-primary"
+            >
+              <option value="all">All stock</option>
+              <option value="low">Low / reorder</option>
+            </select>
+            <label className="flex items-center gap-1.5 text-[11px] text-text-secondary cursor-pointer select-none whitespace-nowrap">
+              <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} className="rounded" />
+              Inactive
+            </label>
+            <ResetFiltersButton
+              disabled={!hasFilters}
+              onReset={() => {
+                setCols(EMPTY_COLS)
+                setSearch('')
+                setStockFilter('all')
+                setShowInactive(false)
+              }}
+            />
+          </>
+        )}
+        <StatusFilterTabs
+          tabs={TYPE_TABS}
+          value={isMetaTab ? '' : tab}
+          counts={counts}
+          onChange={id => setTab(id as Tab)}
+        />
+        <button
+          type="button"
+          onClick={() => setTab('brands')}
+          className={cn(
+            'h-8 px-2.5 rounded-md text-[11px] font-semibold border transition-colors bg-surface',
+            tab === 'brands'
+              ? 'bg-slate-800 text-white border-slate-800'
+              : 'border-divider text-text-primary hover:bg-surface-elevated',
+          )}
+        >
+          Brands
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab('conditions')}
+          className={cn(
+            'h-8 px-2.5 rounded-md text-[11px] font-semibold border transition-colors bg-surface',
+            tab === 'conditions'
+              ? 'bg-slate-800 text-white border-slate-800'
+              : 'border-divider text-text-primary hover:bg-surface-elevated',
+          )}
+        >
+          Conditions
+        </button>
+      </div>
 
-          <select
-            value={stockFilter}
-            onChange={e => setStockFilter(e.target.value as typeof stockFilter)}
-            className="h-8 rounded-md border border-divider bg-surface px-2.5 text-[12px] text-text-primary"
-          >
-            <option value="all">All stock levels</option>
-            <option value="low">Low / reorder needed</option>
-          </select>
-
-          <label className="flex items-center gap-2 text-[12px] text-text-secondary cursor-pointer select-none">
-            <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} className="rounded" />
-            Show inactive
-          </label>
-        </div>
-      )}
+      <div className="flex-1 overflow-auto px-4 py-3">
 
       {/* ══ Brands tab ══ */}
       {tab === 'brands' && (
@@ -276,22 +342,26 @@ export default function InventoryPage() {
           {brands.length === 0 ? (
             <EmptyState icon="label_off" title="No brands yet" sub="Brands are set when creating parts or materials." />
           ) : (
-            <table className="w-full text-[12px]">
+            <table className="w-full">
               <thead>
-                <tr className="border-b border-divider text-text-secondary text-left">
-                  <th className="px-4 py-2.5 font-medium">Brand</th>
-                  <th className="px-4 py-2.5 font-medium text-right">Items</th>
-                  <th className="px-4 py-2.5 font-medium" />
+                <tr className="bg-surface-elevated border-b border-divider text-left">
+                  <th className={`${MONEY_TH} text-left`}>Brand</th>
+                  <th className={`${MONEY_TH} text-right`}>Items</th>
+                  <th className={MONEY_TH} />
                 </tr>
               </thead>
               <tbody>
                 {brands.map(b => (
                   <tr key={b.brand} className="border-b border-divider last:border-0 hover:bg-surface-elevated">
-                    <td className="px-4 py-2.5 font-medium text-text-primary">{b.brand}</td>
-                    <td className="px-4 py-2.5 text-right text-text-secondary">{b.count}</td>
-                    <td className="px-4 py-2.5 text-right">
+                    <td className={`${MONEY_TD} font-medium text-text-primary`}>{b.brand}</td>
+                    <td className={`${MONEY_TD} text-right text-text-secondary`}>{b.count}</td>
+                    <td className={`${MONEY_TD} text-right`}>
                       <button
-                        onClick={() => { setTab('all'); setSearch(b.brand) }}
+                        onClick={() => {
+                          setTab('all')
+                          setCols(c => ({ ...c, brand: b.brand }))
+                          setSearch('')
+                        }}
                         className="text-primary text-[11px] hover:underline"
                       >
                         Filter items →
@@ -312,13 +382,13 @@ export default function InventoryPage() {
             {conditions.length === 0 ? (
               <EmptyState icon="new_label" title="No conditions" sub="Standard conditions will appear here." />
             ) : (
-              <table className="w-full text-[12px]">
+              <table className="w-full">
                 <thead>
-                  <tr className="border-b border-divider text-text-secondary text-left">
-                    <th className="px-4 py-2.5 font-medium">Name</th>
-                    <th className="px-4 py-2.5 font-medium">Type</th>
-                    <th className="px-4 py-2.5 font-medium text-right">Items using</th>
-                    <th className="px-4 py-2.5 font-medium" />
+                  <tr className="bg-surface-elevated border-b border-divider text-left">
+                    <th className={`${MONEY_TH} text-left`}>Name</th>
+                    <th className={`${MONEY_TH} text-left`}>Type</th>
+                    <th className={`${MONEY_TH} text-right`}>Items using</th>
+                    <th className={MONEY_TH} />
                   </tr>
                 </thead>
                 <tbody>
@@ -327,16 +397,16 @@ export default function InventoryPage() {
                     const canDelete = !c.is_standard && usedCount === 0
                     return (
                       <tr key={c.id} className="border-b border-divider last:border-0 hover:bg-surface-elevated">
-                        <td className="px-4 py-2.5 font-medium text-text-primary">{c.name}</td>
-                        <td className="px-4 py-2.5">
+                        <td className={`${MONEY_TD} font-medium text-text-primary`}>{c.name}</td>
+                        <td className={MONEY_TD}>
                           {c.is_standard ? (
                             <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">Standard</span>
                           ) : (
                             <span className="text-[10px] px-2 py-0.5 rounded-full bg-surface-elevated text-text-secondary">Custom</span>
                           )}
                         </td>
-                        <td className="px-4 py-2.5 text-right text-text-secondary">{usedCount}</td>
-                        <td className="px-4 py-2.5 text-right">
+                        <td className={`${MONEY_TD} text-right text-text-secondary`}>{usedCount}</td>
+                        <td className={`${MONEY_TD} text-right`}>
                           {canDelete && (
                             <button
                               onClick={async () => {
@@ -388,31 +458,53 @@ export default function InventoryPage() {
           {filteredItems.length === 0 ? (
             <EmptyState
               icon="inventory_2"
-              title={search ? 'No items match' : 'No items yet'}
-              sub={search ? 'Try a different search term.' : 'Click "Add Item" to create your first catalogue entry.'}
+              title={search || colsActive(cols) ? 'No items match' : 'No items yet'}
+              sub={search || colsActive(cols) ? 'Try clearing filters.' : 'Click "Add Item" to create your first catalogue entry.'}
             />
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-[12px]">
+              <table className="w-full" style={{ minWidth: 860 }}>
                 <thead>
-                  <tr className="border-b border-divider text-text-secondary text-left">
-                    <th className="px-4 py-2.5 font-medium">Name</th>
-                    <th className="px-4 py-2.5 font-medium">SKU</th>
+                  <tr className="bg-surface-elevated border-b border-divider text-left sticky top-0 z-10">
+                    <th className={`${MONEY_TH} text-left`}>
+                      <TextHeaderFilter label="Name" value={cols.name} onChange={v => patchCols({ name: v })} placeholder="Item name…" />
+                    </th>
+                    <th className={`${MONEY_TH} text-left`}>
+                      <TextHeaderFilter label="SKU" value={cols.sku} onChange={v => patchCols({ sku: v })} placeholder="SKU / code…" />
+                    </th>
                     {tab !== 'services' && tab !== 'labour' && (
-                      <th className="px-4 py-2.5 font-medium">Brand</th>
+                      <th className={`${MONEY_TH} text-left`}>
+                        <TextHeaderFilter label="Brand" value={cols.brand} onChange={v => patchCols({ brand: v })} placeholder="Brand…" />
+                      </th>
                     )}
                     {(tab === 'parts' || tab === 'all') && (
-                      <th className="px-4 py-2.5 font-medium">Condition</th>
+                      <th className={`${MONEY_TH} text-left`}>
+                        <TextHeaderFilter label="Condition" value={cols.condition} onChange={v => patchCols({ condition: v })} placeholder="Condition…" />
+                      </th>
                     )}
-                    <th className="px-4 py-2.5 font-medium">Unit</th>
-                    <th className="px-4 py-2.5 font-medium text-right">Cost</th>
-                    <th className="px-4 py-2.5 font-medium text-right">Sell</th>
-                    <th className="px-4 py-2.5 font-medium text-right">Margin</th>
+                    <th className={`${MONEY_TH} text-left`}>Unit</th>
+                    <th className={`${MONEY_TH} text-right`}>
+                      <MoneyHeaderFilter
+                        label="Cost"
+                        min={cols.costMin}
+                        max={cols.costMax}
+                        onChange={({ min, max }) => patchCols({ costMin: min, costMax: max })}
+                      />
+                    </th>
+                    <th className={`${MONEY_TH} text-right`}>
+                      <MoneyHeaderFilter
+                        label="Sell"
+                        min={cols.sellMin}
+                        max={cols.sellMax}
+                        onChange={({ min, max }) => patchCols({ sellMin: min, sellMax: max })}
+                      />
+                    </th>
+                    <th className={`${MONEY_TH} text-right`}>Margin</th>
                     {tab !== 'services' && tab !== 'labour' && (
-                      <th className="px-4 py-2.5 font-medium text-right">On Hand</th>
+                      <th className={`${MONEY_TH} text-right`}>On Hand</th>
                     )}
-                    <th className="px-4 py-2.5 font-medium text-right">Suppliers</th>
-                    <th className="px-4 py-2.5 font-medium" />
+                    <th className={`${MONEY_TH} text-right`}>Suppliers</th>
+                    <th className={MONEY_TH} />
                   </tr>
                 </thead>
                 <tbody>
@@ -427,34 +519,34 @@ export default function InventoryPage() {
                         'border-b border-divider last:border-0 hover:bg-surface-elevated group',
                         !item.is_active && 'opacity-50',
                       )}>
-                        <td className="px-4 py-2.5">
+                        <td className={MONEY_TD}>
                           <div className="font-medium text-text-primary flex items-center gap-1.5">
                             <TypeBadge type={item.item_type} />
                             {item.name}
                           </div>
                           {item.description && (
-                            <div className="text-text-secondary truncate max-w-[200px] mt-0.5">{item.description}</div>
+                            <div className="text-text-secondary truncate max-w-[200px] mt-0.5 text-[11px]">{item.description}</div>
                           )}
                         </td>
-                        <td className="px-4 py-2.5 text-text-secondary font-mono">
+                        <td className={`${MONEY_TD} text-text-secondary font-mono`}>
                           {item.sku ?? item.code ?? '—'}
                         </td>
                         {tab !== 'services' && tab !== 'labour' && (
-                          <td className="px-4 py-2.5 text-text-secondary">{item.brand ?? '—'}</td>
+                          <td className={`${MONEY_TD} text-text-secondary`}>{item.brand ?? '—'}</td>
                         )}
                         {(tab === 'parts' || tab === 'all') && (
-                          <td className="px-4 py-2.5 text-text-secondary">
+                          <td className={`${MONEY_TD} text-text-secondary`}>
                             {item.condition?.name ?? '—'}
                           </td>
                         )}
-                        <td className="px-4 py-2.5 text-text-secondary">
+                        <td className={`${MONEY_TD} text-text-secondary`}>
                           {getUnitLabel(item.unit_of_measure ?? item.unit ?? 'each')}
                         </td>
-                        <td className="px-4 py-2.5 text-right text-text-secondary">{fmtMoney(item.cost_price)}</td>
-                        <td className="px-4 py-2.5 text-right font-medium text-text-primary">{fmtMoney(item.sell_price)}</td>
-                        <td className="px-4 py-2.5 text-right text-text-secondary">{fmtPct(margin)}</td>
+                        <td className={`${MONEY_TD} text-right text-text-secondary`}>{fmtMoney(item.cost_price)}</td>
+                        <td className={`${MONEY_TD} text-right font-medium text-text-primary`}>{fmtMoney(item.sell_price)}</td>
+                        <td className={`${MONEY_TD} text-right text-text-secondary`}>{fmtPct(margin)}</td>
                         {tab !== 'services' && tab !== 'labour' && (
-                          <td className="px-4 py-2.5 text-right">
+                          <td className={`${MONEY_TD} text-right`}>
                             {item.is_stockable ? (
                               <span className={cn('flex items-center justify-end gap-1', isLowStock ? 'text-red-500' : 'text-text-secondary')}>
                                 {isLowStock && <span className="material-icons text-[14px]">warning</span>}
@@ -465,7 +557,7 @@ export default function InventoryPage() {
                             )}
                           </td>
                         )}
-                        <td className="px-4 py-2.5 text-right">
+                        <td className={`${MONEY_TD} text-right`}>
                           {(item.suppliers?.length ?? 0) > 0 ? (
                             <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary/10 text-primary text-[10px] font-semibold">
                               {item.suppliers!.length}
@@ -474,7 +566,7 @@ export default function InventoryPage() {
                             <span className="text-text-secondary">—</span>
                           )}
                         </td>
-                        <td className="px-4 py-2.5 text-right">
+                        <td className={`${MONEY_TD} text-right`}>
                           <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                             <button
                               onClick={() => openEdit(item)}
@@ -519,6 +611,8 @@ export default function InventoryPage() {
           )}
         </div>
       )}
+
+      </div>
 
       {/* ── Item form drawer ── */}
       {companyId && employeeId && (
