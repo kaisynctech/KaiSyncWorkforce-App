@@ -188,7 +188,7 @@ const INCOMING_STATUS_TABS: typeof SALES_STATUS_TABS = [
 ]
 
 const TD = 'data-td !py-1.5 !px-2.5 text-[12px]'
-const TH = 'data-th !py-1.5 !px-2.5 text-[11px]'
+const TH = 'data-th !py-1.5 !px-2.5 text-[11px] !text-text-primary'
 
 function fmt(d: string | null | undefined) {
   if (!d) return '—'

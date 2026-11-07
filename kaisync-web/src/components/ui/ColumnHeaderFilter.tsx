@@ -42,11 +42,12 @@ export function ColumnHeaderFilter({
     <div
       ref={rootRef}
       className={cn(
-        'relative inline-flex items-center gap-0.5 max-w-full',
-        align === 'right' && 'flex-row-reverse ml-auto',
+        // Always label then icon (never reverse) — right columns only push the group to the end.
+        'relative inline-flex items-center gap-px max-w-full',
+        align === 'right' && 'ml-auto',
       )}
     >
-      <span className="truncate">{label}</span>
+      <span className="truncate text-[11px] font-medium text-text-primary">{label}</span>
       <button
         type="button"
         aria-label={`Filter ${label}`}
@@ -56,13 +57,19 @@ export function ColumnHeaderFilter({
           setOpen(v => !v)
         }}
         className={cn(
-          'inline-flex items-center justify-center h-3.5 w-3.5 rounded shrink-0 transition-colors',
+          'inline-flex items-center justify-center h-3 w-3 rounded-sm shrink-0 transition-colors',
           active
             ? 'text-primary bg-primary/10'
-            : 'text-text-secondary/70 hover:text-text-primary hover:bg-surface',
+            : 'text-text-secondary/55 hover:text-text-primary hover:bg-surface',
         )}
       >
-        <span className="material-icons text-[11px] leading-none">filter_alt</span>
+        <span
+          className="material-icons leading-none"
+          style={{ fontSize: 9, width: 9, height: 9 }}
+          aria-hidden
+        >
+          filter_alt
+        </span>
       </button>
       {open && (
         <div
