@@ -64,9 +64,11 @@ export function StatusFilterTabs({
             )}
           >
             {f.label}
-            <span className={cn('ml-1 tabular-nums font-medium', on ? 'text-white/85' : 'opacity-70')}>
-              ({count})
-            </span>
+            {counts[f.id] != null && (
+              <span className={cn('ml-1 tabular-nums font-medium', on ? 'text-white/85' : 'opacity-70')}>
+                ({count})
+              </span>
+            )}
           </button>
         )
       })}

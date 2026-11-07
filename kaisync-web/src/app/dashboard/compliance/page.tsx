@@ -6,6 +6,32 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { getOverview, type OverviewRow, type PartyKind } from '@/lib/compliance/party'
 import { localISODate } from '@/lib/utils'
+import { StatusFilterTabs, TAB_ALL, MONEY_TH, MONEY_TD } from '@/components/ui/StatusFilterTabs'
+import {
+  TextHeaderFilter,
+  StatusHeaderFilter,
+  ResetFiltersButton,
+  statusTab,
+  matchText,
+} from '@/components/ui/MoneyListFilters'
+
+type FilterId = 'all' | 'attention' | 'review' | 'expiring' | 'unassigned'
+
+/** Tab ids are the existing `filter` state values; match is unused here (predicates below decide membership). */
+const FILTER_TABS = [
+  TAB_ALL,
+  statusTab('attention', 'Needs attention', [], 'red'),
+  statusTab('review', 'Waiting review', [], 'blue'),
+  statusTab('expiring', 'Expiring', [], 'amber'),
+  statusTab('unassigned', 'No pack', [], 'gray'),
+]
+
+type Cols = { name: string; pack: string; grade: string; statuses: string[] }
+const EMPTY_COLS: Cols = { name: '', pack: '', grade: '', statuses: [] }
+
+function colsActive(c: Cols): boolean {
+  return !!(c.name || c.pack || c.grade || c.statuses.length)
+}
 
 type Status = 'not_configured' | 'compliant' | 'partial' | 'non_compliant'
 const STATUS_LABEL: Record<Status, string> = {
@@ -27,13 +53,26 @@ function statusOf(r: OverviewRow): Status {
   return 'non_compliant'
 }
 
+const STATUS_OPTIONS = (Object.keys(STATUS_LABEL) as Status[]).map(id => ({ id, label: STATUS_LABEL[id] }))
+
+/** Row membership for each overview tab (same rules the page has always used). */
+function inTab(r: OverviewRow, tab: FilterId): boolean {
+  const st = statusOf(r)
+  if (tab === 'attention') return st === 'non_compliant' || st === 'partial' || r.expired_count > 0
+  if (tab === 'review') return r.pending_count > 0
+  if (tab === 'expiring') return r.expiring_count > 0 || r.expired_count > 0
+  if (tab === 'unassigned') return !r.pack_id
+  return true
+}
+
 /** Compliance overview for clients and contractors — one system, same packs and documents. */
 export default function ComplianceOverviewPage() {
   const [kind, setKind] = useState<PartyKind>('contractor')
   const [rows, setRows] = useState<Record<PartyKind, OverviewRow[] | null>>({ client: null, contractor: null })
   const [error, setError] = useState<string | null>(null)
-  const [filter, setFilter] = useState<'all' | 'attention' | 'review' | 'expiring' | 'unassigned'>('all')
+  const [filter, setFilter] = useState<FilterId>('all')
   const [q, setQ] = useState('')
+  const [cols, setCols] = useState<Cols>(EMPTY_COLS)
 
   const load = useCallback(async () => {
     const supabase = createClient()
@@ -56,15 +95,23 @@ export default function ComplianceOverviewPage() {
   useEffect(() => { void load() }, [load])
 
   const shown = rows[kind]
-  const filtered = useMemo(() => (shown ?? []).filter(r => {
-    if (q && !`${r.name} ${r.code ?? ''}`.toLowerCase().includes(q.toLowerCase())) return false
-    const st = statusOf(r)
-    if (filter === 'attention') return st === 'non_compliant' || st === 'partial' || r.expired_count > 0
-    if (filter === 'review') return r.pending_count > 0
-    if (filter === 'expiring') return r.expiring_count > 0 || r.expired_count > 0
-    if (filter === 'unassigned') return !r.pack_id
+  // Search + column filters (client-side: the overview is loaded in full), before the tab filter so tab counts reflect them.
+  const searched = useMemo(() => (shown ?? []).filter(r => {
+    if (q && !matchText(`${r.name} ${r.code ?? ''}`, q)) return false
+    if (!matchText(`${r.name} ${r.code ?? ''}`, cols.name)) return false
+    if (!matchText(r.pack_name, cols.pack)) return false
+    if (!matchText(r.hr_grade, cols.grade)) return false
+    if (cols.statuses.length && !cols.statuses.includes(statusOf(r))) return false
     return true
-  }), [shown, filter, q])
+  }), [shown, q, cols])
+
+  const filtered = useMemo(() => searched.filter(r => inTab(r, filter)), [searched, filter])
+
+  const tabCounts = useMemo(() => {
+    const out: Record<string, number> = {}
+    for (const t of FILTER_TABS) out[t.id] = searched.filter(r => inTab(r, t.id as FilterId)).length
+    return out
+  }, [searched])
 
   const counts = useMemo(() => {
     const r = shown ?? []
@@ -120,18 +167,31 @@ export default function ComplianceOverviewPage() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <input className="dark-entry max-w-xs" placeholder={kind === 'client' ? 'Search client' : 'Search contractor'} value={q} onChange={e => setQ(e.target.value)} />
-            {([['all', 'All'], ['attention', 'Needs attention'], ['review', 'Waiting review'], ['expiring', 'Expiring'], ['unassigned', 'No pack']] as const).map(([k, l]) => (
-              <button key={k} type="button" onClick={() => setFilter(k)}
-                className={`h-8 px-3 rounded-lg border text-[12px] ${filter === k ? 'bg-primary text-white border-primary' : 'border-border text-text-secondary'}`}>{l}</button>
-            ))}
-            <button type="button" onClick={exportCsv} className="h-8 px-3 rounded-lg border border-border text-[12px] ml-auto">Export CSV</button>
+            <ResetFiltersButton
+              disabled={!colsActive(cols) && !q}
+              onReset={() => { setCols(EMPTY_COLS); setQ('') }}
+            />
+            <StatusFilterTabs tabs={FILTER_TABS} value={filter} counts={tabCounts} onChange={id => setFilter(id as FilterId)} />
+            <button type="button" onClick={exportCsv} className="h-8 px-3 rounded-lg border border-border text-[12px]">Export CSV</button>
           </div>
           <div className="card overflow-x-auto">
             <table className="w-full text-[12px] min-w-[720px]">
               <thead>
-                <tr className="text-left text-text-secondary">
-                  <th className="px-3 py-2">{kind === 'client' ? 'Client' : 'Contractor'}</th><th className="px-3 py-2">Pack</th><th className="px-3 py-2">Status</th>
-                  <th className="px-3 py-2 text-right">Score</th><th className="px-3 py-2">Grade</th><th className="px-3 py-2">To do</th>
+                <tr className="bg-surface-elevated border-b border-divider">
+                  <th className={`${MONEY_TH} text-left`}>
+                    <TextHeaderFilter label={kind === 'client' ? 'Client' : 'Contractor'} value={cols.name} onChange={v => setCols(c => ({ ...c, name: v }))} placeholder="Name or code…" />
+                  </th>
+                  <th className={`${MONEY_TH} text-left`}>
+                    <TextHeaderFilter label="Pack" value={cols.pack} onChange={v => setCols(c => ({ ...c, pack: v }))} placeholder="Pack name…" />
+                  </th>
+                  <th className={`${MONEY_TH} text-left`}>
+                    <StatusHeaderFilter label="Status" options={STATUS_OPTIONS} selected={cols.statuses} onChange={next => setCols(c => ({ ...c, statuses: next }))} />
+                  </th>
+                  <th className={`${MONEY_TH} text-right`}>Score</th>
+                  <th className={`${MONEY_TH} text-left`}>
+                    <TextHeaderFilter label="Grade" value={cols.grade} onChange={v => setCols(c => ({ ...c, grade: v }))} placeholder="Grade…" />
+                  </th>
+                  <th className={`${MONEY_TH} text-left`}>To do</th>
                 </tr>
               </thead>
               <tbody>
@@ -139,16 +199,16 @@ export default function ComplianceOverviewPage() {
                   const st = statusOf(r)
                   const score = scoreOf(r)
                   return (
-                    <tr key={r.party_id} className="border-t border-border">
-                      <td className="px-3 py-2">
+                    <tr key={r.party_id} className="border-b border-divider last:border-0">
+                      <td className={MONEY_TD}>
                         <Link href={kind === 'client' ? `/dashboard/clients/${r.party_id}?tab=compliance` : `/dashboard/contractors/${r.party_id}?tab=Compliance`} className="text-primary hover:underline font-semibold">{r.name}</Link>
                         <span className="text-text-secondary"> {r.code ?? ''}</span>
                       </td>
-                      <td className="px-3 py-2 text-text-secondary">{r.pack_name ?? '—'}</td>
-                      <td className={`px-3 py-2 font-semibold ${TONE[st]}`}>{STATUS_LABEL[st]}</td>
-                      <td className="px-3 py-2 text-right text-text-primary">{score == null ? '—' : `${score}%`}</td>
-                      <td className="px-3 py-2 text-text-primary">{r.hr_grade ?? '—'}</td>
-                      <td className="px-3 py-2 text-text-secondary">
+                      <td className={`${MONEY_TD} text-text-secondary`}>{r.pack_name ?? '—'}</td>
+                      <td className={`${MONEY_TD} font-semibold ${TONE[st]}`}>{STATUS_LABEL[st]}</td>
+                      <td className={`${MONEY_TD} text-right text-text-primary`}>{score == null ? '—' : `${score}%`}</td>
+                      <td className={`${MONEY_TD} text-text-primary`}>{r.hr_grade ?? '—'}</td>
+                      <td className={`${MONEY_TD} text-text-secondary`}>
                         {[r.pending_count && `${r.pending_count} to review`, r.missing_count && `${r.missing_count} missing`,
                           r.rejected_count && `${r.rejected_count} rejected`, r.expiring_count && `${r.expiring_count} expiring`,
                           r.expired_count && `${r.expired_count} expired`, kind === 'client' && r.obligations_open && `${r.obligations_open} we owe`]

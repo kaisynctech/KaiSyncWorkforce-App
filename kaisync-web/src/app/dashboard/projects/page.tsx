@@ -22,8 +22,27 @@ import {
 import { logProjectEvent } from '@/lib/project-events'
 import type { Project, ProjectActionItem } from '@/types/database'
 import { localISODate } from '@/lib/utils'
+import {
+  StatusFilterTabs,
+  MONEY_TH,
+  MONEY_TD,
+  TAB_ALL,
+  type StatusTabDef,
+} from '@/components/ui/StatusFilterTabs'
+import { TextHeaderFilter, ResetFiltersButton, statusTab } from '@/components/ui/MoneyListFilters'
 
-const STATUS_FILTERS = ['all', 'draft', 'sent', 'in_progress', 'negotiation', 'won', 'lost'] as const
+const STATUS_TABS: StatusTabDef[] = [
+  TAB_ALL,
+  statusTab('draft', 'Draft', ['draft'], 'slate'),
+  statusTab('sent', 'Sent', ['sent'], 'blue'),
+  statusTab('in_progress', 'In progress', ['in_progress'], 'amber'),
+  statusTab('negotiation', 'Negotiation', ['negotiation'], 'purple'),
+  statusTab('won', 'Won', ['won'], 'green'),
+  statusTab('lost', 'Lost', ['lost'], 'red'),
+]
+
+type ColFilters = { code: string; title: string; client: string }
+const EMPTY_COLS: ColFilters = { code: '', title: '', client: '' }
 const STATUS_LABELS: Record<string, string> = {
   all: 'All', draft: 'Draft', sent: 'Sent', in_progress: 'In progress',
   negotiation: 'Negotiation', won: 'Won', lost: 'Lost',
@@ -76,6 +95,8 @@ export default function ProjectsPage() {
   const [search, setSearch] = useState('')
   const [searchDebounced, setSearchDebounced] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [cols, setCols] = useState<ColFilters>(EMPTY_COLS)
+  const [colsDebounced, setColsDebounced] = useState<ColFilters>(EMPTY_COLS)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [total, setTotal] = useState(0)
@@ -95,7 +116,16 @@ export default function ProjectsPage() {
     return () => clearTimeout(t)
   }, [search])
 
-  useEffect(() => { setPage(1) }, [searchDebounced, pageSize, statusFilter, scope])
+  useEffect(() => {
+    const t = setTimeout(() => setColsDebounced({
+      code: cols.code.trim(),
+      title: cols.title.trim(),
+      client: cols.client.trim(),
+    }), 300)
+    return () => clearTimeout(t)
+  }, [cols])
+
+  useEffect(() => { setPage(1) }, [searchDebounced, colsDebounced, pageSize, statusFilter, scope])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -121,9 +151,15 @@ export default function ProjectsPage() {
     const today = localISODate()
     const { from, to } = pageRange(page, pageSize)
 
+    // Client column filter needs an inner join on the embedded client so the
+    // filter applies server-side; without it the original left-join select is kept.
+    const selectCols = colsDebounced.client
+      ? '*, clients!inner(id, name), employees:manager_employee_id(id, name, surname)'
+      : '*, clients(id, name), employees:manager_employee_id(id, name, surname)'
+
     let query = supabase
       .from('client_deals')
-      .select('*, clients(id, name), employees:manager_employee_id(id, name, surname)', { count: 'exact' })
+      .select(selectCols, { count: 'exact' })
       .eq('company_id', member.companyId)
       .order('created_at', { ascending: false })
 
@@ -137,6 +173,9 @@ export default function ProjectsPage() {
       const q = escapeIlike(searchDebounced)
       query = query.or(`title.ilike.%${q}%,project_code.ilike.%${q}%`)
     }
+    if (colsDebounced.code) query = query.ilike('project_code', `%${escapeIlike(colsDebounced.code)}%`)
+    if (colsDebounced.title) query = query.ilike('title', `%${escapeIlike(colsDebounced.title)}%`)
+    if (colsDebounced.client) query = query.ilike('clients.name', `%${escapeIlike(colsDebounced.client)}%`)
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [listRes, aRes, snapRes] = await Promise.all([
@@ -154,7 +193,7 @@ export default function ProjectsPage() {
       setProjects([])
       setTotal(0)
     } else {
-      setProjects((listRes.data ?? []) as ProjectRow[])
+      setProjects((listRes.data ?? []) as unknown as ProjectRow[])
       setTotal(listRes.count ?? 0)
     }
 
@@ -188,7 +227,7 @@ export default function ProjectsPage() {
     })
 
     setLoading(false)
-  }, [page, pageSize, searchDebounced, statusFilter, scope])
+  }, [page, pageSize, searchDebounced, colsDebounced, statusFilter, scope])
 
   useEffect(() => { void load() }, [load])
 
@@ -253,6 +292,8 @@ export default function ProjectsPage() {
   }
 
   const pages = totalPages(total, pageSize)
+  const hasFilters = !!cols.code || !!cols.title || !!cols.client || !!search || statusFilter !== 'all'
+  const patchCols = (patch: Partial<ColFilters>) => setCols(prev => ({ ...prev, ...patch }))
   const fmtDate = (d: string) =>
     new Intl.DateTimeFormat('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(d))
 
@@ -304,33 +345,7 @@ export default function ProjectsPage() {
             )}
           </div>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#1E293B]">
-            <span className="text-[14px] font-semibold text-[#94A3B8]">{kpis.total}</span>
-            <span className="text-[11px] text-[#64748B]">Total</span>
-          </span>
-          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#0F2918]">
-            <span className="text-[14px] font-semibold text-[#22C55E]">{kpis.active}</span>
-            <span className="text-[11px] text-[#4ADE80]">Active</span>
-          </span>
-          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#1E293B]">
-            <span className="text-[14px] font-semibold text-[#94A3B8]">{kpis.draft}</span>
-            <span className="text-[11px] text-[#64748B]">Draft</span>
-          </span>
-          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#0F2918]">
-            <span className="text-[14px] font-semibold text-[#22C55E]">{kpis.won}</span>
-            <span className="text-[11px] text-[#4ADE80]">Won</span>
-          </span>
-          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#1E293B]">
-            <span className="text-[14px] font-semibold text-[#FCD34D]">{fmtCurrency(kpis.pipelineValue)}</span>
-            <span className="text-[11px] text-[#64748B]">Pipeline</span>
-          </span>
-          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#1E293B]">
-            <span className="text-[14px] font-semibold text-[#FCA5A5]">{fmtCurrency(kpis.outstanding)}</span>
-            <span className="text-[11px] text-[#64748B]">Outstanding</span>
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {canViewAll && (
             <div className="flex rounded-md overflow-hidden border border-divider shrink-0">
               {([
@@ -358,18 +373,20 @@ export default function ProjectsPage() {
               className="flex-1 min-w-0 text-[13px] text-text-primary placeholder:text-text-disabled bg-transparent focus:outline-none"
             />
           </div>
-        </div>
-        <div className="flex gap-2 flex-wrap">
-          {STATUS_FILTERS.map(value => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setStatusFilter(value)}
-              className={`h-8 px-[14px] rounded-pill text-[11px] font-medium transition-colors ${statusFilter === value ? 'bg-primary text-white' : 'bg-surface text-text-secondary border border-border hover:text-text-primary'}`}
-            >
-              {STATUS_LABELS[value]}
-            </button>
-          ))}
+          <ResetFiltersButton
+            disabled={!hasFilters}
+            onReset={() => {
+              setCols(EMPTY_COLS)
+              setSearch('')
+              setStatusFilter('all')
+            }}
+          />
+          <StatusFilterTabs
+            tabs={STATUS_TABS}
+            value={statusFilter}
+            counts={{ all: kpis.total, draft: kpis.draft, in_progress: kpis.active, won: kpis.won }}
+            onChange={setStatusFilter}
+          />
         </div>
       </div>
 
@@ -444,14 +461,20 @@ export default function ProjectsPage() {
               <table className="w-full text-[13px]">
                 <thead>
                   <tr className="border-b border-divider bg-surface-elevated">
-                    <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary w-[100px]">Code</th>
-                    <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary">Project</th>
-                    <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary w-[18%]">Client</th>
-                    <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary w-[140px]">Manager</th>
-                    <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary w-[140px]">Status</th>
-                    <th className="text-right px-3 py-2 text-[11px] font-medium text-text-secondary w-[100px]">Offer</th>
-                    <th className="text-right px-3 py-2 text-[11px] font-medium text-text-secondary w-[90px]">Paid</th>
-                    <th className="text-right px-3 py-2 text-[11px] font-medium text-text-secondary w-[56px]">%</th>
+                    <th className={`${MONEY_TH} text-left w-[100px]`}>
+                      <TextHeaderFilter label="Code" value={cols.code} onChange={v => patchCols({ code: v })} placeholder="Project code…" />
+                    </th>
+                    <th className={`${MONEY_TH} text-left`}>
+                      <TextHeaderFilter label="Project" value={cols.title} onChange={v => patchCols({ title: v })} placeholder="Project title…" />
+                    </th>
+                    <th className={`${MONEY_TH} text-left w-[18%]`}>
+                      <TextHeaderFilter label="Client" value={cols.client} onChange={v => patchCols({ client: v })} placeholder="Client name…" />
+                    </th>
+                    <th className={`${MONEY_TH} text-left w-[140px]`}>Manager</th>
+                    <th className={`${MONEY_TH} text-left w-[140px]`}>Status</th>
+                    <th className={`${MONEY_TH} text-right w-[100px]`}>Offer</th>
+                    <th className={`${MONEY_TH} text-right w-[90px]`}>Paid</th>
+                    <th className={`${MONEY_TH} text-right w-[56px]`}>%</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -471,11 +494,11 @@ export default function ProjectsPage() {
                         className="border-b border-divider last:border-0 hover:bg-background transition-colors cursor-pointer"
                         onClick={() => router.push(`/dashboard/projects/${p.id}`)}
                       >
-                        <td className="px-3 py-2 font-mono text-[11px] text-text-secondary whitespace-nowrap">{p.project_code ?? '—'}</td>
-                        <td className="px-3 py-2 font-medium text-text-primary truncate">{p.title || '—'}</td>
-                        <td className="px-3 py-2 text-text-secondary truncate">{p.clients?.name ?? '—'}</td>
-                        <td className="px-3 py-2 text-text-secondary truncate">{managerName}</td>
-                        <td className="px-3 py-2" onClick={e => e.stopPropagation()}>
+                        <td className={`${MONEY_TD} font-mono text-[11px] text-text-secondary whitespace-nowrap`}>{p.project_code ?? '—'}</td>
+                        <td className={`${MONEY_TD} font-medium text-text-primary truncate`}>{p.title || '—'}</td>
+                        <td className={`${MONEY_TD} text-text-secondary truncate`}>{p.clients?.name ?? '—'}</td>
+                        <td className={`${MONEY_TD} text-text-secondary truncate`}>{managerName}</td>
+                        <td className={MONEY_TD} onClick={e => e.stopPropagation()}>
                           <select
                             value={p.status ?? 'draft'}
                             onChange={e => void updateStatus(p, e.target.value)}
@@ -485,9 +508,9 @@ export default function ProjectsPage() {
                             {STATUS_OPTIONS.map(s => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
                           </select>
                         </td>
-                        <td className="px-3 py-2 text-right text-text-primary whitespace-nowrap">{fmtCurrency(p.offer_amount)}</td>
-                        <td className="px-3 py-2 text-right text-text-secondary whitespace-nowrap">{fmtCurrency(p.amount_paid)}</td>
-                        <td className="px-3 py-2 text-right font-medium text-text-primary">{progress}%</td>
+                        <td className={`${MONEY_TD} text-right text-text-primary whitespace-nowrap`}>{fmtCurrency(p.offer_amount)}</td>
+                        <td className={`${MONEY_TD} text-right text-text-secondary whitespace-nowrap`}>{fmtCurrency(p.amount_paid)}</td>
+                        <td className={`${MONEY_TD} text-right font-medium text-text-primary`}>{progress}%</td>
                       </tr>
                     )
                   })}

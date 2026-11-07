@@ -27,10 +27,27 @@ import { activeLinkedRecordIds } from '@/lib/company-links'
 import * as XLSX from 'xlsx'
 import { localISODate } from '@/lib/utils'
 
-type ClientKpis = {
-  total: number
-  portalEnabled: number
-  openJobs: number
+import { MONEY_TH, MONEY_TD } from '@/components/ui/StatusFilterTabs'
+import { TextHeaderFilter, ResetFiltersButton } from '@/components/ui/MoneyListFilters'
+
+/** Server-side column filters (ilike, ANDed with search / linked-only). Clients have no lifecycle status, so no status tabs. */
+type Cols = { name: string; code: string; contact: string; email: string; phone: string }
+const EMPTY_COLS: Cols = { name: '', code: '', contact: '', email: '', phone: '' }
+
+function colsActive(c: Cols): boolean {
+  return !!(c.name || c.code || c.contact || c.email || c.phone)
+}
+
+/** Maps column filter state to clients table columns (all already used by the list select / search). */
+function colFilterPairs(c: Cols): Array<[string, string]> {
+  const pairs: Array<[string, string]> = [
+    ['name', c.name],
+    ['client_code', c.code],
+    ['contact_person', c.contact],
+    ['email', c.email],
+    ['phone', c.phone],
+  ]
+  return pairs.filter(([, v]) => v !== '')
 }
 
 const ACTION_TYPE_COLORS: Record<string, { bg: string; fg: string }> = {
@@ -55,7 +72,8 @@ export default function ClientsPage() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [total, setTotal] = useState(0)
-  const [kpis, setKpis] = useState<ClientKpis>({ total: 0, portalEnabled: 0, openJobs: 0 })
+  const [cols, setCols] = useState<Cols>(EMPTY_COLS)
+  const [colsDebounced, setColsDebounced] = useState<Cols>(EMPTY_COLS)
   const [perms, setPerms] = useState<PermissionSet | null>(null)
   const [xeroLinked,    setXeroLinked]    = useState<Set<string>>(new Set())
   const [xeroConnected, setXeroConnected] = useState(false)
@@ -72,7 +90,22 @@ export default function ClientsPage() {
     return () => clearTimeout(t)
   }, [search])
 
-  useEffect(() => { setPage(1) }, [searchDebounced, pageSize, linkedOnly])
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const next: Cols = {
+        name: cols.name.trim(),
+        code: cols.code.trim(),
+        contact: cols.contact.trim(),
+        email: cols.email.trim(),
+        phone: cols.phone.trim(),
+      }
+      // Keep the previous reference when nothing changed so load() is not re-triggered.
+      setColsDebounced(prev => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next))
+    }, 300)
+    return () => clearTimeout(t)
+  }, [cols])
+
+  useEffect(() => { setPage(1) }, [searchDebounced, colsDebounced, pageSize, linkedOnly])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -90,7 +123,6 @@ export default function ClientsPage() {
       .maybeSingle()
     setPerms(await loadPermissions(supabase, member.companyId, me?.access_level))
 
-    const today = localISODate()
     const { from, to } = pageRange(page, pageSize)
 
     let query = supabase
@@ -110,15 +142,14 @@ export default function ClientsPage() {
       )
     }
 
+    for (const [col, value] of colFilterPairs(colsDebounced)) {
+      query = query.ilike(col, `%${escapeIlike(value)}%`)
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [listRes, aRes, snapRes] = await Promise.all([
+    const [listRes, aRes] = await Promise.all([
       query.range(from, to),
       (supabase.rpc as any)('hr_get_client_action_items', { p_company_id: cId }),
-      (supabase.rpc as any)('hr_get_clients_snapshot', {
-        p_company_id: cId,
-        p_from: today,
-        p_to: today,
-      }),
     ])
 
     if (listRes.error) {
@@ -138,17 +169,6 @@ export default function ClientsPage() {
         : []
     setActionItems((actionList ?? []) as ClientActionItem[])
 
-    const snap = (snapRes.data ?? {}) as {
-      total?: number
-      portal_enabled?: number
-      open_jobs?: number
-    }
-    setKpis({
-      total: Number(snap.total ?? listRes.count ?? 0),
-      portalEnabled: Number(snap.portal_enabled ?? 0),
-      openJobs: Number(snap.open_jobs ?? 0),
-    })
-
     const { data: xStatus } = await (supabase.rpc as any)('get_xero_connection_status', { p_company_id: cId })
     setXeroConnected(xStatus?.connected ?? false)
     if (xStatus?.connected) {
@@ -158,7 +178,7 @@ export default function ClientsPage() {
     const { data: { session } } = await supabase.auth.getSession()
     setSessionToken(session?.access_token ?? null)
     setLoading(false)
-  }, [page, pageSize, searchDebounced, linkedOnly])
+  }, [page, pageSize, searchDebounced, colsDebounced, linkedOnly])
 
   useEffect(() => { void load() }, [load])
 
@@ -180,6 +200,9 @@ export default function ClientsPage() {
     if (searchDebounced) {
       const q = escapeIlike(searchDebounced)
       query = query.or(`name.ilike.%${q}%,client_code.ilike.%${q}%,email.ilike.%${q}%,phone.ilike.%${q}%,account_number.ilike.%${q}%,legal_name.ilike.%${q}%`)
+    }
+    for (const [col, value] of colFilterPairs(colsDebounced)) {
+      query = query.ilike(col, `%${escapeIlike(value)}%`)
     }
 
     const [{ data, error: qErr }, { data: people, error: peopleErr }] = await Promise.all([
@@ -403,29 +426,21 @@ export default function ClientsPage() {
         )}
           </div>
         </div>
-        <div className="grid grid-cols-3 gap-2">
-          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#1E293B]">
-            <span className="text-[14px] font-semibold text-[#94A3B8]">{kpis.total}</span>
-            <span className="text-[11px] text-[#64748B]">Total</span>
-          </span>
-          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#0F2918]">
-            <span className="text-[14px] font-semibold text-[#22C55E]">{kpis.portalEnabled}</span>
-            <span className="text-[11px] text-[#4ADE80]">Portal</span>
-          </span>
-          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#1E293B]">
-            <span className="text-[14px] font-semibold text-[#94A3B8]">{kpis.openJobs}</span>
-            <span className="text-[11px] text-[#64748B]">Open jobs</span>
-          </span>
-        </div>
-        <LinkedOnlyToggle value={linkedOnly} onChange={setLinkedOnly} />
-        <div className="flex items-center gap-1.5 h-8 px-2 bg-surface border border-border rounded-sm">
-          <span className="material-icons text-text-disabled text-[16px]">search</span>
-          <input
-            type="search"
-            placeholder="Search by name, code, account, email, phone…"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="flex-1 min-w-0 text-[13px] text-text-primary placeholder:text-text-disabled bg-transparent focus:outline-none"
+        <div className="flex items-center gap-2 flex-wrap">
+          <LinkedOnlyToggle value={linkedOnly} onChange={setLinkedOnly} />
+          <div className="flex items-center gap-1.5 h-8 px-2 bg-surface border border-border rounded-sm flex-1 min-w-[180px]">
+            <span className="material-icons text-text-disabled text-[16px]">search</span>
+            <input
+              type="search"
+              placeholder="Search by name, code, account, email, phone…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="flex-1 min-w-0 text-[13px] text-text-primary placeholder:text-text-disabled bg-transparent focus:outline-none"
+            />
+          </div>
+          <ResetFiltersButton
+            disabled={!colsActive(cols) && !search}
+            onReset={() => { setCols(EMPTY_COLS); setSearch('') }}
           />
         </div>
       </div>
@@ -504,14 +519,24 @@ export default function ClientsPage() {
               <table style={{ minWidth: 760 }} className="w-full">
                 <thead>
                   <tr className="bg-surface-elevated border-b border-divider">
-                    <th className="data-th">Client</th>
-                    <th style={{ width:  90 }} className="data-th">Code</th>
-                    <th style={{ width: 100 }} className="data-th">Type</th>
-                    <th style={{ width: 130 }} className="data-th">Contact</th>
-                    <th style={{ width: 150 }} className="data-th">Email</th>
-                    <th style={{ width: 110 }} className="data-th">Phone</th>
+                    <th className={`${MONEY_TH} text-left`}>
+                      <TextHeaderFilter label="Client" value={cols.name} onChange={v => setCols(c => ({ ...c, name: v }))} placeholder="Client name…" />
+                    </th>
+                    <th style={{ width:  90 }} className={`${MONEY_TH} text-left`}>
+                      <TextHeaderFilter label="Code" value={cols.code} onChange={v => setCols(c => ({ ...c, code: v }))} placeholder="Code…" />
+                    </th>
+                    <th style={{ width: 100 }} className={`${MONEY_TH} text-left`}>Type</th>
+                    <th style={{ width: 130 }} className={`${MONEY_TH} text-left`}>
+                      <TextHeaderFilter label="Contact" value={cols.contact} onChange={v => setCols(c => ({ ...c, contact: v }))} placeholder="Contact person…" />
+                    </th>
+                    <th style={{ width: 150 }} className={`${MONEY_TH} text-left`}>
+                      <TextHeaderFilter label="Email" value={cols.email} onChange={v => setCols(c => ({ ...c, email: v }))} placeholder="Email…" />
+                    </th>
+                    <th style={{ width: 110 }} className={`${MONEY_TH} text-left`}>
+                      <TextHeaderFilter label="Phone" value={cols.phone} onChange={v => setCols(c => ({ ...c, phone: v }))} placeholder="Phone…" />
+                    </th>
                     {xeroConnected && (
-                      <th style={{ width: 80 }} className="data-th text-center">Xero</th>
+                      <th style={{ width: 80 }} className={`${MONEY_TH} text-center`}>Xero</th>
                     )}
                   </tr>
                 </thead>
@@ -520,29 +545,29 @@ export default function ClientsPage() {
                     <tr><td colSpan={xeroConnected ? 7 : 6} className="py-12 text-center text-[13px] text-text-disabled">Loading…</td></tr>
                   ) : clients.length === 0 ? (
                     <tr><td colSpan={xeroConnected ? 7 : 6} className="py-8 text-center text-[13px] text-text-secondary">
-                      {total === 0 && !searchDebounced && !linkedOnly ? 'No clients yet. Click + Add Client to create one.' : (linkedOnly ? 'No clients linked on KaiSync match.' : 'No clients match your search.')}
+                      {total === 0 && !searchDebounced && !colsActive(colsDebounced) && !linkedOnly ? 'No clients yet. Click + Add Client to create one.' : (linkedOnly ? 'No clients linked on KaiSync match.' : 'No clients match your filters.')}
                     </td></tr>
                   ) : (
                     clients.map(c => (
                       <tr key={c.id}
                         onClick={() => router.push(`/dashboard/clients/${c.id}`)}
                         className="bg-surface hover:bg-background cursor-pointer border-b border-divider last:border-0 transition-colors">
-                        <td className="data-td text-text-primary text-[13px]">
+                        <td className={`${MONEY_TD} text-text-primary`}>
                           <span className="flex items-center gap-1 min-w-0"><span className="truncate">{c.name}</span><LinkedBadge linked={linkedIds.has(c.id)} /></span>
                         </td>
-                        <td className="data-td text-text-primary font-medium text-[12px]">{c.client_code ?? '—'}</td>
-                        <td className="data-td text-text-secondary text-[12px]">
+                        <td className={`${MONEY_TD} text-text-primary font-medium`}>{c.client_code ?? '—'}</td>
+                        <td className={`${MONEY_TD} text-text-secondary`}>
                           {CLIENT_TYPE_LABELS[c.type ?? ''] ?? c.type ?? '—'}
                         </td>
-                        <td className="data-td text-text-secondary text-[12px]">
+                        <td className={`${MONEY_TD} text-text-secondary`}>
                           <span className="block truncate" style={{ maxWidth: 130 }}>{c.contact_person ?? '—'}</span>
                         </td>
-                        <td className="data-td text-text-secondary text-[12px]">
+                        <td className={`${MONEY_TD} text-text-secondary`}>
                           <span className="block truncate" style={{ maxWidth: 150 }}>{c.email ?? '—'}</span>
                         </td>
-                        <td className="data-td text-text-secondary text-[12px]">{c.phone ?? '—'}</td>
+                        <td className={`${MONEY_TD} text-text-secondary`}>{c.phone ?? '—'}</td>
                         {xeroConnected && (
-                          <td className="data-td text-center" onClick={e => e.stopPropagation()}>
+                          <td className={`${MONEY_TD} text-center`} onClick={e => e.stopPropagation()}>
                             {xeroLinked.has(c.id) || xero.statuses?.[c.id] ? (
                               <XeroMark companyId={companyId} kind="client" id={c.id} canSend={canEdit}
                                 state={xero.statuses?.[c.id] ?? { s: 'synced' }} connected onChanged={() => void xero.reload()} />
@@ -570,7 +595,7 @@ export default function ClientsPage() {
                 <p className="py-12 text-center text-[13px] text-text-disabled">Loading…</p>
               ) : clients.length === 0 ? (
                 <p className="py-8 text-center text-[13px] text-text-secondary px-4">
-                  {total === 0 && !searchDebounced && !linkedOnly ? 'No clients yet. Click + Add Client to create one.' : (linkedOnly ? 'No clients linked on KaiSync match.' : 'No clients match your search.')}
+                  {total === 0 && !searchDebounced && !colsActive(colsDebounced) && !linkedOnly ? 'No clients yet. Click + Add Client to create one.' : (linkedOnly ? 'No clients linked on KaiSync match.' : 'No clients match your search.')}
                 </p>
               ) : (
                 <>

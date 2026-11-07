@@ -25,13 +25,36 @@ import { LinkedBadge, LinkedOnlyToggle } from '@/components/LinkedBadge'
 import { activeLinkedRecordIds } from '@/lib/company-links'
 import * as XLSX from 'xlsx'
 import { localISODate } from '@/lib/utils'
+import { StatusFilterTabs, TAB_ALL, MONEY_TH, MONEY_TD } from '@/components/ui/StatusFilterTabs'
+import { TextHeaderFilter, ResetFiltersButton, statusTab } from '@/components/ui/MoneyListFilters'
 
 type FilterValue = 'active' | 'inactive' | 'all'
 
-type ContractorKpis = {
-  active: number
-  pendingCompliance: number
-  pendingPayments: number
+/** Tab ids are the existing `filter` state values ('all' comes from TAB_ALL). */
+const STATUS_TABS = [
+  statusTab('active', 'Active', ['active'], 'green'),
+  statusTab('inactive', 'Inactive', ['inactive'], 'slate'),
+  TAB_ALL,
+]
+
+/** Server-side column filters (ilike, ANDed with search / status / linked-only). */
+type Cols = { name: string; code: string; contact: string; phone: string; email: string }
+const EMPTY_COLS: Cols = { name: '', code: '', contact: '', phone: '', email: '' }
+
+function colsActive(c: Cols): boolean {
+  return !!(c.name || c.code || c.contact || c.phone || c.email)
+}
+
+/** Maps column filter state to contractors table columns (all verified in the existing select/export). */
+function colFilterPairs(c: Cols): Array<[string, string]> {
+  const pairs: Array<[string, string]> = [
+    ['name', c.name],
+    ['contractor_code', c.code],
+    ['contact_person', c.contact],
+    ['phone', c.phone],
+    ['email', c.email],
+  ]
+  return pairs.filter(([, v]) => v !== '')
 }
 
 const ACTION_TYPE_COLORS: Record<string, { bg: string; fg: string }> = {
@@ -76,8 +99,10 @@ export default function ContractorsPage() {
   const [xeroImporting, setXeroImporting] = useState(false)
   const [xeroMsg,       setXeroMsg]       = useState<string | null>(null)
   const [perms, setPerms] = useState<PermissionSet | null>(null)
-  const [kpis, setKpis] = useState<ContractorKpis>({ active: 0, pendingCompliance: 0, pendingPayments: 0 })
+  const [activeCount, setActiveCount] = useState<number | null>(null)
   const [searchDebounced, setSearchDebounced] = useState('')
+  const [cols, setCols] = useState<Cols>(EMPTY_COLS)
+  const [colsDebounced, setColsDebounced] = useState<Cols>(EMPTY_COLS)
   const [linkedOnly, setLinkedOnly] = useState(false)
   const [linkedIds, setLinkedIds] = useState<Set<string>>(new Set())
   const [page, setPage] = useState(1)
@@ -92,7 +117,22 @@ export default function ContractorsPage() {
     return () => clearTimeout(t)
   }, [searchText])
 
-  useEffect(() => { setPage(1) }, [searchDebounced, filter, pageSize, linkedOnly])
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const next: Cols = {
+        name: cols.name.trim(),
+        code: cols.code.trim(),
+        contact: cols.contact.trim(),
+        phone: cols.phone.trim(),
+        email: cols.email.trim(),
+      }
+      // Keep the previous reference when nothing changed so load() is not re-triggered.
+      setColsDebounced(prev => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next))
+    }, 300)
+    return () => clearTimeout(t)
+  }, [cols])
+
+  useEffect(() => { setPage(1) }, [searchDebounced, colsDebounced, filter, pageSize, linkedOnly])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -133,8 +173,11 @@ export default function ContractorsPage() {
       const q = escapeIlike(searchDebounced)
       listQuery = listQuery.or(`name.ilike.%${q}%,contact_person.ilike.%${q}%,contractor_code.ilike.%${q}%`)
     }
+    for (const [col, value] of colFilterPairs(colsDebounced)) {
+      listQuery = listQuery.ilike(col, `%${escapeIlike(value)}%`)
+    }
 
-    const [cRes, aRes, snapRes, activeRes, holdRes] = await Promise.all([
+    const [cRes, aRes, snapRes, activeRes] = await Promise.all([
       listQuery.range(from, to),
       supabase.rpc('hr_get_contractor_action_items', { p_company_id: member.companyId }),
       supabase.rpc('hr_get_contractors_snapshot', {
@@ -143,7 +186,6 @@ export default function ContractorsPage() {
         p_to: today,
       }),
       contractorScope().eq('is_active', true),
-      contractorScope().eq('compliance_hold', true),
     ])
 
     if (cRes.error) {
@@ -165,16 +207,8 @@ export default function ContractorsPage() {
         : []
     setActionItems((actionList ?? []) as ContractorActionItem[])
 
-    const snap = (snapRes.data ?? {}) as {
-      active?: number
-      pending_compliance?: number
-      pending_payments?: number
-    }
-    setKpis({
-      active: activeRes.count ?? Number(snap.active ?? 0),
-      pendingCompliance: holdRes.count ?? Number(snap.pending_compliance ?? 0),
-      pendingPayments: Number(snap.pending_payments ?? 0),
-    })
+    const snap = (snapRes.data ?? {}) as { active?: number }
+    setActiveCount(activeRes.count ?? Number(snap.active ?? 0))
 
     const cId = member.companyId
     setCompanyId(cId)
@@ -187,7 +221,7 @@ export default function ContractorsPage() {
     const { data: { session } } = await supabase.auth.getSession()
     setSessionToken(session?.access_token ?? null)
     setLoading(false)
-  }, [page, pageSize, filter, searchDebounced, linkedOnly])
+  }, [page, pageSize, filter, searchDebounced, colsDebounced, linkedOnly])
 
   useEffect(() => { void load() }, [load])
 
@@ -208,6 +242,9 @@ export default function ContractorsPage() {
     if (searchDebounced) {
       const q = escapeIlike(searchDebounced)
       query = query.or(`name.ilike.%${q}%,contact_person.ilike.%${q}%,contractor_code.ilike.%${q}%`)
+    }
+    for (const [col, value] of colFilterPairs(colsDebounced)) {
+      query = query.ilike(col, `%${escapeIlike(value)}%`)
     }
     const { data, error: qErr } = await query
     if (qErr) { setError(qErr.message); return }
@@ -360,39 +397,9 @@ export default function ContractorsPage() {
             )}
           </div>
         </div>
-        <div className="grid grid-cols-3 gap-2">
-          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#0F2918]">
-            <span className="text-[14px] font-semibold text-[#22C55E]">{kpis.active}</span>
-            <span className="text-[11px] text-[#4ADE80]">Active</span>
-          </span>
-          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#292012]">
-            <span className="text-[14px] font-semibold text-[#FCD34D]">{kpis.pendingCompliance}</span>
-            <span className="text-[11px] text-[#FCD34D]">Compliance</span>
-          </span>
-          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#1E293B]">
-            <span className="text-[14px] font-semibold text-[#94A3B8]">{kpis.pendingPayments}</span>
-            <span className="text-[11px] text-[#64748B]">Pending pay</span>
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="flex rounded-md overflow-hidden border border-divider shrink-0">
-            {([
-              { value: 'active' as const, label: 'Active' },
-              { value: 'inactive' as const, label: 'Inactive' },
-              { value: 'all' as const, label: 'All' },
-            ]).map(({ value, label }) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setFilter(value)}
-                className={`h-8 px-3 text-[12px] font-medium transition-colors ${filter === value ? 'bg-primary text-white' : 'bg-surface text-text-secondary hover:text-text-primary'}`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+        <div className="flex items-center gap-2 flex-wrap">
           <LinkedOnlyToggle value={linkedOnly} onChange={setLinkedOnly} />
-          <div className="flex items-center gap-1.5 h-8 px-2 bg-surface border border-border rounded-sm flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 h-8 px-2 bg-surface border border-border rounded-sm flex-1 min-w-[180px]">
             <span className="material-icons text-text-disabled text-[16px]">search</span>
             <input
               type="search"
@@ -402,6 +409,16 @@ export default function ContractorsPage() {
               className="flex-1 min-w-0 text-[13px] text-text-primary placeholder:text-text-disabled bg-transparent focus:outline-none"
             />
           </div>
+          <ResetFiltersButton
+            disabled={!colsActive(cols) && !searchText}
+            onReset={() => { setCols(EMPTY_COLS); setSearchText('') }}
+          />
+          <StatusFilterTabs
+            tabs={STATUS_TABS}
+            value={filter}
+            counts={activeCount != null ? { active: activeCount } : {}}
+            onChange={id => setFilter(id as FilterValue)}
+          />
         </div>
       </div>
 
@@ -490,18 +507,28 @@ export default function ContractorsPage() {
           <table className="w-full text-[13px]">
             <thead>
               <tr className="bg-surface-elevated border-b border-divider">
-                <th style={{ width: 185 }} className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary">Company</th>
-                <th style={{ width: 90 }}  className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary">Code</th>
-                <th style={{ width: 130 }} className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary">Contact</th>
-                <th style={{ width: 120 }} className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary">Phone</th>
-                <th style={{ width: 160 }} className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary">Email</th>
-                <th style={{ width: 70 }}  className="text-center px-3 py-2 text-[11px] font-medium text-text-secondary">Rating</th>
-                <th style={{ width: 85 }}  className="text-center px-3 py-2 text-[11px] font-medium text-text-secondary">Banking</th>
-                <th style={{ width: 80 }}  className="text-center px-3 py-2 text-[11px] font-medium text-text-secondary">Payment</th>
-                <th style={{ width: 100 }} className="text-center px-3 py-2 text-[11px] font-medium text-text-secondary">Compliance</th>
-                <th style={{ width: 80 }}  className="text-right px-3 py-2 text-[11px] font-medium text-text-secondary">Status</th>
+                <th style={{ width: 185 }} className={`${MONEY_TH} text-left`}>
+                  <TextHeaderFilter label="Company" value={cols.name} onChange={v => setCols(c => ({ ...c, name: v }))} placeholder="Company name…" />
+                </th>
+                <th style={{ width: 90 }} className={`${MONEY_TH} text-left`}>
+                  <TextHeaderFilter label="Code" value={cols.code} onChange={v => setCols(c => ({ ...c, code: v }))} placeholder="Code…" />
+                </th>
+                <th style={{ width: 130 }} className={`${MONEY_TH} text-left`}>
+                  <TextHeaderFilter label="Contact" value={cols.contact} onChange={v => setCols(c => ({ ...c, contact: v }))} placeholder="Contact person…" />
+                </th>
+                <th style={{ width: 120 }} className={`${MONEY_TH} text-left`}>
+                  <TextHeaderFilter label="Phone" value={cols.phone} onChange={v => setCols(c => ({ ...c, phone: v }))} placeholder="Phone…" />
+                </th>
+                <th style={{ width: 160 }} className={`${MONEY_TH} text-left`}>
+                  <TextHeaderFilter label="Email" value={cols.email} onChange={v => setCols(c => ({ ...c, email: v }))} placeholder="Email…" />
+                </th>
+                <th style={{ width: 70 }}  className={`${MONEY_TH} text-center`}>Rating</th>
+                <th style={{ width: 85 }}  className={`${MONEY_TH} text-center`}>Banking</th>
+                <th style={{ width: 80 }}  className={`${MONEY_TH} text-center`}>Payment</th>
+                <th style={{ width: 100 }} className={`${MONEY_TH} text-center`}>Compliance</th>
+                <th style={{ width: 80 }}  className={`${MONEY_TH} text-right`}>Status</th>
                 {xeroConnected && (
-                  <th style={{ width: 80 }} className="text-center px-3 py-2 text-[11px] font-medium text-text-secondary">Xero</th>
+                  <th style={{ width: 80 }} className={`${MONEY_TH} text-center`}>Xero</th>
                 )}
               </tr>
             </thead>
@@ -513,7 +540,9 @@ export default function ContractorsPage() {
               ) : filtered.length === 0 ? (
                 <tr>
                   <td colSpan={xeroConnected ? 11 : 10} className="py-12 text-center text-[13px] text-text-secondary">
-                    No contractors yet. Click + Add to register one.
+                    {total === 0 && !searchDebounced && !colsActive(colsDebounced) && !linkedOnly && filter === 'all'
+                      ? 'No contractors yet. Click + Add to register one.'
+                      : 'No contractors match your filters.'}
                   </td>
                 </tr>
               ) : (
@@ -535,26 +564,26 @@ export default function ContractorsPage() {
                       onClick={() => router.push(`/dashboard/contractors/${c.id}`)}
                       className="bg-surface hover:bg-background cursor-pointer border-b border-divider last:border-0 transition-colors"
                     >
-                      <td className="px-3 py-3 text-text-primary font-medium">
+                      <td className={`${MONEY_TD} text-text-primary font-medium`}>
                         <span className="flex items-center gap-1 min-w-0" style={{ maxWidth: 205 }}><span className="truncate">{c.name}</span><LinkedBadge linked={linkedIds.has(c.id)} /></span>
                       </td>
-                      <td className="px-3 py-3 text-text-secondary font-mono">{c.contractor_code ?? '—'}</td>
-                      <td className="px-3 py-3 text-text-secondary">
+                      <td className={`${MONEY_TD} text-text-secondary font-mono`}>{c.contractor_code ?? '—'}</td>
+                      <td className={`${MONEY_TD} text-text-secondary`}>
                         <span className="block truncate" style={{ maxWidth: 130 }}>{c.contact_person ?? '—'}</span>
                       </td>
-                      <td className="px-3 py-3 text-text-secondary">{c.phone ?? '—'}</td>
-                      <td className="px-3 py-3 text-text-secondary">
+                      <td className={`${MONEY_TD} text-text-secondary`}>{c.phone ?? '—'}</td>
+                      <td className={`${MONEY_TD} text-text-secondary`}>
                         <span className="block truncate" style={{ maxWidth: 160 }}>{c.email ?? '—'}</span>
                       </td>
-                      <td className="px-3 py-3 text-center text-text-secondary text-[13px]">
+                      <td className={`${MONEY_TD} text-center text-text-secondary`}>
                         ★ {(c.rating ?? 0).toFixed(1)}
                       </td>
-                      <td className="px-3 py-3 text-center"><StatusBadge {...banking} /></td>
-                      <td className="px-3 py-3 text-center"><StatusBadge {...payment} /></td>
-                      <td className="px-3 py-3 text-center"><StatusBadge {...compliance} /></td>
-                      <td className="px-3 py-3 text-right"><StatusBadge {...status} /></td>
+                      <td className={`${MONEY_TD} text-center`}><StatusBadge {...banking} /></td>
+                      <td className={`${MONEY_TD} text-center`}><StatusBadge {...payment} /></td>
+                      <td className={`${MONEY_TD} text-center`}><StatusBadge {...compliance} /></td>
+                      <td className={`${MONEY_TD} text-right`}><StatusBadge {...status} /></td>
                       {xeroConnected && (
-                        <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
+                        <td className={`${MONEY_TD} text-center`} onClick={e => e.stopPropagation()}>
                           {xeroLinked.has(c.id) ? (
                             <span className="text-green-400 text-[18px]" title="Synced to Xero">✓</span>
                           ) : canEdit ? (

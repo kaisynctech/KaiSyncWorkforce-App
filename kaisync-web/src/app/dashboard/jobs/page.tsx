@@ -23,6 +23,13 @@ import {
 import { cn, formatDate, formatCurrency } from '@/lib/utils'
 import { Toggle } from '@/components/Toggle'
 import { JobsTabs } from '@/components/jobs/JobsTabs'
+import {
+  StatusFilterTabs,
+  TAB_ALL,
+  MONEY_TH,
+  MONEY_TD,
+} from '@/components/ui/StatusFilterTabs'
+import { TextHeaderFilter, ResetFiltersButton, statusTab } from '@/components/ui/MoneyListFilters'
 import { areaOptions, listClientSites, listJobServices, listSiteAreas, type AreaOption } from '@/lib/job-services'
 import type { Job, JobStatus } from '@/types/database'
 
@@ -35,14 +42,18 @@ type JobKpis = {
   unassigned: number
 }
 
-const STATUS_OPTIONS: { value: JobStatus | 'all'; label: string }[] = [
-  { value: 'all', label: 'All' },
-  { value: 'open', label: 'Open' },
-  { value: 'scheduled', label: 'Scheduled' },
-  { value: 'in_progress', label: 'In Progress' },
-  { value: 'completed', label: 'Completed' },
-  { value: 'cancelled', label: 'Cancelled' },
+/** Tab ids are the same values as the server `statusFilter` (each tab maps to exactly one job status). */
+const STATUS_TABS = [
+  TAB_ALL,
+  statusTab('open', 'Open', ['open'], 'blue'),
+  statusTab('scheduled', 'Scheduled', ['scheduled'], 'amber'),
+  statusTab('in_progress', 'In progress', ['in_progress'], 'green'),
+  statusTab('completed', 'Completed', ['completed'], 'slate'),
+  statusTab('cancelled', 'Cancelled', ['cancelled'], 'red'),
 ]
+
+type ColFilters = { code: string; title: string; client: string }
+const EMPTY_COLS: ColFilters = { code: '', title: '', client: '' }
 
 const STATUS_BADGES: Record<string, { label: string; cls: string }> = {
   open: { label: 'Open', cls: 'bg-[#DBEAFE] text-[#1D4ED8]' },
@@ -85,6 +96,10 @@ type JobListFilters = {
   dateFrom: string
   dateTo: string
   clientIds: string[]
+  /** Column header filters (ANDed with everything else). colClientIds: null = no client column filter. */
+  colCode: string
+  colTitle: string
+  colClientIds: string[] | null
   /** Filter panel: one client, one site, an area (with the areas inside it), one service. */
   clientId: string
   siteId: string
@@ -109,6 +124,17 @@ function withJobFilters(query: any, filters: JobListFilters) {
     if (filters.clientIds.length > 0) parts.push(`client_id.in.(${filters.clientIds.join(',')})`)
     next = next.or(parts.join(','))
   }
+  if (filters.colCode) next = next.ilike('job_code', `%${escapeIlike(filters.colCode)}%`)
+  if (filters.colTitle) next = next.ilike('title', `%${escapeIlike(filters.colTitle)}%`)
+  // Empty array = column filter active but no matching clients — force zero rows (avoid PostgREST empty `.in()`).
+  if (filters.colClientIds) {
+    next = next.in(
+      'client_id',
+      filters.colClientIds.length > 0
+        ? filters.colClientIds
+        : ['00000000-0000-0000-0000-000000000000'],
+    )
+  }
   if (filters.clientId) next = next.eq('client_id', filters.clientId)
   if (filters.siteId) next = next.eq('site_id', filters.siteId)
   if (filters.areaIds.length > 0) next = next.in('area_id', filters.areaIds)
@@ -116,6 +142,20 @@ function withJobFilters(query: any, filters: JobListFilters) {
   if (filters.dateFilter && filters.dateFrom) next = next.gte('scheduled_start', filters.dateFrom)
   if (filters.dateFilter && filters.dateTo) next = next.lte('scheduled_end', `${filters.dateTo}T23:59:59`)
   return next
+}
+
+/** Ids of this company's clients whose name contains the term (used by the search box and the Client column filter). */
+async function findClientIds(
+  supabase: ReturnType<typeof createClient>,
+  companyId: string,
+  term: string,
+): Promise<string[]> {
+  const { data } = await supabase
+    .from('clients')
+    .select('id')
+    .eq('company_id', companyId)
+    .ilike('name', `%${escapeIlike(term)}%`)
+  return (data ?? []).map(row => row.id as string)
 }
 
 function statusBadgeOf(raw: string | null | undefined) {
@@ -144,6 +184,10 @@ export default function JobsPage() {
   const [search, setSearch] = useState('')
   const [searchDebounced, setSearchDebounced] = useState('')
   const [statusFilter, setStatusFilter] = useState<JobStatus | 'all'>('all')
+  const [cols, setCols] = useState<ColFilters>(EMPTY_COLS)
+  const [colCode, setColCode] = useState('')
+  const [colTitle, setColTitle] = useState('')
+  const [colClient, setColClient] = useState('')
   const [filterOpen, setFilterOpen] = useState(false)
   const [dateFilter, setDateFilter] = useState(false)
   const [dateFrom, setDateFrom] = useState('')
@@ -171,7 +215,16 @@ export default function JobsPage() {
     return () => clearTimeout(t)
   }, [search])
 
-  useEffect(() => { setPage(1) }, [searchDebounced, statusFilter, scope, pageSize, dateFrom, dateTo, dateFilter, clientFilter, siteFilter, areaFilter, serviceFilter])
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setColCode(cols.code.trim())
+      setColTitle(cols.title.trim())
+      setColClient(cols.client.trim())
+    }, 300)
+    return () => clearTimeout(t)
+  }, [cols])
+
+  useEffect(() => { setPage(1) }, [searchDebounced, colCode, colTitle, colClient, statusFilter, scope, pageSize, dateFrom, dateTo, dateFilter, clientFilter, siteFilter, areaFilter, serviceFilter])
 
   // Filter choices: clients and services when the filter panel opens; sites and areas for the chosen client and site.
   useEffect(() => {
@@ -214,7 +267,8 @@ export default function JobsPage() {
   })()
   const areaKey = areaIds.join(',')
   const activeFilterCount = [clientFilter, siteFilter, areaFilter, serviceFilter].filter(Boolean).length
-    + (statusFilter !== 'all' ? 1 : 0) + (dateFilter ? 1 : 0)
+    + (dateFilter ? 1 : 0)
+  const hasColumnFilters = !!(cols.code || cols.title || cols.client || search)
 
   const loadJobs = useCallback(async () => {
     setLoading(true)
@@ -231,16 +285,8 @@ export default function JobsPage() {
     const nextPerms = await loadPermissions(supabase, member.companyId, me?.access_level)
     setPerms(nextPerms)
 
-    let clientIds: string[] = []
-    if (searchDebounced) {
-      const q = escapeIlike(searchDebounced)
-      const { data: clientRows } = await supabase
-        .from('clients')
-        .select('id')
-        .eq('company_id', member.companyId)
-        .ilike('name', `%${q}%`)
-      clientIds = (clientRows ?? []).map(row => row.id as string)
-    }
+    const clientIds = searchDebounced ? await findClientIds(supabase, member.companyId, searchDebounced) : []
+    const colClientIds = colClient ? await findClientIds(supabase, member.companyId, colClient) : null
 
     const filters: JobListFilters = {
       companyId: member.companyId,
@@ -253,6 +299,9 @@ export default function JobsPage() {
       dateFrom,
       dateTo,
       clientIds,
+      colCode,
+      colTitle,
+      colClientIds,
       clientId: clientFilter,
       siteId: siteFilter,
       areaIds: areaKey ? areaKey.split(',') : [],
@@ -268,6 +317,9 @@ export default function JobsPage() {
       dateFrom: '',
       dateTo: '',
       clientIds: [],
+      colCode: '',
+      colTitle: '',
+      colClientIds: null,
       clientId: '',
       siteId: '',
       areaIds: [],
@@ -317,11 +369,17 @@ export default function JobsPage() {
       }
     }
     setLoading(false)
-  }, [scope, page, pageSize, searchDebounced, statusFilter, dateFilter, dateFrom, dateTo, clientFilter, siteFilter, areaKey, serviceFilter])
+  }, [scope, page, pageSize, searchDebounced, colCode, colTitle, colClient, statusFilter, dateFilter, dateFrom, dateTo, clientFilter, siteFilter, areaKey, serviceFilter])
 
   useEffect(() => { void loadJobs() }, [loadJobs])
 
   const filtered = jobs
+  /** Counts only where the existing KPI queries map to a tab (scheduled/completed/cancelled have no count query). */
+  const statusCounts: Record<string, number> = {
+    all: kpis.total,
+    open: kpis.open,
+    in_progress: kpis.inProgress,
+  }
   const pages = totalPages(total, pageSize)
 
   async function downloadCSV() {
@@ -329,16 +387,8 @@ export default function JobsPage() {
     const member = await resolveCurrentMember(supabase)
     if (!member) return
 
-    let clientIds: string[] = []
-    if (searchDebounced) {
-      const q = escapeIlike(searchDebounced)
-      const { data: clientRows } = await supabase
-        .from('clients')
-        .select('id')
-        .eq('company_id', member.companyId)
-        .ilike('name', `%${q}%`)
-      clientIds = (clientRows ?? []).map(row => row.id as string)
-    }
+    const clientIds = searchDebounced ? await findClientIds(supabase, member.companyId, searchDebounced) : []
+    const colClientIds = colClient ? await findClientIds(supabase, member.companyId, colClient) : null
 
     const filters: JobListFilters = {
       companyId: member.companyId,
@@ -351,6 +401,9 @@ export default function JobsPage() {
       dateFrom,
       dateTo,
       clientIds,
+      colCode,
+      colTitle,
+      colClientIds,
       clientId: clientFilter,
       siteId: siteFilter,
       areaIds,
@@ -450,24 +503,6 @@ export default function JobsPage() {
             )}
           </div>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#1E293B]">
-            <span className="text-[14px] font-semibold text-[#94A3B8]">{kpis.total}</span>
-            <span className="text-[11px] text-[#64748B]">Total</span>
-          </span>
-          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#0F2918]">
-            <span className="text-[14px] font-semibold text-[#22C55E]">{kpis.open}</span>
-            <span className="text-[11px] text-[#4ADE80]">Open</span>
-          </span>
-          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#1E293B]">
-            <span className="text-[14px] font-semibold text-[#FCD34D]">{kpis.inProgress}</span>
-            <span className="text-[11px] text-[#64748B]">In progress</span>
-          </span>
-          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#1E293B]">
-            <span className="text-[14px] font-semibold text-[#FCA5A5]">{kpis.unassigned}</span>
-            <span className="text-[11px] text-[#64748B]">Unassigned</span>
-          </span>
-        </div>
         <div className="flex items-center gap-2">
           <div className="flex rounded-md overflow-hidden border border-divider shrink-0">
             {([
@@ -507,6 +542,25 @@ export default function JobsPage() {
             <span className="material-icons text-[16px]" aria-hidden="true">filter_list</span>
             Filter{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
           </button>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <ResetFiltersButton
+            disabled={!hasColumnFilters}
+            onReset={() => {
+              setCols(EMPTY_COLS)
+              setColCode('')
+              setColTitle('')
+              setColClient('')
+              setSearch('')
+              setSearchDebounced('')
+            }}
+          />
+          <StatusFilterTabs
+            tabs={STATUS_TABS}
+            value={statusFilter}
+            counts={statusCounts}
+            onChange={id => setStatusFilter(id as JobStatus | 'all')}
+          />
         </div>
       </div>
 
@@ -553,7 +607,7 @@ export default function JobsPage() {
               <button
                 type="button"
                 className="text-[12px] text-primary hover:underline"
-                onClick={() => { setClientFilter(''); setSiteFilter(''); setAreaFilter(''); setServiceFilter(''); setStatusFilter('all'); setDateFilter(false) }}
+                onClick={() => { setClientFilter(''); setSiteFilter(''); setAreaFilter(''); setServiceFilter(''); setDateFilter(false) }}
               >
                 Clear filters
               </button>
@@ -571,20 +625,6 @@ export default function JobsPage() {
                   className="flex-1 h-9 px-2 rounded-sm border border-border bg-surface-elevated text-[13px] text-text-primary focus:outline-none focus:ring-1 focus:ring-primary" />
               </div>
             )}
-            <div className="flex gap-2 flex-wrap">
-              {STATUS_OPTIONS.map(({ value, label }) => (
-                <button
-                  key={value}
-                  onClick={() => setStatusFilter(value)}
-                  className={cn(
-                    'h-8 px-[14px] rounded-pill text-[11px] font-medium transition-colors',
-                    statusFilter === value ? 'bg-primary text-white' : 'bg-surface text-text-secondary border border-border hover:text-text-primary'
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
           </div>
         </div>
       )}
@@ -602,15 +642,36 @@ export default function JobsPage() {
             table={
               <table className="w-full text-[13px]">
                 <thead>
-                  <tr className="border-b border-divider bg-surface-elevated">
-                    <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary w-[100px]">Code</th>
-                    <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary">Title</th>
-                    <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary w-[18%]">Client</th>
-                    <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary w-[110px]">Status</th>
-                    <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary w-[100px]">Priority</th>
-                    <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary w-[110px]">Start</th>
-                    <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary w-[110px]">End</th>
-                    <th className="text-right px-3 py-2 text-[11px] font-medium text-text-secondary w-[100px]">Cost</th>
+                  <tr className="bg-surface-elevated border-b border-divider sticky top-0 z-10">
+                    <th className={`${MONEY_TH} text-left w-[110px]`}>
+                      <TextHeaderFilter
+                        label="Code"
+                        value={cols.code}
+                        onChange={v => setCols(c => ({ ...c, code: v }))}
+                        placeholder="Job code…"
+                      />
+                    </th>
+                    <th className={`${MONEY_TH} text-left`}>
+                      <TextHeaderFilter
+                        label="Title"
+                        value={cols.title}
+                        onChange={v => setCols(c => ({ ...c, title: v }))}
+                        placeholder="Job title…"
+                      />
+                    </th>
+                    <th className={`${MONEY_TH} text-left w-[18%]`}>
+                      <TextHeaderFilter
+                        label="Client"
+                        value={cols.client}
+                        onChange={v => setCols(c => ({ ...c, client: v }))}
+                        placeholder="Client name…"
+                      />
+                    </th>
+                    <th className={`${MONEY_TH} text-left w-[110px]`}>Status</th>
+                    <th className={`${MONEY_TH} text-left w-[100px]`}>Priority</th>
+                    <th className={`${MONEY_TH} text-left w-[110px]`}>Start</th>
+                    <th className={`${MONEY_TH} text-left w-[110px]`}>End</th>
+                    <th className={`${MONEY_TH} text-right w-[100px]`}>Cost</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -624,10 +685,10 @@ export default function JobsPage() {
                         className="border-b border-divider last:border-0 hover:bg-background transition-colors cursor-pointer"
                         onClick={() => router.push(`/dashboard/jobs/${job.id}`)}
                       >
-                        <td className="px-3 py-2 font-mono text-[11px] text-text-secondary whitespace-nowrap">
+                        <td className={`${MONEY_TD} font-mono text-text-secondary whitespace-nowrap`}>
                           {job.job_code ?? job.id.slice(0, 8).toUpperCase()}
                         </td>
-                        <td className="px-3 py-2">
+                        <td className={MONEY_TD}>
                           <p className="font-medium text-text-primary truncate">{job.title || '—'}</p>
                           {(job.service?.name || job.area) && (
                             <p className="text-[11px] text-text-secondary truncate">
@@ -635,26 +696,26 @@ export default function JobsPage() {
                             </p>
                           )}
                         </td>
-                        <td className="px-3 py-2 text-text-secondary truncate">
+                        <td className={`${MONEY_TD} text-text-secondary truncate`}>
                           {client?.name ?? '—'}
                         </td>
-                        <td className="px-3 py-2">
+                        <td className={MONEY_TD}>
                           <span className={`px-2 py-0.5 rounded-pill text-[11px] font-medium ${statusBadge.cls}`}>
                             {statusBadge.label}
                           </span>
                         </td>
-                        <td className="px-3 py-2">
+                        <td className={MONEY_TD}>
                           <span className={`px-2 py-0.5 rounded-pill text-[11px] font-medium ${priorityBadge.cls}`}>
                             {priorityBadge.label}
                           </span>
                         </td>
-                        <td className="px-3 py-2 text-text-secondary text-[12px] whitespace-nowrap">
+                        <td className={`${MONEY_TD} text-text-secondary whitespace-nowrap`}>
                           {job.scheduled_start ? formatDate(job.scheduled_start) : '—'}
                         </td>
-                        <td className="px-3 py-2 text-text-secondary text-[12px] whitespace-nowrap">
+                        <td className={`${MONEY_TD} text-text-secondary whitespace-nowrap`}>
                           {job.scheduled_end ? formatDate(job.scheduled_end) : '—'}
                         </td>
-                        <td className="px-3 py-2 text-right font-medium text-text-primary whitespace-nowrap">
+                        <td className={`${MONEY_TD} text-right font-medium text-text-primary whitespace-nowrap`}>
                           {job.estimated_cost != null ? formatCurrency(job.estimated_cost) : '—'}
                         </td>
                       </tr>
@@ -711,7 +772,10 @@ export default function JobsPage() {
       </div>
 
       <div className="shrink-0 px-3 py-2 flex items-center gap-2">
-        <p className="text-[12px] text-text-secondary">{rangeLabel}</p>
+        <p className="text-[12px] text-text-secondary">
+          {rangeLabel}
+          {kpis.unassigned > 0 && ` · ${kpis.unassigned} unassigned`}
+        </p>
         <select
           value={pageSize}
           onChange={e => setPageSize(Number(e.target.value))}

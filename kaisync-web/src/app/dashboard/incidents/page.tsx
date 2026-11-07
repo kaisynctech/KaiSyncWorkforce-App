@@ -24,6 +24,18 @@ import { hrUpdateIncident } from '@/lib/incidents'
 import type { IncidentReport } from '@/types/database'
 import * as XLSX from 'xlsx'
 import { localISODate } from '@/lib/utils'
+import {
+  StatusFilterTabs,
+  MONEY_TH,
+  MONEY_TD,
+  TAB_ALL,
+  type StatusTabDef,
+} from '@/components/ui/StatusFilterTabs'
+import {
+  TextHeaderFilter,
+  ResetFiltersButton,
+  statusTab,
+} from '@/components/ui/MoneyListFilters'
 
 const SEVERITY_COLORS: Record<string, { bg: string; fg: string }> = {
   critical: { bg: '#FEE2E2', fg: '#991B1B' },
@@ -35,6 +47,20 @@ const SEVERITY_COLORS: Record<string, { bg: string; fg: string }> = {
 type StatusFilter = 'open' | 'all' | 'closed'
 type ScopeFilter = 'all' | 'standalone' | 'job'
 type SeverityFilter = 'all' | 'critical' | 'high' | 'medium' | 'low'
+
+const STATUS_TABS: StatusTabDef[] = [
+  statusTab('open', 'Open', ['open', 'investigating'], 'green'),
+  TAB_ALL,
+  statusTab('closed', 'Closed', ['closed', 'resolved'], 'gray'),
+]
+
+const SEVERITY_TABS: StatusTabDef[] = [
+  { ...TAB_ALL, label: 'All severity' },
+  statusTab('critical', 'Critical', ['critical'], 'red'),
+  statusTab('high', 'High', ['high'], 'amber'),
+  statusTab('medium', 'Medium', ['medium'], 'blue'),
+  statusTab('low', 'Low', ['low'], 'green'),
+]
 
 type IncidentKpis = {
   open: number
@@ -79,6 +105,8 @@ export default function IncidentsPage() {
   const [searchText, setSearchText] = useState('')
   const [searchDebounced, setSearchDebounced] = useState('')
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('all')
+  const [titleCol, setTitleCol] = useState('')
+  const [titleColDebounced, setTitleColDebounced] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [total, setTotal] = useState(0)
@@ -94,7 +122,12 @@ export default function IncidentsPage() {
     return () => clearTimeout(t)
   }, [searchText])
 
-  useEffect(() => { setPage(1) }, [searchDebounced, statusFilter, scope, severityFilter, pageSize])
+  useEffect(() => {
+    const t = setTimeout(() => setTitleColDebounced(titleCol.trim()), 300)
+    return () => clearTimeout(t)
+  }, [titleCol])
+
+  useEffect(() => { setPage(1) }, [searchDebounced, titleColDebounced, statusFilter, scope, severityFilter, pageSize])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -130,6 +163,7 @@ export default function IncidentsPage() {
       const q = escapeIlike(searchDebounced)
       query = query.or(`title.ilike.%${q}%,description.ilike.%${q}%,category.ilike.%${q}%`)
     }
+    if (titleColDebounced) query = query.ilike('title', `%${escapeIlike(titleColDebounced)}%`)
 
     const [pageRes, openRes, invRes, critRes, unasRes, acRes] = await Promise.all([
       query.range(from, to),
@@ -175,7 +209,7 @@ export default function IncidentsPage() {
     setActionItems(items)
 
     setLoading(false)
-  }, [page, pageSize, statusFilter, scope, severityFilter, searchDebounced])
+  }, [page, pageSize, statusFilter, scope, severityFilter, searchDebounced, titleColDebounced])
 
   useEffect(() => { void load() }, [load])
 
@@ -242,8 +276,8 @@ export default function IncidentsPage() {
 
   const pages = totalPages(total, pageSize)
 
-  const pill = (active: boolean) =>
-    `h-8 px-3 text-[12px] font-medium transition-colors ${active ? 'bg-primary text-white' : 'bg-surface text-text-secondary hover:text-text-primary'}`
+  const hasFilters =
+    !!titleCol || !!searchText || severityFilter !== 'all' || scope !== 'all' || statusFilter !== 'open'
 
   return (
     <div className="h-full min-h-0 flex flex-col">
@@ -260,37 +294,8 @@ export default function IncidentsPage() {
             )}
           </div>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#0F2918]">
-            <span className="text-[14px] font-semibold text-[#22C55E]">{kpis.open}</span>
-            <span className="text-[11px] text-[#4ADE80]">Open</span>
-          </span>
-          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#292012]">
-            <span className="text-[14px] font-semibold text-[#FCD34D]">{kpis.investigating}</span>
-            <span className="text-[11px] text-[#FCD34D]">Investigating</span>
-          </span>
-          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#3F1515]">
-            <span className="text-[14px] font-semibold text-[#FCA5A5]">{kpis.critical}</span>
-            <span className="text-[11px] text-[#FCA5A5]">Critical</span>
-          </span>
-          <span className="inline-flex items-baseline justify-center gap-1.5 rounded px-2 py-1 bg-[#1E293B]">
-            <span className="text-[14px] font-semibold text-[#94A3B8]">{kpis.unassigned}</span>
-            <span className="text-[11px] text-[#64748B]">Unassigned</span>
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="flex rounded-md overflow-hidden border border-divider shrink-0">
-            {([
-              { value: 'open' as const, label: 'Open' },
-              { value: 'all' as const, label: 'All' },
-              { value: 'closed' as const, label: 'Closed' },
-            ]).map(({ value, label }) => (
-              <button key={value} type="button" onClick={() => setStatusFilter(value)} className={pill(statusFilter === value)}>
-                {label}
-              </button>
-            ))}
-          </div>
-          <div className="flex items-center gap-1.5 h-8 px-2 bg-surface border border-border rounded-sm flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 h-8 px-2 bg-surface border border-border rounded-sm flex-1 min-w-[180px]">
             <span className="material-icons text-text-disabled text-[16px]">search</span>
             <input
               type="search"
@@ -300,6 +305,22 @@ export default function IncidentsPage() {
               className="flex-1 min-w-0 text-[13px] text-text-primary placeholder:text-text-disabled bg-transparent focus:outline-none"
             />
           </div>
+          <ResetFiltersButton
+            disabled={!hasFilters}
+            onReset={() => {
+              setTitleCol('')
+              setSearchText('')
+              setSeverityFilter('all')
+              setScope('all')
+              setStatusFilter('open')
+            }}
+          />
+          <StatusFilterTabs
+            tabs={STATUS_TABS}
+            value={statusFilter}
+            counts={{ open: kpis.open }}
+            onChange={id => setStatusFilter(id as StatusFilter)}
+          />
         </div>
         <div className="flex flex-wrap gap-1.5">
           {([
@@ -311,17 +332,12 @@ export default function IncidentsPage() {
               {label}
             </button>
           ))}
-          {([
-            { value: 'all' as const, label: 'All severity' },
-            { value: 'critical' as const, label: 'Critical' },
-            { value: 'high' as const, label: 'High' },
-            { value: 'medium' as const, label: 'Medium' },
-            { value: 'low' as const, label: 'Low' },
-          ]).map(({ value, label }) => (
-            <button key={value} type="button" onClick={() => setSeverityFilter(value)} className={`h-7 px-2.5 rounded-full text-[11px] font-medium border capitalize ${severityFilter === value ? 'bg-primary text-white border-primary' : 'bg-surface text-text-secondary border-border hover:text-text-primary'}`}>
-              {label}
-            </button>
-          ))}
+          <StatusFilterTabs
+            tabs={SEVERITY_TABS}
+            value={severityFilter}
+            counts={{}}
+            onChange={id => setSeverityFilter(id as SeverityFilter)}
+          />
         </div>
       </div>
 
@@ -372,14 +388,18 @@ export default function IncidentsPage() {
                 <table className="w-full text-[13px]" style={{ minWidth: 960 }}>
                   <thead>
                     <tr className="bg-surface-elevated border-b border-divider">
-                      <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary">Title</th>
-                      <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary">Severity</th>
-                      <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary">Status</th>
-                      <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary">Reporter</th>
-                      <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary">Assignee</th>
-                      <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary">Job</th>
-                      <th className="text-left px-3 py-2 text-[11px] font-medium text-text-secondary">Created</th>
-                      <th className="text-right px-3 py-2 text-[11px] font-medium text-text-secondary">Actions</th>
+                      <th className={`${MONEY_TH} text-left`}>
+                        <TextHeaderFilter label="Title" value={titleCol} onChange={setTitleCol} placeholder="Incident title…" />
+                      </th>
+                      <th className={`${MONEY_TH} text-left`}>
+                        Severity
+                      </th>
+                      <th className={`${MONEY_TH} text-left`}>Status</th>
+                      <th className={`${MONEY_TH} text-left`}>Reporter</th>
+                      <th className={`${MONEY_TH} text-left`}>Assignee</th>
+                      <th className={`${MONEY_TH} text-left`}>Job</th>
+                      <th className={`${MONEY_TH} text-left`}>Created</th>
+                      <th className={`${MONEY_TH} text-right`}>Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-divider">
@@ -389,22 +409,22 @@ export default function IncidentsPage() {
                       return (
                         <tr key={inc.id} className="hover:bg-background transition-colors cursor-pointer"
                           onClick={() => router.push(`/dashboard/incidents/${inc.id}`)}>
-                          <td className="px-3 py-2.5 font-medium text-text-primary max-w-[220px] truncate">
+                          <td className={`${MONEY_TD} font-medium text-text-primary max-w-[220px] truncate`}>
                             {inc.title ?? inc.description ?? '—'}
                           </td>
-                          <td className="px-3 py-2.5">
+                          <td className={MONEY_TD}>
                             <StatusBadge label={inc.severity} bg={sevBg(inc.severity)} fg={sevFg(inc.severity)} />
                           </td>
-                          <td className="px-3 py-2.5 text-text-secondary capitalize">{inc.status}</td>
-                          <td className="px-3 py-2.5 text-text-secondary truncate max-w-[120px]">{reporter}</td>
-                          <td className="px-3 py-2.5 text-text-secondary truncate max-w-[120px]">{assignee}</td>
-                          <td className="px-3 py-2.5 text-text-secondary truncate max-w-[140px]">{inc.jobs?.title ?? '—'}</td>
-                          <td className="px-3 py-2.5 text-text-secondary whitespace-nowrap">{fmtDate(inc.created_at)}</td>
-                          <td className="px-3 py-2.5 text-right">
+                          <td className={`${MONEY_TD} text-text-secondary capitalize`}>{inc.status}</td>
+                          <td className={`${MONEY_TD} text-text-secondary truncate max-w-[120px]`}>{reporter}</td>
+                          <td className={`${MONEY_TD} text-text-secondary truncate max-w-[120px]`}>{assignee}</td>
+                          <td className={`${MONEY_TD} text-text-secondary truncate max-w-[140px]`}>{inc.jobs?.title ?? '—'}</td>
+                          <td className={`${MONEY_TD} text-text-secondary whitespace-nowrap`}>{fmtDate(inc.created_at)}</td>
+                          <td className={`${MONEY_TD} text-right`}>
                             {canEdit && isOpenIncident(inc) && (
                               <button
                                 onClick={e => { e.stopPropagation(); void closeIncident(inc) }}
-                                className="h-8 px-3 rounded-lg bg-primary text-white text-[12px] font-medium"
+                                className="h-7 px-2.5 rounded-md bg-primary text-white text-[11px] font-medium"
                               >
                                 Close
                               </button>

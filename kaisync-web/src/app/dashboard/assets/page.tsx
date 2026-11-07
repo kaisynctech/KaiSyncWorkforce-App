@@ -21,7 +21,14 @@ import {
   pageRange,
   totalPages,
 } from '@/lib/list-pagination'
-import { KpiTile } from '@/components/ui/KpiTile'
+import {
+  StatusFilterTabs,
+  MONEY_TH,
+  MONEY_TD,
+  TAB_ALL,
+  type StatusTabDef,
+} from '@/components/ui/StatusFilterTabs'
+import { TextHeaderFilter, ResetFiltersButton, statusTab } from '@/components/ui/MoneyListFilters'
 import type { Asset, Employee, Site, Unit } from '@/types/database'
 
 type AssetKpis = {
@@ -64,6 +71,17 @@ const statusStyle = (s: string): { bg: string; fg: string } => {
 }
 
 type StatusFilter = 'all' | AssetStatus | 'warranty_expiring'
+
+const STATUS_TABS: StatusTabDef[] = [
+  TAB_ALL,
+  statusTab('active', 'Active', ['active'], 'green'),
+  statusTab('out_of_service', 'Out of service', ['out_of_service'], 'amber'),
+  statusTab('retired', 'Retired', ['retired'], 'gray'),
+  statusTab('warranty_expiring', 'Warranty', [], 'red'),
+]
+
+type ColFilters = { asset: string; type: string; site: string }
+const EMPTY_COLS: ColFilters = { asset: '', type: '', site: '' }
 
 type AssetDraft = {
   id?: string
@@ -137,6 +155,8 @@ export default function AssetsPage() {
   const [search, setSearch] = useState('')
   const [searchDebounced, setSearchDebounced] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [cols, setCols] = useState<ColFilters>(EMPTY_COLS)
+  const [colsDebounced, setColsDebounced] = useState<ColFilters>(EMPTY_COLS)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [total, setTotal] = useState(0)
@@ -145,7 +165,6 @@ export default function AssetsPage() {
   const [isNew, setIsNew] = useState(false)
   const [busy, setBusy] = useState(false)
   const [confirmRetire, setConfirmRetire] = useState<AssetRow | null>(null)
-  const [warrantyExpiringSoon, setWarrantyExpiringSoon] = useState(0)
   const [kpis, setKpis] = useState<AssetKpis>({
     total: 0, active: 0, outOfService: 0, retired: 0, warrantyExpiring: 0, unassigned: 0,
   })
@@ -158,7 +177,16 @@ export default function AssetsPage() {
     return () => clearTimeout(t)
   }, [search])
 
-  useEffect(() => { setPage(1) }, [searchDebounced, statusFilter, pageSize])
+  useEffect(() => {
+    const t = setTimeout(() => setColsDebounced({
+      asset: cols.asset.trim(),
+      type: cols.type.trim(),
+      site: cols.site.trim(),
+    }), 300)
+    return () => clearTimeout(t)
+  }, [cols])
+
+  useEffect(() => { setPage(1) }, [searchDebounced, colsDebounced, statusFilter, pageSize])
 
   const filtered = assets
 
@@ -214,7 +242,6 @@ export default function AssetsPage() {
       assigned_employee_id: string | null
     }[]
     const warrantySoonCount = signals.filter(a => isWarrantyExpiringSoon(a.warranty_expires)).length
-    setWarrantyExpiringSoon(warrantySoonCount)
 
     setKpis({
       total: totalRes.count ?? 0,
@@ -271,9 +298,15 @@ export default function AssetsPage() {
     setActionItems(actions.slice(0, 25))
 
     const { from, to } = pageRange(page, pageSize)
+    // Site column filter needs an inner join on the embedded site so the filter
+    // applies server-side; without it the original left-join select is kept.
+    const selectCols = colsDebounced.site
+      ? '*, sites!inner(id, name), units(id, unit_number), assigned_employee:employees!assigned_employee_id(id, name, surname)'
+      : '*, sites(id, name), units(id, unit_number), assigned_employee:employees!assigned_employee_id(id, name, surname)'
+
     let query = supabase
       .from('assets')
-      .select('*, sites(id, name), units(id, unit_number), assigned_employee:employees!assigned_employee_id(id, name, surname)', { count: 'exact' })
+      .select(selectCols, { count: 'exact' })
       .eq('company_id', member.companyId)
       .order('label')
 
@@ -281,6 +314,9 @@ export default function AssetsPage() {
       const q = escapeIlike(searchDebounced)
       query = query.or(`label.ilike.%${q}%,asset_type.ilike.%${q}%,serial_number.ilike.%${q}%,manufacturer.ilike.%${q}%`)
     }
+    if (colsDebounced.asset) query = query.ilike('label', `%${escapeIlike(colsDebounced.asset)}%`)
+    if (colsDebounced.type) query = query.ilike('asset_type', `%${escapeIlike(colsDebounced.type)}%`)
+    if (colsDebounced.site) query = query.ilike('sites.name', `%${escapeIlike(colsDebounced.site)}%`)
     if (statusFilter !== 'all' && statusFilter !== 'warranty_expiring') {
       query = query.eq('status', statusFilter)
     }
@@ -297,7 +333,7 @@ export default function AssetsPage() {
       setAssets([])
       setTotal(0)
     } else {
-      setAssets((data ?? []) as AssetRow[])
+      setAssets((data ?? []) as unknown as AssetRow[])
       setTotal(count ?? 0)
     }
 
@@ -308,7 +344,7 @@ export default function AssetsPage() {
       setActorName(`${meRes.data.name ?? ''} ${meRes.data.surname ?? ''}`.trim() || null)
     }
     setLoading(false)
-  }, [page, pageSize, searchDebounced, statusFilter])
+  }, [page, pageSize, searchDebounced, colsDebounced, statusFilter])
 
   useEffect(() => { void load() }, [load])
 
@@ -384,13 +420,8 @@ export default function AssetsPage() {
     await load()
   }
 
-  const filterChips: { key: StatusFilter; label: string }[] = [
-    { key: 'all', label: 'All' },
-    { key: 'active', label: 'Active' },
-    { key: 'out_of_service', label: 'Out of service' },
-    { key: 'retired', label: 'Retired' },
-    { key: 'warranty_expiring', label: `Warranty (${warrantyExpiringSoon})` },
-  ]
+  const hasFilters = !!cols.asset || !!cols.type || !!cols.site || !!search || statusFilter !== 'all'
+  const patchCols = (patch: Partial<ColFilters>) => setCols(prev => ({ ...prev, ...patch }))
 
   if (error === 'not_linked') return (
     <div className="flex items-center justify-center h-full">
@@ -428,15 +459,6 @@ export default function AssetsPage() {
             </button>
           )}
         </div>
-      </div>
-
-      <div className="mx-4 mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-        <KpiTile value={kpis.total} label="Total" bg="#1E293B" valueFg="#94A3B8" labelFg="#64748B" />
-        <KpiTile value={kpis.active} label="Active" bg="#0F2918" valueFg="#22C55E" labelFg="#4ADE80" />
-        <KpiTile value={kpis.outOfService} label="Out of service" bg="#1E293B" valueFg="#FCD34D" labelFg="#64748B" />
-        <KpiTile value={kpis.retired} label="Retired" bg="#1E293B" valueFg="#94A3B8" labelFg="#64748B" />
-        <KpiTile value={kpis.warrantyExpiring} label="Warranty 30d" bg="#1E293B" valueFg="#FCD34D" labelFg="#64748B" />
-        <KpiTile value={kpis.unassigned} label="Unassigned" bg="#1E293B" valueFg="#94A3B8" labelFg="#64748B" />
       </div>
 
       {actionItems.length > 0 && (
@@ -482,23 +504,27 @@ export default function AssetsPage() {
       )}
 
       <div className="flex items-center justify-between gap-2 px-4 py-2 border-b border-divider shrink-0 mt-2">
-        <div className="flex items-center gap-2 overflow-x-auto">
-          {filterChips.map(chip => {
-            const active = statusFilter === chip.key
-            return (
-              <button
-                key={chip.key}
-                onClick={() => setStatusFilter(chip.key)}
-                className={`h-8 px-3 rounded-lg text-[12px] font-medium whitespace-nowrap transition-colors ${
-                  active
-                    ? 'bg-primary text-white'
-                    : 'bg-surface-dark text-text-secondary hover:text-text-primary'
-                }`}
-              >
-                {chip.label}
-              </button>
-            )
-          })}
+        <div className="flex items-center gap-2 flex-1 min-w-0 flex-wrap">
+          <ResetFiltersButton
+            disabled={!hasFilters}
+            onReset={() => {
+              setCols(EMPTY_COLS)
+              setSearch('')
+              setStatusFilter('all')
+            }}
+          />
+          <StatusFilterTabs
+            tabs={STATUS_TABS}
+            value={statusFilter}
+            counts={{
+              all: kpis.total,
+              active: kpis.active,
+              out_of_service: kpis.outOfService,
+              retired: kpis.retired,
+              warranty_expiring: kpis.warrantyExpiring,
+            }}
+            onChange={id => setStatusFilter(id as StatusFilter)}
+          />
         </div>
         <div className="flex items-center gap-2 shrink-0 text-[12px] text-text-secondary">
           <span>{total === 0 ? '0' : `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} of ${total}`}</span>
@@ -516,19 +542,25 @@ export default function AssetsPage() {
         <table className="w-full" style={{ minWidth: 1100 }}>
           <thead>
             <tr className="bg-surface-elevated border-b border-divider">
-              <th className="data-th text-left" style={{ width: 180 }}>Asset</th>
-              <th className="data-th text-left" style={{ width: 100 }}>Type</th>
-              <th className="data-th text-left" style={{ width: 120 }}>Site</th>
-              <th className="data-th text-left" style={{ width: 140 }}>Assigned</th>
-              <th className="data-th text-left" style={{ width: 120 }}>Warranty</th>
-              <th className="data-th text-left" style={{ width: 120 }}>Status</th>
+              <th className={`${MONEY_TH} text-left`} style={{ width: 180 }}>
+                <TextHeaderFilter label="Asset" value={cols.asset} onChange={v => patchCols({ asset: v })} placeholder="Asset name…" />
+              </th>
+              <th className={`${MONEY_TH} text-left`} style={{ width: 100 }}>
+                <TextHeaderFilter label="Type" value={cols.type} onChange={v => patchCols({ type: v })} placeholder="Asset type…" />
+              </th>
+              <th className={`${MONEY_TH} text-left`} style={{ width: 120 }}>
+                <TextHeaderFilter label="Site" value={cols.site} onChange={v => patchCols({ site: v })} placeholder="Site name…" />
+              </th>
+              <th className={`${MONEY_TH} text-left`} style={{ width: 140 }}>Assigned</th>
+              <th className={`${MONEY_TH} text-left`} style={{ width: 120 }}>Warranty</th>
+              <th className={`${MONEY_TH} text-left`} style={{ width: 120 }}>Status</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={6} className="data-td text-center text-text-secondary py-10">Loading…</td></tr>
+              <tr><td colSpan={6} className={`${MONEY_TD} text-center text-text-secondary py-10`}>Loading…</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={6} className="data-td text-center text-text-secondary py-10">No assets found.</td></tr>
+              <tr><td colSpan={6} className={`${MONEY_TD} text-center text-text-secondary py-10`}>No assets found.</td></tr>
             ) : filtered.map(asset => {
               const st = statusStyle(asset.status)
               const expired = asset.status !== 'retired' && isWarrantyExpired(asset.warranty_expires)
@@ -539,26 +571,26 @@ export default function AssetsPage() {
                   className="bg-surface-card cursor-pointer hover:bg-background transition-colors border-b border-divider last:border-0"
                   onClick={() => { setEditing(toDraft(asset)); setIsNew(false); setError(null) }}
                 >
-                  <td className="data-td text-sm font-medium text-text-primary">
+                  <td className={`${MONEY_TD} font-medium text-text-primary`}>
                     {asset.label}
                     {asset.serial_number && (
                       <span className="block text-[11px] text-text-secondary font-normal">S/N {asset.serial_number}</span>
                     )}
                   </td>
-                  <td className="data-td text-sm text-text-secondary">{asset.asset_type ?? '—'}</td>
-                  <td className="data-td text-sm text-text-secondary">
+                  <td className={`${MONEY_TD} text-text-secondary`}>{asset.asset_type ?? '—'}</td>
+                  <td className={`${MONEY_TD} text-text-secondary`}>
                     {asset.sites?.name ?? '—'}
                     {asset.units?.unit_number && (
                       <span className="block text-[11px]">Unit {asset.units.unit_number}</span>
                     )}
                   </td>
-                  <td className="data-td text-sm text-text-secondary">{empName(asset.assigned_employee)}</td>
-                  <td className="data-td text-sm" style={{ color: expired ? '#B91C1C' : expiring ? '#D97706' : undefined }}>
+                  <td className={`${MONEY_TD} text-text-secondary`}>{empName(asset.assigned_employee)}</td>
+                  <td className={MONEY_TD} style={{ color: expired ? '#B91C1C' : expiring ? '#D97706' : undefined }}>
                     {fmtDate(asset.warranty_expires)}
                     {expired && <span className="block text-[11px]">Expired</span>}
                     {!expired && expiring && <span className="block text-[11px]">Expiring soon</span>}
                   </td>
-                  <td className="data-td">
+                  <td className={MONEY_TD}>
                     <span className="text-xs px-2 py-0.5 rounded-lg" style={{ backgroundColor: st.bg, color: st.fg }}>
                       {assetStatusLabel(asset.status)}
                     </span>
