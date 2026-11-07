@@ -6,7 +6,6 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { fmtMoney } from '@/lib/finance-calc'
-import { MoneyNotices, type MoneyNotice } from '@/components/money/MoneyNotices'
 import { XeroMark, useXeroStatuses } from '@/components/xero/XeroMark'
 import type { FinanceInvoice } from '@/lib/finance-types'
 import {
@@ -147,7 +146,6 @@ function MoneyInvoicesInner() {
   const dealFilter = searchParams.get('deal_id') ?? searchParams.get('project_id')
 
   const [rows, setRows] = useState<InvoiceRow[]>([])
-  const [notices, setNotices] = useState<MoneyNotice[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusTabId, setStatusTabId] = useState('all')
@@ -158,16 +156,13 @@ function MoneyInvoicesInner() {
   const load = useCallback(async () => {
     setLoading(true)
     const supabase = createClient()
-    let companyIdForNotices: string | null = null
     try {
       const member = await resolveCurrentMember(supabase)
       if (!member) {
         setRows([])
-        setNotices([])
         return
       }
       setCompanyId(member.companyId)
-      companyIdForNotices = member.companyId
 
       let q = supabase
         .from('finance_invoices')
@@ -215,53 +210,10 @@ function MoneyInvoicesInner() {
     } catch (err) {
       console.error('invoices page load failed', err)
       setRows([])
-      setNotices([])
     } finally {
       setLoading(false)
     }
-
-    if (!companyIdForNotices) return
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const actionRes = await (supabase.rpc as any)('hr_get_client_action_items', {
-        p_company_id: companyIdForNotices,
-      })
-      const actionRaw = actionRes?.data as unknown
-      let actionList: Array<{
-        ref_id: string
-        client_name: string
-        action_type: string
-        summary: string
-        created_at: string
-      }> = []
-      if (Array.isArray(actionRaw)) {
-        actionList = actionRaw
-      } else if (typeof actionRaw === 'string') {
-        try {
-          const parsed = JSON.parse(actionRaw) as unknown
-          if (Array.isArray(parsed)) actionList = parsed as typeof actionList
-        } catch {
-          actionList = []
-        }
-      }
-      setNotices(
-        actionList
-          .filter(item => item.action_type?.startsWith('invoice_'))
-          .map(item => ({
-            id: `${item.action_type}-${item.ref_id}`,
-            label: item.action_type === 'invoice_overdue' ? 'Invoice overdue' : 'Invoice outstanding',
-            title: item.client_name || 'Client',
-            detail: item.summary,
-            when: item.created_at,
-            tone: item.action_type === 'invoice_overdue' ? ('red' as const) : ('amber' as const),
-            onOpen: () => router.push(`/dashboard/money/invoices/${item.ref_id}`),
-          })),
-      )
-    } catch (noticeErr) {
-      console.error('invoice action notices failed', noticeErr)
-      setNotices([])
-    }
-  }, [clientFilter, jobFilter, dealFilter, router])
+  }, [clientFilter, jobFilter, dealFilter])
 
   useEffect(() => {
     void load()
@@ -326,8 +278,6 @@ function MoneyInvoicesInner() {
           <span className="material-icons text-[16px]">add</span>Invoice
         </Link>
       </div>
-
-      <MoneyNotices items={notices} />
 
       <div className="flex gap-2 px-4 py-2 border-b border-divider shrink-0 flex-wrap bg-surface items-center">
         <input

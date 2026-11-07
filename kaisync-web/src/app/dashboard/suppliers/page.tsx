@@ -24,22 +24,6 @@ type SupplierKpis = {
   linkedInventory: number
 }
 
-type SupplierActionItem = {
-  id: string
-  supplier_id: string
-  supplier_name: string
-  action_type: string
-  title: string
-  detail: string
-}
-
-const ACTION_TYPE_COLORS: Record<string, { bg: string; fg: string }> = {
-  payment_hold:     { bg: '#FEF3C7', fg: '#92400E' },
-  compliance_hold:  { bg: '#FEE2E2', fg: '#991B1B' },
-  banking_pending:  { bg: '#DBEAFE', fg: '#1E40AF' },
-  inactive:         { bg: '#E5E7EB', fg: '#374151' },
-}
-
 export default function SuppliersPage() {
   const router = useRouter()
   const [suppliers, setSuppliers] = useState<Contractor[]>([])
@@ -61,8 +45,6 @@ export default function SuppliersPage() {
   const [kpis, setKpis] = useState<SupplierKpis>({
     total: 0, active: 0, paymentHold: 0, complianceHold: 0, linkedInventory: 0,
   })
-  const [actionItems, setActionItems] = useState<SupplierActionItem[]>([])
-
   const canEdit = can(perms, PERM.suppliersEdit)
 
   useEffect(() => {
@@ -115,7 +97,6 @@ export default function SuppliersPage() {
       payHoldRes,
       compHoldRes,
       invRes,
-      signalRes,
       xStatusRes,
       sessionRes,
     ] = await Promise.all([
@@ -129,13 +110,6 @@ export default function SuppliersPage() {
         .select('id', { count: 'exact', head: true })
         .eq('company_id', cId)
         .not('supplier_contractor_id', 'is', null),
-      supabase
-        .from('contractors')
-        .select('id, name, is_active, payment_hold, compliance_hold, banking_verified, bank_name, bank_account')
-        .eq('company_id', cId)
-        .or('partner_kind.eq.supplier,partner_kind.eq.both')
-        .order('name')
-        .limit(300),
       (supabase.rpc as any)('get_xero_connection_status', { p_company_id: cId }),
       supabase.auth.getSession(),
     ])
@@ -156,51 +130,6 @@ export default function SuppliersPage() {
       complianceHold: compHoldRes.count ?? 0,
       linkedInventory: invRes.count ?? 0,
     })
-
-    const signals = (signalRes.data ?? []) as {
-      id: string
-      name: string
-      is_active: boolean | null
-      payment_hold: boolean | null
-      compliance_hold: boolean | null
-      banking_verified: boolean | null
-      bank_name: string | null
-      bank_account: string | null
-    }[]
-    const actions: SupplierActionItem[] = []
-    for (const s of signals) {
-      if (s.payment_hold) {
-        actions.push({
-          id: `${s.id}-pay`,
-          supplier_id: s.id,
-          supplier_name: s.name,
-          action_type: 'payment_hold',
-          title: 'Payment hold',
-          detail: 'Payouts blocked for this supplier',
-        })
-      }
-      if (s.compliance_hold) {
-        actions.push({
-          id: `${s.id}-comp`,
-          supplier_id: s.id,
-          supplier_name: s.name,
-          action_type: 'compliance_hold',
-          title: 'Compliance hold',
-          detail: 'Compliance incomplete — review documents',
-        })
-      }
-      if (!s.banking_verified && s.bank_name && s.bank_account) {
-        actions.push({
-          id: `${s.id}-bank`,
-          supplier_id: s.id,
-          supplier_name: s.name,
-          action_type: 'banking_pending',
-          title: 'Banking pending verification',
-          detail: 'Bank details on file but not verified',
-        })
-      }
-    }
-    setActionItems(actions.slice(0, 25))
 
     const xStatus = xStatusRes.data
     setXeroConnected(xStatus?.connected ?? false)
@@ -341,36 +270,6 @@ export default function SuppliersPage() {
         <KpiTile value={kpis.complianceHold} label="Compliance hold" bg="#1E293B" valueFg="#FCA5A5" labelFg="#64748B" />
         <KpiTile value={kpis.linkedInventory} label="Linked stock" bg="#1E293B" valueFg="#94A3B8" labelFg="#64748B" />
       </div>
-
-      {actionItems.length > 0 && (
-        <div className="mx-4 mt-3 card overflow-hidden">
-          <div className="px-3 py-2 border-b border-divider flex items-center justify-between">
-            <p className="text-[11px] font-semibold tracking-wider uppercase text-text-secondary">Action Centre</p>
-            <span className="text-[11px] text-text-disabled">{actionItems.length} item{actionItems.length !== 1 ? 's' : ''}</span>
-          </div>
-          <ul className="divide-y divide-divider max-h-48 overflow-y-auto">
-            {actionItems.map(item => {
-              const colors = ACTION_TYPE_COLORS[item.action_type] ?? { bg: '#E5E7EB', fg: '#374151' }
-              return (
-                <li
-                  key={item.id}
-                  className="px-3 py-2 flex items-center gap-3 cursor-pointer hover:bg-background transition-colors"
-                  onClick={() => router.push(`/dashboard/suppliers/${item.supplier_id}`)}
-                >
-                  <span className="text-[10px] px-2 py-0.5 rounded-lg shrink-0" style={{ backgroundColor: colors.bg, color: colors.fg }}>
-                    {item.title}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[13px] font-medium text-text-primary truncate">{item.supplier_name}</p>
-                    <p className="text-[11px] text-text-secondary truncate">{item.detail}</p>
-                  </div>
-                  <span className="material-icons text-[16px] text-text-disabled">chevron_right</span>
-                </li>
-              )
-            })}
-          </ul>
-        </div>
-      )}
 
       <div className="flex items-center justify-between px-4 py-2 border-b border-divider shrink-0 gap-3 flex-wrap mt-2">
         <p className="text-xs text-text-secondary">

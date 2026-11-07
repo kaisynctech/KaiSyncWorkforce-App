@@ -6,7 +6,6 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { fmtMoney } from '@/lib/finance-calc'
 import { quoteStatusLabel } from '@/lib/contractor-portal/quotes'
-import { MoneyNotices, type MoneyNotice } from '@/components/money/MoneyNotices'
 import type { CommercialQuote } from '@/types/database'
 import { cn } from '@/lib/utils'
 import {
@@ -213,19 +212,6 @@ function incomingBadgeClass(status: string): string {
   }
 }
 
-function asActionRows<T extends Record<string, unknown>>(raw: unknown): T[] {
-  if (Array.isArray(raw)) return raw as T[]
-  if (typeof raw === 'string') {
-    try {
-      const parsed = JSON.parse(raw) as unknown
-      return Array.isArray(parsed) ? (parsed as T[]) : []
-    } catch {
-      return []
-    }
-  }
-  return []
-}
-
 function colsActive(c: TextCols): boolean {
   return !!(
     c.number ||
@@ -288,7 +274,6 @@ function QuotesPageInner() {
   const [loading, setLoading] = useState(true)
   const [sales, setSales] = useState<SalesRow[]>([])
   const [incoming, setIncoming] = useState<IncomingRow[]>([])
-  const [notices, setNotices] = useState<MoneyNotice[]>([])
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE)
   const [filterLabels, setFilterLabels] = useState<{ client?: string; job?: string; deal?: string }>({})
@@ -313,16 +298,13 @@ function QuotesPageInner() {
   const load = useCallback(async () => {
     setLoading(true)
     const supabase = createClient()
-    let companyId: string | null = null
     try {
       const member = await resolveCurrentMember(supabase)
       if (!member) {
         setSales([])
         setIncoming([])
-        setNotices([])
         return
       }
-      companyId = member.companyId
 
       let salesQ = supabase
         .from('commercial_quotes')
@@ -383,71 +365,10 @@ function QuotesPageInner() {
       console.error('quotes page load failed', err)
       setSales([])
       setIncoming([])
-      setNotices([])
     } finally {
       setLoading(false)
     }
-
-    if (!companyId) return
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rpc = supabase.rpc as any
-      const [contractorRes, projectRes] = await Promise.all([
-        rpc('hr_get_contractor_action_items', { p_company_id: companyId }),
-        rpc('hr_get_project_action_items', { p_company_id: companyId }),
-      ])
-
-      type ContractorAction = {
-        action_type?: string | null
-        ref_id?: string | null
-        contractor_id?: string | null
-        contractor_name?: string | null
-        summary?: string | null
-        created_at?: string | null
-      }
-      type ProjectAction = {
-        action_type?: string | null
-        ref_id?: string | null
-        project_id?: string | null
-        project_title?: string | null
-        summary?: string | null
-        created_at?: string | null
-      }
-
-      const quoteNotices: MoneyNotice[] = []
-      for (const item of asActionRows<ContractorAction>(contractorRes?.data)) {
-        if (item.action_type !== 'quote_pending' || !item.ref_id || !item.contractor_id) continue
-        quoteNotices.push({
-          id: `quote-${item.ref_id}`,
-          label: 'Quote to review',
-          title: item.contractor_name || 'Contractor',
-          detail: item.summary ?? '',
-          when: item.created_at ?? null,
-          tone: 'blue',
-          onOpen: () =>
-            router.push(
-              `/dashboard/contractors/${item.contractor_id}?tab=Quotes&focusType=quote_pending&focus=${item.ref_id}`,
-            ),
-        })
-      }
-      for (const item of asActionRows<ProjectAction>(projectRes?.data)) {
-        if (item.action_type !== 'quotation_pending' || !item.project_id) continue
-        quoteNotices.push({
-          id: `quotation-${item.ref_id}`,
-          label: 'Quotation to send',
-          title: item.project_title || 'Project',
-          detail: item.summary ?? '',
-          when: item.created_at ?? null,
-          tone: 'blue',
-          onOpen: () => router.push(`/dashboard/projects/${item.project_id}?tab=quotation`),
-        })
-      }
-      setNotices(quoteNotices)
-    } catch (noticeErr) {
-      console.error('quote action notices failed', noticeErr)
-      setNotices([])
-    }
-  }, [clientFilter, jobFilter, dealFilter, router])
+  }, [clientFilter, jobFilter, dealFilter])
 
   useEffect(() => {
     void load()
@@ -622,8 +543,6 @@ function QuotesPageInner() {
           )}
         </div>
       </div>
-
-      <MoneyNotices items={notices} />
 
       <div className="flex gap-1 px-4 pt-2 border-b border-divider bg-surface shrink-0">
         {(
