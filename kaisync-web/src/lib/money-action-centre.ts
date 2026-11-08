@@ -97,195 +97,219 @@ export async function loadMoneyActionItems(
 
   if (domains.includes('invoices')) {
     tasks.push((async () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rpc = supabase.rpc as any
-      const [clientRes, projectRes] = await Promise.all([
-        rpc('hr_get_client_action_items', { p_company_id: companyId }),
-        rpc('hr_get_project_action_items', { p_company_id: companyId }),
-      ])
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const rpc = supabase.rpc as any
+        const [clientRes, projectRes] = await Promise.all([
+          rpc('hr_get_client_action_items', { p_company_id: companyId }),
+          rpc('hr_get_project_action_items', { p_company_id: companyId }),
+        ])
 
-      const fromClients = parseRpcList<ClientActionItem>(clientRes?.data)
-        .filter(item => item.action_type?.startsWith('invoice_'))
-        .map(item => ({
-          key: `invoices:client:${item.action_type}:${item.ref_id}`,
-          domain: 'invoices' as const,
-          action_type: item.action_type,
-          title: item.client_name || 'Client',
-          summary: item.summary,
-          created_at: item.created_at ?? null,
-          ref_id: item.ref_id,
-          entity_id: item.client_id,
-        }))
+        const fromClients = parseRpcList<ClientActionItem>(clientRes?.data)
+          .filter(item => item.action_type?.startsWith('invoice_'))
+          .map(item => ({
+            key: `invoices:client:${item.action_type}:${item.ref_id}`,
+            domain: 'invoices' as const,
+            action_type: item.action_type,
+            title: item.client_name || 'Client',
+            summary: item.summary,
+            created_at: item.created_at ?? null,
+            ref_id: item.ref_id,
+            entity_id: item.client_id,
+          }))
 
-      // Ops excluded project invoice_overdue — surface it here (money invoice route).
-      const fromProjects = parseRpcList<ProjectActionItem>(projectRes?.data)
-        .filter(item => item.action_type === 'invoice_overdue')
-        .map(item => ({
-          key: `invoices:project:${item.action_type}:${item.ref_id}`,
-          domain: 'invoices' as const,
-          action_type: item.action_type,
-          title: item.project_title || 'Project',
-          summary: item.summary,
-          created_at: item.created_at ?? null,
-          ref_id: item.ref_id,
-          entity_id: item.project_id,
-        }))
+        // Ops excluded project invoice_overdue — surface it here (money invoice route).
+        const fromProjects = parseRpcList<ProjectActionItem>(projectRes?.data)
+          .filter(item => item.action_type === 'invoice_overdue')
+          .map(item => ({
+            key: `invoices:project:${item.action_type}:${item.ref_id}`,
+            domain: 'invoices' as const,
+            action_type: item.action_type,
+            title: item.project_title || 'Project',
+            summary: item.summary,
+            created_at: item.created_at ?? null,
+            ref_id: item.ref_id,
+            entity_id: item.project_id,
+          }))
 
-      empty.invoices = [...fromClients, ...fromProjects]
+        empty.invoices = [...fromClients, ...fromProjects]
+      } catch (err) {
+        console.error('money AC invoices load failed', err)
+      }
     })())
   }
 
   if (domains.includes('quotes')) {
     tasks.push((async () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rpc = supabase.rpc as any
-      const [contractorRes, projectRes] = await Promise.all([
-        rpc('hr_get_contractor_action_items', { p_company_id: companyId }),
-        rpc('hr_get_project_action_items', { p_company_id: companyId }),
-      ])
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const rpc = supabase.rpc as any
+        const [contractorRes, projectRes] = await Promise.all([
+          rpc('hr_get_contractor_action_items', { p_company_id: companyId }),
+          rpc('hr_get_project_action_items', { p_company_id: companyId }),
+        ])
 
-      const fromContractors = parseRpcList<ContractorActionItem>(contractorRes?.data)
-        .filter(item => item.action_type === 'quote_pending')
-        .map(item => ({
-          key: `quotes:contractor:${item.ref_id}`,
-          domain: 'quotes' as const,
-          action_type: 'quote_pending',
-          title: item.contractor_name || 'Contractor',
-          summary: item.summary,
-          created_at: item.created_at ?? null,
-          ref_id: item.ref_id,
-          entity_id: item.contractor_id,
-        }))
+        const fromContractors = parseRpcList<ContractorActionItem>(contractorRes?.data)
+          .filter(item => item.action_type === 'quote_pending')
+          .map(item => ({
+            key: `quotes:contractor:${item.ref_id}`,
+            domain: 'quotes' as const,
+            action_type: 'quote_pending',
+            title: item.contractor_name || 'Contractor',
+            summary: item.summary,
+            created_at: item.created_at ?? null,
+            ref_id: item.ref_id,
+            entity_id: item.contractor_id,
+          }))
 
-      const fromProjects = parseRpcList<ProjectActionItem>(projectRes?.data)
-        .filter(item => item.action_type === 'quotation_pending')
-        .map(item => ({
-          key: `quotes:project:${item.ref_id}`,
-          domain: 'quotes' as const,
-          action_type: 'quotation_pending',
-          title: item.project_title || 'Project',
-          summary: item.summary,
-          created_at: item.created_at ?? null,
-          ref_id: item.ref_id,
-          entity_id: item.project_id,
-        }))
+        const fromProjects = parseRpcList<ProjectActionItem>(projectRes?.data)
+          .filter(item => item.action_type === 'quotation_pending')
+          .map(item => ({
+            key: `quotes:project:${item.ref_id}`,
+            domain: 'quotes' as const,
+            action_type: 'quotation_pending',
+            title: item.project_title || 'Project',
+            summary: item.summary,
+            created_at: item.created_at ?? null,
+            ref_id: item.ref_id,
+            entity_id: item.project_id,
+          }))
 
-      empty.quotes = [...fromContractors, ...fromProjects]
+        empty.quotes = [...fromContractors, ...fromProjects]
+      } catch (err) {
+        console.error('money AC quotes load failed', err)
+      }
     })())
   }
 
   if (domains.includes('approvals')) {
     tasks.push((async () => {
-      // Same queries as /dashboard/finance/approvals (verified existing behaviour).
-      const [siRes, poRes] = await Promise.all([
-        supabase
-          .from('supplier_invoices')
-          .select('id, invoice_number, approval_status, total_amount, created_at, contractors!supplier_invoices_supplier_id_fkey(name)')
-          .eq('company_id', companyId)
-          .eq('approval_status', 'pending')
-          .order('created_at', { ascending: false })
-          .limit(40),
-        supabase
-          .from('contractor_payouts')
-          .select('id, payout_status, approval_status, amount, created_at, contractors(name)')
-          .eq('company_id', companyId)
-          .in('payout_status', ['pending', 'approved'])
-          .order('created_at', { ascending: false })
-          .limit(40),
-      ])
+      try {
+        // Same queries as /dashboard/finance/approvals (verified existing behaviour).
+        // contractor_payouts uses total_amount (not amount).
+        const [siRes, poRes] = await Promise.all([
+          supabase
+            .from('supplier_invoices')
+            .select('id, invoice_number, approval_status, total_amount, created_at, contractors!supplier_invoices_supplier_id_fkey(name)')
+            .eq('company_id', companyId)
+            .eq('approval_status', 'pending')
+            .order('created_at', { ascending: false })
+            .limit(40),
+          supabase
+            .from('contractor_payouts')
+            .select('id, payout_status, approval_status, total_amount, created_at, contractors(name)')
+            .eq('company_id', companyId)
+            .in('payout_status', ['pending', 'approved'])
+            .order('created_at', { ascending: false })
+            .limit(40),
+        ])
 
-      const bills: MoneyActionItem[] = (siRes.data ?? []).map(row => {
-        const contractor = row.contractors as { name?: string } | null
-        return {
-          key: `approvals:si:${row.id}`,
-          domain: 'approvals',
-          action_type: 'supplier_approval',
-          title: contractor?.name || 'Supplier',
-          summary: `Supplier invoice ${row.invoice_number ?? String(row.id).slice(0, 8)} awaiting approval`,
-          created_at: (row.created_at as string | null) ?? null,
-          ref_id: row.id as string,
-          entity_id: row.id as string,
-        }
-      })
+        if (siRes.error) console.error('money AC supplier invoices', siRes.error.message)
+        if (poRes.error) console.error('money AC contractor payouts', poRes.error.message)
 
-      const payouts: MoneyActionItem[] = (poRes.data ?? [])
-        .filter(row => {
-          const approval = row.approval_status as string | null
-          const payout = row.payout_status as string | null
-          return approval === 'pending' || payout === 'pending' || payout === 'approved'
-        })
-        .map(row => {
+        const bills: MoneyActionItem[] = (siRes.data ?? []).map(row => {
           const contractor = row.contractors as { name?: string } | null
-          const status = (row.payout_status as string) || 'pending'
           return {
-            key: `approvals:payout:${row.id}`,
+            key: `approvals:si:${row.id}`,
             domain: 'approvals',
-            action_type: status === 'approved' ? 'payout_approved' : 'payout_pending',
-            title: contractor?.name || 'Contractor',
-            summary: `Payout ${status}${row.amount != null ? ` · R ${Number(row.amount).toLocaleString('en-ZA')}` : ''}`,
+            action_type: 'supplier_approval',
+            title: contractor?.name || 'Supplier',
+            summary: `Supplier invoice ${row.invoice_number ?? String(row.id).slice(0, 8)} awaiting approval`,
             created_at: (row.created_at as string | null) ?? null,
             ref_id: row.id as string,
             entity_id: row.id as string,
           }
         })
 
-      empty.approvals = [...bills, ...payouts]
+        const payouts: MoneyActionItem[] = (poRes.data ?? [])
+          .filter(row => {
+            const approval = row.approval_status as string | null
+            const payout = row.payout_status as string | null
+            return approval === 'pending' || payout === 'pending' || payout === 'approved'
+          })
+          .map(row => {
+            const contractor = row.contractors as { name?: string } | null
+            const status = (row.payout_status as string) || 'pending'
+            const total = row.total_amount
+            return {
+              key: `approvals:payout:${row.id}`,
+              domain: 'approvals',
+              action_type: status === 'approved' ? 'payout_approved' : 'payout_pending',
+              title: contractor?.name || 'Contractor',
+              summary: `Payout ${status}${total != null ? ` · R ${Number(total).toLocaleString('en-ZA')}` : ''}`,
+              created_at: (row.created_at as string | null) ?? null,
+              ref_id: row.id as string,
+              entity_id: row.id as string,
+            }
+          })
+
+        empty.approvals = [...bills, ...payouts]
+      } catch (err) {
+        console.error('money AC approvals load failed', err)
+      }
     })())
   }
 
   if (domains.includes('suppliers')) {
     tasks.push((async () => {
-      const { data, error } = await supabase
-        .from('contractors')
-        .select('id, name, is_active, payment_hold, compliance_hold, banking_verified, bank_name, bank_account')
-        .eq('company_id', companyId)
-        .or('partner_kind.eq.supplier,partner_kind.eq.both')
-        .order('name')
-        .limit(300)
-      if (error) return
+      try {
+        const { data, error } = await supabase
+          .from('contractors')
+          .select('id, name, is_active, payment_hold, compliance_hold, banking_verified, bank_name, bank_account')
+          .eq('company_id', companyId)
+          .or('partner_kind.eq.supplier,partner_kind.eq.both')
+          .order('name')
+          .limit(300)
+        if (error) {
+          console.error('money AC suppliers', error.message)
+          return
+        }
 
-      const actions: MoneyActionItem[] = []
-      for (const s of data ?? []) {
-        const name = (s.name as string) || 'Supplier'
-        const id = s.id as string
-        if (s.payment_hold) {
-          actions.push({
-            key: `suppliers:${id}-pay`,
-            domain: 'suppliers',
-            action_type: 'payment_hold',
-            title: name,
-            summary: 'Payouts blocked for this supplier',
-            created_at: null,
-            ref_id: `${id}-pay`,
-            entity_id: id,
-          })
+        const actions: MoneyActionItem[] = []
+        for (const s of data ?? []) {
+          const name = (s.name as string) || 'Supplier'
+          const id = s.id as string
+          if (s.payment_hold) {
+            actions.push({
+              key: `suppliers:${id}-pay`,
+              domain: 'suppliers',
+              action_type: 'payment_hold',
+              title: name,
+              summary: 'Payouts blocked for this supplier',
+              created_at: null,
+              ref_id: `${id}-pay`,
+              entity_id: id,
+            })
+          }
+          if (s.compliance_hold) {
+            actions.push({
+              key: `suppliers:${id}-comp`,
+              domain: 'suppliers',
+              action_type: 'compliance_hold',
+              title: name,
+              summary: 'Compliance incomplete — review documents',
+              created_at: null,
+              ref_id: `${id}-comp`,
+              entity_id: id,
+            })
+          }
+          if (!s.banking_verified && s.bank_name && s.bank_account) {
+            actions.push({
+              key: `suppliers:${id}-bank`,
+              domain: 'suppliers',
+              action_type: 'banking_pending',
+              title: name,
+              summary: 'Bank details on file but not verified',
+              created_at: null,
+              ref_id: `${id}-bank`,
+              entity_id: id,
+            })
+          }
         }
-        if (s.compliance_hold) {
-          actions.push({
-            key: `suppliers:${id}-comp`,
-            domain: 'suppliers',
-            action_type: 'compliance_hold',
-            title: name,
-            summary: 'Compliance incomplete — review documents',
-            created_at: null,
-            ref_id: `${id}-comp`,
-            entity_id: id,
-          })
-        }
-        if (!s.banking_verified && s.bank_name && s.bank_account) {
-          actions.push({
-            key: `suppliers:${id}-bank`,
-            domain: 'suppliers',
-            action_type: 'banking_pending',
-            title: name,
-            summary: 'Bank details on file but not verified',
-            created_at: null,
-            ref_id: `${id}-bank`,
-            entity_id: id,
-          })
-        }
+        empty.suppliers = actions.slice(0, 25)
+      } catch (err) {
+        console.error('money AC suppliers load failed', err)
       }
-      empty.suppliers = actions.slice(0, 25)
     })())
   }
 

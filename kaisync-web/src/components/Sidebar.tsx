@@ -48,6 +48,7 @@ const NAV_SECTIONS: NavSection[] = [
     label: 'Workforce',
     icon: 'people',
     items: [
+      { label: 'Action Centre',  href: '/dashboard/workforce/action-centre', icon: 'bolt' },
       { label: 'Employees',      href: '/dashboard/employees',      icon: 'people',          flag: 'employees' },
       { label: 'Work Teams',     href: '/dashboard/work-teams',     icon: 'groups',          flag: 'workTeams' },
       { label: 'Leave',          href: '/dashboard/leave',          icon: 'event_available', flag: 'leave' },

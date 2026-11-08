@@ -1,8 +1,8 @@
 'use client'
 
 import { ErrorWithUpgrade } from '@/components/billing/ErrorWithUpgrade'
-import { useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useEffect, useRef, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
@@ -152,7 +152,16 @@ function shiftYearMonth(yearMonth: string, delta: number) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function EmployeesPage() {
+  return (
+    <Suspense fallback={<p className="text-center text-[13px] text-text-secondary py-10">Loading…</p>}>
+      <EmployeesPageInner />
+    </Suspense>
+  )
+}
+
+function EmployeesPageInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
 
   // ── Core ──────────────────────────────────────────────────────────────────
   const [companyId,      setCompanyId]      = useState<string | null>(null)
@@ -162,6 +171,14 @@ export default function EmployeesPage() {
   const [leaveSettings,  setLeaveSettings]  = useState<LeaveSettingsMap>({})
   const [tab,            setTab]            = useState<Tab>('employees')
   const [error,          setError]          = useState<string | null>(null)
+
+  // Deep-link from Workforce Action Centre: /dashboard/employees?tab=pending
+  useEffect(() => {
+    const raw = searchParams.get('tab')
+    if (raw === 'pending' || raw === 'leave' || raw === 'teams' || raw === 'employees') {
+      setTab(raw)
+    }
+  }, [searchParams])
 
   // ── Tab 1 — Employees ─────────────────────────────────────────────────────
   const [employees,     setEmployees]     = useState<Employee[]>([])

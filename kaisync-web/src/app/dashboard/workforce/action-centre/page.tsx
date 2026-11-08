@@ -1,0 +1,233 @@
+'use client'
+
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
+import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import { resolveHrNavFlags, type HrNavFlags } from '@/lib/company-modules'
+import { loadCompanyWorkspace } from '@/lib/employee-workspace'
+import { useDashboardCompany } from '@/components/DashboardCompanyContext'
+import { cn } from '@/lib/utils'
+import { MONEY_TH, MONEY_TD } from '@/components/ui/StatusFilterTabs'
+import {
+  WORKFORCE_ACTION_TABS,
+  loadWorkforceActionItems,
+  openWorkforceActionItem,
+  workforceActionColor,
+  visibleWorkforceActionDomains,
+  type WorkforceActionDomain,
+  type WorkforceActionItem,
+} from '@/lib/workforce-action-centre'
+
+function fmtDate(d: string | null) {
+  if (!d) return '—'
+  return new Intl.DateTimeFormat('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(d))
+}
+
+export default function WorkforceActionCentrePage() {
+  const router = useRouter()
+  const { company } = useDashboardCompany()
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [flags, setFlags] = useState<HrNavFlags | null>(null)
+  const [byDomain, setByDomain] = useState<Record<WorkforceActionDomain, WorkforceActionItem[]> | null>(null)
+  const [tab, setTab] = useState<WorkforceActionDomain | null>(null)
+  const [opening, setOpening] = useState<string | null>(null)
+
+  const domains = useMemo(
+    () => (flags ? visibleWorkforceActionDomains(flags) : []),
+    [flags],
+  )
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const supabase = createClient()
+      const member = await resolveCurrentMember(supabase)
+      const companyId = company?.id ?? member?.companyId
+      if (!companyId || !member) {
+        setError('not_linked')
+        return
+      }
+
+      let workspaceModules: Record<string, boolean> = {}
+      try {
+        const workspace = await loadCompanyWorkspace(supabase, companyId)
+        workspaceModules = (workspace?.enabled_modules ?? {}) as Record<string, boolean>
+      } catch (wsErr) {
+        console.error('workforce AC workspace load failed', wsErr)
+      }
+
+      const enabled = {
+        ...(company?.enabled_modules ?? {}),
+        ...workspaceModules,
+      }
+      const nextFlags = resolveHrNavFlags(enabled)
+      setFlags(nextFlags)
+
+      const visible = visibleWorkforceActionDomains(nextFlags)
+      if (visible.length === 0) {
+        setByDomain({ registrations: [], leave: [], payslips: [] })
+        setTab(null)
+        return
+      }
+
+      const items = await loadWorkforceActionItems(
+        supabase,
+        companyId,
+        member.employeeId,
+        visible,
+      )
+      setByDomain(items)
+      setTab(prev => (prev && visible.includes(prev) ? prev : visible[0]))
+    } catch (err) {
+      console.error('workforce AC page load failed', err)
+      setError(err instanceof Error ? err.message : 'Failed to load Action Centre')
+      setByDomain({ registrations: [], leave: [], payslips: [] })
+    } finally {
+      setLoading(false)
+    }
+  }, [company?.id])
+
+  useEffect(() => { void load() }, [load])
+
+  const rows = tab && byDomain ? byDomain[tab] : []
+  const counts = useMemo(() => {
+    const c: Record<string, number> = {}
+    for (const d of domains) c[d] = byDomain?.[d]?.length ?? 0
+    return c
+  }, [domains, byDomain])
+
+  function onOpen(item: WorkforceActionItem) {
+    setOpening(item.key)
+    try {
+      openWorkforceActionItem(item, router)
+    } finally {
+      setOpening(null)
+    }
+  }
+
+  if (error === 'not_linked') {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <p className="text-[14px] text-text-secondary">Account not linked to an employee record.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="h-full flex flex-col">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-divider shrink-0 bg-surface gap-3 flex-wrap">
+        <div>
+          <h1 className="text-[18px] font-semibold text-text-primary leading-tight flex items-center gap-1.5">
+            <span className="material-icons text-primary text-[20px]">bolt</span>
+            Action Centre
+          </h1>
+          <p className="text-[11px] text-text-secondary mt-0.5">
+            Pending workforce work — registrations, leave and payslips
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void load()}
+          className="h-8 px-2.5 rounded-md border border-divider text-[12px] font-medium text-text-secondary hover:bg-surface-elevated"
+        >
+          Refresh
+        </button>
+      </div>
+
+      <div className="flex gap-1 px-4 py-2 border-b border-divider shrink-0 flex-wrap bg-surface items-center">
+        {domains.length === 0 && !loading && (
+          <p className="text-[12px] text-text-secondary">No Workforce modules available for your account.</p>
+        )}
+        {domains.map(id => {
+          const meta = WORKFORCE_ACTION_TABS.find(t => t.id === id)!
+          const on = tab === id
+          const count = counts[id] ?? 0
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setTab(id)}
+              className={cn(
+                'h-8 px-2.5 rounded-md text-[11px] font-semibold border transition-colors bg-surface',
+                on
+                  ? 'bg-slate-800 text-white border-slate-800'
+                  : 'border-divider text-text-primary hover:bg-surface-elevated',
+              )}
+            >
+              {meta.label}
+              <span className={cn('ml-1 tabular-nums font-medium', on ? 'text-white/85' : 'opacity-70')}>
+                ({count})
+              </span>
+            </button>
+          )
+        })}
+      </div>
+
+      <div className="flex-1 overflow-auto">
+        {loading ? (
+          <p className="text-center text-[12px] text-text-secondary py-10">Loading…</p>
+        ) : error ? (
+          <p className="text-center text-[12px] text-error py-10">{error}</p>
+        ) : rows.length === 0 ? (
+          <div className="py-16 text-center">
+            <span className="material-icons text-[40px] text-divider block mb-2">task_alt</span>
+            <p className="text-[14px] font-medium text-text-primary">Up to date</p>
+            <p className="text-[12px] text-text-secondary mt-1">Nothing pending in this area.</p>
+          </div>
+        ) : (
+          <table className="w-full" style={{ minWidth: 640 }}>
+            <thead>
+              <tr className="bg-surface-elevated border-b border-divider sticky top-0 z-10">
+                <th className={`${MONEY_TH} text-left w-[140px]`}>Type</th>
+                <th className={`${MONEY_TH} text-left`}>Item</th>
+                <th className={`${MONEY_TH} text-left w-[110px]`}>Date</th>
+                <th className={`${MONEY_TH} text-right w-[80px]`} />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(item => {
+                const colors = workforceActionColor(item.action_type)
+                return (
+                  <tr
+                    key={item.key}
+                    className="border-b border-divider last:border-0 hover:bg-surface-elevated cursor-pointer"
+                    onClick={() => onOpen(item)}
+                  >
+                    <td className={MONEY_TD}>
+                      <span
+                        className="inline-flex rounded-[5px] px-[6px] py-[3px] text-[10px] font-medium"
+                        style={{ backgroundColor: colors.bg, color: colors.fg }}
+                      >
+                        {item.action_type.replace(/_/g, ' ')}
+                      </span>
+                    </td>
+                    <td className={MONEY_TD}>
+                      <p className="font-medium text-text-primary truncate">{item.title}</p>
+                      <p className="text-[11px] text-text-secondary truncate">{item.summary}</p>
+                    </td>
+                    <td className={`${MONEY_TD} text-text-secondary whitespace-nowrap`}>
+                      {fmtDate(item.created_at)}
+                    </td>
+                    <td className={`${MONEY_TD} text-right`}>
+                      <button
+                        type="button"
+                        disabled={opening === item.key}
+                        onClick={e => { e.stopPropagation(); onOpen(item) }}
+                        className="text-primary text-[12px] h-7 px-2 hover:opacity-70 disabled:opacity-50"
+                      >
+                        {opening === item.key ? '…' : 'Open →'}
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  )
+}

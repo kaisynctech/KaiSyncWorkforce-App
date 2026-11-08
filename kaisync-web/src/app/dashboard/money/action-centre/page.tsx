@@ -44,50 +44,62 @@ export default function MoneyActionCentrePage() {
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
-    const supabase = createClient()
-    const member = await resolveCurrentMember(supabase)
-    const companyId = company?.id ?? member?.companyId
-    if (!companyId || !member) {
-      setError('not_linked')
-      setLoading(false)
-      return
-    }
+    try {
+      const supabase = createClient()
+      const member = await resolveCurrentMember(supabase)
+      const companyId = company?.id ?? member?.companyId
+      if (!companyId || !member) {
+        setError('not_linked')
+        return
+      }
 
-    const workspace = await loadCompanyWorkspace(supabase, companyId)
-    const enabled = {
-      ...(company?.enabled_modules ?? {}),
-      ...(workspace?.enabled_modules ?? {}),
-    }
-    // Finance entitlement is handled by Money overview / FinanceLayout; commercial
-    // tabs only need the Money module flag from enabled_modules.
-    const nextFlags = resolveHrNavFlags(enabled)
-    setFlags(nextFlags)
+      let workspaceModules: Record<string, boolean> = {}
+      try {
+        const workspace = await loadCompanyWorkspace(supabase, companyId)
+        workspaceModules = (workspace?.enabled_modules ?? {}) as Record<string, boolean>
+      } catch (wsErr) {
+        console.error('money AC workspace load failed', wsErr)
+      }
 
-    const { data: me } = await supabase
-      .from('employees')
-      .select('access_level')
-      .eq('id', member.employeeId)
-      .maybeSingle()
-    const nextPerms = await loadPermissions(
-      supabase,
-      companyId,
-      employee?.access_level ?? me?.access_level ?? null,
-    )
-    setPerms(nextPerms)
+      const enabled = {
+        ...(company?.enabled_modules ?? {}),
+        ...workspaceModules,
+      }
+      // Finance entitlement is handled by Money overview / FinanceLayout; commercial
+      // tabs only need the Money module flag from enabled_modules.
+      const nextFlags = resolveHrNavFlags(enabled)
+      setFlags(nextFlags)
 
-    const visible = visibleMoneyActionDomains(nextFlags, nextPerms)
-    if (visible.length === 0) {
+      const { data: me } = await supabase
+        .from('employees')
+        .select('access_level')
+        .eq('id', member.employeeId)
+        .maybeSingle()
+      const nextPerms = await loadPermissions(
+        supabase,
+        companyId,
+        employee?.access_level ?? me?.access_level ?? null,
+      )
+      setPerms(nextPerms)
+
+      const visible = visibleMoneyActionDomains(nextFlags, nextPerms)
+      if (visible.length === 0) {
+        setByDomain({ invoices: [], quotes: [], approvals: [], suppliers: [] })
+        setTab(null)
+        return
+      }
+
+      const items = await loadMoneyActionItems(supabase, companyId, visible)
+      setByDomain(items)
+      setTab(prev => (prev && visible.includes(prev) ? prev : visible[0]))
+    } catch (err) {
+      console.error('money AC page load failed', err)
+      setError(err instanceof Error ? err.message : 'Failed to load Action Centre')
       setByDomain({ invoices: [], quotes: [], approvals: [], suppliers: [] })
-      setTab(null)
+    } finally {
       setLoading(false)
-      return
     }
-
-    const items = await loadMoneyActionItems(supabase, companyId, visible)
-    setByDomain(items)
-    setTab(prev => (prev && visible.includes(prev) ? prev : visible[0]))
-    setLoading(false)
-  }, [company?.id, company?.enabled_modules, employee?.access_level])
+  }, [company?.id, employee?.access_level])
 
   useEffect(() => { void load() }, [load])
 
