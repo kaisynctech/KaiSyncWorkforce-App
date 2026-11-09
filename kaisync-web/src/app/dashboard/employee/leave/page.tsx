@@ -75,6 +75,12 @@ const STATUS_OPTIONS = [
   { id: 'cancelled', label: 'Cancelled' },
 ]
 
+/** Page view switcher — same chrome as HR Leave Pending/Upcoming/Balances. */
+const LEAVE_VIEW_TABS = [
+  { id: 'requests', label: 'Leave Requests', match: null, idle: 'border-slate-200 text-slate-700 hover:bg-slate-50', active: 'bg-slate-700 text-white border-slate-700' },
+  { id: 'balances', label: 'Leave Balances', match: null, idle: 'border-blue-200 text-blue-700 hover:bg-blue-50', active: 'bg-blue-600 text-white border-blue-600' },
+]
+
 function fmtDate(iso: string): string {
   return new Date(iso + 'T12:00:00').toLocaleDateString('en-ZA', {
     day: '2-digit',
@@ -100,11 +106,13 @@ export default function EmployeeLeavePage() {
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [reason, setReason] = useState('')
+  const [viewTab, setViewTab] = useState<'requests' | 'balances'>('requests')
   const [statusTabId, setStatusTabId] = useState<string>(TAB_ALL.id)
   const [typeFilter, setTypeFilter] = useState('')
   const [reasonFilter, setReasonFilter] = useState('')
   const [noteFilter, setNoteFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState<string[]>([])
+  const [balanceTypeFilter, setBalanceTypeFilter] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
   const tokRef = useRef<string | null>(null)
 
@@ -267,6 +275,8 @@ export default function EmployeeLeavePage() {
   }
 
   const summary = summarizeCompanyLeave(requests, leaveSettings)
+  const filteredBalances = summary.filter(s => matchText(s.leave_type, balanceTypeFilter))
+  const hasBalanceFilters = !!balanceTypeFilter
   const typeOptions = resolveLeaveTypeOptions(leaveSettings)
   const leaveTypeChoices = typeOptions.some(t => t.key === leaveType)
     ? typeOptions
@@ -288,165 +298,240 @@ export default function EmployeeLeavePage() {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {summary.length > 0 && (
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        <StatusFilterTabs
+          tabs={LEAVE_VIEW_TABS}
+          value={viewTab}
+          counts={{ requests: requests.length, balances: summary.length }}
+          onChange={id => setViewTab(id as 'requests' | 'balances')}
+        />
+
+        {viewTab === 'requests' && (
           <div>
-            <p className="section-label mb-2">Leave Balances</p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {summary.map((s) => (
-                <div key={s.leave_type} className="bg-surface border border-divider rounded-xl p-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="material-icons text-primary text-[18px]">{getLeaveIcon(s.leave_type)}</span>
-                    <p className="text-[12px] font-semibold text-text-primary truncate">{s.leave_type}</p>
-                  </div>
-                  <p className="text-[22px] font-bold text-text-primary">
-                    {s.days_remaining}
-                    <span className="text-[14px] text-text-disabled font-normal"> / {s.annual_days}d</span>
-                  </p>
-                  <p className="text-[11px] text-text-disabled">days remaining</p>
-                  <p className="text-[11px] text-text-secondary mt-0.5">
-                    {s.days_approved}d taken
-                    {s.days_pending > 0 ? ` · ${s.days_pending}d pending` : ''}
-                  </p>
+            {sorted.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 gap-2 text-text-secondary">
+                <span className="material-icons text-[48px] text-text-disabled">event_available</span>
+                <p className="text-[14px]">No leave requests yet</p>
+              </div>
+            ) : (
+              <>
+                <div className="flex gap-2 pb-2 flex-wrap items-center">
+                  <ResetFiltersButton disabled={!hasFilters} onReset={resetFilters} />
+                  <StatusFilterTabs
+                    tabs={STATUS_TABS}
+                    value={statusTabId}
+                    counts={statusCounts}
+                    onChange={setStatusTabId}
+                  />
                 </div>
-              ))}
-            </div>
+                {filtered.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 gap-2 text-text-secondary">
+                    <span className="material-icons text-[48px] text-text-disabled">filter_alt_off</span>
+                    <p className="text-[14px]">No leave requests match the current filters</p>
+                  </div>
+                ) : (
+                  <ResponsiveDataView
+                    table={
+                      <div className="bg-surface border border-divider rounded-xl overflow-x-auto">
+                        <table className="w-full" style={{ minWidth: 860 }}>
+                          <thead>
+                            <tr className="bg-surface-elevated border-b border-divider">
+                              <th className={`${MONEY_TH} text-left`}>
+                                <TextHeaderFilter label="Type" value={typeFilter} onChange={setTypeFilter} placeholder="Filter type…" />
+                              </th>
+                              <th className={`${MONEY_TH} text-left`}>Start</th>
+                              <th className={`${MONEY_TH} text-left`}>End</th>
+                              <th className={`${MONEY_TH} text-left`}>Days</th>
+                              <th className={`${MONEY_TH} text-left`}>
+                                <StatusHeaderFilter label="Status" options={STATUS_OPTIONS} selected={statusFilter} onChange={setStatusFilter} />
+                              </th>
+                              <th className={`${MONEY_TH} text-left`}>
+                                <TextHeaderFilter label="Reason" value={reasonFilter} onChange={setReasonFilter} placeholder="Filter reason…" />
+                              </th>
+                              <th className={`${MONEY_TH} text-left`}>
+                                <TextHeaderFilter label="Note" value={noteFilter} onChange={setNoteFilter} placeholder="Filter note…" />
+                              </th>
+                              <th className={`${MONEY_TH} text-center`}>Doc</th>
+                              <th className={MONEY_TH} />
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-divider">
+                            {filtered.map((req) => (
+                              <tr key={req.id} className="hover:bg-surface-elevated transition-colors">
+                                <td className={`${MONEY_TD} font-semibold text-text-primary whitespace-nowrap`}>{req.leave_type}</td>
+                                <td className={`${MONEY_TD} text-text-secondary whitespace-nowrap`}>{fmtDate(req.start_date)}</td>
+                                <td className={`${MONEY_TD} text-text-secondary whitespace-nowrap`}>{fmtDate(req.end_date)}</td>
+                                <td className={`${MONEY_TD} text-text-secondary whitespace-nowrap`}>{req.total_days}d</td>
+                                <td className={`${MONEY_TD} whitespace-nowrap`}>
+                                  <span className={`text-[11px] font-semibold px-2 py-[2px] rounded-full capitalize ${STATUS_STYLES[req.status] ?? 'bg-surface-elevated text-text-secondary'}`}>
+                                    {req.status}
+                                  </span>
+                                </td>
+                                <td className={`${MONEY_TD} text-text-disabled max-w-[140px] truncate`}>
+                                  {req.reason ? <span className="italic">&ldquo;{req.reason}&rdquo;</span> : '—'}
+                                </td>
+                                <td className={`${MONEY_TD} text-text-secondary max-w-[140px] truncate`}>
+                                  {req.decision_note || '—'}
+                                </td>
+                                <td className={`${MONEY_TD} text-center`}>
+                                  {req.attachment_url ? (
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        const signedUrl = await signWorkforceMedia(createClient(), req.attachment_url, 60)
+                                        if (signedUrl) window.open(signedUrl, '_blank')
+                                      }}
+                                      className="inline-flex items-center justify-center w-8 h-8 rounded-md border border-divider text-text-secondary hover:border-primary hover:text-primary transition-colors"
+                                      title="View attachment"
+                                    >
+                                      <span className="material-icons text-[16px]">attach_file</span>
+                                    </button>
+                                  ) : (
+                                    <span className="text-text-disabled">—</span>
+                                  )}
+                                </td>
+                                <td className={MONEY_TD}>
+                                  {req.status === 'pending' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => openForm(req)}
+                                      className="text-[12px] text-primary font-semibold hover:underline whitespace-nowrap"
+                                    >
+                                      Edit
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    }
+                    mobile={
+                      <>
+                        {filtered.map((req) => (
+                          <DataCard key={req.id}>
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <DataCardTitle>{req.leave_type}</DataCardTitle>
+                                <DataCardMeta>{fmtDate(req.start_date)} – {fmtDate(req.end_date)} · {req.total_days}d</DataCardMeta>
+                              </div>
+                              <span className={`text-[11px] font-semibold px-2 py-[2px] rounded-full capitalize shrink-0 ${STATUS_STYLES[req.status] ?? 'bg-surface-elevated text-text-secondary'}`}>
+                                {req.status}
+                              </span>
+                            </div>
+                            {req.reason && <DataCardRow label="Reason" value={req.reason} />}
+                            {req.status === 'pending' && (
+                              <button
+                                type="button"
+                                onClick={() => openForm(req)}
+                                className="mt-3 w-full h-11 rounded-lg bg-primary/10 text-primary text-[13px] font-semibold"
+                              >
+                                Edit
+                              </button>
+                            )}
+                          </DataCard>
+                        ))}
+                      </>
+                    }
+                  />
+                )}
+              </>
+            )}
           </div>
         )}
 
-        <div>
-          <p className="section-label mb-2">Leave Requests</p>
-          {sorted.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 gap-2 text-text-secondary">
-              <span className="material-icons text-[48px] text-text-disabled">event_available</span>
-              <p className="text-[14px]">No leave requests yet</p>
-            </div>
-          ) : (
-            <>
-              <div className="flex gap-2 pb-2 flex-wrap items-center">
-                <ResetFiltersButton disabled={!hasFilters} onReset={resetFilters} />
-                <StatusFilterTabs
-                  tabs={STATUS_TABS}
-                  value={statusTabId}
-                  counts={statusCounts}
-                  onChange={setStatusTabId}
-                />
+        {viewTab === 'balances' && (
+          <div>
+            {summary.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 gap-2 text-text-secondary">
+                <span className="material-icons text-[48px] text-text-disabled">account_balance_wallet</span>
+                <p className="text-[14px]">No leave balances for this year</p>
               </div>
-              {filtered.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 gap-2 text-text-secondary">
-                  <span className="material-icons text-[48px] text-text-disabled">filter_alt_off</span>
-                  <p className="text-[14px]">No leave requests match the current filters</p>
+            ) : (
+              <>
+                <div className="flex gap-2 pb-2 flex-wrap items-center">
+                  <ResetFiltersButton
+                    disabled={!hasBalanceFilters}
+                    onReset={() => setBalanceTypeFilter('')}
+                  />
                 </div>
-              ) : (
-                <ResponsiveDataView
-                  table={
-                    <div className="bg-surface border border-divider rounded-xl overflow-x-auto">
-                      <table className="w-full" style={{ minWidth: 860 }}>
-                        <thead>
-                          <tr className="bg-surface-elevated border-b border-divider">
-                            <th className={`${MONEY_TH} text-left`}>
-                              <TextHeaderFilter label="Type" value={typeFilter} onChange={setTypeFilter} placeholder="Filter type…" />
-                            </th>
-                            <th className={`${MONEY_TH} text-left`}>Start</th>
-                            <th className={`${MONEY_TH} text-left`}>End</th>
-                            <th className={`${MONEY_TH} text-left`}>Days</th>
-                            <th className={`${MONEY_TH} text-left`}>
-                              <StatusHeaderFilter label="Status" options={STATUS_OPTIONS} selected={statusFilter} onChange={setStatusFilter} />
-                            </th>
-                            <th className={`${MONEY_TH} text-left`}>
-                              <TextHeaderFilter label="Reason" value={reasonFilter} onChange={setReasonFilter} placeholder="Filter reason…" />
-                            </th>
-                            <th className={`${MONEY_TH} text-left`}>
-                              <TextHeaderFilter label="Note" value={noteFilter} onChange={setNoteFilter} placeholder="Filter note…" />
-                            </th>
-                            <th className={`${MONEY_TH} text-center`}>Doc</th>
-                            <th className={MONEY_TH} />
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-divider">
-                          {filtered.map((req) => (
-                            <tr key={req.id} className="hover:bg-surface-elevated transition-colors">
-                              <td className={`${MONEY_TD} font-semibold text-text-primary whitespace-nowrap`}>{req.leave_type}</td>
-                              <td className={`${MONEY_TD} text-text-secondary whitespace-nowrap`}>{fmtDate(req.start_date)}</td>
-                              <td className={`${MONEY_TD} text-text-secondary whitespace-nowrap`}>{fmtDate(req.end_date)}</td>
-                              <td className={`${MONEY_TD} text-text-secondary whitespace-nowrap`}>{req.total_days}d</td>
-                              <td className={`${MONEY_TD} whitespace-nowrap`}>
-                                <span className={`text-[11px] font-semibold px-2 py-[2px] rounded-full capitalize ${STATUS_STYLES[req.status] ?? 'bg-surface-elevated text-text-secondary'}`}>
-                                  {req.status}
-                                </span>
-                              </td>
-                              <td className={`${MONEY_TD} text-text-disabled max-w-[140px] truncate`}>
-                                {req.reason ? <span className="italic">&ldquo;{req.reason}&rdquo;</span> : '—'}
-                              </td>
-                              <td className={`${MONEY_TD} text-text-secondary max-w-[140px] truncate`}>
-                                {req.decision_note || '—'}
-                              </td>
-                              <td className={`${MONEY_TD} text-center`}>
-                                {req.attachment_url ? (
-                                  <button
-                                    type="button"
-                                    onClick={async () => {
-                                      const signedUrl = await signWorkforceMedia(createClient(), req.attachment_url, 60)
-                                      if (signedUrl) window.open(signedUrl, '_blank')
-                                    }}
-                                    className="inline-flex items-center justify-center w-8 h-8 rounded-md border border-divider text-text-secondary hover:border-primary hover:text-primary transition-colors"
-                                    title="View attachment"
-                                  >
-                                    <span className="material-icons text-[16px]">attach_file</span>
-                                  </button>
-                                ) : (
-                                  <span className="text-text-disabled">—</span>
-                                )}
-                              </td>
-                              <td className={MONEY_TD}>
-                                {req.status === 'pending' && (
-                                  <button
-                                    type="button"
-                                    onClick={() => openForm(req)}
-                                    className="text-[12px] text-primary font-semibold hover:underline whitespace-nowrap"
-                                  >
-                                    Edit
-                                  </button>
-                                )}
-                              </td>
+                {filteredBalances.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 gap-2 text-text-secondary">
+                    <span className="material-icons text-[48px] text-text-disabled">filter_alt_off</span>
+                    <p className="text-[14px]">No leave balances match the current filters</p>
+                  </div>
+                ) : (
+                  <ResponsiveDataView
+                    table={
+                      <div className="bg-surface border border-divider rounded-xl overflow-x-auto">
+                        <table className="w-full" style={{ minWidth: 560 }}>
+                          <thead>
+                            <tr className="bg-surface-elevated border-b border-divider">
+                              <th className={`${MONEY_TH} text-left`}>
+                                <TextHeaderFilter label="Type" value={balanceTypeFilter} onChange={setBalanceTypeFilter} placeholder="Filter type…" />
+                              </th>
+                              <th className={`${MONEY_TH} text-right`}>Entitlement</th>
+                              <th className={`${MONEY_TH} text-right`}>Taken</th>
+                              <th className={`${MONEY_TH} text-right`}>Pending</th>
+                              <th className={`${MONEY_TH} text-right`}>Remaining</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  }
-                  mobile={
-                    <>
-                      {filtered.map((req) => (
-                        <DataCard key={req.id}>
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <DataCardTitle>{req.leave_type}</DataCardTitle>
-                              <DataCardMeta>{fmtDate(req.start_date)} – {fmtDate(req.end_date)} · {req.total_days}d</DataCardMeta>
+                          </thead>
+                          <tbody className="divide-y divide-divider">
+                            {filteredBalances.map((s) => (
+                              <tr key={s.leave_type} className="hover:bg-surface-elevated transition-colors">
+                                <td className={`${MONEY_TD} font-semibold text-text-primary`}>
+                                  <span className="inline-flex items-center gap-1.5">
+                                    <span className="material-icons text-primary text-[16px]">{getLeaveIcon(s.leave_type)}</span>
+                                    {s.leave_type}
+                                  </span>
+                                </td>
+                                <td className={`${MONEY_TD} text-right tabular-nums text-text-secondary`}>{s.annual_days}d</td>
+                                <td className={`${MONEY_TD} text-right tabular-nums text-text-secondary`}>{s.days_approved}d</td>
+                                <td className={`${MONEY_TD} text-right tabular-nums text-text-secondary`}>
+                                  {s.days_pending > 0 ? `${s.days_pending}d` : '—'}
+                                </td>
+                                <td className={`${MONEY_TD} text-right tabular-nums`}>
+                                  <span className={`font-semibold ${
+                                    s.days_remaining <= 0 ? 'text-error' : s.days_remaining <= 3 ? 'text-warning' : 'text-success'
+                                  }`}>
+                                    {s.days_remaining}d
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    }
+                    mobile={
+                      <>
+                        {filteredBalances.map((s) => (
+                          <DataCard key={s.leave_type}>
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0 flex items-center gap-1.5">
+                                <span className="material-icons text-primary text-[18px]">{getLeaveIcon(s.leave_type)}</span>
+                                <DataCardTitle>{s.leave_type}</DataCardTitle>
+                              </div>
+                              <span className={`text-[13px] font-semibold tabular-nums shrink-0 ${
+                                s.days_remaining <= 0 ? 'text-error' : s.days_remaining <= 3 ? 'text-warning' : 'text-success'
+                              }`}>
+                                {s.days_remaining}d left
+                              </span>
                             </div>
-                            <span className={`text-[11px] font-semibold px-2 py-[2px] rounded-full capitalize shrink-0 ${STATUS_STYLES[req.status] ?? 'bg-surface-elevated text-text-secondary'}`}>
-                              {req.status}
-                            </span>
-                          </div>
-                          {req.reason && <DataCardRow label="Reason" value={req.reason} />}
-                          {req.status === 'pending' && (
-                            <button
-                              type="button"
-                              onClick={() => openForm(req)}
-                              className="mt-3 w-full h-11 rounded-lg bg-primary/10 text-primary text-[13px] font-semibold"
-                            >
-                              Edit
-                            </button>
-                          )}
-                        </DataCard>
-                      ))}
-                    </>
-                  }
-                />
-              )}
-            </>
-          )}
-        </div>
+                            <DataCardMeta>{s.annual_days}d entitlement</DataCardMeta>
+                            <DataCardRow label="Taken" value={`${s.days_approved}d`} />
+                            <DataCardRow label="Pending" value={s.days_pending > 0 ? `${s.days_pending}d` : '—'} />
+                          </DataCard>
+                        ))}
+                      </>
+                    }
+                  />
+                )}
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {showForm && (
