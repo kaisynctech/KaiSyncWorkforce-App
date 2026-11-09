@@ -453,10 +453,15 @@ export default function Sidebar({
   const desktopPanel = Boolean(activeSection && !platformOnly)
 
   // When the phone drawer opens, expand the module that matches the current route.
+  // Only sync on open transition so a later flags refresh does not collapse a user expand.
   useEffect(() => {
-    if (!showMobileDrawer) return
+    if (!showMobileDrawer) {
+      setExpandedSectionId(null)
+      return
+    }
     setExpandedSectionId(activeSection?.id ?? null)
-  }, [showMobileDrawer, activeSection?.id])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: open transition only
+  }, [showMobileDrawer])
 
   const showMyPa = !platformOnly && itemVisible(
     { label: 'My PA', href: '/dashboard/pa', icon: 'task_alt', flag: 'myPa' },
@@ -655,7 +660,7 @@ export default function Sidebar({
       )}
 
       {/* ── LEFT PANEL (desktop fixed / phone drawer) ───────────────── */}
-      {((desktopPanel && !platformOnly) || showMobileDrawer) && (
+      {((desktopPanel && isDesktop && !platformOnly) || showMobileDrawer) && (
         <aside
           className={cn(
             'fixed left-0 bottom-0 flex flex-col shrink-0 bg-surface border-r border-divider overflow-hidden transition-transform duration-200 z-50 safe-pb',
