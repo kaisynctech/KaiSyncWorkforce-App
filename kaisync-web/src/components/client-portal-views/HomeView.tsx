@@ -20,6 +20,15 @@ import { isInvoiceOutstanding, type ClientDocumentRequest, type ClientPortalJob,
 import { localISODate } from '@/lib/utils'
 import { ResponsiveDataView } from '@/components/ui/ResponsiveDataView'
 import { MONEY_TH, MONEY_TD } from '@/components/ui/StatusFilterTabs'
+import {
+  PortalEmpty,
+  PortalHero,
+  PortalKpi,
+  PortalPage,
+  PortalPanel,
+  PortalQuickNav,
+  PortalSection,
+} from '@/components/portal/PortalChrome'
 
 type Tab = 'home' | 'information' | 'projects' | 'jobs' | 'quotes' | 'payments' | 'banking' | 'messages' | 'documents' | 'invoices'
 
@@ -118,14 +127,16 @@ function ClientPortalHomeInner() {
 
   return (
     <ClientPortalShell session={session}>
-      <div className="px-4 py-4 md:px-6 md:py-5 space-y-4">
-        <div>
-          <h1 className="text-text-primary text-[20px] font-bold">{TAB_TITLES[tab]}</h1>
-          <p className="text-text-secondary text-[13px] mt-0.5">
-            {session.client_name}
-            {tab === 'messages' && unreadCount > 0 ? ` · ${unreadCount} unread` : ''}
-          </p>
-        </div>
+      <PortalPage>
+        {tab !== 'home' && (
+          <div>
+            <h1 className="text-text-primary text-[18px] font-bold tracking-tight">{TAB_TITLES[tab]}</h1>
+            <p className="text-text-secondary text-[13px] mt-0.5">
+              {session.client_name}
+              {tab === 'messages' && unreadCount > 0 ? ` · ${unreadCount} unread` : ''}
+            </p>
+          </div>
+        )}
 
         {error && (
           <div className="bg-error/10 border border-error/25 rounded-xl px-4 py-3">
@@ -173,7 +184,7 @@ function ClientPortalHomeInner() {
             initial={tab === 'invoices' || searchParams.get('section') === 'invoices' ? 'invoices' : 'quotes'}
           />
         )}
-      </div>
+      </PortalPage>
     </ClientPortalShell>
   )
 }
@@ -182,11 +193,11 @@ function ProjectsTab({ projects }: { projects: ClientPortalProject[] }) {
   const ph = usePortalHref()
   if (projects.length === 0) {
     return (
-      <Empty icon="folder_open" title="No projects yet" sub="Projects shared with you will appear here." />
+      <PortalEmpty icon="folder_open" title="No projects yet" body="Projects shared with you will appear here." />
     )
   }
   return (
-    <div className="border-divider bg-surface rounded-xl border overflow-hidden">
+    <PortalPanel>
       <ResponsiveDataView
         table={
           <table className="w-full text-[13px]">
@@ -219,7 +230,7 @@ function ProjectsTab({ projects }: { projects: ClientPortalProject[] }) {
           </table>
         }
       />
-    </div>
+    </PortalPanel>
   )
 }
 
@@ -236,14 +247,14 @@ function JobsTab({ jobs }: { jobs: ClientPortalJob[] }) {
     return (
       <>
         {newJob}
-        <Empty icon="work_outline" title="No jobs yet" sub="Jobs for you will appear here, including ones that are not on a project." />
+        <PortalEmpty icon="work_outline" title="No jobs yet" body="Jobs for you will appear here, including ones that are not on a project." />
       </>
     )
   }
   return (
     <>
     {newJob}
-    <div className="border-divider bg-surface rounded-xl border overflow-hidden">
+    <PortalPanel>
       <ResponsiveDataView
         table={
           <table className="w-full text-[13px]">
@@ -285,7 +296,7 @@ function JobsTab({ jobs }: { jobs: ClientPortalJob[] }) {
           </table>
         }
       />
-    </div>
+    </PortalPanel>
     </>
   )
 }
@@ -468,7 +479,35 @@ function HomeTab({
 
   return (
     <div className="space-y-4">
-      <p className="text-text-secondary text-[13px]">Welcome, {name}. Here is where things stand.</p>
+      <PortalHero
+        eyebrow="Client workspace"
+        title={`Welcome, ${name}`}
+        subtitle="Projects, jobs, quotes and payments — your live view with the delivery team."
+        meta={
+          overdue.length > 0 ? (
+            <span className="inline-flex items-center gap-1.5 rounded-md bg-error/10 px-2 py-1 text-[11px] font-semibold text-error">
+              <span className="material-icons text-[14px]">priority_high</span>
+              {overdue.length === 1 ? '1 invoice overdue' : `${overdue.length} invoices overdue`}
+            </span>
+          ) : unreadCount > 0 ? (
+            <span className="inline-flex items-center gap-1.5 rounded-md bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary">
+              <span className="material-icons text-[14px]">mark_email_unread</span>
+              {unreadCount} unread {unreadCount === 1 ? 'message' : 'messages'}
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 rounded-md bg-surface-elevated px-2 py-1 text-[11px] font-medium text-text-secondary">
+              <span className="material-icons text-[14px]">verified</span>
+              All quiet — nothing urgent
+            </span>
+          )
+        }
+        actions={
+          <>
+            <Link href={ph('/home?tab=projects')} className="btn-primary">Projects</Link>
+            <Link href={ph('/home?tab=invoices')} className="btn-outlined">Invoices</Link>
+          </>
+        }
+      />
 
       <PortalComplianceReminder
         load={() => getPartyComplianceDocuments(session.company_code, session.client_code)}
@@ -498,22 +537,21 @@ function HomeTab({
         </div>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-        <HomeKpi label="Open projects" value={String(openProjectsList.length)} href={ph('/home?tab=projects')} />
-        <HomeKpi label="Open jobs" value={String(openJobsList.length)} href={ph('/home?tab=jobs')} />
-        <HomeKpi label="Amount owing" value={moneyZAR(outstanding)} href={ph('/home?tab=invoices')} />
-        <HomeKpi label="Unread messages" value={String(unreadCount)} href={ph('/home?tab=messages')} />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+        <PortalKpi label="Open projects" value={String(openProjectsList.length)} icon="folder_open" href={ph('/home?tab=projects')} />
+        <PortalKpi label="Open jobs" value={String(openJobsList.length)} icon="work" href={ph('/home?tab=jobs')} />
+        <PortalKpi label="Amount owing" value={moneyZAR(outstanding)} icon="payments" tone="money" href={ph('/home?tab=invoices')} />
+        <PortalKpi label="Unread" value={String(unreadCount)} icon="chat" tone={unreadCount > 0 ? 'alert' : 'default'} href={ph('/home?tab=messages')} />
       </div>
 
-      <section className="space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-[13px] font-bold text-text-primary">Open jobs</h2>
-          <Link href={ph('/home?tab=jobs')} className="btn-ghost">View all</Link>
-        </div>
+      <PortalSection
+        title="Open jobs"
+        action={<Link href={ph('/home?tab=jobs')} className="btn-ghost">View all</Link>}
+      >
         {recentJobs.length === 0 ? (
-          <p className="text-[12px] text-text-secondary px-1">No open jobs right now.</p>
+          <PortalEmpty compact icon="work_outline" title="No open jobs" body="Jobs for you will appear here as work starts." />
         ) : (
-          <div className="border-divider bg-surface rounded-xl border overflow-hidden">
+          <PortalPanel>
             <ResponsiveDataView
               table={
                 <table className="w-full text-[13px]">
@@ -540,19 +578,18 @@ function HomeTab({
                 </table>
               }
             />
-          </div>
+          </PortalPanel>
         )}
-      </section>
+      </PortalSection>
 
-      <section className="space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-[13px] font-bold text-text-primary">Open projects</h2>
-          <Link href={ph('/home?tab=projects')} className="btn-ghost">View all</Link>
-        </div>
+      <PortalSection
+        title="Open projects"
+        action={<Link href={ph('/home?tab=projects')} className="btn-ghost">View all</Link>}
+      >
         {recentProjects.length === 0 ? (
-          <p className="text-[12px] text-text-secondary px-1">No open projects right now.</p>
+          <PortalEmpty compact icon="folder_open" title="No open projects" body="Shared projects and progress updates will land here." />
         ) : (
-          <div className="border-divider bg-surface rounded-xl border overflow-hidden">
+          <PortalPanel>
             <ResponsiveDataView
               table={
                 <table className="w-full text-[13px]">
@@ -579,19 +616,18 @@ function HomeTab({
                 </table>
               }
             />
-          </div>
+          </PortalPanel>
         )}
-      </section>
+      </PortalSection>
 
-      <section className="space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-[13px] font-bold text-text-primary">Amount owing</h2>
-          <Link href={ph('/home?tab=invoices')} className="btn-ghost">Invoices</Link>
-        </div>
+      <PortalSection
+        title="Amount owing"
+        action={<Link href={ph('/home?tab=invoices')} className="btn-ghost">Invoices</Link>}
+      >
         {recentInvoices.length === 0 ? (
-          <p className="text-[12px] text-text-secondary px-1">Nothing outstanding.</p>
+          <PortalEmpty compact icon="receipt_long" title="Nothing outstanding" body="New invoices will show balances and due dates here." />
         ) : (
-          <div className="border-divider bg-surface rounded-xl border overflow-hidden">
+          <PortalPanel>
             <ResponsiveDataView
               table={
                 <table className="w-full text-[13px]">
@@ -614,27 +650,18 @@ function HomeTab({
                 </table>
               }
             />
-          </div>
+          </PortalPanel>
         )}
-      </section>
+      </PortalSection>
 
-      <div className="flex flex-wrap gap-1.5">
+      <PortalQuickNav>
         <Link href={ph('/home?tab=information')} className="btn-outlined">Information</Link>
         <Link href={ph('/home?tab=quotes')} className="btn-outlined">Quotes & Invoices</Link>
         <Link href={ph('/home?tab=payments')} className="btn-outlined">Payments</Link>
         <Link href={ph('/home?tab=documents')} className="btn-outlined">Documents</Link>
         <Link href={ph('/home?tab=messages')} className="btn-outlined">Messages</Link>
-      </div>
+      </PortalQuickNav>
     </div>
-  )
-}
-
-function HomeKpi({ label, value, href }: { label: string; value: string; href: string }) {
-  return (
-    <Link href={href} className="border-divider bg-surface rounded-xl border px-3 py-2.5 hover:border-primary/40">
-      <p className="text-[11px] text-text-secondary">{label}</p>
-      <p className="text-[17px] font-bold text-text-primary mt-0.5">{value}</p>
-    </Link>
   )
 }
 

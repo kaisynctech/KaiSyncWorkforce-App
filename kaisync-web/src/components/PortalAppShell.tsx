@@ -130,12 +130,15 @@ export function PortalAppShell({
                   if (!isDesktop) setOpen(false)
                 }}
                 className={cn(
-                  'flex items-center gap-3 mx-2 mb-0.5 rounded-lg px-3 h-11 transition-colors group',
+                  'relative flex items-center gap-3 mx-2 mb-0.5 rounded-lg px-3 h-11 transition-colors group',
                   active ? 'bg-primary/20 text-sidebar-active' : 'text-white/60 hover:text-white hover:bg-white/10',
                   desktopCollapsed && 'justify-center px-0',
                 )}
                 title={item.label}
               >
+                {active && (
+                  <span aria-hidden className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-primary" />
+                )}
                 <span className={cn(
                   'material-icons shrink-0 transition-colors text-[20px]',
                   active ? 'text-sidebar-active' : 'text-white/50 group-hover:text-white',
@@ -183,7 +186,7 @@ export function PortalAppShell({
 
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden bg-background">
         {!isDesktop && (
-          <div className="flex items-center gap-2 px-3 h-12 border-b border-divider bg-surface shrink-0">
+          <div className="flex items-center gap-2 px-3 h-12 border-b border-divider bg-surface/95 backdrop-blur-sm shrink-0 shadow-[0_1px_0_rgba(15,23,42,0.04)]">
             <button
               type="button"
               onClick={() => setOpen(true)}
@@ -195,11 +198,13 @@ export function PortalAppShell({
             <CompanyMark name={companyName} logoUrl={brand.logoUrl} size={28} />
             <div className="min-w-0">
               <p className="text-[14px] font-semibold text-text-primary truncate leading-tight">{companyName}</p>
-              <p className="text-[11px] text-text-secondary truncate leading-tight">{portalLabel}</p>
+              <p className="text-[11px] text-primary/80 font-medium truncate leading-tight">{portalLabel}</p>
             </div>
           </div>
         )}
-        <main className="flex-1 overflow-y-auto min-h-0">{children}</main>
+        <main className="flex-1 overflow-y-auto min-h-0 bg-[radial-gradient(1200px_420px_at_100%_-10%,color-mix(in_srgb,var(--color-primary)_12%,transparent),transparent_55%),radial-gradient(900px_380px_at_0%_20%,color-mix(in_srgb,var(--color-brand-sky)_10%,transparent),transparent_50%),var(--color-background)]">
+          {children}
+        </main>
       </div>
     </div>
   )

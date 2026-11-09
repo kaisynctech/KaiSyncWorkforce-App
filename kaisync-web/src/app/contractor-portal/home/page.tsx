@@ -41,6 +41,15 @@ import {
 } from '@/lib/contractor-portal/types'
 import { ResponsiveDataView } from '@/components/ui/ResponsiveDataView'
 import { MONEY_TH, MONEY_TD } from '@/components/ui/StatusFilterTabs'
+import {
+  PortalEmpty,
+  PortalHero,
+  PortalKpi,
+  PortalPage,
+  PortalPanel,
+  PortalQuickNav,
+  PortalSection,
+} from '@/components/portal/PortalChrome'
 
 type Tab = 'home' | 'information' | 'jobs' | 'quotes' | 'payments' | 'banking' | 'compliance' | 'messages'
 
@@ -210,7 +219,7 @@ function ContractorPortalHomeInner() {
 
   return (
     <ContractorPortalShell session={session}>
-      <div className="px-4 py-4 md:px-6 md:py-5 space-y-4">
+      <PortalPage>
         {error && (
           <div className="bg-error/10 border border-error/25 rounded-xl px-4 py-3">
             <p className="text-[13px] text-error font-semibold">{error}</p>
@@ -270,7 +279,7 @@ function ContractorPortalHomeInner() {
         ) : (
           <ComingSoon tab={TABS.find(t => t.key === tab)?.label ?? tab} />
         )}
-      </div>
+      </PortalPage>
     </ContractorPortalShell>
   )
 }
@@ -295,10 +304,31 @@ function HomeTab({
   const recentJobs = openJobs.slice(0, 5)
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-text-primary text-[20px] font-bold">Welcome, {name}</h1>
-        <p className="text-text-secondary text-[13px] mt-0.5">Your contractor workspace</p>
-      </div>
+      <PortalHero
+        eyebrow="Contractor workspace"
+        title={`Welcome, ${name}`}
+        subtitle="Jobs, money, banking and compliance — your live view with the contracting company."
+        meta={
+          openVisit?.sign_in_at ? (
+            <span className="inline-flex items-center gap-1.5 rounded-md bg-success/10 px-2 py-1 text-[11px] font-semibold text-success">
+              <span className="material-icons text-[14px]">place</span>
+              On site · {new Date(openVisit.sign_in_at).toLocaleTimeString('en-ZA', { hour: 'numeric', minute: '2-digit' })}
+              {openVisit.job_title ? ` · ${openVisit.job_title}` : ''}
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 rounded-md bg-surface-elevated px-2 py-1 text-[11px] font-medium text-text-secondary">
+              <span className="material-icons text-[14px]">schedule</span>
+              Ready for the next assignment
+            </span>
+          )
+        }
+        actions={
+          <>
+            <button type="button" onClick={onGoJobs} className="btn-primary">View jobs</button>
+            <button type="button" onClick={onGoPayments} className="btn-outlined">Statement</button>
+          </>
+        }
+      />
 
       {(profile?.payment_hold || profile?.compliance_hold) && (
         <div className="space-y-2">
@@ -313,29 +343,24 @@ function HomeTab({
 
       <PortalComplianceReminder load={loadDocuments} onOpen={onGoCompliance} />
 
-      {openVisit?.sign_in_at && (
-        <div className="bg-success/10 border border-success/30 rounded-xl px-4 py-3">
-          <p className="text-[13px] font-semibold text-success">
-            On site · since {new Date(openVisit.sign_in_at).toLocaleTimeString('en-ZA', { hour: 'numeric', minute: '2-digit' })}
-            {openVisit.job_title ? ` · ${openVisit.job_title}` : ''}
-          </p>
-        </div>
-      )}
-
-      <div className="grid grid-cols-2 gap-2">
-        <Kpi label="Open jobs" value={String(openJobs.length)} onClick={onGoJobs} />
-        <Kpi label="Outstanding" value={moneyZAR(outstanding)} onClick={onGoPayments} />
+      <div className="grid grid-cols-2 gap-2.5">
+        <PortalKpi label="Open jobs" value={String(openJobs.length)} icon="work" onClick={onGoJobs} />
+        <PortalKpi label="Outstanding" value={moneyZAR(outstanding)} icon="payments" tone="money" onClick={onGoPayments} />
       </div>
 
-      <section className="space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-[13px] font-bold text-text-primary">Open jobs</h2>
-          <button type="button" onClick={onGoJobs} className="btn-ghost">View all</button>
-        </div>
+      <PortalSection
+        title="Open jobs"
+        action={<button type="button" onClick={onGoJobs} className="btn-ghost">View all</button>}
+      >
         {recentJobs.length === 0 ? (
-          <p className="text-[12px] text-text-secondary px-1">No open jobs right now.</p>
+          <PortalEmpty
+            compact
+            icon="work_outline"
+            title="No open jobs"
+            body="When work is assigned to you, it will show up here with status and cost."
+          />
         ) : (
-          <div className="border-divider bg-surface rounded-xl border overflow-hidden">
+          <PortalPanel>
             <ResponsiveDataView
               table={
                 <table className="w-full text-[13px]">
@@ -364,19 +389,23 @@ function HomeTab({
                 </table>
               }
             />
-          </div>
+          </PortalPanel>
         )}
-      </section>
+      </PortalSection>
 
-      <section className="space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-[13px] font-bold text-text-primary">Recent money</h2>
-          <button type="button" onClick={onGoPayments} className="btn-ghost">Statement</button>
-        </div>
+      <PortalSection
+        title="Recent money"
+        action={<button type="button" onClick={onGoPayments} className="btn-ghost">Statement</button>}
+      >
         {recentPayouts.length === 0 ? (
-          <p className="text-[12px] text-text-secondary px-1">No payouts yet.</p>
+          <PortalEmpty
+            compact
+            icon="account_balance_wallet"
+            title="No payouts yet"
+            body="Approved and paid amounts will appear here so you can track what is still outstanding."
+          />
         ) : (
-          <div className="border-divider bg-surface rounded-xl border overflow-hidden">
+          <PortalPanel>
             <ResponsiveDataView
               table={
                 <table className="w-full text-[13px]">
@@ -401,16 +430,16 @@ function HomeTab({
                 </table>
               }
             />
-          </div>
+          </PortalPanel>
         )}
-      </section>
+      </PortalSection>
 
-      <div className="flex flex-wrap gap-1.5">
+      <PortalQuickNav>
         <button type="button" onClick={onGoInfo} className="btn-outlined">Information</button>
         <button type="button" onClick={onGoBanking} className="btn-outlined">Banking</button>
         <button type="button" onClick={onGoCompliance} className="btn-outlined">Compliance</button>
         <button type="button" onClick={onGoPayments} className="btn-outlined">Payments</button>
-      </div>
+      </PortalQuickNav>
     </div>
   )
 }
@@ -418,17 +447,21 @@ function HomeTab({
 function JobsTab({ jobs }: { jobs: ContractorJob[] }) {
   if (jobs.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 gap-2 text-center">
-        <span className="material-icons text-[48px] text-text-secondary">work_off</span>
-        <p className="text-[15px] font-semibold text-text-primary">No jobs assigned</p>
-        <p className="text-[13px] text-text-secondary">Jobs assigned to you will appear here.</p>
-      </div>
+      <PortalEmpty
+        icon="work_off"
+        title="No jobs assigned"
+        body="Jobs assigned to you will appear here with status, site visits and cost."
+      />
     )
   }
   return (
     <div className="space-y-3">
-      <h2 className="text-text-primary text-[16px] font-bold">Jobs</h2>
-      <div className="border-divider bg-surface rounded-xl border overflow-hidden">
+      <PortalHero
+        eyebrow="Work"
+        title="Jobs"
+        subtitle="Assigned work and site activity from your contracting company."
+      />
+      <PortalPanel>
         <ResponsiveDataView
           table={
             <table className="w-full text-[13px]">
@@ -457,7 +490,7 @@ function JobsTab({ jobs }: { jobs: ContractorJob[] }) {
             </table>
           }
         />
-      </div>
+      </PortalPanel>
     </div>
   )
 }
@@ -858,20 +891,6 @@ function Field({ label, value, onChange }: { label: string; value: string; onCha
         onChange={e => onChange(e.target.value)}
       />
     </div>
-  )
-}
-
-function Kpi({ label, value, onClick }: { label: string; value: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="border-divider bg-surface rounded-xl px-4 py-3 text-left border hover:border-primary/50 transition-colors"
-     
-    >
-      <p className="text-[11px] font-semibold text-text-secondary uppercase">{label}</p>
-      <p className="text-[20px] font-bold text-text-primary mt-1">{value}</p>
-    </button>
   )
 }
 
