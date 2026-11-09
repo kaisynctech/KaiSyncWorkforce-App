@@ -10,14 +10,10 @@ import { EMPLOYEE_SAFE_SELECT } from '@/lib/employee-columns'
 import type { Employee } from '@/types/database'
 import { PwaInstallButton } from '@/components/PwaInstallButton'
 import {
-  applyIfCurrent,
-  errorCommercial,
   hiddenCommercial,
   initialCommercial,
-  loadingCommercial,
   overviewPresentation,
   readyCommercial,
-  sumOutstanding,
   type CommercialSnapshot,
 } from '@/lib/overview-loading'
 import {
@@ -72,14 +68,11 @@ export default function OverviewPage() {
   const empsRef         = useRef<EmpRow[]>([])
 
   const [kpi, setKpi] = useState({
-    headcount: 0,
     /** Active employees who must clock in (excludes pay-full-monthly / no-clock staff). */
     attendanceExpected: 0,
     clockedIn: 0,
-    activeJobs: 0,
     pendingLeave: 0,
     openIncidents: 0,
-    pendingPay: 0,
   })
   const [allEmployees, setAllEmployees] = useState<EmpRow[]>([])
   const [notClockedInIds, setNotClockedInIds] = useState<Set<string>>(new Set())
@@ -194,16 +187,10 @@ export default function OverviewPage() {
       .eq('company_id', member.companyId).gte('date_time', todayStart())
       .order('date_time', { ascending: true })
     const kpiPromise = Promise.all([
-      supabase.from('employees').select('id', { count: 'exact', head: true })
-        .eq('company_id', member.companyId).eq('is_active', true),
-      supabase.from('jobs').select('id', { count: 'exact', head: true })
-        .eq('company_id', member.companyId).in('status', ['open', 'scheduled', 'in_progress']),
       supabase.from('leave_requests').select('id', { count: 'exact', head: true })
         .eq('company_id', member.companyId).eq('status', 'pending'),
       supabase.from('incident_reports').select('id', { count: 'exact', head: true })
         .eq('company_id', member.companyId).eq('status', 'open'),
-      supabase.from('payment_approvals').select('id', { count: 'exact', head: true })
-        .eq('company_id', member.companyId).eq('status', 'pending'),
       supabase.from('employees').select('id, name, surname, position, pay_full_monthly_salary')
         .eq('company_id', member.companyId).eq('is_active', true).order('name'),
       supabase.from('leave_requests')
@@ -269,7 +256,7 @@ export default function OverviewPage() {
     setIsClockedIn(selfClockedIn)
 
     // KPI results (requests already ran in the parallel wave above)
-    const [hcRes, jobRes, leaveRes, incRes, payRes, empsRes, onLeaveRes, absentRes] = kpiResults
+    const [leaveRes, incRes, empsRes, onLeaveRes, absentRes] = kpiResults
 
     const employees = (empsRes.data ?? []) as EmpRow[]
     const attendanceEmployees = employees.filter(requiresDailyClockIn)
@@ -281,13 +268,10 @@ export default function OverviewPage() {
     )
 
     setKpi({
-      headcount: hcRes.count ?? 0,
       attendanceExpected: attendanceEmployees.length,
       clockedIn: clockedInIds.size,
-      activeJobs: jobRes.count ?? 0,
       pendingLeave: leaveRes.count ?? 0,
       openIncidents: incRes.count ?? 0,
-      pendingPay: payRes.count ?? 0,
     })
 
     setAllEmployees(employees)
@@ -317,61 +301,17 @@ export default function OverviewPage() {
       }
     }))
 
-    // Core attendance and KPI figures are ready. Commercial summaries must not
-    // keep this loading state up, and must not publish numbers without quotes.view.
+    // Core attendance and focus metrics are ready. Finance KPIs live on Money —
+    // here we only keep quotes.view so Quick Actions can offer New Quote / Invoice.
     setLoading(false)
 
-    const cid = member.companyId
     const permissionAnswer = await quotesPermissionPromise
     if (!stillCurrent()) return
-    if (permissionAnswer === null) {
+    if (!permissionAnswer) {
       setCommercial(hiddenCommercial())
       return
     }
-    const permitted = permissionAnswer
-
-    if (!permitted) {
-      setCommercial(hiddenCommercial())
-      return
-    }
-
-    setCommercial(loadingCommercial())
-    try {
-      const [openQuotesRes, invDataRes, overdueRes] = await Promise.all([
-        supabase.from('commercial_quotes')
-          .select('*', { count: 'exact', head: true })
-          .eq('company_id', cid)
-          .in('status', ['draft', 'sent']),
-        supabase.from('finance_invoices')
-          .select('balance_due, exchange_rate')
-          .eq('company_id', cid)
-          .in('status', ['sent', 'partial'])
-          .gt('balance_due', 0),
-        supabase.from('finance_invoices')
-          .select('*', { count: 'exact', head: true })
-          .eq('company_id', cid)
-          .in('status', ['sent', 'partial'])
-          .gt('balance_due', 0)
-          .lt('due_date', localISODate()),
-      ])
-      if (!stillCurrent()) return
-      const failed = Boolean(openQuotesRes.error || invDataRes.error || overdueRes.error)
-      setCommercial(current => applyIfCurrent(
-        loadId,
-        loadIdRef.current,
-        failed
-          ? errorCommercial()
-          : readyCommercial(
-              openQuotesRes.count ?? 0,
-              sumOutstanding(invDataRes.data ?? []),
-              overdueRes.count ?? 0,
-            ),
-        current,
-      ))
-    } catch {
-      if (!stillCurrent()) return
-      setCommercial(current => applyIfCurrent(loadId, loadIdRef.current, errorCommercial(), current))
-    }
+    setCommercial(readyCommercial(0, 0, 0))
   }, [])
 
   useEffect(() => {
@@ -533,75 +473,137 @@ export default function OverviewPage() {
       <div className="p-5 max-w-4xl mx-auto space-y-4">
 
         {/* ── Greeting header ── */}
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-[22px] font-bold text-text-primary">
-              {greeting}
-            </h1>
-            <p className="text-[16px] font-semibold text-text-primary -mt-0.5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[12px] font-medium text-primary/80">{greeting}</p>
+            <h1 className="text-[20px] font-bold text-text-primary tracking-tight truncate">
               {employee?.name} {employee?.surname}
-            </p>
-            <p className="text-[13px] text-text-secondary mt-0.5">{companyName}</p>
+            </h1>
+            <p className="text-[12px] text-text-secondary mt-0.5 truncate">{companyName}</p>
           </div>
-          <p className="text-[12px] text-text-secondary shrink-0 pt-1">{formatDate(now)}</p>
+          <p className="text-[11px] text-text-secondary shrink-0 pt-1 text-right leading-snug max-w-[9rem]">
+            {formatDate(now)}
+          </p>
         </div>
 
         {/* ── Clock card ── */}
-        <div className="rounded-2xl p-4 flex items-center gap-4"
-          style={{ background: isClockedIn ? 'linear-gradient(135deg, #052e16, #14532d)' : 'var(--color-surface-card)' ,
-                   border: isClockedIn ? '1px solid #166534' : '1px solid var(--color-divider)' }}>
-          <div className="w-11 h-11 rounded-full flex items-center justify-center shrink-0"
-            style={{ backgroundColor: isClockedIn ? 'rgba(34,197,94,0.15)' : 'var(--color-surface-elevated)' }}>
-            <span className="material-icons text-[22px]"
-              style={{ color: isClockedIn ? '#22c55e' : 'var(--color-text-secondary)' }}>
+        <div
+          className="rounded-xl px-3.5 py-3 flex items-center gap-3 border"
+          style={{
+            background: isClockedIn
+              ? 'linear-gradient(135deg, #052e16, #14532d)'
+              : 'linear-gradient(135deg, #F8FAFF, #EEF3FF)',
+            borderColor: isClockedIn ? '#166534' : 'color-mix(in srgb, var(--color-primary) 18%, var(--color-divider))',
+          }}
+        >
+          <div
+            className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+            style={{ backgroundColor: isClockedIn ? 'rgba(34,197,94,0.18)' : 'color-mix(in srgb, var(--color-primary) 12%, white)' }}
+          >
+            <span
+              className="material-icons text-[18px]"
+              style={{ color: isClockedIn ? '#22c55e' : 'var(--color-primary)' }}
+            >
               {isClockedIn ? 'timer' : 'timer_off'}
             </span>
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-[14px] font-semibold"
-              style={{ color: isClockedIn ? '#86efac' : 'var(--color-text-primary)' }}>
+            <p
+              className="text-[13px] font-semibold"
+              style={{ color: isClockedIn ? '#86efac' : 'var(--color-text-primary)' }}
+            >
               {isClockedIn ? 'You are Clocked In' : 'You are Clocked Out'}
             </p>
-            <p className="text-[12px]" style={{ color: isClockedIn ? '#4ade80' : 'var(--color-text-secondary)' }}>
+            <p className="text-[11px]" style={{ color: isClockedIn ? '#4ade80' : 'var(--color-text-secondary)' }}>
               Today: {formatElapsed(elapsedMs)}
             </p>
-            <Link href="/dashboard/team-punch"
-              className="text-[11px] hover:opacity-80 transition-opacity"
-              style={{ color: isClockedIn ? '#4ade80' : 'var(--color-primary)' }}>
+            <Link
+              href="/dashboard/team-punch"
+              className="text-[11px] font-medium hover:opacity-80 transition-opacity"
+              style={{ color: isClockedIn ? '#4ade80' : 'var(--color-primary)' }}
+            >
               Clock in/out for my team →
             </Link>
           </div>
-          <button onClick={handlePunch} disabled={punchLoading}
-            className="h-10 px-5 rounded-xl text-[13px] font-bold text-white shrink-0 disabled:opacity-50 transition-opacity"
-            style={{ backgroundColor: isClockedIn ? '#ef4444' : '#22c55e' }}>
+          <button
+            onClick={handlePunch}
+            disabled={punchLoading}
+            className="h-9 px-4 rounded-lg text-[12px] font-bold text-white shrink-0 disabled:opacity-50 transition-opacity"
+            style={{ backgroundColor: isClockedIn ? '#ef4444' : '#22c55e' }}
+          >
             {punchLoading ? '…' : isClockedIn ? 'Clock Out' : 'Clock In'}
           </button>
         </div>
 
-        <PwaInstallButton variant="banner" />
+        <PwaInstallButton
+          variant="banner"
+          className="flex w-full items-center justify-center gap-1.5 h-8 rounded-lg border border-primary/35 bg-primary/10 text-primary text-[11px] font-semibold transition-colors"
+        />
 
-        {/* ── KPI tiles ── */}
-        <div className="kpi-grid">
-          <KpiTile icon="people" label="Employees" value={kpi.headcount} href="/dashboard/employees" iconBg="#1e3a5f" iconColor="#60a5fa" />
-          <KpiTile icon="timer" label="Clocked In" value={kpi.clockedIn} href="/dashboard/attendance" iconBg="#052e16" iconColor="#22c55e" />
-          <KpiTile icon="work" label="Active Jobs" value={kpi.activeJobs} href="/dashboard/jobs" iconBg="#3b1f05" iconColor="#f97316" />
-          <KpiTile icon="event_available" label="Pending Leave" value={kpi.pendingLeave} href="/dashboard/leave" iconBg="#2e1a05" iconColor="#fbbf24" />
-          <KpiTile icon="warning" label="Open Incidents" value={kpi.openIncidents} href="/dashboard/incidents" iconBg="#3b0a0a" iconColor="#f87171" />
-          <KpiTile icon="payments" label="Pending Pay" value={kpi.pendingPay} href="/dashboard/payroll" iconBg="#1a1f05" iconColor="#a3e635" />
-          {presentation.showCommercialFigures && (
-            <>
-              <KpiTile icon="request_quote" label="Open Quotes" value={commercial.openQuotes} href="/dashboard/money/quotes" iconBg="#1e1b4b" iconColor="#a78bfa" />
-              <KpiTile icon="receipt_long" label="Outstanding" value={fmtShort(commercial.outstanding)} href="/dashboard/money/invoices" iconBg="#1c1917" iconColor="#fbbf24" />
-              <KpiTile icon="warning_amber" label="Overdue" value={commercial.overdue} href="/dashboard/money/invoices" iconBg="#3b0a0a" iconColor="#f87171" />
-            </>
-          )}
+        {/* ── Focus metrics (lean ops strip) ── */}
+        <div className="grid grid-cols-3 gap-2">
+          <FocusMetric
+            href="/dashboard/attendance"
+            icon="timer"
+            label="Clocked In"
+            value={kpi.clockedIn}
+            hint={attendanceDenom > 0 ? `of ${attendanceDenom}` : undefined}
+            accent="emerald"
+          />
+          <FocusMetric
+            href="/dashboard/leave"
+            icon="event_available"
+            label="Pending Leave"
+            value={kpi.pendingLeave}
+            accent="amber"
+          />
+          <FocusMetric
+            href="/dashboard/incidents"
+            icon="warning"
+            label="Open Incidents"
+            value={kpi.openIncidents}
+            accent="rose"
+          />
         </div>
-        {presentation.showCommercialError && (
-          <p className="text-[12px] text-text-secondary">Commercial summary could not be loaded.</p>
-        )}
+
+        {/* ── Quick Actions (above attendance so they stay reachable) ── */}
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-primary/55 mb-2">Quick Actions</p>
+          <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={() => router.push('/dashboard/employees/new')}
+              className="h-9 px-3.5 rounded-lg text-[12px] font-semibold text-white shadow-sm shadow-primary/20"
+              style={{ backgroundColor: 'var(--color-primary)' }}
+            >
+              + Add Employee
+            </button>
+            <button
+              onClick={() => router.push('/dashboard/jobs/new')}
+              className="h-9 px-3.5 rounded-lg text-[12px] font-semibold text-text-primary bg-white border border-divider hover:bg-surface-elevated"
+            >
+              + New Job
+            </button>
+            {presentation.showCommercialActions && (
+              <>
+                <button
+                  onClick={() => router.push('/dashboard/money/quotes/new')}
+                  className="h-9 px-3.5 rounded-lg text-[12px] font-semibold text-text-primary bg-white border border-divider hover:bg-surface-elevated"
+                >
+                  + New Quote
+                </button>
+                <button
+                  onClick={() => router.push('/dashboard/money/invoices/new')}
+                  className="h-9 px-3.5 rounded-lg text-[12px] font-semibold text-text-primary bg-white border border-divider hover:bg-surface-elevated"
+                >
+                  + New Invoice
+                </button>
+              </>
+            )}
+          </div>
+        </div>
 
         {/* ── Today's Attendance ── */}
-        <div className="rounded-2xl overflow-hidden border border-divider" style={{ backgroundColor: 'var(--color-surface-card)' }}>
+        <div className="rounded-xl overflow-hidden border border-divider bg-surface">
           <div className="flex items-center justify-between px-4 py-3 border-b border-divider">
             <div>
               <p className="text-[13px] font-semibold text-text-primary">TODAY&apos;S ATTENDANCE</p>
@@ -801,37 +803,6 @@ export default function OverviewPage() {
           )}
         </div>
 
-        {/* ── Quick Actions ── */}
-        <div>
-          <p className="text-[11px] font-semibold text-text-secondary tracking-wide mb-2">QUICK ACTIONS</p>
-          <div className="flex gap-3 flex-wrap">
-            <button onClick={() => router.push('/dashboard/employees/new')}
-              className="h-10 px-5 rounded-xl text-[13px] font-semibold text-white"
-              style={{ backgroundColor: 'var(--color-primary)' }}>
-              + Add Employee
-            </button>
-            <button onClick={() => router.push('/dashboard/jobs/new')}
-              className="h-10 px-5 rounded-xl text-[13px] font-semibold text-white"
-              style={{ backgroundColor: '#374151' }}>
-              + New Job
-            </button>
-            {presentation.showCommercialActions && (
-              <>
-                <button onClick={() => router.push('/dashboard/money/quotes/new')}
-                  className="h-10 px-5 rounded-xl text-[13px] font-semibold text-white"
-                  style={{ backgroundColor: '#374151' }}>
-                  + New Quote
-                </button>
-                <button onClick={() => router.push('/dashboard/money/invoices/new')}
-                  className="h-10 px-5 rounded-xl text-[13px] font-semibold text-white"
-                  style={{ backgroundColor: '#374151' }}>
-                  + New Invoice
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-
       </div>
     </div>
   )
@@ -872,27 +843,55 @@ function AttendancePager({
   )
 }
 
-function fmtShort(n: number): string {
-  if (n >= 1_000_000) return `R ${(n / 1_000_000).toFixed(1)}M`
-  if (n >= 1_000)     return `R ${Math.round(n / 1_000)}k`
-  return `R ${Math.round(n)}`
-}
+const FOCUS_ACCENT = {
+  emerald: {
+    wrap: 'bg-emerald-500/[0.08] border-emerald-500/20 hover:bg-emerald-500/[0.12]',
+    iconWrap: 'bg-emerald-500/15 text-emerald-600',
+    value: 'text-emerald-700',
+  },
+  amber: {
+    wrap: 'bg-amber-500/[0.08] border-amber-500/20 hover:bg-amber-500/[0.12]',
+    iconWrap: 'bg-amber-500/15 text-amber-600',
+    value: 'text-amber-700',
+  },
+  rose: {
+    wrap: 'bg-rose-500/[0.08] border-rose-500/20 hover:bg-rose-500/[0.12]',
+    iconWrap: 'bg-rose-500/15 text-rose-600',
+    value: 'text-rose-700',
+  },
+} as const
 
-function KpiTile({ icon, label, value, href, iconBg, iconColor }: {
-  icon: string; label: string; value: number | string; href: string; iconBg: string; iconColor: string
+function FocusMetric({
+  href,
+  icon,
+  label,
+  value,
+  hint,
+  accent,
+}: {
+  href: string
+  icon: string
+  label: string
+  value: number
+  hint?: string
+  accent: keyof typeof FOCUS_ACCENT
 }) {
+  const tone = FOCUS_ACCENT[accent]
   return (
-    <Link href={href}
-      className="rounded-2xl p-4 flex flex-col gap-3 border border-divider hover:opacity-80 transition-opacity"
-      style={{ backgroundColor: 'var(--color-surface-card)' }}>
-      <div className="w-10 h-10 rounded-xl flex items-center justify-center"
-        style={{ backgroundColor: iconBg }}>
-        <span className="material-icons text-[20px]" style={{ color: iconColor }}>{icon}</span>
+    <Link
+      href={href}
+      className={`rounded-xl border px-2.5 py-2.5 transition-colors ${tone.wrap}`}
+    >
+      <div className={`w-7 h-7 rounded-lg flex items-center justify-center mb-2 ${tone.iconWrap}`}>
+        <span className="material-icons text-[15px]">{icon}</span>
       </div>
-      <div>
-        <p className="text-[24px] font-bold text-text-primary leading-none">{value}</p>
-        <p className="text-[11px] text-text-secondary mt-1">{label}</p>
-      </div>
+      <p className={`text-[20px] font-bold leading-none tracking-tight ${tone.value}`}>
+        {value}
+        {hint ? (
+          <span className="text-[10px] font-semibold text-text-secondary ml-1">{hint}</span>
+        ) : null}
+      </p>
+      <p className="text-[10px] font-medium text-text-secondary mt-1 leading-tight">{label}</p>
     </Link>
   )
 }
