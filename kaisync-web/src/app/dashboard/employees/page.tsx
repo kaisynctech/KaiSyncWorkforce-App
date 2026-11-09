@@ -22,6 +22,13 @@ import {
   DataCardRow,
 } from '@/components/ui/ResponsiveDataView'
 import { ModalShell } from '@/components/ui/ModalShell'
+import { StatusFilterTabs, TAB_ALL, MONEY_TH, MONEY_TD } from '@/components/ui/StatusFilterTabs'
+import {
+  TextHeaderFilter,
+  StatusHeaderFilter,
+  ResetFiltersButton,
+  statusTab,
+} from '@/components/ui/MoneyListFilters'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -33,6 +40,40 @@ const ACCESS_BADGES: Record<AccessLevel, { label: string; cls: string }> = {
   manager:  { label: 'Manager',  cls: 'bg-warning-dark text-warning' },
   hr:       { label: 'HR',       cls: 'bg-accent-light/30 text-primary-dark' },
   employee: { label: 'Employee', cls: 'bg-success-dark text-success' },
+}
+
+/** Status tabs map to list_employee_directory p_status ('' = all). */
+const STATUS_TABS = [
+  statusTab('active', 'Active', ['active'], 'green'),
+  statusTab('inactive', 'Inactive', ['inactive'], 'slate'),
+  TAB_ALL,
+]
+
+const ROLE_OPTIONS = [
+  { id: 'owner', label: 'Owner' },
+  { id: 'admin', label: 'Admin' },
+  { id: 'manager', label: 'Manager' },
+  { id: 'hr', label: 'HR' },
+  { id: 'employee', label: 'Employee' },
+]
+
+const EMP_TYPE_OPTIONS = [
+  { id: 'permanent', label: 'Permanent' },
+  { id: 'contract', label: 'Contract' },
+  { id: 'part-time', label: 'Part-time' },
+  { id: 'student', label: 'Student' },
+]
+
+type DirectoryCols = {
+  name: string
+  employeeNumber: string
+  idNumber: string
+  department: string
+}
+const EMPTY_COLS: DirectoryCols = { name: '', employeeNumber: '', idNumber: '', department: '' }
+
+function colsActive(c: DirectoryCols): boolean {
+  return !!(c.name || c.employeeNumber || c.idNumber || c.department)
 }
 
 // ─── Local types ──────────────────────────────────────────────────────────────
@@ -191,6 +232,8 @@ function EmployeesPageInner() {
   const [filterStatus,  setFilterStatus]  = useState<'active' | 'inactive' | ''>('')
   const [filterBranch,  setFilterBranch]  = useState('')
   const [filterEmpType, setFilterEmpType] = useState('')
+  const [cols,          setCols]          = useState<DirectoryCols>(EMPTY_COLS)
+  const [colsDebounced, setColsDebounced] = useState<DirectoryCols>(EMPTY_COLS)
 
   // ── Tab 2 — Teams ─────────────────────────────────────────────────────────
   const [teams,          setTeams]          = useState<WorkTeam[]>([])
@@ -233,21 +276,37 @@ function EmployeesPageInner() {
     if (tab === 'pending' && !pendingLoaded) loadPending()
   }, [tab, companyId])
 
-  // Debounce only while typing in search; the first load and filter/page changes run at once.
-  const lastDirectorySearchRef = useRef<string | null>(null)
+  // Debounce global search while typing.
+  const [searchDebounced, setSearchDebounced] = useState('')
   useEffect(() => {
-    if (!companyId) return
-    const typing = lastDirectorySearchRef.current !== null && lastDirectorySearchRef.current !== search
-    lastDirectorySearchRef.current = search
-    if (!typing) {
-      void loadDirectory()
-      return
-    }
-    const timer = setTimeout(() => { void loadDirectory() }, 200)
+    const timer = setTimeout(() => setSearchDebounced(search.trim()), 200)
     return () => clearTimeout(timer)
-  }, [companyId, page, search, filterRole, filterStatus, filterBranch, filterEmpType])
+  }, [search])
+
+  // Debounce column filters; keep previous reference when unchanged so load is not re-fired.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const next: DirectoryCols = {
+        name: cols.name.trim(),
+        employeeNumber: cols.employeeNumber.trim(),
+        idNumber: cols.idNumber.trim(),
+        department: cols.department.trim(),
+      }
+      setColsDebounced(prev => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next))
+    }, 200)
+    return () => clearTimeout(timer)
+  }, [cols])
+
+  useEffect(() => {
+    setPage(0)
+  }, [searchDebounced, colsDebounced, filterRole, filterStatus, filterBranch, filterEmpType])
 
   const directoryRequestRef = useRef(0)
+  useEffect(() => {
+    if (!companyId) return
+    void loadDirectory()
+  }, [companyId, page, searchDebounced, colsDebounced, filterRole, filterStatus, filterBranch, filterEmpType])
+
   async function loadDirectory() {
     if (!companyId) return
     // Only the latest request may update the list (filters now load without a delay).
@@ -255,11 +314,15 @@ function EmployeesPageInner() {
     setEmpLoading(true)
     const supabase = createClient()
     const result = await listEmployeeDirectory(supabase, companyId, {
-      search,
+      search: searchDebounced,
       role: filterRole,
       status: filterStatus,
       employmentType: filterEmpType,
       branchId: filterBranch || null,
+      name: colsDebounced.name,
+      employeeNumber: colsDebounced.employeeNumber,
+      idNumber: colsDebounced.idNumber,
+      department: colsDebounced.department,
       limit: DIRECTORY_PAGE_SIZE,
       offset: page * DIRECTORY_PAGE_SIZE,
     })
@@ -274,6 +337,22 @@ function EmployeesPageInner() {
     }
     setEmpLoading(false)
   }
+
+  function resetDirectoryFilters() {
+    setSearch('')
+    setCols(EMPTY_COLS)
+    setFilterRole('')
+    setFilterStatus('')
+    setFilterBranch('')
+    setFilterEmpType('')
+    setPage(0)
+  }
+
+  const directoryFiltersActive =
+    !!search || colsActive(cols) || !!filterRole || !!filterStatus || !!filterBranch || !!filterEmpType
+
+  const statusTabValue = filterStatus || 'all'
+  const branchOptions = branches.map(b => ({ id: b.id, label: b.name }))
 
   async function init() {
     const supabase = createClient()
@@ -628,151 +707,171 @@ function EmployeesPageInner() {
       {/* ════════════════════════════════════════════════════════════════════ */}
       {tab === 'employees' && (
         <>
-          {/* Filter toolbar */}
-          <div className="flex items-center gap-3 mb-3 flex-wrap">
-            <div className="flex items-center gap-2 h-10 px-3 bg-surface border border-border rounded-md flex-1 min-w-[200px]">
-              <span className="material-icons text-text-disabled text-[18px]">search</span>
+          <div className="flex items-center gap-2 mb-3 flex-wrap">
+            <div className="flex items-center gap-1.5 h-8 px-2 bg-surface border border-border rounded-sm flex-1 min-w-[180px]">
+              <span className="material-icons text-text-disabled text-[16px]">search</span>
               <input
-                type="text"
-                placeholder="Search by name, employee no., ID number, department…"
+                type="search"
+                placeholder="Search name, employee no., ID, department…"
                 value={search}
-                onChange={e => { setSearch(e.target.value); setPage(0) }}
-                className="flex-1 text-[13px] text-text-primary placeholder:text-text-disabled bg-transparent focus:outline-none"
+                onChange={e => setSearch(e.target.value)}
+                className="flex-1 min-w-0 text-[13px] text-text-primary placeholder:text-text-disabled bg-transparent focus:outline-none"
               />
             </div>
-            <select
-              value={filterRole}
-              onChange={e => { setFilterRole(e.target.value as AccessLevel | ''); setPage(0) }}
-              className="h-10 px-3 bg-surface border border-border rounded-md text-[13px] text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 appearance-none"
-            >
-              <option value="">All roles</option>
-              <option value="owner">Owner</option>
-              <option value="admin">Admin</option>
-              <option value="manager">Manager</option>
-              <option value="hr">HR</option>
-              <option value="employee">Employee</option>
-            </select>
-            <select
-              value={filterStatus}
-              onChange={e => { setFilterStatus(e.target.value as 'active' | 'inactive' | ''); setPage(0) }}
-              className="h-10 px-3 bg-surface border border-border rounded-md text-[13px] text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 appearance-none"
-            >
-              <option value="">All statuses</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-            </select>
-            <select
-              value={filterEmpType}
-              onChange={e => { setFilterEmpType(e.target.value); setPage(0) }}
-              className="h-10 px-3 bg-surface border border-border rounded-md text-[13px] text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 appearance-none"
-            >
-              <option value="">All types</option>
-              <option value="permanent">Permanent</option>
-              <option value="contract">Contract</option>
-              <option value="part-time">Part-time</option>
-              <option value="student">Student</option>
-            </select>
+            <ResetFiltersButton
+              disabled={!directoryFiltersActive}
+              onReset={resetDirectoryFilters}
+            />
+            <StatusFilterTabs
+              tabs={STATUS_TABS}
+              value={statusTabValue}
+              counts={{}}
+              onChange={id => setFilterStatus(id === 'all' ? '' : id as 'active' | 'inactive')}
+            />
           </div>
 
-          <p className="text-[12px] text-text-secondary mb-3">
-            Every clock-in and clock-out shows on attendance. A missing place shows as No signal, or as coordinates and No signal. Geofence on still requires a map point inside an assigned branch.
-          </p>
-          {/* Branch filter pills */}
-          {branches.length > 0 && (
-            <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1">
-              <button
-                onClick={() => { setFilterBranch(''); setPage(0) }}
-                className={`shrink-0 h-7 px-3 rounded-full text-[11px] font-medium transition-colors ${
-                  filterBranch === ''
-                    ? 'bg-primary text-white'
-                    : 'bg-surface border border-border text-text-secondary hover:text-text-primary'
-                }`}
-              >
-                All Branches
-              </button>
-              {branches.map(b => (
-                <button
-                  key={b.id}
-                  onClick={() => { setFilterBranch(b.id); setPage(0) }}
-                  className={`shrink-0 h-7 px-3 rounded-full text-[11px] font-medium transition-colors ${
-                    filterBranch === b.id
-                      ? 'bg-primary text-white'
-                      : 'bg-surface border border-border text-text-secondary hover:text-text-primary'
-                  }`}
-                >
-                  {b.name}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Employee table */}
           <div className="bg-surface rounded-lg border border-divider overflow-hidden">
-            {empLoading ? (
-              <div className="py-16 text-center text-[13px] text-text-disabled">Loading…</div>
-            ) : filteredEmployees.length === 0 ? (
-              <div className="py-16 text-center">
-                <span className="material-icons text-[48px] text-text-disabled block mb-2">people_outline</span>
-                <p className="text-[14px] text-text-secondary">No employees found</p>
-                <Link href="/dashboard/employees/new" className="mt-3 inline-block text-primary text-[13px] hover:underline">
-                  + Add your first employee
-                </Link>
-              </div>
-            ) : (
-              <ResponsiveDataView
-                table={
-                  <table className="w-full text-[13px]">
-                    <thead>
-                      <tr className="border-b border-divider bg-surface-elevated">
-                        <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Employee</th>
-                        <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Employee no.</th>
-                        <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">ID number</th>
-                        <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Role</th>
-                        <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Department</th>
-                        <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Status</th>
-                        <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Geofence</th>
+            <ResponsiveDataView
+              table={
+                <table className="w-full" style={{ minWidth: 880 }}>
+                  <thead>
+                    <tr className="bg-surface-elevated border-b border-divider">
+                      <th className={`${MONEY_TH} text-left`}>
+                        <TextHeaderFilter
+                          label="Employee"
+                          value={cols.name}
+                          onChange={v => setCols(c => ({ ...c, name: v }))}
+                          placeholder="Name…"
+                        />
+                      </th>
+                      <th style={{ width: 110 }} className={`${MONEY_TH} text-left`}>
+                        <TextHeaderFilter
+                          label="Emp. no."
+                          value={cols.employeeNumber}
+                          onChange={v => setCols(c => ({ ...c, employeeNumber: v }))}
+                          placeholder="Number…"
+                        />
+                      </th>
+                      <th style={{ width: 120 }} className={`${MONEY_TH} text-left`}>
+                        <TextHeaderFilter
+                          label="ID number"
+                          value={cols.idNumber}
+                          onChange={v => setCols(c => ({ ...c, idNumber: v }))}
+                          placeholder="ID…"
+                        />
+                      </th>
+                      <th style={{ width: 110 }} className={`${MONEY_TH} text-left`}>
+                        <StatusHeaderFilter
+                          label="Role"
+                          options={ROLE_OPTIONS}
+                          selected={filterRole ? [filterRole] : []}
+                          onChange={next => setFilterRole((next[next.length - 1] as AccessLevel | undefined) ?? '')}
+                        />
+                      </th>
+                      <th style={{ width: 120 }} className={`${MONEY_TH} text-left`}>
+                        <TextHeaderFilter
+                          label="Department"
+                          value={cols.department}
+                          onChange={v => setCols(c => ({ ...c, department: v }))}
+                          placeholder="Department…"
+                        />
+                      </th>
+                      <th style={{ width: 110 }} className={`${MONEY_TH} text-left`}>
+                        <StatusHeaderFilter
+                          label="Type"
+                          options={EMP_TYPE_OPTIONS}
+                          selected={filterEmpType ? [filterEmpType] : []}
+                          onChange={next => setFilterEmpType(next[next.length - 1] ?? '')}
+                        />
+                      </th>
+                      {branchOptions.length > 0 && (
+                        <th style={{ width: 120 }} className={`${MONEY_TH} text-left`}>
+                          <StatusHeaderFilter
+                            label="Branch"
+                            options={branchOptions}
+                            selected={filterBranch ? [filterBranch] : []}
+                            onChange={next => setFilterBranch(next[next.length - 1] ?? '')}
+                          />
+                        </th>
+                      )}
+                      <th style={{ width: 80 }} className={`${MONEY_TH} text-left`}>Status</th>
+                      <th style={{ width: 80 }} className={`${MONEY_TH} text-center`}>Geofence</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {empLoading ? (
+                      <tr>
+                        <td colSpan={branchOptions.length > 0 ? 9 : 8} className="py-12 text-center text-[12px] text-text-disabled">
+                          Loading…
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {filteredEmployees.map(emp => {
+                    ) : filteredEmployees.length === 0 ? (
+                      <tr>
+                        <td colSpan={branchOptions.length > 0 ? 9 : 8} className="py-12 text-center">
+                          <span className="material-icons text-[40px] text-text-disabled block mb-2">people_outline</span>
+                          <p className="text-[13px] text-text-secondary">
+                            {directoryFiltersActive ? 'No employees match your filters.' : 'No employees found'}
+                          </p>
+                          {!directoryFiltersActive && (
+                            <Link href="/dashboard/employees/new" className="mt-2 inline-block text-primary text-[12px] hover:underline">
+                              + Add your first employee
+                            </Link>
+                          )}
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredEmployees.map(emp => {
                         const badge = ACCESS_BADGES[normalizeAccessLevel(emp.access_level)]
+                        const branchLabel =
+                          branches.find(b => b.id === emp.branch_id)?.name
+                          || emp.branch
+                          || '—'
+                        const typeLabel = (emp.employment_type || 'permanent').replace(/_/g, '-')
                         return (
                           <tr
                             key={emp.id}
                             className="border-b border-divider last:border-0 hover:bg-background transition-colors cursor-pointer"
                             onClick={() => router.push(`/dashboard/employees/${emp.id}`)}
                           >
-                            <td className="px-5 py-3">
-                              <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                                  <span className="text-primary text-[12px] font-semibold">
+                            <td className={MONEY_TD}>
+                              <div className="flex items-center gap-2 min-w-0">
+                                <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                                  <span className="text-primary text-[11px] font-semibold">
                                     {getInitials(`${emp.name} ${emp.surname}`)}
                                   </span>
                                 </div>
-                                <div>
-                                  <p className="font-medium text-text-primary">{emp.name} {emp.surname}</p>
+                                <div className="min-w-0">
+                                  <p className="font-medium text-text-primary truncate">{emp.name} {emp.surname}</p>
                                   {emp.position && (
-                                    <p className="text-[11px] text-text-secondary">{emp.position}</p>
+                                    <p className="text-[11px] text-text-secondary truncate">{emp.position}</p>
                                   )}
                                 </div>
                               </div>
                             </td>
-                            <td className="px-5 py-3 text-text-secondary font-mono">
+                            <td className={`${MONEY_TD} text-text-secondary font-mono`}>
                               {emp.employee_number?.trim() || '—'}
                             </td>
-                            <td className="px-5 py-3 text-text-secondary font-mono">
+                            <td className={`${MONEY_TD} text-text-secondary font-mono`}>
                               {emp.id_number?.trim() || '—'}
                             </td>
-                            <td className="px-5 py-3">
-                              <span className={`px-2 py-0.5 rounded-pill text-[11px] font-medium ${badge.cls}`}>
+                            <td className={MONEY_TD}>
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${badge.cls}`}>
                                 {badge.label}
                               </span>
                             </td>
-                            <td className="px-5 py-3 text-text-secondary">
+                            <td className={`${MONEY_TD} text-text-secondary`}>
                               {emp.department ?? '—'}
                             </td>
-                            <td className="px-5 py-3">
-                              <span className={`flex items-center gap-1 text-[12px] font-medium w-fit ${
+                            <td className={`${MONEY_TD} text-text-secondary capitalize`}>
+                              {typeLabel}
+                            </td>
+                            {branchOptions.length > 0 && (
+                              <td className={`${MONEY_TD} text-text-secondary truncate`} style={{ maxWidth: 120 }}>
+                                {branchLabel}
+                              </td>
+                            )}
+                            <td className={MONEY_TD}>
+                              <span className={`flex items-center gap-1 text-[11px] font-medium w-fit ${
                                 emp.is_active ? 'text-success' : 'text-text-disabled'
                               }`}>
                                 <span className={`w-1.5 h-1.5 rounded-full ${
@@ -781,12 +880,12 @@ function EmployeesPageInner() {
                                 {emp.is_active ? 'Active' : 'Inactive'}
                               </span>
                             </td>
-                            <td className="px-5 py-3">
+                            <td className={`${MONEY_TD} text-center`}>
                               <button
                                 type="button"
                                 disabled={!canSetGeofence}
                                 onClick={event => { void toggleGeofence(emp, event) }}
-                                className={`h-7 px-3 rounded-full text-[11px] font-semibold ${
+                                className={`h-7 px-2.5 rounded-md text-[11px] font-semibold ${
                                   emp.enforce_branch_geofence === false
                                     ? 'bg-surface-elevated text-text-secondary border border-divider'
                                     : 'bg-primary/10 text-primary'
@@ -797,11 +896,21 @@ function EmployeesPageInner() {
                             </td>
                           </tr>
                         )
-                      })}
-                    </tbody>
-                  </table>
-                }
-                mobile={
+                      })
+                    )}
+                  </tbody>
+                </table>
+              }
+              mobile={
+                empLoading ? (
+                  <p className="py-10 text-center text-[12px] text-text-disabled">Loading…</p>
+                ) : filteredEmployees.length === 0 ? (
+                  <div className="py-10 text-center">
+                    <p className="text-[13px] text-text-secondary">
+                      {directoryFiltersActive ? 'No employees match your filters.' : 'No employees found'}
+                    </p>
+                  </div>
+                ) : (
                   <>
                     {filteredEmployees.map(emp => {
                       const badge = ACCESS_BADGES[normalizeAccessLevel(emp.access_level)]
@@ -839,7 +948,7 @@ function EmployeesPageInner() {
                               type="button"
                               disabled={!canSetGeofence}
                               onClick={event => { void toggleGeofence(emp, event) }}
-                              className={`h-7 px-3 rounded-full text-[11px] font-semibold ${
+                              className={`h-7 px-3 rounded-md text-[11px] font-semibold ${
                                 emp.enforce_branch_geofence === false
                                   ? 'bg-surface-elevated text-text-secondary border border-divider'
                                   : 'bg-primary/10 text-primary'
@@ -852,11 +961,11 @@ function EmployeesPageInner() {
                       )
                     })}
                   </>
-                }
-              />
-            )}
+                )
+              }
+            />
             {directoryTotal > 0 && (
-              <div className="flex items-center justify-between gap-3 px-5 py-3 border-t border-divider">
+              <div className="flex items-center justify-between gap-3 px-3 py-2 border-t border-divider">
                 <p className="text-[12px] text-text-secondary">
                   {pageStart}–{pageEnd} of {directoryTotal}
                 </p>
@@ -865,7 +974,7 @@ function EmployeesPageInner() {
                     type="button"
                     disabled={page === 0 || empLoading}
                     onClick={() => setPage(p => Math.max(0, p - 1))}
-                    className="h-8 px-3 rounded-md border border-border text-[12px] font-medium text-text-primary disabled:opacity-40"
+                    className="h-8 px-2.5 rounded-md border border-border text-[12px] font-medium text-text-primary disabled:opacity-40"
                   >
                     Previous
                   </button>
@@ -873,7 +982,7 @@ function EmployeesPageInner() {
                     type="button"
                     disabled={pageEnd >= directoryTotal || empLoading}
                     onClick={() => setPage(p => p + 1)}
-                    className="h-8 px-3 rounded-md border border-border text-[12px] font-medium text-text-primary disabled:opacity-40"
+                    className="h-8 px-2.5 rounded-md border border-border text-[12px] font-medium text-text-primary disabled:opacity-40"
                   >
                     Next
                   </button>

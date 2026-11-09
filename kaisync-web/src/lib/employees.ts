@@ -47,6 +47,11 @@ export type EmployeeDirectoryQuery = {
   status?: '' | 'active' | 'inactive'
   employmentType?: string
   branchId?: string | null
+  /** Column filters (ANDed). Additive to p_search. */
+  name?: string
+  employeeNumber?: string
+  idNumber?: string
+  department?: string
   limit?: number
   offset?: number
 }
@@ -87,6 +92,10 @@ export async function listEmployeeDirectory(
     p_branch_id: query.branchId || null,
     p_limit: query.limit ?? 50,
     p_offset: query.offset ?? 0,
+    p_name: query.name?.trim() || null,
+    p_employee_number: query.employeeNumber?.trim() || null,
+    p_id_number: query.idNumber?.trim() || null,
+    p_department: query.department?.trim() || null,
   })
   if (error) return { ok: false, message: error.message }
   const body = (data ?? {}) as DirectoryPayload
