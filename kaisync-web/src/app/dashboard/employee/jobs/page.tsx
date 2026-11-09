@@ -24,6 +24,21 @@ import {
   DataCardMeta,
   DataCardRow,
 } from '@/components/ui/ResponsiveDataView'
+import {
+  StatusFilterTabs,
+  MONEY_TH,
+  MONEY_TD,
+  type StatusTabDef,
+} from '@/components/ui/StatusFilterTabs'
+import {
+  ResetFiltersButton,
+  TextHeaderFilter,
+  StatusHeaderFilter,
+  matchText,
+  statusTab,
+  type ColumnOption,
+  type TabTone,
+} from '@/components/ui/MoneyListFilters'
 
 interface Job {
   id: string
@@ -67,6 +82,31 @@ const EMPTY_MESSAGES: Record<JobScope, string> = {
   all: 'No jobs yet — assigned jobs and jobs you create will appear here.',
 }
 
+/** Scope / status tabs filter via job-ownership helpers, so `match` stays null. */
+const SCOPE_TABS: StatusTabDef[] = [
+  { ...statusTab('assigned', 'Assigned', [], 'slate'), match: null },
+  { ...statusTab('created', 'My Jobs', [], 'slate'), match: null },
+  { ...statusTab('all', 'All', [], 'slate'), match: null },
+]
+
+const STATUS_TONES: Record<JobStatusFilter, TabTone> = {
+  open: 'blue',
+  all: 'slate',
+  scheduled: 'indigo',
+  in_progress: 'amber',
+  completed: 'green',
+  cancelled: 'red',
+}
+
+const STATUS_TABS: StatusTabDef[] = JOB_STATUS_FILTERS.map((s) => ({
+  ...statusTab(s.key, s.label, [], STATUS_TONES[s.key]),
+  match: null,
+}))
+
+function priorityLabel(p: string): string {
+  return p.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
 export default function EmployeeJobsPage() {
   const router = useRouter()
   const allowed = useEmployeeModuleGate('jobs')
@@ -74,6 +114,10 @@ export default function EmployeeJobsPage() {
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<JobScope>('assigned')
   const [statusFilter, setStatusFilter] = useState<JobStatusFilter>('all')
+  const [codeCol, setCodeCol] = useState('')
+  const [titleCol, setTitleCol] = useState('')
+  const [statusCol, setStatusCol] = useState<string[]>([])
+  const [priorityCol, setPriorityCol] = useState<string[]>([])
   const [empId, setEmpId] = useState<string | null>(null)
   const [fromCache, setFromCache] = useState(false)
   const [cacheAt, setCacheAt] = useState<string | null>(null)
@@ -135,10 +179,45 @@ export default function EmployeeJobsPage() {
     if (!empId) return []
     return sortJobsByCreatedDesc(
       jobs.filter(
-        (j) => matchesJobScope(j, tab, empId) && matchesJobStatus(j, statusFilter),
+        (j) =>
+          matchesJobScope(j, tab, empId) &&
+          matchesJobStatus(j, statusFilter) &&
+          matchText(j.job_code, codeCol) &&
+          matchText(j.title, titleCol) &&
+          (statusCol.length === 0 || statusCol.includes(normalizeStatus(j.status))) &&
+          (priorityCol.length === 0 || priorityCol.includes(j.priority ?? '')),
       ),
     )
-  }, [jobs, tab, statusFilter, empId])
+  }, [jobs, tab, statusFilter, empId, codeCol, titleCol, statusCol, priorityCol])
+
+  /** Column-filter options come from the loaded jobs only (no invented values). */
+  const statusOptions = useMemo<ColumnOption[]>(() => {
+    const seen = new Set<string>()
+    for (const j of jobs) {
+      const s = normalizeStatus(j.status)
+      if (s) seen.add(s)
+    }
+    return [...seen].sort().map((id) => ({ id, label: statusLabel(id) }))
+  }, [jobs])
+
+  const priorityOptions = useMemo<ColumnOption[]>(() => {
+    const seen = new Set<string>()
+    for (const j of jobs) if (j.priority) seen.add(j.priority)
+    return [...seen].sort().map((id) => ({ id, label: priorityLabel(id) }))
+  }, [jobs])
+
+  const hasColumnFilters =
+    codeCol !== '' || titleCol !== '' || statusCol.length > 0 || priorityCol.length > 0
+  const hasFilters = hasColumnFilters || tab !== 'assigned' || statusFilter !== 'all'
+
+  function resetFilters() {
+    setTab('assigned')
+    setStatusFilter('all')
+    setCodeCol('')
+    setTitleCol('')
+    setStatusCol([])
+    setPriorityCol([])
+  }
 
   if (allowed === null || (allowed && loading && jobs.length === 0)) {
     return (
@@ -178,42 +257,23 @@ export default function EmployeeJobsPage() {
           </p>
         )}
 
-        <div className="flex gap-2 mt-3">
-          {([
-            { key: 'assigned' as const, label: 'Assigned' },
-            { key: 'created' as const, label: 'My Jobs' },
-            { key: 'all' as const, label: 'All' },
-          ]).map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => setTab(t.key)}
-              className={`text-[12px] font-semibold px-3 py-1.5 rounded-full transition-colors ${
-                tab === t.key
-                  ? 'bg-primary text-white'
-                  : 'bg-surface-elevated text-text-secondary border border-divider hover:border-primary'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2 mt-3">
+          <ResetFiltersButton disabled={!hasFilters} onReset={resetFilters} />
+          <StatusFilterTabs
+            tabs={SCOPE_TABS}
+            value={tab}
+            counts={{}}
+            onChange={(id) => setTab(id as JobScope)}
+          />
         </div>
 
-        <div className="flex flex-wrap gap-1.5 mt-2">
-          {JOB_STATUS_FILTERS.map((s) => (
-            <button
-              key={s.key}
-              type="button"
-              onClick={() => setStatusFilter(s.key)}
-              className={`text-[11px] font-semibold px-2.5 py-1 rounded-full transition-colors ${
-                statusFilter === s.key
-                  ? 'bg-primary text-white'
-                  : 'bg-surface-elevated text-text-secondary border border-divider'
-              }`}
-            >
-              {s.label}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2 mt-2">
+          <StatusFilterTabs
+            tabs={STATUS_TABS}
+            value={statusFilter}
+            counts={{}}
+            onChange={(id) => setStatusFilter(id as JobStatusFilter)}
+          />
         </div>
       </div>
 
@@ -223,7 +283,9 @@ export default function EmployeeJobsPage() {
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 gap-3 px-8 text-center text-text-secondary">
             <span className="material-icons text-[48px] text-text-disabled">work_off</span>
-            <p className="text-[14px]">{EMPTY_MESSAGES[tab]}</p>
+            <p className="text-[14px]">
+              {hasColumnFilters ? 'No jobs match your column filters.' : EMPTY_MESSAGES[tab]}
+            </p>
           </div>
         ) : (
           <ResponsiveDataView
@@ -231,42 +293,50 @@ export default function EmployeeJobsPage() {
               <table className="w-full text-[13px]">
                 <thead>
                   <tr className="border-b border-divider bg-surface-elevated">
-                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Code</th>
-                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Title</th>
-                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Status</th>
-                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Priority</th>
-                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Scheduled</th>
+                    <th className={`${MONEY_TH} text-left`}>
+                      <TextHeaderFilter label="Code" value={codeCol} onChange={setCodeCol} placeholder="Job code…" />
+                    </th>
+                    <th className={`${MONEY_TH} text-left`}>
+                      <TextHeaderFilter label="Title" value={titleCol} onChange={setTitleCol} placeholder="Job title…" />
+                    </th>
+                    <th className={`${MONEY_TH} text-left`}>
+                      <StatusHeaderFilter label="Status" options={statusOptions} selected={statusCol} onChange={setStatusCol} />
+                    </th>
+                    <th className={`${MONEY_TH} text-left`}>
+                      <StatusHeaderFilter label="Priority" options={priorityOptions} selected={priorityCol} onChange={setPriorityCol} />
+                    </th>
+                    <th className={`${MONEY_TH} text-left`}>Scheduled</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-divider">
                   {filtered.map((job) => (
                     <tr key={job.id} className="hover:bg-surface-elevated transition-colors">
-                      <td className="px-4 py-3 text-[12px] text-text-disabled whitespace-nowrap">
+                      <td className={`${MONEY_TD} text-text-disabled whitespace-nowrap`}>
                         {job.job_code ?? '—'}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className={MONEY_TD}>
                         <Link
                           href={`/dashboard/employee/jobs/${job.id}`}
-                          className="text-[13px] font-semibold text-primary hover:underline"
+                          className="text-[12px] font-semibold text-primary hover:underline"
                         >
                           {job.title}
                         </Link>
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
+                      <td className={`${MONEY_TD} whitespace-nowrap`}>
                         {job.status ? (
                           <span className={`text-[11px] font-semibold px-2 py-[3px] rounded-full capitalize ${STATUS_COLORS[normalizeStatus(job.status)] ?? 'bg-surface-elevated text-text-secondary'}`}>
                             {statusLabel(job.status)}
                           </span>
                         ) : '—'}
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
+                      <td className={`${MONEY_TD} whitespace-nowrap`}>
                         {job.priority ? (
                           <span className={`text-[12px] font-medium capitalize ${PRIORITY_COLORS[job.priority] ?? 'text-text-secondary'}`}>
                             {job.priority}
                           </span>
                         ) : '—'}
                       </td>
-                      <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
+                      <td className={`${MONEY_TD} text-text-secondary whitespace-nowrap`}>
                         {job.scheduled_start
                           ? new Date(job.scheduled_start).toLocaleDateString('en-ZA', {
                             day: '2-digit',

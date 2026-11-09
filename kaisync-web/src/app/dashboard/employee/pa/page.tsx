@@ -18,6 +18,15 @@ import {
   spawnNextDueAt,
 } from '@/lib/pa-helpers'
 import { localISODate } from '@/lib/utils'
+import { StatusFilterTabs, MONEY_TH, MONEY_TD, TAB_ALL } from '@/components/ui/StatusFilterTabs'
+import {
+  ResetFiltersButton,
+  TextHeaderFilter,
+  StatusHeaderFilter,
+  matchText,
+  statusTab,
+} from '@/components/ui/MoneyListFilters'
+import { ResponsiveDataView } from '@/components/ui/ResponsiveDataView'
 
 interface PATask {
   id: string
@@ -56,6 +65,23 @@ const PRIORITY_BADGE: Record<string, string> = {
 
 type MainTab = 'today' | 'tasks' | 'calendar' | 'search'
 type TaskFilter = 'all' | 'todo' | 'in_progress' | 'overdue' | 'done'
+
+// Tab membership is evaluated in `filteredTasks` (Overdue is date-derived, not a stored status);
+// `match` is only used by the shared tab type.
+const TASK_STATUS_TABS = [
+  TAB_ALL,
+  statusTab('todo', 'To do', ['todo'], 'blue'),
+  statusTab('in_progress', 'In progress', ['in_progress'], 'indigo'),
+  statusTab('overdue', 'Overdue', [], 'red'),
+  statusTab('done', 'Done', ['done'], 'green'),
+]
+
+const PRIORITY_OPTIONS = [
+  { id: 'urgent', label: 'Urgent' },
+  { id: 'high',   label: 'High' },
+  { id: 'medium', label: 'Medium' },
+  { id: 'low',    label: 'Low' },
+]
 
 function fmtDue(iso: string | null): string {
   if (!iso) return ''
@@ -418,6 +444,9 @@ export default function MyPAPage() {
   const [error,      setError]      = useState<string | null>(null)
   const [mainTab,    setMainTab]    = useState<MainTab>('today')
   const [taskFilter, setTaskFilter] = useState<TaskFilter>('all')
+  const [titleFilter,    setTitleFilter]    = useState('')
+  const [linkedFilter,   setLinkedFilter]   = useState('')
+  const [priorityFilter, setPriorityFilter] = useState<string[]>([])
   const [focusMode,  setFocusMode]  = useState(false)
   const [calMode,    setCalMode]    = useState<'month' | 'week'>('month')
   const [calDate,    setCalDate]    = useState(new Date())
@@ -614,17 +643,43 @@ export default function MyPAPage() {
     new Date(t.remind_at) > now && new Date(t.remind_at) < new Date(now.getTime() + 7*86400000)
   ).sort((a, b) => new Date(a.remind_at!).getTime() - new Date(b.remind_at!).getTime())
 
+  // Focus-scoped base list: status tab counts reflect what the table can show.
+  const focusScopedTasks = useMemo(() => {
+    if (!focusMode) return tasks
+    return tasks.filter(t =>
+      isOverdue(t) || t.due_at?.startsWith(todayStr) || ['high','urgent'].includes(t.priority)
+    )
+  }, [tasks, focusMode, todayStr])
+
+  const taskTabCounts = useMemo(() => ({
+    all:         focusScopedTasks.length,
+    todo:        focusScopedTasks.filter(t => t.status === 'todo').length,
+    in_progress: focusScopedTasks.filter(t => t.status === 'in_progress').length,
+    overdue:     focusScopedTasks.filter(isOverdue).length,
+    done:        focusScopedTasks.filter(t => t.status === 'done').length,
+  }), [focusScopedTasks])
+
   const filteredTasks = useMemo(() => {
-    let list = tasks
+    let list = focusScopedTasks
     if (taskFilter === 'todo')        list = list.filter(t => t.status === 'todo')
     else if (taskFilter === 'in_progress') list = list.filter(t => t.status === 'in_progress')
     else if (taskFilter === 'overdue')     list = list.filter(isOverdue)
     else if (taskFilter === 'done')        list = list.filter(t => t.status === 'done')
-    if (focusMode) list = list.filter(t =>
-      isOverdue(t) || t.due_at?.startsWith(todayStr) || ['high','urgent'].includes(t.priority)
+    return list.filter(t =>
+      matchText(t.title, titleFilter) &&
+      matchText(t.linked_label, linkedFilter) &&
+      (priorityFilter.length === 0 || priorityFilter.includes(t.priority)),
     )
-    return list
-  }, [tasks, taskFilter, focusMode, todayStr])
+  }, [focusScopedTasks, taskFilter, titleFilter, linkedFilter, priorityFilter])
+
+  const hasTaskColumnFilters = titleFilter !== '' || linkedFilter !== '' || priorityFilter.length > 0
+  const hasTaskFilters = hasTaskColumnFilters || taskFilter !== 'all'
+  function resetTaskFilters() {
+    setTaskFilter('all')
+    setTitleFilter('')
+    setLinkedFilter('')
+    setPriorityFilter([])
+  }
 
   const searchResults = useMemo(() => {
     if (!search.trim()) return []
@@ -756,21 +811,20 @@ export default function MyPAPage() {
         {/* ── TASKS ── */}
         {mainTab === 'tasks' && (
           <div className="p-4 space-y-3">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div className="flex gap-1.5 flex-wrap">
-                {(['all','todo','in_progress','overdue','done'] as TaskFilter[]).map(f => (
-                  <button key={f} onClick={() => setTaskFilter(f)}
-                    className={`text-[11px] font-semibold px-2.5 py-1 rounded-full capitalize transition-colors ${
-                      taskFilter === f ? 'bg-primary text-white' : 'bg-surface-elevated text-text-secondary border border-divider'
-                    }`}>{f.replace(/_/g,' ')}</button>
-                ))}
-              </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <ResetFiltersButton disabled={!hasTaskFilters} onReset={resetTaskFilters} />
               <button onClick={() => void toggleFocusMode()}
-                className={`text-[11px] font-semibold px-3 py-1.5 rounded-full transition-colors ${
+                className={`h-8 text-[11px] font-semibold px-3 rounded-md transition-colors ${
                   focusMode ? 'bg-warning text-white' : 'bg-surface-elevated text-text-secondary border border-divider'
                 }`}>
                 {focusMode ? 'Focus ON' : 'Focus mode'}
               </button>
+              <StatusFilterTabs
+                tabs={TASK_STATUS_TABS}
+                value={taskFilter}
+                counts={taskTabCounts}
+                onChange={id => setTaskFilter(id as TaskFilter)}
+              />
             </div>
             {focusMode && (
               <p className="text-[11px] text-text-disabled italic">On — showing only overdue, due-today and high-priority work.</p>
@@ -778,19 +832,32 @@ export default function MyPAPage() {
             {filteredTasks.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 gap-2 text-text-secondary">
                 <span className="material-icons text-[48px] text-text-disabled">task_alt</span>
-                <p className="text-[14px]">No tasks.</p>
+                <p className="text-[14px]">{tasks.length === 0 ? 'No tasks.' : 'No tasks match the current filters.'}</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <ResponsiveDataView
+                className="border border-divider rounded-xl bg-surface md:min-h-[260px]"
+                mobile={
+                  <div className="p-2 space-y-2">
+                    {filteredTasks.map(t => <TaskRow key={t.id} task={t} {...rowProps} />)}
+                  </div>
+                }
+                table={
                 <table className="w-full text-[13px]">
                   <thead>
                     <tr className="border-b border-divider bg-surface-elevated">
-                      <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Title</th>
-                      <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Priority</th>
-                      <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Status</th>
-                      <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Due</th>
-                      <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Linked</th>
-                      <th className="px-4 py-2.5" />
+                      <th className={`${MONEY_TH} text-left`}>
+                        <TextHeaderFilter label="Title" value={titleFilter} onChange={setTitleFilter} placeholder="Task title…" />
+                      </th>
+                      <th className={`${MONEY_TH} text-left`}>
+                        <StatusHeaderFilter label="Priority" options={PRIORITY_OPTIONS} selected={priorityFilter} onChange={setPriorityFilter} />
+                      </th>
+                      <th className={`${MONEY_TH} text-left`}>Status</th>
+                      <th className={`${MONEY_TH} text-left`}>Due</th>
+                      <th className={`${MONEY_TH} text-left`}>
+                        <TextHeaderFilter label="Linked" value={linkedFilter} onChange={setLinkedFilter} placeholder="Linked to…" />
+                      </th>
+                      <th className={MONEY_TH} />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-divider">
@@ -798,7 +865,7 @@ export default function MyPAPage() {
                       const overdue = isOverdue(t)
                       return (
                         <tr key={t.id} className={`hover:bg-surface-elevated transition-colors ${overdue ? 'bg-error/5' : ''}`}>
-                          <td className="px-4 py-3">
+                          <td className={MONEY_TD}>
                             <Link href={`${basePath}/${t.id}`}
                               className={`text-[13px] font-semibold hover:underline ${overdue ? 'text-error' : 'text-primary'}`}>
                               {t.title}
@@ -807,27 +874,27 @@ export default function MyPAPage() {
                               <p className="text-[11px] text-text-disabled mt-0.5 line-clamp-1">{t.notes}</p>
                             )}
                           </td>
-                          <td className="px-4 py-3 whitespace-nowrap">
+                          <td className={`${MONEY_TD} whitespace-nowrap`}>
                             <span className={`text-[10px] font-bold px-2 py-[2px] rounded-full capitalize ${PRIORITY_BADGE[t.priority] ?? 'bg-surface-elevated text-text-disabled'}`}>
                               {t.priority}
                             </span>
                           </td>
-                          <td className="px-4 py-3 whitespace-nowrap">
+                          <td className={`${MONEY_TD} whitespace-nowrap`}>
                             <span className="text-[11px] text-text-secondary capitalize">
                               {t.status.replace(/_/g, ' ')}
                             </span>
                           </td>
-                          <td className="px-4 py-3 whitespace-nowrap">
+                          <td className={`${MONEY_TD} whitespace-nowrap`}>
                             {t.due_at ? (
                               <span className={`text-[12px] font-medium ${overdue ? 'text-error' : 'text-text-secondary'}`}>
                                 {fmtDue(t.due_at)}
                               </span>
                             ) : '—'}
                           </td>
-                          <td className="px-4 py-3 text-[12px] text-text-disabled">
+                          <td className={`${MONEY_TD} text-text-disabled`}>
                             {t.linked_label ?? '—'}
                           </td>
-                          <td className="px-4 py-3">
+                          <td className={MONEY_TD}>
                             <div className="flex items-center gap-1 justify-end">
                               {t.status === 'todo' && (
                                 <button onClick={() => void startInline(t)} title="Start" className="p-1 rounded hover:bg-primary/10">
@@ -862,7 +929,8 @@ export default function MyPAPage() {
                     })}
                   </tbody>
                 </table>
-              </div>
+                }
+              />
             )}
           </div>
         )}

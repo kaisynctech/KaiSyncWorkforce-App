@@ -1,6 +1,9 @@
 'use client'
 
-import { useRef, useEffect, useState } from 'react'
+import { useRef, useEffect, useMemo, useState } from 'react'
+import { MONEY_TH, MONEY_TD } from '@/components/ui/StatusFilterTabs'
+import { ResetFiltersButton, StatusHeaderFilter, TextHeaderFilter, matchText } from '@/components/ui/MoneyListFilters'
+import { ResponsiveDataView, DataCard, DataCardTitle, DataCardMeta } from '@/components/ui/ResponsiveDataView'
 import { createClient } from '@/lib/supabase/client'
 import { signWorkforceMedia } from '@/lib/media-read'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
@@ -50,6 +53,28 @@ export default function DocumentsPage() {
   const [replacing,     setReplacing]     = useState(false)
   const [replaceError,  setReplaceError]  = useState<string | null>(null)
   const replaceFileRef  = useRef<HTMLInputElement>(null)
+
+  // Column filters
+  const [nameFilter, setNameFilter] = useState('')
+  const [typeFilter, setTypeFilter] = useState<string[]>([])
+
+  const typeOptions = useMemo(() => {
+    const keys = Array.from(new Set(docs.map(d => d.document_type)))
+    return keys
+      .map(k => ({ id: k, label: formatEmployeeDocumentType(k) }))
+      .sort((a, b) => a.label.localeCompare(b.label))
+  }, [docs])
+
+  const filteredDocs = useMemo(
+    () => docs.filter(d =>
+      matchText(d.document_name, nameFilter) &&
+      (typeFilter.length === 0 || typeFilter.includes(d.document_type)),
+    ),
+    [docs, nameFilter, typeFilter],
+  )
+
+  const hasFilters = nameFilter !== '' || typeFilter.length > 0
+  function resetFilters() { setNameFilter(''); setTypeFilter([]) }
 
   useEffect(() => { init() }, [])
 
@@ -221,6 +246,25 @@ export default function DocumentsPage() {
     <div className="flex items-center justify-center h-64 text-text-secondary text-[14px]">Loading…</div>
   )
 
+  function renderDocActions(doc: EmployeeDocument) {
+    return (
+      <>
+        <button onClick={() => openDoc(doc)} title="Open"
+          className="flex items-center justify-center w-7 h-7 rounded-md border border-divider text-text-secondary hover:text-primary hover:border-primary transition-colors">
+          <span className="material-icons text-[16px]">open_in_new</span>
+        </button>
+        <button onClick={() => downloadDoc(doc)} title="Download"
+          className="flex items-center justify-center w-7 h-7 rounded-md border border-divider text-text-secondary hover:text-primary hover:border-primary transition-colors">
+          <span className="material-icons text-[16px]">download</span>
+        </button>
+        <button onClick={() => openReplaceModal(doc)} title="Replace"
+          className="flex items-center justify-center w-7 h-7 rounded-md border border-divider text-text-secondary hover:text-warning hover:border-warning transition-colors">
+          <span className="material-icons text-[16px]">swap_horiz</span>
+        </button>
+      </>
+    )
+  }
+
   const subtitle = companyName
     ? (pendingReview
         ? `Documents — ${companyName} (pending review)`
@@ -260,38 +304,74 @@ export default function DocumentsPage() {
             </p>
           </div>
         ) : (
-          <div className="divide-y divide-divider">
-            {docs.map(doc => (
-              <div key={doc.id} className="flex items-start gap-3 px-4 py-4">
-                <span className="material-icons text-text-disabled text-[24px] mt-0.5 shrink-0">description</span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[14px] font-semibold text-text-primary truncate">{doc.document_name}</p>
-                  <p className="text-[11px] text-text-secondary">{formatEmployeeDocumentType(doc.document_type)}</p>
-                  <p className="text-[11px] text-text-disabled mt-0.5">
-                    {companyName && <span>{companyName} · </span>}
-                    {fmtDate(doc.created_at)}
-                    <span className="ml-1 text-warning">
-                      {doc.uploaded_by_role === 'employee' ? '(Self-submitted)' : '(HR uploaded)'}
-                    </span>
-                  </p>
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <button onClick={() => openDoc(doc)} title="Open"
-                    className="flex items-center justify-center w-8 h-8 rounded-lg border border-divider text-text-secondary hover:text-primary hover:border-primary transition-colors">
-                    <span className="material-icons text-[16px]">open_in_new</span>
-                  </button>
-                  <button onClick={() => downloadDoc(doc)} title="Download"
-                    className="flex items-center justify-center w-8 h-8 rounded-lg border border-divider text-text-secondary hover:text-primary hover:border-primary transition-colors">
-                    <span className="material-icons text-[16px]">download</span>
-                  </button>
-                  <button onClick={() => openReplaceModal(doc)} title="Replace"
-                    className="flex items-center justify-center w-8 h-8 rounded-lg border border-divider text-text-secondary hover:text-warning hover:border-warning transition-colors">
-                    <span className="material-icons text-[16px]">swap_horiz</span>
-                  </button>
-                </div>
+          <>
+            <div className="flex items-center gap-2 flex-wrap px-4 py-2 border-b border-divider bg-surface">
+              <ResetFiltersButton disabled={!hasFilters} onReset={resetFilters} />
+              <span className="text-[11px] text-text-secondary tabular-nums ml-auto">
+                {filteredDocs.length} of {docs.length}
+              </span>
+            </div>
+            {filteredDocs.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 gap-2 text-text-secondary">
+                <span className="material-icons text-[40px] text-text-disabled">filter_alt_off</span>
+                <p className="text-[13px]">No documents match the current filters.</p>
               </div>
-            ))}
-          </div>
+            ) : (
+              <ResponsiveDataView
+                className="md:min-h-[260px]"
+                table={
+                  <table className="w-full" style={{ minWidth: 720 }}>
+                    <thead className="sticky top-0 z-10">
+                      <tr className="bg-surface-elevated border-b border-divider">
+                        <th className={`${MONEY_TH} text-left`}>
+                          <TextHeaderFilter label="Name" value={nameFilter} onChange={setNameFilter} placeholder="Document name…" />
+                        </th>
+                        <th className={`${MONEY_TH} text-left`}>
+                          <StatusHeaderFilter label="Type" options={typeOptions} selected={typeFilter} onChange={setTypeFilter} />
+                        </th>
+                        <th className={`${MONEY_TH} text-left`}>Submitted</th>
+                        <th className={`${MONEY_TH} text-left`}>Source</th>
+                        <th className={`${MONEY_TH} text-right`}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-divider">
+                      {filteredDocs.map(doc => (
+                        <tr key={doc.id} className="hover:bg-surface-elevated transition-colors">
+                          <td className={`${MONEY_TD} font-semibold text-text-primary`}>{doc.document_name}</td>
+                          <td className={`${MONEY_TD} text-text-secondary`}>{formatEmployeeDocumentType(doc.document_type)}</td>
+                          <td className={`${MONEY_TD} text-text-secondary whitespace-nowrap`}>{fmtDate(doc.created_at)}</td>
+                          <td className={`${MONEY_TD} text-warning whitespace-nowrap`}>
+                            {doc.uploaded_by_role === 'employee' ? 'Self-submitted' : 'HR uploaded'}
+                          </td>
+                          <td className={MONEY_TD}>
+                            <div className="flex items-center gap-1 justify-end">{renderDocActions(doc)}</div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                }
+                mobile={filteredDocs.map(doc => (
+                  <DataCard key={doc.id}>
+                    <div className="flex items-start gap-3">
+                      <div className="flex-1 min-w-0">
+                        <DataCardTitle>{doc.document_name}</DataCardTitle>
+                        <DataCardMeta>{formatEmployeeDocumentType(doc.document_type)}</DataCardMeta>
+                        <p className="text-[11px] text-text-disabled mt-0.5">
+                          {companyName && <span>{companyName} · </span>}
+                          {fmtDate(doc.created_at)}
+                          <span className="ml-1 text-warning">
+                            {doc.uploaded_by_role === 'employee' ? '(Self-submitted)' : '(HR uploaded)'}
+                          </span>
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">{renderDocActions(doc)}</div>
+                    </div>
+                  </DataCard>
+                ))}
+              />
+            )}
+          </>
         )}
       </div>
 

@@ -17,6 +17,36 @@ import {
   DataCardMeta,
   DataCardRow,
 } from '@/components/ui/ResponsiveDataView'
+import {
+  StatusFilterTabs,
+  TAB_ALL,
+  MONEY_TH,
+  MONEY_TD,
+  countByStatusTab,
+  filterByStatusTab,
+} from '@/components/ui/StatusFilterTabs'
+import {
+  ResetFiltersButton,
+  TextHeaderFilter,
+  StatusHeaderFilter,
+  matchText,
+  statusTab,
+} from '@/components/ui/MoneyListFilters'
+
+const STATUS_TABS = [
+  TAB_ALL,
+  statusTab('pending', 'Pending', ['pending'], 'amber'),
+  statusTab('approved', 'Approved', ['approved'], 'blue'),
+  statusTab('paid', 'Paid', ['paid'], 'green'),
+  statusTab('rejected', 'Rejected', ['rejected'], 'red'),
+]
+
+const STATUS_OPTIONS = [
+  { id: 'pending', label: 'Pending' },
+  { id: 'approved', label: 'Approved' },
+  { id: 'paid', label: 'Paid' },
+  { id: 'rejected', label: 'Rejected' },
+]
 
 const STATUS_STYLES: Record<string, string> = {
   pending: 'bg-warning/10 text-warning',
@@ -49,6 +79,9 @@ export default function PayslipsPage() {
   const [companyName, setCompanyName] = useState('Company')
   const [downloading, setDownloading] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  const [statusTabId, setStatusTabId] = useState<string>(TAB_ALL.id)
+  const [periodFilter, setPeriodFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState<string[]>([])
 
   useEffect(() => {
     if (allowed !== true) return
@@ -186,6 +219,18 @@ export default function PayslipsPage() {
   }
   if (allowed === false) return null
 
+  const statusCounts = countByStatusTab(payslips, STATUS_TABS)
+  const filtered = filterByStatusTab(payslips, STATUS_TABS, statusTabId).filter(p =>
+    matchText(fmtPeriod(p.period_start, p.period_end), periodFilter)
+    && (statusFilter.length === 0 || statusFilter.includes(p.status)),
+  )
+  const hasFilters = statusTabId !== TAB_ALL.id || !!periodFilter || statusFilter.length > 0
+  function resetFilters() {
+    setStatusTabId(TAB_ALL.id)
+    setPeriodFilter('')
+    setStatusFilter([])
+  }
+
   return (
     <div className="h-full flex flex-col overflow-hidden">
       <div className="px-4 py-3 border-b border-divider shrink-0 bg-surface">
@@ -203,7 +248,19 @@ export default function PayslipsPage() {
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto">
+      {payslips.length > 0 && (
+        <div className="flex gap-2 px-4 py-2 border-b border-divider shrink-0 flex-wrap bg-surface items-center">
+          <ResetFiltersButton disabled={!hasFilters} onReset={resetFilters} />
+          <StatusFilterTabs
+            tabs={STATUS_TABS}
+            value={statusTabId}
+            counts={statusCounts}
+            onChange={setStatusTabId}
+          />
+        </div>
+      )}
+
+      <div className="flex-1 overflow-auto">
         {payslips.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 gap-2 text-text-secondary px-6 text-center">
             <span className="material-icons text-[48px] text-text-disabled">payments</span>
@@ -212,62 +269,71 @@ export default function PayslipsPage() {
               Payslips appear here after HR shares them with you.
             </p>
           </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-64 gap-2 text-text-secondary px-6 text-center">
+            <span className="material-icons text-[48px] text-text-disabled">filter_alt_off</span>
+            <p className="text-[14px]">No payslips match the current filters.</p>
+          </div>
         ) : (
           <ResponsiveDataView
             table={
-              <table className="w-full text-[13px]">
+              <table className="w-full" style={{ minWidth: 860 }}>
                 <thead>
-                  <tr className="border-b border-divider bg-surface-elevated">
-                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Period</th>
-                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Gross Pay</th>
-                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Deductions</th>
-                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Net Pay</th>
-                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Status</th>
-                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Paid At</th>
-                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Reg Hrs</th>
-                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">OT Hrs</th>
-                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Days</th>
-                    <th className="px-4 py-2.5" />
+                  <tr className="bg-surface-elevated border-b border-divider sticky top-0 z-10">
+                    <th className={`${MONEY_TH} text-left`}>
+                      <TextHeaderFilter label="Period" value={periodFilter} onChange={setPeriodFilter} placeholder="Filter period…" />
+                    </th>
+                    <th className={`${MONEY_TH} text-right`}>Gross Pay</th>
+                    <th className={`${MONEY_TH} text-right`}>Deductions</th>
+                    <th className={`${MONEY_TH} text-right`}>Net Pay</th>
+                    <th className={`${MONEY_TH} text-left`}>
+                      <StatusHeaderFilter label="Status" options={STATUS_OPTIONS} selected={statusFilter} onChange={setStatusFilter} />
+                    </th>
+                    <th className={`${MONEY_TH} text-left`}>Paid At</th>
+                    <th className={`${MONEY_TH} text-right`}>Reg Hrs</th>
+                    <th className={`${MONEY_TH} text-right`}>OT Hrs</th>
+                    <th className={`${MONEY_TH} text-right`}>Days</th>
+                    <th className={MONEY_TH} />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-divider">
-                  {payslips.map(p => (
+                  {filtered.map(p => (
                     <tr key={p.id} className="hover:bg-surface-elevated transition-colors">
-                      <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
+                      <td className={`${MONEY_TD} text-text-secondary whitespace-nowrap`}>
                         {fmtPeriod(p.period_start, p.period_end)}
                       </td>
-                      <td className="px-4 py-3 font-medium text-text-primary whitespace-nowrap">{fmtMoney(p.gross_pay)}</td>
-                      <td className="px-4 py-3 text-text-secondary whitespace-nowrap">{fmtMoney(p.deductions)}</td>
-                      <td className="px-4 py-3 font-bold text-text-primary whitespace-nowrap">{fmtMoney(p.net_pay)}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">
+                      <td className={`${MONEY_TD} text-right tabular-nums font-medium text-text-primary whitespace-nowrap`}>{fmtMoney(p.gross_pay)}</td>
+                      <td className={`${MONEY_TD} text-right tabular-nums text-text-secondary whitespace-nowrap`}>{fmtMoney(p.deductions)}</td>
+                      <td className={`${MONEY_TD} text-right tabular-nums font-bold text-text-primary whitespace-nowrap`}>{fmtMoney(p.net_pay)}</td>
+                      <td className={`${MONEY_TD} whitespace-nowrap`}>
                         <span className={`text-[11px] font-semibold px-2 py-[2px] rounded-full capitalize ${STATUS_STYLES[p.status] ?? 'bg-surface-elevated text-text-secondary'}`}>
                           {p.status}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
+                      <td className={`${MONEY_TD} text-text-secondary whitespace-nowrap`}>
                         {p.paid_at
                           ? new Date(p.paid_at).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })
                           : '—'}
                       </td>
-                      <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
+                      <td className={`${MONEY_TD} text-right tabular-nums text-text-secondary whitespace-nowrap`}>
                         {p.regular_hours != null ? Number(p.regular_hours).toFixed(1) : '—'}
                       </td>
-                      <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
+                      <td className={`${MONEY_TD} text-right tabular-nums text-text-secondary whitespace-nowrap`}>
                         {p.overtime_hours != null ? Number(p.overtime_hours).toFixed(1) : '—'}
                       </td>
-                      <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
+                      <td className={`${MONEY_TD} text-right tabular-nums text-text-secondary whitespace-nowrap`}>
                         {p.working_days != null ? p.working_days : '—'}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className={MONEY_TD}>
                         <button
                           onClick={() => void downloadPDF(p)}
                           disabled={downloading === p.id}
-                          className="flex items-center justify-center w-10 h-10 rounded-lg border border-divider text-text-secondary hover:border-primary hover:text-primary transition-colors disabled:opacity-50"
+                          className="flex items-center justify-center w-8 h-8 rounded-md border border-divider text-text-secondary hover:border-primary hover:text-primary transition-colors disabled:opacity-50"
                           title="Download PDF"
                         >
                           {downloading === p.id
-                            ? <span className="material-icons animate-spin text-[18px]">refresh</span>
-                            : <span className="material-icons text-[18px]">download</span>}
+                            ? <span className="material-icons animate-spin text-[16px]">refresh</span>
+                            : <span className="material-icons text-[16px]">download</span>}
                         </button>
                       </td>
                     </tr>
@@ -277,7 +343,7 @@ export default function PayslipsPage() {
             }
             mobile={
               <>
-                {payslips.map(p => (
+                {filtered.map(p => (
                   <DataCard key={p.id}>
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">

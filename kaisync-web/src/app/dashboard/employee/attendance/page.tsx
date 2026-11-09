@@ -15,6 +15,14 @@ import {
   DataCardTitle,
   DataCardRow,
 } from '@/components/ui/ResponsiveDataView'
+import { StatusFilterTabs, MONEY_TH, MONEY_TD } from '@/components/ui/StatusFilterTabs'
+import {
+  ResetFiltersButton,
+  TextHeaderFilter,
+  StatusHeaderFilter,
+  matchText,
+  statusTab,
+} from '@/components/ui/MoneyListFilters'
 import { SHIFT_TEMPLATE_SELECT } from '@/lib/shift-template-schedule'
 import { loadWorkerCompanySettings } from '@/lib/leave-settings'
 import {
@@ -32,6 +40,29 @@ import {
 } from '@/lib/punch-session'
 
 type Range = 'today' | 'week' | 'month' | 'custom'
+
+const RANGE_TABS = [
+  statusTab('today', 'Today', [], 'slate'),
+  statusTab('week', 'Week', [], 'slate'),
+  statusTab('month', 'Month', [], 'slate'),
+  statusTab('custom', 'Custom', [], 'slate'),
+]
+
+const NO_COUNTS: Record<string, number> = {}
+
+const DAY_STATUS_OPTIONS = [
+  { id: 'present', label: 'Present' },
+  { id: 'late', label: 'Late' },
+  { id: 'absent', label: 'Absent' },
+  { id: 'leave', label: 'Leave' },
+]
+
+function dayStatusOf(s: PunchSessionRow): string {
+  if (s.isAbsentDay) return 'absent'
+  if (s.isLeaveDay) return 'leave'
+  if (s.isLate) return 'late'
+  return 'present'
+}
 
 function asRpcArray<T>(data: unknown): T[] {
   if (data == null) return []
@@ -139,6 +170,11 @@ export default function EmployeeAttendancePage() {
   const [selfId, setSelfId] = useState<string | null>(null)
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [sessionToken, setSessionToken] = useState<string | null>(null)
+  const [dateFilter, setDateFilter] = useState('')
+  const [dayStatusFilter, setDayStatusFilter] = useState<string[]>([])
+  const [inLocFilter, setInLocFilter] = useState('')
+  const [outLocFilter, setOutLocFilter] = useState('')
+  const [notesFilter, setNotesFilter] = useState('')
 
   useEffect(() => {
     if (allowed !== true) return
@@ -326,6 +362,28 @@ export default function EmployeeAttendancePage() {
     )
   }
 
+  const noteText = (s: PunchSessionRow) =>
+    [[lateFlag(s), earlyFlag(s)].filter(Boolean).join(' · '), s.notes ?? s.statusNote ?? '']
+      .filter(Boolean)
+      .join(' · ')
+  const filtered = sessions.filter(s => {
+    const nonWork = s.isAbsentDay || s.isLeaveDay
+    return matchText(fmtSessionDate(s.clockIn), dateFilter)
+      && (dayStatusFilter.length === 0 || dayStatusFilter.includes(dayStatusOf(s)))
+      && matchText(nonWork ? '' : locationDisplay(s.clockInAddress, s.clockInLat, s.clockInLng), inLocFilter)
+      && matchText(nonWork ? '' : locationDisplay(s.clockOutAddress, s.clockOutLat, s.clockOutLng), outLocFilter)
+      && matchText(noteText(s), notesFilter)
+  })
+  const hasFilters = !!dateFilter || dayStatusFilter.length > 0
+    || !!inLocFilter || !!outLocFilter || !!notesFilter
+  function resetFilters() {
+    setDateFilter('')
+    setDayStatusFilter([])
+    setInLocFilter('')
+    setOutLocFilter('')
+    setNotesFilter('')
+  }
+
   return (
     <div className="h-full flex flex-col overflow-hidden">
       <div className="px-4 py-3 border-b border-divider shrink-0 bg-surface">
@@ -350,23 +408,14 @@ export default function EmployeeAttendancePage() {
             </button>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2 mt-3">
-          {([
-            ['today', 'Today'],
-            ['week', 'Week'],
-            ['month', 'Month'],
-            ['custom', 'Custom'],
-          ] as [Range, string][]).map(([r, label]) => (
-            <button
-              key={r}
-              onClick={() => setRange(r)}
-              className={`text-[12px] font-semibold px-3 py-1.5 rounded-full transition-colors ${
-                range === r ? 'bg-primary text-white' : 'bg-surface-elevated text-text-secondary border border-divider hover:border-primary'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
+        <div className="flex flex-wrap gap-2 mt-3 items-center">
+          <ResetFiltersButton disabled={!hasFilters} onReset={resetFilters} />
+          <StatusFilterTabs
+            tabs={RANGE_TABS}
+            value={range}
+            counts={NO_COUNTS}
+            onChange={id => setRange(id as Range)}
+          />
         </div>
         {range === 'custom' && (
           <div className="flex gap-3 mt-3">
@@ -410,7 +459,7 @@ export default function EmployeeAttendancePage() {
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-auto">
         {loading ? (
           <div className="flex items-center justify-center h-48 text-text-secondary text-[14px]">Loading…</div>
         ) : sessions.length === 0 ? (
@@ -418,29 +467,43 @@ export default function EmployeeAttendancePage() {
             <span className="material-icons text-[48px] text-text-disabled">schedule</span>
             <p className="text-[14px]">No attendance records</p>
           </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-64 gap-2 text-text-secondary">
+            <span className="material-icons text-[48px] text-text-disabled">filter_alt_off</span>
+            <p className="text-[14px]">No attendance records match the current filters</p>
+          </div>
         ) : (
           <ResponsiveDataView
             table={
-              <table className="w-full text-[13px]">
+              <table className="w-full" style={{ minWidth: 860 }}>
                 <thead>
-                  <tr className="border-b border-divider bg-surface-elevated">
-                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Date</th>
-                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Time In</th>
-                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">In Location</th>
-                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Time Out</th>
-                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Out Location</th>
-                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Total</th>
-                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Notes</th>
+                  <tr className="bg-surface-elevated border-b border-divider sticky top-0 z-10">
+                    <th className={`${MONEY_TH} text-left`}>
+                      <TextHeaderFilter label="Date" value={dateFilter} onChange={setDateFilter} placeholder="Filter date…" />
+                    </th>
+                    <th className={`${MONEY_TH} text-left`}>
+                      <StatusHeaderFilter label="Time In" options={DAY_STATUS_OPTIONS} selected={dayStatusFilter} onChange={setDayStatusFilter} />
+                    </th>
+                    <th className={`${MONEY_TH} text-left`}>
+                      <TextHeaderFilter label="In Location" value={inLocFilter} onChange={setInLocFilter} placeholder="Filter location…" />
+                    </th>
+                    <th className={`${MONEY_TH} text-left`}>Time Out</th>
+                    <th className={`${MONEY_TH} text-left`}>
+                      <TextHeaderFilter label="Out Location" value={outLocFilter} onChange={setOutLocFilter} placeholder="Filter location…" />
+                    </th>
+                    <th className={`${MONEY_TH} text-right`}>Total</th>
+                    <th className={`${MONEY_TH} text-left`}>
+                      <TextHeaderFilter label="Notes" value={notesFilter} onChange={setNotesFilter} placeholder="Filter notes…" />
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-divider">
-                  {sessions.map((s, i) => {
+                  {filtered.map((s, i) => {
                     const kind = s.isAbsentDay ? 'absent' : s.isLeaveDay ? 'leave' : 'in'
-                    const flag = [lateFlag(s), earlyFlag(s)].filter(Boolean).join(' · ')
                     return (
                       <tr key={`${s.clockIn.toISOString()}-${i}`} className="hover:bg-surface-elevated transition-colors">
-                        <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">{fmtSessionDate(s.clockIn)}</td>
-                        <td className={`px-4 py-3 text-[13px] font-medium whitespace-nowrap ${
+                        <td className={`${MONEY_TD} text-text-secondary whitespace-nowrap`}>{fmtSessionDate(s.clockIn)}</td>
+                        <td className={`${MONEY_TD} font-medium whitespace-nowrap ${
                           s.isAbsentDay ? 'text-error' : s.isLeaveDay ? 'text-warning' : s.isLate ? 'text-error' : 'text-success'
                         }`}>
                           {fmtSessionTime(s.clockIn, kind as 'in' | 'absent' | 'leave')}
@@ -448,24 +511,24 @@ export default function EmployeeAttendancePage() {
                             <span className="ml-1 text-[10px] text-warning font-semibold">OPEN</span>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-[12px] text-text-secondary max-w-[160px] truncate">
+                        <td className={`${MONEY_TD} text-text-secondary max-w-[160px] truncate`}>
                           {s.isAbsentDay || s.isLeaveDay ? '—' : locationDisplay(s.clockInAddress, s.clockInLat, s.clockInLng)}
                         </td>
-                        <td className="px-4 py-3 text-[13px] text-text-primary whitespace-nowrap">
+                        <td className={`${MONEY_TD} text-text-primary whitespace-nowrap`}>
                           {fmtSessionTime(s.clockOut, 'out')}
                         </td>
-                        <td className="px-4 py-3 text-[12px] text-text-secondary max-w-[160px] truncate">
+                        <td className={`${MONEY_TD} text-text-secondary max-w-[160px] truncate`}>
                           {s.isAbsentDay || s.isLeaveDay ? '—' : locationDisplay(s.clockOutAddress, s.clockOutLat, s.clockOutLng)}
                         </td>
-                        <td className="px-4 py-3 text-[12px] font-semibold text-text-primary whitespace-nowrap">
+                        <td className={`${MONEY_TD} text-right tabular-nums font-semibold text-text-primary whitespace-nowrap`}>
                           {totalHrsDisplay(s)}
                           {s.overtimeHours > 0 && (
                             <span className="block text-[10px] text-warning font-medium">OT {s.overtimeHours.toFixed(1)}h</span>
                           )}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className={MONEY_TD}>
                           <AttendanceNote
-                            note={[flag, s.notes ?? s.statusNote ?? ''].filter(Boolean).join(' · ')}
+                            note={noteText(s)}
                             context={fmtSessionDate(s.clockIn)}
                           />
                         </td>
@@ -477,7 +540,7 @@ export default function EmployeeAttendancePage() {
             }
             mobile={
               <>
-                {sessions.map((s, i) => {
+                {filtered.map((s, i) => {
                   const kind = s.isAbsentDay ? 'absent' : s.isLeaveDay ? 'leave' : 'in'
                   const flag = [lateFlag(s), earlyFlag(s)].filter(Boolean).join(' · ')
                   return (

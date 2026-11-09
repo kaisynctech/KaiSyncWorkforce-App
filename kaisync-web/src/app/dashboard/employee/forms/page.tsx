@@ -1,7 +1,10 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { MONEY_TH, MONEY_TD } from '@/components/ui/StatusFilterTabs'
+import { ResetFiltersButton, TextHeaderFilter, matchText } from '@/components/ui/MoneyListFilters'
+import { ResponsiveDataView, DataCard, DataCardTitle, DataCardMeta } from '@/components/ui/ResponsiveDataView'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { useEmployeeModuleGate } from '@/lib/employee-module-gate'
@@ -72,6 +75,27 @@ export default function FormsPage() {
 
   const templateMap = Object.fromEntries(templates.map(t => [t.id, t.name]))
 
+  const [formFilter, setFormFilter] = useState('')
+  const [subFilter, setSubFilter] = useState('')
+
+  const filteredTemplates = useMemo(
+    () => templates.filter(t => matchText(t.name, formFilter)),
+    [templates, formFilter],
+  )
+  const filteredSubmissions = useMemo(
+    () => submissions.filter(s => matchText(templateMap[s.template_id] ?? 'Form', subFilter)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [submissions, templates, subFilter],
+  )
+  const hasFilters = formFilter !== '' || subFilter !== ''
+  function resetFilters() { setFormFilter(''); setSubFilter('') }
+
+  function fmtSubmitted(iso: string): string {
+    return new Date(iso).toLocaleString('en-ZA', {
+      day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    })
+  }
+
   if (allowed === null || (allowed && loading)) {
     return (
       <div className="flex items-center justify-center h-64 text-text-secondary text-[14px]">Loading…</div>
@@ -92,6 +116,10 @@ export default function FormsPage() {
           </div>
         )}
 
+        <div className="flex items-center gap-2">
+          <ResetFiltersButton disabled={!hasFilters} onReset={resetFilters} />
+        </div>
+
         <div>
           <p className="section-label mb-3">Available Forms</p>
           {templates.length === 0 ? (
@@ -100,23 +128,59 @@ export default function FormsPage() {
               <p className="text-[14px]">No forms available.</p>
             </div>
           ) : (
-            <div className="space-y-2">
-              {templates.map(t => (
-                <div key={t.id} className="bg-surface border border-divider rounded-xl p-4 flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[14px] font-semibold text-text-primary">{t.name}</p>
-                    {t.description && (
-                      <p className="text-[12px] text-text-secondary mt-0.5">{t.description}</p>
-                    )}
-                  </div>
-                  <Link
-                    href={`/dashboard/employee/forms/${t.id}`}
-                    className="bg-primary text-white text-[13px] font-semibold px-4 py-2 rounded-lg hover:bg-primary-dark transition-colors shrink-0"
-                  >
-                    Fill Form
-                  </Link>
-                </div>
-              ))}
+            <div className="bg-surface border border-divider rounded-xl">
+              {filteredTemplates.length === 0 ? (
+                <p className="text-center text-[13px] text-text-secondary py-8">No forms match the current filter.</p>
+              ) : (
+                <ResponsiveDataView
+                  className="md:min-h-[220px]"
+                  table={
+                    <table className="w-full" style={{ minWidth: 560 }}>
+                      <thead>
+                        <tr className="bg-surface-elevated border-b border-divider">
+                          <th className={`${MONEY_TH} text-left`}>
+                            <TextHeaderFilter label="Form" value={formFilter} onChange={setFormFilter} placeholder="Form name…" />
+                          </th>
+                          <th className={`${MONEY_TH} text-left`}>Description</th>
+                          <th className={`${MONEY_TH} text-right`} />
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-divider">
+                        {filteredTemplates.map(t => (
+                          <tr key={t.id} className="hover:bg-surface-elevated transition-colors">
+                            <td className={`${MONEY_TD} font-semibold text-text-primary`}>{t.name}</td>
+                            <td className={`${MONEY_TD} text-text-secondary`}>{t.description ?? '—'}</td>
+                            <td className={`${MONEY_TD} text-right whitespace-nowrap`}>
+                              <Link
+                                href={`/dashboard/employee/forms/${t.id}`}
+                                className="bg-primary text-white text-[12px] font-semibold px-3 py-1 rounded-md hover:bg-primary-dark transition-colors"
+                              >
+                                Fill Form
+                              </Link>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  }
+                  mobile={filteredTemplates.map(t => (
+                    <DataCard key={t.id}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <DataCardTitle className="whitespace-normal">{t.name}</DataCardTitle>
+                          {t.description && <DataCardMeta>{t.description}</DataCardMeta>}
+                        </div>
+                        <Link
+                          href={`/dashboard/employee/forms/${t.id}`}
+                          className="bg-primary text-white text-[12px] font-semibold px-3 py-1.5 rounded-md hover:bg-primary-dark transition-colors shrink-0"
+                        >
+                          Fill Form
+                        </Link>
+                      </div>
+                    </DataCard>
+                  ))}
+                />
+              )}
             </div>
           )}
         </div>
@@ -124,24 +188,55 @@ export default function FormsPage() {
         {submissions.length > 0 && (
           <div>
             <p className="section-label mb-3">Recent Submissions</p>
-            <div className="bg-surface border border-divider rounded-xl overflow-hidden divide-y divide-divider">
-              {submissions.map(s => (
-                <div key={s.id} className="px-4 py-3 flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-[13px] font-semibold text-text-primary">
-                      {templateMap[s.template_id] ?? 'Form'}
-                    </p>
-                    <p className="text-[11px] text-text-disabled mt-0.5">
-                      {new Date(s.submitted_at).toLocaleString('en-ZA', {
-                        day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
-                      })}
-                    </p>
-                  </div>
-                  <span className="text-[11px] font-semibold px-2 py-[2px] rounded-full bg-success/10 text-success">
-                    Submitted
-                  </span>
-                </div>
-              ))}
+            <div className="bg-surface border border-divider rounded-xl">
+              {filteredSubmissions.length === 0 ? (
+                <p className="text-center text-[13px] text-text-secondary py-8">No submissions match the current filter.</p>
+              ) : (
+                <ResponsiveDataView
+                  className="md:min-h-[220px]"
+                  table={
+                    <table className="w-full" style={{ minWidth: 480 }}>
+                      <thead>
+                        <tr className="bg-surface-elevated border-b border-divider">
+                          <th className={`${MONEY_TH} text-left`}>
+                            <TextHeaderFilter label="Form" value={subFilter} onChange={setSubFilter} placeholder="Form name…" />
+                          </th>
+                          <th className={`${MONEY_TH} text-left`}>Submitted</th>
+                          <th className={`${MONEY_TH} text-left`}>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-divider">
+                        {filteredSubmissions.map(s => (
+                          <tr key={s.id} className="hover:bg-surface-elevated transition-colors">
+                            <td className={`${MONEY_TD} font-semibold text-text-primary`}>
+                              {templateMap[s.template_id] ?? 'Form'}
+                            </td>
+                            <td className={`${MONEY_TD} text-text-secondary whitespace-nowrap`}>{fmtSubmitted(s.submitted_at)}</td>
+                            <td className={MONEY_TD}>
+                              <span className="text-[11px] font-semibold px-2 py-[2px] rounded-full bg-success/10 text-success">
+                                Submitted
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  }
+                  mobile={filteredSubmissions.map(s => (
+                    <DataCard key={s.id}>
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <DataCardTitle>{templateMap[s.template_id] ?? 'Form'}</DataCardTitle>
+                          <p className="text-[11px] text-text-disabled mt-0.5">{fmtSubmitted(s.submitted_at)}</p>
+                        </div>
+                        <span className="text-[11px] font-semibold px-2 py-[2px] rounded-full bg-success/10 text-success">
+                          Submitted
+                        </span>
+                      </div>
+                    </DataCard>
+                  ))}
+                />
+              )}
             </div>
           </div>
         )}

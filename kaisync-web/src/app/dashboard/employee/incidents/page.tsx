@@ -24,6 +24,20 @@ import {
   DataCardMeta,
   DataCardRow,
 } from '@/components/ui/ResponsiveDataView'
+import {
+  StatusFilterTabs,
+  MONEY_TH,
+  MONEY_TD,
+  type StatusTabDef,
+} from '@/components/ui/StatusFilterTabs'
+import {
+  ResetFiltersButton,
+  TextHeaderFilter,
+  StatusHeaderFilter,
+  matchText,
+  statusTab,
+  type ColumnOption,
+} from '@/components/ui/MoneyListFilters'
 
 interface Incident {
   id: string
@@ -41,6 +55,29 @@ interface Incident {
 
 type ScopeFilter = 'all' | 'standalone' | 'job_linked'
 type StatusFilter = 'open' | 'all' | 'closed'
+
+/** Scope / status tabs filter client-side by job link and open state, so `match` stays null. */
+const SCOPE_TABS: StatusTabDef[] = [
+  { ...statusTab('all', 'All', [], 'slate'), match: null },
+  { ...statusTab('standalone', 'Standalone', [], 'blue'), match: null },
+  { ...statusTab('job_linked', 'Job-linked', [], 'indigo'), match: null },
+]
+
+const STATUS_TABS: StatusTabDef[] = [
+  { ...statusTab('open', 'Open', [], 'amber'), match: null },
+  { ...statusTab('all', 'All', [], 'slate'), match: null },
+  { ...statusTab('closed', 'Closed', [], 'green'), match: null },
+]
+
+const SEVERITY_OPTIONS: ColumnOption[] = Object.keys(SEVERITY_STYLES).map((id) => ({
+  id,
+  label: formatIncidentLabel(id).replace(/\b\w/g, (c) => c.toUpperCase()),
+}))
+
+const STATUS_OPTIONS: ColumnOption[] = Object.keys(STATUS_STYLES).map((id) => ({
+  id,
+  label: formatIncidentLabel(id).replace(/\b\w/g, (c) => c.toUpperCase()),
+}))
 
 function fmtDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -76,7 +113,10 @@ export default function EmployeeIncidentsPage() {
   const [loading, setLoading] = useState(true)
   const [scope, setScope] = useState<ScopeFilter>('all')
   const [status, setStatus] = useState<StatusFilter>('open')
-  const [search, setSearch] = useState('')
+  const [titleCol, setTitleCol] = useState('')
+  const [categoryCol, setCategoryCol] = useState('')
+  const [severityCol, setSeverityCol] = useState<string[]>([])
+  const [statusCol, setStatusCol] = useState<string[]>([])
   const [pendingCount, setPendingCount] = useState(0)
   const [replaying, setReplaying] = useState(false)
 
@@ -175,16 +215,34 @@ export default function EmployeeIncidentsPage() {
     if (status === 'open' && !open) return false
     if (status === 'closed' && open) return false
 
-    if (search.trim()) {
-      const q = search.toLowerCase()
-      const haystack = `${inc.title ?? ''} ${inc.description} ${inc.severity ?? ''}`.toLowerCase()
-      if (!haystack.includes(q)) return false
-    }
+    const titleNeedle = titleCol.trim()
+    if (
+      titleNeedle &&
+      !matchText(displayIncidentTitle(inc.title, inc.description), titleNeedle) &&
+      !matchText(inc.description, titleNeedle)
+    ) return false
+    if (!matchText(formatIncidentLabel(inc.category), categoryCol.trim())) return false
+    if (severityCol.length > 0 && !severityCol.includes((inc.severity ?? '').toLowerCase())) return false
+    if (statusCol.length > 0 && !statusCol.includes((inc.status ?? '').toLowerCase())) return false
     return true
   })
 
+  const hasColumnFilters =
+    titleCol.trim() !== '' || categoryCol.trim() !== '' || severityCol.length > 0 || statusCol.length > 0
+  const hasFilters = hasColumnFilters || scope !== 'all' || status !== 'open'
+
+  function resetFilters() {
+    setScope('all')
+    setStatus('open')
+    setTitleCol('')
+    setCategoryCol('')
+    setSeverityCol([])
+    setStatusCol([])
+  }
+
   function emptyMessage(): string {
     if (pendingCount > 0) return `${pendingCount} report(s) waiting to sync when online.`
+    if (hasColumnFilters) return 'No incidents match your column filters.'
     if (scope === 'standalone') return 'No standalone incidents. Tap New to report one.'
     if (scope === 'job_linked') return 'No job-linked incidents yet.'
     if (status === 'open') return 'No open incidents.'
@@ -237,52 +295,21 @@ export default function EmployeeIncidentsPage() {
       )}
 
       <div className="px-4 pt-3 pb-2 border-b border-divider shrink-0 space-y-2 bg-surface">
-        <div className="flex gap-2 flex-wrap">
-          {([
-            ['all', 'All'],
-            ['standalone', 'Standalone'],
-            ['job_linked', 'Job-linked'],
-          ] as [ScopeFilter, string][]).map(([s, label]) => (
-            <button
-              key={s}
-              onClick={() => setScope(s)}
-              className={`text-[12px] font-semibold px-3 py-1.5 rounded-full transition-colors ${
-                scope === s
-                  ? 'bg-primary text-white'
-                  : 'bg-surface-elevated text-text-secondary border border-divider hover:border-primary'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2">
+          <ResetFiltersButton disabled={!hasFilters} onReset={resetFilters} />
+          <StatusFilterTabs
+            tabs={SCOPE_TABS}
+            value={scope}
+            counts={{}}
+            onChange={id => setScope(id as ScopeFilter)}
+          />
         </div>
-        <div className="flex gap-2 flex-wrap">
-          {([
-            ['open', 'Open'],
-            ['all', 'All'],
-            ['closed', 'Closed'],
-          ] as [StatusFilter, string][]).map(([s, label]) => (
-            <button
-              key={s}
-              onClick={() => setStatus(s)}
-              className={`text-[12px] font-semibold px-3 py-1.5 rounded-full transition-colors ${
-                status === s
-                  ? 'bg-text-primary text-surface'
-                  : 'bg-surface-elevated text-text-secondary border border-divider hover:border-primary'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <div className="relative">
-          <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-text-disabled text-[18px]">search</span>
-          <input
-            className="input pl-9 text-[13px] w-full"
-            type="text"
-            placeholder="Search incidents…"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusFilterTabs
+            tabs={STATUS_TABS}
+            value={status}
+            counts={{}}
+            onChange={id => setStatus(id as StatusFilter)}
           />
         </div>
       </div>
@@ -299,21 +326,29 @@ export default function EmployeeIncidentsPage() {
               <table className="w-full text-[13px]">
                 <thead>
                   <tr className="border-b border-divider bg-surface-elevated">
-                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Title</th>
-                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Severity</th>
-                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Category</th>
-                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Status</th>
-                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Date</th>
-                    <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Job</th>
+                    <th className={`${MONEY_TH} text-left`}>
+                      <TextHeaderFilter label="Title" value={titleCol} onChange={setTitleCol} placeholder="Title or description…" />
+                    </th>
+                    <th className={`${MONEY_TH} text-left`}>
+                      <StatusHeaderFilter label="Severity" options={SEVERITY_OPTIONS} selected={severityCol} onChange={setSeverityCol} />
+                    </th>
+                    <th className={`${MONEY_TH} text-left`}>
+                      <TextHeaderFilter label="Category" value={categoryCol} onChange={setCategoryCol} placeholder="Category…" />
+                    </th>
+                    <th className={`${MONEY_TH} text-left`}>
+                      <StatusHeaderFilter label="Status" options={STATUS_OPTIONS} selected={statusCol} onChange={setStatusCol} />
+                    </th>
+                    <th className={`${MONEY_TH} text-left`}>Date</th>
+                    <th className={`${MONEY_TH} text-left`}>Job</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-divider">
                   {filtered.map(inc => (
                     <tr key={inc.id} className="hover:bg-surface-elevated transition-colors">
-                      <td className="px-4 py-3">
+                      <td className={MONEY_TD}>
                         <Link
                           href={`/dashboard/employee/incidents/${inc.id}`}
-                          className="text-[13px] font-semibold text-primary hover:underline"
+                          className="text-[12px] font-semibold text-primary hover:underline"
                         >
                           {displayIncidentTitle(inc.title, inc.description)}
                         </Link>
@@ -321,27 +356,27 @@ export default function EmployeeIncidentsPage() {
                           <p className="text-[11px] text-text-disabled mt-0.5 line-clamp-1">{inc.description}</p>
                         )}
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
+                      <td className={`${MONEY_TD} whitespace-nowrap`}>
                         {inc.severity ? (
                           <span className={`text-[11px] font-semibold px-2 py-[2px] rounded-full capitalize ${SEVERITY_STYLES[inc.severity] ?? 'bg-surface-elevated text-text-secondary'}`}>
                             {inc.severity}
                           </span>
                         ) : '—'}
                       </td>
-                      <td className="px-4 py-3 text-[12px] text-text-secondary capitalize">
+                      <td className={`${MONEY_TD} text-text-secondary capitalize`}>
                         {formatIncidentLabel(inc.category)}
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
+                      <td className={`${MONEY_TD} whitespace-nowrap`}>
                         {inc.status ? (
                           <span className={`text-[11px] font-semibold px-2 py-[2px] rounded-full capitalize ${STATUS_STYLES[inc.status] ?? 'bg-surface-elevated text-text-secondary'}`}>
                             {formatIncidentLabel(inc.status)}
                           </span>
                         ) : '—'}
                       </td>
-                      <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
+                      <td className={`${MONEY_TD} text-text-secondary whitespace-nowrap`}>
                         {fmtDate(inc.occurred_at ?? inc.created_at)}
                       </td>
-                      <td className="px-4 py-3 text-[12px] text-text-secondary whitespace-nowrap">
+                      <td className={`${MONEY_TD} text-text-secondary whitespace-nowrap`}>
                         {inc.job_id ? (
                           <span className="text-[11px] font-semibold px-2 py-[2px] rounded-full bg-primary/10 text-primary">Linked</span>
                         ) : (
