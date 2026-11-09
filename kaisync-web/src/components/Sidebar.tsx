@@ -311,6 +311,8 @@ export default function Sidebar({
   const [panelCollapsed, setPanelCollapsed] = useState(false)
   const [accountOpen, setAccountOpen] = useState(false)
   const [isDesktop, setIsDesktop] = useState(true)
+  /** Phone drawer: which module accordion is open (null = all collapsed). */
+  const [expandedSectionId, setExpandedSectionId] = useState<string | null>(null)
 
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 1024px)')
@@ -450,6 +452,23 @@ export default function Sidebar({
   const showMobileDrawer = open && !isDesktop
   const desktopPanel = Boolean(activeSection && !platformOnly)
 
+  // When the phone drawer opens, expand the module that matches the current route.
+  useEffect(() => {
+    if (!showMobileDrawer) return
+    setExpandedSectionId(activeSection?.id ?? null)
+  }, [showMobileDrawer, activeSection?.id])
+
+  const showMyPa = !platformOnly && itemVisible(
+    { label: 'My PA', href: '/dashboard/pa', icon: 'task_alt', flag: 'myPa' },
+    flags,
+    isOwner,
+  )
+  const showMessages = !platformOnly && itemVisible(
+    { label: 'Messages', href: '/dashboard/messages', icon: 'chat', flag: 'messaging' },
+    flags,
+    isOwner,
+  )
+
   return (
     <>
       {/* ── TOP NAV BAR ─────────────────────────────────────────────── */}
@@ -461,57 +480,52 @@ export default function Sidebar({
           onClick={onToggle}
           className="lg:hidden flex items-center justify-center w-11 shrink-0 self-stretch text-white/80 hover:text-white hover:bg-white/10"
           aria-label={open ? 'Close menu' : 'Open menu'}
+          aria-expanded={showMobileDrawer}
         >
           <span className="material-icons text-[22px]">{open ? 'close' : 'menu'}</span>
         </button>
 
         {/* Logo + company name */}
-        <div className="flex items-center gap-2 px-3 border-r border-white/10 shrink-0">
+        <div className="flex items-center gap-2 px-3 lg:border-r lg:border-white/10 shrink-0 min-w-0">
           {platformOnly || !company ? (
-            <div className="w-7 h-7 lg:w-6 lg:h-6 rounded-md bg-[#3B5CF6] flex items-center justify-center">
+            <div className="w-7 h-7 lg:w-6 lg:h-6 rounded-md bg-[#3B5CF6] flex items-center justify-center shrink-0">
               <span className="material-icons text-white text-[14px]">bolt</span>
             </div>
           ) : (
             <CompanyMark name={brand.name ?? company.name} logoUrl={brand.logoUrl} size={28} />
           )}
-          <span className="text-[12px] font-semibold text-white truncate max-w-[140px]" title={company?.name ?? undefined}>
+          <span className="text-[13px] lg:text-[12px] font-semibold text-white truncate max-w-[200px] lg:max-w-[140px]" title={company?.name ?? undefined}>
             {company?.name ?? (platformOnly ? 'KaiSync Platform' : 'KaiSync')}
           </span>
         </div>
 
-        {/* ── Left text tabs: Overview, My PA, Messages ── */}
-        <NavTopBtn
-          href="/dashboard/overview"
-          icon="home"
-          label="Overview"
-          active={!activeSection && isItemActive(pathname, '/dashboard/overview')}
-        />
-        {!platformOnly && (
-          <>
-            {itemVisible({ label: 'My PA', href: '/dashboard/pa', icon: 'task_alt', flag: 'myPa' }, flags, isOwner) && (
-              <NavTopBtn
-                href="/dashboard/pa"
-                icon="task_alt"
-                label="My PA"
-                active={isItemActive(pathname, '/dashboard/pa')}
-              />
-            )}
-            {itemVisible({ label: 'Messages', href: '/dashboard/messages', icon: 'chat', flag: 'messaging' }, flags, isOwner) && (
-              <NavTopBtn
-                href="/dashboard/messages"
-                icon="chat"
-                label="Messages"
-                active={isItemActive(pathname, '/dashboard/messages')}
-              />
-            )}
-          </>
-        )}
+        {/* Desktop-only: primary tabs + module tabs (phones use the hamburger drawer) */}
+        <div className="hidden lg:contents">
+          <NavTopBtn
+            href="/dashboard/overview"
+            icon="home"
+            label="Overview"
+            active={!activeSection && isItemActive(pathname, '/dashboard/overview')}
+          />
+          {showMyPa && (
+            <NavTopBtn
+              href="/dashboard/pa"
+              icon="task_alt"
+              label="My PA"
+              active={isItemActive(pathname, '/dashboard/pa')}
+            />
+          )}
+          {showMessages && (
+            <NavTopBtn
+              href="/dashboard/messages"
+              icon="chat"
+              label="Messages"
+              active={isItemActive(pathname, '/dashboard/messages')}
+            />
+          )}
 
-        {/* Divider between left tabs and module tabs */}
-        <div className="w-px bg-white/10 mx-2 self-stretch shrink-0" />
+          <div className="w-px bg-white/10 mx-2 self-stretch shrink-0" />
 
-        {/* ── Module tabs (desktop / scroll on phone) ── */}
-        <div className="hidden sm:contents">
           {!platformOnly && sections.map(section => (
             <NavTopBtn
               key={section.id}
@@ -641,7 +655,7 @@ export default function Sidebar({
       )}
 
       {/* ── LEFT PANEL (desktop fixed / phone drawer) ───────────────── */}
-      {(desktopPanel || showMobileDrawer) && !platformOnly && (
+      {((desktopPanel && !platformOnly) || showMobileDrawer) && (
         <aside
           className={cn(
             'fixed left-0 bottom-0 flex flex-col shrink-0 bg-surface border-r border-divider overflow-hidden transition-transform duration-200 z-50 safe-pb',
@@ -655,7 +669,7 @@ export default function Sidebar({
           <div className="flex items-center justify-between px-2 pt-2 pb-1 shrink-0">
             {(!panelCollapsed || !isDesktop) && (
               <span className="text-[10px] font-semibold uppercase tracking-widest text-text-secondary px-1">
-                {activeSection?.label ?? 'Menu'}
+                {isDesktop ? (activeSection?.label ?? 'Menu') : 'Menu'}
               </span>
             )}
             <button
@@ -677,9 +691,9 @@ export default function Sidebar({
           </div>
 
           <nav className="flex-1 overflow-y-auto py-1">
-            {/* On phone: show all modules when no section, or section items + module switcher */}
+            {/* Phone: pinned destinations + expandable modules (no flat parent/child mix). */}
             {!isDesktop && (
-              <div className="px-2 pb-2 mb-2 border-b border-divider space-y-0.5">
+              <div className="px-2 pb-2 space-y-0.5">
                 <Link
                   href="/dashboard/overview"
                   prefetch={false}
@@ -694,30 +708,90 @@ export default function Sidebar({
                   <span className="material-icons text-[20px]">home</span>
                   Overview
                 </Link>
-                {sections.map(section => (
+                {showMyPa && (
                   <Link
-                    key={section.id}
-                    href={section.items[0]?.href ?? '#'}
+                    href="/dashboard/pa"
                     prefetch={false}
                     onClick={onClose}
                     className={cn(
                       'flex items-center gap-3 rounded-lg px-3 h-11 text-[13px]',
-                      activeSection?.id === section.id
+                      isItemActive(pathname, '/dashboard/pa')
                         ? 'bg-primary/10 text-primary font-semibold'
                         : 'text-text-secondary hover:bg-surface-elevated',
                     )}
                   >
-                    <span className="material-icons text-[20px]">{section.icon}</span>
-                    {section.label}
+                    <span className="material-icons text-[20px]">task_alt</span>
+                    My PA
                   </Link>
-                ))}
+                )}
+                {showMessages && (
+                  <Link
+                    href="/dashboard/messages"
+                    prefetch={false}
+                    onClick={onClose}
+                    className={cn(
+                      'flex items-center gap-3 rounded-lg px-3 h-11 text-[13px]',
+                      isItemActive(pathname, '/dashboard/messages')
+                        ? 'bg-primary/10 text-primary font-semibold'
+                        : 'text-text-secondary hover:bg-surface-elevated',
+                    )}
+                  >
+                    <span className="material-icons text-[20px]">chat</span>
+                    Messages
+                  </Link>
+                )}
+
+                {!platformOnly && sections.length > 0 && (
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-text-secondary px-3 pt-3 pb-1">
+                    Modules
+                  </p>
+                )}
+
+                {!platformOnly && sections.map(section => {
+                  const expanded = expandedSectionId === section.id
+                  const sectionActive = activeSection?.id === section.id
+                  return (
+                    <div key={section.id} className="mb-0.5">
+                      <button
+                        type="button"
+                        onClick={() => setExpandedSectionId(expanded ? null : section.id)}
+                        aria-expanded={expanded}
+                        className={cn(
+                          'flex w-full items-center gap-3 rounded-lg px-3 h-11 text-[13px] text-left transition-colors',
+                          sectionActive
+                            ? 'bg-primary/10 text-primary font-semibold'
+                            : 'text-text-secondary hover:bg-surface-elevated hover:text-text-primary',
+                        )}
+                      >
+                        <span className="material-icons text-[20px] shrink-0">{section.icon}</span>
+                        <span className="flex-1 truncate">{section.label}</span>
+                        <span className="material-icons text-[18px] shrink-0 opacity-70">
+                          {expanded ? 'expand_less' : 'expand_more'}
+                        </span>
+                      </button>
+                      {expanded && (
+                        <div className="ml-3 pl-2 border-l border-divider mb-1">
+                          <PanelItems
+                            items={section.items}
+                            flags={flags}
+                            isOwner={isOwner}
+                            pathname={pathname}
+                            collapsed={false}
+                            onNavigate={onClose}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+
                 {showPlatform && (
                   <Link
                     href="/dashboard/platform"
                     prefetch={false}
                     onClick={onClose}
                     className={cn(
-                      'flex items-center gap-3 rounded-lg px-3 h-11 text-[13px]',
+                      'flex items-center gap-3 rounded-lg px-3 h-11 text-[13px] mt-1',
                       isItemActive(pathname, '/dashboard/platform')
                         ? 'bg-primary/10 text-primary font-semibold'
                         : 'text-text-secondary hover:bg-surface-elevated',
@@ -730,13 +804,14 @@ export default function Sidebar({
               </div>
             )}
 
-            {activeSection && (
+            {/* Desktop: contextual items for the active module tab only */}
+            {isDesktop && activeSection && (
               <PanelItems
                 items={activeSection.items}
                 flags={flags}
                 isOwner={isOwner}
                 pathname={pathname}
-                collapsed={isDesktop && panelCollapsed}
+                collapsed={panelCollapsed}
                 onNavigate={onClose}
               />
             )}
