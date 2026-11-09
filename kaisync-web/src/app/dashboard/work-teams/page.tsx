@@ -13,8 +13,20 @@ import {
   setWorkTeamActive,
   type WorkTeamRow,
 } from '@/lib/work-teams'
+import { StatusFilterTabs, TAB_ALL, MONEY_TH, MONEY_TD } from '@/components/ui/StatusFilterTabs'
+import {
+  ResetFiltersButton,
+  TextHeaderFilter,
+  matchText,
+  statusTab,
+} from '@/components/ui/MoneyListFilters'
+import { ModalShell } from '@/components/ui/ModalShell'
 
-type StatusFilter = 'active' | 'inactive' | 'all'
+const STATUS_TABS = [
+  statusTab('active', 'Active', ['active'], 'green'),
+  statusTab('inactive', 'Inactive', ['inactive'], 'gray'),
+  TAB_ALL,
+]
 
 export default function WorkTeamsPage() {
   const router = useRouter()
@@ -29,7 +41,9 @@ export default function WorkTeamsPage() {
   const [newTeamDesc, setNewTeamDesc] = useState('')
   const [creating, setCreating] = useState(false)
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('active')
+  const [teamNameCol, setTeamNameCol] = useState('')
+  const [leaderCol, setLeaderCol] = useState('')
+  const [statusFilter, setStatusFilter] = useState<'active' | 'inactive' | ''>('active')
   const [archiveBusy, setArchiveBusy] = useState<string | null>(null)
 
   const load = useCallback(async () => {
@@ -106,20 +120,30 @@ export default function WorkTeamsPage() {
     return teams.filter(t => {
       if (statusFilter === 'active' && !t.is_active) return false
       if (statusFilter === 'inactive' && t.is_active) return false
+      const leader = t.leader_employee_id
+        ? (leaderNames.get(t.leader_employee_id) ?? '')
+        : ''
       if (search) {
-        const q = search.toLowerCase()
-        const leader = t.leader_employee_id
-          ? (leaderNames.get(t.leader_employee_id) ?? '').toLowerCase()
-          : ''
-        return (
-          t.name.toLowerCase().includes(q) ||
-          (t.description ?? '').toLowerCase().includes(q) ||
-          leader.includes(q)
-        )
+        if (
+          !matchText(t.name, search) &&
+          !matchText(t.description, search) &&
+          !matchText(leader, search)
+        ) return false
       }
+      if (!matchText(t.name, teamNameCol)) return false
+      if (!matchText(leader, leaderCol)) return false
       return true
     })
-  }, [teams, statusFilter, search, leaderNames])
+  }, [teams, statusFilter, search, teamNameCol, leaderCol, leaderNames])
+
+  const filtersActive = !!(search || teamNameCol || leaderCol || statusFilter)
+
+  function resetFilters() {
+    setSearch('')
+    setTeamNameCol('')
+    setLeaderCol('')
+    setStatusFilter('')
+  }
 
   if (error === 'not_linked') return (
     <div className="flex items-center justify-center h-full">
@@ -135,76 +159,113 @@ export default function WorkTeamsPage() {
   )
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3 shrink-0 bg-surface border-b border-divider">
-        <h1 className="text-[18px] font-semibold text-text-primary">Work Teams</h1>
-        <button onClick={() => setShowCreate(true)} className="btn-primary h-9 px-3 text-[13px]">
-          + Team
+    <div className="p-6 max-w-6xl mx-auto">
+      <div className="flex items-center justify-between mb-5">
+        <div>
+          <h1 className="text-[22px] font-semibold text-text-primary">Work Teams</h1>
+          <p className="text-[13px] text-text-secondary mt-0.5">{teams.length} total</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowCreate(true)}
+          className="flex items-center gap-2 h-10 px-4 rounded-md bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark transition-colors"
+        >
+          <span className="material-icons text-[18px]">group_add</span>
+          Create Team
         </button>
       </div>
 
       {actionError && (
-        <p className="px-4 py-2 text-error text-[13px] shrink-0">{actionError}</p>
+        <p className="mb-3 text-error text-[13px]">{actionError}</p>
       )}
 
-      <div className="px-4 py-3 flex flex-wrap gap-2 shrink-0">
-        <div className="flex items-center gap-2 h-10 px-3 bg-surface border border-border rounded-md flex-1 min-w-[200px]">
-          <span className="material-icons text-text-disabled text-[18px]">search</span>
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <div className="flex items-center gap-1.5 h-8 px-2 bg-surface border border-border rounded-sm flex-1 min-w-[180px]">
+          <span className="material-icons text-text-disabled text-[16px]">search</span>
           <input
-            type="text"
+            type="search"
             placeholder="Search teams or leader…"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="flex-1 text-[13px] bg-transparent focus:outline-none text-text-primary"
+            className="flex-1 min-w-0 text-[13px] text-text-primary placeholder:text-text-disabled bg-transparent focus:outline-none"
           />
         </div>
-        <select
-          value={statusFilter}
-          onChange={e => setStatusFilter(e.target.value as StatusFilter)}
-          className="h-10 px-3 rounded-md border border-border bg-surface text-[13px] text-text-primary"
-        >
-          <option value="active">Active</option>
-          <option value="inactive">Inactive</option>
-          <option value="all">All</option>
-        </select>
+        <ResetFiltersButton disabled={!filtersActive} onReset={resetFilters} />
+        <StatusFilterTabs
+          tabs={STATUS_TABS}
+          value={statusFilter || 'all'}
+          counts={{
+            all: teams.length,
+            active: teams.filter(t => t.is_active).length,
+            inactive: teams.filter(t => !t.is_active).length,
+          }}
+          onChange={id => setStatusFilter(id === 'all' ? '' : id as 'active' | 'inactive')}
+        />
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 pb-4">
-        {loading ? (
-          <p className="text-text-secondary text-[13px] text-center py-8">Loading…</p>
-        ) : filtered.length === 0 ? (
-          <div className="flex flex-col items-center py-12 gap-2">
-            <span className="material-icons text-[48px] text-text-disabled">groups</span>
-            <p className="text-text-secondary text-[14px]">
-              {teams.length === 0 ? 'No teams yet.' : 'No teams match your filters.'}
-            </p>
-            {teams.length === 0 && (
-              <button onClick={() => setShowCreate(true)} className="btn-primary h-9 px-4 text-[13px] mt-2">
-                + Team
-              </button>
-            )}
-          </div>
-        ) : (
-          <div className="bg-surface border border-divider rounded-lg overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-[13px]">
-                <thead>
-                  <tr className="border-b border-divider bg-surface-elevated/50">
-                    <th className="text-left px-4 py-2.5 font-medium text-text-secondary">Team</th>
-                    <th className="text-left px-4 py-2.5 font-medium text-text-secondary">Leader</th>
-                    <th className="text-center px-4 py-2.5 font-medium text-text-secondary">Members</th>
-                    <th className="text-left px-4 py-2.5 font-medium text-text-secondary">Status</th>
-                    <th className="text-right px-4 py-2.5 font-medium text-text-secondary">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map(team => (
+      <div className="bg-surface rounded-lg border border-divider overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full" style={{ minWidth: 720 }}>
+            <thead>
+              <tr className="bg-surface-elevated border-b border-divider">
+                <th className={`${MONEY_TH} text-left`}>
+                  <TextHeaderFilter
+                    label="Team"
+                    value={teamNameCol}
+                    onChange={setTeamNameCol}
+                    placeholder="Team name…"
+                  />
+                </th>
+                <th style={{ width: 160 }} className={`${MONEY_TH} text-left`}>
+                  <TextHeaderFilter
+                    label="Leader"
+                    value={leaderCol}
+                    onChange={setLeaderCol}
+                    placeholder="Leader…"
+                  />
+                </th>
+                <th style={{ width: 90 }} className={`${MONEY_TH} text-center`}>Members</th>
+                <th style={{ width: 90 }} className={`${MONEY_TH} text-left`}>Status</th>
+                <th style={{ width: 110 }} className={`${MONEY_TH} text-right`}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={5} className="py-12 text-center text-[12px] text-text-disabled">
+                    Loading…
+                  </td>
+                </tr>
+              ) : filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="py-12 text-center">
+                    <span className="material-icons text-[40px] text-text-disabled block mb-2">groups</span>
+                    <p className="text-[13px] text-text-secondary">
+                      {teams.length === 0 ? 'No teams yet.' : 'No teams match your filters.'}
+                    </p>
+                    {teams.length === 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowCreate(true)}
+                        className="mt-2 text-primary text-[12px] hover:underline"
+                      >
+                        + Create your first team
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ) : (
+                filtered.map(team => {
+                  const leader = team.leader_employee_id
+                    ? (leaderNames.get(team.leader_employee_id) ?? '—')
+                    : '—'
+                  return (
                     <tr
                       key={team.id}
-                      className="border-b border-divider last:border-0 hover:bg-background/60 cursor-pointer"
+                      className="border-b border-divider last:border-0 hover:bg-background transition-colors cursor-pointer"
                       onClick={() => router.push(`/dashboard/work-teams/${team.id}`)}
                     >
-                      <td className="px-4 py-3">
+                      <td className={MONEY_TD}>
                         <p className="font-medium text-text-primary">{team.name}</p>
                         {team.description && (
                           <p className="text-[11px] text-text-secondary truncate max-w-[280px]">
@@ -212,31 +273,26 @@ export default function WorkTeamsPage() {
                           </p>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-text-secondary">
-                        {team.leader_employee_id
-                          ? (leaderNames.get(team.leader_employee_id) ?? '—')
-                          : '—'}
-                      </td>
-                      <td className="px-4 py-3 text-center text-text-primary">
+                      <td className={`${MONEY_TD} text-text-secondary`}>{leader}</td>
+                      <td className={`${MONEY_TD} text-center text-text-primary tabular-nums`}>
                         {memberCountOf(team)}
                       </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className="text-[11px] font-bold px-2 py-1 rounded-xl"
-                          style={team.is_active
-                            ? { backgroundColor: '#DCFCE7', color: '#166534' }
-                            : { backgroundColor: '#F3F4F6', color: '#6B7280' }
-                          }
-                        >
+                      <td className={MONEY_TD}>
+                        <span className={`flex items-center gap-1 text-[11px] font-medium w-fit ${
+                          team.is_active ? 'text-success' : 'text-text-disabled'
+                        }`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${
+                            team.is_active ? 'bg-success' : 'bg-text-disabled'
+                          }`} />
                           {team.is_active ? 'Active' : 'Inactive'}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right">
+                      <td className={`${MONEY_TD} text-right`}>
                         <button
                           type="button"
                           disabled={archiveBusy === team.id}
                           onClick={e => void toggleArchive(team, e)}
-                          className="text-[12px] font-medium text-text-secondary hover:text-primary disabled:opacity-50"
+                          className="h-7 px-2 rounded-md text-[11px] font-medium text-text-secondary hover:text-primary hover:bg-surface-elevated disabled:opacity-50"
                         >
                           {archiveBusy === team.id
                             ? '…'
@@ -246,56 +302,64 @@ export default function WorkTeamsPage() {
                         </button>
                       </td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+                  )
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      {showCreate && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-surface rounded-xl shadow-lg w-full max-w-sm p-5 space-y-3">
-            <h3 className="font-semibold text-text-primary">New Team</h3>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-text-secondary">Team name *</label>
-              <input
-                value={newTeamName}
-                onChange={e => setNewTeamName(e.target.value)}
-                placeholder="e.g. Site A Crew, Night Shift"
-                className="dark-entry w-full"
-                autoFocus
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-text-secondary">Description (optional)</label>
-              <textarea
-                value={newTeamDesc}
-                onChange={e => setNewTeamDesc(e.target.value)}
-                rows={2}
-                placeholder="Notes…"
-                className="dark-entry w-full resize-none"
-              />
-            </div>
-            <div className="flex gap-2 justify-end">
-              <button
-                onClick={() => { setShowCreate(false); setNewTeamName(''); setNewTeamDesc('') }}
-                className="btn-outlined h-9 px-4 text-[13px]"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => void createTeam()}
-                disabled={!newTeamName.trim() || creating}
-                className="btn-primary h-9 px-4 text-[13px] disabled:opacity-50"
-              >
-                {creating ? 'Creating…' : 'Create'}
-              </button>
-            </div>
+      <ModalShell
+        open={showCreate}
+        onClose={() => { setShowCreate(false); setNewTeamName(''); setNewTeamDesc('') }}
+        title="New Team"
+        size="sm"
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => { setShowCreate(false); setNewTeamName(''); setNewTeamDesc('') }}
+              className="h-11 px-4 rounded-md border border-border text-[13px] text-text-secondary hover:bg-background transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void createTeam()}
+              disabled={!newTeamName.trim() || creating}
+              className="h-11 px-4 rounded-md bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors"
+            >
+              {creating ? 'Creating…' : 'Create'}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <div className="flex flex-col gap-1">
+            <label className="text-[12px] text-text-secondary">Team name *</label>
+            <input
+              type="text"
+              value={newTeamName}
+              onChange={e => setNewTeamName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && void createTeam()}
+              placeholder="e.g. Site A Crew, Night Shift"
+              autoFocus
+              className="w-full h-11 px-3 bg-background border border-border rounded-md text-[13px] text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[12px] text-text-secondary">Description (optional)</label>
+            <textarea
+              value={newTeamDesc}
+              onChange={e => setNewTeamDesc(e.target.value)}
+              rows={2}
+              placeholder="Notes…"
+              className="w-full px-3 py-2 bg-background border border-border rounded-md text-[13px] text-text-primary resize-none focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
           </div>
         </div>
-      )}
+      </ModalShell>
     </div>
   )
 }
