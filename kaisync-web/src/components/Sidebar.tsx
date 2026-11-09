@@ -207,6 +207,16 @@ function NavIconBtn({
   )
 }
 
+/** Soft accent chips for module headers in the phone drawer. */
+const SECTION_ACCENT: Record<string, { chip: string; icon: string; nest: string }> = {
+  workforce:  { chip: 'bg-blue-500/15',    icon: 'text-blue-600',    nest: 'bg-blue-500/[0.06] border-blue-500/20' },
+  operations: { chip: 'bg-sky-500/15',     icon: 'text-sky-600',     nest: 'bg-sky-500/[0.06] border-sky-500/20' },
+  money:      { chip: 'bg-emerald-500/15', icon: 'text-emerald-600', nest: 'bg-emerald-500/[0.06] border-emerald-500/20' },
+  properties: { chip: 'bg-violet-500/15',  icon: 'text-violet-600',  nest: 'bg-violet-500/[0.06] border-violet-500/20' },
+  farms:      { chip: 'bg-lime-500/15',    icon: 'text-lime-700',    nest: 'bg-lime-500/[0.06] border-lime-500/20' },
+  insights:   { chip: 'bg-indigo-500/15',  icon: 'text-indigo-600',  nest: 'bg-indigo-500/[0.06] border-indigo-500/20' },
+}
+
 function PanelItems({
   items,
   flags,
@@ -214,6 +224,7 @@ function PanelItems({
   pathname,
   collapsed,
   onNavigate,
+  compact = false,
 }: {
   items: NavItem[]
   flags: HrNavFlags
@@ -221,6 +232,8 @@ function PanelItems({
   pathname: string
   collapsed: boolean
   onNavigate?: () => void
+  /** Tighter type/spacing for nested phone-drawer children */
+  compact?: boolean
 }) {
   const visible = items.filter(item => itemVisible(item, flags, isOwner))
   if (visible.length === 0) return null
@@ -242,7 +255,12 @@ function PanelItems({
       {groups.map((group, gi) => (
         <div key={gi}>
           {group.label && !collapsed && (
-            <p className="text-[9px] font-semibold uppercase tracking-widest text-text-secondary px-3 pt-3 pb-1">
+            <p
+              className={cn(
+                'font-semibold uppercase tracking-widest text-text-secondary',
+                compact ? 'text-[8px] px-2 pt-2 pb-0.5' : 'text-[9px] px-3 pt-3 pb-1',
+              )}
+            >
               {group.label}
             </p>
           )}
@@ -257,23 +275,37 @@ function PanelItems({
                 aria-label={collapsed ? item.label : undefined}
                 onClick={onNavigate}
                 className={cn(
-                  'flex items-center gap-2 mx-1 mb-0.5 rounded-md transition-colors',
-                  collapsed ? 'justify-center px-0 py-2.5 lg:py-2' : 'px-2 py-2.5 lg:py-1.5',
+                  'flex items-center transition-colors',
+                  compact
+                    ? 'gap-1.5 mx-0.5 mb-px rounded-md px-2 py-1.5'
+                    : 'gap-2 mx-1 mb-0.5 rounded-md',
+                  !compact && (collapsed ? 'justify-center px-0 py-2.5 lg:py-2' : 'px-2 py-2.5 lg:py-1.5'),
                   active
-                    ? 'bg-primary/10 text-primary font-medium border-l-2 border-primary rounded-l-none'
-                    : 'text-text-secondary hover:text-text-primary hover:bg-surface-elevated',
+                    ? compact
+                      ? 'bg-primary/15 text-primary font-semibold shadow-[inset_2px_0_0_0_var(--color-primary)]'
+                      : 'bg-primary/10 text-primary font-medium border-l-2 border-primary rounded-l-none'
+                    : compact
+                      ? 'text-text-secondary/90 hover:text-text-primary hover:bg-white/80'
+                      : 'text-text-secondary hover:text-text-primary hover:bg-surface-elevated',
                 )}
               >
                 <span
                   className={cn(
                     'material-icons shrink-0',
-                    collapsed ? 'text-[18px]' : 'text-[18px] lg:text-[16px]',
+                    compact
+                      ? 'text-[15px]'
+                      : collapsed
+                        ? 'text-[18px]'
+                        : 'text-[18px] lg:text-[16px]',
+                    active && compact && 'text-primary',
                   )}
                 >
                   {item.icon}
                 </span>
                 {!collapsed && (
-                  <span className="text-[13px] lg:text-[12px] truncate">{item.label}</span>
+                  <span className={cn('truncate', compact ? 'text-[11px] leading-tight' : 'text-[13px] lg:text-[12px]')}>
+                    {item.label}
+                  </span>
                 )}
               </Link>
             )
@@ -663,8 +695,10 @@ export default function Sidebar({
       {((desktopPanel && isDesktop && !platformOnly) || showMobileDrawer) && (
         <aside
           className={cn(
-            'fixed left-0 bottom-0 flex flex-col shrink-0 bg-surface border-r border-divider overflow-hidden transition-transform duration-200 z-50 safe-pb',
+            'fixed left-0 bottom-0 flex flex-col shrink-0 border-r border-divider overflow-hidden transition-transform duration-200 z-50 safe-pb',
             'w-72 lg:transition-[width]',
+            // Phone drawer: soft tinted wash so it is not a flat gray slab
+            'bg-gradient-to-b from-[#E8F0FF] via-[#F5F8FF] to-white lg:bg-none lg:bg-surface',
             showMobileDrawer ? 'translate-x-0' : 'max-lg:-translate-x-full',
             desktopPanel ? 'lg:translate-x-0' : 'lg:-translate-x-full',
             panelCollapsed ? 'lg:w-11' : 'lg:w-44',
@@ -673,7 +707,10 @@ export default function Sidebar({
         >
           <div className="flex items-center justify-between px-2 pt-2 pb-1 shrink-0">
             {(!panelCollapsed || !isDesktop) && (
-              <span className="text-[10px] font-semibold uppercase tracking-widest text-text-secondary px-1">
+              <span className={cn(
+                'font-semibold uppercase tracking-widest px-1',
+                isDesktop ? 'text-[10px] text-text-secondary' : 'text-[10px] text-primary/70',
+              )}>
                 {isDesktop ? (activeSection?.label ?? 'Menu') : 'Menu'}
               </span>
             )}
@@ -684,7 +721,10 @@ export default function Sidebar({
                 else setPanelCollapsed(v => !v)
               }}
               className={cn(
-                'w-9 h-9 lg:w-7 lg:h-7 rounded-md flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-surface-elevated transition-colors',
+                'w-9 h-9 lg:w-7 lg:h-7 rounded-md flex items-center justify-center transition-colors',
+                isDesktop
+                  ? 'text-text-secondary hover:text-text-primary hover:bg-surface-elevated'
+                  : 'text-primary/70 hover:text-primary hover:bg-primary/10',
                 panelCollapsed && isDesktop && 'mx-auto',
               )}
               title={isDesktop ? (panelCollapsed ? 'Expand panel' : 'Collapse panel') : 'Close menu'}
@@ -698,19 +738,24 @@ export default function Sidebar({
           <nav className="flex-1 overflow-y-auto py-1">
             {/* Phone: pinned destinations + expandable modules (no flat parent/child mix). */}
             {!isDesktop && (
-              <div className="px-2 pb-2 space-y-0.5">
+              <div className="px-2 pb-3 space-y-1">
                 <Link
                   href="/dashboard/overview"
                   prefetch={false}
                   onClick={onClose}
                   className={cn(
-                    'flex items-center gap-3 rounded-lg px-3 h-11 text-[13px]',
+                    'flex items-center gap-2.5 rounded-xl px-2.5 h-10 text-[12px] font-medium transition-colors',
                     isItemActive(pathname, '/dashboard/overview') && !activeSection
-                      ? 'bg-primary/10 text-primary font-semibold'
-                      : 'text-text-secondary hover:bg-surface-elevated',
+                      ? 'bg-primary text-white shadow-sm shadow-primary/25'
+                      : 'text-text-primary/80 hover:bg-white/80',
                   )}
                 >
-                  <span className="material-icons text-[20px]">home</span>
+                  <span className={cn(
+                    'material-icons text-[18px] w-7 h-7 rounded-lg flex items-center justify-center shrink-0',
+                    isItemActive(pathname, '/dashboard/overview') && !activeSection
+                      ? 'bg-white/20 text-white'
+                      : 'bg-primary/10 text-primary',
+                  )}>home</span>
                   Overview
                 </Link>
                 {showMyPa && (
@@ -719,13 +764,18 @@ export default function Sidebar({
                     prefetch={false}
                     onClick={onClose}
                     className={cn(
-                      'flex items-center gap-3 rounded-lg px-3 h-11 text-[13px]',
+                      'flex items-center gap-2.5 rounded-xl px-2.5 h-10 text-[12px] font-medium transition-colors',
                       isItemActive(pathname, '/dashboard/pa')
-                        ? 'bg-primary/10 text-primary font-semibold'
-                        : 'text-text-secondary hover:bg-surface-elevated',
+                        ? 'bg-primary text-white shadow-sm shadow-primary/25'
+                        : 'text-text-primary/80 hover:bg-white/80',
                     )}
                   >
-                    <span className="material-icons text-[20px]">task_alt</span>
+                    <span className={cn(
+                      'material-icons text-[18px] w-7 h-7 rounded-lg flex items-center justify-center shrink-0',
+                      isItemActive(pathname, '/dashboard/pa')
+                        ? 'bg-white/20 text-white'
+                        : 'bg-sky-500/15 text-sky-600',
+                    )}>task_alt</span>
                     My PA
                   </Link>
                 )}
@@ -735,19 +785,24 @@ export default function Sidebar({
                     prefetch={false}
                     onClick={onClose}
                     className={cn(
-                      'flex items-center gap-3 rounded-lg px-3 h-11 text-[13px]',
+                      'flex items-center gap-2.5 rounded-xl px-2.5 h-10 text-[12px] font-medium transition-colors',
                       isItemActive(pathname, '/dashboard/messages')
-                        ? 'bg-primary/10 text-primary font-semibold'
-                        : 'text-text-secondary hover:bg-surface-elevated',
+                        ? 'bg-primary text-white shadow-sm shadow-primary/25'
+                        : 'text-text-primary/80 hover:bg-white/80',
                     )}
                   >
-                    <span className="material-icons text-[20px]">chat</span>
+                    <span className={cn(
+                      'material-icons text-[18px] w-7 h-7 rounded-lg flex items-center justify-center shrink-0',
+                      isItemActive(pathname, '/dashboard/messages')
+                        ? 'bg-white/20 text-white'
+                        : 'bg-violet-500/15 text-violet-600',
+                    )}>chat</span>
                     Messages
                   </Link>
                 )}
 
                 {!platformOnly && sections.length > 0 && (
-                  <p className="text-[10px] font-semibold uppercase tracking-widest text-text-secondary px-3 pt-3 pb-1">
+                  <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-primary/55 px-2.5 pt-3 pb-1">
                     Modules
                   </p>
                 )}
@@ -755,6 +810,7 @@ export default function Sidebar({
                 {!platformOnly && sections.map(section => {
                   const expanded = expandedSectionId === section.id
                   const sectionActive = activeSection?.id === section.id
+                  const accent = SECTION_ACCENT[section.id] ?? SECTION_ACCENT.workforce
                   return (
                     <div key={section.id} className="mb-0.5">
                       <button
@@ -762,20 +818,32 @@ export default function Sidebar({
                         onClick={() => setExpandedSectionId(expanded ? null : section.id)}
                         aria-expanded={expanded}
                         className={cn(
-                          'flex w-full items-center gap-3 rounded-lg px-3 h-11 text-[13px] text-left transition-colors',
-                          sectionActive
-                            ? 'bg-primary/10 text-primary font-semibold'
-                            : 'text-text-secondary hover:bg-surface-elevated hover:text-text-primary',
+                          'flex w-full items-center gap-2 rounded-xl px-2 h-10 text-[12px] font-semibold text-left transition-colors',
+                          sectionActive || expanded
+                            ? 'bg-white text-text-primary shadow-sm ring-1 ring-black/5'
+                            : 'text-text-primary/75 hover:bg-white/70',
                         )}
                       >
-                        <span className="material-icons text-[20px] shrink-0">{section.icon}</span>
+                        <span className={cn(
+                          'material-icons text-[16px] w-7 h-7 rounded-lg flex items-center justify-center shrink-0',
+                          accent.chip,
+                          accent.icon,
+                        )}>
+                          {section.icon}
+                        </span>
                         <span className="flex-1 truncate">{section.label}</span>
-                        <span className="material-icons text-[18px] shrink-0 opacity-70">
+                        <span className={cn(
+                          'material-icons text-[16px] shrink-0',
+                          expanded ? 'text-primary' : 'text-text-secondary/60',
+                        )}>
                           {expanded ? 'expand_less' : 'expand_more'}
                         </span>
                       </button>
                       {expanded && (
-                        <div className="ml-3 pl-2 border-l border-divider mb-1">
+                        <div className={cn(
+                          'mt-1 mb-1.5 ml-2 mr-1 rounded-xl border px-1 py-1',
+                          accent.nest,
+                        )}>
                           <PanelItems
                             items={section.items}
                             flags={flags}
@@ -783,6 +851,7 @@ export default function Sidebar({
                             pathname={pathname}
                             collapsed={false}
                             onNavigate={onClose}
+                            compact
                           />
                         </div>
                       )}
@@ -796,13 +865,18 @@ export default function Sidebar({
                     prefetch={false}
                     onClick={onClose}
                     className={cn(
-                      'flex items-center gap-3 rounded-lg px-3 h-11 text-[13px] mt-1',
+                      'flex items-center gap-2.5 rounded-xl px-2.5 h-10 text-[12px] font-medium mt-1 transition-colors',
                       isItemActive(pathname, '/dashboard/platform')
-                        ? 'bg-primary/10 text-primary font-semibold'
-                        : 'text-text-secondary hover:bg-surface-elevated',
+                        ? 'bg-primary text-white shadow-sm shadow-primary/25'
+                        : 'text-text-primary/80 hover:bg-white/80',
                     )}
                   >
-                    <span className="material-icons text-[20px]">admin_panel_settings</span>
+                    <span className={cn(
+                      'material-icons text-[18px] w-7 h-7 rounded-lg flex items-center justify-center shrink-0',
+                      isItemActive(pathname, '/dashboard/platform')
+                        ? 'bg-white/20 text-white'
+                        : 'bg-slate-500/15 text-slate-600',
+                    )}>admin_panel_settings</span>
                     Platform
                   </Link>
                 )}
