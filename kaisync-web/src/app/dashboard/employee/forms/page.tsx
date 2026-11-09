@@ -31,6 +31,8 @@ export default function FormsPage() {
 
   useEffect(() => {
     if (allowed !== true) return
+    // Same load-on-gate pattern as other employee portal lists.
+    // eslint-disable-next-line react-hooks/immutability -- async data fetch on gate
     void init()
   }, [allowed])
 

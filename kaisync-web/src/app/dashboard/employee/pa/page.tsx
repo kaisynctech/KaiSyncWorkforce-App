@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
@@ -96,13 +96,6 @@ function fmtDue(iso: string | null): string {
 
 function isOverdue(t: PATask): boolean {
   return t.status !== 'done' && !!t.due_at && new Date(t.due_at) < new Date()
-}
-
-function isToday(iso: string | null): boolean {
-  if (!iso) return false
-  const d = new Date(iso)
-  const now = new Date()
-  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()
 }
 
 async function spawnRecurringNext(
@@ -456,7 +449,6 @@ export default function MyPAPage() {
   const [empId,      setEmpId]      = useState<string | null>(null)
   const [companyId,  setCompanyId]  = useState<string | null>(null)
   const [token,      setToken]      = useState<string | null>(null)
-  const searchRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     if (allowed !== true) return
@@ -773,7 +765,7 @@ export default function MyPAPage() {
             {/* Today's agenda */}
             {todayTasks.length > 0 && (
               <div>
-                <p className="section-label mb-2">Today's Agenda</p>
+                <p className="section-label mb-2">Today&apos;s Agenda</p>
                 <div className="space-y-2">
                   {todayTasks.map(t => <TaskRow key={t.id} task={t} {...rowProps} />)}
                 </div>
