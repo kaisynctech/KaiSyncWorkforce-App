@@ -12,8 +12,9 @@ export type StatusTabDef = {
   active: string
 }
 
-export const MONEY_TH = 'data-th !py-1.5 !px-2.5 text-[11px] !text-text-primary'
-export const MONEY_TD = 'data-td !py-1.5 !px-2.5 text-[12px]'
+/** Dense table chrome — sized to fit more columns on phones without card fallbacks. */
+export const MONEY_TH = 'data-th !py-1 !px-2 text-[10px] sm:!py-1.5 sm:!px-2.5 sm:text-[11px] !text-text-primary whitespace-nowrap'
+export const MONEY_TD = 'data-td !py-1 !px-2 text-[11px] sm:!py-1.5 sm:!px-2.5 sm:text-[12px] whitespace-nowrap'
 
 export function countByStatusTab<T extends { status: string }>(
   rows: T[],

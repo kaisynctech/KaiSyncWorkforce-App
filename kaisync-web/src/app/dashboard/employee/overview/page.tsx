@@ -36,6 +36,7 @@ import {
   type DeviceLocationResult,
 } from '@/lib/geo-location'
 import { PwaInstallButton } from '@/components/PwaInstallButton'
+import { ManualTimesheetForm } from '@/components/attendance/ManualTimesheetForm'
 import { loadClockPack, saveClockPack } from '@/lib/offline/clock-pack'
 import { networkLooksDown } from '@/lib/offline/meta'
 import { localISODate } from '@/lib/utils'
@@ -243,6 +244,7 @@ export default function EmployeeOverviewPage() {
   const [isClockedIn,    setIsClockedIn]    = useState(false)
   const [elapsedMs,      setElapsedMs]      = useState(0)
   const [showClockModal, setShowClockModal] = useState(false)
+  const [showManualTimesheet, setShowManualTimesheet] = useState(false)
   const [clockNote,      setClockNote]      = useState('')
   const [clockJobId,     setClockJobId]     = useState<string | null>(null)
   const [geoLat,         setGeoLat]         = useState<number | null>(null)
@@ -1359,7 +1361,7 @@ export default function EmployeeOverviewPage() {
         <PwaInstallButton variant="banner" />
 
         {/* Quick actions */}
-        {showWorkspace && (modules.jobs || modules.leave) && (
+        {showWorkspace && (modules.jobs || modules.leave || modules.attendance) && (
           <div className="flex flex-wrap gap-2">
             {modules.jobs && (
               <Link
@@ -1378,6 +1380,16 @@ export default function EmployeeOverviewPage() {
                 <span className="material-icons text-[16px]">beach_access</span>
                 Apply for Leave
               </Link>
+            )}
+            {modules.attendance && (
+              <button
+                type="button"
+                onClick={() => setShowManualTimesheet(true)}
+                className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-divider bg-surface text-[13px] font-semibold text-text-primary hover:border-primary hover:text-primary transition-colors"
+              >
+                <span className="material-icons text-[16px]">edit_calendar</span>
+                Manual Timesheet
+              </button>
             )}
           </div>
         )}
@@ -1706,6 +1718,36 @@ export default function EmployeeOverviewPage() {
                 {absenceSubmitting ? '…' : 'Submit'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showManualTimesheet && companyIdRef.current && empIdRef.current && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/50">
+          <div className="bg-surface rounded-2xl w-full max-w-lg p-4 space-y-3 shadow-2xl safe-pb">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-[17px] font-bold text-text-primary">Manual Timesheet</h2>
+              <button
+                type="button"
+                onClick={() => setShowManualTimesheet(false)}
+                className="text-text-secondary hover:text-text-primary"
+                aria-label="Close"
+              >
+                <span className="material-icons">close</span>
+              </button>
+            </div>
+            <p className="text-[12px] text-text-secondary">
+              Use this if you forgot to clock in or out. Enter the date and times for that day.
+            </p>
+            <ManualTimesheetForm
+              companyId={companyIdRef.current}
+              employeeId={empIdRef.current}
+              sessionToken={tokRef.current}
+              onSaved={() => {
+                setShowManualTimesheet(false)
+                void init({ soft: true })
+              }}
+            />
           </div>
         </div>
       )}

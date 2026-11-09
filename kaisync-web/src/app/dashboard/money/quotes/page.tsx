@@ -652,7 +652,7 @@ function QuotesPageInner() {
           ) : (
             <ResponsiveDataView
               table={
-                <table className="w-full" style={{ minWidth: 900 }}>
+                <table className="w-full" style={{ minWidth: 720 }}>
                   <thead className="sticky top-0 z-10">
                     <tr className="bg-surface-elevated border-b border-divider">
                       <th className={`${TH} text-left`}>
@@ -828,7 +828,7 @@ function QuotesPageInner() {
         ) : (
           <ResponsiveDataView
             table={
-              <table className="w-full" style={{ minWidth: 960 }}>
+              <table className="w-full" style={{ minWidth: 760 }}>
                 <thead className="sticky top-0 z-10">
                   <tr className="bg-surface-elevated border-b border-divider">
                     <th className={`${TH} text-left`}>

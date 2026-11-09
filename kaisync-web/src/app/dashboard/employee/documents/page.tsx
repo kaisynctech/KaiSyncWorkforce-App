@@ -320,7 +320,7 @@ export default function DocumentsPage() {
               <ResponsiveDataView
                 className="md:min-h-[260px]"
                 table={
-                  <table className="w-full" style={{ minWidth: 720 }}>
+                  <table className="w-full" style={{ minWidth: 560 }}>
                     <thead className="sticky top-0 z-10">
                       <tr className="bg-surface-elevated border-b border-divider">
                         <th className={`${MONEY_TH} text-left`}>

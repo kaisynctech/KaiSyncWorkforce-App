@@ -848,7 +848,7 @@ function EmployeesPageInner() {
           <div className="bg-surface rounded-lg border border-divider overflow-hidden">
             <ResponsiveDataView
               table={
-                <table className="w-full" style={{ minWidth: 880 }}>
+                <table className="w-full" style={{ minWidth: 720 }}>
                   <thead>
                     <tr className="bg-surface-elevated border-b border-divider">
                       <th className={`${MONEY_TH} text-left`}>

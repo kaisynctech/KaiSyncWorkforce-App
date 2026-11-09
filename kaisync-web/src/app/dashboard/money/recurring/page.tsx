@@ -179,7 +179,7 @@ export default function RecurringInvoicesPage() {
             <p className="text-[12.5px] text-text-secondary">Create one for a client you bill the same amount every month.</p>
           </div>
         ) : (
-          <table className="w-full" style={{ minWidth: 960 }}>
+          <table className="w-full" style={{ minWidth: 720 }}>
             <thead className="sticky top-0 z-10">
               <tr className="bg-surface-elevated border-b border-divider">
                 <th className={`${MONEY_TH} text-left`}>

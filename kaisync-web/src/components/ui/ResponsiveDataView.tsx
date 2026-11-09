@@ -4,31 +4,28 @@ import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 
 /**
- * Desktop: horizontal-scroll table region.
- * Phone (&lt; md): stacked card list — callers render `mobile` cards.
- * Keeps enterprise table-first UX on desktop while making phone usable.
+ * Table-first list chrome for desktop and phone.
+ * Phones keep the table and scroll horizontally — no card fallback.
+ * `mobile` is accepted for backward compatibility but not rendered.
  */
 export function ResponsiveDataView({
   table,
-  mobile,
+  mobile: _mobile,
   className,
   empty,
 }: {
   table: ReactNode
-  mobile: ReactNode
+  /** @deprecated Cards are no longer used; table is shown at all breakpoints. */
+  mobile?: ReactNode
   className?: string
   empty?: boolean
 }) {
+  void _mobile
   if (empty) return null
   return (
-    <>
-      <div className={cn('hidden md:block overflow-x-auto', className)}>
-        {table}
-      </div>
-      <div className={cn('md:hidden divide-y divide-divider', className)}>
-        {mobile}
-      </div>
-    </>
+    <div className={cn('overflow-x-auto overscroll-x-contain -webkit-overflow-scrolling-touch', className)}>
+      {table}
+    </div>
   )
 }
 

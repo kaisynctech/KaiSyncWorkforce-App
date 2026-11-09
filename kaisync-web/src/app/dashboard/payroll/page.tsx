@@ -800,7 +800,7 @@ export default function PayrollPage() {
       <div className="flex-1 overflow-y-auto">
         <ResponsiveDataView
           table={
-            <table style={{ minWidth: 860 }} className="w-full">
+            <table style={{ minWidth: 640 }} className="w-full">
               <thead className="sticky top-0 z-10">
                 <tr className="border-b border-divider bg-surface-elevated">
                   <th className={`${MONEY_TH} text-left`}>

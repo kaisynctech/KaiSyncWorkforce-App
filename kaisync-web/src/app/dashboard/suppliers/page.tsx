@@ -298,7 +298,7 @@ export default function SuppliersPage() {
         {loading ? (
           <p className="text-text-secondary text-[13px] text-center py-8">Loading…</p>
         ) : (
-          <table className="w-full" style={{ minWidth: 900 }}>
+          <table className="w-full" style={{ minWidth: 720 }}>
             <thead>
               <tr className="bg-surface-elevated border-b border-divider">
                 <th className="data-th text-left" style={{ width: 200 }}>Supplier</th>

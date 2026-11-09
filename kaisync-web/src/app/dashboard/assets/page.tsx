@@ -465,7 +465,7 @@ function AssetsInner() {
       )}
 
       <div className="flex-1 overflow-auto mt-2">
-        <table className="w-full" style={{ minWidth: 1100 }}>
+        <table className="w-full" style={{ minWidth: 760 }}>
           <thead>
             <tr className="bg-surface-elevated border-b border-divider">
               <th className={`${MONEY_TH} text-left`} style={{ width: 180 }}>

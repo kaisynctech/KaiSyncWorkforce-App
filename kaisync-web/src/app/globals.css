@@ -148,16 +148,36 @@ body {
 }
 
 .data-th {
-  padding: 10px 12px;
+  padding: 6px 8px;
   text-align: left;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
   color: var(--color-text-secondary);
   white-space: nowrap;
 }
 
 .data-td {
-  padding: 10px 12px;
+  padding: 6px 8px;
+}
+
+@media (min-width: 640px) {
+  .data-th {
+    padding: 10px 12px;
+    font-size: 12px;
+  }
+
+  .data-td {
+    padding: 10px 12px;
+  }
+}
+
+/* Horizontal table scroll feels native on phones */
+.overscroll-x-contain {
+  overscroll-behavior-x: contain;
+}
+
+.-webkit-overflow-scrolling-touch {
+  -webkit-overflow-scrolling: touch;
 }
 
 .dark-entry {

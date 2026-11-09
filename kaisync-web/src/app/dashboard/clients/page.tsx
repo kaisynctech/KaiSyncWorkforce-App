@@ -407,7 +407,7 @@ export default function ClientsPage() {
         <div className="mx-4 mb-4 bg-surface rounded-lg border border-divider overflow-hidden">
           <ResponsiveDataView
             table={
-              <table style={{ minWidth: 760 }} className="w-full">
+              <table style={{ minWidth: 640 }} className="w-full">
                 <thead>
                   <tr className="bg-surface-elevated border-b border-divider">
                     <th className={`${MONEY_TH} text-left`}>

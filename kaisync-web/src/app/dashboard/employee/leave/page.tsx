@@ -344,7 +344,7 @@ export default function EmployeeLeavePage() {
                   <ResponsiveDataView
                     table={
                       <div className="bg-surface border border-divider rounded-xl overflow-x-auto">
-                        <table className="w-full" style={{ minWidth: 860 }}>
+                        <table className="w-full" style={{ minWidth: 640 }}>
                           <thead>
                             <tr className="bg-surface-elevated border-b border-divider">
                               <th className={`${MONEY_TH} text-left`}>

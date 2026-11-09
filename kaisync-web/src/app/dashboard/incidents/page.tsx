@@ -329,7 +329,7 @@ export default function IncidentsPage() {
           ) : (
             <ResponsiveDataView
               table={
-                <table className="w-full text-[13px]" style={{ minWidth: 960 }}>
+                <table className="w-full text-[13px]" style={{ minWidth: 720 }}>
                   <thead>
                     <tr className="bg-surface-elevated border-b border-divider">
                       <th className={`${MONEY_TH} text-left`}>

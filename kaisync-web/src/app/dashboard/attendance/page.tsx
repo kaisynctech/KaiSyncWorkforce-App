@@ -696,7 +696,7 @@ export default function AttendancePage() {
         ) : (
           <ResponsiveDataView
             table={
-              <table className="w-full" style={{ minWidth: 1100 }}>
+              <table className="w-full" style={{ minWidth: 760 }}>
                 <thead>
                   <tr className="border-b border-divider bg-surface-elevated">
                     <th className={`${MONEY_TH} text-left`}>

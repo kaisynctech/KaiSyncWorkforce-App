@@ -444,7 +444,7 @@ export default function LeavePage() {
         {tab === 'upcoming' ? (
           <div className="bg-surface rounded-lg border border-divider overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full" style={{ minWidth: 760 }}>
+              <table className="w-full" style={{ minWidth: 640 }}>
                 <thead>
                   <tr className="bg-surface-elevated border-b border-divider">
                     <th className={`${MONEY_TH} text-left`}>
@@ -527,7 +527,7 @@ export default function LeavePage() {
             ) : (
               <ResponsiveDataView
                 table={
-                  <table className="w-full" style={{ minWidth: 760 }}>
+                  <table className="w-full" style={{ minWidth: 640 }}>
                     <thead>
                       <tr className="bg-surface-elevated border-b border-divider">
                         <th className={`${MONEY_TH} text-left`}>
