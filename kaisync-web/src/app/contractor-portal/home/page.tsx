@@ -39,6 +39,8 @@ import {
   type ContractorPortalProfile,
   type OpenVisit,
 } from '@/lib/contractor-portal/types'
+import { ResponsiveDataView } from '@/components/ui/ResponsiveDataView'
+import { MONEY_TH, MONEY_TD } from '@/components/ui/StatusFilterTabs'
 
 type Tab = 'home' | 'information' | 'jobs' | 'quotes' | 'payments' | 'banking' | 'compliance' | 'messages'
 
@@ -221,7 +223,8 @@ function ContractorPortalHomeInner() {
           <HomeTab
             name={session.contractor_name}
             profile={profile}
-            openJobs={openJobs.length}
+            openJobs={openJobs}
+            recentPayouts={payouts.slice(0, 5)}
             outstanding={outstanding}
             openVisit={openVisit}
             onGoJobs={() => selectTab('jobs')}
@@ -273,12 +276,13 @@ function ContractorPortalHomeInner() {
 }
 
 function HomeTab({
-  name, profile, openJobs, outstanding, openVisit,
+  name, profile, openJobs, recentPayouts, outstanding, openVisit,
   onGoJobs, onGoInfo, onGoPayments, onGoCompliance, onGoBanking, loadDocuments,
 }: {
   name: string
   profile: ContractorPortalProfile | null
-  openJobs: number
+  openJobs: ContractorJob[]
+  recentPayouts: ContractorPayout[]
   outstanding: number
   openVisit: OpenVisit | null
   onGoJobs: () => void
@@ -288,6 +292,7 @@ function HomeTab({
   onGoBanking: () => void
   loadDocuments: () => Promise<ContractorDocument[]>
 }) {
+  const recentJobs = openJobs.slice(0, 5)
   return (
     <div className="space-y-4">
       <div>
@@ -317,17 +322,94 @@ function HomeTab({
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3">
-        <Kpi label="Open jobs" value={String(openJobs)} onClick={onGoJobs} />
+      <div className="grid grid-cols-2 gap-2">
+        <Kpi label="Open jobs" value={String(openJobs.length)} onClick={onGoJobs} />
         <Kpi label="Outstanding" value={moneyZAR(outstanding)} onClick={onGoPayments} />
       </div>
 
-      <div className="border-divider bg-surface rounded-xl border divide-y overflow-hidden">
-        <QuickLink label="My information" sub="View and edit your profile" onClick={onGoInfo} />
-        <QuickLink label="Jobs" sub="Assigned jobs and site visits" onClick={onGoJobs} />
-        <QuickLink label="Banking" sub="Masked details and HR update requests" onClick={onGoBanking} />
-        <QuickLink label="Payments" sub="Payments made to you and your statement" onClick={onGoPayments} />
-        <QuickLink label="Compliance" sub="Documents and pack status" onClick={onGoCompliance} />
+      <section className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-[13px] font-bold text-text-primary">Open jobs</h2>
+          <button type="button" onClick={onGoJobs} className="btn-ghost">View all</button>
+        </div>
+        {recentJobs.length === 0 ? (
+          <p className="text-[12px] text-text-secondary px-1">No open jobs right now.</p>
+        ) : (
+          <div className="border-divider bg-surface rounded-xl border overflow-hidden">
+            <ResponsiveDataView
+              table={
+                <table className="w-full text-[13px]">
+                  <thead>
+                    <tr className="bg-surface-elevated border-b border-divider">
+                      <th className={`${MONEY_TH} text-left`}>Code</th>
+                      <th className={`${MONEY_TH} text-left`}>Job</th>
+                      <th className={`${MONEY_TH} text-left`}>Status</th>
+                      <th className={`${MONEY_TH} text-right`}>Cost</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentJobs.map(j => (
+                      <tr key={j.id} className="border-b border-divider last:border-0 hover:bg-surface-elevated">
+                        <td className={`${MONEY_TD} text-text-secondary`}>{j.job_code || '—'}</td>
+                        <td className={MONEY_TD}>
+                          <Link href={`/contractor-portal/jobs/${j.id}`} className="text-text-primary font-semibold hover:text-primary">
+                            {j.title}
+                          </Link>
+                        </td>
+                        <td className={`${MONEY_TD} text-text-primary`}>{jobStatusLabel(j.status)}</td>
+                        <td className={`${MONEY_TD} text-right text-text-primary`}>{moneyZAR(j.contractor_cost)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              }
+            />
+          </div>
+        )}
+      </section>
+
+      <section className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-[13px] font-bold text-text-primary">Recent money</h2>
+          <button type="button" onClick={onGoPayments} className="btn-ghost">Statement</button>
+        </div>
+        {recentPayouts.length === 0 ? (
+          <p className="text-[12px] text-text-secondary px-1">No payouts yet.</p>
+        ) : (
+          <div className="border-divider bg-surface rounded-xl border overflow-hidden">
+            <ResponsiveDataView
+              table={
+                <table className="w-full text-[13px]">
+                  <thead>
+                    <tr className="bg-surface-elevated border-b border-divider">
+                      <th className={`${MONEY_TH} text-left`}>Job</th>
+                      <th className={`${MONEY_TH} text-left`}>Status</th>
+                      <th className={`${MONEY_TH} text-right`}>Net</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentPayouts.map(p => (
+                      <tr key={p.id} className="border-b border-divider last:border-0 hover:bg-surface-elevated">
+                        <td className={`${MONEY_TD} text-text-primary font-semibold`}>
+                          {p.job_title || p.job_code || 'Payout'}
+                        </td>
+                        <td className={`${MONEY_TD} text-text-secondary capitalize`}>{p.payout_status.replace(/_/g, ' ')}</td>
+                        <td className={`${MONEY_TD} text-right text-text-primary`}>{moneyZAR(payoutNetPayable(p))}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              }
+            />
+          </div>
+        )}
+      </section>
+
+      <div className="flex flex-wrap gap-1.5">
+        <button type="button" onClick={onGoInfo} className="btn-outlined">Information</button>
+        <button type="button" onClick={onGoBanking} className="btn-outlined">Banking</button>
+        <button type="button" onClick={onGoCompliance} className="btn-outlined">Compliance</button>
+        <button type="button" onClick={onGoPayments} className="btn-outlined">Payments</button>
       </div>
     </div>
   )
@@ -345,32 +427,36 @@ function JobsTab({ jobs }: { jobs: ContractorJob[] }) {
   }
   return (
     <div className="space-y-3">
-      <h2 className="text-text-primary text-[18px] font-bold">Jobs</h2>
-      <div className="border-divider bg-surface overflow-x-auto rounded-xl border">
-        <table className="w-full text-[13px]">
-          <thead>
-            <tr className="bg-surface-elevated">
-              <th className="text-left px-3 py-2.5 text-[11px] font-semibold text-text-secondary uppercase">Code</th>
-              <th className="text-left px-3 py-2.5 text-[11px] font-semibold text-text-secondary uppercase">Job</th>
-              <th className="text-left px-3 py-2.5 text-[11px] font-semibold text-text-secondary uppercase">Status</th>
-              <th className="text-left px-3 py-2.5 text-[11px] font-semibold text-text-secondary uppercase">Cost</th>
-            </tr>
-          </thead>
-          <tbody>
-            {jobs.map(j => (
-              <tr key={j.id} className="border-divider border-t hover:bg-surface-elevated">
-                <td className="px-3 py-3 text-text-secondary whitespace-nowrap">{j.job_code || '—'}</td>
-                <td className="px-3 py-3">
-                  <Link href={`/contractor-portal/jobs/${j.id}`} className="text-text-primary font-semibold hover:text-primary">
-                    {j.title}
-                  </Link>
-                </td>
-                <td className="px-3 py-3 text-text-primary whitespace-nowrap">{jobStatusLabel(j.status)}</td>
-                <td className="px-3 py-3 text-text-primary whitespace-nowrap">{moneyZAR(j.contractor_cost)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <h2 className="text-text-primary text-[16px] font-bold">Jobs</h2>
+      <div className="border-divider bg-surface rounded-xl border overflow-hidden">
+        <ResponsiveDataView
+          table={
+            <table className="w-full text-[13px]">
+              <thead>
+                <tr className="bg-surface-elevated border-b border-divider">
+                  <th className={`${MONEY_TH} text-left`}>Code</th>
+                  <th className={`${MONEY_TH} text-left`}>Job</th>
+                  <th className={`${MONEY_TH} text-left`}>Status</th>
+                  <th className={`${MONEY_TH} text-right`}>Cost</th>
+                </tr>
+              </thead>
+              <tbody>
+                {jobs.map(j => (
+                  <tr key={j.id} className="border-b border-divider last:border-0 hover:bg-surface-elevated">
+                    <td className={`${MONEY_TD} text-text-secondary`}>{j.job_code || '—'}</td>
+                    <td className={MONEY_TD}>
+                      <Link href={`/contractor-portal/jobs/${j.id}`} className="text-text-primary font-semibold hover:text-primary">
+                        {j.title}
+                      </Link>
+                    </td>
+                    <td className={`${MONEY_TD} text-text-primary`}>{jobStatusLabel(j.status)}</td>
+                    <td className={`${MONEY_TD} text-right text-text-primary`}>{moneyZAR(j.contractor_cost)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          }
+        />
       </div>
     </div>
   )
@@ -571,7 +657,7 @@ function BankingTab({
             type="button"
             onClick={() => void onSubmit()}
             disabled={submitting}
-            className="h-10 px-4 rounded-xl bg-primary text-white font-semibold text-[13px] disabled:opacity-50"
+            className="btn-primary"
           >
             {submitting ? 'Submitting…' : 'Submit for HR review'}
           </button>
@@ -662,20 +748,11 @@ function InformationTab({
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-text-primary text-[18px] font-bold">Information</h2>
         {!editing ? (
-          <button type="button" onClick={onEdit} className="text-[12px] font-semibold text-primary hover:underline">
-            Edit
-          </button>
+          <button type="button" onClick={onEdit} className="btn-outlined">Edit</button>
         ) : (
-          <div className="flex gap-2">
-            <button type="button" onClick={onCancel} className="text-[12px] font-semibold text-text-secondary px-3 py-1.5">
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={onSave}
-              disabled={saving}
-              className="text-[12px] font-semibold bg-primary text-white px-3 py-1.5 rounded-lg disabled:opacity-50"
-            >
+          <div className="flex gap-1.5">
+            <button type="button" onClick={onCancel} className="btn-ghost">Cancel</button>
+            <button type="button" onClick={onSave} disabled={saving} className="btn-primary">
               {saving ? 'Saving…' : 'Save'}
             </button>
           </div>
@@ -794,21 +871,6 @@ function Kpi({ label, value, onClick }: { label: string; value: string; onClick:
     >
       <p className="text-[11px] font-semibold text-text-secondary uppercase">{label}</p>
       <p className="text-[20px] font-bold text-text-primary mt-1">{value}</p>
-    </button>
-  )
-}
-
-function QuickLink({ label, sub, onClick, soon }: { label: string; sub: string; onClick: () => void; soon?: boolean }) {
-  return (
-    <button type="button" onClick={onClick} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-surface-elevated">
-      <div className="flex-1 min-w-0">
-        <p className="text-[14px] font-semibold text-text-primary">
-          {label}
-          {soon && <span className="ml-2 text-[10px] text-text-secondary font-bold uppercase">Soon</span>}
-        </p>
-        <p className="text-[12px] text-text-secondary">{sub}</p>
-      </div>
-      <span className="material-icons text-text-secondary text-[18px]">chevron_right</span>
     </button>
   )
 }

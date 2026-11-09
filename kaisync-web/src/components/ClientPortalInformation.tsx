@@ -87,7 +87,7 @@ export function ClientPortalInformation({ session }: { session: ClientPortalSess
           <button
             type="button"
             onClick={() => { setEditing(true); setSaved(false); setError(null) }}
-            className="h-9 px-4 rounded-lg bg-primary text-white text-[12px] font-semibold shrink-0"
+            className="btn-primary shrink-0"
           >
             Edit details
           </button>
@@ -144,7 +144,7 @@ export function ClientPortalInformation({ session }: { session: ClientPortalSess
             type="button"
             disabled={saving}
             onClick={() => void save()}
-            className="h-10 px-5 rounded-xl bg-primary text-white text-[13px] font-semibold disabled:opacity-50"
+            className="btn-primary"
           >
             {saving ? 'Saving…' : 'Save changes'}
           </button>
@@ -152,7 +152,7 @@ export function ClientPortalInformation({ session }: { session: ClientPortalSess
             type="button"
             disabled={saving}
             onClick={() => { setForm(toForm(profile)); setEditing(false); setError(null) }}
-            className="h-10 px-5 rounded-xl border border-divider text-text-primary text-[13px] font-semibold"
+            className="btn-outlined"
           >
             Cancel
           </button>

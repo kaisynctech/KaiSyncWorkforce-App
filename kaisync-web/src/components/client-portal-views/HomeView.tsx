@@ -18,6 +18,8 @@ import { fmtDate, fmtDateTime, projectStatusLabel } from '@/lib/client-portal/fo
 import { moneyZAR } from '@/lib/client-portal/quotation'
 import { isInvoiceOutstanding, type ClientDocumentRequest, type ClientPortalJob, type ClientPortalProject, type MessageInboxItem, type PortalInvoice } from '@/lib/client-portal/types'
 import { localISODate } from '@/lib/utils'
+import { ResponsiveDataView } from '@/components/ui/ResponsiveDataView'
+import { MONEY_TH, MONEY_TD } from '@/components/ui/StatusFilterTabs'
 
 type Tab = 'home' | 'information' | 'projects' | 'jobs' | 'quotes' | 'payments' | 'banking' | 'messages' | 'documents' | 'invoices'
 
@@ -184,35 +186,39 @@ function ProjectsTab({ projects }: { projects: ClientPortalProject[] }) {
     )
   }
   return (
-    <div className="border-divider bg-surface overflow-x-auto rounded-xl border">
-      <table className="w-full text-[13px]">
-        <thead>
-          <tr className="bg-surface-elevated">
-            <Th>Code</Th>
-            <Th>Project</Th>
-            <Th>Status</Th>
-            <Th>Progress</Th>
-            <Th>Offer</Th>
-            <Th>Updated</Th>
-          </tr>
-        </thead>
-        <tbody>
-          {projects.map(p => (
-            <tr key={p.id} className="border-divider border-t hover:bg-surface-elevated">
-              <td className="px-3 py-3 text-text-secondary whitespace-nowrap">{p.project_code || '—'}</td>
-              <td className="px-3 py-3">
-                <Link href={ph(`/projects/${p.id}`)} className="text-text-primary font-semibold hover:text-primary">
-                  {p.title}
-                </Link>
-              </td>
-              <td className="px-3 py-3 text-text-primary whitespace-nowrap">{projectStatusLabel(p.status)}</td>
-              <td className="px-3 py-3 text-text-primary whitespace-nowrap">{p.progress_percent}%</td>
-              <td className="px-3 py-3 text-text-primary whitespace-nowrap">{moneyZAR(p.offer_amount)}</td>
-              <td className="px-3 py-3 text-text-secondary whitespace-nowrap">{fmtDate(p.last_update_at ?? p.updated_at)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="border-divider bg-surface rounded-xl border overflow-hidden">
+      <ResponsiveDataView
+        table={
+          <table className="w-full text-[13px]">
+            <thead>
+              <tr className="bg-surface-elevated border-b border-divider">
+                <th className={`${MONEY_TH} text-left`}>Code</th>
+                <th className={`${MONEY_TH} text-left`}>Project</th>
+                <th className={`${MONEY_TH} text-left`}>Status</th>
+                <th className={`${MONEY_TH} text-right`}>Progress</th>
+                <th className={`${MONEY_TH} text-right`}>Offer</th>
+                <th className={`${MONEY_TH} text-left`}>Updated</th>
+              </tr>
+            </thead>
+            <tbody>
+              {projects.map(p => (
+                <tr key={p.id} className="border-b border-divider last:border-0 hover:bg-surface-elevated">
+                  <td className={`${MONEY_TD} text-text-secondary`}>{p.project_code || '—'}</td>
+                  <td className={MONEY_TD}>
+                    <Link href={ph(`/projects/${p.id}`)} className="text-text-primary font-semibold hover:text-primary">
+                      {p.title}
+                    </Link>
+                  </td>
+                  <td className={`${MONEY_TD} text-text-primary`}>{projectStatusLabel(p.status)}</td>
+                  <td className={`${MONEY_TD} text-right text-text-primary`}>{p.progress_percent}%</td>
+                  <td className={`${MONEY_TD} text-right text-text-primary`}>{moneyZAR(p.offer_amount)}</td>
+                  <td className={`${MONEY_TD} text-text-secondary`}>{fmtDate(p.last_update_at ?? p.updated_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        }
+      />
     </div>
   )
 }
@@ -223,7 +229,7 @@ function JobsTab({ jobs }: { jobs: ClientPortalJob[] }) {
   // A linked company can create a job for the provider (stage 3); the portal cannot.
   const newJob = mode.kind === 'linked' && mode.canAct ? (
     <div className="flex justify-end mb-3">
-      <Link href={ph('/jobs/new')} className="btn-primary h-9 px-3 text-[13px] inline-flex items-center">+ New job</Link>
+      <Link href={ph('/jobs/new')} className="btn-primary">+ New job</Link>
     </div>
   ) : null
   if (jobs.length === 0) {
@@ -237,44 +243,48 @@ function JobsTab({ jobs }: { jobs: ClientPortalJob[] }) {
   return (
     <>
     {newJob}
-    <div className="border-divider bg-surface overflow-x-auto rounded-xl border">
-      <table className="w-full text-[13px]">
-        <thead>
-          <tr className="bg-surface-elevated">
-            <Th>Code</Th>
-            <Th>Job</Th>
-            <Th>Status</Th>
-            <Th>Project</Th>
-            <Th>Start</Th>
-            <Th>End</Th>
-          </tr>
-        </thead>
-        <tbody>
-          {jobs.map(job => (
-            <tr key={job.id} className="border-divider border-t">
-              <td className="px-3 py-3 text-text-secondary whitespace-nowrap">{job.job_code || '—'}</td>
-              <td className="px-3 py-3">
-                <Link href={ph(`/jobs/${job.id}`)} className="text-text-primary font-semibold hover:text-primary">
-                  {job.title || '—'}
-                </Link>
-              </td>
-              <td className="px-3 py-3 text-text-primary whitespace-nowrap">{projectStatusLabel(job.status)}</td>
-              <td className="px-3 py-3 whitespace-nowrap">
-                {job.deal_id && job.project_title ? (
-                  <Link href={ph(`/projects/${job.deal_id}`)} className="text-primary hover:text-primary font-semibold">
-                    {job.project_title}
-                    {job.project_code ? <span className="text-text-secondary font-normal"> · {job.project_code}</span> : null}
-                  </Link>
-                ) : (
-                  <span className="text-text-secondary">—</span>
-                )}
-              </td>
-              <td className="px-3 py-3 text-text-secondary whitespace-nowrap">{fmtDate(job.scheduled_start)}</td>
-              <td className="px-3 py-3 text-text-secondary whitespace-nowrap">{fmtDate(job.scheduled_end)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="border-divider bg-surface rounded-xl border overflow-hidden">
+      <ResponsiveDataView
+        table={
+          <table className="w-full text-[13px]">
+            <thead>
+              <tr className="bg-surface-elevated border-b border-divider">
+                <th className={`${MONEY_TH} text-left`}>Code</th>
+                <th className={`${MONEY_TH} text-left`}>Job</th>
+                <th className={`${MONEY_TH} text-left`}>Status</th>
+                <th className={`${MONEY_TH} text-left`}>Project</th>
+                <th className={`${MONEY_TH} text-left`}>Start</th>
+                <th className={`${MONEY_TH} text-left`}>End</th>
+              </tr>
+            </thead>
+            <tbody>
+              {jobs.map(job => (
+                <tr key={job.id} className="border-b border-divider last:border-0 hover:bg-surface-elevated">
+                  <td className={`${MONEY_TD} text-text-secondary`}>{job.job_code || '—'}</td>
+                  <td className={MONEY_TD}>
+                    <Link href={ph(`/jobs/${job.id}`)} className="text-text-primary font-semibold hover:text-primary">
+                      {job.title || '—'}
+                    </Link>
+                  </td>
+                  <td className={`${MONEY_TD} text-text-primary`}>{projectStatusLabel(job.status)}</td>
+                  <td className={MONEY_TD}>
+                    {job.deal_id && job.project_title ? (
+                      <Link href={ph(`/projects/${job.deal_id}`)} className="text-primary font-semibold hover:underline">
+                        {job.project_title}
+                        {job.project_code ? <span className="text-text-secondary font-normal"> · {job.project_code}</span> : null}
+                      </Link>
+                    ) : (
+                      <span className="text-text-secondary">—</span>
+                    )}
+                  </td>
+                  <td className={`${MONEY_TD} text-text-secondary`}>{fmtDate(job.scheduled_start)}</td>
+                  <td className={`${MONEY_TD} text-text-secondary`}>{fmtDate(job.scheduled_end)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        }
+      />
     </div>
     </>
   )
@@ -348,80 +358,76 @@ function InvoicesTab({ invoices, outstanding, session }: { invoices: PortalInvoi
       {invoices.length === 0 ? (
         <Empty icon="receipt_long" title="No invoices" sub="Invoices issued to you will appear here." />
       ) : (
-        <div className="border-divider bg-surface overflow-x-auto rounded-xl border">
-          <table className="w-full text-[13px]">
-            <thead>
-              <tr className="bg-surface-elevated">
-                <Th>Number</Th>
-                <Th>Status</Th>
-                <Th>Total</Th>
-                <Th>Balance</Th>
-                <Th>Issued</Th>
-                <Th>Due</Th>
-                <Th>PDF</Th>
-                {linkedMode && <Th>Proof of payment</Th>}
-              </tr>
-            </thead>
-            <tbody>
-              {invoices.flatMap(inv => [
-                <tr key={inv.id} className="border-divider border-t">
-                  <td className="px-3 py-3 text-text-primary font-medium whitespace-nowrap">{inv.invoice_number || '—'}</td>
-                  <td className="px-3 py-3 text-text-primary capitalize whitespace-nowrap">{inv.status.replace(/_/g, ' ')}</td>
-                  <td className="px-3 py-3 text-text-primary whitespace-nowrap">{moneyZAR(inv.total_amount)}</td>
-                  <td className={`px-3 py-3 whitespace-nowrap font-semibold ${isInvoiceOutstanding(inv.status) ? 'text-warning' : 'text-text-secondary'}`}>
-                    {moneyZAR(inv.balance_due)}
-                  </td>
-                  <td className="px-3 py-3 text-text-secondary whitespace-nowrap">{fmtDate(inv.issue_date)}</td>
-                  <td className="px-3 py-3 text-text-secondary whitespace-nowrap">{fmtDate(inv.due_date)}</td>
-                  <td className="px-3 py-3 whitespace-nowrap">
-                    <button
-                      type="button"
-                      disabled={busyId === inv.id}
-                      onClick={() => void pdf(inv.id)}
-                      className="text-primary text-[12px] font-semibold hover:underline disabled:opacity-50"
-                    >
-                      {busyId === inv.id ? '…' : 'Download'}
-                    </button>
-                  </td>
-                  {linkedMode && (
-                    <td className="px-3 py-3 whitespace-nowrap">
-                      <button
-                        type="button"
-                        onClick={() => setProofFor(proofFor === inv.id ? null : inv.id)}
-                        aria-expanded={proofFor === inv.id}
-                        className="text-primary text-[12px] font-semibold hover:underline"
-                      >
-                        {proofFor === inv.id ? 'Close' : canAct && isInvoiceOutstanding(inv.status) ? 'Send proof' : 'View'}
-                      </button>
-                    </td>
-                  )}
-                </tr>,
-                linkedMode && proofFor === inv.id ? (
-                  <tr key={`${inv.id}-proof`} className="bg-surface-elevated/40">
-                    <td colSpan={8} className="px-3 py-3">
-                      <LinkedPaymentProof
-                        invoiceId={inv.id}
-                        invoiceNumber={inv.invoice_number}
-                        balance={inv.balance_due}
-                        canSend={canAct && isInvoiceOutstanding(inv.status)}
-                      />
-                    </td>
+        <div className="border-divider bg-surface rounded-xl border overflow-hidden">
+          <ResponsiveDataView
+            table={
+              <table className="w-full text-[13px]">
+                <thead>
+                  <tr className="bg-surface-elevated border-b border-divider">
+                    <th className={`${MONEY_TH} text-left`}>Number</th>
+                    <th className={`${MONEY_TH} text-left`}>Status</th>
+                    <th className={`${MONEY_TH} text-right`}>Total</th>
+                    <th className={`${MONEY_TH} text-right`}>Balance</th>
+                    <th className={`${MONEY_TH} text-left`}>Issued</th>
+                    <th className={`${MONEY_TH} text-left`}>Due</th>
+                    <th className={`${MONEY_TH} text-left`}>PDF</th>
+                    {linkedMode && <th className={`${MONEY_TH} text-left`}>Proof</th>}
                   </tr>
-                ) : null,
-              ])}
-            </tbody>
-          </table>
+                </thead>
+                <tbody>
+                  {invoices.flatMap(inv => [
+                    <tr key={inv.id} className="border-b border-divider last:border-0 hover:bg-surface-elevated">
+                      <td className={`${MONEY_TD} text-text-primary font-medium`}>{inv.invoice_number || '—'}</td>
+                      <td className={`${MONEY_TD} text-text-primary capitalize`}>{inv.status.replace(/_/g, ' ')}</td>
+                      <td className={`${MONEY_TD} text-right text-text-primary`}>{moneyZAR(inv.total_amount)}</td>
+                      <td className={`${MONEY_TD} text-right font-semibold ${isInvoiceOutstanding(inv.status) ? 'text-warning' : 'text-text-secondary'}`}>
+                        {moneyZAR(inv.balance_due)}
+                      </td>
+                      <td className={`${MONEY_TD} text-text-secondary`}>{fmtDate(inv.issue_date)}</td>
+                      <td className={`${MONEY_TD} text-text-secondary`}>{fmtDate(inv.due_date)}</td>
+                      <td className={MONEY_TD}>
+                        <button
+                          type="button"
+                          disabled={busyId === inv.id}
+                          onClick={() => void pdf(inv.id)}
+                          className="btn-ghost !px-1"
+                        >
+                          {busyId === inv.id ? '…' : 'Download'}
+                        </button>
+                      </td>
+                      {linkedMode && (
+                        <td className={MONEY_TD}>
+                          <button
+                            type="button"
+                            onClick={() => setProofFor(proofFor === inv.id ? null : inv.id)}
+                            aria-expanded={proofFor === inv.id}
+                            className="btn-ghost !px-1"
+                          >
+                            {proofFor === inv.id ? 'Close' : canAct && isInvoiceOutstanding(inv.status) ? 'Send proof' : 'View'}
+                          </button>
+                        </td>
+                      )}
+                    </tr>,
+                    linkedMode && proofFor === inv.id ? (
+                      <tr key={`${inv.id}-proof`} className="bg-surface-elevated/40">
+                        <td colSpan={8} className={`${MONEY_TD} !whitespace-normal`}>
+                          <LinkedPaymentProof
+                            invoiceId={inv.id}
+                            invoiceNumber={inv.invoice_number}
+                            balance={inv.balance_due}
+                            canSend={canAct && isInvoiceOutstanding(inv.status)}
+                          />
+                        </td>
+                      </tr>
+                    ) : null,
+                  ])}
+                </tbody>
+              </table>
+            }
+          />
         </div>
       )}
     </div>
-  )
-}
-
-function Th({ children }: { children: React.ReactNode }) {
-  return (
-    <th className="text-left px-3 py-2.5 text-[11px] font-semibold text-text-secondary uppercase tracking-wide">
-      {children}
-    </th>
   )
 }
 
@@ -452,10 +458,13 @@ function HomeTab({
 }) {
   const ph = usePortalHref()
   const today = localISODate()
-  const openProjects = projects.filter(p => !CLOSED_PROJECT.includes((p.status ?? '').toLowerCase())).length
-  const openJobs = jobs.filter(j => !CLOSED_JOB.includes((j.status ?? '').toLowerCase())).length
+  const openProjectsList = projects.filter(p => !CLOSED_PROJECT.includes((p.status ?? '').toLowerCase()))
+  const openJobsList = jobs.filter(j => !CLOSED_JOB.includes((j.status ?? '').toLowerCase()))
   const overdue = invoices.filter(i => isInvoiceOutstanding(i.status) && i.due_date && i.due_date < today)
   const pendingRequests = docRequests.filter(r => ['requested', 'rejected'].includes((r.status ?? '').toLowerCase()))
+  const recentProjects = openProjectsList.slice(0, 5)
+  const recentJobs = openJobsList.slice(0, 5)
+  const recentInvoices = invoices.filter(i => isInvoiceOutstanding(i.status)).slice(0, 5)
 
   return (
     <div className="space-y-4">
@@ -490,18 +499,131 @@ function HomeTab({
       )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-        <HomeKpi label="Open projects" value={String(openProjects)} href={ph('/home?tab=projects')} />
-        <HomeKpi label="Open jobs" value={String(openJobs)} href={ph('/home?tab=jobs')} />
+        <HomeKpi label="Open projects" value={String(openProjectsList.length)} href={ph('/home?tab=projects')} />
+        <HomeKpi label="Open jobs" value={String(openJobsList.length)} href={ph('/home?tab=jobs')} />
         <HomeKpi label="Amount owing" value={moneyZAR(outstanding)} href={ph('/home?tab=invoices')} />
         <HomeKpi label="Unread messages" value={String(unreadCount)} href={ph('/home?tab=messages')} />
       </div>
 
-      <div className="grid gap-2 md:grid-cols-2">
-        <HomeLink label="My information" sub="Your company and contact details" href={ph('/home?tab=information')} />
-        <HomeLink label="Projects" sub="Progress, photos and documents" href={ph('/home?tab=projects')} />
-        <HomeLink label="Quotes & Invoices" sub="Quotes to review and invoices to download" href={ph('/home?tab=quotes')} />
-        <HomeLink label="Payments & statement" sub="What you have paid and your full statement" href={ph('/home?tab=payments')} />
-        <HomeLink label="Documents" sub="Documents requested from you and shared with you" href={ph('/home?tab=documents')} />
+      <section className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-[13px] font-bold text-text-primary">Open jobs</h2>
+          <Link href={ph('/home?tab=jobs')} className="btn-ghost">View all</Link>
+        </div>
+        {recentJobs.length === 0 ? (
+          <p className="text-[12px] text-text-secondary px-1">No open jobs right now.</p>
+        ) : (
+          <div className="border-divider bg-surface rounded-xl border overflow-hidden">
+            <ResponsiveDataView
+              table={
+                <table className="w-full text-[13px]">
+                  <thead>
+                    <tr className="bg-surface-elevated border-b border-divider">
+                      <th className={`${MONEY_TH} text-left`}>Code</th>
+                      <th className={`${MONEY_TH} text-left`}>Job</th>
+                      <th className={`${MONEY_TH} text-left`}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentJobs.map(job => (
+                      <tr key={job.id} className="border-b border-divider last:border-0 hover:bg-surface-elevated">
+                        <td className={`${MONEY_TD} text-text-secondary`}>{job.job_code || '—'}</td>
+                        <td className={MONEY_TD}>
+                          <Link href={ph(`/jobs/${job.id}`)} className="text-text-primary font-semibold hover:text-primary">
+                            {job.title || '—'}
+                          </Link>
+                        </td>
+                        <td className={`${MONEY_TD} text-text-primary`}>{projectStatusLabel(job.status)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              }
+            />
+          </div>
+        )}
+      </section>
+
+      <section className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-[13px] font-bold text-text-primary">Open projects</h2>
+          <Link href={ph('/home?tab=projects')} className="btn-ghost">View all</Link>
+        </div>
+        {recentProjects.length === 0 ? (
+          <p className="text-[12px] text-text-secondary px-1">No open projects right now.</p>
+        ) : (
+          <div className="border-divider bg-surface rounded-xl border overflow-hidden">
+            <ResponsiveDataView
+              table={
+                <table className="w-full text-[13px]">
+                  <thead>
+                    <tr className="bg-surface-elevated border-b border-divider">
+                      <th className={`${MONEY_TH} text-left`}>Code</th>
+                      <th className={`${MONEY_TH} text-left`}>Project</th>
+                      <th className={`${MONEY_TH} text-right`}>Progress</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentProjects.map(p => (
+                      <tr key={p.id} className="border-b border-divider last:border-0 hover:bg-surface-elevated">
+                        <td className={`${MONEY_TD} text-text-secondary`}>{p.project_code || '—'}</td>
+                        <td className={MONEY_TD}>
+                          <Link href={ph(`/projects/${p.id}`)} className="text-text-primary font-semibold hover:text-primary">
+                            {p.title}
+                          </Link>
+                        </td>
+                        <td className={`${MONEY_TD} text-right text-text-primary`}>{p.progress_percent}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              }
+            />
+          </div>
+        )}
+      </section>
+
+      <section className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-[13px] font-bold text-text-primary">Amount owing</h2>
+          <Link href={ph('/home?tab=invoices')} className="btn-ghost">Invoices</Link>
+        </div>
+        {recentInvoices.length === 0 ? (
+          <p className="text-[12px] text-text-secondary px-1">Nothing outstanding.</p>
+        ) : (
+          <div className="border-divider bg-surface rounded-xl border overflow-hidden">
+            <ResponsiveDataView
+              table={
+                <table className="w-full text-[13px]">
+                  <thead>
+                    <tr className="bg-surface-elevated border-b border-divider">
+                      <th className={`${MONEY_TH} text-left`}>Number</th>
+                      <th className={`${MONEY_TH} text-left`}>Due</th>
+                      <th className={`${MONEY_TH} text-right`}>Balance</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentInvoices.map(inv => (
+                      <tr key={inv.id} className="border-b border-divider last:border-0 hover:bg-surface-elevated">
+                        <td className={`${MONEY_TD} text-text-primary font-medium`}>{inv.invoice_number || '—'}</td>
+                        <td className={`${MONEY_TD} text-text-secondary`}>{fmtDate(inv.due_date)}</td>
+                        <td className={`${MONEY_TD} text-right font-semibold text-warning`}>{moneyZAR(inv.balance_due)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              }
+            />
+          </div>
+        )}
+      </section>
+
+      <div className="flex flex-wrap gap-1.5">
+        <Link href={ph('/home?tab=information')} className="btn-outlined">Information</Link>
+        <Link href={ph('/home?tab=quotes')} className="btn-outlined">Quotes & Invoices</Link>
+        <Link href={ph('/home?tab=payments')} className="btn-outlined">Payments</Link>
+        <Link href={ph('/home?tab=documents')} className="btn-outlined">Documents</Link>
+        <Link href={ph('/home?tab=messages')} className="btn-outlined">Messages</Link>
       </div>
     </div>
   )
@@ -512,18 +634,6 @@ function HomeKpi({ label, value, href }: { label: string; value: string; href: s
     <Link href={href} className="border-divider bg-surface rounded-xl border px-3 py-2.5 hover:border-primary/40">
       <p className="text-[11px] text-text-secondary">{label}</p>
       <p className="text-[17px] font-bold text-text-primary mt-0.5">{value}</p>
-    </Link>
-  )
-}
-
-function HomeLink({ label, sub, href }: { label: string; sub: string; href: string }) {
-  return (
-    <Link href={href} className="border-divider bg-surface rounded-xl border px-4 py-3 flex items-center justify-between hover:border-primary/40">
-      <span>
-        <span className="block text-[14px] font-semibold text-text-primary">{label}</span>
-        <span className="block text-[12px] text-text-secondary">{sub}</span>
-      </span>
-      <span className="material-icons text-text-secondary text-[20px]">chevron_right</span>
     </Link>
   )
 }
@@ -544,13 +654,13 @@ function QuotesInvoicesTab({
   const quoted = projects.filter(p => (p.offer_amount ?? 0) > 0 || QUOTE_WAITING.includes((p.status ?? '').toLowerCase()))
   return (
     <div className="space-y-4">
-      <div className="bg-surface-elevated inline-flex gap-1 p-1 rounded-xl">
+      <div className="inline-flex gap-1.5">
         {(['quotes', 'invoices'] as const).map(s => (
           <button
             key={s}
             type="button"
             onClick={() => setSection(s)}
-            className={`text-[13px] font-semibold px-4 py-1.5 rounded-lg ${section === s ? 'bg-primary text-white' : 'text-text-secondary hover:text-text-primary'}`}
+            className={section === s ? 'btn-primary' : 'btn-outlined'}
           >
             {s === 'quotes' ? 'Quotes' : 'Invoices'}
           </button>
@@ -561,28 +671,41 @@ function QuotesInvoicesTab({
       ) : quoted.length === 0 ? (
         <Empty icon="request_quote" title="No quotes" sub="Quotes we send you will appear here." />
       ) : (
-        <div className="space-y-2">
-          {quoted.map(p => {
-            const waiting = QUOTE_WAITING.includes((p.status ?? '').toLowerCase())
-            return (
-              <Link
-                key={p.id}
-                href={ph(`/projects/${p.id}`)}
-                className="block border-divider bg-surface rounded-xl border px-4 py-3 hover:border-primary/40"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-[14px] font-semibold text-text-primary truncate">{p.title}</p>
-                    <p className="text-[12px] text-text-secondary mt-0.5">{p.project_code || '—'} · {projectStatusLabel(p.status)}</p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-[15px] font-bold text-text-primary">{moneyZAR(p.offer_amount ?? 0)}</p>
-                    {waiting && <span className="inline-block mt-1 text-[10px] font-semibold text-warning">Awaiting your response</span>}
-                  </div>
-                </div>
-              </Link>
-            )
-          })}
+        <div className="border-divider bg-surface rounded-xl border overflow-hidden">
+          <ResponsiveDataView
+            table={
+              <table className="w-full text-[13px]">
+                <thead>
+                  <tr className="bg-surface-elevated border-b border-divider">
+                    <th className={`${MONEY_TH} text-left`}>Code</th>
+                    <th className={`${MONEY_TH} text-left`}>Project</th>
+                    <th className={`${MONEY_TH} text-left`}>Status</th>
+                    <th className={`${MONEY_TH} text-right`}>Offer</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {quoted.map(p => {
+                    const waiting = QUOTE_WAITING.includes((p.status ?? '').toLowerCase())
+                    return (
+                      <tr key={p.id} className="border-b border-divider last:border-0 hover:bg-surface-elevated">
+                        <td className={`${MONEY_TD} text-text-secondary`}>{p.project_code || '—'}</td>
+                        <td className={MONEY_TD}>
+                          <Link href={ph(`/projects/${p.id}`)} className="text-text-primary font-semibold hover:text-primary">
+                            {p.title}
+                          </Link>
+                        </td>
+                        <td className={`${MONEY_TD} text-text-primary`}>
+                          {projectStatusLabel(p.status)}
+                          {waiting ? <span className="ml-1.5 text-[10px] font-semibold text-warning">Awaiting</span> : null}
+                        </td>
+                        <td className={`${MONEY_TD} text-right text-text-primary font-semibold`}>{moneyZAR(p.offer_amount ?? 0)}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            }
+          />
         </div>
       )}
     </div>

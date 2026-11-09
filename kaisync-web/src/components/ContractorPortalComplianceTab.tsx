@@ -172,7 +172,7 @@ export function ContractorPortalComplianceTab({
         <button
           type="button"
           onClick={() => openUpload({ mode: 'additional' })}
-          className="h-9 px-3 rounded-lg bg-primary text-white text-[12px] font-semibold"
+          className="btn-primary"
         >
           + Upload document
         </button>

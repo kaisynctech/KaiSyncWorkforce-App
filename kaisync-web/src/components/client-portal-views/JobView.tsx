@@ -188,7 +188,7 @@ export function ClientPortalJobView() {
                   {linkedActions.can_cancel ? ' You can cancel it until the team is assigned.' : ''}
                 </p>
                 {linkedActions.can_cancel && (
-                  <button type="button" disabled={cancelBusy} onClick={() => void cancelJob()} className="btn-outlined h-9 px-3 text-[13px]">
+                  <button type="button" disabled={cancelBusy} onClick={() => void cancelJob()} className="btn-outlined">
                     {cancelBusy ? 'Cancelling…' : 'Cancel job'}
                   </button>
                 )}

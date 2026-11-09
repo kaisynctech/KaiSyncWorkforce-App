@@ -91,9 +91,9 @@ export function ClientPortalStatement({ session }: { session: ClientPortalSessio
       <div className="flex items-end justify-between gap-3 flex-wrap">
         <p className="text-[12px] text-text-secondary">Everything we have invoiced, what you have paid, and any credits or refunds.</p>
         <div className="flex gap-2 print:hidden">
-          <button type="button" onClick={() => void downloadPdf()} disabled={pdfBusy} className="h-9 px-3 rounded-lg bg-primary text-white text-[12px] font-semibold disabled:opacity-60">{pdfBusy ? 'Preparing…' : 'Download PDF'}</button>
-          <button type="button" onClick={download} className="h-9 px-3 rounded-lg border border-divider text-[12px] font-semibold text-text-primary">Download (CSV)</button>
-          <button type="button" onClick={() => window.print()} className="h-9 px-3 rounded-lg border border-divider text-[12px] font-semibold text-text-primary">Print</button>
+          <button type="button" onClick={() => void downloadPdf()} disabled={pdfBusy} className="btn-primary">{pdfBusy ? 'Preparing…' : 'Download PDF'}</button>
+          <button type="button" onClick={download} className="btn-outlined">Download (CSV)</button>
+          <button type="button" onClick={() => window.print()} className="btn-outlined">Print</button>
         </div>
       </div>
       {error && <div className="bg-error/10 border border-error/25 rounded-xl px-4 py-3 text-[13px] text-error font-semibold">{error}</div>}

@@ -29,6 +29,7 @@ import { localISODate } from '@/lib/utils'
 
 import { MONEY_TH, MONEY_TD } from '@/components/ui/StatusFilterTabs'
 import { TextHeaderFilter, ResetFiltersButton } from '@/components/ui/MoneyListFilters'
+import { HeaderOverflowMenu, HeaderOverflowItem } from '@/components/ui/HeaderOverflowMenu'
 
 /** Server-side column filters (ilike, ANDed with search / linked-only). Clients have no lifecycle status, so no status tabs. */
 type Cols = { name: string; code: string; contact: string; email: string; phone: string }
@@ -330,46 +331,29 @@ export default function ClientsPage() {
       <div className="px-4 pt-3 pb-2 space-y-2 shrink-0">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <h1 className="text-[16px] font-bold text-text-primary">Clients</h1>
-          <div className="flex items-center gap-2 flex-wrap">
-        <button onClick={() => void load()} className="h-8 px-2.5 text-[12px] rounded-lg border border-border text-text-secondary hover:text-text-primary transition-colors">Refresh</button>
-        {canEdit && xeroConnected && (
-          <button
-            onClick={syncAllToXero}
-            disabled={!!xeroPushing}
-            className="h-8 px-2.5 text-[12px] rounded-lg border border-[#13B5EA] text-[#13B5EA] hover:bg-[#13B5EA]/10 disabled:opacity-40 transition-colors whitespace-nowrap"
-          >
-            {xeroPushing === '__all__' ? 'Syncing…' : 'Sync All to Xero'}
-          </button>
-        )}
-        {canEdit && xeroConnected && (
-          <button
-            onClick={importFromXero}
-            disabled={xeroImporting}
-            className="h-8 px-2.5 text-[12px] rounded-lg border border-[#13B5EA] text-[#13B5EA] font-medium hover:bg-[#13B5EA]/10 disabled:opacity-50 transition-colors"
-          >
-            {xeroImporting ? 'Importing…' : '↓ Import from Xero'}
-          </button>
-        )}
-        <button
-          onClick={() => void exportCsv()}
-          className="h-8 px-2.5 text-[12px] rounded-lg border border-border text-text-primary font-medium hover:bg-surface-elevated transition-colors"
-        >
-          Export
-        </button>
-        {canEdit && (
-          <button
-            onClick={() => router.push('/dashboard/clients/import')}
-            className="h-8 px-2.5 text-[12px] rounded-lg border border-border text-text-primary font-medium hover:bg-surface-elevated transition-colors"
-          >
-            Import
-          </button>
-        )}
-        {canEdit && (
-          <button onClick={() => router.push('/dashboard/clients/new')}
-            className="btn-primary h-8 px-2.5 text-[12px] whitespace-nowrap">
-            + Add Client
-          </button>
-        )}
+          <div className="flex items-center gap-1.5 flex-wrap justify-end">
+            <button type="button" onClick={() => void load()} className="btn-ghost">Refresh</button>
+            <HeaderOverflowMenu>
+              {canEdit && xeroConnected && (
+                <HeaderOverflowItem onClick={syncAllToXero} disabled={!!xeroPushing} className="text-[#13B5EA]">
+                  {xeroPushing === '__all__' ? 'Syncing…' : 'Sync All to Xero'}
+                </HeaderOverflowItem>
+              )}
+              {canEdit && xeroConnected && (
+                <HeaderOverflowItem onClick={importFromXero} disabled={xeroImporting} className="text-[#13B5EA]">
+                  {xeroImporting ? 'Importing…' : 'Import from Xero'}
+                </HeaderOverflowItem>
+              )}
+              <HeaderOverflowItem onClick={() => void exportCsv()}>Export</HeaderOverflowItem>
+              {canEdit && (
+                <HeaderOverflowItem href="/dashboard/clients/import">Import</HeaderOverflowItem>
+              )}
+            </HeaderOverflowMenu>
+            {canEdit && (
+              <button type="button" onClick={() => router.push('/dashboard/clients/new')} className="btn-primary">
+                + Add Client
+              </button>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">

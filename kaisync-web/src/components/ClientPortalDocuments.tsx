@@ -106,7 +106,7 @@ export function ClientPortalDocuments({ session }: { session: ClientPortalSessio
                   type="button"
                   disabled={busyId === row.id}
                   onClick={() => void send(row)}
-                  className="text-[12px] font-semibold px-3 py-1.5 rounded-lg bg-primary text-white disabled:opacity-50"
+                  className="btn-primary"
                 >
                   {busyId === row.id ? 'Sending…' : 'Send'}
                 </button>

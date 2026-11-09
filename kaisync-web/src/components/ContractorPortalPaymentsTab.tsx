@@ -155,7 +155,7 @@ export function ContractorPortalPaymentsTab({
           <button
             type="button"
             onClick={() => { setCreating(true); onError(null) }}
-            className="h-9 px-3 rounded-lg bg-primary text-white text-[12px] font-semibold shrink-0"
+            className="btn-primary shrink-0"
           >
             + Submit invoice
           </button>

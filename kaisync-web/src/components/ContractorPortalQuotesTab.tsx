@@ -492,8 +492,8 @@ export function ContractorPortalQuotesTab({
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-text-primary text-[18px] font-bold">Quotes</h2>
         <div className="flex gap-2">
-          <button type="button" onClick={openCreate} className="h-9 px-3 rounded-lg bg-primary text-white text-[12px] font-semibold">+ Create</button>
-          <button type="button" onClick={openUpload} className="bg-surface border border-divider h-9 px-3 rounded-lg text-text-primary text-[12px] font-semibold">+ Upload</button>
+          <button type="button" onClick={openCreate} className="btn-primary">+ Create</button>
+          <button type="button" onClick={openUpload} className="btn-outlined">+ Upload</button>
         </div>
       </div>
 

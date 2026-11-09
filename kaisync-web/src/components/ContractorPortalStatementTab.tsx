@@ -87,15 +87,11 @@ export function ContractorPortalStatementTab({
           <p className="text-[12px] text-text-secondary mt-0.5">Everything you have invoiced and been paid.</p>
         </div>
         <div className="flex gap-2 print:hidden">
-          <button type="button" onClick={() => void downloadPdf()} disabled={pdfBusy} className="h-9 px-3 rounded-lg bg-primary text-white text-[12px] font-semibold disabled:opacity-60">
+          <button type="button" onClick={() => void downloadPdf()} disabled={pdfBusy} className="btn-primary">
             {pdfBusy ? 'Preparing…' : 'Download PDF'}
           </button>
-          <button type="button" onClick={download} className="h-9 px-3 rounded-lg border border-divider text-[12px] font-semibold text-text-primary">
-            Download (CSV)
-          </button>
-          <button type="button" onClick={() => window.print()} className="h-9 px-3 rounded-lg border border-divider text-[12px] font-semibold text-text-primary">
-            Print
-          </button>
+          <button type="button" onClick={download} className="btn-outlined">Download (CSV)</button>
+          <button type="button" onClick={() => window.print()} className="btn-outlined">Print</button>
         </div>
       </div>
 
