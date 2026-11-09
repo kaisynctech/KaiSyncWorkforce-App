@@ -40,7 +40,14 @@ import {
   type OpenVisit,
 } from '@/lib/contractor-portal/types'
 import { ResponsiveDataView } from '@/components/ui/ResponsiveDataView'
-import { MONEY_TH, MONEY_TD } from '@/components/ui/StatusFilterTabs'
+import { MONEY_TH, MONEY_TD, countByStatusTab, filterByStatusTab, TAB_ALL } from '@/components/ui/StatusFilterTabs'
+import {
+  TextHeaderFilter,
+  MoneyHeaderFilter,
+  matchText,
+  matchMoney,
+  statusTab,
+} from '@/components/ui/MoneyListFilters'
 import {
   PortalEmpty,
   PortalHero,
@@ -50,6 +57,22 @@ import {
   PortalQuickNav,
   PortalSection,
 } from '@/components/portal/PortalChrome'
+import { PortalListPager, PortalListToolbar, usePortalListPaging } from '@/components/portal/PortalListChrome'
+
+const JOB_STATUS_TABS = [
+  TAB_ALL,
+  statusTab('open', 'Open', ['open'], 'blue'),
+  statusTab('scheduled', 'Scheduled', ['scheduled'], 'amber'),
+  statusTab('in_progress', 'In progress', ['in_progress'], 'green'),
+  statusTab('completed', 'Completed', ['completed'], 'slate'),
+  statusTab('cancelled', 'Cancelled', ['cancelled', 'canceled'], 'red'),
+]
+
+type JobCols = { code: string; title: string; costMin: string; costMax: string }
+const EMPTY_JOB_COLS: JobCols = { code: '', title: '', costMin: '', costMax: '' }
+function jobColsActive(c: JobCols) {
+  return !!(c.code || c.title || c.costMin || c.costMax)
+}
 
 type Tab = 'home' | 'information' | 'jobs' | 'quotes' | 'payments' | 'banking' | 'compliance' | 'messages'
 
@@ -445,6 +468,32 @@ function HomeTab({
 }
 
 function JobsTab({ jobs }: { jobs: ContractorJob[] }) {
+  const [search, setSearch] = useState('')
+  const [statusTabId, setStatusTabId] = useState('all')
+  const [cols, setCols] = useState<JobCols>(EMPTY_JOB_COLS)
+
+  const normalized = useMemo(
+    () => jobs.map(j => ({ ...j, status: (j.status ?? '').toLowerCase() })),
+    [jobs],
+  )
+
+  const base = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return normalized.filter(j => {
+      if (!matchText(j.job_code, cols.code)) return false
+      if (!matchText(j.title, cols.title)) return false
+      if (!matchMoney(j.contractor_cost, cols.costMin, cols.costMax)) return false
+      if (!q) return true
+      return (j.job_code ?? '').toLowerCase().includes(q)
+        || j.title.toLowerCase().includes(q)
+        || jobStatusLabel(j.status).toLowerCase().includes(q)
+    })
+  }, [normalized, cols, search])
+
+  const counts = useMemo(() => countByStatusTab(base, JOB_STATUS_TABS), [base])
+  const filtered = useMemo(() => filterByStatusTab(base, JOB_STATUS_TABS, statusTabId), [base, statusTabId])
+  const paging = usePortalListPaging(filtered)
+
   if (jobs.length === 0) {
     return (
       <PortalEmpty
@@ -454,6 +503,7 @@ function JobsTab({ jobs }: { jobs: ContractorJob[] }) {
       />
     )
   }
+
   return (
     <div className="space-y-3">
       <PortalHero
@@ -461,20 +511,46 @@ function JobsTab({ jobs }: { jobs: ContractorJob[] }) {
         title="Jobs"
         subtitle="Assigned work and site activity from your contracting company."
       />
+      <PortalListToolbar
+        search={search}
+        onSearch={v => { setSearch(v); paging.resetPage() }}
+        placeholder="Search code, job, or status…"
+        resetDisabled={!jobColsActive(cols) && !search}
+        onReset={() => { setCols(EMPTY_JOB_COLS); setSearch(''); paging.resetPage() }}
+        tabs={JOB_STATUS_TABS}
+        statusTabId={statusTabId}
+        counts={counts}
+        onStatusChange={id => { setStatusTabId(id); paging.resetPage() }}
+      />
       <PortalPanel>
         <ResponsiveDataView
           table={
-            <table className="w-full text-[13px]">
-              <thead>
+            <table className="w-full text-[13px]" style={{ minWidth: 560 }}>
+              <thead className="sticky top-0 z-10">
                 <tr className="bg-surface-elevated border-b border-divider">
-                  <th className={`${MONEY_TH} text-left`}>Code</th>
-                  <th className={`${MONEY_TH} text-left`}>Job</th>
+                  <th className={`${MONEY_TH} text-left`}>
+                    <TextHeaderFilter label="Code" value={cols.code} onChange={v => { setCols(c => ({ ...c, code: v })); paging.resetPage() }} placeholder="Code…" />
+                  </th>
+                  <th className={`${MONEY_TH} text-left`}>
+                    <TextHeaderFilter label="Job" value={cols.title} onChange={v => { setCols(c => ({ ...c, title: v })); paging.resetPage() }} placeholder="Job title…" />
+                  </th>
                   <th className={`${MONEY_TH} text-left`}>Status</th>
-                  <th className={`${MONEY_TH} text-right`}>Cost</th>
+                  <th className={`${MONEY_TH} text-right`}>
+                    <MoneyHeaderFilter
+                      label="Cost"
+                      min={cols.costMin}
+                      max={cols.costMax}
+                      onChange={p => { setCols(c => ({ ...c, costMin: p.min, costMax: p.max })); paging.resetPage() }}
+                    />
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {jobs.map(j => (
+                {paging.pageRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="py-10 text-center text-[13px] text-text-secondary">No jobs match your filters.</td>
+                  </tr>
+                ) : paging.pageRows.map(j => (
                   <tr key={j.id} className="border-b border-divider last:border-0 hover:bg-surface-elevated">
                     <td className={`${MONEY_TD} text-text-secondary`}>{j.job_code || '—'}</td>
                     <td className={MONEY_TD}>
@@ -489,6 +565,13 @@ function JobsTab({ jobs }: { jobs: ContractorJob[] }) {
               </tbody>
             </table>
           }
+        />
+        <PortalListPager
+          page={paging.page}
+          pageSize={paging.pageSize}
+          total={paging.total}
+          onPage={paging.setPage}
+          onPageSize={paging.setPageSize}
         />
       </PortalPanel>
     </div>

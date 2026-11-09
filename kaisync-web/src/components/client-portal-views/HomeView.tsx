@@ -19,7 +19,14 @@ import { moneyZAR } from '@/lib/client-portal/quotation'
 import { isInvoiceOutstanding, type ClientDocumentRequest, type ClientPortalJob, type ClientPortalProject, type MessageInboxItem, type PortalInvoice } from '@/lib/client-portal/types'
 import { localISODate } from '@/lib/utils'
 import { ResponsiveDataView } from '@/components/ui/ResponsiveDataView'
-import { MONEY_TH, MONEY_TD } from '@/components/ui/StatusFilterTabs'
+import { MONEY_TH, MONEY_TD, countByStatusTab, filterByStatusTab, TAB_ALL } from '@/components/ui/StatusFilterTabs'
+import {
+  TextHeaderFilter,
+  MoneyHeaderFilter,
+  matchText,
+  matchMoney,
+  statusTab,
+} from '@/components/ui/MoneyListFilters'
 import {
   PortalEmpty,
   PortalHero,
@@ -29,6 +36,31 @@ import {
   PortalQuickNav,
   PortalSection,
 } from '@/components/portal/PortalChrome'
+import { PortalListPager, PortalListToolbar, usePortalListPaging } from '@/components/portal/PortalListChrome'
+
+const JOB_STATUS_TABS = [
+  TAB_ALL,
+  statusTab('open', 'Open', ['open'], 'blue'),
+  statusTab('scheduled', 'Scheduled', ['scheduled'], 'amber'),
+  statusTab('in_progress', 'In progress', ['in_progress'], 'green'),
+  statusTab('completed', 'Completed', ['completed', 'closed', 'invoiced'], 'slate'),
+  statusTab('cancelled', 'Cancelled', ['cancelled', 'canceled'], 'red'),
+]
+
+const PROJECT_STATUS_TABS = [
+  TAB_ALL,
+  statusTab('open', 'Open', ['open', 'active', 'in_progress', 'quoted', 'sent', 'negotiation'], 'blue'),
+  statusTab('completed', 'Completed', ['completed', 'closed', 'archived'], 'slate'),
+  statusTab('lost', 'Lost / cancelled', ['lost', 'cancelled', 'canceled'], 'red'),
+]
+
+const INVOICE_STATUS_TABS = [
+  TAB_ALL,
+  statusTab('outstanding', 'Outstanding', ['sent', 'partially_paid', 'overdue', 'viewed'], 'amber'),
+  statusTab('paid', 'Paid', ['paid'], 'green'),
+  statusTab('draft', 'Draft', ['draft'], 'slate'),
+  statusTab('void', 'Void', ['void', 'cancelled', 'canceled', 'written_off'], 'red'),
+]
 
 type Tab = 'home' | 'information' | 'projects' | 'jobs' | 'quotes' | 'payments' | 'banking' | 'messages' | 'documents' | 'invoices'
 
@@ -191,113 +223,220 @@ function ClientPortalHomeInner() {
 
 function ProjectsTab({ projects }: { projects: ClientPortalProject[] }) {
   const ph = usePortalHref()
+  const [search, setSearch] = useState('')
+  const [statusTabId, setStatusTabId] = useState('all')
+  const [cols, setCols] = useState({ code: '', title: '', offerMin: '', offerMax: '' })
+
+  const normalized = useMemo(
+    () => projects.map(p => ({ ...p, status: (p.status ?? '').toLowerCase() })),
+    [projects],
+  )
+  const base = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return normalized.filter(p => {
+      if (!matchText(p.project_code, cols.code)) return false
+      if (!matchText(p.title, cols.title)) return false
+      if (!matchMoney(p.offer_amount, cols.offerMin, cols.offerMax)) return false
+      if (!q) return true
+      return (p.project_code ?? '').toLowerCase().includes(q)
+        || p.title.toLowerCase().includes(q)
+        || projectStatusLabel(p.status).toLowerCase().includes(q)
+    })
+  }, [normalized, cols, search])
+  const counts = useMemo(() => countByStatusTab(base, PROJECT_STATUS_TABS), [base])
+  const filtered = useMemo(() => filterByStatusTab(base, PROJECT_STATUS_TABS, statusTabId), [base, statusTabId])
+  const paging = usePortalListPaging(filtered)
+
   if (projects.length === 0) {
     return (
       <PortalEmpty icon="folder_open" title="No projects yet" body="Projects shared with you will appear here." />
     )
   }
   return (
-    <PortalPanel>
-      <ResponsiveDataView
-        table={
-          <table className="w-full text-[13px]">
-            <thead>
-              <tr className="bg-surface-elevated border-b border-divider">
-                <th className={`${MONEY_TH} text-left`}>Code</th>
-                <th className={`${MONEY_TH} text-left`}>Project</th>
-                <th className={`${MONEY_TH} text-left`}>Status</th>
-                <th className={`${MONEY_TH} text-right`}>Progress</th>
-                <th className={`${MONEY_TH} text-right`}>Offer</th>
-                <th className={`${MONEY_TH} text-left`}>Updated</th>
-              </tr>
-            </thead>
-            <tbody>
-              {projects.map(p => (
-                <tr key={p.id} className="border-b border-divider last:border-0 hover:bg-surface-elevated">
-                  <td className={`${MONEY_TD} text-text-secondary`}>{p.project_code || '—'}</td>
-                  <td className={MONEY_TD}>
-                    <Link href={ph(`/projects/${p.id}`)} className="text-text-primary font-semibold hover:text-primary">
-                      {p.title}
-                    </Link>
-                  </td>
-                  <td className={`${MONEY_TD} text-text-primary`}>{projectStatusLabel(p.status)}</td>
-                  <td className={`${MONEY_TD} text-right text-text-primary`}>{p.progress_percent}%</td>
-                  <td className={`${MONEY_TD} text-right text-text-primary`}>{moneyZAR(p.offer_amount)}</td>
-                  <td className={`${MONEY_TD} text-text-secondary`}>{fmtDate(p.last_update_at ?? p.updated_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        }
+    <div className="space-y-3">
+      <PortalListToolbar
+        search={search}
+        onSearch={v => { setSearch(v); paging.resetPage() }}
+        placeholder="Search code, project, or status…"
+        resetDisabled={!(cols.code || cols.title || cols.offerMin || cols.offerMax || search)}
+        onReset={() => { setCols({ code: '', title: '', offerMin: '', offerMax: '' }); setSearch(''); paging.resetPage() }}
+        tabs={PROJECT_STATUS_TABS}
+        statusTabId={statusTabId}
+        counts={counts}
+        onStatusChange={id => { setStatusTabId(id); paging.resetPage() }}
       />
-    </PortalPanel>
+      <PortalPanel>
+        <ResponsiveDataView
+          table={
+            <table className="w-full text-[13px]" style={{ minWidth: 640 }}>
+              <thead className="sticky top-0 z-10">
+                <tr className="bg-surface-elevated border-b border-divider">
+                  <th className={`${MONEY_TH} text-left`}>
+                    <TextHeaderFilter label="Code" value={cols.code} onChange={v => { setCols(c => ({ ...c, code: v })); paging.resetPage() }} placeholder="Code…" />
+                  </th>
+                  <th className={`${MONEY_TH} text-left`}>
+                    <TextHeaderFilter label="Project" value={cols.title} onChange={v => { setCols(c => ({ ...c, title: v })); paging.resetPage() }} placeholder="Project…" />
+                  </th>
+                  <th className={`${MONEY_TH} text-left`}>Status</th>
+                  <th className={`${MONEY_TH} text-right`}>Progress</th>
+                  <th className={`${MONEY_TH} text-right`}>
+                    <MoneyHeaderFilter
+                      label="Offer"
+                      min={cols.offerMin}
+                      max={cols.offerMax}
+                      onChange={p => { setCols(c => ({ ...c, offerMin: p.min, offerMax: p.max })); paging.resetPage() }}
+                    />
+                  </th>
+                  <th className={`${MONEY_TH} text-left`}>Updated</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paging.pageRows.length === 0 ? (
+                  <tr><td colSpan={6} className="py-10 text-center text-[13px] text-text-secondary">No projects match your filters.</td></tr>
+                ) : paging.pageRows.map(p => (
+                  <tr key={p.id} className="border-b border-divider last:border-0 hover:bg-surface-elevated">
+                    <td className={`${MONEY_TD} text-text-secondary`}>{p.project_code || '—'}</td>
+                    <td className={MONEY_TD}>
+                      <Link href={ph(`/projects/${p.id}`)} className="text-text-primary font-semibold hover:text-primary">
+                        {p.title}
+                      </Link>
+                    </td>
+                    <td className={`${MONEY_TD} text-text-primary`}>{projectStatusLabel(p.status)}</td>
+                    <td className={`${MONEY_TD} text-right text-text-primary`}>{p.progress_percent}%</td>
+                    <td className={`${MONEY_TD} text-right text-text-primary`}>{moneyZAR(p.offer_amount)}</td>
+                    <td className={`${MONEY_TD} text-text-secondary`}>{fmtDate(p.last_update_at ?? p.updated_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          }
+        />
+        <PortalListPager
+          page={paging.page}
+          pageSize={paging.pageSize}
+          total={paging.total}
+          onPage={paging.setPage}
+          onPageSize={paging.setPageSize}
+        />
+      </PortalPanel>
+    </div>
   )
 }
 
 function JobsTab({ jobs }: { jobs: ClientPortalJob[] }) {
   const ph = usePortalHref()
   const mode = usePortalMode()
+  const [search, setSearch] = useState('')
+  const [statusTabId, setStatusTabId] = useState('all')
+  const [cols, setCols] = useState({ code: '', title: '', project: '' })
+
+  const normalized = useMemo(
+    () => jobs.map(j => ({ ...j, status: (j.status ?? '').toLowerCase() })),
+    [jobs],
+  )
+  const base = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return normalized.filter(job => {
+      if (!matchText(job.job_code, cols.code)) return false
+      if (!matchText(job.title, cols.title)) return false
+      if (!matchText(job.project_title, cols.project) && !matchText(job.project_code, cols.project)) return false
+      if (!q) return true
+      return (job.job_code ?? '').toLowerCase().includes(q)
+        || (job.title ?? '').toLowerCase().includes(q)
+        || (job.project_title ?? '').toLowerCase().includes(q)
+        || projectStatusLabel(job.status).toLowerCase().includes(q)
+    })
+  }, [normalized, cols, search])
+  const counts = useMemo(() => countByStatusTab(base, JOB_STATUS_TABS), [base])
+  const filtered = useMemo(() => filterByStatusTab(base, JOB_STATUS_TABS, statusTabId), [base, statusTabId])
+  const paging = usePortalListPaging(filtered)
+
   // A linked company can create a job for the provider (stage 3); the portal cannot.
   const newJob = mode.kind === 'linked' && mode.canAct ? (
-    <div className="flex justify-end mb-3">
-      <Link href={ph('/jobs/new')} className="btn-primary">+ New job</Link>
-    </div>
+    <Link href={ph('/jobs/new')} className="btn-primary">+ New job</Link>
   ) : null
+
   if (jobs.length === 0) {
     return (
       <>
-        {newJob}
+        {newJob && <div className="flex justify-end mb-3">{newJob}</div>}
         <PortalEmpty icon="work_outline" title="No jobs yet" body="Jobs for you will appear here, including ones that are not on a project." />
       </>
     )
   }
   return (
-    <>
-    {newJob}
-    <PortalPanel>
-      <ResponsiveDataView
-        table={
-          <table className="w-full text-[13px]">
-            <thead>
-              <tr className="bg-surface-elevated border-b border-divider">
-                <th className={`${MONEY_TH} text-left`}>Code</th>
-                <th className={`${MONEY_TH} text-left`}>Job</th>
-                <th className={`${MONEY_TH} text-left`}>Status</th>
-                <th className={`${MONEY_TH} text-left`}>Project</th>
-                <th className={`${MONEY_TH} text-left`}>Start</th>
-                <th className={`${MONEY_TH} text-left`}>End</th>
-              </tr>
-            </thead>
-            <tbody>
-              {jobs.map(job => (
-                <tr key={job.id} className="border-b border-divider last:border-0 hover:bg-surface-elevated">
-                  <td className={`${MONEY_TD} text-text-secondary`}>{job.job_code || '—'}</td>
-                  <td className={MONEY_TD}>
-                    <Link href={ph(`/jobs/${job.id}`)} className="text-text-primary font-semibold hover:text-primary">
-                      {job.title || '—'}
-                    </Link>
-                  </td>
-                  <td className={`${MONEY_TD} text-text-primary`}>{projectStatusLabel(job.status)}</td>
-                  <td className={MONEY_TD}>
-                    {job.deal_id && job.project_title ? (
-                      <Link href={ph(`/projects/${job.deal_id}`)} className="text-primary font-semibold hover:underline">
-                        {job.project_title}
-                        {job.project_code ? <span className="text-text-secondary font-normal"> · {job.project_code}</span> : null}
-                      </Link>
-                    ) : (
-                      <span className="text-text-secondary">—</span>
-                    )}
-                  </td>
-                  <td className={`${MONEY_TD} text-text-secondary`}>{fmtDate(job.scheduled_start)}</td>
-                  <td className={`${MONEY_TD} text-text-secondary`}>{fmtDate(job.scheduled_end)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        }
+    <div className="space-y-3">
+      <PortalListToolbar
+        search={search}
+        onSearch={v => { setSearch(v); paging.resetPage() }}
+        placeholder="Search code, job, or project…"
+        resetDisabled={!(cols.code || cols.title || cols.project || search)}
+        onReset={() => { setCols({ code: '', title: '', project: '' }); setSearch(''); paging.resetPage() }}
+        tabs={JOB_STATUS_TABS}
+        statusTabId={statusTabId}
+        counts={counts}
+        onStatusChange={id => { setStatusTabId(id); paging.resetPage() }}
+        trailing={newJob}
       />
-    </PortalPanel>
-    </>
+      <PortalPanel>
+        <ResponsiveDataView
+          table={
+            <table className="w-full text-[13px]" style={{ minWidth: 680 }}>
+              <thead className="sticky top-0 z-10">
+                <tr className="bg-surface-elevated border-b border-divider">
+                  <th className={`${MONEY_TH} text-left`}>
+                    <TextHeaderFilter label="Code" value={cols.code} onChange={v => { setCols(c => ({ ...c, code: v })); paging.resetPage() }} placeholder="Code…" />
+                  </th>
+                  <th className={`${MONEY_TH} text-left`}>
+                    <TextHeaderFilter label="Job" value={cols.title} onChange={v => { setCols(c => ({ ...c, title: v })); paging.resetPage() }} placeholder="Job…" />
+                  </th>
+                  <th className={`${MONEY_TH} text-left`}>Status</th>
+                  <th className={`${MONEY_TH} text-left`}>
+                    <TextHeaderFilter label="Project" value={cols.project} onChange={v => { setCols(c => ({ ...c, project: v })); paging.resetPage() }} placeholder="Project…" />
+                  </th>
+                  <th className={`${MONEY_TH} text-left`}>Start</th>
+                  <th className={`${MONEY_TH} text-left`}>End</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paging.pageRows.length === 0 ? (
+                  <tr><td colSpan={6} className="py-10 text-center text-[13px] text-text-secondary">No jobs match your filters.</td></tr>
+                ) : paging.pageRows.map(job => (
+                  <tr key={job.id} className="border-b border-divider last:border-0 hover:bg-surface-elevated">
+                    <td className={`${MONEY_TD} text-text-secondary`}>{job.job_code || '—'}</td>
+                    <td className={MONEY_TD}>
+                      <Link href={ph(`/jobs/${job.id}`)} className="text-text-primary font-semibold hover:text-primary">
+                        {job.title || '—'}
+                      </Link>
+                    </td>
+                    <td className={`${MONEY_TD} text-text-primary`}>{projectStatusLabel(job.status)}</td>
+                    <td className={MONEY_TD}>
+                      {job.deal_id && job.project_title ? (
+                        <Link href={ph(`/projects/${job.deal_id}`)} className="text-primary font-semibold hover:underline">
+                          {job.project_title}
+                          {job.project_code ? <span className="text-text-secondary font-normal"> · {job.project_code}</span> : null}
+                        </Link>
+                      ) : (
+                        <span className="text-text-secondary">—</span>
+                      )}
+                    </td>
+                    <td className={`${MONEY_TD} text-text-secondary`}>{fmtDate(job.scheduled_start)}</td>
+                    <td className={`${MONEY_TD} text-text-secondary`}>{fmtDate(job.scheduled_end)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          }
+        />
+        <PortalListPager
+          page={paging.page}
+          pageSize={paging.pageSize}
+          total={paging.total}
+          onPage={paging.setPage}
+          onPageSize={paging.setPageSize}
+        />
+      </PortalPanel>
+    </div>
   )
 }
 
@@ -344,8 +483,31 @@ function InvoicesTab({ invoices, outstanding, session }: { invoices: PortalInvoi
   const [busyId, setBusyId] = useState<string | null>(null)
   const [pdfError, setPdfError] = useState<string | null>(null)
   const [proofFor, setProofFor] = useState<string | null>(null)
+  const [search, setSearch] = useState('')
+  const [statusTabId, setStatusTabId] = useState('all')
+  const [cols, setCols] = useState({ number: '', totalMin: '', totalMax: '', balanceMin: '', balanceMax: '' })
   const linkedMode = usePortalMode().kind === 'linked'
   const canAct = usePortalCanAct()
+
+  const normalized = useMemo(
+    () => invoices.map(i => ({ ...i, status: (i.status ?? '').toLowerCase() })),
+    [invoices],
+  )
+  const base = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return normalized.filter(inv => {
+      if (!matchText(inv.invoice_number, cols.number)) return false
+      if (!matchMoney(inv.total_amount, cols.totalMin, cols.totalMax)) return false
+      if (!matchMoney(inv.balance_due, cols.balanceMin, cols.balanceMax)) return false
+      if (!q) return true
+      return (inv.invoice_number ?? '').toLowerCase().includes(q)
+        || inv.status.replace(/_/g, ' ').includes(q)
+    })
+  }, [normalized, cols, search])
+  const counts = useMemo(() => countByStatusTab(base, INVOICE_STATUS_TABS), [base])
+  const filtered = useMemo(() => filterByStatusTab(base, INVOICE_STATUS_TABS, statusTabId), [base, statusTabId])
+  const paging = usePortalListPaging(filtered)
+
   async function pdf(id: string) {
     setBusyId(id)
     setPdfError(null)
@@ -359,6 +521,12 @@ function InvoicesTab({ invoices, outstanding, session }: { invoices: PortalInvoi
     }
     setBusyId(null)
   }
+
+  if (invoices.length === 0) {
+    return <PortalEmpty icon="receipt_long" title="No invoices" body="Invoices issued to you will appear here." />
+  }
+
+  const colSpan = linkedMode ? 8 : 7
   return (
     <div className="space-y-3">
       <div className="bg-primary/10 border border-primary/25 rounded-xl px-4 py-3 flex items-center justify-between">
@@ -366,78 +534,105 @@ function InvoicesTab({ invoices, outstanding, session }: { invoices: PortalInvoi
         <p className="text-[18px] font-bold text-text-primary">{moneyZAR(outstanding)}</p>
       </div>
       {pdfError && <p className="text-[12px] text-error">{pdfError}</p>}
-      {invoices.length === 0 ? (
-        <Empty icon="receipt_long" title="No invoices" sub="Invoices issued to you will appear here." />
-      ) : (
-        <div className="border-divider bg-surface rounded-xl border overflow-hidden">
-          <ResponsiveDataView
-            table={
-              <table className="w-full text-[13px]">
-                <thead>
-                  <tr className="bg-surface-elevated border-b border-divider">
-                    <th className={`${MONEY_TH} text-left`}>Number</th>
-                    <th className={`${MONEY_TH} text-left`}>Status</th>
-                    <th className={`${MONEY_TH} text-right`}>Total</th>
-                    <th className={`${MONEY_TH} text-right`}>Balance</th>
-                    <th className={`${MONEY_TH} text-left`}>Issued</th>
-                    <th className={`${MONEY_TH} text-left`}>Due</th>
-                    <th className={`${MONEY_TH} text-left`}>PDF</th>
-                    {linkedMode && <th className={`${MONEY_TH} text-left`}>Proof</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {invoices.flatMap(inv => [
-                    <tr key={inv.id} className="border-b border-divider last:border-0 hover:bg-surface-elevated">
-                      <td className={`${MONEY_TD} text-text-primary font-medium`}>{inv.invoice_number || '—'}</td>
-                      <td className={`${MONEY_TD} text-text-primary capitalize`}>{inv.status.replace(/_/g, ' ')}</td>
-                      <td className={`${MONEY_TD} text-right text-text-primary`}>{moneyZAR(inv.total_amount)}</td>
-                      <td className={`${MONEY_TD} text-right font-semibold ${isInvoiceOutstanding(inv.status) ? 'text-warning' : 'text-text-secondary'}`}>
-                        {moneyZAR(inv.balance_due)}
-                      </td>
-                      <td className={`${MONEY_TD} text-text-secondary`}>{fmtDate(inv.issue_date)}</td>
-                      <td className={`${MONEY_TD} text-text-secondary`}>{fmtDate(inv.due_date)}</td>
+      <PortalListToolbar
+        search={search}
+        onSearch={v => { setSearch(v); paging.resetPage() }}
+        placeholder="Search invoice # or status…"
+        resetDisabled={!(cols.number || cols.totalMin || cols.totalMax || cols.balanceMin || cols.balanceMax || search)}
+        onReset={() => { setCols({ number: '', totalMin: '', totalMax: '', balanceMin: '', balanceMax: '' }); setSearch(''); paging.resetPage() }}
+        tabs={INVOICE_STATUS_TABS}
+        statusTabId={statusTabId}
+        counts={counts}
+        onStatusChange={id => { setStatusTabId(id); paging.resetPage() }}
+      />
+      <PortalPanel>
+        <ResponsiveDataView
+          table={
+            <table className="w-full text-[13px]" style={{ minWidth: 720 }}>
+              <thead className="sticky top-0 z-10">
+                <tr className="bg-surface-elevated border-b border-divider">
+                  <th className={`${MONEY_TH} text-left`}>
+                    <TextHeaderFilter label="Number" value={cols.number} onChange={v => { setCols(c => ({ ...c, number: v })); paging.resetPage() }} placeholder="Invoice #…" />
+                  </th>
+                  <th className={`${MONEY_TH} text-left`}>Status</th>
+                  <th className={`${MONEY_TH} text-right`}>
+                    <MoneyHeaderFilter
+                      label="Total"
+                      min={cols.totalMin}
+                      max={cols.totalMax}
+                      onChange={p => { setCols(c => ({ ...c, totalMin: p.min, totalMax: p.max })); paging.resetPage() }}
+                    />
+                  </th>
+                  <th className={`${MONEY_TH} text-right`}>
+                    <MoneyHeaderFilter
+                      label="Balance"
+                      min={cols.balanceMin}
+                      max={cols.balanceMax}
+                      onChange={p => { setCols(c => ({ ...c, balanceMin: p.min, balanceMax: p.max })); paging.resetPage() }}
+                    />
+                  </th>
+                  <th className={`${MONEY_TH} text-left`}>Issued</th>
+                  <th className={`${MONEY_TH} text-left`}>Due</th>
+                  <th className={`${MONEY_TH} text-left`}>PDF</th>
+                  {linkedMode && <th className={`${MONEY_TH} text-left`}>Proof</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {paging.pageRows.length === 0 ? (
+                  <tr><td colSpan={colSpan} className="py-10 text-center text-[13px] text-text-secondary">No invoices match your filters.</td></tr>
+                ) : paging.pageRows.flatMap(inv => [
+                  <tr key={inv.id} className="border-b border-divider last:border-0 hover:bg-surface-elevated">
+                    <td className={`${MONEY_TD} text-text-primary font-medium`}>{inv.invoice_number || '—'}</td>
+                    <td className={`${MONEY_TD} text-text-primary capitalize`}>{inv.status.replace(/_/g, ' ')}</td>
+                    <td className={`${MONEY_TD} text-right text-text-primary`}>{moneyZAR(inv.total_amount)}</td>
+                    <td className={`${MONEY_TD} text-right font-semibold ${isInvoiceOutstanding(inv.status) ? 'text-warning' : 'text-text-secondary'}`}>
+                      {moneyZAR(inv.balance_due)}
+                    </td>
+                    <td className={`${MONEY_TD} text-text-secondary`}>{fmtDate(inv.issue_date)}</td>
+                    <td className={`${MONEY_TD} text-text-secondary`}>{fmtDate(inv.due_date)}</td>
+                    <td className={MONEY_TD}>
+                      <button type="button" disabled={busyId === inv.id} onClick={() => void pdf(inv.id)} className="btn-ghost !px-1">
+                        {busyId === inv.id ? '…' : 'Download'}
+                      </button>
+                    </td>
+                    {linkedMode && (
                       <td className={MONEY_TD}>
                         <button
                           type="button"
-                          disabled={busyId === inv.id}
-                          onClick={() => void pdf(inv.id)}
+                          onClick={() => setProofFor(proofFor === inv.id ? null : inv.id)}
+                          aria-expanded={proofFor === inv.id}
                           className="btn-ghost !px-1"
                         >
-                          {busyId === inv.id ? '…' : 'Download'}
+                          {proofFor === inv.id ? 'Close' : canAct && isInvoiceOutstanding(inv.status) ? 'Send proof' : 'View'}
                         </button>
                       </td>
-                      {linkedMode && (
-                        <td className={MONEY_TD}>
-                          <button
-                            type="button"
-                            onClick={() => setProofFor(proofFor === inv.id ? null : inv.id)}
-                            aria-expanded={proofFor === inv.id}
-                            className="btn-ghost !px-1"
-                          >
-                            {proofFor === inv.id ? 'Close' : canAct && isInvoiceOutstanding(inv.status) ? 'Send proof' : 'View'}
-                          </button>
-                        </td>
-                      )}
-                    </tr>,
-                    linkedMode && proofFor === inv.id ? (
-                      <tr key={`${inv.id}-proof`} className="bg-surface-elevated/40">
-                        <td colSpan={8} className={`${MONEY_TD} !whitespace-normal`}>
-                          <LinkedPaymentProof
-                            invoiceId={inv.id}
-                            invoiceNumber={inv.invoice_number}
-                            balance={inv.balance_due}
-                            canSend={canAct && isInvoiceOutstanding(inv.status)}
-                          />
-                        </td>
-                      </tr>
-                    ) : null,
-                  ])}
-                </tbody>
-              </table>
-            }
-          />
-        </div>
-      )}
+                    )}
+                  </tr>,
+                  linkedMode && proofFor === inv.id ? (
+                    <tr key={`${inv.id}-proof`} className="bg-surface-elevated/40">
+                      <td colSpan={colSpan} className={`${MONEY_TD} !whitespace-normal`}>
+                        <LinkedPaymentProof
+                          invoiceId={inv.id}
+                          invoiceNumber={inv.invoice_number}
+                          balance={inv.balance_due}
+                          canSend={canAct && isInvoiceOutstanding(inv.status)}
+                        />
+                      </td>
+                    </tr>
+                  ) : null,
+                ])}
+              </tbody>
+            </table>
+          }
+        />
+        <PortalListPager
+          page={paging.page}
+          pageSize={paging.pageSize}
+          total={paging.total}
+          onPage={paging.setPage}
+          onPageSize={paging.setPageSize}
+        />
+      </PortalPanel>
     </div>
   )
 }
@@ -667,6 +862,113 @@ function HomeTab({
 
 const QUOTE_WAITING = ['quoted', 'sent', 'negotiation']
 
+function QuotesList({ projects }: { projects: ClientPortalProject[] }) {
+  const ph = usePortalHref()
+  const quoted = useMemo(
+    () => projects.filter(p => (p.offer_amount ?? 0) > 0 || QUOTE_WAITING.includes((p.status ?? '').toLowerCase())),
+    [projects],
+  )
+  const [search, setSearch] = useState('')
+  const [statusTabId, setStatusTabId] = useState('all')
+  const [cols, setCols] = useState({ code: '', title: '', offerMin: '', offerMax: '' })
+
+  const normalized = useMemo(
+    () => quoted.map(p => ({ ...p, status: (p.status ?? '').toLowerCase() })),
+    [quoted],
+  )
+  const base = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return normalized.filter(p => {
+      if (!matchText(p.project_code, cols.code)) return false
+      if (!matchText(p.title, cols.title)) return false
+      if (!matchMoney(p.offer_amount, cols.offerMin, cols.offerMax)) return false
+      if (!q) return true
+      return (p.project_code ?? '').toLowerCase().includes(q)
+        || p.title.toLowerCase().includes(q)
+        || projectStatusLabel(p.status).toLowerCase().includes(q)
+    })
+  }, [normalized, cols, search])
+  const counts = useMemo(() => countByStatusTab(base, PROJECT_STATUS_TABS), [base])
+  const filtered = useMemo(() => filterByStatusTab(base, PROJECT_STATUS_TABS, statusTabId), [base, statusTabId])
+  const paging = usePortalListPaging(filtered)
+
+  if (quoted.length === 0) {
+    return <PortalEmpty icon="request_quote" title="No quotes" body="Quotes we send you will appear here." />
+  }
+
+  return (
+    <div className="space-y-3">
+      <PortalListToolbar
+        search={search}
+        onSearch={v => { setSearch(v); paging.resetPage() }}
+        placeholder="Search code, project, or status…"
+        resetDisabled={!(cols.code || cols.title || cols.offerMin || cols.offerMax || search)}
+        onReset={() => { setCols({ code: '', title: '', offerMin: '', offerMax: '' }); setSearch(''); paging.resetPage() }}
+        tabs={PROJECT_STATUS_TABS}
+        statusTabId={statusTabId}
+        counts={counts}
+        onStatusChange={id => { setStatusTabId(id); paging.resetPage() }}
+      />
+      <PortalPanel>
+        <ResponsiveDataView
+          table={
+            <table className="w-full text-[13px]" style={{ minWidth: 560 }}>
+              <thead className="sticky top-0 z-10">
+                <tr className="bg-surface-elevated border-b border-divider">
+                  <th className={`${MONEY_TH} text-left`}>
+                    <TextHeaderFilter label="Code" value={cols.code} onChange={v => { setCols(c => ({ ...c, code: v })); paging.resetPage() }} placeholder="Code…" />
+                  </th>
+                  <th className={`${MONEY_TH} text-left`}>
+                    <TextHeaderFilter label="Project" value={cols.title} onChange={v => { setCols(c => ({ ...c, title: v })); paging.resetPage() }} placeholder="Project…" />
+                  </th>
+                  <th className={`${MONEY_TH} text-left`}>Status</th>
+                  <th className={`${MONEY_TH} text-right`}>
+                    <MoneyHeaderFilter
+                      label="Offer"
+                      min={cols.offerMin}
+                      max={cols.offerMax}
+                      onChange={p => { setCols(c => ({ ...c, offerMin: p.min, offerMax: p.max })); paging.resetPage() }}
+                    />
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {paging.pageRows.length === 0 ? (
+                  <tr><td colSpan={4} className="py-10 text-center text-[13px] text-text-secondary">No quotes match your filters.</td></tr>
+                ) : paging.pageRows.map(p => {
+                  const waiting = QUOTE_WAITING.includes(p.status)
+                  return (
+                    <tr key={p.id} className="border-b border-divider last:border-0 hover:bg-surface-elevated">
+                      <td className={`${MONEY_TD} text-text-secondary`}>{p.project_code || '—'}</td>
+                      <td className={MONEY_TD}>
+                        <Link href={ph(`/projects/${p.id}`)} className="text-text-primary font-semibold hover:text-primary">
+                          {p.title}
+                        </Link>
+                      </td>
+                      <td className={`${MONEY_TD} text-text-primary`}>
+                        {projectStatusLabel(p.status)}
+                        {waiting ? <span className="ml-1.5 text-[10px] font-semibold text-warning">Awaiting</span> : null}
+                      </td>
+                      <td className={`${MONEY_TD} text-right text-text-primary font-semibold`}>{moneyZAR(p.offer_amount ?? 0)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          }
+        />
+        <PortalListPager
+          page={paging.page}
+          pageSize={paging.pageSize}
+          total={paging.total}
+          onPage={paging.setPage}
+          onPageSize={paging.setPageSize}
+        />
+      </PortalPanel>
+    </div>
+  )
+}
+
 function QuotesInvoicesTab({
   session, projects, invoices, outstanding, initial,
 }: {
@@ -676,9 +978,7 @@ function QuotesInvoicesTab({
   outstanding: number
   initial: 'quotes' | 'invoices'
 }) {
-  const ph = usePortalHref()
   const [section, setSection] = useState<'quotes' | 'invoices'>(initial)
-  const quoted = projects.filter(p => (p.offer_amount ?? 0) > 0 || QUOTE_WAITING.includes((p.status ?? '').toLowerCase()))
   return (
     <div className="space-y-4">
       <div className="inline-flex gap-1.5">
@@ -695,45 +995,8 @@ function QuotesInvoicesTab({
       </div>
       {section === 'invoices' ? (
         <InvoicesTab invoices={invoices} outstanding={outstanding} session={session} />
-      ) : quoted.length === 0 ? (
-        <Empty icon="request_quote" title="No quotes" sub="Quotes we send you will appear here." />
       ) : (
-        <div className="border-divider bg-surface rounded-xl border overflow-hidden">
-          <ResponsiveDataView
-            table={
-              <table className="w-full text-[13px]">
-                <thead>
-                  <tr className="bg-surface-elevated border-b border-divider">
-                    <th className={`${MONEY_TH} text-left`}>Code</th>
-                    <th className={`${MONEY_TH} text-left`}>Project</th>
-                    <th className={`${MONEY_TH} text-left`}>Status</th>
-                    <th className={`${MONEY_TH} text-right`}>Offer</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {quoted.map(p => {
-                    const waiting = QUOTE_WAITING.includes((p.status ?? '').toLowerCase())
-                    return (
-                      <tr key={p.id} className="border-b border-divider last:border-0 hover:bg-surface-elevated">
-                        <td className={`${MONEY_TD} text-text-secondary`}>{p.project_code || '—'}</td>
-                        <td className={MONEY_TD}>
-                          <Link href={ph(`/projects/${p.id}`)} className="text-text-primary font-semibold hover:text-primary">
-                            {p.title}
-                          </Link>
-                        </td>
-                        <td className={`${MONEY_TD} text-text-primary`}>
-                          {projectStatusLabel(p.status)}
-                          {waiting ? <span className="ml-1.5 text-[10px] font-semibold text-warning">Awaiting</span> : null}
-                        </td>
-                        <td className={`${MONEY_TD} text-right text-text-primary font-semibold`}>{moneyZAR(p.offer_amount ?? 0)}</td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            }
-          />
-        </div>
+        <QuotesList projects={projects} />
       )}
     </div>
   )
