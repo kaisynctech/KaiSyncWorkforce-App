@@ -24,8 +24,8 @@ type ServerResult = { created: number; failed: number; rows: ServerRow[] }
 type Problem = { row: number; name: string; problem: string }
 type Phase = 'idle' | 'reading' | 'checking' | 'checked' | 'importing' | 'linking' | 'done'
 
-const btnPrimary = 'h-10 px-4 rounded-sm bg-primary text-white text-[13px] font-medium hover:bg-primary-dark transition-colors disabled:opacity-50'
-const btnSecondary = 'h-10 px-4 rounded-sm border border-border text-[13px] font-medium text-text-primary hover:bg-surface-elevated transition-colors disabled:opacity-50'
+const btnPrimary = 'btn-primary'
+const btnSecondary = 'btn-secondary'
 
 function personName(r: ImportRow) {
   return `${r.name} ${r.surname}`.trim() || '(no name)'
@@ -263,11 +263,11 @@ export default function ImportEmployeesPage() {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-divider shrink-0 bg-surface">
-        <Link href="/dashboard/employees" aria-label="Back to employees" className="text-text-secondary hover:text-text-primary transition-colors">
-          <span className="material-icons text-[20px]" aria-hidden="true">arrow_back</span>
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-divider shrink-0 bg-surface">
+        <Link href="/dashboard/employees" aria-label="Back to employees" className="btn-back">
+          <span className="material-icons" aria-hidden="true">arrow_back</span>
         </Link>
-        <h1 className="text-[18px] font-semibold text-text-primary flex-1">Import employees</h1>
+        <h1 className="text-[16px] font-semibold text-text-primary flex-1">Import employees</h1>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4 max-w-3xl pb-24">

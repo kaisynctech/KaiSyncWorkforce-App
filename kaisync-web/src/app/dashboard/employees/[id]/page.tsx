@@ -394,9 +394,9 @@ export default function EmployeeDetailPage() {
   if (loading) {
     return (
       <div className="h-full flex flex-col">
-        <div className="bg-surface border-b border-divider px-4 py-3 shrink-0">
-          <Link href="/dashboard/employees" aria-label="Back to employees" className="text-text-secondary hover:text-text-primary transition-colors">
-            <span className="material-icons text-[20px]">arrow_back</span>
+        <div className="bg-surface border-b border-divider px-3 py-2 shrink-0">
+          <Link href="/dashboard/employees" aria-label="Back to employees" className="btn-back">
+            <span className="material-icons">arrow_back</span>
           </Link>
         </div>
         <div className="flex items-center justify-center flex-1 text-[14px] text-text-secondary">Loading…</div>
@@ -435,25 +435,27 @@ export default function EmployeeDetailPage() {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      <div className="bg-surface border-b border-divider px-4 pt-3 pb-3 shrink-0">
-        <div className="flex items-center gap-3 mb-3">
+      <div className="bg-surface border-b border-divider px-3 pt-2 pb-2 shrink-0">
+        <div className="flex items-center gap-2 mb-2">
           <Link
             href="/dashboard/employees"
             aria-label="Back to employees"
-            className="text-text-secondary hover:text-text-primary transition-colors shrink-0"
+            className="btn-back shrink-0"
           >
-            <span className="material-icons text-[20px]">arrow_back</span>
+            <span className="material-icons">arrow_back</span>
           </Link>
-          <h1 className="text-[18px] font-semibold text-text-primary truncate">{fullName}</h1>
+          <h1 className="text-[16px] font-semibold text-text-primary truncate">{fullName}</h1>
         </div>
-        <div className="flex gap-[6px] overflow-x-auto">
+        <div className="flex gap-1.5 overflow-x-auto">
           {EMPLOYEE_TABS.map(t => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
               className={cn(
-                'h-10 px-3 rounded-sm font-medium text-[12px] whitespace-nowrap transition-colors',
-                tab === t.id ? 'bg-primary text-white' : 'bg-background text-text-secondary hover:text-text-primary'
+                'h-8 px-2.5 rounded-md font-medium text-[11px] whitespace-nowrap transition-colors',
+                tab === t.id
+                  ? 'bg-primary text-white shadow-sm shadow-primary/20'
+                  : 'bg-sky-500/10 text-sky-800 hover:bg-sky-500/15',
               )}
             >
               {t.label}

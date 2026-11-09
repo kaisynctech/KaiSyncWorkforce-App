@@ -192,15 +192,14 @@ export default function WorkTeamDetailPage() {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="grid grid-cols-[1fr_auto] items-center px-4 py-3 border-b border-divider shrink-0 bg-surface">
-        <div className="flex items-center gap-3 min-w-0">
-          <Link href="/dashboard/work-teams" className="text-text-secondary hover:text-text-primary transition-colors shrink-0">
-            <span className="material-icons text-[20px]">arrow_back</span>
+      <div className="grid grid-cols-[1fr_auto] items-center gap-2 px-3 py-2 border-b border-divider shrink-0 bg-surface">
+        <div className="flex items-center gap-2 min-w-0">
+          <Link href="/dashboard/work-teams" aria-label="Back to work teams" className="btn-back shrink-0">
+            <span className="material-icons">arrow_back</span>
           </Link>
-          <h1 className="text-[20px] font-semibold text-text-primary truncate">{name || (isNew ? 'New Team' : 'Team')}</h1>
+          <h1 className="text-[16px] font-semibold text-text-primary truncate">{name || (isNew ? 'New Team' : 'Team')}</h1>
         </div>
-        <button onClick={save} disabled={saving}
-          className="h-11 px-5 text-[16px] font-semibold rounded-lg bg-primary text-white hover:bg-primary-dark disabled:opacity-50 transition-colors min-w-[80px]">
+        <button type="button" onClick={save} disabled={saving} className="btn-primary min-w-[72px]">
           {saving ? 'Saving…' : 'Save'}
         </button>
       </div>
@@ -245,7 +244,7 @@ export default function WorkTeamDetailPage() {
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <p className="section-label">MEMBERS</p>
-              <button onClick={() => setShowAddMember(true)} className="btn-primary h-9 px-3 text-[13px]">
+              <button type="button" onClick={() => setShowAddMember(true)} className="btn-primary">
                 + Add Member
               </button>
             </div>
@@ -325,7 +324,7 @@ export default function WorkTeamDetailPage() {
             />
             <div className="flex gap-2 justify-end">
               <button onClick={() => { setShowAddMember(false); setPicked([]) }} className="btn-outlined h-9 px-4 text-[13px]">Cancel</button>
-              <button onClick={() => void addMembers()} disabled={picked.length === 0 || busy} className="btn-primary h-9 px-4 text-[13px]">
+              <button type="button" onClick={() => void addMembers()} disabled={picked.length === 0 || busy} className="btn-primary">
                 {busy ? 'Adding…' : picked.length > 1 ? `Add ${picked.length} people` : 'Add'}
               </button>
             </div>

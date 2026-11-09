@@ -402,8 +402,8 @@ export default function EditEmployeePage({
         <div className="flex items-center justify-between gap-4 min-w-0">
           <div className="flex items-center gap-3 min-w-0">
             {!embedded && (
-              <Link href={`/dashboard/employees/${id}`} className="text-text-secondary hover:text-text-primary transition-colors shrink-0">
-                <span className="material-icons text-[20px]">arrow_back</span>
+              <Link href={`/dashboard/employees/${id}`} aria-label="Back" className="btn-back shrink-0">
+                <span className="material-icons">arrow_back</span>
               </Link>
             )}
             <div className="min-w-0">
@@ -420,20 +420,10 @@ export default function EditEmployeePage({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving || deleting}
-            className="bg-primary text-white h-10 px-4 rounded-sm font-semibold text-[13px] hover:bg-primary-dark disabled:opacity-50 transition-colors"
-          >
+          <button type="button" onClick={handleSave} disabled={saving || deleting} className="btn-primary">
             {saving ? 'Saving…' : 'Save Changes'}
           </button>
-          <button
-            type="button"
-            onClick={handleSendInvite}
-            disabled={deleting}
-            className="border border-primary text-primary bg-surface h-10 px-4 rounded-sm font-medium text-[13px] hover:bg-primary/5 transition-colors disabled:opacity-50"
-          >
+          <button type="button" onClick={handleSendInvite} disabled={deleting} className="btn-secondary">
             Send Invite
           </button>
           <button
@@ -441,20 +431,13 @@ export default function EditEmployeePage({
             onClick={handleToggleActive}
             disabled={archiving || deleting}
             className={cn(
-              'h-10 px-4 rounded-sm font-semibold text-[13px] disabled:opacity-50 transition-colors',
-              isActive
-                ? 'bg-warning text-white hover:opacity-90'
-                : 'bg-success text-white hover:opacity-90'
+              'btn-primary',
+              isActive ? '!bg-warning hover:!opacity-90' : '!bg-success hover:!opacity-90',
             )}
           >
             {archiving ? '…' : isActive ? 'Archive' : 'Reactivate'}
           </button>
-          <button
-            type="button"
-            onClick={handleDelete}
-            disabled={deleting || archiving}
-            className="bg-error text-white h-10 px-4 rounded-sm font-semibold text-[13px] hover:opacity-90 disabled:opacity-50 transition-colors"
-          >
+          <button type="button" onClick={handleDelete} disabled={deleting || archiving} className="btn-danger">
             {deleting ? '…' : 'Delete'}
           </button>
         </div>

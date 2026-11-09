@@ -217,10 +217,10 @@ export default function CreateEmployeePage() {
     <form onSubmit={handleSubmit} className="p-4 space-y-4 max-w-2xl mx-auto pb-8">
       {/* Back nav */}
       <div className="flex items-center gap-2 mb-1">
-        <Link href="/dashboard/employees" className="text-text-secondary hover:text-text-primary transition-colors">
-          <span className="material-icons text-[20px]">arrow_back</span>
+        <Link href="/dashboard/employees" aria-label="Back to employees" className="btn-back">
+          <span className="material-icons">arrow_back</span>
         </Link>
-        <h1 className="text-[19px] font-bold text-text-primary">New Employee</h1>
+        <h1 className="text-[16px] font-semibold text-text-primary">New Employee</h1>
       </div>
 
       {/* PERSONAL INFO */}

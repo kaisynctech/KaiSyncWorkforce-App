@@ -14,6 +14,11 @@
   --color-primary-dark: #1D4ED8;
   --color-primary-light: #60A5FA;
 
+  /* Soft supporting brand tones for secondary chrome (not primary CTAs) */
+  --color-brand-sky: #0EA5E9;
+  --color-brand-cyan: #06B6D4;
+  --color-brand-indigo: #4F46E5;
+
   --color-accent: #3B82F6;
   --color-accent-light: #93C5FD;
 
@@ -198,43 +203,151 @@ body {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 20%, transparent);
 }
 
-.btn-primary {
-  background-color: var(--color-primary);
-  color: #fff;
-  border-radius: var(--radius-sm);
-  font-weight: 600;
-  border: none;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: background-color 0.15s;
-}
+/* ── Shared button system (dense by default — Money/Quotes standard) ──
+   Use .btn-md for modal footers; .btn-lg only for rare full-width mobile CTAs.
+   Tailwind h-* / text-* still override when a call site needs an exception. */
+@layer components {
+  .btn-primary,
+  .btn-outlined,
+  .btn-secondary,
+  .btn-ghost,
+  .btn-danger,
+  .btn-back {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    height: 2rem; /* 32px */
+    padding: 0 0.75rem;
+    font-size: 12px;
+    line-height: 1;
+    font-weight: 600;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s;
+  }
 
-.btn-primary:hover:not(:disabled) {
-  background-color: var(--color-primary-dark);
-}
+  .btn-primary .material-icons,
+  .btn-outlined .material-icons,
+  .btn-secondary .material-icons,
+  .btn-ghost .material-icons,
+  .btn-danger .material-icons,
+  .btn-back .material-icons {
+    font-size: 16px;
+  }
 
-.btn-primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+  @media (max-width: 1023px) {
+    .btn-primary,
+    .btn-outlined,
+    .btn-secondary,
+    .btn-ghost,
+    .btn-danger {
+      height: 2.25rem; /* 36px — readable tap without looking zoomed */
+    }
+  }
 
-.btn-outlined {
-  background-color: transparent;
-  color: var(--color-text-primary);
-  border-radius: var(--radius-sm);
-  font-weight: 500;
-  border: 1px solid var(--color-border);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: background-color 0.15s;
-}
+  .btn-md {
+    height: 2.25rem;
+    padding: 0 0.875rem;
+    font-size: 12px;
+  }
 
-.btn-outlined:hover {
-  background-color: var(--color-surface-elevated);
+  .btn-lg {
+    height: 2.5rem;
+    padding: 0 1rem;
+    font-size: 13px;
+  }
+
+  .btn-primary {
+    background-color: var(--color-primary);
+    color: #fff;
+    border: none;
+    box-shadow: 0 1px 2px color-mix(in srgb, var(--color-primary-dark) 25%, transparent);
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background-color: var(--color-primary-dark);
+  }
+
+  .btn-primary:disabled,
+  .btn-outlined:disabled,
+  .btn-secondary:disabled,
+  .btn-ghost:disabled,
+  .btn-danger:disabled,
+  .btn-back:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .btn-outlined {
+    background-color: var(--color-surface);
+    color: var(--color-text-primary);
+    font-weight: 500;
+    border: 1px solid var(--color-border);
+  }
+
+  .btn-outlined:hover:not(:disabled) {
+    background-color: var(--color-surface-elevated);
+  }
+
+  /* Soft sky wash — Import / secondary chrome */
+  .btn-secondary {
+    background-color: color-mix(in srgb, var(--color-brand-sky) 10%, white);
+    color: #0369a1;
+    font-weight: 600;
+    border: 1px solid color-mix(in srgb, var(--color-brand-sky) 35%, var(--color-border));
+  }
+
+  .btn-secondary:hover:not(:disabled) {
+    background-color: color-mix(in srgb, var(--color-brand-sky) 16%, white);
+    border-color: color-mix(in srgb, var(--color-brand-sky) 50%, var(--color-border));
+  }
+
+  .btn-ghost {
+    background-color: transparent;
+    color: var(--color-text-secondary);
+    font-weight: 500;
+    border: none;
+  }
+
+  .btn-ghost:hover:not(:disabled) {
+    background-color: color-mix(in srgb, var(--color-primary) 8%, transparent);
+    color: var(--color-primary);
+  }
+
+  .btn-danger {
+    background-color: var(--color-error);
+    color: #fff;
+    border: none;
+  }
+
+  .btn-danger:hover:not(:disabled) {
+    background-color: #dc2626;
+  }
+
+  /* Compact back control — keeps a comfortable hit area without a huge pill */
+  .btn-back {
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    color: var(--color-text-secondary);
+    background-color: transparent;
+    border: 1px solid transparent;
+  }
+
+  .btn-back:hover:not(:disabled) {
+    color: var(--color-primary);
+    background-color: color-mix(in srgb, var(--color-primary) 10%, transparent);
+    border-color: color-mix(in srgb, var(--color-primary) 18%, transparent);
+  }
+
+  @media (max-width: 1023px) {
+    .btn-back {
+      width: 2.25rem;
+      height: 2.25rem;
+    }
+  }
 }
 
 /* ── Responsive / touch helpers (Phase 1–2 mobile foundation) ── */

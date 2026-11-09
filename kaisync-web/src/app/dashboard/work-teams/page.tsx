@@ -165,12 +165,8 @@ export default function WorkTeamsPage() {
           <h1 className="text-[22px] font-semibold text-text-primary">Work Teams</h1>
           <p className="text-[13px] text-text-secondary mt-0.5">{teams.length} total</p>
         </div>
-        <button
-          type="button"
-          onClick={() => setShowCreate(true)}
-          className="flex items-center gap-2 h-10 px-4 rounded-md bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark transition-colors"
-        >
-          <span className="material-icons text-[18px]">group_add</span>
+        <button type="button" onClick={() => setShowCreate(true)} className="btn-primary">
+          <span className="material-icons">group_add</span>
           Create Team
         </button>
       </div>
@@ -320,7 +316,7 @@ export default function WorkTeamsPage() {
             <button
               type="button"
               onClick={() => { setShowCreate(false); setNewTeamName(''); setNewTeamDesc('') }}
-              className="h-11 px-4 rounded-md border border-border text-[13px] text-text-secondary hover:bg-background transition-colors"
+              className="btn-outlined btn-md"
             >
               Cancel
             </button>
@@ -328,7 +324,7 @@ export default function WorkTeamsPage() {
               type="button"
               onClick={() => void createTeam()}
               disabled={!newTeamName.trim() || creating}
-              className="h-11 px-4 rounded-md bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors"
+              className="btn-primary btn-md disabled:opacity-50"
             >
               {creating ? 'Creating…' : 'Create'}
             </button>

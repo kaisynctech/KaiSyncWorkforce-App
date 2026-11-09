@@ -783,18 +783,12 @@ function EmployeesPageInner() {
           <p className="text-[13px] text-text-secondary mt-0.5">{directoryTotal} total</p>
         </div>
         <div className="flex items-center gap-2">
-          <Link
-            href="/dashboard/employees/import"
-            className="flex items-center gap-2 h-10 px-4 rounded-md border border-border bg-surface text-text-primary text-[13px] font-semibold hover:bg-surface-elevated transition-colors"
-          >
-            <span className="material-icons text-[18px]">upload_file</span>
+          <Link href="/dashboard/employees/import" className="btn-secondary">
+            <span className="material-icons">upload_file</span>
             Import
           </Link>
-          <Link
-            href="/dashboard/employees/new"
-            className="flex items-center gap-2 h-10 px-4 rounded-md bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark transition-colors"
-          >
-            <span className="material-icons text-[18px]">person_add</span>
+          <Link href="/dashboard/employees/new" className="btn-primary">
+            <span className="material-icons">person_add</span>
             Add Employee
           </Link>
         </div>
@@ -806,7 +800,7 @@ function EmployeesPageInner() {
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`h-10 px-4 text-[13px] font-medium border-b-2 -mb-px transition-colors ${
+            className={`h-8 px-3 text-[12px] font-medium border-b-2 -mb-px transition-colors ${
               tab === t.key
                 ? 'border-primary text-primary'
                 : 'border-transparent text-text-secondary hover:text-text-primary'
@@ -1156,7 +1150,7 @@ function EmployeesPageInner() {
                 <button
                   type="button"
                   onClick={() => { setShowCreateTeam(false); setNewTeamName('') }}
-                  className="h-11 px-4 rounded-md border border-border text-[13px] text-text-secondary hover:bg-background transition-colors"
+                  className="btn-outlined btn-md"
                 >
                   Cancel
                 </button>
@@ -1164,7 +1158,7 @@ function EmployeesPageInner() {
                   type="button"
                   onClick={createTeam}
                   disabled={!newTeamName.trim() || teamBusy}
-                  className="h-11 px-4 rounded-md bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors"
+                  className="btn-primary btn-md disabled:opacity-50"
                 >
                   {teamBusy ? 'Creating…' : 'Create'}
                 </button>

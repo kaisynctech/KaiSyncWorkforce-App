@@ -770,7 +770,7 @@ export default function PayrollPage() {
           type="button"
           onClick={() => void openGenerate()}
           disabled={generating || isLocked}
-          className="h-8 px-2.5 text-[11px] rounded-md bg-surface-dark border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50 whitespace-nowrap"
+          className="btn-secondary"
         >
           {generating
             ? genProgress ? `${genProgress.done.toLocaleString()}/${genProgress.total.toLocaleString()}` : 'Working…'
@@ -780,7 +780,7 @@ export default function PayrollPage() {
           type="button"
           onClick={approveAll}
           disabled={approving}
-          className="btn-primary h-8 px-2.5 text-[11px] disabled:opacity-50 whitespace-nowrap"
+          className="btn-primary"
         >
           {approving ? 'Approving…' : 'Approve all'}
         </button>
@@ -788,8 +788,7 @@ export default function PayrollPage() {
           type="button"
           onClick={releaseAll}
           disabled={releasing}
-          className="h-8 px-2.5 text-[11px] rounded-md border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50 whitespace-nowrap"
-          style={{ backgroundColor: '#4C1D95', color: '#C4B5FD', borderColor: '#7C3AED' }}
+          className="btn-primary !bg-violet-700 hover:!bg-violet-800"
         >
           {releasing ? 'Releasing…' : 'Release all'}
         </button>
@@ -959,7 +958,7 @@ export default function PayrollPage() {
                           <button
                             type="button"
                             onClick={() => approvePayslip(p.id)}
-                            className="btn-primary flex-1 h-11 text-[13px]"
+                            className="btn-primary flex-1"
                           >
                             Approve
                           </button>
@@ -968,8 +967,7 @@ export default function PayrollPage() {
                           <button
                             type="button"
                             onClick={() => releasePayslip(p.id)}
-                            className="flex-1 h-11 text-[13px] rounded-md text-white"
-                            style={{ backgroundColor: '#7C3AED' }}
+                            className="btn-primary flex-1 !bg-violet-600 hover:!bg-violet-700"
                           >
                             Show
                           </button>
@@ -978,8 +976,7 @@ export default function PayrollPage() {
                           <button
                             type="button"
                             onClick={() => rejectPayslip(p.id)}
-                            className="flex-1 h-11 text-[13px] rounded-md"
-                            style={{ backgroundColor: '#FEE2E2', color: '#991B1B' }}
+                            className="btn-outlined flex-1 !border-error/40 !text-error !bg-error-dark/40"
                           >
                             Reject
                           </button>
@@ -1016,7 +1013,7 @@ export default function PayrollPage() {
               <button
                 type="button"
                 onClick={() => setShowGenModal(false)}
-                className="btn-outlined h-11 px-4 text-[13px]"
+                className="btn-outlined btn-md"
               >
                 Cancel
               </button>
@@ -1024,7 +1021,7 @@ export default function PayrollPage() {
                 type="button"
                 onClick={() => void confirmGenerate()}
                 disabled={generating || genPreview.readyCount === 0}
-                className="btn-primary h-11 px-4 text-[13px] disabled:opacity-50"
+                className="btn-primary btn-md"
               >
                 {generating
                   ? genProgress ? `${genProgress.done.toLocaleString()} of ${genProgress.total.toLocaleString()}…` : 'Working…'
