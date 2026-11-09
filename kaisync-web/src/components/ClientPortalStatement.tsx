@@ -7,6 +7,19 @@ import { moneyZAR } from '@/lib/client-portal/quotation'
 import type { ClientPortalSession } from '@/lib/client-portal/session'
 import { buildClientStatement, clientStatementToCsv, type ClientStatementEntry } from '@/lib/client-portal/statement'
 import { localISODate } from '@/lib/utils'
+import { ResponsiveDataView } from '@/components/ui/ResponsiveDataView'
+import { MONEY_TH, MONEY_TD, countByStatusTab, filterByStatusTab, TAB_ALL } from '@/components/ui/StatusFilterTabs'
+import {
+  TextHeaderFilter,
+  MoneyHeaderFilter,
+  DateHeaderFilter,
+  matchText,
+  matchMoney,
+  inDateRange,
+  statusTab,
+} from '@/components/ui/MoneyListFilters'
+import { PortalEmpty, PortalPanel } from '@/components/portal/PortalChrome'
+import { PortalListPager, PortalListToolbar, usePortalListPaging } from '@/components/portal/PortalListChrome'
 
 const KIND_LABEL: Record<ClientStatementEntry['kind'], string> = {
   invoice: 'Invoice',
@@ -15,11 +28,40 @@ const KIND_LABEL: Record<ClientStatementEntry['kind'], string> = {
   refund: 'Refund',
 }
 
+const KIND_TABS = [
+  TAB_ALL,
+  statusTab('invoice', 'Invoices', ['invoice'], 'blue'),
+  statusTab('payment', 'Payments', ['payment'], 'green'),
+  statusTab('credit_note', 'Credits', ['credit_note'], 'amber'),
+  statusTab('refund', 'Refunds', ['refund'], 'slate'),
+]
+
+type Cols = {
+  reference: string
+  description: string
+  dateFrom: string
+  dateTo: string
+  debitMin: string
+  debitMax: string
+  creditMin: string
+  creditMax: string
+}
+const EMPTY_COLS: Cols = {
+  reference: '', description: '', dateFrom: '', dateTo: '',
+  debitMin: '', debitMax: '', creditMin: '', creditMax: '',
+}
+function colsActive(c: Cols) {
+  return !!(c.reference || c.description || c.dateFrom || c.dateTo || c.debitMin || c.debitMax || c.creditMin || c.creditMax)
+}
+
 /** Payments tab: full statement with running balance, download and print. */
 export function ClientPortalStatement({ session }: { session: ClientPortalSession }) {
   const [entries, setEntries] = useState<ClientStatementEntry[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [pdfBusy, setPdfBusy] = useState(false)
+  const [search, setSearch] = useState('')
+  const [statusTabId, setStatusTabId] = useState('all')
+  const [cols, setCols] = useState<Cols>(EMPTY_COLS)
 
   useEffect(() => {
     let cancelled = false
@@ -30,6 +72,30 @@ export function ClientPortalStatement({ session }: { session: ClientPortalSessio
   }, [session.company_code, session.client_code])
 
   const st = useMemo(() => buildClientStatement(entries ?? []), [entries])
+
+  const rows = useMemo(
+    () => st.lines.map((l, i) => ({ ...l, id: String(i), status: l.kind })),
+    [st.lines],
+  )
+
+  const base = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return rows.filter(l => {
+      if (!matchText(l.reference, cols.reference)) return false
+      if (!matchText(l.description, cols.description)) return false
+      if (!inDateRange(l.entry_date, cols.dateFrom, cols.dateTo)) return false
+      if (!matchMoney(l.debit, cols.debitMin, cols.debitMax)) return false
+      if (!matchMoney(l.credit, cols.creditMin, cols.creditMax)) return false
+      if (!q) return true
+      return (l.reference ?? '').toLowerCase().includes(q)
+        || l.description.toLowerCase().includes(q)
+        || (KIND_LABEL[l.kind] ?? l.kind).toLowerCase().includes(q)
+    })
+  }, [rows, cols, search])
+
+  const counts = useMemo(() => countByStatusTab(base, KIND_TABS), [base])
+  const filtered = useMemo(() => filterByStatusTab(base, KIND_TABS, statusTabId), [base, statusTabId])
+  const paging = usePortalListPaging(filtered)
 
   function download() {
     const title = `Statement — ${session.client_name}${session.client_code ? ` (${session.client_code})` : ''} — ${new Date().toLocaleDateString('en-ZA')}`
@@ -110,35 +176,98 @@ export function ClientPortalStatement({ session }: { session: ClientPortalSessio
       </div>
 
       {st.lines.length === 0 ? (
-        <div className="py-16 text-center text-text-secondary text-[13px]">No invoices or payments yet.</div>
+        <PortalEmpty icon="receipt_long" title="No invoices or payments yet" body="Statement lines will appear here as invoices and payments are posted." />
       ) : (
-        <div className="border-divider bg-surface rounded-xl border overflow-x-auto">
-          <table className="w-full text-[12px] min-w-[600px]">
-            <thead>
-              <tr className="text-left text-text-secondary border-b border-divider">
-                <th className="px-3 py-2 font-semibold">Date</th>
-                <th className="px-3 py-2 font-semibold">Type</th>
-                <th className="px-3 py-2 font-semibold">Reference</th>
-                <th className="px-3 py-2 font-semibold">Description</th>
-                <th className="px-3 py-2 font-semibold text-right">Debit</th>
-                <th className="px-3 py-2 font-semibold text-right">Credit</th>
-                <th className="px-3 py-2 font-semibold text-right">Balance</th>
-              </tr>
-            </thead>
-            <tbody>
-              {st.lines.map((l, i) => (
-                <tr key={i} className="border-b border-divider last:border-0">
-                  <td className="px-3 py-2 whitespace-nowrap text-text-secondary">{fmtDate(l.entry_date)}</td>
-                  <td className="px-3 py-2 whitespace-nowrap text-text-primary">{KIND_LABEL[l.kind] ?? l.kind}</td>
-                  <td className="px-3 py-2 text-text-secondary">{l.reference || '—'}</td>
-                  <td className="px-3 py-2 text-text-primary">{l.description}</td>
-                  <td className="px-3 py-2 text-right text-text-primary">{l.debit ? moneyZAR(l.debit) : ''}</td>
-                  <td className="px-3 py-2 text-right text-success">{l.credit ? moneyZAR(l.credit) : ''}</td>
-                  <td className="px-3 py-2 text-right font-semibold text-text-primary">{moneyZAR(l.balance)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="space-y-3">
+          <PortalListToolbar
+            search={search}
+            onSearch={v => { setSearch(v); paging.resetPage() }}
+            placeholder="Search reference, description, or type…"
+            resetDisabled={!colsActive(cols) && !search}
+            onReset={() => { setCols(EMPTY_COLS); setSearch(''); paging.resetPage() }}
+            tabs={KIND_TABS}
+            statusTabId={statusTabId}
+            counts={counts}
+            onStatusChange={id => { setStatusTabId(id); paging.resetPage() }}
+          />
+          <PortalPanel>
+            <ResponsiveDataView
+              table={
+                <table className="w-full text-[13px]" style={{ minWidth: 720 }}>
+                  <thead className="sticky top-0 z-10">
+                    <tr className="bg-surface-elevated border-b border-divider">
+                      <th className={`${MONEY_TH} text-left`}>
+                        <DateHeaderFilter
+                          label="Date"
+                          from={cols.dateFrom}
+                          to={cols.dateTo}
+                          onChange={p => { setCols(c => ({ ...c, dateFrom: p.from, dateTo: p.to })); paging.resetPage() }}
+                        />
+                      </th>
+                      <th className={`${MONEY_TH} text-left`}>Type</th>
+                      <th className={`${MONEY_TH} text-left`}>
+                        <TextHeaderFilter
+                          label="Reference"
+                          value={cols.reference}
+                          onChange={v => { setCols(c => ({ ...c, reference: v })); paging.resetPage() }}
+                          placeholder="Reference…"
+                        />
+                      </th>
+                      <th className={`${MONEY_TH} text-left`}>
+                        <TextHeaderFilter
+                          label="Description"
+                          value={cols.description}
+                          onChange={v => { setCols(c => ({ ...c, description: v })); paging.resetPage() }}
+                          placeholder="Description…"
+                        />
+                      </th>
+                      <th className={`${MONEY_TH} text-right`}>
+                        <MoneyHeaderFilter
+                          label="Debit"
+                          min={cols.debitMin}
+                          max={cols.debitMax}
+                          onChange={p => { setCols(c => ({ ...c, debitMin: p.min, debitMax: p.max })); paging.resetPage() }}
+                        />
+                      </th>
+                      <th className={`${MONEY_TH} text-right`}>
+                        <MoneyHeaderFilter
+                          label="Credit"
+                          min={cols.creditMin}
+                          max={cols.creditMax}
+                          onChange={p => { setCols(c => ({ ...c, creditMin: p.min, creditMax: p.max })); paging.resetPage() }}
+                        />
+                      </th>
+                      <th className={`${MONEY_TH} text-right`}>Balance</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paging.pageRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="py-10 text-center text-[13px] text-text-secondary">No lines match your filters.</td>
+                      </tr>
+                    ) : paging.pageRows.map(l => (
+                      <tr key={l.id} className="border-b border-divider last:border-0 hover:bg-surface-elevated">
+                        <td className={`${MONEY_TD} text-text-secondary`}>{fmtDate(l.entry_date)}</td>
+                        <td className={`${MONEY_TD} text-text-primary`}>{KIND_LABEL[l.kind] ?? l.kind}</td>
+                        <td className={`${MONEY_TD} text-text-secondary`}>{l.reference || '—'}</td>
+                        <td className={`${MONEY_TD} text-text-primary`}>{l.description}</td>
+                        <td className={`${MONEY_TD} text-right text-text-primary`}>{l.debit ? moneyZAR(l.debit) : ''}</td>
+                        <td className={`${MONEY_TD} text-right text-success`}>{l.credit ? moneyZAR(l.credit) : ''}</td>
+                        <td className={`${MONEY_TD} text-right font-semibold text-text-primary`}>{moneyZAR(l.balance)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              }
+            />
+            <PortalListPager
+              page={paging.page}
+              pageSize={paging.pageSize}
+              total={paging.total}
+              onPage={paging.setPage}
+              onPageSize={paging.setPageSize}
+            />
+          </PortalPanel>
         </div>
       )}
     </div>
