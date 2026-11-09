@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { signWorkforceMedia } from '@/lib/media-read'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
@@ -91,10 +92,12 @@ function fmtDate(iso: string): string {
 
 export default function EmployeeLeavePage() {
   const allowed = useEmployeeModuleGate('leave')
+  const searchParams = useSearchParams()
   const [requests, setRequests] = useState<LeaveRequest[]>([])
   const [leaveSettings, setLeaveSettings] = useState<LeaveSettingsMap>({})
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
+  const applyOpenedRef = useRef(false)
   const [editRequest, setEditRequest] = useState<LeaveRequest | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
@@ -120,6 +123,14 @@ export default function EmployeeLeavePage() {
     if (allowed !== true) return
     void init()
   }, [allowed])
+
+  useEffect(() => {
+    if (allowed !== true || loading || applyOpenedRef.current) return
+    if (searchParams.get('apply') === '1') {
+      applyOpenedRef.current = true
+      openForm()
+    }
+  }, [allowed, loading, searchParams])
 
   async function init() {
     setLoading(true)

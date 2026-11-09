@@ -57,6 +57,20 @@ interface Job {
   site_id: string | null
   site_radius_mode: boolean | null
   site_radius_meters: number | null
+  scheduled_start?: string | null
+  scheduled_end?: string | null
+  job_code?: string | null
+  priority?: string | null
+}
+
+interface OverviewShift {
+  id: string
+  title: string
+  start_time: string
+  end_time: string | null
+  location: string | null
+  linked_job_id: string | null
+  attendance_responses: Record<string, string> | null
 }
 
 interface LeaveRequest {
@@ -156,10 +170,39 @@ const PRIORITY_CLASSES: Record<string, string> = {
 }
 
 const STATUS_STYLES: Record<string, string> = {
+  scheduled:    'bg-primary/10 text-primary',
   open:         'bg-primary/10 text-primary',
   in_progress:  'bg-warning/10 text-warning',
   completed:    'bg-success/10 text-success',
   cancelled:    'bg-surface-elevated text-text-secondary',
+}
+
+function jobDateKey(iso: string | null | undefined): string | null {
+  if (!iso) return null
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso.slice(0, 10)
+  return toLocalDateStr(d)
+}
+
+/** Assigned/active work that belongs on today's dashboard. */
+function jobIsForToday(job: Job, today: string): boolean {
+  const status = (job.status ?? '').toLowerCase()
+  if (status === 'completed' || status === 'cancelled') return false
+  const start = jobDateKey(job.scheduled_start)
+  const end = jobDateKey(job.scheduled_end) ?? start
+  if (start && end) return start <= today && end >= today
+  if (start) return start === today
+  return status === 'in_progress'
+}
+
+function addDaysIso(baseIso: string, days: number): string {
+  const d = new Date(baseIso + 'T12:00:00')
+  d.setDate(d.getDate() + days)
+  return toLocalDateStr(d)
+}
+
+function fmtShiftTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit', hour12: false })
 }
 
 const ABSENCE_REASONS = ['sick', 'personal', 'emergency', 'other']
@@ -243,6 +286,7 @@ export default function EmployeeOverviewPage() {
   const [pendingPunches, setPendingPunches] = useState<QueuedPunch[]>([])
   const [notificationCount, setNotificationCount] = useState(0)
   const [myTeams, setMyTeams] = useState<WorkTeam[]>([])
+  const [todayShifts, setTodayShifts] = useState<OverviewShift[]>([])
 
   const baseElapsedRef  = useRef<number>(0)
   const clockInTimeRef  = useRef<string | null>(null)
@@ -719,6 +763,32 @@ export default function EmployeeOverviewPage() {
         return ids.includes(member.employeeId)
       })
       setMyTeams(teams)
+
+      const flagsForShifts = bundle.company
+        ? moduleFlagsForCompany({
+            id: bundle.company.id,
+            name: bundle.company.name,
+            enabled_modules: bundle.company.enabled_modules ?? {},
+            dispatch_settings: bundle.company.dispatch_settings ?? {},
+          })
+        : flags
+      if (flagsForShifts.scheduling) {
+        const shiftTo = addDaysIso(todayStr, 7)
+        const { data: shiftData } = await rpc('employee_get_calendar_events_for_worker', {
+          p_company_id: member.companyId,
+          p_employee_id: member.employeeId,
+          p_from: todayStr,
+          p_to: shiftTo,
+          p_session_token: tokRef.current,
+        })
+        const shifts = asRpcArray<OverviewShift>(shiftData)
+          .filter(s => typeof s.start_time === 'string' && s.start_time.length > 0)
+          .sort((a, b) => a.start_time.localeCompare(b.start_time))
+          .slice(0, 8)
+        setTodayShifts(shifts)
+      } else {
+        setTodayShifts([])
+      }
     } catch (e) {
       console.error('[Dashboard] init failed:', e)
       const message = e instanceof Error
@@ -1070,12 +1140,14 @@ export default function EmployeeOverviewPage() {
   }
 
   // ── Derived ────────────────────────────────────────────────────────────
-  const pendingLeave  = leaveRequests.filter(r => r.status === 'pending').length
-  const openIncidents = incidents.filter(i => i.status === 'open' || i.status === 'investigating').length
-  const activeJobs    = jobs.filter(j => j.status !== 'completed' && j.status !== 'cancelled')
+  const activeJobs = jobs.filter(j => j.status !== 'completed' && j.status !== 'cancelled')
+  const todayKey = localISODate()
+  const todayJobs = jobs
+    .filter(j => jobIsForToday(j, todayKey))
+    .slice()
+    .sort((a, b) => (a.scheduled_start ?? '').localeCompare(b.scheduled_start ?? ''))
   const showBranchBanner = showClockCard && !isClockedIn && !!branchStatus?.enforcementActive && !!branchStatus.displayMessage
   const companyName = companyWs?.name ?? 'your company'
-  const todayKey = localISODate()
   const firstClockInToday = recentPunches
     .filter(p => p.type === 'in' && toLocalDateStr(new Date(p.date_time)) === todayKey)
     .sort((a, b) => a.date_time.localeCompare(b.date_time))[0]
@@ -1087,27 +1159,11 @@ export default function EmployeeOverviewPage() {
     ? `Awaiting HR approval at ${companyName}. You can upload documents below — only this company can see them.`
     : 'Awaiting HR approval. You can upload documents for this company while you wait.'
 
-  type ActivityItem =
-    | { kind: 'leave'; id: string; date: string; leave: LeaveRequest }
-    | { kind: 'incident'; id: string; date: string; inc: Incident }
-
-  const activityItems: ActivityItem[] = [
-    ...leaveRequests.map(r => ({
-      kind: 'leave' as const,
-      id:   r.id,
-      date: r.start_date,
-      leave: r,
-    })),
-    ...incidents.map(i => ({
-      kind: 'incident' as const,
-      id:   i.id,
-      date: i.occurred_at ?? i.created_at,
-      inc:  i,
-    })),
-  ]
-    .filter(a => typeof a.date === 'string' && a.date.length > 0)
-    .sort((a, b) => b.date.localeCompare(a.date))
-    .slice(0, 5)
+  // Bundle still loads these for clock/init; dashboard no longer surfaces them.
+  void leaveRequests
+  void incidents
+  void colleagues
+  void myTeams
 
   if (loading) return (
     <div className="flex items-center justify-center h-64 text-text-secondary text-[14px]">Loading…</div>
@@ -1294,289 +1350,156 @@ export default function EmployeeOverviewPage() {
 
         <PwaInstallButton variant="banner" />
 
-        {/* Today's PA Tasks strip */}
-        {showWorkspace && modules.myPa && paTasks.length > 0 && (
-          <div>
-            <p className="section-label mb-2">Today&apos;s Tasks</p>
-            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-              {paTasks.map(t => (
-                <button key={t.id} onClick={() => router.push('/dashboard/employee/pa')}
-                  className="flex items-center gap-2 bg-surface border border-divider rounded-xl px-3 py-2 shrink-0 hover:border-primary transition-colors max-w-[200px]">
-                  <span className="text-[13px] font-medium text-text-primary truncate">{t.title}</span>
-                  <span className={`text-[10px] font-bold px-1.5 py-[2px] rounded-full capitalize shrink-0 ${PRIORITY_CLASSES[t.priority] ?? 'bg-surface-elevated text-text-secondary'}`}>
-                    {t.priority}
-                  </span>
-                </button>
-              ))}
-            </div>
+        {/* Quick actions */}
+        {showWorkspace && (modules.jobs || modules.leave) && (
+          <div className="flex flex-wrap gap-2">
+            {modules.jobs && (
+              <Link
+                href="/dashboard/employee/jobs/new"
+                className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-divider bg-surface text-[13px] font-semibold text-text-primary hover:border-primary hover:text-primary transition-colors"
+              >
+                <span className="material-icons text-[16px]">add</span>
+                Add Job
+              </Link>
+            )}
+            {modules.leave && (
+              <Link
+                href="/dashboard/employee/leave?apply=1"
+                className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg border border-divider bg-surface text-[13px] font-semibold text-text-primary hover:border-primary hover:text-primary transition-colors"
+              >
+                <span className="material-icons text-[16px]">beach_access</span>
+                Apply for Leave
+              </Link>
+            )}
           </div>
         )}
 
-        {/* KPI grid */}
-        <div className={`grid grid-cols-2 gap-3 ${isPending ? 'opacity-60' : ''}`}>
-          {modules.jobs ? (
-            <Link href={showWorkspace ? '/dashboard/employee/jobs' : '#'}
-              onClick={e => { if (!showWorkspace) e.preventDefault() }}
-              className="bg-surface border border-divider rounded-xl p-4 hover:border-primary transition-colors">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="material-icons text-primary text-[20px]">work</span>
-                <p className="text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Active Jobs</p>
-              </div>
-              <p className="text-[28px] font-bold text-text-primary">{activeJobs.length}</p>
-            </Link>
-          ) : (
-            <div className="bg-surface border border-divider rounded-xl p-4 opacity-40">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="material-icons text-text-disabled text-[20px]">work</span>
-                <p className="text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Active Jobs</p>
-              </div>
-              <p className="text-[28px] font-bold text-text-disabled">—</p>
-            </div>
-          )}
-          {modules.leave ? (
-            <Link href={showWorkspace ? '/dashboard/employee/leave' : '#'}
-              onClick={e => { if (!showWorkspace) e.preventDefault() }}
-              className="bg-surface border border-divider rounded-xl p-4 hover:border-primary transition-colors">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="material-icons text-warning text-[20px]">beach_access</span>
-                <p className="text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Pending Leave</p>
-              </div>
-              <p className="text-[28px] font-bold text-text-primary">{pendingLeave}</p>
-            </Link>
-          ) : (
-            <div className="bg-surface border border-divider rounded-xl p-4 opacity-40">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="material-icons text-text-disabled text-[20px]">beach_access</span>
-                <p className="text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Pending Leave</p>
-              </div>
-              <p className="text-[28px] font-bold text-text-disabled">—</p>
-            </div>
-          )}
-          {modules.myPa ? (
-            <Link href={showWorkspace ? '/dashboard/employee/pa' : '#'}
-              onClick={e => { if (!showWorkspace) e.preventDefault() }}
-              className="bg-surface border border-divider rounded-xl p-4 hover:border-primary transition-colors">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="material-icons text-primary text-[20px]">task_alt</span>
-                <p className="text-[11px] font-semibold text-text-disabled uppercase tracking-wide">PA Tasks Today</p>
-              </div>
-              <p className="text-[28px] font-bold text-text-primary">{paTasks.length}</p>
-            </Link>
-          ) : (
-            <div className="bg-surface border border-divider rounded-xl p-4 opacity-40">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="material-icons text-text-disabled text-[20px]">task_alt</span>
-                <p className="text-[11px] font-semibold text-text-disabled uppercase tracking-wide">PA Tasks Today</p>
-              </div>
-              <p className="text-[28px] font-bold text-text-disabled">—</p>
-            </div>
-          )}
-          {modules.incidents ? (
-            <Link href={showWorkspace ? '/dashboard/employee/incidents' : '#'}
-              onClick={e => { if (!showWorkspace) e.preventDefault() }}
-              className="bg-surface border border-divider rounded-xl p-4 hover:border-primary transition-colors">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="material-icons text-error text-[20px]">warning</span>
-                <p className="text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Open Incidents</p>
-              </div>
-              <p className="text-[28px] font-bold text-text-primary">{openIncidents}</p>
-            </Link>
-          ) : (
-            <div className="bg-surface border border-divider rounded-xl p-4 opacity-40">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="material-icons text-text-disabled text-[20px]">warning</span>
-                <p className="text-[11px] font-semibold text-text-disabled uppercase tracking-wide">Open Incidents</p>
-              </div>
-              <p className="text-[28px] font-bold text-text-disabled">—</p>
-            </div>
-          )}
-        </div>
-
-        {/* Quick links / Home discoverability */}
-        {showWorkspace && (
+        {/* Today's Jobs */}
+        {showWorkspace && modules.jobs && (
           <div className="bg-surface border border-divider rounded-xl overflow-hidden">
-            <div className="px-4 py-3 border-b border-divider">
-              <p className="section-label">Quick Links</p>
-            </div>
-            <div className="divide-y divide-divider">
-              {modules.scheduling && (
-                <Link href="/dashboard/employee/shifts" className="flex items-center gap-3 px-4 py-3 hover:bg-surface-elevated transition-colors">
-                  <span className="material-icons text-primary text-[22px]">event</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[14px] font-semibold text-text-primary">My Shifts</p>
-                    <p className="text-[12px] text-text-secondary">View schedule and RSVP</p>
-                  </div>
-                  <span className="material-icons text-text-disabled">chevron_right</span>
-                </Link>
-              )}
-              {modules.paperless && (
-                <Link href="/dashboard/employee/forms" className="flex items-center gap-3 px-4 py-3 hover:bg-surface-elevated transition-colors">
-                  <span className="material-icons text-primary text-[22px]">description</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[14px] font-semibold text-text-primary">Forms</p>
-                    <p className="text-[12px] text-text-secondary">Fill company forms</p>
-                  </div>
-                  <span className="material-icons text-text-disabled">chevron_right</span>
-                </Link>
-              )}
-              {modules.payroll && (
-                <Link href="/dashboard/employee/payslips" className="flex items-center gap-3 px-4 py-3 hover:bg-surface-elevated transition-colors">
-                  <span className="material-icons text-primary text-[22px]">payments</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[14px] font-semibold text-text-primary">My Payslips</p>
-                    <p className="text-[12px] text-text-secondary">View released payslips</p>
-                  </div>
-                  <span className="material-icons text-text-disabled">chevron_right</span>
-                </Link>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Home attendance (compact, last 7 days) */}
-        {showClockCard && (
-          <div className="bg-surface border border-divider rounded-xl overflow-hidden">
-            <div className="px-4 py-3 border-b border-divider flex items-center justify-between">
-              <p className="section-label">Recent Attendance</p>
-              <Link href="/dashboard/employee/attendance"
-                className="text-[12px] font-semibold text-primary hover:underline">
-                View all / Export
+            <div className="px-4 py-3 border-b border-divider flex items-center justify-between gap-2">
+              <p className="section-label">Today&apos;s Jobs</p>
+              <Link href="/dashboard/employee/jobs" className="text-[12px] font-semibold text-primary hover:underline">
+                View all
               </Link>
             </div>
-            {recentPunches.length === 0 ? (
-              <p className="px-4 py-3 text-[12px] text-text-secondary">No punches in the last 7 days.</p>
+            {todayJobs.length === 0 ? (
+              <p className="px-4 py-3 text-[13px] text-text-secondary">No jobs scheduled for you today.</p>
             ) : (
               <div className="divide-y divide-divider">
-                {recentPunches.slice(0, 8).map(p => (
-                  <div key={p.id} className="px-4 py-2.5 flex items-center justify-between gap-3">
-                    <p className="text-[12px] text-text-secondary w-[88px] shrink-0">{fmtDate(p.date_time)}</p>
-                    <p className="text-[12px] font-semibold text-text-primary capitalize flex-1">{p.type === 'in' ? 'In' : p.type === 'out' ? 'Out' : p.type}</p>
-                    <p className="text-[12px] text-text-disabled tabular-nums">{fmtTime(p.date_time)}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* My Teams section */}
-        {showWorkspace && (
-          <div className="bg-surface border border-divider rounded-xl overflow-hidden">
-            <div className="px-4 py-3 border-b border-divider">
-              <p className="section-label">My Teams</p>
-            </div>
-            {myTeams.length === 0 ? (
-              <p className="px-4 py-3 text-[12px] text-text-secondary">You&apos;re not a member of any teams yet.</p>
-            ) : (
-              <div className="divide-y divide-divider">
-                {myTeams.map(t => (
-                  <div key={t.id} className="px-4 py-3 flex items-start justify-between gap-3">
+                {todayJobs.map(j => (
+                  <Link
+                    key={j.id}
+                    href={`/dashboard/employee/jobs/${j.id}`}
+                    className="px-4 py-3 flex items-center justify-between gap-3 hover:bg-surface-elevated transition-colors"
+                  >
                     <div className="min-w-0">
-                      <p className="text-[14px] font-semibold text-text-primary truncate">{t.name}</p>
-                      {t.description && (
-                        <p className="text-[12px] text-text-secondary mt-0.5 line-clamp-2">{t.description}</p>
-                      )}
+                      <p className="text-[14px] font-semibold text-text-primary truncate">{j.title}</p>
+                      <p className="text-[12px] text-text-secondary mt-0.5">
+                        {j.scheduled_start
+                          ? `${fmtTime(j.scheduled_start)}${j.scheduled_end ? ` – ${fmtTime(j.scheduled_end)}` : ''}`
+                          : 'In progress'}
+                        {j.job_code ? ` · ${j.job_code}` : ''}
+                      </p>
                     </div>
-                    <span className="text-[11px] text-text-disabled shrink-0 tabular-nums">
-                      {(t.member_ids ?? []).length} members
-                    </span>
-                  </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {j.status && (
+                        <span className={`text-[10px] font-bold px-1.5 py-[2px] rounded-full capitalize ${STATUS_STYLES[j.status] ?? 'bg-surface-elevated text-text-secondary'}`}>
+                          {j.status.replace(/_/g, ' ')}
+                        </span>
+                      )}
+                      <span className="material-icons text-text-disabled text-[18px]">chevron_right</span>
+                    </div>
+                  </Link>
                 ))}
               </div>
             )}
           </div>
         )}
 
-        {/* Active Jobs strip */}
-        {showWorkspace && modules.jobs && activeJobs.length > 0 && (
-          <div>
-            <p className="section-label mb-2">Active Jobs</p>
-            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-              {activeJobs.slice(0, 5).map(j => (
-                <Link key={j.id} href={`/dashboard/employee/jobs/${j.id}`}
-                  className="bg-surface border border-divider rounded-xl px-3 py-2.5 shrink-0 hover:border-primary transition-colors min-w-[140px]">
-                  <p className="text-[13px] font-semibold text-text-primary truncate max-w-[160px]">{j.title}</p>
-                  {j.status && (
-                    <span className={`text-[10px] font-bold px-1.5 py-[2px] rounded-full capitalize ${STATUS_STYLES[j.status] ?? 'bg-surface-elevated text-text-secondary'}`}>
-                      {j.status.replace(/_/g,' ')}
-                    </span>
-                  )}
-                </Link>
-              ))}
-              {activeJobs.length > 5 && (
-                <Link href="/dashboard/employee/jobs"
-                  className="bg-surface border border-dashed border-divider rounded-xl px-3 py-2.5 shrink-0 flex items-center text-[12px] font-semibold text-primary hover:border-primary transition-colors">
-                  View all
-                </Link>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Colleagues on leave */}
-        {showWorkspace && modules.leave && colleagues.length > 0 && (
+        {/* Today's / upcoming shifts */}
+        {showWorkspace && modules.scheduling && (
           <div className="bg-surface border border-divider rounded-xl overflow-hidden">
-            <div className="px-4 py-3 border-b border-divider">
-              <p className="section-label">Colleagues on Leave</p>
+            <div className="px-4 py-3 border-b border-divider flex items-center justify-between gap-2">
+              <p className="section-label">My Shifts</p>
+              <Link href="/dashboard/employee/shifts" className="text-[12px] font-semibold text-primary hover:underline">
+                View schedule
+              </Link>
             </div>
-            <div className="divide-y divide-divider">
-              {colleagues.map((c, i) => (
-                <div key={i} className="px-4 py-3 flex items-center justify-between">
-                  <div>
-                    <p className="text-[13px] font-semibold text-text-primary">{c.employees ? `${c.employees.name} ${c.employees.surname}` : '—'}</p>
-                    <p className="text-[11px] text-text-secondary">{fmtLeaveType(c.leave_type)}</p>
-                  </div>
-                  <p className="text-[11px] text-text-disabled">Back: {fmtDate(c.end_date + 'T12:00:00')}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Recent Activity */}
-        {showWorkspace && activityItems.length > 0 && (
-          <div className="bg-surface border border-divider rounded-xl overflow-hidden">
-            <div className="px-4 py-3 border-b border-divider">
-              <p className="section-label">Recent Activity</p>
-            </div>
-            <div className="divide-y divide-divider">
-              {activityItems.map(item => {
-                if (item.kind === 'leave') {
-                  const r = item.leave
+            {todayShifts.length === 0 ? (
+              <p className="px-4 py-3 text-[13px] text-text-secondary">No shifts assigned in the next 7 days.</p>
+            ) : (
+              <div className="divide-y divide-divider">
+                {todayShifts.map(s => {
+                  const dayKey = jobDateKey(s.start_time)
+                  const isToday = dayKey === todayKey
+                  const response = empIdRef.current && s.attendance_responses
+                    ? s.attendance_responses[empIdRef.current]
+                    : null
                   return (
-                    <div key={item.id} className="px-4 py-3 flex items-center justify-between">
-                      <div>
-                        <p className="text-[13px] font-semibold text-text-primary">Leave: {fmtLeaveType(r.leave_type)}</p>
-                        <p className="text-[11px] text-text-disabled">
-                          {fmtDate(r.start_date + 'T12:00:00')} – {fmtDate(r.end_date + 'T12:00:00')}
+                    <Link
+                      key={s.id}
+                      href="/dashboard/employee/shifts"
+                      className="px-4 py-3 flex items-center justify-between gap-3 hover:bg-surface-elevated transition-colors"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-[14px] font-semibold text-text-primary truncate">{s.title}</p>
+                        <p className="text-[12px] text-text-secondary mt-0.5">
+                          {isToday ? 'Today' : fmtDate(s.start_time)}
+                          {' · '}
+                          {fmtShiftTime(s.start_time)}
+                          {s.end_time ? ` – ${fmtShiftTime(s.end_time)}` : ''}
+                          {s.location ? ` · ${s.location}` : ''}
                         </p>
                       </div>
-                      <span className={`text-[11px] font-semibold px-2 py-[2px] rounded-full capitalize ${
-                        r.status === 'approved' ? 'bg-success/10 text-success' :
-                        r.status === 'pending'  ? 'bg-warning/10 text-warning' :
-                        r.status === 'rejected' ? 'bg-error/10 text-error' :
-                        'bg-surface-elevated text-text-secondary'
-                      }`}>{r.status}</span>
-                    </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {response && (
+                          <span className={`text-[10px] font-bold px-1.5 py-[2px] rounded-full capitalize ${
+                            response === 'accepted' ? 'bg-success/10 text-success'
+                              : response === 'declined' ? 'bg-error/10 text-error'
+                                : 'bg-surface-elevated text-text-secondary'
+                          }`}>
+                            {response}
+                          </span>
+                        )}
+                        <span className="material-icons text-text-disabled text-[18px]">chevron_right</span>
+                      </div>
+                    </Link>
                   )
-                }
-                const i = item.inc
-                return (
-                  <Link key={item.id} href={`/dashboard/employee/incidents/${i.id}`}
-                    className="px-4 py-3 flex items-center justify-between hover:bg-surface-elevated transition-colors">
-                    <div>
-                      <p className="text-[13px] font-semibold text-text-primary">
-                        Incident: {i.title ?? i.description ?? 'Untitled'}
-                      </p>
-                      <p className="text-[11px] text-text-disabled">{fmtDate(i.occurred_at ?? i.created_at)}</p>
-                    </div>
-                    {i.severity && (
-                      <span className="text-[11px] font-semibold text-error capitalize">{i.severity}</span>
-                    )}
-                  </Link>
-                )
-              })}
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Today's PA Tasks */}
+        {showWorkspace && modules.myPa && (
+          <div className="bg-surface border border-divider rounded-xl overflow-hidden">
+            <div className="px-4 py-3 border-b border-divider flex items-center justify-between gap-2">
+              <p className="section-label">Today&apos;s Tasks</p>
+              <Link href="/dashboard/employee/pa" className="text-[12px] font-semibold text-primary hover:underline">
+                Open PA
+              </Link>
             </div>
+            {paTasks.length === 0 ? (
+              <p className="px-4 py-3 text-[13px] text-text-secondary">No PA tasks due today.</p>
+            ) : (
+              <div className="divide-y divide-divider">
+                {paTasks.map(t => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => router.push('/dashboard/employee/pa')}
+                    className="w-full text-left px-4 py-3 flex items-center justify-between gap-3 hover:bg-surface-elevated transition-colors"
+                  >
+                    <p className="text-[14px] font-semibold text-text-primary truncate">{t.title}</p>
+                    <span className={`text-[10px] font-bold px-1.5 py-[2px] rounded-full capitalize shrink-0 ${PRIORITY_CLASSES[t.priority] ?? 'bg-surface-elevated text-text-secondary'}`}>
+                      {t.priority}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
