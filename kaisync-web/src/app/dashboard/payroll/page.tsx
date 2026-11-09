@@ -615,12 +615,6 @@ export default function PayrollPage() {
                   </button>
                   <span className="text-[11px] text-text-secondary whitespace-nowrap">{isLocked ? 'Locked' : 'Open'}</span>
                 </div>
-                <StatusFilterTabs
-                  tabs={PAYROLL_STATUS_TABS}
-                  value={statusFilter}
-                  counts={payrollStatusCounts}
-                  onChange={id => setStatusFilter(id as StatusFilter)}
-                />
               </>
             )}
           </div>
@@ -752,7 +746,7 @@ export default function PayrollPage() {
 
       {section === 'payslips' && (
       <div className="shrink-0 flex flex-wrap items-center gap-2 px-3 py-1.5 bg-surface border-b border-divider">
-        <div className="flex items-center gap-1.5 h-8 min-w-[180px] flex-1 max-w-md bg-surface border border-border rounded-sm px-2">
+        <div className="flex items-center gap-1.5 h-8 min-w-[160px] flex-1 max-w-xs bg-surface border border-border rounded-sm px-2">
           <span className="material-icons text-text-disabled text-[16px]">search</span>
           <input
             type="search"
@@ -766,11 +760,17 @@ export default function PayrollPage() {
           disabled={!payrollFiltersActive}
           onReset={() => { setSearch(''); setEmployeeCol(''); setStatusFilter('all') }}
         />
+        <StatusFilterTabs
+          tabs={PAYROLL_STATUS_TABS}
+          value={statusFilter}
+          counts={payrollStatusCounts}
+          onChange={id => setStatusFilter(id as StatusFilter)}
+        />
         <button
           type="button"
           onClick={() => void openGenerate()}
           disabled={generating || isLocked}
-          className="h-8 px-2.5 text-[11px] rounded-md bg-surface-dark border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
+          className="h-8 px-2.5 text-[11px] rounded-md bg-surface-dark border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50 whitespace-nowrap"
         >
           {generating
             ? genProgress ? `${genProgress.done.toLocaleString()}/${genProgress.total.toLocaleString()}` : 'Working…'
@@ -780,7 +780,7 @@ export default function PayrollPage() {
           type="button"
           onClick={approveAll}
           disabled={approving}
-          className="btn-primary h-8 px-2.5 text-[11px] disabled:opacity-50"
+          className="btn-primary h-8 px-2.5 text-[11px] disabled:opacity-50 whitespace-nowrap"
         >
           {approving ? 'Approving…' : 'Approve all'}
         </button>
@@ -788,7 +788,7 @@ export default function PayrollPage() {
           type="button"
           onClick={releaseAll}
           disabled={releasing}
-          className="h-8 px-2.5 text-[11px] rounded-md border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
+          className="h-8 px-2.5 text-[11px] rounded-md border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50 whitespace-nowrap"
           style={{ backgroundColor: '#4C1D95', color: '#C4B5FD', borderColor: '#7C3AED' }}
         >
           {releasing ? 'Releasing…' : 'Release all'}
