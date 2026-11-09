@@ -135,6 +135,7 @@ export default function EmployeeSidebar({ open, onToggle, onClose, company, empl
       {!isDesktop && open && (
         <div
           className="fixed inset-0 bg-black/50 z-40"
+          style={{ top: 'var(--app-chrome-offset)' }}
           onClick={onClose ?? onToggle}
           aria-hidden
         />
@@ -143,10 +144,11 @@ export default function EmployeeSidebar({ open, onToggle, onClose, company, empl
         className={cn(
           'flex flex-col bg-sidebar-bg',
           mobileClosed && 'hidden',
-          !isDesktop && open && 'fixed inset-y-0 left-0 z-50 w-72 translate-x-0 shadow-xl',
+          !isDesktop && open && 'fixed bottom-0 left-0 z-50 w-72 translate-x-0 shadow-xl safe-pb',
           isDesktop && 'relative z-auto shrink-0 h-full transition-[width] duration-200',
           isDesktop && (open ? 'w-60' : 'w-16'),
         )}
+        style={!isDesktop && open ? { top: 'var(--app-chrome-offset)' } : undefined}
         aria-hidden={mobileClosed}
       >
         <div

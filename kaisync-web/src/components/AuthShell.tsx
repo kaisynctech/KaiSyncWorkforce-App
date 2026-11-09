@@ -6,9 +6,9 @@ import { PwaInstallButton } from '@/components/PwaInstallButton'
 /** Shared dark auth chrome matching the web auth shell. */
 export function AuthShell({ children }: { children: ReactNode }) {
   return (
-    <div className="min-h-screen w-full flex">
+    <div className="min-h-app w-full flex">
       <div
-        className="hidden lg:flex lg:w-[45%] flex-col justify-between p-12 relative overflow-hidden"
+        className="hidden lg:flex lg:w-[45%] flex-col justify-between p-12 relative overflow-hidden safe-pad"
         style={{ background: 'linear-gradient(145deg, #1a1f2e 0%, #0f172a 60%, #1e3a5f 100%)' }}
       >
         <div
@@ -57,7 +57,7 @@ export function AuthShell({ children }: { children: ReactNode }) {
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col items-center justify-center px-6 py-12 bg-[#0f172a]">
+      <div className="flex-1 flex flex-col items-center justify-center px-6 py-12 bg-[#0f172a] safe-pad">
         <div className="flex lg:hidden items-center gap-2 mb-10">
           <div
             className="w-9 h-9 rounded-xl flex items-center justify-center"

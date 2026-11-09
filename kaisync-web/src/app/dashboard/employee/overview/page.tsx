@@ -236,6 +236,7 @@ export default function EmployeeOverviewPage() {
   const [companyWs, setCompanyWs]   = useState<CompanyWorkspace | null>(null)
   const [modules, setModules]       = useState<EmployeeModuleFlags>(ALL_MODULES_ENABLED)
   const [isPending, setIsPending]   = useState(false)
+  const [greetingName, setGreetingName] = useState('')
 
   // Clock state
   const [lastPunch,      setLastPunch]      = useState<LastPunch | null>(null)
@@ -639,6 +640,9 @@ export default function EmployeeOverviewPage() {
       const flags = moduleFlagsForCompany(company)
       attendanceRef.current = flags.attendance
       setModules(flags)
+      if (emp?.name || emp?.surname) {
+        setGreetingName([emp.name, emp.surname].filter(Boolean).join(' ').trim())
+      }
       employeeBranchRef.current = emp?.branch ?? null
       enforceGeofenceRef.current = emp?.enforce_branch_geofence !== false
       // Fetched once per init, alongside the bundle rather than before it.
@@ -711,6 +715,8 @@ export default function EmployeeOverviewPage() {
         employeeBranchRef.current = bundle.employee.branch ?? null
         enforceGeofenceRef.current = bundle.employee.enforce_branch_geofence !== false
         rememberBranches(bundle.employee.branch_id, assignedIds)
+        const fromBundle = [bundle.employee.name, bundle.employee.surname].filter(Boolean).join(' ').trim()
+        if (fromBundle) setGreetingName(fromBundle)
       }
 
       branchesRef.current = (bundle.branches as BranchRow[]) ?? []
@@ -1189,7 +1195,9 @@ export default function EmployeeOverviewPage() {
   return (
     <div className="h-full flex flex-col overflow-hidden">
       <div className="px-4 py-3 border-b border-divider shrink-0 bg-surface flex items-center justify-between gap-3">
-        <h1 className="text-[18px] font-semibold text-text-primary">Dashboard</h1>
+        <h1 className="text-[18px] font-semibold text-text-primary truncate">
+          {greetingName || 'Dashboard'}
+        </h1>
         <div className="flex items-center gap-1">
           <Link
             href="/auth/company-selector"

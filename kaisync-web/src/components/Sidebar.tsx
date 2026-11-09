@@ -453,13 +453,13 @@ export default function Sidebar({
   return (
     <>
       {/* ── TOP NAV BAR ─────────────────────────────────────────────── */}
-      <header className="flex items-stretch h-12 lg:h-[42px] shrink-0 bg-[#0C111D] border-b border-white/8 z-30">
+      <header className="app-chrome-top flex items-stretch shrink-0 bg-[#0C111D] border-b border-white/8 z-30">
         <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto">
 
         <button
           type="button"
           onClick={onToggle}
-          className="lg:hidden flex items-center justify-center w-11 h-12 shrink-0 text-white/80 hover:text-white hover:bg-white/10"
+          className="lg:hidden flex items-center justify-center w-11 shrink-0 self-stretch text-white/80 hover:text-white hover:bg-white/10"
           aria-label={open ? 'Close menu' : 'Open menu'}
         >
           <span className="material-icons text-[22px]">{open ? 'close' : 'menu'}</span>
@@ -633,7 +633,8 @@ export default function Sidebar({
       {/* Mobile drawer backdrop */}
       {showMobileDrawer && (
         <div
-          className="fixed inset-0 top-12 bg-black/50 z-40 lg:hidden"
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+          style={{ top: 'var(--app-chrome-offset)' }}
           onClick={onClose}
           aria-hidden
         />
@@ -643,12 +644,13 @@ export default function Sidebar({
       {(desktopPanel || showMobileDrawer) && !platformOnly && (
         <aside
           className={cn(
-            'fixed top-12 lg:top-[42px] left-0 bottom-0 flex flex-col shrink-0 bg-surface border-r border-divider overflow-hidden transition-transform duration-200 z-50',
+            'fixed left-0 bottom-0 flex flex-col shrink-0 bg-surface border-r border-divider overflow-hidden transition-transform duration-200 z-50 safe-pb',
             'w-72 lg:transition-[width]',
             showMobileDrawer ? 'translate-x-0' : 'max-lg:-translate-x-full',
             desktopPanel ? 'lg:translate-x-0' : 'lg:-translate-x-full',
             panelCollapsed ? 'lg:w-11' : 'lg:w-44',
           )}
+          style={{ top: 'var(--app-chrome-offset)' }}
         >
           <div className="flex items-center justify-between px-2 pt-2 pb-1 shrink-0">
             {(!panelCollapsed || !isDesktop) && (

@@ -45,10 +45,67 @@
   --radius-pill: 999px;
 }
 
+:root {
+  /* Notch / Dynamic Island / home-indicator — used by dashboard shells */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  /* Mobile top chrome (menu bar) height without safe inset */
+  --app-chrome-h: 3rem; /* h-12 */
+  --app-chrome-offset: calc(var(--app-chrome-h) + var(--safe-top));
+}
+
+@media (min-width: 1024px) {
+  :root {
+    /* HR top nav is shorter on desktop */
+    --app-chrome-h: 2.625rem; /* 42px */
+    --app-chrome-offset: calc(var(--app-chrome-h) + var(--safe-top));
+  }
+}
+
 body {
   font-family: var(--font-poppins), sans-serif;
   background-color: var(--color-background);
   color: var(--color-text-primary);
+}
+
+/* Prefer dynamic viewport on phones (address bar / home indicator). */
+.h-app {
+  height: 100vh;
+  height: 100dvh;
+}
+
+.min-h-app {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.safe-pt {
+  padding-top: var(--safe-top);
+}
+
+.safe-pb {
+  padding-bottom: var(--safe-bottom);
+}
+
+.safe-px {
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
+}
+
+.safe-pad {
+  padding-top: var(--safe-top);
+  padding-right: var(--safe-right);
+  padding-bottom: var(--safe-bottom);
+  padding-left: var(--safe-left);
+}
+
+/* Top app chrome that must clear the notch / Dynamic Island */
+.app-chrome-top {
+  padding-top: var(--safe-top);
+  height: var(--app-chrome-offset);
+  box-sizing: border-box;
 }
 
 .input {

@@ -207,7 +207,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-background">
+      <div className="flex h-app items-center justify-center bg-background safe-pad">
         <div className="flex items-center gap-2 text-text-secondary text-[14px]">
           <span className="material-icons animate-spin text-primary text-[20px]">refresh</span>
           Loading…
@@ -221,7 +221,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return (
       <DashboardCompanyProvider company={company} employee={employee}>
         <DashboardBootstrapProvider>
-          <div className="flex h-screen overflow-hidden">
+          <div className={`flex h-app overflow-hidden safe-px${isDesktop ? ' safe-pt' : ''}`}>
             <EmployeeSidebar
               open={sidebarOpen}
               onToggle={() => setSidebarOpen(v => !v)}
@@ -231,7 +231,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             />
             <div className="flex flex-col flex-1 min-w-0 overflow-hidden bg-background">
               {!isDesktop && (
-                <div className="flex items-center gap-2 px-3 h-12 border-b border-divider bg-surface shrink-0">
+                <div className="app-chrome-top flex items-center gap-2 px-3 border-b border-divider bg-surface shrink-0">
                   <button
                     type="button"
                     onClick={() => setSidebarOpen(true)}
@@ -246,7 +246,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   </p>
                 </div>
               )}
-              <main className="flex-1 overflow-y-auto min-h-0">
+              <main className="flex-1 overflow-y-auto min-h-0 safe-pb">
                 {children}
               </main>
             </div>
@@ -260,7 +260,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <DashboardCompanyProvider company={company} employee={employee}>
       <DashboardBootstrapProvider>
-        <div className="flex flex-col h-screen overflow-hidden">
+        <div className="flex flex-col h-app overflow-hidden safe-px">
           <Sidebar
             open={sidebarOpen}
             onToggle={() => setSidebarOpen(v => !v)}
@@ -272,7 +272,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <div className="flex flex-1 min-w-0 overflow-hidden">
             {/* paddingLeft tracks --sidebar-panel-w set by Sidebar (0 on phones — drawer overlays) */}
             <main
-              className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden bg-background transition-[padding] duration-200"
+              className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden bg-background transition-[padding] duration-200 safe-pb"
               style={{ paddingLeft: 'var(--sidebar-panel-w, 0px)' }}
             >
               <BillingLockBanner companyId={company?.id} />
