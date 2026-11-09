@@ -28,6 +28,7 @@ import {
   StatusHeaderFilter,
   ResetFiltersButton,
   statusTab,
+  matchText,
 } from '@/components/ui/MoneyListFilters'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -46,6 +47,21 @@ const ACCESS_BADGES: Record<AccessLevel, { label: string; cls: string }> = {
 const STATUS_TABS = [
   statusTab('active', 'Active', ['active'], 'green'),
   statusTab('inactive', 'Inactive', ['inactive'], 'slate'),
+  TAB_ALL,
+]
+
+const TEAM_STATUS_TABS = STATUS_TABS
+
+/** Leave view switcher — same chrome as status tabs, not row-status filters. */
+const LEAVE_VIEW_TABS = [
+  { id: 'pending', label: 'Pending', match: null, idle: 'border-amber-200 text-amber-700 hover:bg-amber-50', active: 'bg-amber-500 text-white border-amber-500' },
+  { id: 'upcoming', label: 'Upcoming', match: null, idle: 'border-blue-200 text-blue-700 hover:bg-blue-50', active: 'bg-blue-600 text-white border-blue-600' },
+  { id: 'balances', label: 'Balances', match: null, idle: 'border-slate-200 text-slate-700 hover:bg-slate-50', active: 'bg-slate-700 text-white border-slate-700' },
+]
+
+const UPCOMING_STATUS_TABS = [
+  statusTab('approved', 'Approved', ['approved'], 'green'),
+  statusTab('pending', 'Pending', ['pending'], 'amber'),
   TAB_ALL,
 ]
 
@@ -242,6 +258,9 @@ function EmployeesPageInner() {
   const [showCreateTeam, setShowCreateTeam] = useState(false)
   const [newTeamName,    setNewTeamName]    = useState('')
   const [teamBusy,       setTeamBusy]       = useState(false)
+  const [teamSearch,     setTeamSearch]     = useState('')
+  const [teamStatus,     setTeamStatus]     = useState<'active' | 'inactive' | ''>('')
+  const [teamNameCol,    setTeamNameCol]    = useState('')
 
   // ── Tab 3 — Leave ─────────────────────────────────────────────────────────
   const [leaveBalances,   setLeaveBalances]   = useState<LeaveBalance[]>([])
@@ -250,6 +269,11 @@ function EmployeesPageInner() {
   const [leaveLoaded,     setLeaveLoaded]     = useState(false)
   const [leaveSearch,     setLeaveSearch]     = useState('')
   const [leaveTypeFilter, setLeaveTypeFilter] = useState('')
+  const [leavePendingName, setLeavePendingName] = useState('')
+  const [leavePendingType, setLeavePendingType] = useState('')
+  const [leaveUpcomingName, setLeaveUpcomingName] = useState('')
+  const [leaveUpcomingType, setLeaveUpcomingType] = useState('')
+  const [leaveUpcomingStatus, setLeaveUpcomingStatus] = useState<'approved' | 'pending' | ''>('')
   const [leaveSubTab,     setLeaveSubTab]     = useState<'pending' | 'upcoming' | 'balances'>('pending')
   const [leaveMonth,      setLeaveMonth]      = useState(() => {
     const now = new Date()
@@ -265,6 +289,9 @@ function EmployeesPageInner() {
   const [pendingLoading, setPendingLoading] = useState(false)
   const [pendingLoaded,  setPendingLoaded]  = useState(false)
   const [pendingBusy,    setPendingBusy]    = useState<string | null>(null)
+  const [pendingSearch,  setPendingSearch]  = useState('')
+  const [pendingNameCol, setPendingNameCol] = useState('')
+  const [pendingEmailCol, setPendingEmailCol] = useState('')
 
   // ── Init & lazy loading ───────────────────────────────────────────────────
   useEffect(() => { init() }, [])
@@ -634,14 +661,63 @@ function EmployeesPageInner() {
   const pageEnd = Math.min(directoryTotal, (page + 1) * DIRECTORY_PAGE_SIZE)
 
   const leaveTypes = Array.from(new Set(leaveBalances.map(b => b.leaveType))).sort()
+  const leaveTypeOptions = leaveTypes.map(lt => ({ id: lt, label: lt.replace(/_/g, ' ') }))
+  const pendingLeaveTypes = Array.from(new Set(pendingLeave.map(r => r.leave_type))).sort()
+  const pendingLeaveTypeOptions = pendingLeaveTypes.map(lt => ({ id: lt, label: lt.replace(/_/g, ' ') }))
+  const upcomingLeaveTypes = Array.from(new Set(upcomingLeave.map(r => r.leave_type))).sort()
+  const upcomingLeaveTypeOptions = upcomingLeaveTypes.map(lt => ({ id: lt, label: lt.replace(/_/g, ' ') }))
+
+  const filteredTeams = teams.filter(team => {
+    if (teamStatus === 'active' && !team.is_active) return false
+    if (teamStatus === 'inactive' && team.is_active) return false
+    if (!matchText(team.name, teamSearch) && !matchText(team.description, teamSearch)) return false
+    if (!matchText(team.name, teamNameCol)) return false
+    return true
+  })
+  const teamFiltersActive = !!teamSearch || !!teamNameCol || !!teamStatus
 
   const filteredLeave = leaveBalances.filter(b => {
     if (leaveTypeFilter && b.leaveType !== leaveTypeFilter) return false
-    if (leaveSearch) {
-      return b.employeeName.toLowerCase().includes(leaveSearch.toLowerCase())
-    }
+    if (!matchText(b.employeeName, leaveSearch)) return false
     return true
   })
+
+  const filteredPendingLeave = pendingLeave.filter(req => {
+    const emp = req.employees as { name?: string; surname?: string } | undefined
+    const name = emp ? `${emp.name ?? ''} ${emp.surname ?? ''}`.trim() : 'Employee'
+    if (!matchText(name, leavePendingName)) return false
+    if (leavePendingType && req.leave_type !== leavePendingType) return false
+    return true
+  })
+
+  const filteredUpcomingLeave = upcomingLeave.filter(row => {
+    const name = row.employees
+      ? `${row.employees.name} ${row.employees.surname}`.trim()
+      : 'Employee'
+    if (!matchText(name, leaveUpcomingName)) return false
+    if (leaveUpcomingType && row.leave_type !== leaveUpcomingType) return false
+    if (leaveUpcomingStatus && row.status !== leaveUpcomingStatus) return false
+    return true
+  })
+
+  const filteredPendingRegs = pending.filter(emp => {
+    const name = `${emp.name} ${emp.surname}`
+    if (!matchText(name, pendingSearch) && !matchText(emp.email, pendingSearch)) return false
+    if (!matchText(name, pendingNameCol)) return false
+    if (!matchText(emp.email, pendingEmailCol)) return false
+    return true
+  })
+  const pendingFiltersActive = !!pendingSearch || !!pendingNameCol || !!pendingEmailCol
+
+  const leaveViewCounts = {
+    pending: pendingLeave.length,
+    upcoming: upcomingLeave.length,
+  }
+  const upcomingStatusCounts = {
+    all: upcomingLeave.length,
+    approved: upcomingLeave.filter(r => r.status === 'approved').length,
+    pending: upcomingLeave.filter(r => r.status === 'pending').length,
+  }
 
   // ── Not-linked guard ──────────────────────────────────────────────────────
   if (error === 'not_linked') return (
@@ -998,18 +1074,40 @@ function EmployeesPageInner() {
       {/* ════════════════════════════════════════════════════════════════════ */}
       {tab === 'teams' && (
         <>
-          <div className="flex items-center justify-between mb-4">
-            <p className="text-[13px] text-text-secondary">{teams.length} team{teams.length !== 1 ? 's' : ''}</p>
+          <div className="flex items-center gap-2 mb-3 flex-wrap">
+            <div className="flex items-center gap-1.5 h-8 px-2 bg-surface border border-border rounded-sm flex-1 min-w-[180px]">
+              <span className="material-icons text-text-disabled text-[16px]">search</span>
+              <input
+                type="search"
+                placeholder="Search teams…"
+                value={teamSearch}
+                onChange={e => setTeamSearch(e.target.value)}
+                className="flex-1 min-w-0 text-[13px] text-text-primary placeholder:text-text-disabled bg-transparent focus:outline-none"
+              />
+            </div>
+            <ResetFiltersButton
+              disabled={!teamFiltersActive}
+              onReset={() => { setTeamSearch(''); setTeamNameCol(''); setTeamStatus('') }}
+            />
+            <StatusFilterTabs
+              tabs={TEAM_STATUS_TABS}
+              value={teamStatus || 'all'}
+              counts={{
+                all: teams.length,
+                active: teams.filter(t => t.is_active).length,
+                inactive: teams.filter(t => !t.is_active).length,
+              }}
+              onChange={id => setTeamStatus(id === 'all' ? '' : id as 'active' | 'inactive')}
+            />
             <button
+              type="button"
               onClick={() => setShowCreateTeam(true)}
-              className="flex items-center gap-2 h-10 px-4 rounded-md bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark transition-colors"
+              className="h-8 px-2.5 text-[12px] rounded-md bg-primary text-white font-semibold hover:bg-primary-dark whitespace-nowrap"
             >
-              <span className="material-icons text-[18px]">group_add</span>
               + Create Team
             </button>
           </div>
 
-          {/* Create team modal */}
           <ModalShell
             open={showCreateTeam}
             onClose={() => { setShowCreateTeam(false); setNewTeamName('') }}
@@ -1045,43 +1143,55 @@ function EmployeesPageInner() {
             />
           </ModalShell>
 
-          {teamsLoading ? (
-            <div className="py-16 text-center text-[13px] text-text-disabled">Loading…</div>
-          ) : teams.length === 0 ? (
-            <div className="py-16 text-center">
-              <span className="material-icons text-[48px] text-text-disabled block mb-2">groups</span>
-              <p className="text-[14px] text-text-secondary">No teams yet. Create one to get started.</p>
-            </div>
-          ) : (
-            <div className="bg-surface rounded-lg border border-divider overflow-hidden">
-              <ResponsiveDataView
-                table={
-                  <table className="w-full text-[13px]">
-                    <thead>
-                      <tr className="border-b border-divider bg-surface-elevated">
-                        <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Team</th>
-                        <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Members</th>
-                        <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Status</th>
+          <div className="bg-surface rounded-lg border border-divider overflow-hidden">
+            <ResponsiveDataView
+              table={
+                <table className="w-full" style={{ minWidth: 520 }}>
+                  <thead>
+                    <tr className="bg-surface-elevated border-b border-divider">
+                      <th className={`${MONEY_TH} text-left`}>
+                        <TextHeaderFilter
+                          label="Team"
+                          value={teamNameCol}
+                          onChange={setTeamNameCol}
+                          placeholder="Team name…"
+                        />
+                      </th>
+                      <th style={{ width: 110 }} className={`${MONEY_TH} text-left`}>Members</th>
+                      <th style={{ width: 90 }} className={`${MONEY_TH} text-left`}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {teamsLoading ? (
+                      <tr>
+                        <td colSpan={3} className="py-12 text-center text-[12px] text-text-disabled">Loading…</td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {teams.map(team => (
+                    ) : filteredTeams.length === 0 ? (
+                      <tr>
+                        <td colSpan={3} className="py-12 text-center text-[13px] text-text-secondary">
+                          {teams.length === 0
+                            ? 'No teams yet. Create one to get started.'
+                            : 'No teams match your filters.'}
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredTeams.map(team => (
                         <tr
                           key={team.id}
                           className="border-b border-divider last:border-0 hover:bg-background transition-colors cursor-pointer"
                           onClick={() => router.push(`/dashboard/work-teams/${team.id}`)}
                         >
-                          <td className="px-5 py-3">
-                            <p className="font-medium text-text-primary">{team.name}</p>
+                          <td className={MONEY_TD}>
+                            <p className="font-medium text-text-primary truncate">{team.name}</p>
                             {team.description && (
-                              <p className="text-[11px] text-text-secondary">{team.description}</p>
+                              <p className="text-[11px] text-text-secondary truncate">{team.description}</p>
                             )}
                           </td>
-                          <td className="px-5 py-3 text-text-secondary">
+                          <td className={`${MONEY_TD} text-text-secondary`}>
                             {team.member_count} {team.member_count === 1 ? 'member' : 'members'}
                           </td>
-                          <td className="px-5 py-3">
-                            <span className={`flex items-center gap-1 text-[12px] font-medium w-fit ${
+                          <td className={MONEY_TD}>
+                            <span className={`flex items-center gap-1 text-[11px] font-medium w-fit ${
                               team.is_active ? 'text-success' : 'text-text-disabled'
                             }`}>
                               <span className={`w-1.5 h-1.5 rounded-full ${
@@ -1091,13 +1201,21 @@ function EmployeesPageInner() {
                             </span>
                           </td>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                }
-                mobile={
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              }
+              mobile={
+                teamsLoading ? (
+                  <p className="py-10 text-center text-[12px] text-text-disabled">Loading…</p>
+                ) : filteredTeams.length === 0 ? (
+                  <p className="py-10 text-center text-[13px] text-text-secondary">
+                    {teams.length === 0 ? 'No teams yet.' : 'No teams match your filters.'}
+                  </p>
+                ) : (
                   <>
-                    {teams.map(team => (
+                    {filteredTeams.map(team => (
                       <DataCard
                         key={team.id}
                         onClick={() => router.push(`/dashboard/work-teams/${team.id}`)}
@@ -1112,10 +1230,10 @@ function EmployeesPageInner() {
                       </DataCard>
                     ))}
                   </>
-                }
-              />
-            </div>
-          )}
+                )
+              }
+            />
+          </div>
         </>
       )}
 
@@ -1124,103 +1242,106 @@ function EmployeesPageInner() {
       {/* ════════════════════════════════════════════════════════════════════ */}
       {tab === 'leave' && (
         <>
-          <div className="flex gap-2 mb-4">
-            <button
-              onClick={() => setLeaveSubTab('pending')}
-              className={`h-8 px-3 rounded-2xl text-[12px] font-medium ${
-                leaveSubTab === 'pending' ? 'bg-primary text-white' : 'bg-surface border border-border text-text-secondary'
-              }`}
-            >
-              Pending ({pendingLeave.length})
-            </button>
-            <button
-              onClick={() => setLeaveSubTab('upcoming')}
-              className={`h-8 px-3 rounded-2xl text-[12px] font-medium ${
-                leaveSubTab === 'upcoming' ? 'bg-primary text-white' : 'bg-surface border border-border text-text-secondary'
-              }`}
-            >
-              Upcoming{upcomingLeave.length > 0 ? ` (${upcomingLeave.length})` : ''}
-            </button>
-            <button
-              onClick={() => setLeaveSubTab('balances')}
-              className={`h-8 px-3 rounded-2xl text-[12px] font-medium ${
-                leaveSubTab === 'balances' ? 'bg-primary text-white' : 'bg-surface border border-border text-text-secondary'
-              }`}
-            >
-              Balances
-            </button>
+          <div className="flex items-center gap-2 mb-3 flex-wrap">
+            <StatusFilterTabs
+              tabs={LEAVE_VIEW_TABS}
+              value={leaveSubTab}
+              counts={leaveViewCounts}
+              onChange={id => setLeaveSubTab(id as 'pending' | 'upcoming' | 'balances')}
+            />
+            {leaveSubTab === 'upcoming' && (
+              <div className="flex items-center gap-1 ml-auto">
+                <button
+                  type="button"
+                  onClick={() => changeLeaveMonth(-1)}
+                  className="h-8 w-8 rounded-md border border-border bg-surface text-text-primary"
+                  aria-label="Previous month"
+                >
+                  <span className="material-icons text-[18px]">chevron_left</span>
+                </button>
+                <span className="min-w-[120px] text-center text-[12px] font-semibold text-text-primary">
+                  {monthLabel(leaveMonth)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => changeLeaveMonth(1)}
+                  className="h-8 w-8 rounded-md border border-border bg-surface text-text-primary"
+                  aria-label="Next month"
+                >
+                  <span className="material-icons text-[18px]">chevron_right</span>
+                </button>
+              </div>
+            )}
           </div>
 
           {leaveSubTab === 'upcoming' ? (
             <>
-              <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
-                <p className="text-[13px] text-text-secondary">
-                  Approved and pending leave in {monthLabel(leaveMonth)}.
-                </p>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => changeLeaveMonth(-1)}
-                    className="h-9 w-9 rounded-md border border-border bg-surface text-text-primary"
-                    aria-label="Previous month"
-                  >
-                    <span className="material-icons text-[18px]">chevron_left</span>
-                  </button>
-                  <span className="min-w-[140px] text-center text-[13px] font-semibold text-text-primary">
-                    {monthLabel(leaveMonth)}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => changeLeaveMonth(1)}
-                    className="h-9 w-9 rounded-md border border-border bg-surface text-text-primary"
-                    aria-label="Next month"
-                  >
-                    <span className="material-icons text-[18px]">chevron_right</span>
-                  </button>
-                </div>
+              <div className="flex items-center gap-2 mb-3 flex-wrap">
+                <ResetFiltersButton
+                  disabled={!leaveUpcomingName && !leaveUpcomingType && !leaveUpcomingStatus}
+                  onReset={() => { setLeaveUpcomingName(''); setLeaveUpcomingType(''); setLeaveUpcomingStatus('') }}
+                />
+                <StatusFilterTabs
+                  tabs={UPCOMING_STATUS_TABS}
+                  value={leaveUpcomingStatus || 'all'}
+                  counts={upcomingStatusCounts}
+                  onChange={id => setLeaveUpcomingStatus(id === 'all' ? '' : id as 'approved' | 'pending')}
+                />
               </div>
               <div className="bg-surface rounded-lg border border-divider overflow-hidden">
-                {upcomingLoading ? (
-                  <div className="py-16 text-center text-[13px] text-text-disabled">Loading…</div>
-                ) : upcomingLeave.length === 0 ? (
-                  <div className="py-16 text-center">
-                    <span className="material-icons text-[48px] text-text-disabled block mb-2">event_available</span>
-                    <p className="text-[14px] text-text-secondary">No leave in {monthLabel(leaveMonth)}</p>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-[13px]">
-                      <thead>
-                        <tr className="border-b border-divider bg-surface-elevated">
-                          <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Employee</th>
-                          <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Leave type</th>
-                          <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">From</th>
-                          <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">To</th>
-                          <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Days</th>
-                          <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Status</th>
+                <div className="overflow-x-auto">
+                  <table className="w-full" style={{ minWidth: 720 }}>
+                    <thead>
+                      <tr className="bg-surface-elevated border-b border-divider">
+                        <th className={`${MONEY_TH} text-left`}>
+                          <TextHeaderFilter label="Employee" value={leaveUpcomingName} onChange={setLeaveUpcomingName} placeholder="Employee…" />
+                        </th>
+                        <th style={{ width: 130 }} className={`${MONEY_TH} text-left`}>
+                          <StatusHeaderFilter
+                            label="Leave type"
+                            options={upcomingLeaveTypeOptions}
+                            selected={leaveUpcomingType ? [leaveUpcomingType] : []}
+                            onChange={next => setLeaveUpcomingType(next[next.length - 1] ?? '')}
+                          />
+                        </th>
+                        <th style={{ width: 100 }} className={`${MONEY_TH} text-left`}>From</th>
+                        <th style={{ width: 100 }} className={`${MONEY_TH} text-left`}>To</th>
+                        <th style={{ width: 60 }} className={`${MONEY_TH} text-right`}>Days</th>
+                        <th style={{ width: 90 }} className={`${MONEY_TH} text-left`}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {upcomingLoading ? (
+                        <tr><td colSpan={6} className="py-12 text-center text-[12px] text-text-disabled">Loading…</td></tr>
+                      ) : filteredUpcomingLeave.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="py-12 text-center text-[13px] text-text-secondary">
+                            {upcomingLeave.length === 0
+                              ? `No leave in ${monthLabel(leaveMonth)}`
+                              : 'No leave matches your filters.'}
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {upcomingLeave.map(row => {
+                      ) : (
+                        filteredUpcomingLeave.map(row => {
                           const name = row.employees
                             ? `${row.employees.name} ${row.employees.surname}`.trim()
                             : 'Employee'
                           const approved = row.status === 'approved'
                           return (
-                            <tr key={row.id} className="border-b border-divider last:border-0">
-                              <td className="px-5 py-3">
+                            <tr key={row.id} className="border-b border-divider last:border-0 hover:bg-background">
+                              <td className={MONEY_TD}>
                                 <Link href={`/dashboard/employees/${row.employee_id}?tab=leave`} className="font-medium text-text-primary hover:text-primary hover:underline">
                                   {name}
                                 </Link>
                               </td>
-                              <td className="px-5 py-3 text-text-secondary capitalize">
+                              <td className={`${MONEY_TD} text-text-secondary capitalize`}>
                                 {row.leave_type.replace(/_/g, ' ')}
                               </td>
-                              <td className="px-5 py-3 text-text-secondary">{fmtDate(row.start_date)}</td>
-                              <td className="px-5 py-3 text-text-secondary">{row.end_date ? fmtDate(row.end_date) : '—'}</td>
-                              <td className="px-5 py-3 text-text-secondary">{row.total_days ?? '—'}</td>
-                              <td className="px-5 py-3">
-                                <span className={`px-2 py-0.5 rounded-pill text-[11px] font-medium ${
+                              <td className={`${MONEY_TD} text-text-secondary whitespace-nowrap`}>{fmtDate(row.start_date)}</td>
+                              <td className={`${MONEY_TD} text-text-secondary whitespace-nowrap`}>{row.end_date ? fmtDate(row.end_date) : '—'}</td>
+                              <td className={`${MONEY_TD} text-text-secondary text-right tabular-nums`}>{row.total_days ?? '—'}</td>
+                              <td className={MONEY_TD}>
+                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
                                   approved ? 'bg-success-dark text-success' : 'bg-warning-dark text-warning'
                                 }`}>
                                   {approved ? 'Approved' : 'Pending'}
@@ -1228,136 +1349,176 @@ function EmployeesPageInner() {
                               </td>
                             </tr>
                           )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </>
           ) : leaveSubTab === 'pending' ? (
-            <div className="bg-surface rounded-lg border border-divider overflow-hidden">
-              {leaveLoading ? (
-                <div className="py-16 text-center text-[13px] text-text-disabled">Loading…</div>
-              ) : pendingLeave.length === 0 ? (
-                <div className="py-16 text-center">
-                  <span className="material-icons text-[48px] text-text-disabled block mb-2">beach_access</span>
-                  <p className="text-[14px] text-text-secondary">No pending leave requests</p>
+            <>
+              <div className="flex items-center gap-2 mb-3 flex-wrap">
+                <ResetFiltersButton
+                  disabled={!leavePendingName && !leavePendingType}
+                  onReset={() => { setLeavePendingName(''); setLeavePendingType('') }}
+                />
+              </div>
+              <div className="bg-surface rounded-lg border border-divider overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full" style={{ minWidth: 760 }}>
+                    <thead>
+                      <tr className="bg-surface-elevated border-b border-divider">
+                        <th className={`${MONEY_TH} text-left`}>
+                          <TextHeaderFilter label="Employee" value={leavePendingName} onChange={setLeavePendingName} placeholder="Employee…" />
+                        </th>
+                        <th style={{ width: 130 }} className={`${MONEY_TH} text-left`}>
+                          <StatusHeaderFilter
+                            label="Leave type"
+                            options={pendingLeaveTypeOptions}
+                            selected={leavePendingType ? [leavePendingType] : []}
+                            onChange={next => setLeavePendingType(next[next.length - 1] ?? '')}
+                          />
+                        </th>
+                        <th style={{ width: 100 }} className={`${MONEY_TH} text-left`}>From</th>
+                        <th style={{ width: 100 }} className={`${MONEY_TH} text-left`}>To</th>
+                        <th style={{ width: 60 }} className={`${MONEY_TH} text-right`}>Days</th>
+                        <th style={{ width: 150 }} className={`${MONEY_TH} text-right`}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {leaveLoading ? (
+                        <tr><td colSpan={6} className="py-12 text-center text-[12px] text-text-disabled">Loading…</td></tr>
+                      ) : filteredPendingLeave.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="py-12 text-center text-[13px] text-text-secondary">
+                            {pendingLeave.length === 0 ? 'No pending leave requests' : 'No leave matches your filters.'}
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredPendingLeave.map(req => {
+                          const emp = req.employees as { name: string; surname: string } | undefined
+                          const name = emp ? `${emp.name} ${emp.surname}` : 'Employee'
+                          return (
+                            <tr key={req.id} className="border-b border-divider last:border-0 hover:bg-background">
+                              <td className={MONEY_TD}>
+                                <Link href={`/dashboard/employees/${req.employee_id}?tab=leave`} className="font-medium text-text-primary hover:text-primary hover:underline">
+                                  {name}
+                                </Link>
+                              </td>
+                              <td className={`${MONEY_TD} text-text-secondary capitalize`}>
+                                {req.leave_type.replace(/_/g, ' ')}
+                              </td>
+                              <td className={`${MONEY_TD} text-text-secondary whitespace-nowrap`}>{fmtDate(req.start_date)}</td>
+                              <td className={`${MONEY_TD} text-text-secondary whitespace-nowrap`}>{req.end_date ? fmtDate(req.end_date) : '—'}</td>
+                              <td className={`${MONEY_TD} text-text-secondary text-right tabular-nums`}>{req.total_days ?? '—'}</td>
+                              <td className={`${MONEY_TD} text-right`}>
+                                <div className="inline-flex gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => decideLeave(req.id, 'declined')}
+                                    disabled={leaveActionBusy === req.id}
+                                    className="h-7 px-2 rounded-md text-[11px] font-medium bg-error-dark text-error hover:bg-red-100 disabled:opacity-50"
+                                  >
+                                    {leaveActionBusy === req.id ? '…' : 'Decline'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => decideLeave(req.id, 'approved')}
+                                    disabled={leaveActionBusy === req.id}
+                                    className="h-7 px-2 rounded-md text-[11px] font-medium bg-success-dark text-success hover:bg-green-100 disabled:opacity-50"
+                                  >
+                                    {leaveActionBusy === req.id ? '…' : 'Approve'}
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        })
+                      )}
+                    </tbody>
+                  </table>
                 </div>
-              ) : (
-                <div className="divide-y divide-divider">
-                  {pendingLeave.map(req => {
-                    const emp = req.employees as { name: string; surname: string; employee_number?: string } | undefined
-                    const name = emp ? `${emp.name} ${emp.surname}` : 'Employee'
-                    return (
-                      <div key={req.id} className="flex items-center gap-4 px-5 py-3">
-                        <div className="flex-1 min-w-0">
-                          <Link href={`/dashboard/employees/${req.employee_id}?tab=leave`} className="block text-[13px] font-medium text-text-primary truncate hover:text-primary hover:underline">
-                            {name}
-                          </Link>
-                          <p className="text-[12px] text-text-secondary capitalize">
-                            {req.leave_type.replace(/_/g, ' ')} · {fmtDate(req.start_date)}
-                            {req.end_date ? ` – ${fmtDate(req.end_date)}` : ''}
-                            {req.total_days != null ? ` · ${req.total_days}d` : ''}
-                          </p>
-                        </div>
-                        <div className="flex gap-2 shrink-0">
-                          <button
-                            onClick={() => decideLeave(req.id, 'declined')}
-                            disabled={leaveActionBusy === req.id}
-                            className="h-8 px-3 rounded-md text-[12px] font-medium bg-error-dark text-error hover:bg-red-100 transition-colors disabled:opacity-50"
-                          >
-                            {leaveActionBusy === req.id ? '…' : 'Decline'}
-                          </button>
-                          <button
-                            onClick={() => decideLeave(req.id, 'approved')}
-                            disabled={leaveActionBusy === req.id}
-                            className="h-8 px-3 rounded-md text-[12px] font-medium bg-success-dark text-success hover:bg-green-100 transition-colors disabled:opacity-50"
-                          >
-                            {leaveActionBusy === req.id ? '…' : 'Approve'}
-                          </button>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
+              </div>
+            </>
           ) : (
             <>
-              <div className="flex items-center gap-3 mb-4 flex-wrap">
-                <div className="flex items-center gap-2 h-10 px-3 bg-surface border border-border rounded-md flex-1 min-w-[200px]">
-                  <span className="material-icons text-text-disabled text-[18px]">search</span>
+              <div className="flex items-center gap-2 mb-3 flex-wrap">
+                <div className="flex items-center gap-1.5 h-8 px-2 bg-surface border border-border rounded-sm flex-1 min-w-[180px]">
+                  <span className="material-icons text-text-disabled text-[16px]">search</span>
                   <input
-                    type="text"
+                    type="search"
                     placeholder="Search employee…"
                     value={leaveSearch}
                     onChange={e => setLeaveSearch(e.target.value)}
-                    className="flex-1 text-[13px] text-text-primary placeholder:text-text-disabled bg-transparent focus:outline-none"
+                    className="flex-1 min-w-0 text-[13px] text-text-primary placeholder:text-text-disabled bg-transparent focus:outline-none"
                   />
                 </div>
-                <select
-                  value={leaveTypeFilter}
-                  onChange={e => setLeaveTypeFilter(e.target.value)}
-                  className="h-10 px-3 bg-surface border border-border rounded-md text-[13px] text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/30 appearance-none"
-                >
-                  <option value="">All leave types</option>
-                  {leaveTypes.map(lt => (
-                    <option key={lt} value={lt}>{lt.replace(/_/g, ' ')}</option>
-                  ))}
-                </select>
+                <ResetFiltersButton
+                  disabled={!leaveSearch && !leaveTypeFilter}
+                  onReset={() => { setLeaveSearch(''); setLeaveTypeFilter('') }}
+                />
               </div>
-
               <div className="bg-surface rounded-lg border border-divider overflow-hidden">
-                {leaveLoading ? (
-                  <div className="py-16 text-center text-[13px] text-text-disabled">Loading…</div>
-                ) : filteredLeave.length === 0 ? (
-                  <div className="py-16 text-center">
-                    <span className="material-icons text-[48px] text-text-disabled block mb-2">beach_access</span>
-                    <p className="text-[14px] text-text-secondary">No approved leave records for this year</p>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-[13px]">
-                      <thead>
-                        <tr className="border-b border-divider bg-surface-elevated">
-                          <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Employee</th>
-                          <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Leave Type</th>
-                          <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Annual Days</th>
-                          <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Used</th>
-                          <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Remaining</th>
-                          <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Last Request</th>
+                <div className="overflow-x-auto">
+                  <table className="w-full" style={{ minWidth: 720 }}>
+                    <thead>
+                      <tr className="bg-surface-elevated border-b border-divider">
+                        <th className={`${MONEY_TH} text-left`}>
+                          <TextHeaderFilter label="Employee" value={leaveSearch} onChange={setLeaveSearch} placeholder="Employee…" />
+                        </th>
+                        <th style={{ width: 130 }} className={`${MONEY_TH} text-left`}>
+                          <StatusHeaderFilter
+                            label="Leave type"
+                            options={leaveTypeOptions}
+                            selected={leaveTypeFilter ? [leaveTypeFilter] : []}
+                            onChange={next => setLeaveTypeFilter(next[next.length - 1] ?? '')}
+                          />
+                        </th>
+                        <th style={{ width: 90 }} className={`${MONEY_TH} text-right`}>Annual</th>
+                        <th style={{ width: 70 }} className={`${MONEY_TH} text-right`}>Used</th>
+                        <th style={{ width: 90 }} className={`${MONEY_TH} text-right`}>Remaining</th>
+                        <th style={{ width: 110 }} className={`${MONEY_TH} text-left`}>Last request</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {leaveLoading ? (
+                        <tr><td colSpan={6} className="py-12 text-center text-[12px] text-text-disabled">Loading…</td></tr>
+                      ) : filteredLeave.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="py-12 text-center text-[13px] text-text-secondary">
+                            No approved leave records for this year
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {filteredLeave.map((b, i) => (
-                          <tr key={i} className="border-b border-divider last:border-0">
-                            <td className="px-5 py-3">
+                      ) : (
+                        filteredLeave.map((b, i) => (
+                          <tr key={`${b.employeeId}-${b.leaveType}-${i}`} className="border-b border-divider last:border-0 hover:bg-background">
+                            <td className={MONEY_TD}>
                               <Link href={`/dashboard/employees/${b.employeeId}?tab=leave`} className="font-medium text-text-primary hover:text-primary hover:underline">
                                 {b.employeeName}
                               </Link>
                             </td>
-                            <td className="px-5 py-3 text-text-secondary capitalize">
+                            <td className={`${MONEY_TD} text-text-secondary capitalize`}>
                               {b.leaveType.replace(/_/g, ' ')}
                             </td>
-                            <td className="px-5 py-3 text-text-secondary text-center">{b.annualDays}</td>
-                            <td className="px-5 py-3 text-text-secondary text-center">{b.usedDays}</td>
-                            <td className="px-5 py-3 text-center">
+                            <td className={`${MONEY_TD} text-text-secondary text-right tabular-nums`}>{b.annualDays}</td>
+                            <td className={`${MONEY_TD} text-text-secondary text-right tabular-nums`}>{b.usedDays}</td>
+                            <td className={`${MONEY_TD} text-right tabular-nums`}>
                               <span className={`font-semibold ${
                                 b.remaining <= 0 ? 'text-error' : b.remaining <= 3 ? 'text-warning' : 'text-success'
                               }`}>
                                 {b.remaining}
                               </span>
                             </td>
-                            <td className="px-5 py-3 text-text-secondary">
+                            <td className={`${MONEY_TD} text-text-secondary whitespace-nowrap`}>
                               {b.lastRequestDate ? fmtDate(b.lastRequestDate) : '—'}
                             </td>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </>
           )}
@@ -1369,60 +1530,82 @@ function EmployeesPageInner() {
       {/* ════════════════════════════════════════════════════════════════════ */}
       {tab === 'pending' && (
         <>
-          {!pendingLoading && pending.length > 0 && (
-            <div className="flex justify-end mb-4">
+          <div className="flex items-center gap-2 mb-3 flex-wrap">
+            <div className="flex items-center gap-1.5 h-8 px-2 bg-surface border border-border rounded-sm flex-1 min-w-[180px]">
+              <span className="material-icons text-text-disabled text-[16px]">search</span>
+              <input
+                type="search"
+                placeholder="Search name or email…"
+                value={pendingSearch}
+                onChange={e => setPendingSearch(e.target.value)}
+                className="flex-1 min-w-0 text-[13px] text-text-primary placeholder:text-text-disabled bg-transparent focus:outline-none"
+              />
+            </div>
+            <ResetFiltersButton
+              disabled={!pendingFiltersActive}
+              onReset={() => { setPendingSearch(''); setPendingNameCol(''); setPendingEmailCol('') }}
+            />
+            {!pendingLoading && pending.length > 0 && (
               <button
+                type="button"
                 onClick={approveAll}
                 disabled={pendingBusy !== null}
-                className="h-10 px-4 rounded-md bg-success/10 text-success text-[13px] font-semibold hover:bg-success/20 disabled:opacity-50 transition-colors border border-success/30"
+                className="h-8 px-2.5 rounded-md bg-success/10 text-success text-[12px] font-semibold hover:bg-success/20 disabled:opacity-50 border border-success/30"
               >
-                {pendingBusy === 'all' ? 'Approving all…' : `Approve All (${pending.length})`}
+                {pendingBusy === 'all' ? 'Approving…' : `Approve All (${pending.length})`}
               </button>
-            </div>
-          )}
+            )}
+          </div>
 
           {error && error !== 'not_linked' && <ErrorWithUpgrade message={error} className="mb-3" />}
           <div className="bg-surface rounded-lg border border-divider overflow-hidden">
-            {pendingLoading ? (
-              <div className="py-16 text-center text-[13px] text-text-disabled">Loading…</div>
-            ) : pending.length === 0 ? (
-              <div className="py-16 text-center">
-                <span className="material-icons text-[48px] text-text-disabled block mb-2">check_circle</span>
-                <p className="text-[14px] text-text-secondary">No pending registrations</p>
-              </div>
-            ) : (
-              <table className="w-full text-[13px]">
-                <thead>
-                  <tr className="border-b border-divider bg-surface-elevated">
-                    <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Employee</th>
-                    <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Email</th>
-                    <th className="text-left px-5 py-3 text-[12px] font-medium text-text-secondary">Submitted</th>
-                    <th className="px-5 py-3"></th>
+            <table className="w-full" style={{ minWidth: 640 }}>
+              <thead>
+                <tr className="bg-surface-elevated border-b border-divider">
+                  <th className={`${MONEY_TH} text-left`}>
+                    <TextHeaderFilter label="Employee" value={pendingNameCol} onChange={setPendingNameCol} placeholder="Name…" />
+                  </th>
+                  <th style={{ width: 220 }} className={`${MONEY_TH} text-left`}>
+                    <TextHeaderFilter label="Email" value={pendingEmailCol} onChange={setPendingEmailCol} placeholder="Email…" />
+                  </th>
+                  <th style={{ width: 110 }} className={`${MONEY_TH} text-left`}>Submitted</th>
+                  <th style={{ width: 150 }} className={`${MONEY_TH} text-right`}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pendingLoading ? (
+                  <tr><td colSpan={4} className="py-12 text-center text-[12px] text-text-disabled">Loading…</td></tr>
+                ) : filteredPendingRegs.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="py-12 text-center text-[13px] text-text-secondary">
+                      {pending.length === 0 ? 'No pending registrations' : 'No registrations match your filters.'}
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {pending.map(emp => {
+                ) : (
+                  filteredPendingRegs.map(emp => {
                     const isBusy = pendingBusy === emp.id || pendingBusy === 'all'
                     return (
-                      <tr key={emp.id} className="border-b border-divider last:border-0">
-                        <td className="px-5 py-3 font-medium text-text-primary">
+                      <tr key={emp.id} className="border-b border-divider last:border-0 hover:bg-background">
+                        <td className={`${MONEY_TD} font-medium text-text-primary`}>
                           {emp.name} {emp.surname}
                         </td>
-                        <td className="px-5 py-3 text-text-secondary">{emp.email ?? '—'}</td>
-                        <td className="px-5 py-3 text-text-secondary">{fmtDate(emp.created_at)}</td>
-                        <td className="px-5 py-3">
-                          <div className="flex gap-2 justify-end">
+                        <td className={`${MONEY_TD} text-text-secondary`}>{emp.email ?? '—'}</td>
+                        <td className={`${MONEY_TD} text-text-secondary whitespace-nowrap`}>{fmtDate(emp.created_at)}</td>
+                        <td className={`${MONEY_TD} text-right`}>
+                          <div className="inline-flex gap-1.5">
                             <button
+                              type="button"
                               onClick={() => approvePending(emp.id)}
                               disabled={pendingBusy !== null}
-                              className="h-8 px-3 rounded-md bg-success/10 text-success text-[12px] font-semibold hover:bg-success/20 disabled:opacity-50 transition-colors"
+                              className="h-7 px-2 rounded-md bg-success/10 text-success text-[11px] font-semibold hover:bg-success/20 disabled:opacity-50"
                             >
                               {isBusy ? '…' : 'Approve'}
                             </button>
                             <button
+                              type="button"
                               onClick={() => rejectPending(emp.id)}
                               disabled={pendingBusy !== null}
-                              className="h-8 px-3 rounded-md bg-error/10 text-error text-[12px] font-semibold hover:bg-error/20 disabled:opacity-50 transition-colors"
+                              className="h-7 px-2 rounded-md bg-error/10 text-error text-[11px] font-semibold hover:bg-error/20 disabled:opacity-50"
                             >
                               {isBusy ? '…' : 'Reject'}
                             </button>
@@ -1430,10 +1613,10 @@ function EmployeesPageInner() {
                         </td>
                       </tr>
                     )
-                  })}
-                </tbody>
-              </table>
-            )}
+                  })
+                )}
+              </tbody>
+            </table>
           </div>
         </>
       )}
