@@ -16,6 +16,14 @@ import {
   DataCardRow,
 } from '@/components/ui/ResponsiveDataView'
 import { ModalShell } from '@/components/ui/ModalShell'
+import { StatusFilterTabs, TAB_ALL, MONEY_TH, MONEY_TD } from '@/components/ui/StatusFilterTabs'
+import {
+  ResetFiltersButton,
+  TextHeaderFilter,
+  StatusHeaderFilter,
+  matchText,
+  statusTab,
+} from '@/components/ui/MoneyListFilters'
 import type { LeaveRequest } from '@/types/database'
 
 type Tab = 'pending' | 'all' | 'upcoming'
@@ -39,6 +47,34 @@ type UpcomingLeave = {
   employees: { name: string; surname: string } | null
 }
 
+const LEAVE_VIEW_TABS = [
+  { id: 'pending', label: 'Pending', match: null, idle: 'border-amber-200 text-amber-700 hover:bg-amber-50', active: 'bg-amber-500 text-white border-amber-500' },
+  { id: 'upcoming', label: 'Upcoming', match: null, idle: 'border-blue-200 text-blue-700 hover:bg-blue-50', active: 'bg-blue-600 text-white border-blue-600' },
+  { id: 'all', label: 'All', match: null, idle: 'border-slate-200 text-slate-700 hover:bg-slate-50', active: 'bg-slate-700 text-white border-slate-700' },
+]
+
+const UPCOMING_STATUS_TABS = [
+  statusTab('approved', 'Approved', ['approved'], 'green'),
+  statusTab('pending', 'Pending', ['pending'], 'amber'),
+  TAB_ALL,
+]
+
+const ALL_STATUS_TABS = [
+  statusTab('pending', 'Pending', ['pending'], 'amber'),
+  statusTab('approved', 'Approved', ['approved'], 'green'),
+  statusTab('declined', 'Declined', ['declined', 'rejected'], 'red'),
+  statusTab('cancelled', 'Cancelled', ['cancelled'], 'gray'),
+  TAB_ALL,
+]
+
+const STATUS_BADGES: Record<string, { label: string; cls: string }> = {
+  pending:   { label: 'Pending',   cls: 'bg-warning-dark text-warning' },
+  approved:  { label: 'Approved',  cls: 'bg-success-dark text-success' },
+  declined:  { label: 'Declined',  cls: 'bg-error-dark text-error' },
+  rejected:  { label: 'Rejected',  cls: 'bg-error-dark text-error' },
+  cancelled: { label: 'Cancelled', cls: 'bg-background text-text-disabled' },
+}
+
 function monthBounds(yearMonth: string): { start: string; end: string } {
   const [year, month] = yearMonth.split('-').map(Number)
   const lastDay = new Date(year, month, 0).getDate()
@@ -46,6 +82,12 @@ function monthBounds(yearMonth: string): { start: string; end: string } {
     start: `${yearMonth}-01`,
     end: `${yearMonth}-${String(lastDay).padStart(2, '0')}`,
   }
+}
+
+function overlapsMonth(startDate: string, endDate: string | null | undefined, yearMonth: string): boolean {
+  const { start, end } = monthBounds(yearMonth)
+  const rangeEnd = endDate || startDate
+  return startDate <= end && rangeEnd >= start
 }
 
 function monthLabel(yearMonth: string) {
@@ -64,14 +106,6 @@ function currentYearMonth() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 }
 
-const STATUS_BADGES: Record<string, { label: string; cls: string }> = {
-  pending:   { label: 'Pending',   cls: 'bg-warning-dark text-warning' },
-  approved:  { label: 'Approved',  cls: 'bg-success-dark text-success' },
-  declined:  { label: 'Declined',  cls: 'bg-error-dark text-error' },
-  rejected:  { label: 'Rejected',  cls: 'bg-error-dark text-error' },
-  cancelled: { label: 'Cancelled', cls: 'bg-background text-text-disabled' },
-}
-
 export default function LeavePage() {
   const [requests, setRequests] = useState<LeaveRequest[]>([])
   const [onLeaveToday, setOnLeaveToday] = useState<OnLeaveRecord[]>([])
@@ -84,9 +118,10 @@ export default function LeavePage() {
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
 
-  const [search, setSearch] = useState('')
-  const [leaveTypeFilter, setLeaveTypeFilter] = useState('all')
-  const [statusFilter, setStatusFilter] = useState('all')
+  const [employeeCol, setEmployeeCol] = useState('')
+  const [leaveTypeFilter, setLeaveTypeFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
+  const [showOnLeave, setShowOnLeave] = useState(false)
 
   const [noteModal, setNoteModal] = useState<{
     requestId: string
@@ -210,10 +245,21 @@ export default function LeavePage() {
   function changeLeaveMonth(delta: number) {
     const next = shiftYearMonth(leaveMonth, delta)
     setLeaveMonth(next)
-    void loadUpcoming(next)
+    if (tab === 'upcoming') void loadUpcoming(next)
+  }
+
+  function changeTab(id: string) {
+    const next = id as Tab
+    setTab(next)
+    setStatusFilter('')
+    if (next === 'upcoming') void loadUpcoming(leaveMonth)
   }
 
   const leaveTypes = Array.from(new Set(requests.map(r => r.leave_type))).sort()
+  const leaveTypeOptions = leaveTypes.map(lt => ({ id: lt, label: lt.replace(/_/g, ' ') }))
+  const upcomingLeaveTypes = Array.from(new Set(upcoming.map(r => r.leave_type))).sort()
+  const upcomingLeaveTypeOptions = upcomingLeaveTypes.map(lt => ({ id: lt, label: lt.replace(/_/g, ' ') }))
+
   const yearStart = `${new Date().getFullYear()}-01-01`
   const usedByKey = requests
     .filter(r => r.status === 'approved' && r.start_date >= yearStart)
@@ -223,28 +269,60 @@ export default function LeavePage() {
       return acc
     }, {})
 
-  const filtered = requests.filter(r => {
-    if (tab === 'pending' && r.status !== 'pending') return false
-    if (tab === 'all' && statusFilter !== 'all' && r.status !== statusFilter) return false
-    if (leaveTypeFilter !== 'all' && r.leave_type !== leaveTypeFilter) return false
-    if (search) {
-      const emp = r.employees as { name: string; surname: string } | undefined
-      const name = `${emp?.name ?? ''} ${emp?.surname ?? ''}`.toLowerCase()
-      if (!name.includes(search.toLowerCase())) return false
-    }
-    return true
-  })
-
   const pendingCount = requests.filter(r => r.status === 'pending').length
 
-  const upcomingView = upcoming.filter(row => {
-    if (leaveTypeFilter !== 'all' && row.leave_type !== leaveTypeFilter) return false
-    if (search) {
-      const name = `${row.employees?.name ?? ''} ${row.employees?.surname ?? ''}`.toLowerCase()
-      if (!name.includes(search.toLowerCase())) return false
+  const pendingInMonth = requests.filter(r =>
+    r.status === 'pending' && overlapsMonth(r.start_date, r.end_date, leaveMonth)
+  )
+
+  const filtered = (tab === 'pending' ? pendingInMonth : requests).filter(r => {
+    if (tab === 'pending' && r.status !== 'pending') return false
+    if (tab === 'all' && statusFilter) {
+      if (statusFilter === 'declined') {
+        if (r.status !== 'declined' && r.status !== 'rejected') return false
+      } else if (r.status !== statusFilter) return false
     }
+    if (leaveTypeFilter && r.leave_type !== leaveTypeFilter) return false
+    const emp = r.employees as { name?: string; surname?: string } | undefined
+    const name = `${emp?.name ?? ''} ${emp?.surname ?? ''}`.trim()
+    if (!matchText(name, employeeCol)) return false
     return true
   })
+
+  const upcomingView = upcoming.filter(row => {
+    if (leaveTypeFilter && row.leave_type !== leaveTypeFilter) return false
+    if (statusFilter && row.status !== statusFilter) return false
+    const name = `${row.employees?.name ?? ''} ${row.employees?.surname ?? ''}`.trim()
+    if (!matchText(name, employeeCol)) return false
+    return true
+  })
+
+  const leaveViewCounts = {
+    pending: pendingCount,
+    upcoming: upcoming.length,
+    all: requests.length,
+  }
+
+  const statusSource =
+    tab === 'upcoming' ? upcoming
+    : tab === 'pending' ? pendingInMonth
+    : requests
+
+  const leaveStatusCounts = {
+    all: statusSource.length,
+    approved: statusSource.filter(r => r.status === 'approved').length,
+    pending: statusSource.filter(r => r.status === 'pending').length,
+    declined: statusSource.filter(r => r.status === 'declined' || r.status === 'rejected').length,
+    cancelled: statusSource.filter(r => r.status === 'cancelled').length,
+  }
+
+  const filtersActive = !!(employeeCol || leaveTypeFilter || statusFilter)
+
+  function resetFilters() {
+    setEmployeeCol('')
+    setLeaveTypeFilter('')
+    setStatusFilter('')
+  }
 
   if (error === 'not_linked') return (
     <div className="flex items-center justify-center h-full">
@@ -277,7 +355,7 @@ export default function LeavePage() {
       </div>
 
       {actionError && (
-        <div className="mx-4 mt-3 rounded-sm border border-error/40 bg-error-dark/30 px-3 py-2 flex items-start justify-between gap-3">
+        <div className="mx-4 mt-3 rounded-sm border border-error/40 bg-error-dark/30 px-3 py-2 flex items-start justify-between gap-3 shrink-0">
           <p className="text-[13px] text-error">{actionError}</p>
           <button type="button" onClick={() => setActionError(null)} className="text-error shrink-0">
             <span className="material-icons text-[16px]">close</span>
@@ -285,189 +363,267 @@ export default function LeavePage() {
         </div>
       )}
       {error && error !== 'not_linked' && (
-        <p className="px-4 py-2 text-error text-[13px]">{error}</p>
+        <p className="px-4 py-2 text-error text-[13px] shrink-0">{error}</p>
       )}
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {!loading && onLeaveToday.length > 0 && (
-          <div className="bg-surface border border-divider rounded-lg p-4">
-            <p className="text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-2.5">
-              On Leave Today ({onLeaveToday.length})
-            </p>
-            <div className="space-y-1">
-              {onLeaveToday.map(r => (
-                <div key={r.id} className="flex items-center justify-between text-[13px]">
-                  <Link href={`/dashboard/employees/${r.employee_id}?tab=leave`} className="font-medium text-text-primary hover:text-primary hover:underline">
-                    {r.employees ? `${r.employees.name} ${r.employees.surname}` : 'Unknown'}
-                  </Link>
-                  <span className="text-text-secondary">
-                    {r.leave_type} · back {returnToWorkLabel(r.end_date)}
-                  </span>
-                </div>
-              ))}
-            </div>
+          <div className="bg-surface border border-divider rounded-lg overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setShowOnLeave(v => !v)}
+              className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-background transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <span className="material-icons text-[16px] text-warning">event_busy</span>
+                <span className="text-[12px] font-medium text-text-primary">
+                  On Leave Today ({onLeaveToday.length})
+                </span>
+              </div>
+              <span className="material-icons text-[16px] text-text-secondary">
+                {showOnLeave ? 'expand_less' : 'expand_more'}
+              </span>
+            </button>
+            {showOnLeave && (
+              <div className="border-t border-divider divide-y divide-divider">
+                {onLeaveToday.map(r => (
+                  <div key={r.id} className="flex items-center justify-between px-3 py-2 text-[12px]">
+                    <Link href={`/dashboard/employees/${r.employee_id}?tab=leave`} className="font-medium text-text-primary hover:text-primary hover:underline">
+                      {r.employees ? `${r.employees.name} ${r.employees.surname}` : 'Unknown'}
+                    </Link>
+                    <span className="text-text-secondary">
+                      {r.leave_type.replace(/_/g, ' ')} · back {returnToWorkLabel(r.end_date)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-2 h-10 px-3 bg-surface border border-border rounded-md flex-1 min-w-[200px]">
-            <span className="material-icons text-text-disabled text-[18px]">search</span>
-            <input
-              type="text"
-              placeholder="Search by employee name…"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="flex-1 text-[13px] text-text-primary placeholder:text-text-disabled bg-transparent focus:outline-none"
-            />
-          </div>
-          <select
-            value={leaveTypeFilter}
-            onChange={e => setLeaveTypeFilter(e.target.value)}
-            className="h-10 px-3 rounded-md border border-border bg-surface text-[13px] text-text-primary"
-          >
-            <option value="all">All types</option>
-            {leaveTypes.map(lt => (
-              <option key={lt} value={lt}>{lt}</option>
-            ))}
-          </select>
-          {tab === 'all' && (
-            <select
-              value={statusFilter}
-              onChange={e => setStatusFilter(e.target.value)}
-              className="h-10 px-3 rounded-md border border-border bg-surface text-[13px] text-text-primary"
+        <div className="flex items-center gap-2 flex-wrap">
+          <StatusFilterTabs
+            tabs={LEAVE_VIEW_TABS}
+            value={tab}
+            counts={leaveViewCounts}
+            onChange={changeTab}
+          />
+          <div className="flex items-center gap-1 ml-auto">
+            <button
+              type="button"
+              onClick={() => changeLeaveMonth(-1)}
+              className="h-8 w-8 rounded-md border border-border bg-surface text-text-primary"
+              aria-label="Previous month"
             >
-              <option value="all">All statuses</option>
-              <option value="pending">Pending</option>
-              <option value="approved">Approved</option>
-              <option value="declined">Declined</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
-          )}
+              <span className="material-icons text-[18px]">chevron_left</span>
+            </button>
+            <span className="min-w-[120px] text-center text-[12px] font-semibold text-text-primary">
+              {monthLabel(leaveMonth)}
+            </span>
+            <button
+              type="button"
+              onClick={() => changeLeaveMonth(1)}
+              className="h-8 w-8 rounded-md border border-border bg-surface text-text-primary"
+              aria-label="Next month"
+            >
+              <span className="material-icons text-[18px]">chevron_right</span>
+            </button>
+          </div>
         </div>
 
-        <div className="flex gap-1 bg-surface border border-divider rounded-md p-1 w-fit">
-          {(['pending', 'upcoming', 'all'] as Tab[]).map(t => (
-            <button
-              key={t}
-              onClick={() => {
-                setTab(t)
-                if (t === 'upcoming') void loadUpcoming(leaveMonth)
-              }}
-              className={`px-4 h-8 rounded text-[13px] font-medium transition-colors capitalize ${
-                tab === t ? 'bg-primary text-white' : 'text-text-secondary hover:text-text-primary'
-              }`}
-            >
-              {t === 'pending' ? `Pending (${pendingCount})` : t === 'upcoming' ? 'Upcoming' : 'All'}
-            </button>
-          ))}
+        <div className="flex items-center gap-2 flex-wrap">
+          <ResetFiltersButton disabled={!filtersActive} onReset={resetFilters} />
+          <StatusFilterTabs
+            tabs={tab === 'all' ? ALL_STATUS_TABS : UPCOMING_STATUS_TABS}
+            value={statusFilter || 'all'}
+            counts={leaveStatusCounts}
+            onChange={id => setStatusFilter(id === 'all' ? '' : id)}
+          />
         </div>
 
         {tab === 'upcoming' ? (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <p className="text-[13px] text-text-secondary">
-                Approved and pending leave in {monthLabel(leaveMonth)}. Back is the day they return.
-              </p>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => changeLeaveMonth(-1)}
-                  className="h-9 w-9 rounded-md border border-border bg-surface text-text-primary"
-                  aria-label="Previous month"
-                >
-                  <span className="material-icons text-[18px]">chevron_left</span>
-                </button>
-                <span className="min-w-[140px] text-center text-[13px] font-semibold text-text-primary">
-                  {monthLabel(leaveMonth)}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => changeLeaveMonth(1)}
-                  className="h-9 w-9 rounded-md border border-border bg-surface text-text-primary"
-                  aria-label="Next month"
-                >
-                  <span className="material-icons text-[18px]">chevron_right</span>
-                </button>
-              </div>
+          <div className="bg-surface rounded-lg border border-divider overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full" style={{ minWidth: 760 }}>
+                <thead>
+                  <tr className="bg-surface-elevated border-b border-divider">
+                    <th className={`${MONEY_TH} text-left`}>
+                      <TextHeaderFilter label="Employee" value={employeeCol} onChange={setEmployeeCol} placeholder="Employee…" />
+                    </th>
+                    <th style={{ width: 130 }} className={`${MONEY_TH} text-left`}>
+                      <StatusHeaderFilter
+                        label="Type"
+                        options={upcomingLeaveTypeOptions}
+                        selected={leaveTypeFilter ? [leaveTypeFilter] : []}
+                        onChange={next => setLeaveTypeFilter(next[next.length - 1] ?? '')}
+                      />
+                    </th>
+                    <th style={{ width: 100 }} className={`${MONEY_TH} text-left`}>From</th>
+                    <th style={{ width: 100 }} className={`${MONEY_TH} text-left`}>To</th>
+                    <th style={{ width: 60 }} className={`${MONEY_TH} text-right`}>Days</th>
+                    <th style={{ width: 90 }} className={`${MONEY_TH} text-left`}>Back</th>
+                    <th style={{ width: 90 }} className={`${MONEY_TH} text-left`}>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {upcomingLoading ? (
+                    <tr><td colSpan={7} className="py-12 text-center text-[12px] text-text-disabled">Loading…</td></tr>
+                  ) : upcomingView.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-12 text-center text-[13px] text-text-secondary">
+                        {upcoming.length === 0
+                          ? `No leave in ${monthLabel(leaveMonth)}`
+                          : 'No leave matches your filters.'}
+                      </td>
+                    </tr>
+                  ) : (
+                    upcomingView.map(row => {
+                      const badge = STATUS_BADGES[row.status] ?? STATUS_BADGES.cancelled
+                      const name = row.employees ? `${row.employees.name} ${row.employees.surname}` : 'Unknown'
+                      return (
+                        <tr key={row.id} className="border-b border-divider last:border-0 hover:bg-background">
+                          <td className={MONEY_TD}>
+                            <Link href={`/dashboard/employees/${row.employee_id}?tab=leave`} className="font-medium text-text-primary hover:text-primary hover:underline">
+                              {name}
+                            </Link>
+                          </td>
+                          <td className={`${MONEY_TD} text-text-secondary capitalize`}>
+                            {row.leave_type.replace(/_/g, ' ')}
+                          </td>
+                          <td className={`${MONEY_TD} text-text-secondary whitespace-nowrap`}>{formatDate(row.start_date)}</td>
+                          <td className={`${MONEY_TD} text-text-secondary whitespace-nowrap`}>{formatDate(row.end_date)}</td>
+                          <td className={`${MONEY_TD} text-right tabular-nums text-text-secondary`}>{row.total_days ?? '—'}</td>
+                          <td className={`${MONEY_TD} text-text-secondary whitespace-nowrap`}>{returnToWorkLabel(row.end_date)}</td>
+                          <td className={MONEY_TD}>
+                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${badge.cls}`}>
+                              {badge.label}
+                            </span>
+                          </td>
+                        </tr>
+                      )
+                    })
+                  )}
+                </tbody>
+              </table>
             </div>
-            <div className="bg-surface rounded-lg border border-divider overflow-hidden">
-              {upcomingLoading ? (
-                <div className="py-16 text-center text-[13px] text-text-disabled">Loading…</div>
-              ) : upcomingView.length === 0 ? (
-                <div className="py-16 text-center">
-                  <span className="material-icons text-[48px] text-text-disabled block mb-2">event_available</span>
-                  <p className="text-[14px] text-text-secondary">No leave in {monthLabel(leaveMonth)}</p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-[13px]">
+          </div>
+        ) : (
+          <div className="bg-surface rounded-lg border border-divider overflow-hidden">
+            {loading ? (
+              <p className="py-12 text-center text-[12px] text-text-disabled">Loading…</p>
+            ) : filtered.length === 0 ? (
+              <div className="py-12 text-center">
+                <span className="material-icons text-[40px] text-text-disabled block mb-2">event_available</span>
+                <p className="text-[13px] text-text-secondary">
+                  {tab === 'pending'
+                    ? (pendingCount === 0
+                      ? 'No pending leave requests'
+                      : pendingInMonth.length === 0
+                        ? `No pending leave in ${monthLabel(leaveMonth)}`
+                        : 'No leave matches your filters.')
+                    : 'No leave requests match your filters'}
+                </p>
+              </div>
+            ) : (
+              <ResponsiveDataView
+                table={
+                  <table className="w-full" style={{ minWidth: 760 }}>
                     <thead>
-                      <tr className="border-b border-divider bg-surface-elevated/50">
-                        <th className="text-left px-4 py-2.5 font-medium text-text-secondary">Employee</th>
-                        <th className="text-left px-4 py-2.5 font-medium text-text-secondary">Type</th>
-                        <th className="text-left px-4 py-2.5 font-medium text-text-secondary">From</th>
-                        <th className="text-left px-4 py-2.5 font-medium text-text-secondary">To</th>
-                        <th className="text-center px-4 py-2.5 font-medium text-text-secondary">Days</th>
-                        <th className="text-left px-4 py-2.5 font-medium text-text-secondary">Back</th>
-                        <th className="text-left px-4 py-2.5 font-medium text-text-secondary">Status</th>
+                      <tr className="bg-surface-elevated border-b border-divider">
+                        <th className={`${MONEY_TH} text-left`}>
+                          <TextHeaderFilter label="Employee" value={employeeCol} onChange={setEmployeeCol} placeholder="Employee…" />
+                        </th>
+                        <th style={{ width: 130 }} className={`${MONEY_TH} text-left`}>
+                          <StatusHeaderFilter
+                            label="Type"
+                            options={leaveTypeOptions}
+                            selected={leaveTypeFilter ? [leaveTypeFilter] : []}
+                            onChange={next => setLeaveTypeFilter(next[next.length - 1] ?? '')}
+                          />
+                        </th>
+                        <th style={{ width: 160 }} className={`${MONEY_TH} text-left`}>Dates</th>
+                        <th style={{ width: 60 }} className={`${MONEY_TH} text-right`}>Days</th>
+                        <th style={{ width: 90 }} className={`${MONEY_TH} text-left`}>Status</th>
+                        <th style={{ width: 150 }} className={`${MONEY_TH} text-right`}>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {upcomingView.map(row => {
-                        const badge = STATUS_BADGES[row.status] ?? STATUS_BADGES.cancelled
-                        const name = row.employees ? `${row.employees.name} ${row.employees.surname}` : 'Unknown'
+                      {filtered.map(req => {
+                        const emp = req.employees as {
+                          name: string
+                          surname: string
+                          employee_number: string | null
+                        } | undefined
+                        const badge = STATUS_BADGES[req.status] ?? STATUS_BADGES.cancelled
+                        const empName = emp ? `${emp.name} ${emp.surname}` : 'Unknown'
+                        const balanceKey = `${req.employee_id}:${req.leave_type}`
+                        const used = usedByKey[balanceKey] ?? 0
+                        const annual = getCompanyAnnualDays(req.leave_type, leaveSettings)
+                        const remaining = Math.max(0, annual - used)
+
                         return (
-                          <tr key={row.id} className="border-b border-divider last:border-0">
-                            <td className="px-4 py-3">
-                              <Link href={`/dashboard/employees/${row.employee_id}?tab=leave`} className="font-medium text-text-primary hover:text-primary hover:underline">
-                                {name}
+                          <tr key={req.id} className="border-b border-divider last:border-0 hover:bg-background">
+                            <td className={MONEY_TD}>
+                              <Link href={`/dashboard/employees/${req.employee_id}?tab=leave`} className="font-medium text-text-primary hover:text-primary hover:underline">
+                                {empName}
                               </Link>
+                              {req.reason && (
+                                <p className="text-[11px] text-text-secondary mt-0.5 truncate max-w-[220px]" title={req.reason}>
+                                  {req.reason}
+                                </p>
+                              )}
                             </td>
-                            <td className="px-4 py-3 text-text-primary">{row.leave_type}</td>
-                            <td className="px-4 py-3 text-text-secondary whitespace-nowrap">{formatDate(row.start_date)}</td>
-                            <td className="px-4 py-3 text-text-secondary whitespace-nowrap">{formatDate(row.end_date)}</td>
-                            <td className="px-4 py-3 text-center text-text-primary">{row.total_days ?? '—'}</td>
-                            <td className="px-4 py-3 text-text-secondary whitespace-nowrap">back {returnToWorkLabel(row.end_date)}</td>
-                            <td className="px-4 py-3">
-                              <span className={`px-2 py-0.5 rounded-pill text-[11px] font-medium ${badge.cls}`}>
+                            <td className={`${MONEY_TD} text-text-secondary capitalize`}>
+                              {req.leave_type.replace(/_/g, ' ')}
+                              {req.status === 'pending' && (
+                                <p className={`text-[11px] mt-0.5 ${
+                                  remaining <= 0 ? 'text-error' : remaining <= 3 ? 'text-warning' : 'text-success'
+                                }`}>
+                                  {remaining} days remaining
+                                </p>
+                              )}
+                            </td>
+                            <td className={`${MONEY_TD} text-text-secondary whitespace-nowrap`}>
+                              {formatDate(req.start_date)} – {formatDate(req.end_date)}
+                            </td>
+                            <td className={`${MONEY_TD} text-right tabular-nums text-text-secondary`}>{req.total_days}</td>
+                            <td className={MONEY_TD}>
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${badge.cls}`}>
                                 {badge.label}
                               </span>
+                            </td>
+                            <td className={`${MONEY_TD} text-right`}>
+                              {req.status === 'pending' ? (
+                                <div className="inline-flex gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => openDecide(req.id, 'declined', empName)}
+                                    disabled={actionLoading === req.id}
+                                    className="h-7 px-2 rounded-md text-[11px] font-medium bg-error-dark text-error hover:bg-red-100 disabled:opacity-50"
+                                  >
+                                    Decline
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => openDecide(req.id, 'approved', empName)}
+                                    disabled={actionLoading === req.id}
+                                    className="h-7 px-2 rounded-md text-[11px] font-medium bg-success-dark text-success hover:bg-green-100 disabled:opacity-50"
+                                  >
+                                    Approve
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-text-disabled">—</span>
+                              )}
                             </td>
                           </tr>
                         )
                       })}
                     </tbody>
                   </table>
-                </div>
-              )}
-            </div>
-          </div>
-        ) : (
-        <div className="bg-surface rounded-lg border border-divider overflow-hidden">
-          {loading ? (
-            <div className="py-16 text-center text-[13px] text-text-disabled">Loading…</div>
-          ) : filtered.length === 0 ? (
-            <div className="py-16 text-center">
-              <span className="material-icons text-[48px] text-text-disabled block mb-2">event_available</span>
-              <p className="text-[14px] text-text-secondary">
-                {tab === 'pending' ? 'No pending leave requests' : 'No leave requests match your filters'}
-              </p>
-            </div>
-          ) : (
-            <ResponsiveDataView
-              table={
-                <table className="w-full text-[13px]">
-                  <thead>
-                    <tr className="border-b border-divider bg-surface-elevated/50">
-                      <th className="text-left px-4 py-2.5 font-medium text-text-secondary">Employee</th>
-                      <th className="text-left px-4 py-2.5 font-medium text-text-secondary">Type</th>
-                      <th className="text-left px-4 py-2.5 font-medium text-text-secondary">Dates</th>
-                      <th className="text-center px-4 py-2.5 font-medium text-text-secondary">Days</th>
-                      <th className="text-left px-4 py-2.5 font-medium text-text-secondary">Status</th>
-                      <th className="text-right px-4 py-2.5 font-medium text-text-secondary">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+                }
+                mobile={
+                  <>
                     {filtered.map(req => {
                       const emp = req.employees as {
                         name: string
@@ -480,132 +636,56 @@ export default function LeavePage() {
                       const used = usedByKey[balanceKey] ?? 0
                       const annual = getCompanyAnnualDays(req.leave_type, leaveSettings)
                       const remaining = Math.max(0, annual - used)
-
                       return (
-                        <tr key={req.id} className="border-b border-divider last:border-0 hover:bg-background/60">
-                          <td className="px-4 py-3">
-                            <Link href={`/dashboard/employees/${req.employee_id}?tab=leave`} className="font-medium text-text-primary hover:text-primary hover:underline">
-                              {empName}
-                            </Link>
-                            {req.reason && (
-                              <p className="text-[11px] text-text-secondary mt-0.5 truncate max-w-[220px]" title={req.reason}>
-                                {req.reason}
-                              </p>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-text-primary">
-                            {req.leave_type}
-                            {req.status === 'pending' && (
-                              <p className={`text-[11px] mt-0.5 ${
-                                remaining <= 0 ? 'text-error' : remaining <= 3 ? 'text-warning' : 'text-success'
-                              }`}>
-                                {remaining} days remaining
-                              </p>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-text-secondary whitespace-nowrap">
-                            {formatDate(req.start_date)} – {formatDate(req.end_date)}
-                          </td>
-                          <td className="px-4 py-3 text-center text-text-primary">{req.total_days}</td>
-                          <td className="px-4 py-3">
-                            <span className={`px-2 py-0.5 rounded-pill text-[11px] font-medium ${badge.cls}`}>
+                        <DataCard key={req.id}>
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <DataCardTitle>
+                                <Link href={`/dashboard/employees/${req.employee_id}?tab=leave`} className="hover:underline">
+                                  {empName}
+                                </Link>
+                              </DataCardTitle>
+                              <DataCardMeta>{req.leave_type.replace(/_/g, ' ')} · {req.total_days} day{req.total_days !== 1 ? 's' : ''}</DataCardMeta>
+                            </div>
+                            <span className={`px-2 py-0.5 rounded-pill text-[11px] font-medium shrink-0 ${badge.cls}`}>
                               {badge.label}
                             </span>
-                          </td>
-                          <td className="px-4 py-3 text-right whitespace-nowrap">
-                            {req.status === 'pending' ? (
-                              <div className="inline-flex gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => openDecide(req.id, 'declined', empName)}
-                                  disabled={actionLoading === req.id}
-                                  className="h-8 px-3 rounded-md text-[12px] font-medium bg-error-dark text-error hover:bg-red-100 transition-colors disabled:opacity-50"
-                                >
-                                  Decline
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => openDecide(req.id, 'approved', empName)}
-                                  disabled={actionLoading === req.id}
-                                  className="h-8 px-3 rounded-md text-[12px] font-medium bg-success-dark text-success hover:bg-green-100 transition-colors disabled:opacity-50"
-                                >
-                                  Approve
-                                </button>
-                              </div>
-                            ) : (
-                              <span className="text-text-disabled">—</span>
-                            )}
-                          </td>
-                        </tr>
+                          </div>
+                          <DataCardRow
+                            label="Dates"
+                            value={`${formatDate(req.start_date)} – ${formatDate(req.end_date)}`}
+                          />
+                          {req.status === 'pending' && (
+                            <DataCardRow label="Remaining" value={`${remaining} days`} />
+                          )}
+                          {req.status === 'pending' && (
+                            <div className="flex gap-2 mt-3">
+                              <button
+                                type="button"
+                                onClick={() => openDecide(req.id, 'declined', empName)}
+                                disabled={actionLoading === req.id}
+                                className="flex-1 h-11 rounded-md text-[13px] font-medium bg-error-dark text-error disabled:opacity-50"
+                              >
+                                Decline
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => openDecide(req.id, 'approved', empName)}
+                                disabled={actionLoading === req.id}
+                                className="flex-1 h-11 rounded-md text-[13px] font-medium bg-success-dark text-success disabled:opacity-50"
+                              >
+                                Approve
+                              </button>
+                            </div>
+                          )}
+                        </DataCard>
                       )
                     })}
-                  </tbody>
-                </table>
-              }
-              mobile={
-                <>
-                  {filtered.map(req => {
-                    const emp = req.employees as {
-                      name: string
-                      surname: string
-                      employee_number: string | null
-                    } | undefined
-                    const badge = STATUS_BADGES[req.status] ?? STATUS_BADGES.cancelled
-                    const empName = emp ? `${emp.name} ${emp.surname}` : 'Unknown'
-                    const balanceKey = `${req.employee_id}:${req.leave_type}`
-                    const used = usedByKey[balanceKey] ?? 0
-                    const annual = getCompanyAnnualDays(req.leave_type, leaveSettings)
-                    const remaining = Math.max(0, annual - used)
-                    return (
-                      <DataCard key={req.id}>
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <DataCardTitle>
-                              <Link href={`/dashboard/employees/${req.employee_id}?tab=leave`} className="hover:underline">
-                                {empName}
-                              </Link>
-                            </DataCardTitle>
-                            <DataCardMeta>{req.leave_type} · {req.total_days} day{req.total_days !== 1 ? 's' : ''}</DataCardMeta>
-                          </div>
-                          <span className={`px-2 py-0.5 rounded-pill text-[11px] font-medium shrink-0 ${badge.cls}`}>
-                            {badge.label}
-                          </span>
-                        </div>
-                        <DataCardRow
-                          label="Dates"
-                          value={`${formatDate(req.start_date)} – ${formatDate(req.end_date)}`}
-                        />
-                        {req.status === 'pending' && (
-                          <DataCardRow label="Remaining" value={`${remaining} days`} />
-                        )}
-                        {req.status === 'pending' && (
-                          <div className="flex gap-2 mt-3">
-                            <button
-                              type="button"
-                              onClick={() => openDecide(req.id, 'declined', empName)}
-                              disabled={actionLoading === req.id}
-                              className="flex-1 h-11 rounded-md text-[13px] font-medium bg-error-dark text-error disabled:opacity-50"
-                            >
-                              Decline
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => openDecide(req.id, 'approved', empName)}
-                              disabled={actionLoading === req.id}
-                              className="flex-1 h-11 rounded-md text-[13px] font-medium bg-success-dark text-success disabled:opacity-50"
-                            >
-                              Approve
-                            </button>
-                          </div>
-                        )}
-                      </DataCard>
-                    )
-                  })}
-                </>
-              }
-            />
-          )}
-        </div>
+                  </>
+                }
+              />
+            )}
+          </div>
         )}
       </div>
 

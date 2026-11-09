@@ -32,6 +32,12 @@ import {
   DataCardMeta,
   DataCardRow,
 } from '@/components/ui/ResponsiveDataView'
+import { StatusFilterTabs, MONEY_TH, MONEY_TD } from '@/components/ui/StatusFilterTabs'
+import {
+  ResetFiltersButton,
+  TextHeaderFilter,
+  matchText,
+} from '@/components/ui/MoneyListFilters'
 import type { TimePunch } from '@/types/database'
 
 type Preset = 'today' | 'week' | 'month' | 'all' | 'custom'
@@ -195,12 +201,12 @@ function exportPDF(sessions: DisplaySession[], from: string, to: string) {
   w.document.close()
 }
 
-const PRESETS: { key: Preset; label: string }[] = [
-  { key: 'today', label: 'Today' },
-  { key: 'week', label: 'This Week' },
-  { key: 'month', label: 'This Month' },
-  { key: 'all', label: 'All' },
-  { key: 'custom', label: 'Custom' },
+const PRESET_TABS = [
+  { id: 'today', label: 'Today', match: null, idle: 'border-blue-200 text-blue-700 hover:bg-blue-50', active: 'bg-blue-600 text-white border-blue-600' },
+  { id: 'week', label: 'This Week', match: null, idle: 'border-indigo-200 text-indigo-700 hover:bg-indigo-50', active: 'bg-indigo-600 text-white border-indigo-600' },
+  { id: 'month', label: 'This Month', match: null, idle: 'border-slate-200 text-slate-700 hover:bg-slate-50', active: 'bg-slate-700 text-white border-slate-700' },
+  { id: 'all', label: 'All', match: null, idle: 'border-gray-200 text-gray-600 hover:bg-gray-50', active: 'bg-gray-500 text-white border-gray-500' },
+  { id: 'custom', label: 'Custom', match: null, idle: 'border-amber-200 text-amber-700 hover:bg-amber-50', active: 'bg-amber-500 text-white border-amber-500' },
 ]
 
 export default function AttendancePage() {
@@ -210,6 +216,7 @@ export default function AttendancePage() {
   const [customFrom, setCustomFrom] = useState(todayStr())
   const [customTo, setCustomTo] = useState(todayStr())
   const [search, setSearch] = useState('')
+  const [employeeCol, setEmployeeCol] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [staff, setStaff] = useState<EmpRow[]>([])
@@ -460,10 +467,13 @@ export default function AttendancePage() {
   const { from, to } = getRange(preset, customFrom, customTo)
 
   const filtered = sessions.filter(s => {
-    if (!search) return true
-    const q = search.toLowerCase()
-    return s.employeeName.toLowerCase().includes(q) || s.employeeCode.toLowerCase().includes(q)
+    if (search) {
+      if (!matchText(s.employeeName, search) && !matchText(s.employeeCode, search)) return false
+    }
+    if (!matchText(s.employeeName, employeeCol) && !matchText(s.employeeCode, employeeCol)) return false
+    return true
   })
+  const searchFiltersActive = !!(search || employeeCol)
 
   const onSite = sessions.filter(s => s.row.isOpen && !s.row.isAbsentDay && !s.row.isLeaveDay).length
   const completed = sessions.filter(s => !s.row.isOpen && !s.row.isAbsentDay && !s.row.isLeaveDay).length
@@ -520,44 +530,39 @@ export default function AttendancePage() {
 
   return (
     <div className="p-6 max-w-[1400px] mx-auto">
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
         <div>
           <h1 className="text-[22px] font-semibold text-text-primary">Attendance</h1>
-          <div className="flex gap-1 mt-2 bg-surface border border-divider rounded-md p-1 w-fit">
-            <button
-              type="button"
-              onClick={() => setView('attendance')}
-              className={`h-8 px-3 rounded text-[13px] font-medium ${view === 'attendance' ? 'bg-primary text-white' : 'text-text-secondary'}`}
-            >
-              Attendance
-            </button>
-            <button
-              type="button"
-              onClick={() => setView('timesheet')}
-              className={`h-8 px-3 rounded text-[13px] font-medium ${view === 'timesheet' ? 'bg-primary text-white' : 'text-text-secondary'}`}
-            >
-              Timesheet
-            </button>
+          <div className="flex gap-1 mt-2">
+            <StatusFilterTabs
+              tabs={[
+                { id: 'attendance', label: 'Attendance', match: null, idle: 'border-blue-200 text-blue-700 hover:bg-blue-50', active: 'bg-blue-600 text-white border-blue-600' },
+                { id: 'timesheet', label: 'Timesheet', match: null, idle: 'border-slate-200 text-slate-700 hover:bg-slate-50', active: 'bg-slate-700 text-white border-slate-700' },
+              ]}
+              value={view}
+              counts={{}}
+              onChange={id => setView(id as AttendanceView)}
+            />
           </div>
         </div>
-        <div className="flex gap-2">
-          {view === 'attendance' && (
-            <>
-          <button
-            onClick={() => exportCSV(filtered, from, to)}
-            className="h-10 px-4 text-[13px] font-medium rounded-lg border border-border bg-surface text-text-primary hover:bg-background transition-colors"
-          >
-            Export CSV
-          </button>
-          <button
-            onClick={() => exportPDF(filtered, from, to)}
-            className="h-10 px-4 text-[13px] font-medium rounded-lg border border-border bg-surface text-text-primary hover:bg-background transition-colors"
-          >
-            Export PDF
-          </button>
-            </>
-          )}
-        </div>
+        {view === 'attendance' && (
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => exportCSV(filtered, from, to)}
+              className="h-8 px-2.5 text-[12px] font-medium rounded-md border border-border bg-surface text-text-primary hover:bg-background transition-colors"
+            >
+              Export CSV
+            </button>
+            <button
+              type="button"
+              onClick={() => exportPDF(filtered, from, to)}
+              className="h-8 px-2.5 text-[12px] font-medium rounded-md border border-border bg-surface text-text-primary hover:bg-background transition-colors"
+            >
+              Export PDF
+            </button>
+          </div>
+        )}
       </div>
 
       {error && error !== 'not_linked' && (
@@ -621,22 +626,15 @@ export default function AttendancePage() {
 
       {view === 'attendance' && (
       <>
-      <div className="flex items-center gap-2 mb-4 flex-wrap">
-        {PRESETS.map(p => (
-          <button
-            key={p.key}
-            onClick={() => setPreset(p.key)}
-            className={`h-8 px-3 rounded-full text-[12px] font-medium transition-colors ${
-              preset === p.key
-                ? 'bg-primary text-white'
-                : 'bg-surface border border-border text-text-secondary hover:text-text-primary'
-            }`}
-          >
-            {p.label}
-          </button>
-        ))}
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <StatusFilterTabs
+          tabs={PRESET_TABS}
+          value={preset}
+          counts={{}}
+          onChange={id => setPreset(id as Preset)}
+        />
         {preset === 'custom' && (
-          <div className="flex items-center gap-2 ml-2">
+          <div className="flex items-center gap-2">
             <input
               type="date"
               value={customFrom}
@@ -654,58 +652,71 @@ export default function AttendancePage() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
-        <div className="bg-surface rounded-lg border border-divider p-4">
-          <p className="text-[24px] font-bold text-primary">{onSite}</p>
-          <p className="text-[12px] text-text-secondary">Currently on site</p>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
+        <div className="bg-surface rounded-lg border border-divider px-3 py-2">
+          <p className="text-[18px] font-bold text-primary tabular-nums">{onSite}</p>
+          <p className="text-[11px] text-text-secondary">Currently on site</p>
         </div>
-        <div className="bg-surface rounded-lg border border-divider p-4">
-          <p className="text-[24px] font-bold text-success">{completed}</p>
-          <p className="text-[12px] text-text-secondary">Completed shifts</p>
+        <div className="bg-surface rounded-lg border border-divider px-3 py-2">
+          <p className="text-[18px] font-bold text-success tabular-nums">{completed}</p>
+          <p className="text-[11px] text-text-secondary">Completed shifts</p>
         </div>
-        <div className="bg-surface rounded-lg border border-divider p-4">
-          <p className="text-[24px] font-bold text-text-primary">{missedClockIn}</p>
-          <p className="text-[12px] text-text-secondary">Didn't clock in</p>
-          <p className="text-[11px] text-text-disabled mt-0.5">{fmtSessionDate(new Date(`${focusDay}T12:00:00`))}</p>
+        <div className="bg-surface rounded-lg border border-divider px-3 py-2">
+          <p className="text-[18px] font-bold text-text-primary tabular-nums">{missedClockIn}</p>
+          <p className="text-[11px] text-text-secondary">Didn&apos;t clock in</p>
+          <p className="text-[10px] text-text-disabled mt-0.5">{fmtSessionDate(new Date(`${focusDay}T12:00:00`))}</p>
         </div>
       </div>
 
-      <div className="flex items-center gap-2 h-10 px-3 bg-surface border border-border rounded-md mb-4 w-full max-w-sm">
-        <span className="material-icons text-text-disabled text-[18px]">search</span>
-        <input
-          type="text"
-          placeholder="Filter by name or code…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="flex-1 text-[13px] text-text-primary placeholder:text-text-disabled bg-transparent focus:outline-none"
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <div className="flex items-center gap-1.5 h-8 px-2 bg-surface border border-border rounded-sm flex-1 min-w-[180px] max-w-sm">
+          <span className="material-icons text-text-disabled text-[16px]">search</span>
+          <input
+            type="search"
+            placeholder="Filter by name or code…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="flex-1 min-w-0 text-[13px] text-text-primary placeholder:text-text-disabled bg-transparent focus:outline-none"
+          />
+        </div>
+        <ResetFiltersButton
+          disabled={!searchFiltersActive}
+          onReset={() => { setSearch(''); setEmployeeCol('') }}
         />
       </div>
 
       <div className="bg-surface rounded-lg border border-divider overflow-hidden">
         {loading ? (
-          <div className="py-16 text-center text-[13px] text-text-disabled">Loading…</div>
+          <div className="py-12 text-center text-[12px] text-text-disabled">Loading…</div>
         ) : filtered.length === 0 ? (
-          <div className="py-16 text-center">
-            <span className="material-icons text-[48px] text-text-disabled block mb-2">schedule</span>
-            <p className="text-[14px] text-text-secondary">No attendance records for this period</p>
+          <div className="py-12 text-center">
+            <span className="material-icons text-[40px] text-text-disabled block mb-2">schedule</span>
+            <p className="text-[13px] text-text-secondary">No attendance records for this period</p>
           </div>
         ) : (
           <ResponsiveDataView
             table={
-              <table className="w-full text-[13px]" style={{ minWidth: 1100 }}>
+              <table className="w-full" style={{ minWidth: 1100 }}>
                 <thead>
                   <tr className="border-b border-divider bg-surface-elevated">
-                    <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Employee</th>
-                    <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Date</th>
-                    <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Time In</th>
-                    <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">In Location</th>
-                    <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Time Out</th>
-                    <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Out Location</th>
-                    <th className="text-right px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Reg</th>
-                    <th className="text-right px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">OT</th>
-                    <th className="text-right px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Total</th>
-                    <th className="text-right px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Pay</th>
-                    <th className="text-left px-4 py-3 text-[11px] font-semibold text-text-disabled uppercase">Notes</th>
+                    <th className={`${MONEY_TH} text-left`}>
+                      <TextHeaderFilter
+                        label="Employee"
+                        value={employeeCol}
+                        onChange={setEmployeeCol}
+                        placeholder="Name or code…"
+                      />
+                    </th>
+                    <th style={{ width: 90 }} className={`${MONEY_TH} text-left`}>Date</th>
+                    <th style={{ width: 90 }} className={`${MONEY_TH} text-left`}>Time In</th>
+                    <th className={`${MONEY_TH} text-left`}>In Location</th>
+                    <th style={{ width: 90 }} className={`${MONEY_TH} text-left`}>Time Out</th>
+                    <th className={`${MONEY_TH} text-left`}>Out Location</th>
+                    <th style={{ width: 56 }} className={`${MONEY_TH} text-right`}>Reg</th>
+                    <th style={{ width: 56 }} className={`${MONEY_TH} text-right`}>OT</th>
+                    <th style={{ width: 64 }} className={`${MONEY_TH} text-right`}>Total</th>
+                    <th style={{ width: 80 }} className={`${MONEY_TH} text-right`}>Pay</th>
+                    <th style={{ width: 120 }} className={`${MONEY_TH} text-left`}>Notes</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -717,7 +728,7 @@ export default function AttendancePage() {
                     const notes = [late, early, r.notes ?? r.statusNote ?? ''].filter(Boolean).join(' · ')
                     return (
                       <tr key={s.key} className="border-b border-divider last:border-0 hover:bg-background transition-colors">
-                        <td className="px-4 py-3">
+                        <td className={MONEY_TD}>
                           <Link
                             href={`/dashboard/employees/${s.employeeId}?tab=attendance&from=${from}&to=${to}`}
                             className="font-medium text-text-primary hover:text-primary hover:underline whitespace-nowrap"
@@ -732,14 +743,14 @@ export default function AttendancePage() {
                               type="button"
                               disabled={resumeBusy === s.employeeId}
                               onClick={() => void continueShift(s.employeeId)}
-                              className="mt-1 text-[12px] font-medium text-primary hover:underline disabled:opacity-50"
+                              className="mt-0.5 text-[11px] font-medium text-primary hover:underline disabled:opacity-50"
                             >
                               {resumeBusy === s.employeeId ? 'Continuing…' : 'Continue first shift'}
                             </button>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-text-secondary whitespace-nowrap">{fmtSessionDate(r.clockIn)}</td>
-                        <td className={`px-4 py-3 font-medium whitespace-nowrap ${
+                        <td className={`${MONEY_TD} text-text-secondary whitespace-nowrap`}>{fmtSessionDate(r.clockIn)}</td>
+                        <td className={`${MONEY_TD} font-medium whitespace-nowrap ${
                           r.isAbsentDay ? 'text-error' : r.isLeaveDay ? 'text-warning' : r.isLate ? 'text-error' : 'text-success'
                         }`}>
                           {fmtSessionTime(r.clockIn, kind as 'in' | 'absent' | 'leave')}
@@ -748,29 +759,29 @@ export default function AttendancePage() {
                           )}
                           {late && <span className="block text-[10px] text-error font-semibold">{late}</span>}
                         </td>
-                        <td className="px-4 py-3 text-text-secondary max-w-[160px] truncate">
+                        <td className={`${MONEY_TD} text-text-secondary max-w-[160px] truncate`}>
                           {r.isAbsentDay || r.isLeaveDay
                             ? '—'
                             : locationDisplay(r.clockInAddress, r.clockInLat, r.clockInLng, r.notes)}
                         </td>
-                        <td className="px-4 py-3 text-text-primary whitespace-nowrap">
+                        <td className={`${MONEY_TD} text-text-primary whitespace-nowrap`}>
                           {fmtSessionOut(r)}
                           {early && <span className="block text-[10px] text-warning font-semibold">{early}</span>}
                         </td>
-                        <td className="px-4 py-3 text-text-secondary max-w-[160px] truncate">
+                        <td className={`${MONEY_TD} text-text-secondary max-w-[160px] truncate`}>
                           {r.isAbsentDay || r.isLeaveDay
                             ? '—'
                             : locationDisplay(r.clockOutAddress, r.clockOutLat, r.clockOutLng, r.notes)}
                         </td>
-                        <td className="px-4 py-3 text-right text-text-primary">{r.regularHours.toFixed(1)}</td>
-                        <td className="px-4 py-3 text-right text-warning font-medium">
+                        <td className={`${MONEY_TD} text-right text-text-primary tabular-nums`}>{r.regularHours.toFixed(1)}</td>
+                        <td className={`${MONEY_TD} text-right text-warning font-medium tabular-nums`}>
                           {r.overtimeHours > 0 ? r.overtimeHours.toFixed(1) : '—'}
                         </td>
-                        <td className="px-4 py-3 text-right font-semibold text-text-primary">{totalHrsDisplay(r)}</td>
-                        <td className="px-4 py-3 text-right text-text-primary">
+                        <td className={`${MONEY_TD} text-right font-semibold text-text-primary tabular-nums`}>{totalHrsDisplay(r)}</td>
+                        <td className={`${MONEY_TD} text-right text-text-primary tabular-nums`}>
                           {s.pay > 0 ? `R${s.pay.toFixed(2)}` : '—'}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className={MONEY_TD}>
                           <AttendanceNote
                             note={notes}
                             context={`${s.employeeName} · ${fmtSessionDate(r.clockIn)}`}
