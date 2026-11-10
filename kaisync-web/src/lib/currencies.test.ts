@@ -17,8 +17,10 @@ describe('currencies', () => {
     expect(clean(fmtMoney(1250, 'ZAR'))).toBe('R 1 250,00')
     expect(fmtMoney(null)).toBe('R —')
   })
-  it('formats other currencies with their symbol', () => {
-    expect(clean(formatCurrency(1250, 'USD'))).toMatch(/US\$|\$/)
+  it('formats other currencies with their narrow symbol (not the ISO code)', () => {
+    expect(clean(formatCurrency(1250, 'USD'))).toMatch(/^\$/)
+    expect(clean(formatCurrency(1250, 'USD'))).not.toContain('USD')
     expect(clean(formatCurrency(1250, 'EUR'))).toContain('€')
+    expect(clean(formatCurrency(1250, 'GBP'))).toContain('£')
   })
 })

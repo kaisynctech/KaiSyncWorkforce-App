@@ -3,6 +3,7 @@
  */
 
 import { jsPDF } from 'jspdf'
+import { formatCurrency } from '@/lib/currencies'
 import { localISODate } from '@/lib/utils'
 import { drawLetterhead, finishDocument, letterheadFromRow, showsBank, type Letterhead } from '@/lib/letterhead'
 import { vatPercentLabel } from '@/lib/quote-vat'
@@ -33,13 +34,12 @@ export type QuotePdfInput = {
   vatRate?: number
   /** Company letterhead (logo, details, banking). Falls back to the company name only. */
   letterhead?: Letterhead | null
-  /** The quote's currency (ISO code). Rand prints as "R", others as their code ("USD 1 250,00"). */
+  /** The quote's currency (ISO code). Amounts print with the narrow symbol ("$500,00"). */
   currency?: string | null
 }
 
 function money(n: number, currency?: string | null): string {
-  const c = (currency || 'ZAR').toUpperCase()
-  return `${c === 'ZAR' ? 'R' : c} ${n.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  return formatCurrency(n, currency)
 }
 
 function fmtDate(d: string | null | undefined): string {

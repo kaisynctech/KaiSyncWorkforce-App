@@ -34,16 +34,38 @@ export function currencyName(code: string | null | undefined): string {
   return currencyOptions().find(c => c.code === code.toUpperCase())?.name ?? code.toUpperCase()
 }
 
-/** Money in a currency. Rand keeps KaiSync's usual "R 1 250,00"; others use their own symbol ("US$ 1 250,00"). */
+/**
+ * Money for screens / PDFs / portals.
+ * Rand stays KaiSync's usual "R 1 250,00".
+ * Other currencies use the narrow symbol ("$500,00", "€500,00") — not the code ("USD 500,00").
+ */
 export function formatCurrency(n: number | null | undefined, currency?: string | null): string {
   const code = (currency || 'ZAR').toUpperCase()
   if (code === 'ZAR') {
     if (n == null) return 'R —'
     return `R ${n.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   }
-  if (n == null) return `${code} —`
+  if (n == null) {
+    try {
+      const sample = new Intl.NumberFormat('en-ZA', {
+        style: 'currency',
+        currency: code,
+        currencyDisplay: 'narrowSymbol',
+      }).format(0)
+      const sym = sample.replace(/[\d\s.,\u00a0]/g, '').trim() || code
+      return `${sym} —`
+    } catch {
+      return `${code} —`
+    }
+  }
   try {
-    return new Intl.NumberFormat('en-ZA', { style: 'currency', currency: code, currencyDisplay: 'symbol' }).format(n)
+    return new Intl.NumberFormat('en-ZA', {
+      style: 'currency',
+      currency: code,
+      currencyDisplay: 'narrowSymbol',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(n)
   } catch {
     return `${code} ${n.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   }

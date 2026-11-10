@@ -4,6 +4,7 @@
  */
 
 import { jsPDF } from 'jspdf'
+import { formatCurrency } from '@/lib/currencies'
 import { drawLetterhead, finishDocument, type Letterhead } from '@/lib/letterhead'
 
 export type DocumentPdfLine = { description: string; qty: number; unit?: string | null; unit_price: number; total: number }
@@ -24,10 +25,9 @@ export type DocumentPdfInput = {
   currency?: string | null
 }
 
-/** Money for PDFs: rand prints as "R", other currencies as their code ("USD 1 250,00") so every font can print it. */
+/** Money for PDFs — same symbols as the app ("$500,00", "R 500,00"). */
 export function money(n: number, currency?: string | null): string {
-  const c = (currency || 'ZAR').toUpperCase()
-  return `${c === 'ZAR' ? 'R' : c} ${Number(n || 0).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  return formatCurrency(n, currency)
 }
 
 export function pdfDate(d: string | null | undefined): string {

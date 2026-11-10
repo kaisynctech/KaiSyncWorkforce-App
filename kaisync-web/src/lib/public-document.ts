@@ -1,5 +1,7 @@
 /** The client's online invoice / quote (opened from the link in the email, no login). */
 
+import { formatCurrency } from '@/lib/currencies'
+
 export type PublicCompany = Record<string, unknown> & { name?: string | null; brand_logo_path?: string | null }
 export type PublicClient = { name?: string | null; legal_name?: string | null; address?: string | null; billing_address?: string | null; vat_number?: string | null; email?: string | null } | null
 
@@ -45,7 +47,7 @@ export function publicLogoUrl(path: string | null | undefined): string | null {
 }
 
 export const randZA = (n: number | null | undefined, currency?: string | null) =>
-  `${!currency || currency.toUpperCase() === 'ZAR' ? 'R' : currency.toUpperCase()} ${Number(n ?? 0).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  formatCurrency(n ?? 0, currency)
 
 export const dayZA = (d: string | null | undefined) =>
   d ? new Date(`${d.slice(0, 10)}T12:00:00`).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'
