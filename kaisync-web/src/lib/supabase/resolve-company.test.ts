@@ -81,4 +81,25 @@ describe('resolveCurrentMember', () => {
     await resolveCurrentMember(client)
     expect(getUser).toHaveBeenCalledTimes(1)
   })
+
+  it('overlays a newer code-session token onto a cached member', async () => {
+    mem.set('kf_cs', JSON.stringify({
+      session_token: 'token-new',
+      employee_id: 'e1',
+      company_id: 'c1',
+      company_code: '30',
+      employee_code: 'WBE0006',
+      employee: { id: 'e1', name: 'A', surname: 'B', access_level: 'employee', company_id: 'c1' },
+      company: { id: 'c1', name: 'Co', code: '30' },
+    }))
+    primeCurrentMember(null, { employeeId: 'e1', companyId: 'c1', sessionToken: 'token-old' })
+    const { client, getUser, from } = fakeSupabase(null, null)
+    expect(await resolveCurrentMember(client)).toEqual({
+      employeeId: 'e1',
+      companyId: 'c1',
+      sessionToken: 'token-new',
+    })
+    expect(getUser).not.toHaveBeenCalled()
+    expect(from).not.toHaveBeenCalled()
+  })
 })

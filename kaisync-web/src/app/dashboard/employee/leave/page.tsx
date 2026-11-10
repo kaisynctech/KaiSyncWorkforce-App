@@ -40,6 +40,7 @@ import {
   matchText,
   statusTab,
 } from '@/components/ui/MoneyListFilters'
+import { getCodeSession } from '@/lib/auth/code-session'
 
 interface LeaveRequest {
   id: string
@@ -52,6 +53,20 @@ interface LeaveRequest {
   attachment_url: string | null
   decision_note: string | null
   created_at: string
+}
+
+function asRpcArray<T>(data: unknown): T[] {
+  if (data == null) return []
+  if (Array.isArray(data)) return data as T[]
+  if (typeof data === 'string') {
+    try {
+      const parsed = JSON.parse(data) as unknown
+      return Array.isArray(parsed) ? (parsed as T[]) : []
+    } catch {
+      return []
+    }
+  }
+  return []
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -96,6 +111,7 @@ export default function EmployeeLeavePage() {
   const [requests, setRequests] = useState<LeaveRequest[]>([])
   const [leaveSettings, setLeaveSettings] = useState<LeaveSettingsMap>({})
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
   const applyOpenedRef = useRef(false)
   const [editRequest, setEditRequest] = useState<LeaveRequest | null>(null)
@@ -134,16 +150,22 @@ export default function EmployeeLeavePage() {
 
   async function init() {
     setLoading(true)
+    setLoadError(null)
     const supabase = createClient()
     const member = await resolveCurrentMember(supabase)
     if (!member) {
+      setLoadError('Could not resolve your employee session. Please sign in again.')
       setLoading(false)
       return
     }
     setCompanyId(member.companyId)
     setEmpId(member.employeeId)
 
-    const tok = member.sessionToken
+    // Prefer the live code-session token — cached members can hold a revoked token
+    // after a re-login until the in-memory cache is cleared.
+    const liveCodeTok = getCodeSession()?.session_token ?? null
+    const tok = liveCodeTok
+      ?? member.sessionToken
       ?? (await supabase.auth.getSession()).data.session?.access_token
       ?? null
     tokRef.current = tok
@@ -154,10 +176,15 @@ export default function EmployeeLeavePage() {
       p_employee_id: member.employeeId,
       p_session_token: tok,
     })
-    if (!error) setRequests((data as LeaveRequest[]) ?? [])
+    if (error) {
+      setRequests([])
+      setLoadError(error.message || 'Could not load leave requests.')
+    } else {
+      setRequests(asRpcArray<LeaveRequest>(data))
+    }
     const settingsRes = await loadLeaveSettings(supabase, member.companyId, {
       employeeId: member.employeeId,
-      sessionToken: member.sessionToken,
+      sessionToken: liveCodeTok ?? member.sessionToken,
     })
     if (settingsRes.ok) setLeaveSettings(settingsRes.data)
     setLoading(false)
@@ -310,6 +337,19 @@ export default function EmployeeLeavePage() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {loadError && (
+          <div className="rounded-xl px-4 py-3 bg-error-dark border border-error/30 flex items-start justify-between gap-3">
+            <p className="text-[13px] text-error font-semibold">{loadError}</p>
+            <button
+              type="button"
+              onClick={() => void init()}
+              className="text-[12px] font-semibold text-primary shrink-0 hover:underline"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
         <StatusFilterTabs
           tabs={LEAVE_VIEW_TABS}
           value={viewTab}
@@ -322,7 +362,7 @@ export default function EmployeeLeavePage() {
             {sorted.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 gap-2 text-text-secondary">
                 <span className="material-icons text-[48px] text-text-disabled">event_available</span>
-                <p className="text-[14px]">No leave requests yet</p>
+                <p className="text-[14px]">{loadError ? 'Leave requests could not be loaded' : 'No leave requests yet'}</p>
               </div>
             ) : (
               <>

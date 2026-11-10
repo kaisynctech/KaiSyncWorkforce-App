@@ -116,6 +116,9 @@ export function saveCodeSession(
 
   localStorage.setItem(CODE_SESSION_KEY, JSON.stringify(session))
   clearEmpContext()
+  // Sign-in revokes prior code sessions — drop any cached member that still
+  // holds the revoked token (otherwise worker RPCs 401 for up to 10 minutes).
+  void import('@/lib/supabase/resolve-company').then(m => m.clearCurrentMemberCache())
   return session
 }
 

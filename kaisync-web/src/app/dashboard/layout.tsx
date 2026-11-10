@@ -146,6 +146,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         void refreshCodeSession(supabase).then(refreshed => {
           if (cancelled) return
           if (refreshed?.employee?.id && refreshed.company?.id) {
+            primeCurrentMember(user?.id ?? null, {
+              employeeId: refreshed.employee_id,
+              companyId: refreshed.company_id,
+              sessionToken: refreshed.session_token ?? null,
+            })
             setEmployee({
               ...refreshed.employee,
               company_id: refreshed.company_id,

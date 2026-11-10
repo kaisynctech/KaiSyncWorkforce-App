@@ -25,6 +25,24 @@ function memberCacheKey(userId: string | null, empId: string | null, companyId: 
   return `${userId ?? 'anon'}|${empId ?? ''}|${companyId ?? ''}`
 }
 
+/**
+ * Code login may mint a new session_token (and revoke the old one) without
+ * changing the cache key. Always prefer the live localStorage token.
+ */
+function withFreshCodeSessionToken(member: CurrentMember): CurrentMember {
+  if (typeof window === 'undefined') return member
+  const cs = getCodeSession()
+  if (
+    cs?.session_token
+    && cs.employee_id === member.employeeId
+    && cs.company_id === member.companyId
+    && cs.session_token !== member.sessionToken
+  ) {
+    return { ...member, sessionToken: cs.session_token }
+  }
+  return member
+}
+
 /** Drop cached member (call after company switch / sign-out). */
 export function clearCurrentMemberCache() {
   memberCache = null
@@ -75,7 +93,11 @@ export async function resolveCurrentMember(
     memberCache.key === localKey &&
     Date.now() - memberCache.at < MEMBER_CACHE_MS
   ) {
-    return memberCache.member
+    const fresh = withFreshCodeSessionToken(memberCache.member)
+    if (fresh !== memberCache.member) {
+      memberCache = { ...memberCache, member: fresh }
+    }
+    return fresh
   }
   const running = inFlight.get(localKey)
   if (running) return running
@@ -112,7 +134,11 @@ async function resolveCurrentMemberVerified(
     memberCache.key === cacheKey &&
     Date.now() - memberCache.at < MEMBER_CACHE_MS
   ) {
-    return memberCache.member
+    const fresh = withFreshCodeSessionToken(memberCache.member)
+    if (fresh !== memberCache.member) {
+      memberCache = { ...memberCache, member: fresh }
+    }
+    return fresh
   }
 
   if (user) {
