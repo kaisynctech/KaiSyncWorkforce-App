@@ -34,7 +34,7 @@ type HubTab = 'sales' | 'incoming'
 
 type SalesRow = Pick<
   CommercialQuote,
-  'id' | 'quote_number' | 'title' | 'status' | 'total_amount' | 'valid_until' | 'created_at'
+  'id' | 'quote_number' | 'title' | 'status' | 'currency' | 'total_amount' | 'valid_until' | 'created_at'
 > & { clients?: { name: string } | null }
 
 type IncomingRow = {
@@ -42,6 +42,7 @@ type IncomingRow = {
   title: string | null
   quote_number: string | null
   status: string
+  currency: string | null
   total_amount: number | null
   submitted_at: string | null
   created_at: string
@@ -308,7 +309,7 @@ function QuotesPageInner() {
 
       let salesQ = supabase
         .from('commercial_quotes')
-        .select('id, quote_number, title, status, total_amount, valid_until, created_at, clients(name)')
+        .select('id, quote_number, title, status, currency, total_amount, valid_until, created_at, clients(name)')
         .eq('company_id', member.companyId)
         .order('created_at', { ascending: false })
         .limit(300)
@@ -322,7 +323,7 @@ function QuotesPageInner() {
         supabase
           .from('contractor_quotes')
           .select(
-            'id, title, quote_number, status, total_amount, submitted_at, created_at, contractor_id, contractors(name)',
+            'id, title, quote_number, status, currency, total_amount, submitted_at, created_at, contractor_id, contractors(name)',
           )
           .eq('company_id', member.companyId)
           .neq('status', 'draft')
@@ -774,7 +775,7 @@ function QuotesPageInner() {
                           {q.title || 'Untitled'}
                         </td>
                         <td className={`${TD} text-right font-medium text-text-primary`}>
-                          {fmtMoney(q.total_amount)}
+                          {fmtMoney(q.total_amount, q.currency)}
                         </td>
                         <td className={TD}>
                           <span
@@ -809,7 +810,7 @@ function QuotesPageInner() {
                         </span>
                       </div>
                       <DataCardRow label="Client" value={q.clients?.name ?? '—'} />
-                      <DataCardRow label="Value" value={fmtMoney(q.total_amount)} />
+                      <DataCardRow label="Value" value={fmtMoney(q.total_amount, q.currency)} />
                       <DataCardRow label="Valid" value={fmt(q.valid_until)} />
                     </DataCard>
                   ))}
@@ -934,7 +935,7 @@ function QuotesPageInner() {
                         {q.title || 'Untitled'}
                       </td>
                       <td className={`${TD} text-right font-medium text-text-primary`}>
-                        {fmtMoney(q.total_amount)}
+                        {fmtMoney(q.total_amount, q.currency)}
                       </td>
                       <td className={TD}>
                         <span
@@ -980,7 +981,7 @@ function QuotesPageInner() {
                         {quoteStatusLabel(q.status)}
                       </span>
                     </div>
-                    <DataCardRow label="Value" value={fmtMoney(q.total_amount)} />
+                    <DataCardRow label="Value" value={fmtMoney(q.total_amount, q.currency)} />
                     <DataCardRow label="Submitted" value={fmt(q.submitted_at ?? q.created_at)} />
                     <button
                       type="button"

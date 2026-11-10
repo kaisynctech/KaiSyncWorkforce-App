@@ -166,6 +166,7 @@ function ClientDetailInner() {
     quote_number: string | null
     title: string
     status: string
+    currency: string | null
     total_amount: number
     created_at: string
     deal_id: string | null
@@ -202,8 +203,8 @@ function ClientDetailInner() {
   const [editSiteName, setEditSiteName] = useState('')
   const [editSiteAddress, setEditSiteAddress] = useState('')
   const [commercialData, setCommercialData] = useState<{
-    quotes: Array<{ id: string; quote_number: string | null; title: string; status: string; total_amount: number; created_at: string }>
-    invoices: Array<{ id: string; invoice_number: string | null; status: string; total_amount: number; balance_due: number; issue_date: string }>
+    quotes: Array<{ id: string; quote_number: string | null; title: string; status: string; currency: string | null; total_amount: number; created_at: string }>
+    invoices: Array<{ id: string; invoice_number: string | null; status: string; currency: string | null; total_amount: number; balance_due: number; issue_date: string }>
     ledger: Array<{ id: string; entry_type: string; reference_number: string | null; description: string | null; debit: number; credit: number; entry_date: string }>
     outstanding: number
   } | null>(null)
@@ -261,11 +262,11 @@ function ClientDetailInner() {
     const supabase = createClient()
     const [quoteRes, invoiceRes, ledgerRes, balanceRes] = await Promise.all([
       supabase.from('commercial_quotes')
-        .select('id, quote_number, title, status, total_amount, created_at')
+        .select('id, quote_number, title, status, currency, total_amount, created_at')
         .eq('client_id', clientId).eq('company_id', companyId)
         .order('created_at', { ascending: false }).limit(10),
       supabase.from('finance_invoices')
-        .select('id, invoice_number, status, total_amount, balance_due, issue_date')
+        .select('id, invoice_number, status, currency, total_amount, balance_due, issue_date')
         .eq('client_id', clientId).eq('company_id', companyId)
         .order('created_at', { ascending: false }).limit(10),
       supabase.from('customer_ledger_entries')
@@ -537,7 +538,7 @@ function ClientDetailInner() {
       supabase.from('client_deals').select('*, employees:manager_employee_id(name, surname)').eq('client_id', clientId).order('created_at', { ascending: false }),
       supabase
         .from('finance_invoices')
-        .select('id, invoice_number, status, issue_date, due_date, total_amount, balance_due, client_id, company_id, quote_id')
+        .select('id, invoice_number, status, currency, issue_date, due_date, total_amount, balance_due, client_id, company_id, quote_id')
         .eq('client_id', clientId)
         .order('issue_date', { ascending: false }),
     ])
@@ -610,7 +611,7 @@ function ClientDetailInner() {
     setInvoices((iRes.data ?? []) as FinanceInvoice[])
     const { data: quoteRows, error: quoteError } = await supabase
       .from('commercial_quotes')
-      .select('id, quote_number, title, status, total_amount, created_at, deal_id')
+      .select('id, quote_number, title, status, currency, total_amount, created_at, deal_id')
       .eq('client_id', clientId)
       .eq('company_id', c.company_id)
       .order('created_at', { ascending: false })
@@ -1811,7 +1812,7 @@ function ClientDetailInner() {
                         <td className="data-td text-text-primary text-[13px]">{quote.title}</td>
                         <td className="data-td text-text-secondary text-[12px] capitalize">{quote.status.replace(/_/g, ' ')}</td>
                         <td className="data-td text-text-secondary text-[12px]">{quote.deal_id ? answer : '—'}</td>
-                        <td className="data-td text-text-secondary text-[12px] text-right">{fmtMoney(quote.total_amount)}</td>
+                        <td className="data-td text-text-secondary text-[12px] text-right">{fmtMoney(quote.total_amount, quote.currency)}</td>
                         <td className="data-td text-right">
                           {existingInvoice ? (
                             <button
@@ -1881,8 +1882,8 @@ function ClientDetailInner() {
                           </td>
                           <td className="data-td text-text-secondary text-[12px]">{inv.issue_date ?? '—'}</td>
                           <td className="data-td text-text-secondary text-[12px]">{inv.due_date ?? '—'}</td>
-                          <td className="data-td text-text-secondary text-[12px] text-right">{fmtMoney(inv.total_amount)}</td>
-                          <td className="data-td text-text-secondary text-[12px] text-right">{fmtMoney(inv.balance_due)}</td>
+                          <td className="data-td text-text-secondary text-[12px] text-right">{fmtMoney(inv.total_amount, inv.currency)}</td>
+                          <td className="data-td text-text-secondary text-[12px] text-right">{fmtMoney(inv.balance_due, inv.currency)}</td>
                         </tr>
                       )
                     })
@@ -2223,7 +2224,7 @@ function ClientDetailInner() {
                           <td className="data-td font-medium">{q.quote_number ?? '—'}</td>
                           <td className="data-td">{q.title}</td>
                           <td className="data-td capitalize">{q.status.replace(/_/g, ' ')}</td>
-                          <td className="data-td text-right">{fmtMoney(q.total_amount)}</td>
+                          <td className="data-td text-right">{fmtMoney(q.total_amount, q.currency)}</td>
                           <td className="data-td text-text-secondary">{q.created_at.split('T')[0]}</td>
                         </tr>
                       ))}
@@ -2255,8 +2256,8 @@ function ClientDetailInner() {
                           onClick={() => router.push(`/dashboard/money/invoices/${inv.id}`)}>
                           <td className="data-td font-medium">{inv.invoice_number ?? '—'}</td>
                           <td className="data-td capitalize">{inv.status.replace(/_/g, ' ')}</td>
-                          <td className="data-td text-right">{fmtMoney(inv.total_amount)}</td>
-                          <td className="data-td text-right">{fmtMoney(inv.balance_due)}</td>
+                          <td className="data-td text-right">{fmtMoney(inv.total_amount, inv.currency)}</td>
+                          <td className="data-td text-right">{fmtMoney(inv.balance_due, inv.currency)}</td>
                           <td className="data-td text-text-secondary">{inv.issue_date}</td>
                         </tr>
                       ))}
