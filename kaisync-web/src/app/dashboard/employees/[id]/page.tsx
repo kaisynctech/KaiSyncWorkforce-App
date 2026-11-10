@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
+import { employeeDocumentStoragePath } from '@/lib/employee-document-types'
 import { cn, formatDate, formatDateTime, formatCurrency, getInitials, localISODate } from '@/lib/utils'
 import { labelEmploymentType } from '@/lib/employee-taxonomy'
 import { getCompanyAnnualDays, loadLeaveSettings, readCustomLeaveTypes, type LeaveSettingsMap } from '@/lib/leave-settings'
@@ -15,7 +16,7 @@ import EditEmployeePage from './edit/page'
 import { assessPayrollReadiness } from '@/lib/payroll-readiness'
 import { downloadPayslipTemplatePdf, imageUrlToDataUrl } from '@/lib/payslip-pdf'
 import { companyLetterhead } from '@/lib/letterhead'
-import type { Employee, LeaveRequest, TimePunch, AccessLevel } from '@/types/database'
+import type { Employee, LeaveRequest, TimePunch } from '@/types/database'
 
 type PairSession = {
   punchIn: string
@@ -185,7 +186,6 @@ export default function EmployeeDetailPage() {
   const [templateName, setTemplateName] = useState<string | null>(null)
   const [myCompanyId, setMyCompanyId] = useState<string | null>(null)
   const [myEmployeeId, setMyEmployeeId] = useState<string | null>(null)
-  const [myAccessLevel, setMyAccessLevel] = useState<AccessLevel>('employee')
   const [tab, setTab] = useState<Tab>('overview')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -268,10 +268,7 @@ export default function EmployeeDetailPage() {
     setMyCompanyId(member.companyId)
     setMyEmployeeId(member.employeeId)
 
-    const [empRes, { data: me }] = await Promise.all([
-      getEmployee(supabase, member.companyId, id),
-      supabase.from('employees').select('access_level').eq('id', member.employeeId).single(),
-    ])
+    const empRes = await getEmployee(supabase, member.companyId, id)
 
     if (!empRes.ok) {
       setError(empRes.message)
@@ -280,7 +277,6 @@ export default function EmployeeDetailPage() {
     }
     const employeeRow = empRes.data
     setEmployee(employeeRow)
-    setMyAccessLevel(((me as { access_level: AccessLevel } | null)?.access_level) ?? 'employee')
 
     if (employeeRow) {
       const [branchRes, managerRes, extraRes, templateRes] = await Promise.all([
@@ -692,7 +688,6 @@ export default function EmployeeDetailPage() {
           <DocumentsTab
             employeeId={employee.id}
             companyId={myCompanyId!}
-            myAccessLevel={myAccessLevel}
             docs={docs}
             setDocs={setDocs}
             reloadDocs={loadDocs}
@@ -1048,13 +1043,12 @@ const DOC_TYPES = [
 type DocumentsTabProps = {
   employeeId: string
   companyId: string
-  myAccessLevel: AccessLevel
   docs: EmployeeDocument[]
   setDocs: React.Dispatch<React.SetStateAction<EmployeeDocument[]>>
   reloadDocs: () => Promise<void>
 }
 
-function DocumentsTab({ employeeId, companyId, myAccessLevel, docs, setDocs, reloadDocs }: DocumentsTabProps) {
+function DocumentsTab({ employeeId, companyId, docs, setDocs, reloadDocs }: DocumentsTabProps) {
   const fileRef     = useRef<HTMLInputElement>(null)
   const [docType,        setDocType]        = useState(DOC_TYPES[0])
   const [uploading,      setUploading]      = useState(false)
@@ -1068,31 +1062,34 @@ function DocumentsTab({ employeeId, companyId, myAccessLevel, docs, setDocs, rel
     setUploading(true)
     setUploadError(null)
 
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-    const path     = `employee-docs/${companyId}/${employeeId}/${Date.now()}_${safeName}`
+    const ext = file.name.split('.').pop()?.toLowerCase() ?? 'pdf'
+    const path = employeeDocumentStoragePath(companyId, employeeId, ext)
     const supabase = createClient()
 
-    const { error: upErr } = await supabase.storage
-      .from('workforce-media')
-      .upload(path, file)
+    try {
+      const { error: upErr } = await supabase.storage
+        .from('workforce-media')
+        .upload(path, file, { upsert: false, contentType: file.type || undefined })
 
-    if (upErr) {
-      setUploadError(upErr.message)
+      if (upErr) throw upErr
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error: rpcErr } = await (supabase.rpc as any)('hr_register_employee_document', {
+        p_company_id:    companyId,
+        p_employee_id:   employeeId,
+        p_document_type: docType,
+        p_document_name: file.name,
+        p_file_url:      path,
+      })
+      if (rpcErr) throw rpcErr
+
+      await reloadDocs()
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      setUploadError(msg || 'Upload failed.')
+    } finally {
       setUploading(false)
-      return
     }
-
-    await supabase.from('employee_documents').insert({
-      employee_id:      employeeId,
-      company_id:       companyId,
-      document_name:    file.name,
-      document_type:    docType,
-      file_url:         path,
-      uploaded_by_role: myAccessLevel,
-    })
-
-    await reloadDocs()
-    setUploading(false)
   }
 
   async function openDocument(doc: EmployeeDocument) {

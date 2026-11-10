@@ -750,9 +750,13 @@ export default function EmployeeOverviewPage() {
       setRecentPunches(weekPunches)
 
       const absences = asRpcArray<DailyAbsenceRow>(bundle.absences_today)
-      if (absences.length > 0) {
+      const todayAbsence = absences.find(a => {
+        const d = typeof a.date === 'string' ? a.date.slice(0, 10) : ''
+        return !d || d === todayStr
+      })
+      if (todayAbsence) {
         setIsAbsentToday(true)
-        setAbsenceReasonLabel(fmtAbsenceReason(absences[0].reason ?? 'other'))
+        setAbsenceReasonLabel(fmtAbsenceReason(todayAbsence.reason ?? 'other'))
       } else {
         setIsAbsentToday(false)
         setAbsenceReasonLabel('')
@@ -1138,8 +1142,9 @@ export default function EmployeeOverviewPage() {
       })
       if (rpcErr) throw rpcErr
       setAbsenceSuccess(true)
-      setIsAbsentToday(true)
-      setAbsenceReasonLabel(fmtAbsenceReason(absenceReason))
+      const reportedForToday = absenceDate === localISODate()
+      setIsAbsentToday(reportedForToday)
+      setAbsenceReasonLabel(reportedForToday ? fmtAbsenceReason(absenceReason) : '')
       setTimeout(() => setShowAbsenceModal(false), 1500)
     } catch (e: unknown) {
       setAbsenceError(e instanceof Error ? e.message : 'Failed to report absence.')

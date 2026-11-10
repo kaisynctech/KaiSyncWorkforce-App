@@ -85,7 +85,7 @@ interface InventoryUsage {
 interface Feedback {
   rating: number
   comments: string | null
-  created_at: string
+  submitted_at: string
 }
 
 interface Incident {
@@ -102,6 +102,13 @@ function firstCard(data: unknown): JobCard | null {
   if (!data) return null
   if (Array.isArray(data)) return (data[0] as JobCard | undefined) ?? null
   return typeof data === 'object' ? (data as JobCard) : null
+}
+
+/** Open site-visit RPC returns one JSON object; older shapes may be a list. */
+function firstOpenVisit(data: unknown): SiteVisit | null {
+  if (!data) return null
+  if (Array.isArray(data)) return (data[0] as SiteVisit | undefined) ?? null
+  return typeof data === 'object' ? (data as SiteVisit) : null
 }
 
 function toLocalDateTimeInput(iso: string | null): string {
@@ -432,9 +439,18 @@ export default function JobCardPage() {
       const docUrls = await signWorkforceMediaMany(supabase, rawDocs.map(d => d.file_url).filter(Boolean), 3600)
       const docsWithUrls = rawDocs.map(d => ({ ...d, signedUrl: d.file_url ? docUrls.get(d.file_url.trim()) ?? null : null }))
       setDocs(docsWithUrls)
-      setSiteVisit((visitRes.data as SiteVisit[] | null)?.[0] ?? null)
-      setInventory((invRes.data as InventoryUsage[]) ?? [])
-      setFeedback((fbRes.data as Feedback[] | null)?.[0] ?? null)
+      setSiteVisit(firstOpenVisit(visitRes.data))
+      if (invRes.error) {
+        setInventory([])
+        setError(invRes.error.message || 'Failed to load inventory for this job.')
+      } else {
+        setInventory((invRes.data as InventoryUsage[]) ?? [])
+      }
+      setFeedback(
+        Array.isArray(fbRes.data)
+          ? ((fbRes.data as Feedback[])[0] ?? null)
+          : (fbRes.data && typeof fbRes.data === 'object' ? (fbRes.data as Feedback) : null),
+      )
       setIncidents((incRes.data as Incident[]) ?? [])
 
     } catch (e: unknown) {
@@ -798,22 +814,31 @@ export default function JobCardPage() {
 
   // ── Inventory ──────────────────────────────────────────────────────────
   async function openInvModal() {
-    if (!companyId || !empId) return
-    const supabase = createClient()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data } = await (supabase.rpc as any)('employee_get_inventory_items', {
-      p_company_id:    companyId,
-      p_employee_id:   empId,
-      p_session_token: token,
-    })
-    const items = (data as InventoryItem[]) ?? []
-    if (items.length === 0) {
-      alert('No inventory items found.')
+    if (!companyId || !empId) {
+      setError('Sign in again to record inventory for this job.')
       return
     }
-    setInvItems(items)
-    setInvItemId(''); setInvQty('')
-    setInvModalOpen(true)
+    const supabase = createClient()
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error: rpcErr } = await (supabase.rpc as any)('employee_get_inventory_items', {
+        p_company_id:    companyId,
+        p_employee_id:   empId,
+        p_session_token: token,
+      })
+      if (rpcErr) throw rpcErr
+      const items = (data as InventoryItem[]) ?? []
+      if (items.length === 0) {
+        setError('No inventory items found for this company.')
+        return
+      }
+      setError(null)
+      setInvItems(items)
+      setInvItemId(''); setInvQty('')
+      setInvModalOpen(true)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to load inventory items.')
+    }
   }
 
   async function submitInventory() {
@@ -1254,7 +1279,7 @@ export default function JobCardPage() {
                 </div>
                 {feedback.comments && <p className="text-[13px] text-text-secondary mt-1">&ldquo;{feedback.comments}&rdquo;</p>}
                 <p className="text-[11px] text-text-disabled mt-1">
-                  {new Date(feedback.created_at).toLocaleDateString('en-ZA', {day:'2-digit',month:'short',year:'numeric'})}
+                  {new Date(feedback.submitted_at).toLocaleDateString('en-ZA', {day:'2-digit',month:'short',year:'numeric'})}
                 </p>
               </div>
             )}
