@@ -21,6 +21,10 @@ import {
   type ShiftTemplateLike,
 } from '@/lib/punch-session'
 import { ManualTimesheetForm } from '@/components/attendance/ManualTimesheetForm'
+import {
+  CorrectAttendanceForm,
+  type CorrectAttendancePrefill,
+} from '@/components/attendance/CorrectAttendanceForm'
 import { AttendanceNote } from '@/components/attendance/AttendanceNote'
 import { enrichSessionsWithPlaceNames } from '@/lib/punch-address-enrich'
 import { resumeSameDayShift } from '@/lib/resume-shift'
@@ -225,6 +229,32 @@ export default function AttendancePage() {
   const [view, setView] = useState<AttendanceView>('attendance')
   const [timeZone, setTimeZone] = useState('Africa/Johannesburg')
   const [resumeBusy, setResumeBusy] = useState<string | null>(null)
+  const [correctPrefill, setCorrectPrefill] = useState<CorrectAttendancePrefill | null>(null)
+
+  function openCorrect(session: DisplaySession) {
+    const day = toLocalDateStr(session.row.clockIn, timeZone)
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const asTime = (d: Date | null) => {
+      if (!d) return ''
+      // Prefer company-local wall clock for the form.
+      const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone,
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }).formatToParts(d)
+      const hh = parts.find(p => p.type === 'hour')?.value ?? pad(d.getHours())
+      const mm = parts.find(p => p.type === 'minute')?.value ?? pad(d.getMinutes())
+      return `${hh}:${mm}`
+    }
+    setCorrectPrefill({
+      employeeId: session.employeeId,
+      workDate: day,
+      timeIn: session.row.isAbsentDay || session.row.isLeaveDay ? '' : asTime(session.row.clockIn),
+      timeOut: session.row.clockOut ? asTime(session.row.clockOut) : '',
+    })
+    setView('timesheet')
+  }
 
   const companyIdRef = useRef<string | null>(null)
   const scopedIdsRef = useRef<Set<string> | null>(null)
@@ -570,19 +600,36 @@ export default function AttendancePage() {
       )}
 
       {view === 'timesheet' && companyId && (
-        <ManualTimesheetForm
-          companyId={companyId}
-          employees={staff}
-          onSaved={date => {
-            setView('attendance')
-            if (preset === 'custom' && customFrom === date && customTo === date) fetchPunches()
-            else {
-              setPreset('custom')
-              setCustomFrom(date)
-              setCustomTo(date)
-            }
-          }}
-        />
+        <div className="space-y-3 mb-4">
+          <ManualTimesheetForm
+            companyId={companyId}
+            employees={staff}
+            onSaved={date => {
+              setView('attendance')
+              if (preset === 'custom' && customFrom === date && customTo === date) fetchPunches()
+              else {
+                setPreset('custom')
+                setCustomFrom(date)
+                setCustomTo(date)
+              }
+            }}
+          />
+          <CorrectAttendanceForm
+            companyId={companyId}
+            employees={staff}
+            prefill={correctPrefill}
+            onSaved={date => {
+              setCorrectPrefill(null)
+              setView('attendance')
+              if (preset === 'custom' && customFrom === date && customTo === date) fetchPunches()
+              else {
+                setPreset('custom')
+                setCustomFrom(date)
+                setCustomTo(date)
+              }
+            }}
+          />
+        </div>
       )}
 
       {view === 'attendance' && onLeaveToday.length > 0 && (
@@ -748,6 +795,15 @@ export default function AttendancePage() {
                               {resumeBusy === s.employeeId ? 'Continuing…' : 'Continue first shift'}
                             </button>
                           )}
+                          {!s.row.isLeaveDay && (
+                            <button
+                              type="button"
+                              onClick={() => openCorrect(s)}
+                              className="mt-0.5 block text-[11px] font-medium text-primary hover:underline"
+                            >
+                              Correct
+                            </button>
+                          )}
                         </td>
                         <td className={`${MONEY_TD} text-text-secondary whitespace-nowrap`}>{fmtSessionDate(r.clockIn)}</td>
                         <td className={`${MONEY_TD} font-medium whitespace-nowrap ${
@@ -822,6 +878,15 @@ export default function AttendancePage() {
                               className="mt-1 text-[12px] font-medium text-primary hover:underline disabled:opacity-50"
                             >
                               {resumeBusy === s.employeeId ? 'Continuing…' : 'Continue first shift'}
+                            </button>
+                          )}
+                          {!s.row.isLeaveDay && (
+                            <button
+                              type="button"
+                              onClick={() => openCorrect(s)}
+                              className="mt-1 block text-[12px] font-medium text-primary hover:underline"
+                            >
+                              Correct
                             </button>
                           )}
                         </div>
