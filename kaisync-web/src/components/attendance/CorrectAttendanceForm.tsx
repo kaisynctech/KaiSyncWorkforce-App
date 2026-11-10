@@ -3,7 +3,10 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { manualTimesheetIsOvernight } from '@/lib/manual-timesheet'
-import { submitHrCorrectAttendance } from '@/lib/hr-correct-attendance'
+import {
+  submitHrCorrectAttendance,
+  type HrCorrectMode,
+} from '@/lib/hr-correct-attendance'
 
 export type CorrectAttendanceEmployee = {
   id: string
@@ -17,6 +20,7 @@ export type CorrectAttendancePrefill = {
   workDate?: string
   timeIn?: string
   timeOut?: string
+  mode?: HrCorrectMode
 }
 
 type Props = {
@@ -24,6 +28,12 @@ type Props = {
   employees: CorrectAttendanceEmployee[]
   prefill?: CorrectAttendancePrefill | null
   onSaved: (workDate: string) => void
+}
+
+const MODE_HELP: Record<HrCorrectMode, string> = {
+  full_day: 'Set both times for a complete day (replaces that day’s punches).',
+  in_only: 'Set or fix clock-in only. The employee clocks out themselves later.',
+  out_only: 'Close an open shift when they forgot to clock out.',
 }
 
 export function CorrectAttendanceForm({
@@ -34,6 +44,7 @@ export function CorrectAttendanceForm({
 }: Props) {
   const [pickedId, setPickedId] = useState(prefill?.employeeId ?? '')
   const [workDate, setWorkDate] = useState(prefill?.workDate ?? '')
+  const [mode, setMode] = useState<HrCorrectMode>(prefill?.mode ?? 'full_day')
   const [timeIn, setTimeIn] = useState(prefill?.timeIn ?? '')
   const [timeOut, setTimeOut] = useState(prefill?.timeOut ?? '')
   const [reason, setReason] = useState('')
@@ -48,6 +59,9 @@ export function CorrectAttendanceForm({
     if (prefill.workDate) setWorkDate(prefill.workDate)
     if (prefill.timeIn) setTimeIn(prefill.timeIn)
     if (prefill.timeOut) setTimeOut(prefill.timeOut)
+    if (prefill.mode) setMode(prefill.mode)
+    else if (prefill.timeIn && !prefill.timeOut) setMode('in_only')
+    else if (!prefill.timeIn && prefill.timeOut) setMode('out_only')
   }, [prefill])
 
   async function save() {
@@ -59,6 +73,7 @@ export function CorrectAttendanceForm({
       companyId,
       employeeId: pickedId,
       workDate,
+      mode,
       timeIn,
       timeOut,
       reason,
@@ -69,9 +84,15 @@ export function CorrectAttendanceForm({
       setError(result.message)
       return
     }
-    setSaved(
-      `Corrected ${workDate}, ${timeIn} to ${timeOut}${result.overnight ? ' the next day' : ''}.`,
-    )
+    if (result.mode === 'in_only') {
+      setSaved(`Clock-in set for ${workDate} at ${timeIn}. Employee can clock out themselves.`)
+    } else if (result.mode === 'out_only') {
+      setSaved(`Clock-out set for ${workDate} at ${timeOut}.`)
+    } else {
+      setSaved(
+        `Corrected ${workDate}, ${timeIn} to ${timeOut}${result.overnight ? ' the next day' : ''}.`,
+      )
+    }
     setReason('')
     onSaved(workDate)
   }
@@ -84,10 +105,33 @@ export function CorrectAttendanceForm({
       <div>
         <p className="text-[13px] font-semibold text-text-primary">Correct attendance</p>
         <p className="text-[12px] text-text-secondary">
-          Owner, HR, or a manager in scope can replace a day&apos;s punches with the correct times
-          (forgotten clock-in/out, or marked absent then arrived). Requires a reason and is audited.
+          Owner, HR, or a manager in scope. Use clock-in only when they forgot the morning punch
+          (or need the in time fixed) and will clock out themselves. Use clock-out only when they
+          forgot to leave. Requires a reason and is audited.
         </p>
       </div>
+
+      <div className="flex flex-wrap gap-3 text-[12px] text-text-secondary">
+        {(
+          [
+            ['full_day', 'Full day (in + out)'],
+            ['in_only', 'Clock in only'],
+            ['out_only', 'Clock out only'],
+          ] as const
+        ).map(([value, label]) => (
+          <label key={value} className="inline-flex items-center gap-1.5">
+            <input
+              type="radio"
+              name="correct-mode"
+              checked={mode === value}
+              onChange={() => setMode(value)}
+            />
+            {label}
+          </label>
+        ))}
+      </div>
+      <p className="text-[11px] text-text-disabled">{MODE_HELP[mode]}</p>
+
       <div className="flex flex-wrap items-end gap-2">
         <label className="flex flex-col gap-1 text-[11px] text-text-secondary min-w-[180px]">
           Employee
@@ -113,30 +157,34 @@ export function CorrectAttendanceForm({
             className="h-9 px-2 border border-border rounded text-[13px] bg-background text-text-primary"
           />
         </label>
-        <label className="flex flex-col gap-1 text-[11px] text-text-secondary">
-          Time in
-          <input
-            type="time"
-            value={timeIn}
-            onChange={e => setTimeIn(e.target.value)}
-            className="h-9 px-2 border border-border rounded text-[13px] bg-background text-text-primary"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-[11px] text-text-secondary">
-          Time out
-          <input
-            type="time"
-            value={timeOut}
-            onChange={e => setTimeOut(e.target.value)}
-            className="h-9 px-2 border border-border rounded text-[13px] bg-background text-text-primary"
-          />
-        </label>
+        {mode !== 'out_only' && (
+          <label className="flex flex-col gap-1 text-[11px] text-text-secondary">
+            Time in
+            <input
+              type="time"
+              value={timeIn}
+              onChange={e => setTimeIn(e.target.value)}
+              className="h-9 px-2 border border-border rounded text-[13px] bg-background text-text-primary"
+            />
+          </label>
+        )}
+        {mode !== 'in_only' && (
+          <label className="flex flex-col gap-1 text-[11px] text-text-secondary">
+            Time out
+            <input
+              type="time"
+              value={timeOut}
+              onChange={e => setTimeOut(e.target.value)}
+              className="h-9 px-2 border border-border rounded text-[13px] bg-background text-text-primary"
+            />
+          </label>
+        )}
         <label className="flex flex-col gap-1 text-[11px] text-text-secondary flex-1 min-w-[180px]">
           Reason
           <input
             value={reason}
             onChange={e => setReason(e.target.value)}
-            placeholder="Required — e.g. forgot to clock out"
+            placeholder="Required — e.g. forgot morning clock-in"
             className="h-9 px-2 border border-border rounded text-[13px] bg-background text-text-primary"
             required
           />
@@ -158,7 +206,7 @@ export function CorrectAttendanceForm({
         />
         Clear absence for this date if one exists
       </label>
-      {manualTimesheetIsOvernight(timeIn, timeOut) && (
+      {mode === 'full_day' && manualTimesheetIsOvernight(timeIn, timeOut) && (
         <p className="text-[12px] text-text-secondary">Ends the next day ({timeIn} to {timeOut}).</p>
       )}
       {error && <p className="text-[12px] text-error">{error}</p>}

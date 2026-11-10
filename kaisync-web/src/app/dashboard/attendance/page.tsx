@@ -247,11 +247,16 @@ export default function AttendancePage() {
       const mm = parts.find(p => p.type === 'minute')?.value ?? pad(d.getMinutes())
       return `${hh}:${mm}`
     }
+    const isAbsent = session.row.isAbsentDay || session.row.isLeaveDay
+    const timeIn = isAbsent ? '' : asTime(session.row.clockIn)
+    const timeOut = session.row.clockOut ? asTime(session.row.clockOut) : ''
     setCorrectPrefill({
       employeeId: session.employeeId,
       workDate: day,
-      timeIn: session.row.isAbsentDay || session.row.isLeaveDay ? '' : asTime(session.row.clockIn),
-      timeOut: session.row.clockOut ? asTime(session.row.clockOut) : '',
+      timeIn,
+      timeOut,
+      // Absent → set morning in; open shift → usually forgot out; closed → full day.
+      mode: isAbsent ? 'in_only' : session.row.isOpen ? 'out_only' : 'full_day',
     })
     setView('timesheet')
   }
