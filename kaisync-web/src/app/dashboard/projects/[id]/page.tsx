@@ -28,18 +28,16 @@ import {
 import { logProjectEvent } from '@/lib/project-events'
 import { portalStorageObjectName } from '@/lib/client-portal/api'
 import { createInvoiceFromAcceptedQuote } from '@/lib/quote-invoice'
+import { EntityTabs } from '@/components/ui/EntityTabs'
 import type { Project, Client, Employee, Job, ProjectDocument, ProjectQuotationLine } from '@/types/database'
 
-const PROJECT_TABS = ['details', 'jobs', 'docs', 'quotation', 'pipeline', 'milestones', 'financials', 'payments', 'activity']
-const TAB_LABELS: Record<string, string> = {
+const PROJECT_TABS = ['details', 'jobs', 'docs', 'quotation', 'pipeline', 'milestones', 'financials', 'payments', 'activity'] as const
+type ProjectTab = typeof PROJECT_TABS[number]
+const TAB_LABELS: Record<ProjectTab, string> = {
   details: 'Details', jobs: 'Jobs', docs: 'Docs', quotation: 'Quotation', pipeline: 'Pipeline',
   milestones: 'Milestones', financials: 'Financials',
   payments: 'Payments', activity: 'Activity',
 }
-const TAB_BTN = (active: boolean) =>
-  `h-[38px] px-3 rounded-[10px] text-[12px] font-medium transition-colors whitespace-nowrap shrink-0 border ${
-    active ? 'bg-primary text-white border-primary' : 'bg-surface text-text-secondary border-border hover:text-text-primary'
-  }`
 const STATUS_OPTIONS = ['draft', 'sent', 'negotiation', 'in_progress', 'won', 'lost']
 const DOC_TYPE_OPTIONS = [
   { value: 'contract', label: 'Contract' },
@@ -65,7 +63,7 @@ export default function ProjectDetailPage() {
   const isNew = projectId === 'new'
   const fileRef = useRef<HTMLInputElement>(null)
 
-  const [tab, setTab] = useState('details')
+  const [tab, setTab] = useState<ProjectTab>('details')
   const [project, setProject] = useState<Project | null>(null)
   const [clients, setClients] = useState<Client[]>([])
   const [managers, setManagers] = useState<Employee[]>([])
@@ -131,7 +129,7 @@ export default function ProjectDetailPage() {
 
   useEffect(() => {
     const t = searchParams.get('tab')
-    if (t && PROJECT_TABS.includes(t)) setTab(t)
+    if (t && (PROJECT_TABS as readonly string[]).includes(t)) setTab(t as ProjectTab)
   }, [searchParams])
 
   async function load() {
@@ -515,37 +513,33 @@ export default function ProjectDetailPage() {
   }
 
   return (
-    <div className="h-full flex flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-divider shrink-0 bg-surface">
-        <div className="flex items-center gap-3">
-          <Link href="/dashboard/projects" className="text-text-secondary hover:text-text-primary transition-colors">
-            <span className="material-icons text-[20px]">arrow_back</span>
+    <div className="h-full flex flex-col overflow-hidden">
+      <div className="bg-surface border-b border-divider px-3 pt-2 pb-2 shrink-0 space-y-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <Link href="/dashboard/projects" aria-label="Back to projects" className="btn-back shrink-0">
+            <span className="material-icons">arrow_back</span>
           </Link>
-          <h1 className="text-[20px] font-semibold text-text-primary">{title || 'New Project'}</h1>
+          <h1 className="text-[15px] font-semibold text-text-primary truncate min-w-0 flex-1">
+            {title || 'New Project'}
+          </h1>
+          {(isNew ? canCreate : canEdit) && (
+            <button type="button" onClick={save} disabled={saving} className="btn-primary shrink-0">
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+          )}
         </div>
-        {(isNew ? canCreate : canEdit) && (
-          <button onClick={save} disabled={saving}
-            className="h-11 px-5 text-[16px] font-semibold rounded-lg bg-primary text-white hover:bg-primary-dark disabled:opacity-50 transition-colors min-w-[96px]">
-            {saving ? 'Saving…' : 'Save'}
-          </button>
+
+        {error && <p className="text-[12px] font-medium text-error">{error}</p>}
+
+        {!isNew && (
+          <EntityTabs
+            tabs={PROJECT_TABS.map(t => ({ id: t, label: TAB_LABELS[t] }))}
+            value={tab}
+            onChange={setTab}
+          />
         )}
       </div>
 
-      {error && <p className="px-4 py-2 text-error text-[13px] shrink-0">{error}</p>}
-
-      {/* Tab bar */}
-      {!isNew && (
-        <div className="flex flex-wrap gap-2 px-4 py-2 overflow-x-auto shrink-0">
-          {PROJECT_TABS.map(t => (
-            <button key={t} type="button" onClick={() => setTab(t)} className={TAB_BTN(tab === t)}>
-              {TAB_LABELS[t]}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 w-full">
         {isNew && (
           <p className="text-text-secondary text-center py-4 text-[12px]">
