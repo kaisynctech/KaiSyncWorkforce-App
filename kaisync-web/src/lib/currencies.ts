@@ -34,6 +34,22 @@ export function currencyName(code: string | null | undefined): string {
   return currencyOptions().find(c => c.code === code.toUpperCase())?.name ?? code.toUpperCase()
 }
 
+/** Narrow currency glyph for inputs/labels: "R", "$", "€", "£". Falls back to the ISO code. */
+export function currencySymbol(code: string | null | undefined): string {
+  const c = (code || 'ZAR').toUpperCase()
+  if (c === 'ZAR') return 'R'
+  try {
+    const sample = new Intl.NumberFormat('en-ZA', {
+      style: 'currency',
+      currency: c,
+      currencyDisplay: 'narrowSymbol',
+    }).format(0)
+    return sample.replace(/[\d\s.,\u00a0]/g, '').trim() || c
+  } catch {
+    return c
+  }
+}
+
 /**
  * Money for screens / PDFs / portals.
  * Rand stays KaiSync's usual "R 1 250,00".
@@ -45,19 +61,7 @@ export function formatCurrency(n: number | null | undefined, currency?: string |
     if (n == null) return 'R —'
     return `R ${n.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   }
-  if (n == null) {
-    try {
-      const sample = new Intl.NumberFormat('en-ZA', {
-        style: 'currency',
-        currency: code,
-        currencyDisplay: 'narrowSymbol',
-      }).format(0)
-      const sym = sample.replace(/[\d\s.,\u00a0]/g, '').trim() || code
-      return `${sym} —`
-    } catch {
-      return `${code} —`
-    }
-  }
+  if (n == null) return `${currencySymbol(code)} —`
   try {
     return new Intl.NumberFormat('en-ZA', {
       style: 'currency',

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { currencyOptions, formatCurrency } from './currencies'
+import { currencyOptions, currencySymbol, formatCurrency } from './currencies'
 import { fmtMoney } from './finance-calc'
 
 const clean = (s: string) => s.replace(/\s/g, ' ')
@@ -22,5 +22,10 @@ describe('currencies', () => {
     expect(clean(formatCurrency(1250, 'USD'))).not.toContain('USD')
     expect(clean(formatCurrency(1250, 'EUR'))).toContain('€')
     expect(clean(formatCurrency(1250, 'GBP'))).toContain('£')
+  })
+  it('exposes narrow symbols for price inputs', () => {
+    expect(currencySymbol('ZAR')).toBe('R')
+    expect(currencySymbol('USD')).toBe('$')
+    expect(currencySymbol('EUR')).toBe('€')
   })
 })
