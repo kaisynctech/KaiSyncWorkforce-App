@@ -885,7 +885,8 @@ export async function saveQuoteDraft(params: {
       discount_amount: Number(i.discount_amount) || 0,
     })),
   }
-  if (params.quoteId) args.p_quote_id = params.quoteId
+  // PostgREST 404s if a required arg is omitted — always send null for new drafts.
+  args.p_quote_id = params.quoteId ?? null
   const data = await rpc('contractor_portal_save_quote_draft', args)
   const id = typeof data === 'string' ? data.replace(/"/g, '') : str(data)
   if (!id) throw new Error('Could not save quote draft.')
