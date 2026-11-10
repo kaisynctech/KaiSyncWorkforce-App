@@ -317,6 +317,40 @@ body {
     background-color: #dc2626;
   }
 
+  /* Quiet destructive action for toolbars (prefer over solid red until confirm) */
+  .btn-danger-soft {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+    height: 2rem;
+    padding: 0 0.625rem;
+    font-size: 11px;
+    line-height: 1;
+    font-weight: 600;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+    background-color: color-mix(in srgb, var(--color-error) 8%, white);
+    color: #b91c1c;
+    border: 1px solid color-mix(in srgb, var(--color-error) 35%, var(--color-border));
+  }
+
+  .btn-danger-soft:hover:not(:disabled) {
+    background-color: color-mix(in srgb, var(--color-error) 14%, white);
+    border-color: color-mix(in srgb, var(--color-error) 50%, var(--color-border));
+  }
+
+  .btn-danger-soft:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .btn-danger-soft .material-icons {
+    font-size: 15px;
+  }
+
   /* Compact back control — same 32px density as pills */
   .btn-back {
     width: 2rem;

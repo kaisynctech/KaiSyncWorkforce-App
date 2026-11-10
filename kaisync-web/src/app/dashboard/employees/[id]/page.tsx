@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { employeeDocumentStoragePath } from '@/lib/employee-document-types'
 import { cn, formatDate, formatDateTime, formatCurrency, getInitials, localISODate } from '@/lib/utils'
+import { EntityTabs } from '@/components/ui/EntityTabs'
 import { labelEmploymentType } from '@/lib/employee-taxonomy'
 import { getCompanyAnnualDays, loadLeaveSettings, readCustomLeaveTypes, type LeaveSettingsMap } from '@/lib/leave-settings'
 import { LEAVE_TYPES } from '@/lib/leave-policy'
@@ -442,22 +443,7 @@ export default function EmployeeDetailPage() {
           </Link>
           <h1 className="text-[16px] font-semibold text-text-primary truncate">{fullName}</h1>
         </div>
-        <div className="flex gap-1.5 overflow-x-auto">
-          {EMPLOYEE_TABS.map(t => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={cn(
-                'h-8 px-2.5 rounded-md font-medium text-[11px] whitespace-nowrap transition-colors',
-                tab === t.id
-                  ? 'bg-primary text-white shadow-sm shadow-primary/20'
-                  : 'bg-sky-500/10 text-sky-800 hover:bg-sky-500/15',
-              )}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <EntityTabs tabs={EMPLOYEE_TABS} value={tab} onChange={setTab} />
       </div>
 
       {/* Tab content */}

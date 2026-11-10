@@ -225,6 +225,7 @@ function PanelItems({
   collapsed,
   onNavigate,
   compact = false,
+  accent,
 }: {
   items: NavItem[]
   flags: HrNavFlags
@@ -234,6 +235,8 @@ function PanelItems({
   onNavigate?: () => void
   /** Tighter type/spacing for nested phone-drawer children */
   compact?: boolean
+  /** Module accent for desktop icon chips */
+  accent?: { chip: string; icon: string; nest: string }
 }) {
   const visible = items.filter(item => itemVisible(item, flags, isOwner))
   if (visible.length === 0) return null
@@ -250,6 +253,9 @@ function PanelItems({
     }
   }
 
+  const chip = accent?.chip ?? 'bg-primary/10'
+  const chipIcon = accent?.icon ?? 'text-primary'
+
   return (
     <>
       {groups.map((group, gi) => (
@@ -257,8 +263,8 @@ function PanelItems({
           {group.label && !collapsed && (
             <p
               className={cn(
-                'font-semibold uppercase tracking-widest text-text-secondary',
-                compact ? 'text-[8px] px-2 pt-2 pb-0.5' : 'text-[9px] px-3 pt-3 pb-1',
+                'font-semibold uppercase tracking-widest text-text-secondary/70',
+                compact ? 'text-[8px] px-2 pt-2 pb-0.5' : 'text-[9px] px-2.5 pt-2.5 pb-1',
               )}
             >
               {group.label}
@@ -279,31 +285,34 @@ function PanelItems({
                   compact
                     ? 'gap-1.5 mx-0.5 mb-px rounded-md px-2 py-1.5'
                     : 'gap-2 mx-1 mb-0.5 rounded-md',
-                  !compact && (collapsed ? 'justify-center px-0 py-2.5 lg:py-2' : 'px-2 py-2.5 lg:py-1.5'),
+                  !compact && (collapsed ? 'justify-center px-0 py-1.5' : 'px-1.5 py-1'),
                   active
                     ? compact
                       ? 'bg-primary/15 text-primary font-semibold shadow-[inset_2px_0_0_0_var(--color-primary)]'
-                      : 'bg-primary/10 text-primary font-medium border-l-2 border-primary rounded-l-none'
+                      : 'bg-primary text-white font-medium shadow-sm shadow-primary/20'
                     : compact
                       ? 'text-text-secondary/90 hover:text-text-primary hover:bg-white/80'
-                      : 'text-text-secondary hover:text-text-primary hover:bg-surface-elevated',
+                      : 'text-text-primary/75 hover:text-text-primary hover:bg-white/90',
                 )}
               >
                 <span
                   className={cn(
-                    'material-icons shrink-0',
+                    'material-icons shrink-0 flex items-center justify-center',
                     compact
                       ? 'text-[15px]'
                       : collapsed
-                        ? 'text-[18px]'
-                        : 'text-[18px] lg:text-[16px]',
+                        ? cn('text-[15px] w-7 h-7 rounded-md', active ? 'bg-white/20 text-white' : cn(chip, chipIcon))
+                        : cn(
+                            'text-[14px] w-6 h-6 rounded-md',
+                            active ? 'bg-white/20 text-white' : cn(chip, chipIcon),
+                          ),
                     active && compact && 'text-primary',
                   )}
                 >
                   {item.icon}
                 </span>
                 {!collapsed && (
-                  <span className={cn('truncate', compact ? 'text-[11px] leading-tight' : 'text-[13px] lg:text-[12px]')}>
+                  <span className={cn('truncate', compact ? 'text-[11px] leading-tight' : 'text-[11px] leading-tight')}>
                     {item.label}
                   </span>
                 )}
@@ -449,7 +458,7 @@ export default function Sidebar({
       const w = !desktop
         ? 0
         : activeSection
-          ? (panelCollapsed ? 44 : 176)
+          ? (panelCollapsed ? 40 : 156)
           : 0
       document.documentElement.style.setProperty('--sidebar-panel-w', `${w}px`)
     }
@@ -697,19 +706,19 @@ export default function Sidebar({
           className={cn(
             'fixed left-0 bottom-0 flex flex-col shrink-0 border-r border-divider overflow-hidden transition-transform duration-200 z-50 safe-pb',
             'w-72 lg:transition-[width]',
-            // Phone drawer: soft tinted wash so it is not a flat gray slab
-            'bg-gradient-to-b from-[#E8F0FF] via-[#F5F8FF] to-white lg:bg-none lg:bg-surface',
+            // Soft wash on phone + desktop — avoid flat grey slab
+            'bg-gradient-to-b from-[#E8F0FF] via-[#F5F8FF] to-white',
             showMobileDrawer ? 'translate-x-0' : 'max-lg:-translate-x-full',
             desktopPanel ? 'lg:translate-x-0' : 'lg:-translate-x-full',
-            panelCollapsed ? 'lg:w-11' : 'lg:w-44',
+            panelCollapsed ? 'lg:w-10' : 'lg:w-[156px]',
           )}
           style={{ top: 'var(--app-chrome-offset)' }}
         >
-          <div className="flex items-center justify-between px-2 pt-2 pb-1 shrink-0">
+          <div className="flex items-center justify-between px-2 pt-1.5 pb-1 shrink-0">
             {(!panelCollapsed || !isDesktop) && (
               <span className={cn(
-                'font-semibold uppercase tracking-widest px-1',
-                isDesktop ? 'text-[10px] text-text-secondary' : 'text-[10px] text-primary/70',
+                'font-semibold uppercase tracking-[0.12em] px-1',
+                isDesktop ? 'text-[9px] text-primary/60' : 'text-[10px] text-primary/70',
               )}>
                 {isDesktop ? (activeSection?.label ?? 'Menu') : 'Menu'}
               </span>
@@ -721,15 +730,15 @@ export default function Sidebar({
                 else setPanelCollapsed(v => !v)
               }}
               className={cn(
-                'w-9 h-9 lg:w-7 lg:h-7 rounded-md flex items-center justify-center transition-colors',
+                'w-8 h-8 lg:w-6 lg:h-6 rounded-md flex items-center justify-center transition-colors',
                 isDesktop
-                  ? 'text-text-secondary hover:text-text-primary hover:bg-surface-elevated'
+                  ? 'text-text-secondary/80 hover:text-primary hover:bg-white/80'
                   : 'text-primary/70 hover:text-primary hover:bg-primary/10',
                 panelCollapsed && isDesktop && 'mx-auto',
               )}
               title={isDesktop ? (panelCollapsed ? 'Expand panel' : 'Collapse panel') : 'Close menu'}
             >
-              <span className="material-icons text-[18px] lg:text-[16px]">
+              <span className="material-icons text-[16px] lg:text-[14px]">
                 {isDesktop ? (panelCollapsed ? 'chevron_right' : 'chevron_left') : 'close'}
               </span>
             </button>
@@ -892,6 +901,7 @@ export default function Sidebar({
                 pathname={pathname}
                 collapsed={panelCollapsed}
                 onNavigate={onClose}
+                accent={SECTION_ACCENT[activeSection.id] ?? SECTION_ACCENT.workforce}
               />
             )}
           </nav>

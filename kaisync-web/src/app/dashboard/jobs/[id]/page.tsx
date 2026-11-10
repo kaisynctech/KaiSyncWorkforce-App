@@ -12,6 +12,7 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { FormSelect } from '@/components/FormSelect'
 import { StatusBadge } from '@/components/ui/StatusBadge'
+import { EntityTabs } from '@/components/ui/EntityTabs'
 import { isContractorKind } from '@/lib/partner-kinds'
 import { appendJobPhoto, openJobTeamThread, setJobAssignments } from '@/lib/jobs'
 import { applyHousekeepingFromCompletedJob } from '@/lib/property-housekeeping'
@@ -705,78 +706,78 @@ export default function JobDetailPage() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="p-4 space-y-4 overflow-y-auto pb-8">
+    <div className="flex flex-col h-full overflow-hidden">
+      <div className="bg-surface border-b border-divider px-3 pt-2 pb-2 shrink-0 space-y-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <Link href="/dashboard/jobs" aria-label="Back to jobs" className="btn-back shrink-0">
+            <span className="material-icons">arrow_back</span>
+          </Link>
+          <h1 className="text-[15px] font-semibold text-text-primary truncate min-w-0">
+            {job.title}
+          </h1>
+          <div className="ml-auto flex items-center gap-1.5 overflow-x-auto shrink-0">
+            {canEdit && (
+              <button
+                type="button"
+                onClick={() => void handleSaveTeam()}
+                disabled={saving || isEditing}
+                className="btn-primary shrink-0"
+              >
+                Save team
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => void openChat()}
+              disabled={chatBusy}
+              className="btn-secondary shrink-0"
+            >
+              {chatBusy ? '…' : 'Chat'}
+            </button>
+            {canEdit && (
+              <button
+                type="button"
+                onClick={isEditing ? () => void saveEdit() : startEdit}
+                disabled={saving}
+                className="btn-outlined shrink-0"
+              >
+                {saving && isEditing ? '…' : isEditing ? 'Save' : 'Edit'}
+              </button>
+            )}
+            {isEditing && (
+              <button
+                type="button"
+                onClick={() => setIsEditing(false)}
+                className="btn-ghost shrink-0"
+              >
+                Cancel
+              </button>
+            )}
+            {canEdit && (
+              <button
+                type="button"
+                onClick={handleDeleteJob}
+                disabled={deleting}
+                className="btn-danger-soft shrink-0"
+              >
+                {deleting ? '…' : 'Delete'}
+              </button>
+            )}
+          </div>
+        </div>
 
-      <Link href="/dashboard/jobs" aria-label="Back to jobs" className="inline-flex text-text-secondary hover:text-text-primary transition-colors">
-        <span className="material-icons text-[20px]">arrow_back</span>
-      </Link>
+        {error && error !== 'not_linked' && (
+          <p className="text-[12px] font-medium text-error">{error}</p>
+        )}
 
-      {/* ── Action bar ── */}
-      <div className="flex gap-2 overflow-x-auto pb-1">
-        {canEdit && (
-          <button
-            onClick={() => void handleSaveTeam()}
-            disabled={saving || isEditing}
-            className="h-[42px] px-[18px] text-sm min-w-[72px] rounded-xl bg-primary text-white font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors shrink-0"
-          >
-            Save team
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={() => void openChat()}
-          disabled={chatBusy}
-          className="h-[42px] px-[18px] text-sm min-w-[72px] rounded-xl border border-primary text-primary font-semibold hover:bg-primary/5 transition-colors shrink-0 disabled:opacity-50"
-        >
-          {chatBusy ? '…' : 'Chat'}
-        </button>
-        {/* Edit / Save edit / Cancel */}
-        {canEdit && (
-          <button
-            onClick={isEditing ? () => void saveEdit() : startEdit}
-            disabled={saving}
-            className="h-[42px] px-[18px] text-sm min-w-[72px] rounded-xl border border-border text-text-primary font-semibold hover:border-primary hover:text-primary disabled:opacity-50 transition-colors shrink-0"
-          >
-            {saving && isEditing ? '…' : isEditing ? 'Save' : 'Edit'}
-          </button>
-        )}
-        {isEditing && (
-          <button
-            onClick={() => setIsEditing(false)}
-            className="h-[42px] px-[18px] text-sm min-w-[72px] rounded-xl border border-border text-text-secondary font-semibold hover:text-text-primary transition-colors shrink-0"
-          >
-            Cancel
-          </button>
-        )}
-        {canEdit && (
-          <button
-            onClick={handleDeleteJob}
-            disabled={deleting}
-            className="h-[42px] px-[18px] text-sm min-w-[72px] rounded-xl border font-semibold disabled:opacity-50 shrink-0"
-            style={{ backgroundColor: '#450A0A', color: '#FCA5A5', borderColor: '#FCA5A5' }}
-          >
-            {deleting ? '…' : 'Delete'}
-          </button>
-        )}
+        <EntityTabs
+          tabs={JOB_TABS.map(t => ({ id: t, label: JOB_TAB_LABELS[t] }))}
+          value={tab}
+          onChange={setTab}
+        />
       </div>
 
-      {/* Error banner */}
-      {error && error !== 'not_linked' && (
-        <p className="font-semibold text-[13px]" style={{ color: '#FCA5A5' }}>{error}</p>
-      )}
-
-      <div className="flex flex-wrap gap-2 overflow-x-auto">
-        {JOB_TABS.map(t => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setTab(t)}
-            className={`h-[38px] px-3 rounded-[10px] text-[12px] font-medium transition-colors whitespace-nowrap shrink-0 border ${tab === t ? 'bg-primary text-white border-primary' : 'bg-surface text-text-secondary border-border hover:text-text-primary'}`}
-          >
-            {JOB_TAB_LABELS[t]}
-          </button>
-        ))}
-      </div>
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-8">
 
       {tab === 'details' && (<>
       {/* ── Job header card ── */}
@@ -1667,14 +1668,14 @@ export default function JobDetailPage() {
             <div className="flex gap-2 justify-end pt-1">
               <button
                 onClick={() => setShowInventoryModal(false)}
-                className="h-10 px-4 rounded-lg border border-border text-[13px] text-text-secondary hover:text-text-primary transition-colors"
+                className="btn-outlined"
               >
                 Cancel
               </button>
               <button
                 onClick={allocateInventory}
                 disabled={!selectedItemId || saving}
-                className="h-10 px-5 rounded-lg bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors"
+                className="btn-primary"
               >
                 {saving ? 'Adding…' : 'Add to Job'}
               </button>
@@ -1682,6 +1683,7 @@ export default function JobDetailPage() {
           </div>
         </div>
       )}
+      </div>
     </div>
   )
 }
