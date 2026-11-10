@@ -70,7 +70,7 @@ interface InventoryItem {
   id: string
   name: string
   supplier: string | null
-  quantity: number
+  quantity_on_hand?: number | null
   unit_cost: number | null
 }
 
@@ -80,6 +80,45 @@ interface InventoryUsage {
   supplier: string | null
   quantity: number
   unit_cost: number | null
+}
+
+/** Raw inventory_usage rows (and optional enriched shapes) from the job usage RPC. */
+type RawInventoryUsage = {
+  inventory_item_id: string
+  quantity_used?: number | null
+  quantity?: number | null
+  unit_cost_at_use?: number | null
+  unit_cost?: number | null
+  item_name?: string | null
+  supplier?: string | null
+}
+
+function mapInventoryUsage(
+  rows: RawInventoryUsage[],
+  itemsById: Map<string, InventoryItem> = new Map(),
+): InventoryUsage[] {
+  return rows
+    .map((r) => {
+      const item = itemsById.get(r.inventory_item_id)
+      const quantity = Number(r.quantity_used ?? r.quantity ?? 0)
+      return {
+        inventory_item_id: r.inventory_item_id,
+        item_name: (r.item_name ?? item?.name ?? 'Item').trim() || 'Item',
+        supplier: r.supplier ?? item?.supplier ?? null,
+        quantity,
+        unit_cost: r.unit_cost_at_use ?? r.unit_cost ?? item?.unit_cost ?? null,
+      }
+    })
+    .filter((u) => Boolean(u.inventory_item_id) && Number.isFinite(u.quantity) && u.quantity > 0)
+}
+
+function rpcFailMessage(err: unknown, fallback: string): string {
+  if (err instanceof Error && err.message) return err.message
+  if (err && typeof err === 'object' && 'message' in err) {
+    const msg = (err as { message?: unknown }).message
+    if (typeof msg === 'string' && msg.trim()) return msg
+  }
+  return fallback
 }
 
 interface Feedback {
@@ -444,7 +483,19 @@ export default function JobCardPage() {
         setInventory([])
         setError(invRes.error.message || 'Failed to load inventory for this job.')
       } else {
-        setInventory((invRes.data as InventoryUsage[]) ?? [])
+        const rawUsage = (invRes.data as RawInventoryUsage[] | null) ?? []
+        let itemsById = new Map<string, InventoryItem>()
+        if (rawUsage.length > 0) {
+          const { data: itemsData } = await rpc('employee_get_inventory_items', {
+            p_company_id: member.companyId,
+            p_employee_id: member.employeeId,
+            p_session_token: tok,
+          })
+          for (const item of (itemsData as InventoryItem[] | null) ?? []) {
+            if (item?.id) itemsById.set(item.id, item)
+          }
+        }
+        setInventory(mapInventoryUsage(rawUsage, itemsById))
       }
       setFeedback(
         Array.isArray(fbRes.data)
@@ -837,7 +888,7 @@ export default function JobCardPage() {
       setInvItemId(''); setInvQty('')
       setInvModalOpen(true)
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to load inventory items.')
+      setError(rpcFailMessage(e, 'Failed to load inventory items.'))
     }
   }
 
@@ -862,7 +913,7 @@ export default function JobCardPage() {
       })
       if (loadErr) throw loadErr
 
-      const existing = (existingData as InventoryUsage[]) ?? []
+      const existing = mapInventoryUsage((existingData as RawInventoryUsage[] | null) ?? [])
       const merged = new Map<string, number>()
       for (const u of existing) {
         const id = u.inventory_item_id
@@ -871,6 +922,7 @@ export default function JobCardPage() {
       }
       merged.set(invItemId, (merged.get(invItemId) ?? 0) + qty)
 
+      // Pass a JSON array (not a stringified string) so PostgREST binds jsonb correctly.
       const usages = Array.from(merged.entries())
         .filter(([, q]) => q > 0)
         .map(([inventory_item_id, quantity]) => ({
@@ -882,14 +934,15 @@ export default function JobCardPage() {
         p_company_id: companyId,
         p_employee_id: empId,
         p_job_id: jobId,
-        p_usages: JSON.stringify(usages),
+        p_usages: usages,
         p_session_token: token,
       })
       if (rpcErr) throw rpcErr
       setInvModalOpen(false)
+      setError(null)
       await init()
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to record inventory.')
+      setError(rpcFailMessage(e, 'Failed to record inventory.'))
     }
     setSubmittingInv(false)
   }
