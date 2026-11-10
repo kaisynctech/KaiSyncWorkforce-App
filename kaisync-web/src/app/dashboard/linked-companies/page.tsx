@@ -14,6 +14,7 @@ import {
   type HistoryRow, type LinkSummary, type StatusFilter, type WorkItem,
 } from '@/lib/linked-extras'
 import { moneyZAR } from '@/lib/client-portal/quotation'
+import { EntityTabs } from '@/components/ui/EntityTabs'
 
 type View = LinkTab | 'work'
 
@@ -333,48 +334,48 @@ export default function LinkedCompaniesPage() {
     )
   }
 
+  const showWorkTab = groupLinks(links, 'contractors').open.some(l => l.status === 'active')
+  const viewTabs = [
+    ...TABS.map(t => {
+      const g = groupLinks(links, t.id)
+      return {
+        id: t.id as View,
+        label: t.label,
+        badge: g.waiting.length + g.open.length,
+        indicator: g.waiting.length > 0,
+      }
+    }),
+    ...(showWorkTab ? [{ id: 'work' as View, label: 'Work from my contractors' }] : []),
+  ]
+
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3 shrink-0 bg-surface border-b border-divider">
-        <h1 className="text-[18px] font-semibold text-text-primary">Linked companies</h1>
+    <div className="h-full flex flex-col overflow-hidden">
+      <div className="bg-surface border-b border-divider px-3 pt-2 pb-2 shrink-0 space-y-2">
+        <div>
+          <h1 className="text-[15px] font-semibold text-text-primary">Linked companies</h1>
+          <p className="text-[11px] text-text-secondary mt-0.5 max-w-3xl">
+            Clients and contractors that also use KaiSync. A link joins your record and theirs, so you work together
+            inside KaiSync without portals or copies.
+          </p>
+        </div>
+        <EntityTabs
+          tabs={viewTabs}
+          value={view}
+          onChange={(id) => {
+            if (id === 'work') {
+              void openWork()
+              return
+            }
+            tabChosen.current = true
+            setTab(id)
+            setView(id)
+            setAccepting(null)
+            setShowEnded(false)
+            setHistoryFor(null)
+          }}
+        />
       </div>
       <div className="flex-1 overflow-y-auto p-4 space-y-4 text-[13px]">
-        <p className="text-text-secondary max-w-3xl">
-          Clients and contractors that also use KaiSync. A link joins your record and theirs, so you work together
-          inside KaiSync without portals or copies.
-        </p>
-        <div className="flex gap-1 border-b border-divider" role="tablist" aria-label="Linked companies">
-          {TABS.map(t => {
-            const g = groupLinks(links, t.id)
-            const count = g.waiting.length + g.open.length
-            const active = t.id === view
-            return (
-              <button
-                key={t.id}
-                role="tab"
-                aria-selected={active}
-                onClick={() => { tabChosen.current = true; setTab(t.id); setView(t.id); setAccepting(null); setShowEnded(false); setHistoryFor(null) }}
-                className={`px-4 py-2 -mb-px border-b-2 text-[13px] inline-flex items-center gap-2 ${active ? 'border-primary text-primary font-semibold' : 'border-transparent text-text-secondary hover:text-text-primary'}`}
-              >
-                {t.label}
-                <span className="text-[11px] px-1.5 rounded-full bg-surface-elevated text-text-secondary">{count}</span>
-                {g.waiting.length > 0 && (
-                  <span className="w-2 h-2 rounded-full bg-warning" title={`${g.waiting.length} waiting for you`} aria-label={`${g.waiting.length} waiting for you`} />
-                )}
-              </button>
-            )
-          })}
-          {groupLinks(links, 'contractors').open.some(l => l.status === 'active') && (
-            <button
-              role="tab"
-              aria-selected={view === 'work'}
-              onClick={() => void openWork()}
-              className={`px-4 py-2 -mb-px border-b-2 text-[13px] inline-flex items-center gap-2 ${view === 'work' ? 'border-primary text-primary font-semibold' : 'border-transparent text-text-secondary hover:text-text-primary'}`}
-            >
-              Work from my contractors
-            </button>
-          )}
-        </div>
         {error && <p className="text-error">{error}</p>}
         {loading ? (
           <p className="text-text-secondary">Loading…</p>

@@ -28,6 +28,7 @@ import { SectionCard, FormField, entryClass } from '@/components/SectionCard'
 import { FormSelect } from '@/components/FormSelect'
 import { Toggle } from '@/components/Toggle'
 import { StatusBadge } from '@/components/ui/StatusBadge'
+import { EntityTabs } from '@/components/ui/EntityTabs'
 import { ContractorActivityTab } from '@/components/ContractorActivityTab'
 import { ContractorQuotesTab } from '@/components/ContractorQuotesTab'
 import { ContractorInvoicesTab } from '@/components/ContractorInvoicesTab'
@@ -875,81 +876,67 @@ function ContractorDetailInner() {
   const entityLabel = partnerKindLabel(partnerKind) || 'Contractor'
 
   return (
-    <div className="h-full flex flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-divider shrink-0 bg-surface">
-        <div className="flex items-center gap-3">
-          <Link href={listHref} className="text-text-secondary hover:text-text-primary transition-colors">
-            <span className="material-icons text-[20px]">arrow_back</span>
+    <div className="h-full flex flex-col overflow-hidden">
+      <div className="bg-surface border-b border-divider px-3 pt-2 pb-2 shrink-0 space-y-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <Link href={listHref} aria-label={`Back to ${entityLabel.toLowerCase()}s`} className="btn-back shrink-0">
+            <span className="material-icons">arrow_back</span>
           </Link>
-          <div>
-            <h1 className="text-[20px] font-semibold text-text-primary">{contractor?.name ?? entityLabel}</h1>
-            <p className="text-[11px] text-text-secondary mt-0.5">{entityLabel}</p>
+          <div className="min-w-0 flex-1">
+            <h1 className="text-[15px] font-semibold text-text-primary truncate">{contractor?.name ?? entityLabel}</h1>
+            <p className="text-[10px] text-text-secondary">{entityLabel}</p>
             {xeroConnected && (
-              <div className="flex items-center gap-2 mt-1">
+              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                 {xeroLink ? (
                   <>
-                    <span className="inline-flex items-center gap-1 text-[12px] text-green-400">
-                      <span className="text-[14px]">✓</span> Synced to Xero
+                    <span className="inline-flex items-center gap-1 text-[11px] text-success">
+                      <span className="text-[12px]">✓</span> Synced to Xero
                     </span>
-                    <span className="text-text-disabled text-[11px]">
+                    <span className="text-text-disabled text-[10px]">
                       {new Date(xeroLink.last_synced_at).toLocaleDateString()}
                     </span>
-                    <button onClick={pushToXero} disabled={xeroPushing || !canEdit}
+                    <button type="button" onClick={pushToXero} disabled={xeroPushing || !canEdit}
                       className="text-[11px] text-[#13B5EA] hover:opacity-70 disabled:opacity-40">
                       Update in Xero
                     </button>
                   </>
                 ) : (
-                  <button onClick={pushToXero} disabled={xeroPushing || !canEdit}
-                    className="inline-flex items-center gap-1 text-[12px] px-3 py-1 rounded border border-[#13B5EA] text-[#13B5EA] hover:bg-[#13B5EA]/10 disabled:opacity-40 transition-colors">
-                    {xeroPushing ? 'Pushing…' : '+ Push to Xero'}
+                  <button type="button" onClick={pushToXero} disabled={xeroPushing || !canEdit}
+                    className="btn-secondary shrink-0">
+                    {xeroPushing ? 'Pushing…' : 'Push to Xero'}
                   </button>
                 )}
               </div>
             )}
             {xeroMsg && (
-              <p className={`text-[11px] mt-1 ${
-                xeroMsg.includes('Synced') ? 'text-green-400' : 'text-error'
+              <p className={`text-[11px] mt-0.5 ${
+                xeroMsg.includes('Synced') ? 'text-success' : 'text-error'
               }`}>
                 {xeroMsg}
                 <button type="button" onClick={() => setXeroMsg(null)} className="ml-2 opacity-60 hover:opacity-100">✕</button>
               </p>
             )}
           </div>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving || !canEdit}
+            title={!canEdit ? 'You do not have permission to edit contractors' : undefined}
+            className="btn-primary shrink-0"
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
         </div>
-        <button
-          onClick={handleSave}
-          disabled={saving || !canEdit}
-          title={!canEdit ? 'You do not have permission to edit contractors' : undefined}
-          className="h-11 px-5 text-[15px] font-semibold rounded-lg bg-primary text-white hover:bg-primary-dark disabled:opacity-50 transition-colors min-w-[96px]"
-        >
-          {saving ? 'Saving…' : 'Save'}
-        </button>
+
+        {error && <p className="text-[12px] font-medium text-error">{error}</p>}
+
+        <EntityTabs
+          tabs={TABS.map(t => ({ id: t, label: t }))}
+          value={tab}
+          onChange={setTab}
+        />
       </div>
 
-      {error && <p className="px-4 py-2 text-error text-[13px] shrink-0">{error}</p>}
-
-      {/* Tab bar */}
-      <div className="flex flex-wrap gap-2 px-4 py-2 overflow-x-auto shrink-0">
-        {TABS.map(t => {
-          const active = tab === t
-          return (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setTab(t)}
-              className={`h-[38px] px-3 rounded-[10px] text-[12px] font-medium transition-colors whitespace-nowrap shrink-0 border ${
-                active ? 'bg-primary text-white border-primary' : 'bg-surface text-text-secondary border-border hover:text-text-primary'
-              }`}
-            >
-              {t}
-            </button>
-          )
-        })}
-      </div>
-
-      {/* Tab content */}
       <div className="flex-1 overflow-hidden flex flex-col">
 
         {/* ── INFORMATION ── */}
@@ -1036,7 +1023,7 @@ function ContractorDetailInner() {
                       <button
                         type="button"
                         onClick={() => void copyPortalCode()}
-                        className="h-11 px-3 rounded-lg border border-border text-[12px] font-medium text-primary shrink-0 hover:bg-surface-elevated"
+                        className="btn-outlined shrink-0"
                       >
                         {codeCopied ? 'Copied' : 'Copy'}
                       </button>

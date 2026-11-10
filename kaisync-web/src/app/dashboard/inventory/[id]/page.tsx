@@ -291,23 +291,23 @@ export default function InventoryDetailPage() {
             : ''
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="grid grid-cols-[1fr_auto] items-center px-4 py-3 border-b border-divider shrink-0 bg-surface">
-        <div className="flex items-center gap-3 min-w-0">
-          <Link href="/dashboard/inventory" className="text-text-secondary hover:text-text-primary transition-colors shrink-0">
-            <span className="material-icons text-[20px]">arrow_back</span>
+    <div className="h-full flex flex-col overflow-hidden">
+      <div className="bg-surface border-b border-divider px-3 pt-2 pb-2 shrink-0 space-y-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <Link href="/dashboard/inventory" aria-label="Back to inventory" className="btn-back shrink-0">
+            <span className="material-icons">arrow_back</span>
           </Link>
-          <h1 className="text-[20px] font-semibold text-text-primary truncate">{name || (isNew ? 'New Item' : 'Item')}</h1>
+          <h1 className="text-[15px] font-semibold text-text-primary truncate min-w-0 flex-1">
+            {name || (isNew ? 'New Item' : 'Item')}
+          </h1>
+          {canEdit && (
+            <button type="button" onClick={() => void save()} disabled={saving} className="btn-primary shrink-0">
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+          )}
         </div>
-        {canEdit && (
-          <button onClick={() => void save()} disabled={saving}
-            className="h-11 px-5 text-[16px] font-semibold rounded-lg bg-primary text-white hover:bg-primary-dark disabled:opacity-50 transition-colors min-w-[80px]">
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-        )}
+        {error && error !== 'not_linked' && <p className="text-[12px] font-medium text-error">{error}</p>}
       </div>
-
-      {error && error !== 'not_linked' && <p className="px-4 py-2 text-error text-[13px] shrink-0">{error}</p>}
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4 max-w-2xl">
         <div className="card p-4 space-y-3">
@@ -381,10 +381,10 @@ export default function InventoryDetailPage() {
 
         {!isNew && canEdit && (
           <div className="grid grid-cols-2 gap-2">
-            <button onClick={() => void openStockModal('receive')} className="btn-outlined h-11 text-[13px]">Receive</button>
-            <button onClick={() => void openStockModal('adjust')} className="btn-outlined h-11 text-[13px]">Adjust</button>
-            <button onClick={() => void openStockModal('return')} className="btn-outlined h-11 text-[13px]">Return</button>
-            <button onClick={() => void openStockModal('allocate')} className="btn-primary h-11 text-[13px]">Allocate to job</button>
+            <button type="button" onClick={() => void openStockModal('receive')} className="btn-outlined">Receive</button>
+            <button type="button" onClick={() => void openStockModal('adjust')} className="btn-outlined">Adjust</button>
+            <button type="button" onClick={() => void openStockModal('return')} className="btn-outlined">Return</button>
+            <button type="button" onClick={() => void openStockModal('allocate')} className="btn-primary">Allocate to job</button>
           </div>
         )}
 
@@ -466,11 +466,11 @@ export default function InventoryDetailPage() {
               </div>
             )}
             <div className="flex gap-2 justify-end">
-              <button onClick={() => setStockModal(null)} className="btn-outlined h-9 px-4 text-[13px]">Cancel</button>
+              <button type="button" onClick={() => setStockModal(null)} className="btn-outlined">Cancel</button>
               <button
                 onClick={() => void submitStockMovement()}
                 disabled={moving || (stockModal === 'allocate' && !selectedJobId)}
-                className="btn-primary h-9 px-4 text-[13px] disabled:opacity-50"
+                className="btn-primary"
               >
                 {moving ? 'Working…' : 'Confirm'}
               </button>

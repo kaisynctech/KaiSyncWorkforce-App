@@ -330,7 +330,7 @@ export default function ClientsPage() {
     <div className="h-full flex flex-col">
       <div className="px-4 pt-3 pb-2 space-y-2 shrink-0">
         <div className="flex items-center justify-between gap-2 flex-wrap">
-          <h1 className="text-[16px] font-bold text-text-primary">Clients</h1>
+          <h1 className="text-[15px] font-semibold text-text-primary">Clients</h1>
           <div className="flex items-center gap-1.5 flex-wrap justify-end">
             <button type="button" onClick={() => void load()} className="btn-ghost">Refresh</button>
             <HeaderOverflowMenu>
@@ -487,7 +487,7 @@ export default function ClientsPage() {
                           type="button"
                           onClick={e => { e.stopPropagation(); void pushToXero(e, c.id) }}
                           disabled={xeroPushing === c.id}
-                          className="mt-3 w-full h-11 rounded-lg border border-[#13B5EA] text-[#13B5EA] text-[13px] disabled:opacity-40"
+                          className="btn-outlined mt-3 w-full disabled:opacity-40"
                         >
                           {xeroPushing === c.id ? '…' : '+ Sync to Xero'}
                         </button>

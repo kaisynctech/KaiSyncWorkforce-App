@@ -14,6 +14,7 @@ import {
   statusTab,
   matchText,
 } from '@/components/ui/MoneyListFilters'
+import { EntityTabs } from '@/components/ui/EntityTabs'
 
 type FilterId = 'all' | 'attention' | 'review' | 'expiring' | 'unassigned'
 
@@ -134,26 +135,28 @@ export default function ComplianceOverviewPage() {
   }
 
   return (
-    <div className="p-4 md:p-6 space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-text-primary text-[20px] font-bold">Compliance</h1>
-          <p className="text-[12px] text-text-secondary">Every contractor and client in one place: documents, scores and grades. Flag only — nothing is blocked.</p>
+    <div className="h-full flex flex-col overflow-hidden">
+      <div className="bg-surface border-b border-divider px-3 pt-2 pb-2 shrink-0 space-y-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="min-w-0 flex-1">
+            <h1 className="text-[15px] font-semibold text-text-primary">Compliance</h1>
+            <p className="text-[11px] text-text-secondary mt-0.5">Every contractor and client in one place: documents, scores and grades. Flag only — nothing is blocked.</p>
+          </div>
+          <Link href="/dashboard/compliance-packs" className="btn-outlined shrink-0">
+            Compliance Packs
+          </Link>
         </div>
-        <Link href="/dashboard/compliance-packs" className="h-9 px-3 rounded-lg border border-border text-[12px] flex items-center text-text-primary">
-          Compliance Packs
-        </Link>
+        <EntityTabs
+          tabs={[
+            { id: 'contractor', label: 'Contractors' },
+            { id: 'client', label: 'Clients' },
+          ]}
+          value={kind}
+          onChange={setKind}
+        />
       </div>
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
       {error && <div className="rounded-lg border border-error/30 bg-error/10 px-3 py-2 text-[12px] text-error">{error}</div>}
-
-      <div className="flex gap-1 bg-surface-elevated p-1 rounded-xl w-fit">
-        {(['contractor', 'client'] as const).map(k => (
-          <button key={k} type="button" onClick={() => setKind(k)}
-            className={`text-[12px] font-semibold px-3 py-1.5 rounded-lg ${kind === k ? 'bg-primary text-white' : 'text-text-secondary'}`}>
-            {k === 'client' ? 'Clients' : 'Contractors'}
-          </button>
-        ))}
-      </div>
 
       {shown === null ? (
         <p className="text-[13px] text-text-secondary">Loading…</p>
@@ -172,7 +175,7 @@ export default function ComplianceOverviewPage() {
               onReset={() => { setCols(EMPTY_COLS); setQ('') }}
             />
             <StatusFilterTabs tabs={FILTER_TABS} value={filter} counts={tabCounts} onChange={id => setFilter(id as FilterId)} />
-            <button type="button" onClick={exportCsv} className="h-8 px-3 rounded-lg border border-border text-[12px]">Export CSV</button>
+            <button type="button" onClick={exportCsv} className="btn-outlined">Export CSV</button>
           </div>
           <div className="card overflow-x-auto">
             <table className="w-full text-[12px] min-w-[720px]">
@@ -223,6 +226,7 @@ export default function ComplianceOverviewPage() {
           </div>
         </>
       )}
+      </div>
     </div>
   )
 }

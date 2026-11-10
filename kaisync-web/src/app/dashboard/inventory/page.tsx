@@ -8,21 +8,15 @@ import { getUnitLabel } from '@/lib/units'
 import ItemFormDrawer from '@/components/inventory/ItemFormDrawer'
 import StockAdjustmentModal from '@/components/inventory/StockAdjustmentModal'
 import type { CatalogueCondition, CatalogueItem, ItemType } from '@/types/inventory'
-import {
-  StatusFilterTabs,
-  MONEY_TH,
-  MONEY_TD,
-  TAB_ALL,
-  type StatusTabDef,
-} from '@/components/ui/StatusFilterTabs'
+import { MONEY_TH, MONEY_TD } from '@/components/ui/StatusFilterTabs'
 import {
   TextHeaderFilter,
   MoneyHeaderFilter,
   ResetFiltersButton,
   matchText,
   matchMoney,
-  statusTab,
 } from '@/components/ui/MoneyListFilters'
+import { EntityTabs } from '@/components/ui/EntityTabs'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -35,12 +29,14 @@ const TYPE_BY_TAB: Partial<Record<Tab, ItemType>> = {
   labour: 'labour',
 }
 
-const TYPE_TABS: StatusTabDef[] = [
-  TAB_ALL,
-  statusTab('parts', 'Parts', ['part'], 'blue'),
-  statusTab('services', 'Services', ['service'], 'purple'),
-  statusTab('materials', 'Materials', ['material'], 'green'),
-  statusTab('labour', 'Labour', ['labour'], 'amber'),
+const INV_TABS: { id: Tab; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'parts', label: 'Parts' },
+  { id: 'services', label: 'Services' },
+  { id: 'materials', label: 'Materials' },
+  { id: 'labour', label: 'Labour' },
+  { id: 'brands', label: 'Brands' },
+  { id: 'conditions', label: 'Conditions' },
 ]
 
 type ColFilters = {
@@ -252,87 +248,61 @@ export default function InventoryPage() {
   }
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col overflow-hidden">
 
-      {/* ── Page header ── */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-divider shrink-0 bg-surface gap-3 flex-wrap">
-        <div>
-          <h1 className="text-[18px] font-semibold text-text-primary leading-tight">Inventory &amp; Services</h1>
-          <p className="text-[11px] text-text-secondary mt-0.5">Parts, services, materials and labour in one catalogue</p>
+      <div className="bg-surface border-b border-divider px-3 pt-2 pb-2 shrink-0 space-y-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="min-w-0 flex-1">
+            <h1 className="text-[15px] font-semibold text-text-primary leading-tight">Inventory &amp; Services</h1>
+            <p className="text-[11px] text-text-secondary mt-0.5">Parts, services, materials and labour in one catalogue</p>
+          </div>
+          <button type="button" onClick={openCreate} className="btn-primary shrink-0">
+            <span className="material-icons">add</span>
+            Add Item
+          </button>
         </div>
-        <button
-          onClick={openCreate}
-          className="btn-primary h-8 px-3 text-[12px] flex items-center gap-1"
-        >
-          <span className="material-icons text-[16px]">add</span>
-          Add Item
-        </button>
+        <EntityTabs
+          tabs={INV_TABS.map(t => ({
+            id: t.id,
+            label: t.label,
+            badge: t.id === 'brands' || t.id === 'conditions' ? undefined : (counts[t.id] ?? 0),
+          }))}
+          value={tab}
+          onChange={setTab}
+        />
       </div>
 
-      {/* ── Toolbar: search + reset + type tabs (+ meta views) ── */}
-      <div className="flex gap-2 px-4 py-2 border-b border-divider shrink-0 flex-wrap bg-surface items-center">
-        {!isMetaTab && (
-          <>
-            <input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search name, SKU, brand…"
-              className="form-input h-8 flex-1 min-w-[180px] text-[12px]"
-            />
-            <select
-              value={stockFilter}
-              onChange={e => setStockFilter(e.target.value as typeof stockFilter)}
-              className="h-8 rounded-md border border-divider bg-surface px-2.5 text-[11px] text-text-primary"
-            >
-              <option value="all">All stock</option>
-              <option value="low">Low / reorder</option>
-            </select>
-            <label className="flex items-center gap-1.5 text-[11px] text-text-secondary cursor-pointer select-none whitespace-nowrap">
-              <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} className="rounded" />
-              Inactive
-            </label>
-            <ResetFiltersButton
-              disabled={!hasFilters}
-              onReset={() => {
-                setCols(EMPTY_COLS)
-                setSearch('')
-                setStockFilter('all')
-                setShowInactive(false)
-              }}
-            />
-          </>
-        )}
-        <StatusFilterTabs
-          tabs={TYPE_TABS}
-          value={isMetaTab ? '' : tab}
-          counts={counts}
-          onChange={id => setTab(id as Tab)}
-        />
-        <button
-          type="button"
-          onClick={() => setTab('brands')}
-          className={cn(
-            'h-8 px-2.5 rounded-md text-[11px] font-semibold border transition-colors bg-surface',
-            tab === 'brands'
-              ? 'bg-slate-800 text-white border-slate-800'
-              : 'border-divider text-text-primary hover:bg-surface-elevated',
-          )}
-        >
-          Brands
-        </button>
-        <button
-          type="button"
-          onClick={() => setTab('conditions')}
-          className={cn(
-            'h-8 px-2.5 rounded-md text-[11px] font-semibold border transition-colors bg-surface',
-            tab === 'conditions'
-              ? 'bg-slate-800 text-white border-slate-800'
-              : 'border-divider text-text-primary hover:bg-surface-elevated',
-          )}
-        >
-          Conditions
-        </button>
-      </div>
+      {!isMetaTab && (
+        <div className="flex gap-2 px-3 py-2 border-b border-divider shrink-0 flex-wrap bg-surface items-center">
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search name, SKU, brand…"
+            className="form-input h-8 flex-1 min-w-[180px] text-[12px]"
+          />
+          <select
+            value={stockFilter}
+            onChange={e => setStockFilter(e.target.value as typeof stockFilter)}
+            className="h-8 rounded-md border border-divider bg-surface px-2.5 text-[11px] text-text-primary"
+          >
+            <option value="all">All stock</option>
+            <option value="low">Low / reorder</option>
+          </select>
+          <label className="flex items-center gap-1.5 text-[11px] text-text-secondary cursor-pointer select-none whitespace-nowrap">
+            <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} className="rounded" />
+            Inactive
+          </label>
+          <ResetFiltersButton
+            disabled={!hasFilters}
+            onReset={() => {
+              setCols(EMPTY_COLS)
+              setSearch('')
+              setStockFilter('all')
+              setShowInactive(false)
+            }}
+          />
+        </div>
+      )}
 
       <div className="flex-1 overflow-auto px-4 py-3">
 

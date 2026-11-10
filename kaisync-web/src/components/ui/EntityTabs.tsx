@@ -5,6 +5,10 @@ import { cn } from '@/lib/utils'
 export type EntityTabItem<T extends string = string> = {
   id: T
   label: string
+  /** Optional count / meta shown after the label */
+  badge?: string | number
+  /** Small attention dot (e.g. waiting items) */
+  indicator?: boolean
 }
 
 type Props<T extends string> = {
@@ -12,12 +16,12 @@ type Props<T extends string> = {
   value: T
   onChange: (id: T) => void
   className?: string
-  /** Soft sky idle (employee detail). Default. */
+  /** Soft sky idle (entity detail). Default. */
   tone?: 'sky' | 'neutral'
 }
 
 /**
- * Compact entity-detail tabs — solid primary when active, soft tint when idle.
+ * Compact entity/list tabs — solid primary when active, soft tint when idle.
  * Reference: employee profile chrome.
  */
 export function EntityTabs<T extends string>({
@@ -44,13 +48,32 @@ export function EntityTabs<T extends string>({
             aria-selected={active}
             onClick={() => onChange(t.id)}
             className={cn(
-              'h-8 px-2.5 rounded-md font-medium text-[11px] whitespace-nowrap transition-colors shrink-0',
+              'h-8 px-2.5 rounded-md font-medium text-[11px] whitespace-nowrap transition-colors shrink-0 inline-flex items-center gap-1.5',
               active
                 ? 'bg-primary text-white shadow-sm shadow-primary/20'
                 : idle,
             )}
           >
-            {t.label}
+            <span>{t.label}</span>
+            {t.badge != null && t.badge !== '' && (
+              <span
+                className={cn(
+                  'tabular-nums text-[10px] font-semibold',
+                  active ? 'text-white/85' : 'opacity-70',
+                )}
+              >
+                ({t.badge})
+              </span>
+            )}
+            {t.indicator && (
+              <span
+                className={cn(
+                  'w-1.5 h-1.5 rounded-full shrink-0',
+                  active ? 'bg-white' : 'bg-warning',
+                )}
+                aria-hidden
+              />
+            )}
           </button>
         )
       })}

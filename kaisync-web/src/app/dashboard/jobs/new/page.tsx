@@ -233,9 +233,9 @@ function CreateJobInner() {
 
   if (error === 'not_linked') return (
     <div className="h-full flex flex-col">
-      <div className="px-4 py-3">
-        <Link href="/dashboard/jobs" aria-label="Back to jobs" className="inline-flex text-text-secondary hover:text-text-primary transition-colors">
-          <span className="material-icons text-[20px]">arrow_back</span>
+      <div className="px-3 py-2">
+        <Link href="/dashboard/jobs" aria-label="Back to jobs" className="btn-back">
+          <span className="material-icons">arrow_back</span>
         </Link>
       </div>
       <div className="flex-1 flex items-center justify-center">
@@ -254,8 +254,8 @@ function CreateJobInner() {
   if (perms && !canCreate) {
     return (
       <div className="h-full flex flex-col p-6">
-        <Link href="/dashboard/jobs" aria-label="Back to jobs" className="inline-flex text-text-secondary hover:text-text-primary transition-colors">
-          <span className="material-icons text-[20px]">arrow_back</span>
+        <Link href="/dashboard/jobs" aria-label="Back to jobs" className="btn-back">
+          <span className="material-icons">arrow_back</span>
         </Link>
         <div className="flex-1 flex items-center justify-center">
         <div className="text-center space-y-3">
@@ -269,13 +269,23 @@ function CreateJobInner() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="p-4 space-y-4 pb-8">
-      <div className="flex items-center gap-2 mb-1">
-        <Link href="/dashboard/jobs" className="text-text-secondary hover:text-text-primary transition-colors">
-          <span className="material-icons text-[20px]">arrow_back</span>
-        </Link>
-        <h1 className="text-[19px] font-bold text-text-primary">New Job</h1>
+    <form onSubmit={handleSubmit} className="h-full flex flex-col overflow-hidden">
+      <div className="bg-surface border-b border-divider px-3 pt-2 pb-2 shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <Link href="/dashboard/jobs" aria-label="Back to jobs" className="btn-back shrink-0">
+            <span className="material-icons">arrow_back</span>
+          </Link>
+          <h1 className="text-[15px] font-semibold text-text-primary truncate min-w-0 flex-1">New Job</h1>
+          <button
+            type="submit"
+            disabled={saving || !title.trim() || !canCreate}
+            className="btn-primary shrink-0"
+          >
+            {saving ? 'Creating…' : 'Create Job'}
+          </button>
+        </div>
       </div>
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-8">
 
       <SectionCard title="SERVICE & CLIENT">
         <FormSelect label="What is the job?" value={serviceId} onChange={e => pickService(e.target.value)}
@@ -413,14 +423,7 @@ function CreateJobInner() {
       </SectionCard>
 
       {error && <p className="text-error text-[13px] px-1">{error}</p>}
-
-      <button
-        type="submit"
-        disabled={saving || !title.trim() || !canCreate}
-        className="w-full h-[52px] bg-primary text-white rounded-md font-semibold text-[15px] hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-      >
-        {saving ? 'Creating…' : 'Create Job'}
-      </button>
+      </div>
     </form>
   )
 }

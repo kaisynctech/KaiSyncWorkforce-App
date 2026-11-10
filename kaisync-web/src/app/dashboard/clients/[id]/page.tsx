@@ -1445,7 +1445,7 @@ function ClientDetailInner() {
                     type="button"
                     onClick={() => void copyCredentials()}
                     disabled={!client?.client_code}
-                    className="w-full h-[42px] rounded-sm bg-surface-elevated border border-border text-text-primary text-[12px] hover:bg-background transition-colors disabled:opacity-40"
+                    className="btn-outlined w-full disabled:opacity-40"
                   >
                     {codeCopied ? 'Copied' : 'Copy portal login credentials'}
                   </button>

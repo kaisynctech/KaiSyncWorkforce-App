@@ -35,9 +35,9 @@ export default function JobChatPage() {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="px-4 py-3 border-b border-divider">
-        <Link href={`/dashboard/jobs/${jobId}`} aria-label="Back to job" className="inline-flex text-text-secondary hover:text-text-primary transition-colors">
-          <span className="material-icons text-[20px]">arrow_back</span>
+      <div className="px-3 py-2 border-b border-divider bg-surface">
+        <Link href={`/dashboard/jobs/${jobId}`} aria-label="Back to job" className="btn-back">
+          <span className="material-icons">arrow_back</span>
         </Link>
       </div>
       <div className="flex-1 flex items-center justify-center px-4">

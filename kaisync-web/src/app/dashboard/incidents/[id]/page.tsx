@@ -192,11 +192,11 @@ export default function IncidentDetailPage() {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-divider shrink-0 bg-surface">
-        <Link href="/dashboard/incidents" className="text-text-secondary hover:text-text-primary transition-colors">
-          <span className="material-icons text-[20px]">arrow_back</span>
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-divider shrink-0 bg-surface">
+        <Link href="/dashboard/incidents" aria-label="Back to incidents" className="btn-back shrink-0">
+          <span className="material-icons">arrow_back</span>
         </Link>
-        <h1 className="text-[16px] font-bold text-text-primary flex-1 truncate">
+        <h1 className="text-[15px] font-semibold text-text-primary flex-1 truncate min-w-0">
           {incident.title ?? 'Incident'}
         </h1>
         <StatusBadge label={incident.status} bg={stBg(incident.status)} fg={stFg(incident.status)} />
@@ -269,7 +269,7 @@ export default function IncidentDetailPage() {
             <div className="flex flex-wrap gap-2">
               <button type="button" onClick={() => void setStatus('investigating')} className="h-8 px-3 text-[12px] rounded-lg border border-border text-text-primary hover:bg-surface-elevated">Investigating</button>
               <button type="button" onClick={() => void resolveOrClose('resolved')} className="h-8 px-3 text-[12px] rounded-lg border border-border text-text-primary hover:bg-surface-elevated">Resolved</button>
-              <button type="button" onClick={() => void resolveOrClose('closed')} className="btn-primary h-8 px-3 text-[12px]">Close</button>
+              <button type="button" onClick={() => void resolveOrClose('closed')} className="btn-primary">Close</button>
             </div>
           )}
         </SectionCard>
@@ -310,7 +310,7 @@ export default function IncidentDetailPage() {
               onKeyDown={e => e.key === 'Enter' && !posting && void addComment()}
               className="flex-1 h-10 px-3 rounded-sm bg-surface-elevated border border-border text-[14px] text-text-primary placeholder:text-text-disabled focus:outline-none focus:ring-2 focus:ring-primary/30" />
             <button type="button" onClick={() => void addComment()} disabled={posting}
-              className="btn-primary h-10 px-4 text-[13px] disabled:opacity-50">
+              className="btn-primary">
               Post
             </button>
           </div>
@@ -329,8 +329,8 @@ export default function IncidentDetailPage() {
               ))}
             </select>
             <div className="flex gap-2 justify-end">
-              <button onClick={() => setShowAssignModal(false)} className="btn-outlined h-9 px-4 text-[13px]">Cancel</button>
-              <button onClick={() => void assignIncident()} className="btn-primary h-9 px-4 text-[13px]">Assign</button>
+              <button type="button" onClick={() => setShowAssignModal(false)} className="btn-outlined">Cancel</button>
+              <button type="button" onClick={() => void assignIncident()} className="btn-primary">Assign</button>
             </div>
           </div>
         </div>

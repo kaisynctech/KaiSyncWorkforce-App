@@ -256,12 +256,12 @@ export default function IncidentsPage() {
     <div className="h-full min-h-0 flex flex-col">
       <div className="px-3 pt-3 pb-2 space-y-2 shrink-0">
         <div className="flex items-center justify-between gap-2 flex-wrap">
-          <h1 className="text-[16px] font-bold text-text-primary">Incidents</h1>
+          <h1 className="text-[15px] font-semibold text-text-primary">Incidents</h1>
           <div className="flex items-center gap-2">
             <button type="button" onClick={() => void load()} className="h-8 px-2.5 text-[12px] rounded-lg border border-border text-text-secondary hover:text-text-primary transition-colors">Refresh</button>
             <button type="button" onClick={() => void exportXlsx()} className="h-8 px-2.5 text-[12px] rounded-lg border border-border text-text-primary font-medium hover:bg-surface-elevated transition-colors">Export</button>
             {canCreate && (
-              <button type="button" onClick={() => router.push('/dashboard/incidents/new')} className="btn-primary h-8 px-2.5 text-[12px] whitespace-nowrap">
+              <button type="button" onClick={() => router.push('/dashboard/incidents/new')} className="btn-primary whitespace-nowrap">
                 + New Incident
               </button>
             )}
@@ -402,7 +402,7 @@ export default function IncidentsPage() {
                           <button
                             type="button"
                             onClick={e => { e.stopPropagation(); void closeIncident(inc) }}
-                            className="mt-3 w-full h-11 rounded-lg bg-primary text-white text-[13px] font-medium"
+                            className="btn-primary mt-3 w-full"
                           >
                             Close
                           </button>

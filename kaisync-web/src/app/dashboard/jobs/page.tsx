@@ -591,7 +591,7 @@ export default function JobsPage() {
       <div className="px-3 pt-3 pb-2 space-y-2 shrink-0">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-[16px] font-bold text-text-primary">Jobs</h1>
+            <h1 className="text-[15px] font-semibold text-text-primary">Jobs</h1>
             <JobsTabs active="jobs" />
           </div>
           <div className="flex items-center gap-2">

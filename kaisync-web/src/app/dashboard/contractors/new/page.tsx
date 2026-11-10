@@ -179,21 +179,17 @@ function NewContractorForm() {
   }
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-divider shrink-0 bg-surface">
-        <div className="flex items-center gap-3">
-          <Link href={backHref} className="text-text-secondary hover:text-text-primary transition-colors">
-            <span className="material-icons text-[20px]">arrow_back</span>
+    <div className="h-full flex flex-col overflow-hidden">
+      <div className="bg-surface border-b border-divider px-3 pt-2 pb-2 shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <Link href={backHref} aria-label="Back" className="btn-back shrink-0">
+            <span className="material-icons">arrow_back</span>
           </Link>
-          <h1 className="text-[20px] font-semibold text-text-primary">{title}</h1>
+          <h1 className="text-[15px] font-semibold text-text-primary truncate min-w-0 flex-1">{title}</h1>
+          <button type="button" onClick={save} disabled={busy} className="btn-primary shrink-0">
+            {busy ? 'Saving…' : 'Save'}
+          </button>
         </div>
-        <button
-          onClick={save}
-          disabled={busy}
-          className="h-10 px-5 text-[14px] font-semibold rounded-lg bg-primary text-white hover:bg-primary-dark disabled:opacity-50 transition-colors"
-        >
-          {busy ? 'Saving…' : 'Save'}
-        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4 w-full max-w-4xl">

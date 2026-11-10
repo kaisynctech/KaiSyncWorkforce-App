@@ -645,9 +645,9 @@ export default function JobDetailPage() {
   if (!job) {
     return (
       <div className="h-full flex flex-col">
-        <div className="px-4 py-3">
-          <Link href="/dashboard/jobs" aria-label="Back to jobs" className="inline-flex text-text-secondary hover:text-text-primary transition-colors">
-            <span className="material-icons text-[20px]">arrow_back</span>
+        <div className="px-3 py-2">
+          <Link href="/dashboard/jobs" aria-label="Back to jobs" className="btn-back">
+            <span className="material-icons">arrow_back</span>
           </Link>
         </div>
         <div className="flex-1 flex items-center justify-center">
@@ -659,9 +659,9 @@ export default function JobDetailPage() {
 
   if (error === 'not_linked') return (
     <div className="h-full flex flex-col">
-      <div className="px-4 py-3">
-        <Link href="/dashboard/jobs" aria-label="Back to jobs" className="inline-flex text-text-secondary hover:text-text-primary transition-colors">
-          <span className="material-icons text-[20px]">arrow_back</span>
+      <div className="px-3 py-2">
+        <Link href="/dashboard/jobs" aria-label="Back to jobs" className="btn-back">
+          <span className="material-icons">arrow_back</span>
         </Link>
       </div>
       <div className="flex-1 flex items-center justify-center">
@@ -1161,9 +1161,10 @@ export default function JobDetailPage() {
 
           {canEdit && (
             <button
+              type="button"
               onClick={handleSaveTeam}
               disabled={saving}
-              className="w-full h-11 text-[13px] rounded-lg bg-primary text-white font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors"
+              className="btn-primary"
             >
               Save team
             </button>
@@ -1233,8 +1234,9 @@ export default function JobDetailPage() {
 
             {canEdit && (
               <button
+                type="button"
                 onClick={() => { setShowContractorModal(true); setContractorSearch(''); setSelectedContractorId(''); setAgreedAmount('') }}
-                className="h-10 px-4 text-[13px] rounded-lg border border-border text-text-secondary hover:text-text-primary hover:border-primary transition-colors"
+                className="btn-outlined"
               >
                 + Assign Contractor
               </button>
@@ -1471,16 +1473,18 @@ export default function JobDetailPage() {
         {canEdit && (
           <div className="flex gap-2">
             <button
+              type="button"
               onClick={() => beforeInputRef.current?.click()}
               disabled={photoBusy}
-              className="h-10 px-[14px] text-[12px] rounded-lg bg-primary text-white font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors"
+              className="btn-primary"
             >
               Upload Before
             </button>
             <button
+              type="button"
               onClick={() => afterInputRef.current?.click()}
               disabled={photoBusy}
-              className="h-10 px-[14px] text-[12px] rounded-lg border border-primary text-primary font-semibold hover:bg-primary/5 disabled:opacity-50 transition-colors"
+              className="btn-outlined"
             >
               Upload After
             </button>
@@ -1582,15 +1586,17 @@ export default function JobDetailPage() {
 
             <div className="flex gap-2 justify-end pt-1">
               <button
+                type="button"
                 onClick={() => setShowContractorModal(false)}
-                className="h-10 px-4 rounded-lg border border-border text-[13px] text-text-secondary hover:text-text-primary transition-colors"
+                className="btn-outlined"
               >
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={assignContractor}
                 disabled={!selectedContractorId || saving}
-                className="h-10 px-5 rounded-lg bg-primary text-white text-[13px] font-semibold hover:bg-primary-dark disabled:opacity-50 transition-colors"
+                className="btn-primary"
               >
                 {saving ? 'Assigning…' : 'Assign'}
               </button>

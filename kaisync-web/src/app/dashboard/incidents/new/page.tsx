@@ -353,16 +353,24 @@ export default function HrNewIncidentPage() {
   }
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="p-4 space-y-4 pb-8 max-w-3xl">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <Link href="/dashboard/incidents" className="text-text-secondary hover:text-text-primary transition-colors">
-              <span className="material-icons text-[20px]">arrow_back</span>
-            </Link>
-            <h1 className="text-[16px] font-bold text-text-primary">New Incident</h1>
-          </div>
+    <div className="h-full flex flex-col overflow-hidden">
+      <div className="bg-surface border-b border-divider px-3 pt-2 pb-2 shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <Link href="/dashboard/incidents" aria-label="Back to incidents" className="btn-back shrink-0">
+            <span className="material-icons">arrow_back</span>
+          </Link>
+          <h1 className="text-[15px] font-semibold text-text-primary truncate min-w-0 flex-1">New Incident</h1>
+          <button
+            type="button"
+            onClick={submit}
+            disabled={submitting}
+            className="btn-primary shrink-0"
+          >
+            {submitting ? 'Saving…' : 'Submit'}
+          </button>
         </div>
+      </div>
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-8 max-w-3xl">
 
         {error && error !== 'not_linked' && (
           <p className="text-error text-[13px]">{error}</p>
@@ -456,14 +464,6 @@ export default function HrNewIncidentPage() {
           </FormField>
         </SectionCard>
 
-        <button
-          type="button"
-          onClick={submit}
-          disabled={submitting}
-          className="w-full h-[52px] bg-primary text-white rounded-md font-semibold text-[15px] hover:bg-primary-dark disabled:opacity-50 transition-colors"
-        >
-          {submitting ? 'Saving…' : 'Submit incident'}
-        </button>
       </div>
     </div>
   )

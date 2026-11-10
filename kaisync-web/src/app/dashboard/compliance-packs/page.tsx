@@ -7,6 +7,7 @@ import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permission
 import { CLIENT_DOC_TYPES, CONTRACTOR_DOC_TYPES } from '@/lib/contractor-portal/types'
 import { upsertClientPack } from '@/lib/compliance/party'
 import { KpiTile } from '@/components/ui/KpiTile'
+import { EntityTabs } from '@/components/ui/EntityTabs'
 import {
   archiveCompliancePack,
   setDefaultCompliancePack,
@@ -248,34 +249,33 @@ export default function CompliancePacksPage() {
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      <div className="px-4 pt-4 pb-2 shrink-0 space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <div>
-            <h1 className="text-[18px] font-semibold text-text-primary">Compliance Packs</h1>
-            <p className="text-[12px] text-text-secondary">
+      <div className="bg-surface border-b border-divider px-3 pt-2 pb-2 shrink-0 space-y-2">
+        <div className="flex items-center gap-2 min-w-0 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <h1 className="text-[15px] font-semibold text-text-primary">Compliance Packs</h1>
+            <p className="text-[11px] text-text-secondary mt-0.5">
               {kind === 'client' ? 'Client document requirement templates' : 'Contractor document requirement templates'}
             </p>
           </div>
-          <div className="flex rounded-lg border border-border overflow-hidden text-[12px]">
-            {(['contractor', 'client'] as const).map(k => (
-              <button key={k} type="button"
-                onClick={() => { setKind(k); setIsEditing(false); setError(null) }}
-                className={`h-9 px-3 ${kind === k ? 'bg-primary text-white' : 'text-text-secondary'}`}>
-                {k === 'client' ? 'Clients' : 'Contractors'}
-              </button>
-            ))}
-          </div>
-          <div className="flex items-center gap-2">
-            <label className="flex items-center gap-1.5 text-[12px] text-text-secondary">
-              <input type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} />
-              Show archived
-            </label>
-            {canEdit && (
-              <button onClick={openCreate} className="btn-primary h-9 px-3 text-[13px]">+ Create Pack</button>
-            )}
-          </div>
+          <label className="flex items-center gap-1.5 text-[12px] text-text-secondary shrink-0">
+            <input type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} />
+            Show archived
+          </label>
+          {canEdit && (
+            <button type="button" onClick={openCreate} className="btn-primary shrink-0">+ Create Pack</button>
+          )}
         </div>
+        <EntityTabs
+          tabs={[
+            { id: 'contractor', label: 'Contractors' },
+            { id: 'client', label: 'Clients' },
+          ]}
+          value={kind}
+          onChange={(k) => { setKind(k); setIsEditing(false); setError(null) }}
+        />
+      </div>
 
+      <div className="px-3 py-2 shrink-0 space-y-2 border-b border-divider">
         {!loading && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <KpiTile value={activePacks.length} label="Active packs" bg="#1E293B" valueFg="#94A3B8" labelFg="#64748B" />
@@ -284,18 +284,17 @@ export default function CompliancePacksPage() {
             <KpiTile value={archivedCount} label="Archived" bg="#1E293B" valueFg="#94A3B8" labelFg="#64748B" />
           </div>
         )}
-
         {(error || loadError) && error !== 'not_linked' && (
           <div className="rounded-lg border border-error/30 bg-error/5 px-3 py-2 text-[13px] text-error">
             {error || loadError}
             {loadError && (
-              <button onClick={() => void load()} className="ml-2 underline">Retry</button>
+              <button type="button" onClick={() => void load()} className="ml-2 underline">Retry</button>
             )}
           </div>
         )}
       </div>
 
-      <div className="grid grid-cols-[320px_1fr] gap-0 flex-1 overflow-hidden border-t border-divider">
+      <div className="grid grid-cols-[320px_1fr] gap-0 flex-1 overflow-hidden">
         <div className="flex flex-col border-r border-divider overflow-hidden">
           <div className="flex-1 overflow-y-auto px-4 py-2 space-y-2">
             {loading && <p className="text-text-secondary text-[13px] text-center py-6">Loading…</p>}
@@ -439,8 +438,8 @@ export default function CompliancePacksPage() {
               <hr className="border-divider" />
 
               <div className="flex justify-end gap-2.5 pb-4">
-                <button onClick={cancelEdit} className="btn-outlined h-[42px] px-5 text-[13px]">Cancel</button>
-                <button onClick={() => void savePack()} disabled={isBusy || !editName.trim()} className="btn-primary h-[42px] px-5 text-[13px] font-semibold">
+                <button type="button" onClick={cancelEdit} className="btn-outlined">Cancel</button>
+                <button type="button" onClick={() => void savePack()} disabled={isBusy || !editName.trim()} className="btn-primary">
                   {isBusy ? 'Saving...' : 'Save Pack'}
                 </button>
               </div>

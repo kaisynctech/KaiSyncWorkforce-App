@@ -333,7 +333,7 @@ export default function ContractorsPage() {
     <div className="h-full min-h-0 flex flex-col">
       <div className="px-3 pt-3 pb-2 space-y-2 shrink-0">
         <div className="flex items-center justify-between gap-2 flex-wrap">
-          <h1 className="text-[16px] font-bold text-text-primary">Contractors</h1>
+          <h1 className="text-[15px] font-semibold text-text-primary">Contractors</h1>
           <div className="flex items-center gap-1.5 flex-wrap justify-end">
             <button type="button" onClick={() => void load()} className="btn-ghost">Refresh</button>
             {(canEdit && xeroConnected) || canCreate ? (

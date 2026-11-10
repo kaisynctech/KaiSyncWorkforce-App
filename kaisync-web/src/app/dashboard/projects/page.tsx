@@ -251,7 +251,7 @@ export default function ProjectsPage() {
     <div className="h-full min-h-0 flex flex-col">
       <div className="px-3 pt-3 pb-2 space-y-2 shrink-0">
         <div className="flex items-center justify-between gap-2">
-          <h1 className="text-[16px] font-bold text-text-primary">Projects</h1>
+          <h1 className="text-[15px] font-semibold text-text-primary">Projects</h1>
           <div className="flex items-center gap-2">
             <button
               type="button"

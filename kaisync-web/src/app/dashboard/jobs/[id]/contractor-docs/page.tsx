@@ -88,16 +88,16 @@ function ContractorDocsContent() {
   }
 
   return (
-    <div className="h-full flex flex-col">
-      {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-divider shrink-0 bg-surface">
-        <Link href={`/dashboard/jobs/${jobId}`}
-          className="text-text-secondary hover:text-text-primary transition-colors">
-          <span className="material-icons text-[20px]">arrow_back</span>
-        </Link>
-        <div className="flex-1 min-w-0">
-          <h1 className="text-[18px] font-semibold text-text-primary">Contractor Documents</h1>
-          {jobTitle && <p className="text-[13px] text-text-secondary truncate">{jobTitle}</p>}
+    <div className="h-full flex flex-col overflow-hidden">
+      <div className="bg-surface border-b border-divider px-3 pt-2 pb-2 shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <Link href={`/dashboard/jobs/${jobId}`} aria-label="Back to job" className="btn-back shrink-0">
+            <span className="material-icons">arrow_back</span>
+          </Link>
+          <div className="flex-1 min-w-0">
+            <h1 className="text-[15px] font-semibold text-text-primary truncate">Contractor Documents</h1>
+            {jobTitle && <p className="text-[11px] text-text-secondary truncate">{jobTitle}</p>}
+          </div>
         </div>
       </div>
 
@@ -116,7 +116,7 @@ function ContractorDocsContent() {
             <button
               disabled={isDocsBusy}
               onClick={() => fileRef.current?.click()}
-              className="btn-primary h-[36px] px-3.5 text-[12px] disabled:opacity-50"
+              className="btn-primary"
             >
               Upload
             </button>

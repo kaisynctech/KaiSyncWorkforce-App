@@ -405,23 +405,23 @@ function AssetsInner() {
   )
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-divider shrink-0 bg-surface gap-3">
-        <div className="flex items-center gap-2 flex-1 max-w-sm bg-surface border border-border rounded-lg px-2">
+    <div className="h-full flex flex-col overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-divider shrink-0 bg-surface gap-3">
+        <div className="flex items-center gap-2 flex-1 max-w-sm bg-surface border border-border rounded-md px-2">
           <span className="material-icons text-text-secondary text-[16px]">search</span>
           <input
             placeholder="Search assets…"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="flex-1 bg-transparent text-text-primary text-[13px] h-[38px] outline-none placeholder:text-text-disabled"
+            className="flex-1 bg-transparent text-text-primary text-[12px] h-8 outline-none placeholder:text-text-disabled"
           />
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => void load()} className="bg-surface-dark rounded-md h-9 w-9 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors">
-            <span className="material-icons text-[18px]">refresh</span>
+          <button type="button" onClick={() => void load()} className="btn-back" aria-label="Refresh">
+            <span className="material-icons">refresh</span>
           </button>
           {canEdit && (
-            <button className="btn-primary h-9 px-3 text-[13px]"
+            <button type="button" className="btn-primary"
               onClick={() => { setEditing(blankAsset()); setIsNew(true); setError(null) }}>
               + Asset
             </button>
@@ -674,12 +674,12 @@ function AssetsInner() {
                 </button>
               )}
               <div className="flex gap-2 ml-auto">
-                <button onClick={() => setEditing(null)} className="btn-outlined h-9 px-4 text-[13px]">
+                <button type="button" onClick={() => setEditing(null)} className="btn-outlined">
                   {canEdit ? 'Cancel' : 'Close'}
                 </button>
                 {canEdit && (
                   <button onClick={() => void save()} disabled={!editing.label.trim() || busy}
-                    className="btn-primary h-9 px-4 text-[13px] disabled:opacity-50">
+                    className="btn-primary">
                     {busy ? 'Saving…' : 'Save'}
                   </button>
                 )}
@@ -703,9 +703,9 @@ function AssetsInner() {
               &ldquo;{confirmRetire.label}&rdquo; will be marked retired. It stays in history and is not hard-deleted.
             </p>
             <div className="flex gap-2 justify-end">
-              <button onClick={() => setConfirmRetire(null)} className="btn-outlined h-9 px-4 text-[13px]">Cancel</button>
-              <button onClick={() => void retireAsset(confirmRetire)} disabled={busy}
-                className="h-9 px-4 text-[13px] rounded-lg bg-error text-white font-medium disabled:opacity-50">
+              <button type="button" onClick={() => setConfirmRetire(null)} className="btn-outlined">Cancel</button>
+              <button type="button" onClick={() => void retireAsset(confirmRetire)} disabled={busy}
+                className="btn-danger">
                 {busy ? '…' : 'Retire'}
               </button>
             </div>

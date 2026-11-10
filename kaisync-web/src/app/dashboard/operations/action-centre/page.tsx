@@ -8,8 +8,8 @@ import { loadPermissions, type PermissionSet } from '@/lib/permissions'
 import { resolveHrNavFlags, type HrNavFlags } from '@/lib/company-modules'
 import { loadCompanyWorkspace } from '@/lib/employee-workspace'
 import { useDashboardCompany } from '@/components/DashboardCompanyContext'
-import { cn } from '@/lib/utils'
 import { MONEY_TH, MONEY_TD } from '@/components/ui/StatusFilterTabs'
+import { EntityTabs } from '@/components/ui/EntityTabs'
 import {
   OPS_ACTION_TABS,
   loadOpsActionItems,
@@ -130,53 +130,34 @@ export default function OperationsActionCentrePage() {
   }
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-divider shrink-0 bg-surface gap-3 flex-wrap">
-        <div>
-          <h1 className="text-[18px] font-semibold text-text-primary leading-tight flex items-center gap-1.5">
-            <span className="material-icons text-primary text-[20px]">bolt</span>
-            Action Centre
-          </h1>
-          <p className="text-[11px] text-text-secondary mt-0.5">
-            Pending work across Operations — open an item to jump straight to it
-          </p>
+    <div className="h-full flex flex-col overflow-hidden">
+      <div className="bg-surface border-b border-divider px-3 pt-2 pb-2 shrink-0 space-y-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="min-w-0 flex-1">
+            <h1 className="text-[15px] font-semibold text-text-primary leading-tight flex items-center gap-1.5">
+              <span className="material-icons text-primary text-[18px]">bolt</span>
+              Action Centre
+            </h1>
+            <p className="text-[11px] text-text-secondary mt-0.5">
+              Pending work across Operations — open an item to jump straight to it
+            </p>
+          </div>
+          <button type="button" onClick={() => void load()} className="btn-outlined shrink-0">
+            Refresh
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={() => void load()}
-          className="h-8 px-2.5 rounded-md border border-divider text-[12px] font-medium text-text-secondary hover:bg-surface-elevated"
-        >
-          Refresh
-        </button>
-      </div>
-
-      <div className="flex gap-1 px-4 py-2 border-b border-divider shrink-0 flex-wrap bg-surface items-center">
-        {domains.length === 0 && !loading && (
+        {domains.length === 0 && !loading ? (
           <p className="text-[12px] text-text-secondary">No Operations modules available for your account.</p>
-        )}
-        {domains.map(id => {
-          const meta = OPS_ACTION_TABS.find(t => t.id === id)!
-          const on = tab === id
-          const count = counts[id] ?? 0
-          return (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setTab(id)}
-              className={cn(
-                'h-8 px-2.5 rounded-md text-[11px] font-semibold border transition-colors bg-surface',
-                on
-                  ? 'bg-slate-800 text-white border-slate-800'
-                  : 'border-divider text-text-primary hover:bg-surface-elevated',
-              )}
-            >
-              {meta.label}
-              <span className={cn('ml-1 tabular-nums font-medium', on ? 'text-white/85' : 'opacity-70')}>
-                ({count})
-              </span>
-            </button>
-          )
-        })}
+        ) : tab ? (
+          <EntityTabs
+            tabs={domains.map(id => {
+              const meta = OPS_ACTION_TABS.find(t => t.id === id)!
+              return { id, label: meta.label, badge: counts[id] ?? 0 }
+            })}
+            value={tab}
+            onChange={setTab}
+          />
+        ) : null}
       </div>
 
       <div className="flex-1 overflow-auto">

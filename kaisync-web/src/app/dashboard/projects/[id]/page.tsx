@@ -615,7 +615,7 @@ export default function ProjectDetailPage() {
               {canEdit && (
                 <Link
                   href={`/dashboard/jobs/new?dealId=${projectId}`}
-                  className="btn-primary h-10 px-[14px] text-[12px] inline-flex items-center"
+                  className="btn-primary inline-flex items-center"
                 >
                   + Add job
                 </Link>
@@ -926,7 +926,7 @@ export default function ProjectDetailPage() {
               <button
                 onClick={() => void handleSendQuotation()}
                 disabled={lines.length === 0 || sendBusy || status === 'sent' || moneyQuote?.status === 'sent'}
-                className="btn-primary h-11 w-full text-[14px] font-semibold disabled:opacity-40"
+                className="btn-primary w-full disabled:opacity-40"
               >
                 {sendBusy
                   ? 'Sending…'

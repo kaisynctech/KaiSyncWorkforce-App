@@ -324,13 +324,14 @@ export default function ImportClientsPage() {
   }
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-divider shrink-0 bg-surface">
-        <Link href="/dashboard/clients"
-          className="text-text-secondary hover:text-text-primary transition-colors">
-          <span className="material-icons text-[20px]">arrow_back</span>
-        </Link>
-        <h1 className="text-[18px] font-semibold text-text-primary flex-1">Import Clients</h1>
+    <div className="h-full flex flex-col overflow-hidden">
+      <div className="bg-surface border-b border-divider px-3 pt-2 pb-2 shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <Link href="/dashboard/clients" aria-label="Back to clients" className="btn-back shrink-0">
+            <span className="material-icons">arrow_back</span>
+          </Link>
+          <h1 className="text-[15px] font-semibold text-text-primary truncate min-w-0 flex-1">Import Clients</h1>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4 max-w-xl pb-24">
@@ -343,18 +344,10 @@ export default function ImportClientsPage() {
             a permanent client code is assigned on import.
           </p>
           <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={downloadLocalTemplate}
-              className="h-10 px-4 rounded-sm bg-primary text-white text-[13px] font-medium hover:bg-primary-dark transition-colors"
-            >
+            <button type="button" onClick={downloadLocalTemplate} className="btn-primary">
               Download Excel template
             </button>
-            <button
-              type="button"
-              onClick={downloadCsvTemplate}
-              className="h-10 px-4 rounded-sm border border-border text-[13px] font-medium text-text-primary hover:bg-surface-elevated transition-colors"
-            >
+            <button type="button" onClick={downloadCsvTemplate} className="btn-outlined">
               Download CSV template
             </button>
           </div>
@@ -373,11 +366,7 @@ export default function ImportClientsPage() {
               if (f) void handleFile(f)
             }}
           />
-          <button
-            type="button"
-            onClick={() => fileRef.current?.click()}
-            className="h-10 px-4 rounded-sm border border-border text-[13px] font-medium text-text-primary hover:bg-surface-elevated transition-colors"
-          >
+          <button type="button" onClick={() => fileRef.current?.click()} className="btn-outlined">
             Choose .xlsx / .csv file
           </button>
         </div>
@@ -423,7 +412,7 @@ export default function ImportClientsPage() {
               type="button"
               disabled={isBusy}
               onClick={() => void importClients()}
-              className="h-10 px-4 rounded-sm bg-primary text-white text-[13px] font-medium hover:bg-primary-dark transition-colors disabled:opacity-50"
+              className="btn-primary"
             >
               {isBusy ? 'Importing…' : `Import ${preview.length} client(s)`}
             </button>
