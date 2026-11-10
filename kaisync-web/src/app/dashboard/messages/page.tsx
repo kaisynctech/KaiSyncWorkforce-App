@@ -577,11 +577,17 @@ export default function MessagesPage() {
                 </div>
               ) : messages.map(msg => {
                 const isMe = msg.sender_id === employeeId
+                const peer = employees.find(e => e.id === msg.sender_id)
+                const senderLabel =
+                  msg.sender_display_name?.trim()
+                  || (peer ? `${peer.name} ${peer.surname}`.trim() : '')
+                  || (msg.sender_id === employeeId ? myName.trim() : '')
+                  || 'Unknown'
                 return (
                   <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
                     {!isMe && (
                       <p className="text-[11px] text-text-secondary mb-1 px-1">
-                        {msg.sender_display_name ?? 'Unknown'}
+                        {senderLabel}
                       </p>
                     )}
                     <div className={`max-w-[72%] rounded-2xl px-4 py-2.5 ${
