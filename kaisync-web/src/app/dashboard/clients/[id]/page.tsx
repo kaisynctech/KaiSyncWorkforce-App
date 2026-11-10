@@ -183,6 +183,7 @@ function ClientDetailInner() {
   const [noteDraft, setNoteDraft] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [companyCode, setCompanyCode] = useState('')
+  const [homeCurrency, setHomeCurrency] = useState('ZAR')
   const [perms, setPerms] = useState<PermissionSet | null>(null)
   const [xeroLink,      setXeroLink]      = useState<{ xero_contact_id: string; last_synced_at: string } | null>(null)
   const [xeroConnected, setXeroConnected] = useState(false)
@@ -499,12 +500,16 @@ function ClientDetailInner() {
         .eq('id', member.employeeId)
         .maybeSingle()
       setPerms(await loadPermissions(supabase, member.companyId, me?.access_level))
-      const { data: company } = await supabase
-        .from('companies')
-        .select('code')
-        .eq('id', member.companyId)
-        .maybeSingle()
+      const [{ data: company }, { data: home }] = await Promise.all([
+        supabase
+          .from('companies')
+          .select('code')
+          .eq('id', member.companyId)
+          .maybeSingle(),
+        supabase.rpc('company_home_currency' as never, { p_company_id: member.companyId } as never),
+      ])
       setCompanyCode((company as { code?: string | null } | null)?.code ?? '')
+      setHomeCurrency(typeof home === 'string' && home ? home : 'ZAR')
     }
 
     if (isNew) {
@@ -2099,7 +2104,7 @@ function ClientDetailInner() {
                     className="w-full h-9 px-3 border border-border rounded-md text-[13px] bg-background" />
                 </label>
                 <label className="space-y-1">
-                  <span className="text-[12px] text-text-secondary">Credit Limit ({client.currency || 'R'})</span>
+                  <span className="text-[12px] text-text-secondary">Credit Limit ({client.currency || homeCurrency})</span>
                   <input type="number" value={client.credit_limit ?? 0}
                     onChange={e => setClient(prev => prev ? { ...prev, credit_limit: Number(e.target.value) } : prev)}
                     className="w-full h-9 px-3 border border-border rounded-md text-[13px] bg-background" />
@@ -2116,9 +2121,59 @@ function ClientDetailInner() {
                     onChange={e => setClient(prev => prev ? { ...prev, billing_address: e.target.value } : prev)}
                     className="w-full h-9 px-3 border border-border rounded-md text-[13px] bg-background" />
                 </label>
-                <div className="col-span-2">
-                  <CurrencyPicker value={client.currency ?? null} disabled={!canEdit} label="Currency (quotes, invoices and statements)"
-                    onChange={code => setClient(prev => prev ? { ...prev, currency: code } : prev)} />
+                <div className="col-span-2 space-y-2">
+                  <span className="text-[12px] font-medium text-text-secondary">Billing currency (quotes, invoices and statements)</span>
+                  {(() => {
+                    const isInternational = !!(client.currency && client.currency.toUpperCase() !== homeCurrency.toUpperCase())
+                    return (
+                      <>
+                        <div className="flex gap-1.5">
+                          <button
+                            type="button"
+                            disabled={!canEdit}
+                            onClick={() => setClient(prev => prev ? { ...prev, currency: null } : prev)}
+                            className={`h-8 px-2.5 rounded-md text-[11px] font-medium transition-colors ${
+                              !isInternational
+                                ? 'bg-primary text-white'
+                                : 'bg-sky-500/10 text-sky-800 hover:bg-sky-500/15'
+                            }`}
+                          >
+                            Local ({homeCurrency})
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!canEdit}
+                            onClick={() => setClient(prev => {
+                              if (!prev) return prev
+                              if (prev.currency && prev.currency.toUpperCase() !== homeCurrency.toUpperCase()) return prev
+                              return { ...prev, currency: 'USD' }
+                            })}
+                            className={`h-8 px-2.5 rounded-md text-[11px] font-medium transition-colors ${
+                              isInternational
+                                ? 'bg-primary text-white'
+                                : 'bg-sky-500/10 text-sky-800 hover:bg-sky-500/15'
+                            }`}
+                          >
+                            International
+                          </button>
+                        </div>
+                        {isInternational ? (
+                          <CurrencyPicker
+                            value={client.currency}
+                            allowDefault={false}
+                            homeCurrency={homeCurrency}
+                            disabled={!canEdit}
+                            label="Choose currency"
+                            onChange={code => setClient(prev => prev ? { ...prev, currency: code || 'USD' } : prev)}
+                          />
+                        ) : (
+                          <p className="text-[12px] text-text-secondary">
+                            This client is billed in {homeCurrency} (South African Rand when that is your company currency).
+                          </p>
+                        )}
+                      </>
+                    )
+                  })()}
                 </div>
               </div>
               <label className="flex items-center gap-2 text-[13px]">

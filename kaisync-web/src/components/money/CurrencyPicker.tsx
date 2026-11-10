@@ -29,6 +29,12 @@ export function CurrencyPicker({ value, onChange, homeCurrency = 'ZAR', allowDef
 
   const shown = value ? `${value} · ${currencyName(value)}` : `${homeCurrency} · ${currencyName(homeCurrency)} (company currency)`
 
+  function pick(code: string | null) {
+    onChange(code)
+    setOpen(false)
+    setQ('')
+  }
+
   return (
     <div ref={box} className={`relative flex flex-col gap-1.5 ${className}`}
       onBlur={e => { if (!box.current?.contains(e.relatedTarget as Node)) setOpen(false) }}>
@@ -38,20 +44,27 @@ export function CurrencyPicker({ value, onChange, homeCurrency = 'ZAR', allowDef
         <span className="truncate">{shown}</span>
         <span className="material-icons text-[18px] text-text-secondary">expand_more</span>
       </button>
-      {open && (
+      {open && !disabled && (
         <div className="absolute z-30 top-full mt-1 left-0 right-0 rounded-xl border border-divider bg-surface-card shadow-xl p-2 flex flex-col gap-1.5">
           <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Search: USD, euro, botswana…"
             className="h-9 rounded-lg border border-divider px-2.5 text-[13px] bg-background text-text-primary focus:outline-none focus:border-primary/60" />
           <div className="max-h-60 overflow-y-auto flex flex-col">
             {allowDefault && !q && (
-              <button type="button" onClick={() => { onChange(null); setOpen(false); setQ('') }}
-                className={`text-left px-2.5 py-1.5 rounded-md text-[13px] hover:bg-surface-elevated ${!value ? 'font-semibold text-primary' : 'text-text-primary'}`}>
+              <button
+                type="button"
+                onMouseDown={e => { e.preventDefault(); pick(null) }}
+                className={`text-left px-2.5 py-1.5 rounded-md text-[13px] hover:bg-surface-elevated ${!value ? 'font-semibold text-primary' : 'text-text-primary'}`}
+              >
                 Company currency ({homeCurrency})
               </button>
             )}
             {list.map(c => (
-              <button key={c.code} type="button" onClick={() => { onChange(c.code); setOpen(false); setQ('') }}
-                className={`text-left px-2.5 py-1.5 rounded-md text-[13px] hover:bg-surface-elevated ${value === c.code ? 'font-semibold text-primary' : 'text-text-primary'}`}>
+              <button
+                key={c.code}
+                type="button"
+                onMouseDown={e => { e.preventDefault(); pick(c.code) }}
+                className={`text-left px-2.5 py-1.5 rounded-md text-[13px] hover:bg-surface-elevated ${value === c.code ? 'font-semibold text-primary' : 'text-text-primary'}`}
+              >
                 <span className="inline-block w-12 font-mono text-text-secondary">{c.code}</span>{c.name}
               </button>
             ))}

@@ -25,6 +25,7 @@ import {
 } from '@/lib/quote-vat'
 import { escapeIlike } from '@/lib/list-pagination'
 import { LineItemsEditor } from '@/components/money/LineItemsEditor'
+import { CurrencyPicker } from '@/components/money/CurrencyPicker'
 import { formatCurrency } from '@/lib/currencies'
 import { asItemType, lineQty, lineTotal, loadPickItems, type EditorLine, type ItemType, type PickItem } from '@/lib/line-items'
 
@@ -136,11 +137,21 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   // ── Clients list ──────────────────────────────────────────────────────────
   const [clients,        setClients]        = useState<ClientRow[]>([])
   const [chosenClient,   setChosenClient]   = useState<ClientRow | null>(null)
-  // The quote's currency: the client's (blank = the company's, rand). Kept on the quote when it is saved.
-  const [savedCurrency, setSavedCurrency] = useState<string | null>(null)
-  const quoteCurrency = chosenClient ? (chosenClient.currency || 'ZAR') : (savedCurrency || 'ZAR')
+  // Currency: defaults from the client (or company home), overridable on this quote.
+  const [homeCurrency, setHomeCurrency] = useState('ZAR')
+  const [quoteCurrency, setQuoteCurrency] = useState('ZAR')
+  const [currencyTouched, setCurrencyTouched] = useState(false)
+  const [fxRate, setFxRate] = useState('')
+  const [dailyRate, setDailyRate] = useState<number | null>(null)
   const quoteCurrencyRef = useRef('ZAR')
+  const homeCurrencyRef = useRef('ZAR')
+  const fxRateRef = useRef('')
   useEffect(() => { quoteCurrencyRef.current = quoteCurrency }, [quoteCurrency])
+  useEffect(() => { homeCurrencyRef.current = homeCurrency }, [homeCurrency])
+  useEffect(() => { fxRateRef.current = fxRate }, [fxRate])
+  const foreign = quoteCurrency !== homeCurrency
+  const fxNum = Number(fxRate.replace(',', '.'))
+  const bookRate = fxNum > 0 ? fxNum : dailyRate
   const [clientListError, setClientListError] = useState<string | null>(null)
   const [clientSearch,   setClientSearch]   = useState('')
   const [clientDropOpen, setClientDropOpen] = useState(false)
@@ -216,12 +227,21 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
       setEmployeeId(m.employeeId)
       companyIdRef.current  = m.companyId
       employeeIdRef.current = m.employeeId
-      const { data: company } = await supabase
-        .from('companies')
-        .select('name, is_vat_registered, default_vat_rate')
-        .eq('id', m.companyId)
-        .maybeSingle()
+      const [{ data: company }, { data: home }] = await Promise.all([
+        supabase
+          .from('companies')
+          .select('name, is_vat_registered, default_vat_rate')
+          .eq('id', m.companyId)
+          .maybeSingle(),
+        supabase.rpc('company_home_currency' as never, { p_company_id: m.companyId } as never),
+      ])
       const row = company as { name?: string; is_vat_registered?: boolean; default_vat_rate?: number } | null
+      const hc = typeof home === 'string' && home ? home : 'ZAR'
+      setHomeCurrency(hc)
+      if (!quoteIdRef.current && !currencyTouched) {
+        setQuoteCurrency(hc)
+        quoteCurrencyRef.current = hc
+      }
       if (row?.name) setCompanyName(row.name)
       const choice = companyQuoteVat({
         isVatRegistered: row?.is_vat_registered,
@@ -346,7 +366,14 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         setTitle((q.title as string) ?? '')
         const cid2 = (q.client_id as string | null) ?? null
         setClientId(cid2);         clientIdRef.current = cid2
-        setSavedCurrency((q.currency as string | null) ?? null)
+        if (q.currency) {
+          setQuoteCurrency(String(q.currency))
+          setCurrencyTouched(true)
+          quoteCurrencyRef.current = String(q.currency)
+        }
+        if ((q.rate_source as string | null) === 'manual' && q.exchange_rate) {
+          setFxRate(String(q.exchange_rate))
+        }
         const vu = (q.valid_until as string | null) ?? todayPlus(14)
         setValidUntil(vu);         validUntilRef.current = vu
         const n = (q.scope_notes as string | null) ?? ''
@@ -439,6 +466,9 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
       const rate = money.vatRate
 
       // Upsert quote header
+      const curr = quoteCurrencyRef.current || homeCurrencyRef.current || 'ZAR'
+      const rateTyped = Number(fxRateRef.current.replace(',', '.'))
+      const isForeign = curr !== homeCurrencyRef.current
       const payload: Record<string, unknown> = {
         company_id:   cid,
         quote_number: qNum,
@@ -452,7 +482,9 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         subtotal:     lineSubtotal,
         vat_amount:   lineVat,
         total_amount: lineTotal,
-        currency:     quoteCurrencyRef.current,
+        currency:     curr,
+        exchange_rate: isForeign && rateTyped > 0 ? rateTyped : null,
+        rate_source:   isForeign && rateTyped > 0 ? 'manual' : null,
         updated_at:   new Date().toISOString(),
       }
       if (!qid) payload.created_by = eid
@@ -606,6 +638,23 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
     return () => { alive = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId, clientId])
+
+  // A new client brings their currency (unless the currency was chosen by hand).
+  useEffect(() => {
+    if (currencyTouched) return
+    const next = chosenClient?.currency || homeCurrency
+    setQuoteCurrency(next)
+    quoteCurrencyRef.current = next
+  }, [chosenClient, homeCurrency, currencyTouched])
+
+  useEffect(() => {
+    if (!foreign) { setDailyRate(null); return }
+    let live = true
+    void supabase.rpc('fx_rate', { p_from: quoteCurrency, p_to: homeCurrency, p_day: null })
+      .then(({ data }) => { if (live) setDailyRate(Number(data) > 0 ? Number(data) : null) })
+    return () => { live = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [foreign, quoteCurrency, homeCurrency])
 
   const editorLines: EditorLine[] = lines.map(l => ({
     key: l.tempId,
@@ -1373,6 +1422,36 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         {/* ── Totals ── */}
         <div className="flex justify-end">
           <div className="w-full max-w-md rounded-xl border border-divider overflow-hidden">
+            <div className="px-5 py-3 border-b border-divider space-y-2">
+              <CurrencyPicker
+                value={quoteCurrency}
+                allowDefault={false}
+                homeCurrency={homeCurrency}
+                label="Currency"
+                onChange={c => {
+                  const next = c ?? homeCurrency
+                  setQuoteCurrency(next)
+                  quoteCurrencyRef.current = next
+                  setCurrencyTouched(true)
+                  scheduleAutoSave()
+                }}
+              />
+              {foreign && (
+                <label className="flex flex-col gap-1 text-[12px] text-text-secondary">
+                  <span>Exchange rate (optional): 1 {quoteCurrency} = ? {homeCurrency}</span>
+                  <input
+                    inputMode="decimal"
+                    value={fxRate}
+                    onChange={e => { setFxRate(e.target.value); scheduleAutoSave() }}
+                    placeholder={dailyRate ? `Leave empty to use today's rate (${dailyRate.toFixed(4)})` : "Leave empty to use today's rate"}
+                    className="h-9 rounded-lg border border-divider px-3 text-[13px] bg-background text-text-primary focus:outline-none focus:border-primary/60"
+                  />
+                  {bookRate && bookRate > 0 && (
+                    <span>≈ {formatCurrency(Math.round(total * bookRate * 100) / 100, homeCurrency)} in your books{fxNum > 0 ? '' : ' (daily rate)'}</span>
+                  )}
+                </label>
+              )}
+            </div>
             <div className="flex justify-between items-center px-5 py-3 border-b border-divider">
               <span className="text-[13px] text-text-secondary">{vatOn ? 'Subtotal (excl. VAT)' : 'Subtotal'}</span>
               <span className="text-[13px] text-text-primary font-medium tabular-nums">{fmtR(subtotal, quoteCurrency)}</span>
