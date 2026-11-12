@@ -5,7 +5,7 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 // purchase orders), payments and manual journals (payroll). Granular scopes: valid for every Xero app.
 // The old screens ask for the old set; the new Settings sends { full: true }.
 const OLD_SCOPES = 'accounting.contacts accounting.manualjournals offline_access openid profile email'
-const XERO_SCOPES = 'openid profile email offline_access accounting.contacts accounting.settings accounting.invoices accounting.payments accounting.manualjournals'
+const XERO_SCOPES = 'openid profile email offline_access accounting.contacts accounting.settings accounting.invoices accounting.payments accounting.manualjournals accounting.attachments'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',

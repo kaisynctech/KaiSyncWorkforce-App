@@ -215,6 +215,21 @@ ${items.map((l) => `<tr><td style="${cell}">${esc(l.description)}${l.specificati
   return { companyId: p.company_id, to: valid(c.email), greetName: c.contact_person || c.name || null, subject: (co) => `Remittance advice${p.remittance_number ? ` ${p.remittance_number}` : ""} from ${co}`, paras };
 }
 
+/** Keeps the PDF the client got (an invoice), so Xero can have it attached (xero-sync-run, job 'invoice_pdf'). Never blocks sending. */
+async function saveInvoicePdf(admin: SupabaseClient, companyId: string, invoiceId: string, pdf: string) {
+  try {
+    const path = `${companyId}/invoices/${invoiceId}.pdf`;
+    const bytes = Uint8Array.from(atob(pdf), (c) => c.charCodeAt(0));
+    const { error } = await admin.storage.from("workforce-media").upload(path, bytes, { contentType: "application/pdf", upsert: true });
+    if (error) return;
+    const { data: inv } = await admin.from("finance_invoices").update({ pdf_path: path, pdf_saved_at: new Date().toISOString() })
+      .eq("id", invoiceId).select("invoice_number, issue_date, status").maybeSingle();
+    if (!inv || ["draft", "voided", "cancelled"].includes(String(inv.status))) return;
+    await admin.rpc("xero_enqueue", { p_company_id: companyId, p_entity: "invoice_pdf", p_record_id: invoiceId,
+      p_label: `Invoice PDF ${inv.invoice_number ?? ""}`.trim(), p_doc_date: inv.issue_date ?? null });
+  } catch { /* the email matters more than the copy */ }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
@@ -231,7 +246,10 @@ Deno.serve(async (req: Request) => {
       preview?: boolean; subject?: string; body_text?: string;
     };
     const preview = body.preview === true;
-    const kind = String(body.kind ?? "") as Kind;
+    // kind "invoice_pdf": an invoice marked sent without an email; only keep its PDF (for Xero). A separate kind, so
+    // an older version of this function refuses it instead of emailing the client.
+    const storeOnly = body.kind === "invoice_pdf";
+    const kind = (storeOnly ? "invoice" : String(body.kind ?? "")) as Kind;
     if (!KINDS.includes(kind)) return json({ error: "kind required" }, 400);
     const docId = String(body.doc_id ?? "");
     if (!/^[0-9a-f-]{36}$/i.test(docId)) return json({ error: "doc_id required" }, 400);
@@ -245,6 +263,11 @@ Deno.serve(async (req: Request) => {
     // Permission: office staff of this document's company.
     const { data: role } = await userClient.rpc("get_my_role", { p_company_id: built.companyId });
     if (!role || role === "employee") return json({ error: "not_allowed", message: "You don't have permission to email this." }, 403);
+
+    if (storeOnly) {
+      await saveInvoicePdf(admin, built.companyId, docId, pdf);
+      return json({ ok: true, stored: true });
+    }
 
     const recipient = valid(body.recipient_email) || built.to;
     if (!recipient && !preview) return json({ error: "no_email", message: "Enter an email address to send it to." }, 400);
@@ -328,6 +351,7 @@ ${co?.document_footer ? `<div style="margin-top:8px">${esc(co.document_footer)}<
     });
     if (!res.ok) return json({ error: "send_failed", message: out.message ?? "The email could not be sent." }, 502);
     await built.afterSent?.();
+    if (kind === "invoice" && pdf) await saveInvoicePdf(admin, built.companyId, docId, pdf);
     return json({ ok: true, recipient_email: recipient, cc, from: sender.from });
   } catch (e) {
     return json({ error: "unexpected", message: e instanceof Error ? e.message : String(e) }, 500);

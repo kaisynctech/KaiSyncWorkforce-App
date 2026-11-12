@@ -10,7 +10,7 @@ import { recordInvoicePayment } from '@/lib/finance-api'
 import { buildInvoicePdf, downloadInvoicePdf } from '@/lib/invoice-pdf'
 import { pdfBase64 } from '@/lib/document-pdf'
 import { EmailDocumentDialog, type EmailPdf } from '@/components/money/EmailDocumentDialog'
-import { emailedLabel, loadDocumentEmails, type DocumentEmailLog } from '@/lib/money/document-email'
+import { emailedLabel, loadDocumentEmails, storeInvoicePdf, type DocumentEmailLog } from '@/lib/money/document-email'
 import { companyLetterhead, type Letterhead } from '@/lib/letterhead'
 import type { FinanceInvoice, FinanceInvoiceLine } from '@/lib/finance-types'
 import { localISODate } from '@/lib/utils'
@@ -347,6 +347,11 @@ function MoneyInvoiceDetailInner() {
     setErr(null)
     const ok = await markInvoiceSent()
     if (!ok) setErr('Failed to mark invoice as sent')
+    else {
+      // Keep the PDF as sent (with its new number), so Xero gets it attached.
+      const pdf = await invoiceEmailPdf().catch(() => null)
+      if (pdf) void storeInvoicePdf(createClient(), inv.id, pdf.base64)
+    }
     await load()
     setWhatsNextMode('sent')
     setShowWhatsNext(true)

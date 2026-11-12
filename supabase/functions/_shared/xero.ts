@@ -18,7 +18,7 @@ export type XeroContact = {
 export const norm = (s: string | null | undefined) => (s ?? '').trim().replace(/\s+/g, ' ').toLowerCase()
 
 /** Scopes asked for at connect time. Granular scopes work for apps made before and after Xero's 2 March 2026 change. */
-export const XERO_SCOPES = 'openid profile email offline_access accounting.contacts accounting.settings accounting.invoices accounting.payments accounting.manualjournals'
+export const XERO_SCOPES = 'openid profile email offline_access accounting.contacts accounting.settings accounting.invoices accounting.payments accounting.manualjournals accounting.attachments'
 
 /** Reads the scope claim from a Xero access token (a JWT). */
 export function tokenScopes(accessToken: string): string {

@@ -7,6 +7,7 @@
  * - Shows what's waiting, what failed (with Xero's own message) and lets you try again.
  * - "Set up from Xero" suggests the accounts and checks VAT and currencies, then matches contacts both ways.
  * - Payments made in Xero come back to KaiSync (every 10 minutes, or "Check Xero now").
+ * - Extras: tracking by Project and Job, items by code, and the invoice PDF attached (needs a reconnect once).
  */
 
 import { useCallback, useEffect, useState } from 'react'
@@ -17,6 +18,7 @@ type Status = {
   sales_account_code?: string | null; purchases_account_code?: string | null; bank_account_code?: string | null
   last_error?: string | null; waiting?: number; failed?: number; sent_today?: number
   pull_from_xero?: boolean; pulled_at?: string | null; pull_error?: string | null; received_today?: number
+  can_attach_pdfs?: boolean; track_projects_jobs?: boolean; link_items?: boolean; attach_pdfs?: boolean; tracking_note?: string | null
 }
 type Setup = { organisation: string; suggested: { sales: string | null; purchases: string | null; bank: string | null }
   checks: Array<{ ok: boolean; text: string }>; contacts: { clients: number; suppliers: number; already_linked: number } }
@@ -135,6 +137,18 @@ export function XeroSyncPanel({ companyId, canManage, onReconnect }: { companyId
     setBusy(false)
     void load()
   }
+  async function setOption(key: 'track_projects_jobs' | 'link_items' | 'attach_pdfs', on: boolean) {
+    if (!status) return
+    const next = { track_projects_jobs: status.track_projects_jobs !== false, link_items: status.link_items !== false, attach_pdfs: status.attach_pdfs !== false, [key]: on }
+    setBusy(true); setMsg(null)
+    const { error } = await rpc(createClient())('xero_save_options', {
+      p_company_id: companyId, p_track: next.track_projects_jobs, p_items: next.link_items, p_pdfs: next.attach_pdfs,
+    })
+    setBusy(false)
+    if (error) { setMsg({ ok: false, text: error.message.includes('NOT_ALLOWED') ? 'Only the owner, HR, finance and admins can change this.' : error.message }); return }
+    void load()
+  }
+
   async function checkNow() {
     setBusy(true); setMsg(null)
     const r = await callFn('xero-pull', { company_id: companyId })
@@ -252,6 +266,28 @@ export function XeroSyncPanel({ companyId, canManage, onReconnect }: { companyId
         </span>
       </div>
       {status.pull_error && <p className="text-[12px] text-amber-800">{status.pull_error}</p>}
+
+      <div className="flex flex-col gap-1.5">
+        <p className="text-[12px] font-medium text-text-primary">Extra detail in Xero</p>
+        {([
+          ['track_projects_jobs', 'Track by Project and Job', 'Adds "Project" and "Job" tracking in Xero, with an option for each project or job when its first document goes across.'],
+          ['link_items', 'Link stock and catalogue items', 'Items are matched or added in Xero by code and put on the lines. Stock levels stay in KaiSync.'],
+          ['attach_pdfs', 'Attach the invoice PDF', 'The PDF your client got is attached to the invoice in Xero when it is emailed or marked sent.'],
+        ] as const).map(([key, title, help]) => (
+          <label key={key} className="flex items-start gap-2 text-[13px] text-text-primary">
+            <input type="checkbox" checked={status[key] !== false} disabled={!canManage || busy} onChange={e => void setOption(key, e.target.checked)}
+              className="w-4 h-4 mt-0.5 accent-[var(--color-primary,#1E3A5F)] shrink-0" />
+            <span>{title}<span className="block text-[11.5px] text-text-secondary">{help}</span></span>
+          </label>
+        ))}
+        {status.track_projects_jobs !== false && status.tracking_note && <p className="text-[12px] text-amber-800">{status.tracking_note}</p>}
+        {status.attach_pdfs !== false && !status.can_attach_pdfs && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-[12px] text-amber-900">Reconnect Xero to turn on PDF attachments. Xero will ask you to allow attachments; nothing else changes.</p>
+            {canManage && <button type="button" onClick={onReconnect} className="h-8 px-3 rounded-lg bg-primary text-white text-[12px] font-semibold hover:bg-primary-dark">Reconnect Xero</button>}
+          </div>
+        )}
+      </div>
 
       <div className="flex flex-wrap gap-2 text-[12px]">
         <span className="rounded-full bg-surface-elevated px-2.5 py-1">Waiting: {status.waiting ?? 0}</span>
