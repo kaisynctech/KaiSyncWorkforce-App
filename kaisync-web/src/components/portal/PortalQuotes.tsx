@@ -71,23 +71,37 @@ export function PortalQuotesWaiting({ quotes }: { quotes: PortalQuote[] }) {
         </div>
         <Link href={ph('/home?tab=quotes')} className="btn-ghost text-[12px] shrink-0">All quotes</Link>
       </div>
-      <div className="grid gap-2.5 sm:grid-cols-2">
-        {waiting.slice(0, 4).map(q => (
-          <div key={q.id} className="rounded-xl border border-divider bg-surface p-3.5 flex flex-col gap-2.5">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-[11px] uppercase tracking-wide text-text-secondary">Quote {q.quote_number ?? ''}</p>
-                <p className="text-[14px] font-semibold text-text-primary truncate">{q.title || q.project_title || 'Quotation'}</p>
-                {q.project_title && q.title && <p className="text-[12px] text-text-secondary truncate">Project: {q.project_title}</p>}
-              </div>
-              <div className="text-right shrink-0">
-                <p className="text-[16px] font-bold text-text-primary tabular-nums">{formatCurrency(q.total_amount, q.currency)}</p>
-                {q.valid_until && <p className="text-[11.5px] text-text-secondary">Valid until {fmtDate(q.valid_until)}</p>}
-              </div>
-            </div>
-            <QuoteActions q={q} />
-          </div>
-        ))}
+      <div className="rounded-xl border border-divider bg-surface overflow-hidden">
+        <ResponsiveDataView
+          className="max-h-[236px] overflow-y-auto"
+          table={
+            <table className="w-full text-[13px]" style={{ minWidth: 560 }}>
+              <thead className="sticky top-0 z-10">
+                <tr className="bg-surface-elevated border-b border-divider">
+                  <th className={`${MONEY_TH} text-left`}>Quote</th>
+                  <th className={`${MONEY_TH} text-left`}>For</th>
+                  <th className={`${MONEY_TH} text-left`}>Valid until</th>
+                  <th className={`${MONEY_TH} text-right`}>Total</th>
+                  <th className={`${MONEY_TH} text-right`}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {waiting.map(q => (
+                  <tr key={q.id} className="border-b border-divider last:border-0">
+                    <td className={`${MONEY_TD} font-semibold text-text-primary whitespace-nowrap`}>{q.quote_number ?? '—'}</td>
+                    <td className={MONEY_TD}>
+                      <p className="text-text-primary">{q.title || q.project_title || 'Quotation'}</p>
+                      {q.project_title && q.title && <p className="text-[11.5px] text-text-secondary">Project: {q.project_title}</p>}
+                    </td>
+                    <td className={`${MONEY_TD} text-text-secondary whitespace-nowrap`}>{q.valid_until ? fmtDate(q.valid_until) : '—'}</td>
+                    <td className={`${MONEY_TD} text-right font-semibold text-text-primary tabular-nums whitespace-nowrap`}>{formatCurrency(q.total_amount, q.currency)}</td>
+                    <td className={`${MONEY_TD} text-right`}><QuoteActions q={q} compact /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          }
+        />
       </div>
     </section>
   )

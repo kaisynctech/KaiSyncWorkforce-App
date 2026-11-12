@@ -39,6 +39,9 @@ import {
 } from '@/components/portal/PortalChrome'
 import { PortalListPager, PortalListToolbar, usePortalListPaging } from '@/components/portal/PortalListChrome'
 
+/** Dashboard lists: about five rows visible, then the list scrolls inside its box (on phones too). */
+const DASH_SCROLL = 'max-h-[236px] overflow-y-auto'
+
 const JOB_STATUS_TABS = [
   TAB_ALL,
   statusTab('open', 'Open', ['open'], 'blue'),
@@ -675,9 +678,10 @@ function HomeTab({
   const openJobsList = jobs.filter(j => !CLOSED_JOB.includes((j.status ?? '').toLowerCase()))
   const overdue = invoices.filter(i => isInvoiceOutstanding(i.status) && i.due_date && i.due_date < today)
   const pendingRequests = docRequests.filter(r => ['requested', 'rejected'].includes((r.status ?? '').toLowerCase()))
-  const recentProjects = openProjectsList.slice(0, 5)
-  const recentJobs = openJobsList.slice(0, 5)
-  const recentInvoices = invoices.filter(i => isInvoiceOutstanding(i.status)).slice(0, 5)
+  // Every open item, in a box that shows about five rows and scrolls for the rest.
+  const recentProjects = openProjectsList
+  const recentJobs = openJobsList
+  const recentInvoices = invoices.filter(i => isInvoiceOutstanding(i.status))
 
   return (
     <div className="space-y-4">
@@ -749,7 +753,7 @@ function HomeTab({
       </div>
 
       <PortalSection
-        title="Open jobs"
+        title={`Open jobs (${openJobsList.length})`}
         action={<Link href={ph('/home?tab=jobs')} className="btn-ghost">View all</Link>}
       >
         {recentJobs.length === 0 ? (
@@ -757,9 +761,10 @@ function HomeTab({
         ) : (
           <PortalPanel>
             <ResponsiveDataView
+              className={DASH_SCROLL}
               table={
                 <table className="w-full text-[13px]">
-                  <thead>
+                  <thead className="sticky top-0 z-10">
                     <tr className="bg-surface-elevated border-b border-divider">
                       <th className={`${MONEY_TH} text-left`}>Code</th>
                       <th className={`${MONEY_TH} text-left`}>Job</th>
@@ -787,7 +792,7 @@ function HomeTab({
       </PortalSection>
 
       <PortalSection
-        title="Open projects"
+        title={`Open projects (${openProjectsList.length})`}
         action={<Link href={ph('/home?tab=projects')} className="btn-ghost">View all</Link>}
       >
         {recentProjects.length === 0 ? (
@@ -795,9 +800,10 @@ function HomeTab({
         ) : (
           <PortalPanel>
             <ResponsiveDataView
+              className={DASH_SCROLL}
               table={
                 <table className="w-full text-[13px]">
-                  <thead>
+                  <thead className="sticky top-0 z-10">
                     <tr className="bg-surface-elevated border-b border-divider">
                       <th className={`${MONEY_TH} text-left`}>Code</th>
                       <th className={`${MONEY_TH} text-left`}>Project</th>
@@ -833,9 +839,10 @@ function HomeTab({
         ) : (
           <PortalPanel>
             <ResponsiveDataView
+              className={DASH_SCROLL}
               table={
                 <table className="w-full text-[13px]">
-                  <thead>
+                  <thead className="sticky top-0 z-10">
                     <tr className="bg-surface-elevated border-b border-divider">
                       <th className={`${MONEY_TH} text-left`}>Number</th>
                       <th className={`${MONEY_TH} text-left`}>Due</th>
