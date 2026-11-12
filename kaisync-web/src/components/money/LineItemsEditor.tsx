@@ -35,14 +35,15 @@ type Props = {
 function QuoteCols({ readOnly }: { readOnly?: boolean }) {
   return (
     <colgroup>
-      <col />
-      <col style={{ width: 112 }} />
-      <col style={{ width: 118 }} />
-      <col style={{ width: 118 }} />
-      <col style={{ width: 82 }} />
-      <col style={{ width: 82 }} />
-      <col style={{ width: 120 }} />
-      {!readOnly && <col style={{ width: 40 }} />}
+      {/* On a phone the item name sits on its own line above the numbers, so its column is hidden. */}
+      <col className="hidden sm:table-column" />
+      <col className="w-[38px] sm:w-[100px]" />
+      <col className="w-[62px] sm:w-[104px]" />
+      <col className="w-[62px] sm:w-[104px]" />
+      <col className="w-[40px] sm:w-[68px]" />
+      <col className="w-[44px] sm:w-[72px]" />
+      <col className="sm:w-[110px]" />
+      {!readOnly && <col className="w-[24px] sm:w-[36px]" />}
     </colgroup>
   )
 }
@@ -59,8 +60,41 @@ export function QuoteTotalsRows({ lines, currency, readOnly, vatOn, vatLabel, va
   const TH = 'px-2 py-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-text-secondary whitespace-nowrap'
   const span = readOnly ? 1 : 2
   return (
-    <div className="bg-surface-card border border-divider rounded-2xl overflow-x-auto">
-      <table className="w-full text-[12.5px]" style={{ minWidth: 840 }}>
+    <div className="bg-surface-card border border-divider rounded-2xl overflow-hidden">
+      {/* Phone: the same rows, label on the left and amount on the right. */}
+      <div className="sm:hidden text-[12.5px] divide-y divide-divider/60">
+        <div className="px-3 py-2">
+          <div className="flex justify-between gap-3">
+            <span className="text-text-secondary">{vatOn ? 'Subtotal (excl. VAT)' : 'Subtotal'}</span>
+            <span className="tabular-nums font-medium text-text-primary">{formatCurrency(p.sell, currency)}</span>
+          </div>
+          {p.costed && (
+            <div className="mt-0.5 flex justify-end items-center gap-1 text-[11px] text-text-secondary">
+              <span className="material-icons !text-[12px] !leading-none">lock</span>
+              Cost {formatCurrency(p.cost, currency)} · Margin <b className={p.profit < 0 ? 'text-error' : 'text-text-primary'}>{marginText(p.marginPct)}</b>
+            </div>
+          )}
+        </div>
+        <div className="px-3 py-1.5 flex justify-between items-center gap-3">
+          <div className="flex items-center gap-2 text-text-secondary">
+            <span>{vatLabel}</span>
+            {!readOnly && (
+              <div className="flex rounded-lg border border-divider overflow-hidden">
+                <button type="button" onClick={() => onVat(true)}
+                  className={`h-6 px-2 text-[11px] font-medium ${vatOn ? 'bg-primary text-white' : 'text-text-secondary'}`}>VAT on</button>
+                <button type="button" onClick={() => onVat(false)}
+                  className={`h-6 px-2 text-[11px] font-medium ${!vatOn ? 'bg-primary text-white' : 'text-text-secondary'}`}>No VAT</button>
+              </div>
+            )}
+          </div>
+          <span className="tabular-nums text-text-primary">{vatOn ? formatCurrency(vat, currency) : '—'}</span>
+        </div>
+        <div className="px-3 py-2 flex justify-between gap-3 bg-surface-elevated/60 font-semibold text-text-primary">
+          <span>{vatOn ? 'Total (incl. VAT)' : 'Total'}</span>
+          <span className="tabular-nums text-[14px] font-bold">{formatCurrency(total, currency)}</span>
+        </div>
+      </div>
+      <table className="hidden sm:table w-full table-fixed text-[12.5px]">
         <QuoteCols readOnly={readOnly} />
         <thead>
           <tr className="bg-surface-elevated/60 border-b border-divider">
@@ -176,7 +210,8 @@ export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly
   // Move the cursor into a line that was just created from the empty row.
   useEffect(() => {
     if (!focusKey) return
-    const el = inputs.current.get(focusKey)
+    const el = [inputs.current.get(focusKey), inputs.current.get(`m:${focusKey}`)].find(e => e && e.offsetParent !== null)
+      ?? inputs.current.get(focusKey)
     if (el) {
       el.focus()
       const end = el.value.length
@@ -232,22 +267,22 @@ export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly
   }
 
   const total = lines.length
-
-  const TH = 'px-2 py-2 text-[11px] font-semibold uppercase tracking-wide text-text-secondary whitespace-nowrap'
+  // Quote table headings: tighter on a phone so the whole table fits without scrolling.
+  const QTH = 'px-1 sm:px-2 py-2 text-[9.5px] sm:text-[11px] font-semibold uppercase tracking-wide text-text-secondary whitespace-nowrap overflow-hidden'
   const moneyInput = (value: string, onText: (t: string) => void, onBlur: () => void, label: string) => (
-    <label className="inline-flex items-center gap-1 h-8 w-full rounded-lg border border-divider px-2 text-[12px] text-text-secondary bg-background focus-within:border-primary/60">
-      {currencySymbol(currency)}
+    <label className="inline-flex items-center gap-1 h-8 w-full rounded-lg border border-divider px-1 sm:px-2 text-[12px] text-text-secondary bg-background focus-within:border-primary/60">
+      <span className="hidden sm:inline">{currencySymbol(currency)}</span>
       <input value={value} inputMode="decimal" placeholder="0.00" aria-label={label}
         onChange={e => onText(e.target.value)} onBlur={onBlur}
-        className="w-full min-w-0 text-right text-[13px] text-text-primary bg-transparent focus:outline-none" />
+        className="w-full min-w-0 text-right text-[12px] sm:text-[13px] text-text-primary bg-transparent focus:outline-none" />
     </label>
   )
 
   const pctInput = (value: string, onText: (t: string) => void, onBlur: () => void, label: string, disabled: boolean, title?: string) => (
-    <label title={title} className={`inline-flex items-center gap-1 h-8 w-full rounded-lg border border-divider px-2 text-[12px] text-text-secondary bg-background focus-within:border-primary/60 ${disabled ? 'opacity-50' : ''}`}>
+    <label title={title} className={`inline-flex items-center gap-0.5 sm:gap-1 h-8 w-full rounded-lg border border-divider px-1 sm:px-2 text-[11px] sm:text-[12px] text-text-secondary bg-background focus-within:border-primary/60 ${disabled ? 'opacity-50' : ''}`}>
       <input value={value} inputMode="decimal" placeholder={disabled ? '—' : '0'} aria-label={label} disabled={disabled}
         onChange={e => onText(e.target.value)} onBlur={onBlur}
-        className="w-full min-w-0 text-right text-[13px] text-text-primary bg-transparent focus:outline-none disabled:cursor-not-allowed" />
+        className="w-full min-w-0 text-right text-[12px] sm:text-[13px] text-text-primary bg-transparent focus:outline-none disabled:cursor-not-allowed" />
       %
     </label>
   )
@@ -264,22 +299,22 @@ export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly
       {/* Quotes: the items as a table: item, qty, cost price, selling price, discount, margin, line total; the totals are in their own card below. */}
       {showCost ? (lines.length === 0 ? null : (
       <div className="overflow-x-auto border-t border-divider/70">
-        <table className="w-full text-[13px]" style={{ minWidth: 840 }}>
+        <table className="w-full table-fixed text-[12px] sm:text-[13px]">
           <QuoteCols readOnly={readOnly} />
           <thead>
             <tr className="bg-surface-elevated/60 border-b border-divider">
-              <th className={`${TH} text-left pl-5`}>Item</th>
-              <th className={`${TH} text-center`}>Qty</th>
-              <th className={`${TH} text-right`} title="Only your team sees this">
-                <span className="inline-flex items-center gap-1"><span className="material-icons !text-[12px] !leading-none">lock</span>Cost price</span>
+              <th className={`${QTH} text-left pl-5 hidden sm:table-cell`}>Item</th>
+              <th className={`${QTH} text-center`}>Qty</th>
+              <th className={`${QTH} text-right`} title="Only your team sees this">
+                <span className="inline-flex items-center gap-1"><span className="material-icons !text-[12px] !leading-none hidden sm:inline">lock</span><span className="sm:hidden">Cost</span><span className="hidden sm:inline">Cost price</span></span>
               </th>
-              <th className={`${TH} text-right`}>Selling price</th>
-              <th className={`${TH} text-right`}>Discount</th>
-              <th className={`${TH} text-right`} title="Only your team sees this. Change it to work out the selling price from the cost.">
-                <span className="inline-flex items-center gap-1"><span className="material-icons !text-[12px] !leading-none">lock</span>Margin</span>
+              <th className={`${QTH} text-right`}><span className="sm:hidden">Price</span><span className="hidden sm:inline">Selling price</span></th>
+              <th className={`${QTH} text-right`}><span className="sm:hidden">Disc</span><span className="hidden sm:inline">Discount</span></th>
+              <th className={`${QTH} text-right`} title="Only your team sees this. Change it to work out the selling price from the cost.">
+                <span className="inline-flex items-center gap-1"><span className="material-icons !text-[12px] !leading-none hidden sm:inline">lock</span>Margin</span>
               </th>
-              <th className={`${TH} text-right pr-5`}>Total</th>
-              {!readOnly && <th className={TH} />}
+              <th className={`${QTH} text-right pr-2 sm:pr-5`}>Total</th>
+              {!readOnly && <th className={QTH} />}
             </tr>
           </thead>
           <tbody>
@@ -294,8 +329,33 @@ export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly
               const clearDraft = (set: typeof setPriceDraft) => () => set(d => { const n = { ...d }; delete n[l.key]; return n })
               return (
                 <Fragment key={l.key}>
+                  <tr className="sm:hidden">
+                    <td colSpan={readOnly ? 6 : 7} className="pt-2 pb-0.5 px-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="w-2 h-2 rounded-[3px] shrink-0" style={{ background: kind.dot }} title={kind.label} aria-hidden />
+                        {l.type === 'custom' && !readOnly ? (
+                          <input
+                            ref={el => { if (el) inputs.current.set(`m:${l.key}`, el); else inputs.current.delete(`m:${l.key}`) }}
+                            value={l.description}
+                            onChange={e => { update(l.key, { description: e.target.value }); setActiveKey(l.key) }}
+                            onFocus={() => setActiveKey(l.key)}
+                            onBlur={() => setTimeout(() => setActiveKey(k => (k === l.key ? null : k)), 120)}
+                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); setActiveKey(null); ghostRef.current?.focus() } }}
+                            placeholder="Describe the work or item"
+                            aria-label="Description"
+                            className="flex-1 min-w-0 h-8 rounded-lg border border-divider px-2.5 text-[13px] text-text-primary bg-background focus:outline-none focus:border-primary/60"
+                          />
+                        ) : (
+                          <span className="min-w-0 truncate" title={l.description}>
+                            <span className="font-medium text-text-primary">{l.description || '—'}</span>
+                            {l.hint && <span className="ml-1.5 text-[11.5px] text-text-secondary/80">{l.hint}</span>}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
                   <tr className="border-b border-divider/60 align-middle">
-                    <td className="py-1.5 pl-5 pr-2">
+                    <td className="py-1.5 pl-5 pr-2 hidden sm:table-cell">
                       <div className="flex items-center gap-2 min-w-0">
                         <span className="w-2 h-2 rounded-[3px] shrink-0" style={{ background: kind.dot }} title={kind.label} aria-hidden />
                         {l.type === 'custom' && !readOnly ? (
@@ -318,22 +378,24 @@ export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly
                         )}
                       </div>
                     </td>
-                    <td className="py-1.5 px-2">
+                    <td className="py-1.5 px-1 sm:px-2">
                       {isService ? (
-                        <span className="block text-center text-[11.5px] px-2 py-1 rounded-md whitespace-nowrap" style={{ color: kind.fg, background: kind.bg }}>Fixed price</span>
+                        <span className="block text-center text-[10.5px] sm:text-[11.5px] px-1 sm:px-2 py-1 rounded-md whitespace-nowrap overflow-hidden" style={{ color: kind.fg, background: kind.bg }}>
+                          <span className="sm:hidden">Fixed</span><span className="hidden sm:inline">Fixed price</span>
+                        </span>
                       ) : (
-                        <div className="flex items-center h-8 rounded-lg border border-divider overflow-hidden mx-auto w-fit">
+                        <div className="flex items-center h-8 rounded-lg border border-divider overflow-hidden w-full sm:w-fit sm:mx-auto">
                           <button type="button" disabled={readOnly} aria-label="Fewer" onClick={() => update(l.key, { qty: Math.max(1, (Number(l.qty) || 1) - 1) })}
-                            className="w-7 h-8 bg-surface-elevated text-[14px] text-text-secondary hover:text-text-primary disabled:opacity-40">−</button>
+                            className="hidden sm:block w-7 h-8 bg-surface-elevated text-[14px] text-text-secondary hover:text-text-primary disabled:opacity-40">−</button>
                           <input value={String(l.qty)} disabled={readOnly} inputMode="decimal" aria-label="Quantity"
                             onChange={e => { const n = parseFloat(e.target.value.replace(',', '.')); update(l.key, { qty: Number.isFinite(n) && n >= 0 ? n : 0 }) }}
-                            className="w-9 h-8 text-center text-[13px] font-semibold text-text-primary bg-transparent focus:outline-none" />
+                            className="w-full sm:w-9 min-w-0 h-8 text-center text-[12px] sm:text-[13px] font-semibold text-text-primary bg-transparent focus:outline-none" />
                           <button type="button" disabled={readOnly} aria-label="More" onClick={() => update(l.key, { qty: (Number(l.qty) || 0) + 1 })}
-                            className="w-7 h-8 bg-surface-elevated text-[14px] text-text-secondary hover:text-text-primary disabled:opacity-40">+</button>
+                            className="hidden sm:block w-7 h-8 bg-surface-elevated text-[14px] text-text-secondary hover:text-text-primary disabled:opacity-40">+</button>
                         </div>
                       )}
                     </td>
-                    <td className="py-1.5 px-2 text-right tabular-nums">
+                    <td className="py-1.5 px-1 sm:px-2 text-right tabular-nums">
                       {readOnly ? (cost > 0 ? formatCurrency(cost, currency) : '—') : moneyInput(
                         costDraft[l.key] ?? (cost ? cost.toFixed(2) : ''),
                         t => { setCostDraft(d => ({ ...d, [l.key]: t })); update(l.key, { unitCost: parseMoney(t) || null }) },
@@ -341,7 +403,7 @@ export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly
                         'Cost price',
                       )}
                     </td>
-                    <td className="py-1.5 px-2 text-right tabular-nums">
+                    <td className="py-1.5 px-1 sm:px-2 text-right tabular-nums">
                       {readOnly ? formatCurrency(l.unitPrice, currency) : moneyInput(
                         priceDraft[l.key] ?? (l.unitPrice ? l.unitPrice.toFixed(2) : ''),
                         t => { setPriceDraft(d => ({ ...d, [l.key]: t })); update(l.key, { unitPrice: parseMoney(t) }) },
@@ -349,7 +411,7 @@ export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly
                         'Selling price',
                       )}
                     </td>
-                    <td className="py-1.5 px-2 text-right tabular-nums">
+                    <td className="py-1.5 px-1 sm:px-2 text-right tabular-nums">
                       {readOnly ? (disc > 0 ? `${marginText(disc)}` : '—') : pctInput(
                         discDraft[l.key] ?? (disc ? String(disc) : ''),
                         t => { setDiscDraft(d => ({ ...d, [l.key]: t })); update(l.key, { discountPct: Math.min(100, Math.max(0, parsePct(t))) || null }) },
@@ -358,7 +420,7 @@ export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly
                         false,
                       )}
                     </td>
-                    <td className={`py-1.5 px-2 text-right tabular-nums ${margin != null && margin < 0 ? 'text-error' : ''}`}>
+                    <td className={`py-1.5 px-1 sm:px-2 text-right tabular-nums ${margin != null && margin < 0 ? 'text-error' : ''}`}>
                       {readOnly ? (margin != null ? marginText(margin) : '—') : pctInput(
                         marginDraft[l.key] ?? (margin != null ? String(Math.round(margin * 10) / 10) : ''),
                         t => {
@@ -372,11 +434,11 @@ export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly
                         cost > 0 ? undefined : 'Add the cost price first',
                       )}
                     </td>
-                    <td className="py-1.5 pl-2 pr-5 text-right tabular-nums font-semibold text-text-primary whitespace-nowrap">{formatCurrency(sell, currency)}</td>
+                    <td className="py-1.5 pl-1 pr-2 sm:pl-2 sm:pr-5 text-right tabular-nums font-semibold text-text-primary whitespace-nowrap overflow-hidden text-ellipsis">{formatCurrency(sell, currency)}</td>
                     {!readOnly && (
-                      <td className="py-1.5 pr-3 text-center">
+                      <td className="py-1.5 pr-0.5 sm:pr-3 text-center">
                         <button type="button" aria-label="Remove line" onClick={() => remove(l.key)}
-                          className="w-7 h-7 rounded-lg inline-flex items-center justify-center text-text-secondary/60 hover:text-error hover:bg-error/10">
+                          className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg inline-flex items-center justify-center text-text-secondary/60 hover:text-error hover:bg-error/10">
                           <span className="material-icons text-[16px]">close</span>
                         </button>
                       </td>
