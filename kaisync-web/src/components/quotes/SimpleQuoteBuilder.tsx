@@ -184,6 +184,8 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
 
   // ── Mutable refs (for use inside async callbacks without stale closures) ──
   const isLoaded       = useRef(false)
+  // An existing quote shows "Loading…" until it has loaded, so nothing is typed into an empty form first.
+  const [dataLoaded, setDataLoaded] = useState(!initialQuoteId)
   const autoSaveTimer  = useRef<ReturnType<typeof setTimeout> | null>(null)
   const savedFadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -262,7 +264,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   // ── Load data after auth resolves ──────────────────────────────────────────
   useEffect(() => {
     if (!authReady || !companyId) return
-    void loadData(companyId)
+    void loadData(companyId).finally(() => setDataLoaded(true))
     void companyLetterhead(supabase, companyId).then(setLetterhead)
   }, [authReady, companyId]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1083,7 +1085,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  if (!authReady) {
+  if (!authReady || !dataLoaded) {
     return (
       <div className="flex items-center justify-center h-64 gap-2 text-text-secondary text-[13px]">
         <span className="material-icons animate-spin text-primary text-[20px]">refresh</span>
