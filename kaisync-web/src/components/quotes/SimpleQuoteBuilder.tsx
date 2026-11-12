@@ -25,7 +25,7 @@ import {
 } from '@/lib/quote-vat'
 import { escapeIlike } from '@/lib/list-pagination'
 import { LineItemsEditor, QuoteTotalsRows } from '@/components/money/LineItemsEditor'
-import { createInvoiceFromQuote } from '@/lib/money/quote-invoice'
+import { createInvoiceFromQuote, openInvoiceForQuote } from '@/lib/money/quote-invoice'
 import { CurrencyPicker } from '@/components/money/CurrencyPicker'
 import { formatCurrency } from '@/lib/currencies'
 import { asItemType, lineQty, lineTotal, loadPickItems, type EditorLine, type ItemType, type PickItem } from '@/lib/line-items'
@@ -185,6 +185,12 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
 
   // ── Mutable refs (for use inside async callbacks without stale closures) ──
   const isLoaded       = useRef(false)
+  // An accepted quote is an order: it is read-only until someone chooses "Make changes" (and confirms).
+  const [unlocked, setUnlocked] = useState(false)
+  const [confirmUnlock, setConfirmUnlock] = useState(false)
+  const lockedRef = useRef(false)
+  // The order's open invoice, if it has one ("Open invoice" instead of "Create invoice").
+  const [openInvoiceId, setOpenInvoiceId] = useState<string | null>(null)
   // An existing quote shows "Loading…" until it has loaded, so nothing is typed into an empty form first.
   const [dataLoaded, setDataLoaded] = useState(!initialQuoteId)
   const autoSaveTimer  = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -268,6 +274,15 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
     void loadData(companyId).finally(() => setDataLoaded(true))
     void companyLetterhead(supabase, companyId).then(setLetterhead)
   }, [authReady, companyId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const locked = status === 'accepted' && !unlocked
+  useEffect(() => { lockedRef.current = locked }, [locked])
+  useEffect(() => {
+    if (status !== 'accepted' || !companyId || !quoteId) return
+    let live = true
+    void openInvoiceForQuote(supabase, companyId, quoteId).then(id => { if (live) setOpenInvoiceId(id) })
+    return () => { live = false }
+  }, [status, companyId, quoteId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!companyId) return
@@ -579,7 +594,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
 
   // ── Auto-save scheduler ────────────────────────────────────────────────────
   function scheduleAutoSave() {
-    if (!isLoaded.current) return
+    if (!isLoaded.current || lockedRef.current) return
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
     autoSaveTimer.current = setTimeout(() => {
       // A new quote is only saved once it has a client or a line, so opening New quote and leaving
@@ -1040,6 +1055,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
               <input
                 value={title}
                 onChange={e => updateTitle(e.target.value)}
+                disabled={locked}
                 placeholder="Quote title (optional)"
                 className="text-[13px] text-text-secondary bg-transparent border-none outline-none mt-0.5 w-72 placeholder-text-secondary/40"
               />
@@ -1153,11 +1169,40 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
               className="h-11 px-5 rounded-xl bg-emerald-600 text-white text-[14px] font-semibold flex items-center gap-2 hover:bg-emerald-700 disabled:opacity-60"
             >
               <span className="material-icons text-[18px]">receipt_long</span>
-              {actionBusy ? 'Opening…' : 'Create invoice'}
+              {actionBusy ? 'Opening…' : openInvoiceId ? 'Open invoice' : 'Create invoice'}
             </button>
             </div>
           </div>
         )}
+
+        {status === 'accepted' && (locked ? (
+          confirmUnlock ? (
+            <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 space-y-2">
+              <p className="text-[13px] font-semibold text-amber-900">Change an accepted quote?</p>
+              <p className="text-[12.5px] text-amber-900">
+                The client accepted this quote as it is. Changes are saved on the quote only: {openInvoiceId ? 'its invoice is not changed, so check the invoice too' : 'the invoice made from it later will use the changes'}, and the client isn&apos;t told.
+              </p>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setConfirmUnlock(false)} className="h-8 px-3 rounded-lg border border-amber-300 bg-white text-[12.5px] text-amber-900 font-medium">Keep it locked</button>
+                <button type="button" onClick={() => { setUnlocked(true); setConfirmUnlock(false) }} className="h-8 px-3 rounded-lg bg-amber-600 text-white text-[12.5px] font-semibold">Make changes</button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-divider bg-surface-elevated px-4 py-2">
+              <p className="text-[12.5px] text-text-secondary flex items-center gap-1.5">
+                <span className="material-icons !text-[15px] !leading-none">lock</span>
+                Locked: this quote is an order now, so its lines, prices and client can&apos;t be changed by accident.
+              </p>
+              <button type="button" onClick={() => setConfirmUnlock(true)} className="h-7 px-3 rounded-lg border border-divider bg-surface text-[12px] font-medium text-text-primary hover:bg-surface-elevated">Make changes</button>
+            </div>
+          )
+        ) : (
+          <p className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-[12.5px] text-amber-900 flex items-center gap-1.5">
+            <span className="material-icons !text-[15px] !leading-none">edit</span>
+            You&apos;re changing an accepted quote. {openInvoiceId ? 'Its invoice is not changed: check it too.' : ''}
+            <button type="button" onClick={() => setUnlocked(false)} className="ml-auto h-7 px-3 rounded-lg border border-amber-300 bg-white text-[12px] font-medium">Lock again</button>
+          </p>
+        ))}
 
         {sentNote && !actionError && (
           <p className="text-[12px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 flex items-start gap-2">
@@ -1175,6 +1220,8 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
           </p>
         )}
 
+        {/* An accepted quote is locked: everything in here is read-only until "Make changes". */}
+        <fieldset disabled={locked} className="min-w-0 m-0 p-0 border-0 flex flex-col gap-6">
         {/* ── Quote meta ── */}
         <div className="rounded-xl border border-divider bg-surface px-4 py-3 grid grid-cols-2 sm:grid-cols-12 gap-x-3 gap-y-2.5">
 
@@ -1397,7 +1444,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         </div>
 
         {/* ── Items ── */}
-        <LineItemsEditor lines={editorLines} onChange={handleEditorChange} items={pickItems} itemsLoading={pickLoading} startOpen={!initialQuoteId} currency={quoteCurrency} showCost />
+        <LineItemsEditor lines={editorLines} onChange={handleEditorChange} items={pickItems} itemsLoading={pickLoading} startOpen={!initialQuoteId} currency={quoteCurrency} showCost readOnly={locked} />
 
         {/* ── Notes ── */}
         <div className="rounded-xl border border-divider overflow-hidden">
@@ -1415,13 +1462,14 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
           />
         </div>
         {/* ── Totals: rows in the same columns as the items ── */}
-        <QuoteTotalsRows lines={editorLines} currency={quoteCurrency} vatOn={vatOn}
+        <QuoteTotalsRows lines={editorLines} currency={quoteCurrency} vatOn={vatOn} readOnly={locked}
           vatLabel={vatOn ? `VAT (${vatPercentLabel(vatRate)}%)` : 'VAT'} vat={vat} total={total} onVat={updateVatOn} />
 
         <p className="-mt-2 px-1 text-[11.5px] text-text-secondary flex items-start gap-1">
           <span className="material-icons !text-[13px] !leading-[1.4]">lock</span>
           Cost price and margin are only for your team. They never show on the quote PDF or the client&apos;s page. Change the margin to set the selling price from the cost.
         </p>
+        </fieldset>
 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-[13px] text-text-secondary">
