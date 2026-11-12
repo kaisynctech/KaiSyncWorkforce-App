@@ -188,6 +188,9 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   // An accepted quote is an order: it is read-only until someone chooses "Make changes" (and confirms).
   const [unlocked, setUnlocked] = useState(false)
   const [confirmUnlock, setConfirmUnlock] = useState(false)
+  // A draft that was never sent can be deleted (after asking).
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const lockedRef = useRef(false)
   // The order's open invoice, if it has one ("Open invoice" instead of "Create invoice").
   const [openInvoiceId, setOpenInvoiceId] = useState<string | null>(null)
@@ -590,6 +593,27 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
       setSaveState('error')
       return null
     }
+  }
+
+  async function handleDeleteDraft() {
+    const cid = companyIdRef.current
+    const qid = quoteIdRef.current
+    if (!cid || !qid) return
+    setDeleting(true)
+    setActionError(null)
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
+    lockedRef.current = true // no autosave while it goes
+    // Only a draft that was never sent; its lines go with it.
+    const { data, error } = await supabase.from('commercial_quotes').delete()
+      .eq('id', qid).eq('company_id', cid).eq('status', 'draft').is('sent_at', null).select('id')
+    setDeleting(false)
+    if (error || !data?.length) {
+      lockedRef.current = false
+      setConfirmDelete(false)
+      setActionError(error?.message ?? 'Only a draft that was never sent can be deleted.')
+      return
+    }
+    router.push('/dashboard/money/quotes')
   }
 
   // ── Auto-save scheduler ────────────────────────────────────────────────────
@@ -1097,6 +1121,16 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
               {status === 'draft' ? 'Save draft' : 'Save'}
             </button>
             )}
+            {status === 'draft' && quoteId && (
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(true)}
+                className="h-9 px-3 rounded-lg border border-divider text-[13px] text-text-secondary font-medium hover:bg-red-50 hover:text-error transition-colors flex items-center gap-1"
+              >
+                <span className="material-icons text-[15px]">delete</span>
+                Delete
+              </button>
+            )}
             <button
               type="button"
               onClick={handleDownloadPdf}
@@ -1214,6 +1248,17 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
               <span className="material-icons text-[15px]">close</span>
             </button>
           </p>
+        )}
+
+        {confirmDelete && (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 space-y-2">
+            <p className="text-[13px] font-semibold text-red-900">Delete draft {quoteNumber ?? ''}?</p>
+            <p className="text-[12.5px] text-red-900">The quote and its lines are removed for good. Only drafts that were never sent can be deleted.</p>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setConfirmDelete(false)} className="h-8 px-3 rounded-lg border border-red-200 bg-white text-[12.5px] text-red-900 font-medium">Keep it</button>
+              <button type="button" disabled={deleting} onClick={() => void handleDeleteDraft()} className="h-8 px-3 rounded-lg bg-red-600 text-white text-[12.5px] font-semibold disabled:opacity-60">{deleting ? 'Deleting…' : 'Delete draft'}</button>
+            </div>
+          </div>
         )}
 
         {actionError && !showWhatsNext && !showAcceptModal && (

@@ -10,6 +10,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { letterheadFromRow, loadLetterheadLogo, bankLines } from '@/lib/letterhead'
+import { currencySymbol } from '@/lib/currencies'
 import {
   callPublicDocument, dayZA, fileToBase64, publicLogoUrl, randZA,
   type PublicInvoiceView, type PublicQuoteView, type PublicResult, type PublicView,
@@ -199,7 +200,7 @@ function InvoiceView({ token, v, onChange }: { token: string; v: PublicInvoiceVi
         </Card>
       )}
 
-      {v.can_pay && <ProofForm token={token} balance={Number(d.balance)} onDone={onChange} proofs={v.proofs} />}
+      {v.can_pay && <ProofForm token={token} balance={Number(d.balance)} currency={d.currency} onDone={onChange} proofs={v.proofs} />}
 
       <Card>
         <p className="text-[14px] font-semibold mb-1">Details</p>
@@ -229,7 +230,7 @@ function FragmentRow({ k, v, strong }: { k: string; v: string; strong?: boolean 
   )
 }
 
-function ProofForm({ token, balance, onDone, proofs }: { token: string; balance: number; onDone: () => Promise<void>; proofs: PublicInvoiceView['proofs'] }) {
+function ProofForm({ token, balance, currency, onDone, proofs }: { token: string; balance: number; currency?: string | null; onDone: () => Promise<void>; proofs: PublicInvoiceView['proofs'] }) {
   const [file, setFile] = useState<File | null>(null)
   const [amount, setAmount] = useState(balance > 0 ? balance.toFixed(2) : '')
   const [reference, setReference] = useState('')
@@ -265,7 +266,7 @@ function ProofForm({ token, balance, onDone, proofs }: { token: string; balance:
         </label>
         <div className="grid grid-cols-2 gap-3">
           <label className="block">
-            <span className="text-[12.5px] font-medium text-slate-600">Amount paid (R)</span>
+            <span className="text-[12.5px] font-medium text-slate-600">Amount paid ({currencySymbol(currency ?? 'ZAR')})</span>
             <input inputMode="decimal" value={amount} onChange={e => setAmount(e.target.value.replace(/[^\d.]/g, ''))}
               className="mt-1 w-full h-11 rounded-xl border border-slate-300 px-3 text-[14px] bg-white" />
           </label>
