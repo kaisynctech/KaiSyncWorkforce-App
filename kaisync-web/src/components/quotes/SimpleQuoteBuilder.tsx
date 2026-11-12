@@ -25,6 +25,7 @@ import {
 } from '@/lib/quote-vat'
 import { escapeIlike } from '@/lib/list-pagination'
 import { LineItemsEditor, QuoteTotalsRows } from '@/components/money/LineItemsEditor'
+import { createInvoiceFromQuote } from '@/lib/money/quote-invoice'
 import { CurrencyPicker } from '@/components/money/CurrencyPicker'
 import { formatCurrency } from '@/lib/currencies'
 import { asItemType, lineQty, lineTotal, loadPickItems, type EditorLine, type ItemType, type PickItem } from '@/lib/line-items'
@@ -948,102 +949,13 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
     if (!cid || !qid) return
     setActionBusy(true)
     setActionError(null)
-
-    // One invoice per accepted quote: open the one already made (unless it was voided or cancelled).
-    const { data: existing } = await supabase
-      .from('finance_invoices')
-      .select('id')
-      .eq('company_id', cid)
-      .eq('quote_id', qid)
-      .not('status', 'in', '(voided,cancelled)')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    if (existing) {
-      setActionBusy(false)
-      setShowWhatsNext(false)
-      router.push(`/dashboard/money/invoices/${(existing as { id: string }).id}`)
-      return
-    }
-
-    const ls = linesRef.current.filter(l => l.description.trim() || l.total > 0)
-    const lineSubtotal = ls.reduce((s, l) => s + l.total, 0)
-    const money = quoteMoney(lineSubtotal, vatOnRef.current, vatRateRef.current)
-    const lineVat = money.vat
-    const lineTotal = money.total
-    const rate = money.vatRate
-    const taxType = rate > 0 ? 'standard' : 'exempt'
-    const issue = new Date().toISOString().slice(0, 10)
-
-    const { data: inv, error: invErr } = await supabase
-      .from('finance_invoices')
-      .insert({
-        company_id: cid,
-        client_id: clientIdRef.current,
-        deal_id: dealIdRef.current,
-        project_id: dealIdRef.current,
-        job_id: jobIdRef.current,
-        quote_id: qid,
-        invoice_number: null,
-        status: 'draft',
-        currency: quoteCurrencyRef.current,
-        subtotal: lineSubtotal,
-        vat_rate: rate,
-        vat_amount: lineVat,
-        total_amount: lineTotal,
-        amount_paid: 0,
-        balance_due: lineTotal,
-        is_vat_inclusive: false,
-        tax_type: taxType,
-        issue_date: issue,
-        due_date: null,
-        created_by: eid,
-        invoice_type: 'standard',
-      })
-      .select('id')
-      .maybeSingle()
-
-    if (invErr || !inv) {
-      setActionError(invErr?.message ?? 'Failed to create invoice')
-      setActionBusy(false)
-      return
-    }
-
-    const invId = (inv as { id: string }).id
-    if (ls.length > 0) {
-      const { error: lineErr } = await supabase.from('finance_invoice_lines').insert(
-        ls.map((l, i) => {
-          const sub = l.total
-          const vatAmt = sub * rate
-          return {
-            company_id: cid,
-            invoice_id: invId,
-            line_no: i + 1,
-            description: l.description.trim() || `Line ${i + 1}`,
-            quantity: l.qty,
-            unit_price: l.unit_price,
-            subtotal: sub,
-            vat_rate: rate,
-            vat_amount: vatAmt,
-            total_amount: sub + vatAmt,
-            is_vat_inclusive: false,
-            tax_type: taxType,
-            item_type: l.item_type,
-            source_id: l.source_id,
-            unit: l.unit || null,
-          }
-        }),
-      )
-      if (lineErr) {
-        setActionError(lineErr.message)
-        setActionBusy(false)
-        return
-      }
-    }
-
+    // Any unsaved change goes in first; then the same rules as everywhere else (one open invoice per quote).
+    if (autoSaveTimer.current) { clearTimeout(autoSaveTimer.current); await doSave() }
+    const r = await createInvoiceFromQuote(supabase, { companyId: cid, quoteId: qid, employeeId: eid })
     setActionBusy(false)
+    if ('error' in r) { setActionError(r.error); return }
     setShowWhatsNext(false)
-    router.push(`/dashboard/money/invoices/${invId}/edit`)
+    router.push(r.created ? `/dashboard/money/invoices/${r.id}/edit` : `/dashboard/money/invoices/${r.id}`)
   }
 
   async function handleCreateRfqFromQuote() {
@@ -1223,9 +1135,17 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
               </span>
               <div>
                 <p className="text-[14.5px] font-semibold text-emerald-900">Quote accepted{clientName ? ` by ${clientName}` : ''}</p>
-                <p className="text-[12.5px] text-emerald-800">Turn it into an invoice: every line, price and the client come across.</p>
+                <p className="text-[12.5px] text-emerald-800">It&apos;s now an order. See everything for it in one place: invoices, payments, purchasing and credit notes.</p>
               </div>
             </div>
+            <div className="flex flex-wrap gap-2">
+            <Link
+              href={`/dashboard/money/orders/${quoteId}`}
+              className="h-11 px-5 rounded-xl border border-emerald-300 bg-white text-emerald-800 text-[14px] font-semibold flex items-center gap-2 hover:bg-emerald-100"
+            >
+              <span className="material-icons text-[18px]">assignment_turned_in</span>
+              Open order
+            </Link>
             <button
               type="button"
               disabled={actionBusy}
@@ -1235,6 +1155,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
               <span className="material-icons text-[18px]">receipt_long</span>
               {actionBusy ? 'Opening…' : 'Create invoice'}
             </button>
+            </div>
           </div>
         )}
 

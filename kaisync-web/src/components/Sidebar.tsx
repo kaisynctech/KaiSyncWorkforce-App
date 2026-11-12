@@ -85,6 +85,7 @@ const NAV_SECTIONS: NavSection[] = [
       { label: 'Action Centre',     href: '/dashboard/money/action-centre',       icon: 'bolt',            flag: 'commercial', group: 'Finance' },
       { label: 'Money overview',    href: '/dashboard/money',                     icon: 'account_balance', flag: 'finance',    group: 'Finance' },
       { label: 'Sales Quotes',      href: '/dashboard/money/quotes',              icon: 'request_quote',   flag: 'commercial', group: 'Client' },
+      { label: 'Orders',            href: '/dashboard/money/orders',              icon: 'assignment_turned_in', flag: 'commercial', group: 'Client' },
       { label: 'Invoices',          href: '/dashboard/money/invoices',            icon: 'receipt_long',    flag: 'commercial', group: 'Client' },
       { label: 'Credit Notes',      href: '/dashboard/money/credit-notes',        icon: 'undo',            flag: 'commercial', group: 'Client' },
       { label: 'Recurring invoices', href: '/dashboard/money/recurring',          icon: 'event_repeat',    flag: 'commercial', group: 'Client' },

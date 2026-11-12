@@ -43,6 +43,8 @@ export default function PoBuilder({ poId }: { poId?: string }) {
   const preRfqId = searchParams.get('rfq_id')
   const preRecipientId = searchParams.get('recipient_id')
   const preSupplier = searchParams.get('supplier_id')
+  // From an order (Money → Orders → Purchasing → Create PO): the order's quote lines, at their cost price.
+  const preQuoteId = searchParams.get('quote_id')
 
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [employeeId, setEmployeeId] = useState<string | null>(null)
@@ -202,13 +204,34 @@ export default function PoBuilder({ poId }: { poId?: string }) {
           setLines([{ key: nk(), description: '', unit: 'each', quantity_ordered: '1', unit_price: '0', vat_rate: '15' }])
           if (preSupplier) setSupplierId(preSupplier)
         }
+      } else if (preQuoteId) {
+        setQuoteId(preQuoteId)
+        const [{ data: q }, { data: qLines }] = await Promise.all([
+          supabase.from('commercial_quotes').select('deal_id').eq('id', preQuoteId).eq('company_id', member.companyId).maybeSingle(),
+          supabase.from('commercial_quote_lines').select('id, description, unit, quantity, cost_price, is_excluded')
+            .eq('quote_id', preQuoteId).order('sort_order'),
+        ])
+        const dl = (q as { deal_id?: string | null } | null)?.deal_id
+        if (dl) setDealId(dl)
+        const rows = ((qLines ?? []) as { id: string; description: string | null; unit: string | null; quantity: number | null; cost_price: number | null; is_excluded: boolean | null }[])
+          .filter(l => !l.is_excluded && (l.description ?? '').trim())
+        setLines(rows.length ? rows.map(l => ({
+          key: nk(),
+          description: l.description ?? '',
+          unit: l.unit || 'each',
+          quantity_ordered: String(l.quantity ?? 1),
+          unit_price: String(Number(l.cost_price) || 0),
+          vat_rate: '15',
+          quote_line_id: l.id,
+        })) : [{ key: nk(), description: '', unit: 'each', quantity_ordered: '1', unit_price: '0', vat_rate: '15' }])
+        if (preSupplier) setSupplierId(preSupplier)
       } else {
         setLines([{ key: nk(), description: '', unit: 'each', quantity_ordered: '1', unit_price: '0', vat_rate: '15' }])
         if (preSupplier) setSupplierId(preSupplier)
       }
     }
     setLoading(false)
-  }, [isNew, preRfqId, preRecipientId, preSupplier])
+  }, [isNew, preRfqId, preRecipientId, preSupplier, preQuoteId])
 
   useEffect(() => { void load() }, [load])
 

@@ -130,7 +130,7 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
-export type DocListScope = { clientId?: string | null; jobId?: string | null; dealId?: string | null }
+export type DocListScope = { clientId?: string | null; jobId?: string | null; dealId?: string | null; quoteId?: string | null }
 
 /** Query string that pre-fills a new document with this scope (job / project / client). */
 export function scopeQuery(scope: DocListScope, withProject = false): string {
@@ -146,7 +146,11 @@ export function scopeQuery(scope: DocListScope, withProject = false): string {
  * The invoices table used on Money → Invoices and, embedded, on a job or project (same columns, filters,
  * status tabs and Xero marks). Embedded: no page header, no scope chips, "+ Invoice" pre-fills the job/project.
  */
-export function InvoicesList({ clientId = null, jobId = null, dealId = null, embedded = false, prefill }: DocListScope & { embedded?: boolean; prefill?: DocListScope }) {
+export function InvoicesList({ clientId = null, jobId = null, dealId = null, quoteId = null, embedded = false, prefill, onNew, newLabel }: DocListScope & {
+  embedded?: boolean; prefill?: DocListScope
+  /** Replaces the "+ Invoice" link (an order makes its invoice from the quote). */
+  onNew?: () => void; newLabel?: string
+}) {
   const router = useRouter()
   const clientFilter = clientId
   const jobFilter = jobId
@@ -187,6 +191,7 @@ export function InvoicesList({ clientId = null, jobId = null, dealId = null, emb
       if (clientFilter) q = q.eq('client_id', clientFilter)
       if (jobFilter) q = q.eq('job_id', jobFilter)
       if (dealFilter) q = q.or(`deal_id.eq.${dealFilter},project_id.eq.${dealFilter}`)
+      if (quoteId) q = q.eq('quote_id', quoteId)
 
       const listRes = await q
       if (listRes.error) {
@@ -220,7 +225,7 @@ export function InvoicesList({ clientId = null, jobId = null, dealId = null, emb
     } finally {
       setLoading(false)
     }
-  }, [clientFilter, jobFilter, dealFilter])
+  }, [clientFilter, jobFilter, dealFilter, quoteId])
 
   useEffect(() => {
     void load()
@@ -280,12 +285,18 @@ export function InvoicesList({ clientId = null, jobId = null, dealId = null, emb
             : <h1 className="text-[18px] font-semibold text-text-primary leading-tight">Invoices</h1>}
           {!embedded && <p className="text-[11px] text-text-secondary mt-0.5">Sales invoices you send to clients</p>}
         </div>
-        <Link
-          href={`/dashboard/money/invoices/new${scopeQuery(prefill ?? { clientId, jobId, dealId }, true)}`}
-          className="btn-primary h-8 px-3 text-[12px] flex items-center gap-1"
-        >
-          <span className="material-icons text-[16px]">add</span>Invoice
-        </Link>
+        {onNew ? (
+          <button type="button" onClick={onNew} className="btn-primary h-8 px-3 text-[12px] flex items-center gap-1">
+            <span className="material-icons text-[16px]">add</span>{newLabel ?? 'Invoice'}
+          </button>
+        ) : (
+          <Link
+            href={`/dashboard/money/invoices/new${scopeQuery(prefill ?? { clientId, jobId, dealId }, true)}`}
+            className="btn-primary h-8 px-3 text-[12px] flex items-center gap-1"
+          >
+            <span className="material-icons text-[16px]">add</span>Invoice
+          </Link>
+        )}
       </div>
 
       <div className="flex gap-2 px-4 py-2 border-b border-divider shrink-0 flex-wrap bg-surface items-center">
