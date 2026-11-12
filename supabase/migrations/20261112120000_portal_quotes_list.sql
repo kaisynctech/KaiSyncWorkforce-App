@@ -42,6 +42,7 @@ BEGIN
       AND (d.id IS NULL OR d.visibility <> 'private')
       AND (q.status IN ('sent', 'viewed')
            OR (q.status IN ('accepted', 'declined') AND coalesce(q.accepted_at, q.declined_at, q.updated_at) > now() - interval '90 days'))
+    ORDER BY waiting DESC, q.sent_at DESC NULLS LAST
     LIMIT 50
   ) t;
   RETURN v;
