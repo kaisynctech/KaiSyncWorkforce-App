@@ -29,6 +29,9 @@ import { createInvoiceFromQuote, openInvoiceForQuote } from '@/lib/money/quote-i
 import { CurrencyPicker } from '@/components/money/CurrencyPicker'
 import { formatCurrency } from '@/lib/currencies'
 import { asItemType, lineQty, lineTotal, loadPickItems, type EditorLine, type ItemType, type PickItem } from '@/lib/line-items'
+import { BuyoutPanel, SupplyPill, type BuyoutChoice, type BuyoutQuoteLine } from '@/components/quotes/BuyoutPanel'
+import { ensureBuyout, loadBuyout, type Buyout } from '@/lib/money/buyout'
+import { priceAfterChoice, supplyModeOf, type SupplyMode } from '@/lib/money/quote-supply'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -50,6 +53,11 @@ export interface SimpleQuoteLine {
   unit_cost?:         number | null
   /** Discount on the line, in %. total is after the discount. */
   discount_pct?:      number | null
+  /** How it is supplied (null: worked out from the item, see quote-supply). */
+  supply_mode?:       SupplyMode | null
+  /** Buyout: the supplier chosen for it, and their reply. */
+  supplier_id?:       string | null
+  chosen_response_line_id?: string | null
 }
 
 type ClientRow = {
@@ -83,7 +91,7 @@ function todayPlus(days: number): string {
 
 function blankLine(): SimpleQuoteLine {
   return {
-    id:                null,
+    id:                crypto.randomUUID(),
     tempId:            crypto.randomUUID(),
     description:       '',
     qty:               1,
@@ -424,6 +432,9 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
           source_id:         ((row.job_service_id ?? row.inventory_item_id ?? row.catalogue_item_id) as string | null) ?? null,
           unit_cost:         Number(row.cost_price ?? 0) > 0 ? Number(row.cost_price) : null,
           discount_pct:      Number(row.discount_percent ?? 0) > 0 ? Number(row.discount_percent) : null,
+          supply_mode:       (row.supply_mode as SupplyMode | null) ?? null,
+          supplier_id:       (row.supplier_id as string | null) ?? null,
+          chosen_response_line_id: (row.chosen_response_line_id as string | null) ?? null,
         }))
         // total is after the line's discount.
         for (const m of mapped) m.total = lineTotal({ type: m.item_type, qty: m.qty, unitPrice: m.unit_price, discountPct: m.discount_pct })
@@ -552,11 +563,16 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         statusRef.current = overrideStatus
       }
 
-      // Save lines: delete all + re-insert
-      await supabase.from('commercial_quote_lines').delete().eq('quote_id', savedId)
+      // Save lines: each line keeps its id (suppliers' prices and purchase orders point at it); removed lines are deleted.
+      for (const l of ls) if (!l.id) l.id = crypto.randomUUID()
+      const keepIds = ls.map(l => l.id as string)
+      const del = supabase.from('commercial_quote_lines').delete().eq('quote_id', savedId)
+      const { error: delErr } = keepIds.length ? await del.not('id', 'in', `(${keepIds.join(',')})`) : await del
+      if (delErr) throw delErr
       if (ls.length > 0) {
-        await supabase.from('commercial_quote_lines').insert(
+        const { error: lineErr } = await supabase.from('commercial_quote_lines').upsert(
           ls.map((l, i) => ({
+            id:                l.id,
             company_id:        cid,
             quote_id:          savedId,
             sort_order:        i,
@@ -579,8 +595,12 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
             is_optional:       false,
             is_excluded:       false,
             item_type:         l.item_type === 'service' ? 'labour' : 'material',
-          }))
+            supply_mode:       supplyModeOf(l.supply_mode, l.item_type, l.qty, onHandOf(l)),
+            supplier_id:       l.supplier_id ?? null,
+            chosen_response_line_id: l.chosen_response_line_id ?? null,
+          })),
         )
+        if (lineErr) throw lineErr
       }
 
       setSaveState('saved')
@@ -731,8 +751,9 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
     const byKey = new Map(linesRef.current.map(l => [l.tempId, l]))
     const mapped: SimpleQuoteLine[] = next.map((e, i) => {
       const prev = byKey.get(e.key)
+      const sameItem = !!prev && prev.item_type === e.type && prev.source_id === e.sourceId
       return {
-        id:                prev?.id ?? null,
+        id:                prev?.id ?? crypto.randomUUID(),
         tempId:            e.key,
         description:       e.description,
         qty:               lineQty(e),
@@ -746,11 +767,145 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         hint:              e.hint ?? null,
         unit_cost:         e.unitCost ?? null,
         discount_pct:      e.discountPct ?? null,
+        supply_mode:       sameItem ? prev?.supply_mode ?? null : null,
+        supplier_id:       sameItem ? prev?.supplier_id ?? null : null,
+        chosen_response_line_id: sameItem ? prev?.chosen_response_line_id ?? null : null,
       }
     })
     setLines(mapped)
     linesRef.current = mapped
     scheduleAutoSave()
+  }
+
+  // ── How lines are supplied, and the Buyout tab ────────────────────────────
+  function onHandOf(l: Pick<SimpleQuoteLine, 'item_type' | 'source_id'>): number | null {
+    if (l.item_type !== 'inventory' || !l.source_id) return null
+    return pickItems.find(p => p.type === 'inventory' && p.sourceId === l.source_id)?.onHand ?? null
+  }
+  const modeOf = (l: SimpleQuoteLine) => supplyModeOf(l.supply_mode, l.item_type, l.qty, onHandOf(l))
+
+  function setSupplyMode(tempId: string, mode: SupplyMode) {
+    setLines(prev => {
+      const next = prev.map(l => (l.tempId === tempId ? { ...l, supply_mode: mode, ...(mode === 'outsource' ? {} : { supplier_id: null, chosen_response_line_id: null }) } : l))
+      linesRef.current = next
+      return next
+    })
+    scheduleAutoSave()
+  }
+
+  const [quoteView, setQuoteView] = useState<'items' | 'buyout'>('items')
+  const [buyout, setBuyout] = useState<Buyout | null>(null)
+  const [keepMode, setKeepMode] = useState<'margin' | 'price'>(() => {
+    try { return localStorage.getItem('kaisync.buyout.keep') === 'price' ? 'price' : 'margin' } catch { return 'margin' }
+  })
+  const [defaultMargin, setDefaultMargin] = useState<number>(() => {
+    try { const n = Number(localStorage.getItem('kaisync.buyout.margin')); return n > 0 && n < 95 ? n : 25 } catch { return 25 }
+  })
+  function rememberKeep(k: 'margin' | 'price') { setKeepMode(k); try { localStorage.setItem('kaisync.buyout.keep', k) } catch { /* fine */ } }
+  function rememberMargin(n: number) { setDefaultMargin(n); try { localStorage.setItem('kaisync.buyout.margin', String(n)) } catch { /* fine */ } }
+
+  async function reloadBuyout() {
+    const cid = companyIdRef.current
+    const qid = quoteIdRef.current
+    if (!cid || !qid) return
+    setBuyout(await loadBuyout(supabase, cid, qid))
+  }
+
+  // Suppliers' replies for the Supply pills (once the quote is open).
+  useEffect(() => {
+    if (!dataLoaded || !companyId || !quoteId) return
+    void loadBuyout(supabase, companyId, quoteId).then(setBuyout)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataLoaded, companyId, quoteId])
+
+  /** Saves the quote and brings the buyout in step with its outsourced lines. Returns an error, or null. */
+  async function ensureQuoteBuyout(): Promise<string | null> {
+    const cid = companyIdRef.current
+    const qid = await doSave()
+    if (!qid || !cid) return 'Save the quote first (it needs a client or a line).'
+    const out = linesRef.current.filter(l => modeOf(l) === 'outsource' && l.id && l.description.trim())
+    const r = await ensureBuyout(supabase, {
+      companyId: cid, quoteId: qid, employeeId: employeeIdRef.current, title: titleRef.current || 'Request for quotation',
+      dealId: dealIdRef.current, lines: out.map(l => ({ id: l.id as string, description: l.description, qty: l.qty, unit: l.unit })),
+    })
+    if ('error' in r) return r.error
+    await reloadBuyout()
+    return null
+  }
+
+  async function openBuyout() {
+    setQuoteView('buyout')
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  /** A supplier's price (or your own cost) chosen in the Buyout tab: it goes on the quote line. */
+  function chooseForLine(quoteLineId: string, choice: BuyoutChoice) {
+    setLines(prev => {
+      const next = prev.map(l => {
+        if (l.id !== quoteLineId) return l
+        const cost = 'ownCost' in choice ? choice.ownCost : choice.cost
+        const price = priceAfterChoice({ cost, prevCost: l.unit_cost, prevPrice: l.unit_price, discountPct: l.discount_pct, keep: keepMode, defaultMarginPct: defaultMargin })
+        const merged: SimpleQuoteLine = {
+          ...l, unit_cost: cost, unit_price: price,
+          supplier_id: 'ownCost' in choice ? null : choice.supplierId,
+          chosen_response_line_id: 'ownCost' in choice ? null : choice.responseLineId,
+        }
+        merged.total = lineTotal({ type: merged.item_type, qty: merged.qty, unitPrice: merged.unit_price, discountPct: merged.discount_pct })
+        return merged
+      })
+      linesRef.current = next
+      return next
+    })
+    scheduleAutoSave()
+  }
+
+  const outsourcedLines: BuyoutQuoteLine[] = lines.filter(l => l.id && modeOf(l) === 'outsource').map(l => ({
+    id: l.id as string, description: l.description, qty: l.qty, unit: l.unit, unitCost: l.unit_cost ?? null,
+    supplierId: l.supplier_id ?? null, chosenResponseLineId: l.chosen_response_line_id ?? null,
+  }))
+  const sourcing = (() => {
+    const chosen = outsourcedLines.filter(l => l.chosenResponseLineId || (l.unitCost ?? 0) > 0).length
+    const waiting = outsourcedLines.filter(l => {
+      if (l.chosenResponseLineId) return false
+      const bl = buyout?.lines.find(b => b.quoteLineId === l.id)
+      return !!bl && (buyout?.recipients ?? []).some(r => r.status !== 'pending' && (!r.lineIds || r.lineIds.includes(bl.rfqLineId)))
+    }).length
+    return { count: outsourcedLines.length, chosen, waiting }
+  })()
+
+  function lineExtra(e: EditorLine) {
+    const l = lines.find(x => x.tempId === e.key)
+    if (!l || !e.description.trim()) return null
+    const mode = modeOf(l)
+    const onHand = onHandOf(l)
+    const sel = 'h-6 rounded-md border border-divider bg-background px-1.5 text-[11.5px] text-text-primary focus:outline-none focus:border-primary/60'
+    return (
+      <div className="flex flex-wrap items-center gap-1.5">
+        {mode === 'stock' ? (
+          <>
+            <span className="h-6 px-2 rounded-full bg-sky-50 text-sky-800 text-[11px] font-semibold inline-flex items-center gap-1">
+              <span className="material-icons !text-[13px]">inventory_2</span>From stock{onHand != null ? ` · ${onHand.toLocaleString('en-ZA')} on hand` : ''}
+            </span>
+            {!locked && <button type="button" onClick={() => setSupplyMode(l.tempId, 'outsource')} className="text-[11.5px] text-primary hover:underline">Outsource instead</button>}
+          </>
+        ) : (
+          <>
+            <select value={mode} disabled={locked} aria-label="How this line is supplied" className={sel}
+              onChange={ev => setSupplyMode(l.tempId, ev.target.value as SupplyMode)}>
+              <option value="outsource">Outsource</option>
+              <option value="service">Service</option>
+            </select>
+            {mode === 'outsource' && l.id && (
+              <SupplyPill line={{ id: l.id, description: l.description, qty: l.qty, unit: l.unit, unitCost: l.unit_cost ?? null, supplierId: l.supplier_id ?? null, chosenResponseLineId: l.chosen_response_line_id ?? null }}
+                buyout={buyout} currency={quoteCurrency} onOpenBuyout={() => void openBuyout()} />
+            )}
+            {l.item_type === 'inventory' && (onHand ?? 0) >= Math.max(l.qty, 1) && !locked && (
+              <button type="button" onClick={() => setSupplyMode(l.tempId, 'stock')} className="text-[11.5px] text-primary hover:underline">Use stock ({onHand})</button>
+            )}
+          </>
+        )}
+      </div>
+    )
   }
 
   // ── Add new client ─────────────────────────────────────────────────────────
@@ -1490,8 +1645,35 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
           )}
         </div>
 
-        {/* ── Items ── */}
-        <LineItemsEditor lines={editorLines} onChange={handleEditorChange} items={pickItems} itemsLoading={pickLoading} startOpen={!initialQuoteId} currency={quoteCurrency} showCost readOnly={locked} />
+        {/* ── Items | Buyout ── */}
+        <div className="flex items-center gap-5 border-b border-divider -mb-2" role="tablist" aria-label="Quote sections">
+          {([['items', 'Items'], ['buyout', 'Buyout']] as const).map(([k, label]) => (
+            <button key={k} type="button" role="tab" aria-selected={quoteView === k}
+              onClick={() => (k === 'buyout' ? void openBuyout() : setQuoteView('items'))}
+              className={cn('pb-2 -mb-px text-[13.5px] font-semibold border-b-2 flex items-center gap-1.5', quoteView === k ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary')}>
+              {label}
+              {k === 'buyout' && sourcing.waiting > 0 && <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10.5px]">{sourcing.waiting} waiting</span>}
+            </button>
+          ))}
+        </div>
+
+        {quoteView === 'buyout' && companyId ? (
+          <BuyoutPanel companyId={companyId} buyout={buyout} lines={outsourcedLines} currency={quoteCurrency} readOnly={locked}
+            ensure={ensureQuoteBuyout} reload={reloadBuyout} onChoose={chooseForLine}
+            keep={keepMode} onKeep={rememberKeep} defaultMargin={defaultMargin} onDefaultMargin={rememberMargin} />
+        ) : (
+        <>
+        <LineItemsEditor lines={editorLines} onChange={handleEditorChange} items={pickItems} itemsLoading={pickLoading} startOpen={!initialQuoteId} currency={quoteCurrency} showCost readOnly={locked} lineExtra={lineExtra} />
+
+        {sourcing.count > 0 && (
+          <div className="-mt-3 rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-[12.5px] text-text-primary">
+              <b>Sourcing</b> <span className="text-text-secondary">· {sourcing.count} outsourced {sourcing.count === 1 ? 'item' : 'items'} · {sourcing.chosen} with a cost price{sourcing.waiting ? ` · ${sourcing.waiting} waiting for replies` : ''}</span>
+              <span className="block text-[11.5px] text-text-secondary">Buyout is optional: you can always type a cost price yourself. Click a supplier pill to see everyone asked.</span>
+            </p>
+            <button type="button" onClick={() => void openBuyout()} className="h-9 px-4 rounded-lg bg-primary text-white text-[13px] font-semibold hover:bg-primary/90">Buyout</button>
+          </div>
+        )}
 
         {/* ── Notes ── */}
         <div className="rounded-xl border border-divider overflow-hidden">
@@ -1516,21 +1698,10 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
           <span className="material-icons !text-[13px] !leading-[1.4]">lock</span>
           Cost price and margin are only for your team. They never show on the quote PDF or the client&apos;s page. Change the margin to set the selling price from the cost.
         </p>
+        </>
+        )}
         </fieldset>
 
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-[13px] text-text-secondary">
-            Ask suppliers what they will charge for these lines.
-          </p>
-          <button
-            type="button"
-            onClick={() => void handleCreateRfqFromQuote()}
-            disabled={saveState === 'saving' || rfqBusy}
-            className="h-8 px-3 rounded-lg border border-divider text-[12px] text-text-secondary font-medium hover:bg-surface-elevated transition-colors disabled:opacity-50"
-          >
-            {rfqBusy ? 'Opening RFQ…' : 'Create RFQ'}
-          </button>
-        </div>
 
       </div>
 

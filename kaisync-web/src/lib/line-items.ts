@@ -38,6 +38,8 @@ export type PickItem = {
   hint: string | null
   /** Cost price from the catalogue or stock item, when known. */
   cost?: number | null
+  /** Stock items: how many are on hand. */
+  onHand?: number | null
 }
 
 export const ITEM_KIND: Record<ItemType, { label: string; dot: string; fg: string; bg: string }> = {
@@ -161,6 +163,7 @@ export async function loadPickItems(
       cost: num(i.unit_cost) > 0 ? num(i.unit_cost) : null,
       detail: [i.sku, `${onHand.toLocaleString('en-ZA')} in stock`].filter(Boolean).join(' · '),
       hint: `${onHand.toLocaleString('en-ZA')} in stock`,
+      onHand,
     })
   }
   return out

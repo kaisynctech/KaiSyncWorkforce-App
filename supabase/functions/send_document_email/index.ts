@@ -51,6 +51,15 @@ async function documentLink(admin: SupabaseClient, companyId: string, kind: "inv
   }
   return `${site}/d/${token}`;
 }
+/** The supplier's private link to send their prices (one per supplier on an RFQ, made the first time it is sent). */
+async function rfqReplyToken(admin: SupabaseClient, recipientId: string): Promise<string> {
+  const { data } = await admin.from("rfq_recipients").select("reply_token").eq("id", recipientId).maybeSingle();
+  if (data?.reply_token) return String(data.reply_token);
+  const token = newToken();
+  await admin.from("rfq_recipients").update({ reply_token: token }).eq("id", recipientId).is("reply_token", null);
+  const { data: again } = await admin.from("rfq_recipients").select("reply_token").eq("id", recipientId).maybeSingle();
+  return String(again?.reply_token ?? token);
+}
 const button = (href: string, label: string) =>
   `<a href="${esc(href)}" style="display:inline-block;background:#1E3A5F;color:#ffffff;text-decoration:none;font-weight:bold;padding:12px 22px;border-radius:8px">${esc(label)}</a>`;
 
@@ -70,6 +79,7 @@ type Built = {
   afterSent?: () => Promise<void>;
   fixedAfter?: string[]; // HTML shown after the message and never edited (e.g. the RFQ items table)
   number?: string; // the document number, put in place of NUMBER_LATER in an edited message
+  rfqRecipientId?: string; // an RFQ: the supplier gets a private "Send your prices" link
 } | { error: string; status: number };
 
 async function build(admin: SupabaseClient, kind: Kind, id: string, preview = false): Promise<Built> {
@@ -143,7 +153,7 @@ async function build(admin: SupabaseClient, kind: Kind, id: string, preview = fa
   if (kind === "rfq") {
     // doc_id is the rfq_recipients row: each supplier gets its own email, so they don't see each other.
     const { data: r } = await admin.from("rfq_recipients")
-      .select("id, company_id, rfq_id, status, supplier:contractors(name, contact_person, email)")
+      .select("id, company_id, rfq_id, status, line_ids, send_to, supplier:contractors(name, contact_person, email)")
       .eq("id", id).maybeSingle();
     if (!r) return { error: "Supplier not found on this RFQ.", status: 404 };
     const { data: rfq } = await admin.from("rfqs")
@@ -151,9 +161,11 @@ async function build(admin: SupabaseClient, kind: Kind, id: string, preview = fa
       .eq("id", r.rfq_id).maybeSingle();
     if (!rfq) return { error: "RFQ not found.", status: 404 };
     if (["cancelled", "closed"].includes(String(rfq.status))) return { error: "This RFQ is closed.", status: 409 };
-    const { data: lines } = await admin.from("rfq_lines").select("description, quantity, unit, specifications")
+    const { data: lines } = await admin.from("rfq_lines").select("id, description, quantity, unit, specifications")
       .eq("rfq_id", rfq.id).order("sort_order");
-    const items = (lines ?? []).filter((l) => String(l.description ?? "").trim());
+    // A supplier is only asked for the items ticked for them (line_ids; none = all).
+    const asked = (r.line_ids ?? null) as string[] | null;
+    const items = (lines ?? []).filter((l) => String(l.description ?? "").trim() && (!asked || asked.includes(l.id)));
     if (!items.length) return { error: "Add at least one item to the RFQ first.", status: 409 };
     const s = (r.supplier ?? {}) as { name?: string; contact_person?: string; email?: string };
     const num = String(rfq.rfq_number ?? "");
@@ -169,7 +181,7 @@ ${items.map((l) => `<tr><td style="${cell}">${esc(l.description)}${l.specificati
     if (rfq.response_deadline) paras.push(`Please reply with your quote by ${b(day(rfq.response_deadline))}, including delivery time and how long your price is valid.`);
     else paras.push("Please include your delivery time and how long your price is valid.");
     return {
-      companyId: r.company_id, to: valid(s.email), greetName: s.contact_person || s.name || null,
+      companyId: r.company_id, to: valid(r.send_to) || valid(s.email), greetName: s.contact_person || s.name || null, rfqRecipientId: r.id,
       subject: (co) => `Request for quotation${num ? ` ${num}` : ""}${rfq.title ? ` — ${String(rfq.title).slice(0, 80)}` : ""} (${co})`,
       paras,
       fixedAfter: [table],
@@ -218,7 +230,7 @@ ${items.map((l) => `<tr><td style="${cell}">${esc(l.description)}${l.specificati
 /** Keeps the PDF the client got (an invoice), so Xero can have it attached (xero-sync-run, job 'invoice_pdf'). Never blocks sending. */
 async function saveInvoicePdf(admin: SupabaseClient, companyId: string, invoiceId: string, pdf: string) {
   try {
-    const path = `${companyId}/invoices/${invoiceId}.pdf`;
+    const path = `invoice_pdfs/${companyId}/${invoiceId}.pdf`;
     const bytes = Uint8Array.from(atob(pdf), (c) => c.charCodeAt(0));
     const { error } = await admin.storage.from("workforce-media").upload(path, bytes, { contentType: "application/pdf", upsert: true });
     if (error) return;
@@ -292,6 +304,9 @@ Deno.serve(async (req: Request) => {
     const onlineUrl = kind === "invoice" && site
       ? (preview ? `${site}/d/preview` : await documentLink(admin, built.companyId, "invoice", docId, site))
       : null;
+    const replyUrl = kind === "rfq" && site && built.rfqRecipientId
+      ? (preview ? `${site}/d/rfq/preview` : `${site}/d/rfq/${await rfqReplyToken(admin, built.rfqRecipientId)}`)
+      : null;
     const standard = [
       ...built.paras,
       ...(note ? [esc(note).replace(/\n/g, "<br>")] : []),
@@ -305,6 +320,7 @@ Deno.serve(async (req: Request) => {
       ...(edited ? textToParas(edited, esc) : standard),
       ...(built.fixedAfter ?? []),
       ...(onlineUrl ? [`${button(onlineUrl, "View & pay online")}<br><span style="font-size:12px;color:#64748B">See the invoice, our banking details, and send us your proof of payment.</span>`] : []),
+      ...(replyUrl ? [`${button(replyUrl, "Send your prices")}<br><span style="font-size:12px;color:#64748B">Or simply reply to this email with your quote.</span>`] : []),
     ];
     const head = logoUrl
       ? `<img src="${esc(logoUrl)}" alt="${esc(companyName)}" style="max-height:56px;max-width:220px;display:block">`
@@ -323,7 +339,7 @@ ${co?.legal_name && co.legal_name !== companyName ? `<div>${esc(co.legal_name)}<
 ${co?.document_footer ? `<div style="margin-top:8px">${esc(co.document_footer)}</div>` : ""}
 </td></tr></table>
 </td></tr></table></body></html>`;
-    const text = paras.map(htmlToText).join("\n\n") + (onlineUrl ? `\n\nView and pay online: ${onlineUrl}` : "") + `\n\n${signOffText(sender, companyName)}`;
+    const text = paras.map(htmlToText).join("\n\n") + (onlineUrl ? `\n\nView and pay online: ${onlineUrl}` : "") + (replyUrl ? `\n\nSend your prices: ${replyUrl}` : "") + `\n\n${signOffText(sender, companyName)}`;
     const defaultSubject = built.subject(companyName);
     const subject = withNumber(editedSubject(body.subject)) ?? defaultSubject;
     if (preview) {
