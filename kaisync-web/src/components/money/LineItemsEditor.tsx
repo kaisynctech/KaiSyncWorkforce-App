@@ -37,13 +37,13 @@ function QuoteCols({ readOnly }: { readOnly?: boolean }) {
     <colgroup>
       {/* On a phone the item name sits on its own line above the numbers, so its column is hidden. */}
       <col className="hidden sm:table-column" />
-      <col className="w-[38px] sm:w-[100px]" />
-      <col className="w-[62px] sm:w-[104px]" />
-      <col className="w-[62px] sm:w-[104px]" />
-      <col className="w-[40px] sm:w-[68px]" />
-      <col className="w-[44px] sm:w-[72px]" />
+      <col className="w-[32px] sm:w-[100px]" />
+      <col className="w-[58px] sm:w-[104px]" />
+      <col className="w-[58px] sm:w-[104px]" />
+      <col className="w-[38px] sm:w-[68px]" />
+      <col className="w-[42px] sm:w-[72px]" />
       <col className="sm:w-[110px]" />
-      {!readOnly && <col className="w-[24px] sm:w-[36px]" />}
+      {!readOnly && <col className="w-[22px] sm:w-[36px]" />}
     </colgroup>
   )
 }
@@ -306,12 +306,12 @@ export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly
               <th className={`${QTH} text-left pl-5 hidden sm:table-cell`}>Item</th>
               <th className={`${QTH} text-center`}>Qty</th>
               <th className={`${QTH} text-right`} title="Only your team sees this">
-                <span className="inline-flex items-center gap-1"><span className="material-icons !text-[12px] !leading-none hidden sm:inline">lock</span><span className="sm:hidden">Cost</span><span className="hidden sm:inline">Cost price</span></span>
+                <span className="inline-flex items-center gap-1"><span className="material-icons !text-[12px] !leading-none !hidden sm:!inline-block">lock</span><span className="sm:hidden">Cost</span><span className="hidden sm:inline">Cost price</span></span>
               </th>
               <th className={`${QTH} text-right`}><span className="sm:hidden">Price</span><span className="hidden sm:inline">Selling price</span></th>
               <th className={`${QTH} text-right`}><span className="sm:hidden">Disc</span><span className="hidden sm:inline">Discount</span></th>
               <th className={`${QTH} text-right`} title="Only your team sees this. Change it to work out the selling price from the cost.">
-                <span className="inline-flex items-center gap-1"><span className="material-icons !text-[12px] !leading-none hidden sm:inline">lock</span>Margin</span>
+                <span className="inline-flex items-center gap-1"><span className="material-icons !text-[12px] !leading-none !hidden sm:!inline-block">lock</span><span className="sm:hidden">Mgn</span><span className="hidden sm:inline">Margin</span></span>
               </th>
               <th className={`${QTH} text-right pr-2 sm:pr-5`}>Total</th>
               {!readOnly && <th className={QTH} />}
