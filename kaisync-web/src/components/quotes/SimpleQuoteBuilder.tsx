@@ -567,7 +567,12 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   function scheduleAutoSave() {
     if (!isLoaded.current) return
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
-    autoSaveTimer.current = setTimeout(() => void doSave(), 1500)
+    autoSaveTimer.current = setTimeout(() => {
+      // A new quote is only saved once it has a client or a line, so opening New quote and leaving
+      // doesn't leave an empty "Untitled Quote" draft behind.
+      if (!quoteIdRef.current && !clientIdRef.current && linesRef.current.length === 0) return
+      void doSave()
+    }, 1500)
   }
 
   // ── Field updaters (each sets state + ref + schedules auto-save) ───────────

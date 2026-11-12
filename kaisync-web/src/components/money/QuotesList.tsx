@@ -38,8 +38,10 @@ type SalesRow = Pick<
   'id' | 'quote_number' | 'title' | 'status' | 'currency' | 'total_amount' | 'valid_until' | 'created_at'
 > & { clients?: { name: string } | null }
 
+/** A quote the business received: a contractor's quote, or a supplier's reply to an RFQ. */
 type IncomingRow = {
   id: string
+  source: 'contractor' | 'supplier'
   title: string | null
   quote_number: string | null
   status: string
@@ -47,8 +49,20 @@ type IncomingRow = {
   total_amount: number | null
   submitted_at: string | null
   created_at: string
-  contractor_id: string
+  party: string | null
+  href: string
+}
+
+type ContractorQuoteRow = {
+  id: string; title: string | null; quote_number: string | null; status: string; currency: string | null
+  total_amount: number | null; submitted_at: string | null; created_at: string; contractor_id: string
   contractors?: { name: string } | null
+}
+type RfqReplyRow = {
+  id: string; rfq_id: string; status: string; response_total: number | null; responded_at: string | null
+  declined_at: string | null; created_at: string
+  supplier?: { name: string } | null
+  rfq?: { rfq_number: string | null; title: string | null } | null
 }
 
 /** Toolbar status tabs — exact statuses (not the old Outstanding/Done buckets). */
@@ -90,7 +104,17 @@ const SALES_STATUS_COLORS: Record<CommercialQuote['status'], string> = {
   expired: 'bg-gray-100 text-gray-500',
 }
 
-const INCOMING_OUTSTANDING = new Set(['submitted', 'under_review', 'revision_requested'])
+const INCOMING_OUTSTANDING = new Set(['submitted', 'under_review', 'revision_requested', 'responded'])
+
+/** Supplier replies to an RFQ, in the same words as contractor quotes. */
+const RFQ_REPLY_STATUS: Record<string, string> = {
+  responded: 'responded', selected: 'approved', not_selected: 'rejected', declined: 'declined',
+}
+function incomingLabel(status: string): string {
+  if (status === 'responded') return 'Received'
+  if (status === 'declined') return 'Supplier declined'
+  return quoteStatusLabel(status)
+}
 
 const SALES_STATUS_OPTIONS = [
   { id: 'draft', label: 'Draft' },
@@ -103,6 +127,7 @@ const SALES_STATUS_OPTIONS = [
 ]
 
 const INCOMING_STATUS_OPTIONS = [
+  { id: 'responded', label: 'Received (supplier)' },
   { id: 'submitted', label: 'Submitted' },
   { id: 'under_review', label: 'Under review' },
   { id: 'revision_requested', label: 'Revision requested' },
@@ -110,6 +135,7 @@ const INCOMING_STATUS_OPTIONS = [
   { id: 'rejected', label: 'Rejected' },
   { id: 'converted', label: 'Converted' },
   { id: 'expired', label: 'Expired' },
+  { id: 'declined', label: 'Supplier declined' },
 ]
 
 /** Coloured status pills — colours match the status badges in the table. */
@@ -167,8 +193,8 @@ const INCOMING_STATUS_TABS: typeof SALES_STATUS_TABS = [
   },
   {
     id: 'submitted',
-    label: 'Submitted',
-    match: ['submitted', 'under_review', 'revision_requested'],
+    label: 'To review',
+    match: ['submitted', 'under_review', 'revision_requested', 'responded'],
     idle: 'border-amber-200 text-amber-700 hover:bg-amber-50',
     active: 'bg-amber-500 text-white border-amber-500',
   },
@@ -182,7 +208,7 @@ const INCOMING_STATUS_TABS: typeof SALES_STATUS_TABS = [
   {
     id: 'rejected',
     label: 'Rejected',
-    match: ['rejected'],
+    match: ['rejected', 'declined'],
     idle: 'border-red-200 text-red-700 hover:bg-red-50',
     active: 'bg-red-600 text-white border-red-600',
   },
@@ -200,12 +226,14 @@ function incomingBadgeClass(status: string): string {
   switch (status) {
     case 'submitted':
     case 'under_review':
+    case 'responded':
       return 'bg-amber-100 text-amber-700'
     case 'revision_requested':
       return 'bg-blue-100 text-blue-700'
     case 'approved':
       return 'bg-green-100 text-green-700'
     case 'rejected':
+    case 'declined':
       return 'bg-red-100 text-red-700'
     case 'converted':
       return 'bg-slate-100 text-slate-700'
@@ -254,17 +282,18 @@ function toggleStatus(list: string[], id: string): string[] {
 }
 
 /**
- * The quotes table used on Money → Quotes and, embedded, on a job or project (same columns, filters and status
- * tabs). Embedded: sales quotes only, no page header or scope chips, "+ New Quote" pre-fills the job/project.
+ * The quotes table on Money → Sales Quotes (kind 'sales': quotes the business sends) and Money → Incoming Quotes
+ * (kind 'incoming': contractor quotes and supplier replies to RFQs), and, embedded, on a job or project (sales
+ * quotes only, no page header or scope chips, "+ New Quote" pre-fills the job/project).
  */
-export function QuotesList({ clientId = null, jobId = null, dealId = null, embedded = false, prefill }: DocListScope & { embedded?: boolean; prefill?: DocListScope }) {
+export function QuotesList({ clientId = null, jobId = null, dealId = null, embedded = false, prefill, kind = 'sales' }: DocListScope & { embedded?: boolean; prefill?: DocListScope; kind?: HubTab }) {
   const router = useRouter()
   const clientFilter = clientId
   const jobFilter = jobId
   const dealFilter = dealId
   const newQuoteHref = `/dashboard/money/quotes/new${scopeQuery(prefill ?? { clientId, jobId, dealId })}`
 
-  const [tab, setTab] = useState<HubTab>('sales')
+  const tab: HubTab = embedded ? 'sales' : kind
   const [statusTab, setStatusTab] = useState<StatusTab>('all')
   const [search, setSearch] = useState('')
   const [searchD, setSearchD] = useState('')
@@ -315,30 +344,50 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
       if (jobFilter) salesQ = salesQ.eq('job_id', jobFilter)
       if (dealFilter) salesQ = salesQ.eq('deal_id', dealFilter)
 
-      const [salesRes, incomingRes] = await Promise.all([
-        salesQ,
-        supabase
-          .from('contractor_quotes')
-          .select(
-            'id, title, quote_number, status, currency, total_amount, submitted_at, created_at, contractor_id, contractors(name)',
-          )
-          .eq('company_id', member.companyId)
-          .neq('status', 'draft')
-          .order('created_at', { ascending: false })
-          .limit(300),
-      ])
-
-      if (salesRes.error) {
-        console.error('commercial_quotes list failed', salesRes.error)
-        setSales([])
+      if (tab === 'sales') {
+        const salesRes = await salesQ
+        if (salesRes.error) {
+          console.error('commercial_quotes list failed', salesRes.error)
+          setSales([])
+        } else {
+          setSales((salesRes.data ?? []) as unknown as SalesRow[])
+        }
       } else {
-        setSales((salesRes.data ?? []) as unknown as SalesRow[])
-      }
-      if (incomingRes.error) {
-        console.error('contractor_quotes list failed', incomingRes.error)
-        setIncoming([])
-      } else {
-        setIncoming((incomingRes.data ?? []) as unknown as IncomingRow[])
+        const [cqRes, rfqRes] = await Promise.all([
+          supabase
+            .from('contractor_quotes')
+            .select('id, title, quote_number, status, currency, total_amount, submitted_at, created_at, contractor_id, contractors(name)')
+            .eq('company_id', member.companyId)
+            .neq('status', 'draft')
+            .order('created_at', { ascending: false })
+            .limit(300),
+          supabase
+            .from('rfq_recipients')
+            .select('id, rfq_id, status, response_total, responded_at, declined_at, created_at, supplier:contractors(name), rfq:rfqs(rfq_number, title)')
+            .eq('company_id', member.companyId)
+            .in('status', Object.keys(RFQ_REPLY_STATUS))
+            .order('created_at', { ascending: false })
+            .limit(300),
+        ])
+        if (cqRes.error) console.error('contractor_quotes list failed', cqRes.error)
+        if (rfqRes.error) console.error('rfq replies list failed', rfqRes.error)
+        const rows: IncomingRow[] = [
+          ...((cqRes.data ?? []) as unknown as ContractorQuoteRow[]).map(q => ({
+            id: q.id, source: 'contractor' as const, title: q.title, quote_number: q.quote_number, status: q.status,
+            currency: q.currency, total_amount: q.total_amount, submitted_at: q.submitted_at, created_at: q.created_at,
+            party: q.contractors?.name ?? null,
+            href: `/dashboard/contractors/${q.contractor_id}?tab=Quotes&focusType=quote_pending&focus=${q.id}`,
+          })),
+          ...((rfqRes.data ?? []) as unknown as RfqReplyRow[]).map(r => ({
+            id: r.id, source: 'supplier' as const, title: r.rfq?.title ?? null, quote_number: r.rfq?.rfq_number ?? null,
+            status: RFQ_REPLY_STATUS[r.status] ?? r.status, currency: null,
+            total_amount: r.status === 'declined' ? null : r.response_total,
+            submitted_at: r.responded_at ?? r.declined_at, created_at: r.created_at,
+            party: r.supplier?.name ?? null,
+            href: `/dashboard/supply/rfqs/${r.rfq_id}/responses?supplier=${r.id}`,
+          })),
+        ].sort((a, b) => (b.submitted_at ?? b.created_at).localeCompare(a.submitted_at ?? a.created_at))
+        setIncoming(rows)
       }
 
       const labels: { client?: string; job?: string; deal?: string } = {}
@@ -366,7 +415,7 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
     } finally {
       setLoading(false)
     }
-  }, [clientFilter, jobFilter, dealFilter])
+  }, [clientFilter, jobFilter, dealFilter, tab])
 
   useEffect(() => {
     void load()
@@ -389,7 +438,7 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
   const matchIncomingCols = useCallback(
     (row: IncomingRow) => {
       if (cols.number && !(row.quote_number ?? '').toLowerCase().includes(cols.number.toLowerCase())) return false
-      if (cols.party && !(row.contractors?.name ?? '').toLowerCase().includes(cols.party.toLowerCase())) return false
+      if (cols.party && !(row.party ?? '').toLowerCase().includes(cols.party.toLowerCase())) return false
       if (cols.title && !(row.title ?? '').toLowerCase().includes(cols.title.toLowerCase())) return false
       if (!matchMoney(row.total_amount, cols.valueMin, cols.valueMax)) return false
       if (cols.statuses.length && !cols.statuses.includes(row.status)) return false
@@ -418,7 +467,7 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
     return incoming.filter(row => {
       if (!matchIncomingCols(row)) return false
       if (!q) return true
-      const contractor = row.contractors?.name ?? ''
+      const contractor = row.party ?? ''
       return (
         (row.quote_number ?? '').toLowerCase().includes(q) ||
         (row.title ?? '').toLowerCase().includes(q) ||
@@ -461,9 +510,7 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
   const hasScopeFilter = !!(clientFilter || jobFilter || dealFilter)
 
   function openIncoming(row: IncomingRow) {
-    router.push(
-      `/dashboard/contractors/${row.contractor_id}?tab=Quotes&focusType=quote_pending&focus=${row.id}`,
-    )
+    router.push(row.href)
   }
 
   function exportCsv() {
@@ -480,7 +527,8 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
           ])
         : filteredIncoming.map(q => [
             q.quote_number ?? '',
-            q.contractors?.name ?? '',
+            q.source === 'supplier' ? 'Supplier (RFQ)' : 'Contractor',
+            q.party ?? '',
             q.title ?? '',
             String(q.total_amount ?? 0),
             q.status,
@@ -489,7 +537,7 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
     const header =
       tab === 'sales'
         ? ['Number', 'Client', 'Title', 'Value', 'Status', 'Created', 'Valid Until']
-        : ['Number', 'Contractor', 'Title', 'Value', 'Status', 'Submitted']
+        : ['Number', 'Source', 'From', 'Title', 'Value', 'Status', 'Received']
     const csv = [header, ...rows]
       .map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))
       .join('\n')
@@ -518,10 +566,12 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
         <div>
           {embedded
             ? <h2 className="text-[14px] font-semibold text-text-primary leading-tight">Quotes</h2>
-            : <h1 className="text-[18px] font-semibold text-text-primary leading-tight">Quotes</h1>}
+            : <h1 className="text-[18px] font-semibold text-text-primary leading-tight">{tab === 'sales' ? 'Sales Quotes' : 'Incoming Quotes'}</h1>}
           {!embedded && (
             <p className="text-[11px] text-text-secondary mt-0.5">
-              Sales quotes you send · Incoming contractor quotes to review
+              {tab === 'sales'
+                ? 'Quotes you send to your clients'
+                : 'Quotes you receive: from contractors, and suppliers\' replies to your RFQs'}
             </p>
           )}
         </div>
@@ -534,7 +584,7 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
           >
             Export
           </button>
-          {tab === 'sales' && (
+          {tab === 'sales' ? (
             <button
               type="button"
               onClick={() => router.push(newQuoteHref)}
@@ -542,32 +592,18 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
             >
               + New Quote
             </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => router.push('/dashboard/supply/rfqs/new')}
+              className="btn-primary h-8 px-3 text-[12px]"
+            >
+              + New RFQ
+            </button>
           )}
         </div>
       </div>
 
-      {!embedded && <div className="flex gap-1 px-4 pt-2 border-b border-divider bg-surface shrink-0">
-        {(
-          [
-            { id: 'sales' as const, label: 'Sales' },
-            { id: 'incoming' as const, label: 'Incoming' },
-          ] as const
-        ).map(t => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setTab(t.id)}
-            className={cn(
-              'px-3 py-1.5 text-[12px] font-medium border-b-2 -mb-px transition-colors',
-              tab === t.id
-                ? 'border-primary text-primary'
-                : 'border-transparent text-text-secondary hover:text-text-primary',
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>}
 
       <div className="flex gap-2 px-4 py-2 border-b border-divider bg-surface shrink-0 flex-wrap items-center">
         <input
@@ -576,7 +612,7 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
           placeholder={
             tab === 'sales'
               ? 'Search quote #, title, or client…'
-              : 'Search quote #, title, or contractor…'
+              : 'Search number, title, contractor or supplier…'
           }
           className="form-input h-8 flex-1 min-w-[180px] text-[12px]"
         />
@@ -822,15 +858,15 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
         ) : filteredIncoming.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 gap-2">
             <span className="material-icons text-[40px] text-text-disabled">inbox</span>
-            <p className="text-text-secondary text-[13px] font-medium">No incoming contractor quotes</p>
+            <p className="text-text-secondary text-[13px] font-medium">No incoming quotes</p>
             <p className="text-[11px] text-text-secondary">
-              Submitted quotes from contractors appear here for review.
+              Quotes contractors send you, and suppliers&apos; replies to your RFQs, appear here.
             </p>
           </div>
         ) : (
           <ResponsiveDataView
             table={
-              <table className="w-full" style={{ minWidth: 760 }}>
+              <table className="w-full" style={{ minWidth: 860 }}>
                 <thead className="sticky top-0 z-10">
                   <tr className="bg-surface-elevated border-b border-divider">
                     <th className={`${TH} text-left`}>
@@ -846,12 +882,13 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
                         />
                       </ColumnHeaderFilter>
                     </th>
+                    <th className={`${TH} text-left`}>Source</th>
                     <th className={`${TH} text-left`}>
-                      <ColumnHeaderFilter label="Contractor" active={!!cols.party}>
+                      <ColumnHeaderFilter label="From" active={!!cols.party}>
                         <ColumnFilterText
                           value={cols.party}
                           onChange={v => patchCols({ party: v })}
-                          placeholder="Contractor…"
+                          placeholder="Contractor or supplier…"
                         />
                         <ColumnFilterClear
                           disabled={!cols.party}
@@ -905,7 +942,7 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
                     </th>
                     <th className={`${TH} text-left`}>
                       <ColumnHeaderFilter
-                        label="Submitted"
+                        label="Received"
                         active={!!(cols.dateFrom || cols.dateTo)}
                       >
                         <ColumnFilterDateRange
@@ -931,18 +968,23 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
                       className="bg-surface-card border-b border-divider last:border-0 cursor-pointer hover:bg-surface-elevated transition-colors"
                     >
                       <td className={`${TD} font-mono text-text-secondary`}>{q.quote_number ?? '—'}</td>
-                      <td className={`${TD} text-text-primary`}>{q.contractors?.name ?? '—'}</td>
+                      <td className={TD}>
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${q.source === 'supplier' ? 'bg-indigo-50 text-indigo-700' : 'bg-teal-50 text-teal-700'}`}>
+                          {q.source === 'supplier' ? `Supplier${q.quote_number ? ` · ${q.quote_number}` : ''}` : 'Contractor'}
+                        </span>
+                      </td>
+                      <td className={`${TD} text-text-primary`}>{q.party ?? '—'}</td>
                       <td className={`${TD} text-text-primary max-w-[240px] truncate`}>
                         {q.title || 'Untitled'}
                       </td>
                       <td className={`${TD} text-right font-medium text-text-primary`}>
-                        {fmtMoney(q.total_amount, q.currency)}
+                        {q.total_amount == null ? '—' : fmtMoney(q.total_amount, q.currency)}
                       </td>
                       <td className={TD}>
                         <span
                           className={`px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${incomingBadgeClass(q.status)}`}
                         >
-                          {quoteStatusLabel(q.status)}
+                          {incomingLabel(q.status)}
                         </span>
                       </td>
                       <td className={`${TD} text-text-secondary whitespace-nowrap`}>
@@ -973,17 +1015,17 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
                       <div className="min-w-0">
                         <DataCardTitle>{q.title || 'Untitled'}</DataCardTitle>
                         <DataCardMeta>
-                          {q.contractors?.name ?? '—'} · {q.quote_number ?? '—'}
+                          {q.party ?? '—'} · {q.quote_number ?? '—'}
                         </DataCardMeta>
                       </div>
                       <span
                         className={`px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide shrink-0 ${incomingBadgeClass(q.status)}`}
                       >
-                        {quoteStatusLabel(q.status)}
+                        {incomingLabel(q.status)}
                       </span>
                     </div>
                     <DataCardRow label="Value" value={fmtMoney(q.total_amount, q.currency)} />
-                    <DataCardRow label="Submitted" value={fmt(q.submitted_at ?? q.created_at)} />
+                    <DataCardRow label="Received" value={fmt(q.submitted_at ?? q.created_at)} />
                     <button
                       type="button"
                       onClick={e => {

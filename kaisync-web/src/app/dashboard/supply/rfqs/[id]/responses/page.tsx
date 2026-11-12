@@ -57,7 +57,9 @@ export default function RfqResponsesPage() {
     setRecipients(rfqRecipients)
 
     if (rfqRecipients.length > 0 && !activeTab) {
-      setActiveTab(rfqRecipients[0].id)
+      // Opened from Incoming Quotes (?supplier=<reply id>): start on that supplier's reply.
+      const wanted = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('supplier') : null
+      setActiveTab(rfqRecipients.find(r => r.id === wanted)?.id ?? rfqRecipients[0].id)
     }
 
     // Build local response state per recipient
