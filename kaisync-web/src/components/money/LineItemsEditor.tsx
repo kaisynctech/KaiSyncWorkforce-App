@@ -38,12 +38,12 @@ function QuoteCols({ readOnly }: { readOnly?: boolean }) {
       {/* On a phone the item name sits on its own line above the numbers, so its column is hidden. */}
       <col className="hidden sm:table-column" />
       <col className="w-[32px] sm:w-[100px]" />
-      <col className="w-[58px] sm:w-[104px]" />
-      <col className="w-[58px] sm:w-[104px]" />
+      <col className="w-[56px] sm:w-[104px]" />
+      <col className="w-[56px] sm:w-[104px]" />
       <col className="w-[38px] sm:w-[68px]" />
       <col className="w-[42px] sm:w-[72px]" />
       <col className="sm:w-[110px]" />
-      {!readOnly && <col className="w-[22px] sm:w-[36px]" />}
+      {!readOnly && <col className="w-[20px] sm:w-[36px]" />}
     </colgroup>
   )
 }
