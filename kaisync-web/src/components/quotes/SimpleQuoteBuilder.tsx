@@ -1087,14 +1087,16 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
               </button>
             )}
 
+            {!locked && (
             <button
               type="button"
               onClick={() => void doSave()}
               disabled={saveState === 'saving'}
               className="h-9 px-4 rounded-lg border border-divider text-[13px] text-text-secondary font-medium hover:bg-surface-elevated transition-colors disabled:opacity-50"
             >
-              Save draft
+              {status === 'draft' ? 'Save draft' : 'Save'}
             </button>
+            )}
             <button
               type="button"
               onClick={handleDownloadPdf}
