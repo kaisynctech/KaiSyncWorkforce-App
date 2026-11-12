@@ -11,7 +11,7 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ITEM_KIND, blankEditorLine, filterPicks, formatRand, lineFromPick, lineMarginPct, lineTotal, priceForMargin,
+  ITEM_KIND, blankEditorLine, filterPicks, formatRand, lineFromPick, lineMarginPct, lineTotal, linesProfit, priceForMargin,
   type EditorLine, type ItemType, type PickItem,
 } from '@/lib/line-items'
 import { currencySymbol, formatCurrency } from '@/lib/currencies'
@@ -29,6 +29,88 @@ type Props = {
   /** Quotes: the items as a table with cost price, discount and margin (office only: cost and margin are never
    * printed or shown to the client). */
   showCost?: boolean
+}
+
+/** Column widths shared by the quote items table and the totals rows under it, so their columns line up. */
+function QuoteCols({ readOnly }: { readOnly?: boolean }) {
+  return (
+    <colgroup>
+      <col />
+      <col style={{ width: 112 }} />
+      <col style={{ width: 118 }} />
+      <col style={{ width: 118 }} />
+      <col style={{ width: 82 }} />
+      <col style={{ width: 82 }} />
+      <col style={{ width: 120 }} />
+      {!readOnly && <col style={{ width: 40 }} />}
+    </colgroup>
+  )
+}
+
+/**
+ * Quote totals as rows, in the same columns as the items table: subtotal (with the total cost and the margin
+ * under those columns), VAT with its on / off switch, and the total. Cost and margin are for the team only.
+ */
+export function QuoteTotalsRows({ lines, currency, readOnly, vatOn, vatLabel, vat, total, onVat }: {
+  lines: EditorLine[]; currency?: string; readOnly?: boolean
+  vatOn: boolean; vatLabel: string; vat: number; total: number; onVat: (on: boolean) => void
+}) {
+  const p = linesProfit(lines)
+  const TH = 'px-2 py-2 text-[11px] font-semibold uppercase tracking-wide text-text-secondary whitespace-nowrap'
+  const span = readOnly ? 1 : 2
+  return (
+    <div className="bg-surface-card border border-divider rounded-2xl overflow-x-auto">
+      <table className="w-full text-[13px]" style={{ minWidth: 840 }}>
+        <QuoteCols readOnly={readOnly} />
+        <thead>
+          <tr className="bg-surface-elevated/60 border-b border-divider">
+            <th className={`${TH} text-left pl-5`}>Totals</th>
+            <th className={TH} />
+            <th className={`${TH} text-right`} title="Only your team sees this">
+              <span className="inline-flex items-center gap-1"><span className="material-icons !text-[12px] !leading-none">lock</span>Cost</span>
+            </th>
+            <th className={TH} />
+            <th className={TH} />
+            <th className={`${TH} text-right`} title="Only your team sees this">
+              <span className="inline-flex items-center gap-1"><span className="material-icons !text-[12px] !leading-none">lock</span>Margin</span>
+            </th>
+            <th className={`${TH} text-right pr-5`} colSpan={span}>Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr className="border-b border-divider/60">
+            <td className="py-2.5 pl-5 pr-2 text-text-secondary">{vatOn ? 'Subtotal (excl. VAT)' : 'Subtotal'}</td>
+            <td />
+            <td className="py-2.5 px-2 text-right tabular-nums text-text-secondary">{p.costed ? formatCurrency(p.cost, currency) : '—'}</td>
+            <td />
+            <td />
+            <td className={`py-2.5 px-2 text-right tabular-nums font-medium ${p.costed && p.profit < 0 ? 'text-error' : 'text-text-primary'}`}>{p.costed ? marginText(p.marginPct) : '—'}</td>
+            <td colSpan={span} className="py-2.5 pl-2 pr-5 text-right tabular-nums font-medium text-text-primary whitespace-nowrap">{formatCurrency(p.sell, currency)}</td>
+          </tr>
+          <tr className="border-b border-divider/60">
+            <td colSpan={6} className="py-2 pl-5 pr-2">
+              <div className="flex items-center gap-3 text-text-secondary">
+                <span>{vatLabel}</span>
+                {!readOnly && (
+                  <div className="flex rounded-lg border border-divider overflow-hidden">
+                    <button type="button" onClick={() => onVat(true)}
+                      className={`h-7 px-2.5 text-[12px] font-medium ${vatOn ? 'bg-primary text-white' : 'text-text-secondary hover:bg-surface-elevated'}`}>VAT on</button>
+                    <button type="button" onClick={() => onVat(false)}
+                      className={`h-7 px-2.5 text-[12px] font-medium ${!vatOn ? 'bg-primary text-white' : 'text-text-secondary hover:bg-surface-elevated'}`}>No VAT</button>
+                  </div>
+                )}
+              </div>
+            </td>
+            <td colSpan={span} className="py-2 pl-2 pr-5 text-right tabular-nums text-text-primary whitespace-nowrap">{vatOn ? formatCurrency(vat, currency) : '—'}</td>
+          </tr>
+          <tr className="bg-surface-elevated/60">
+            <td colSpan={6} className="py-3 pl-5 pr-2 text-[14px] font-semibold text-text-primary">{vatOn ? 'Total (incl. VAT)' : 'Total'}</td>
+            <td colSpan={span} className="py-3 pl-2 pr-5 text-right tabular-nums text-[15px] font-bold text-text-primary whitespace-nowrap">{formatCurrency(total, currency)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  )
 }
 
 function parsePct(text: string): number {
@@ -183,16 +265,7 @@ export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly
       {showCost ? (lines.length === 0 ? null : (
       <div className="overflow-x-auto border-t border-divider/70">
         <table className="w-full text-[13px]" style={{ minWidth: 840 }}>
-          <colgroup>
-            <col />
-            <col style={{ width: 112 }} />
-            <col style={{ width: 118 }} />
-            <col style={{ width: 118 }} />
-            <col style={{ width: 82 }} />
-            <col style={{ width: 82 }} />
-            <col style={{ width: 120 }} />
-            {!readOnly && <col style={{ width: 40 }} />}
-          </colgroup>
+          <QuoteCols readOnly={readOnly} />
           <thead>
             <tr className="bg-surface-elevated/60 border-b border-divider">
               <th className={`${TH} text-left pl-5`}>Item</th>
@@ -323,13 +396,6 @@ export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly
               )
             })}
           </tbody>
-          <tfoot>
-            <tr>
-              <td colSpan={readOnly ? 7 : 8} className="px-5 py-1.5 text-[11.5px] text-text-secondary">
-                <span className="inline-flex items-center gap-1"><span className="material-icons !text-[13px] !leading-none">lock</span>Cost price and margin are only for your team. They never show on the quote PDF or the client&apos;s page. Change the margin to set the selling price from the cost.</span>
-              </td>
-            </tr>
-          </tfoot>
         </table>
       </div>
       )) : (
