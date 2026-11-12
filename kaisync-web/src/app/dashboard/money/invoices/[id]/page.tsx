@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Suspense, useCallback, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
@@ -233,9 +233,10 @@ function MoneyInvoiceDetailInner() {
 
   function buildPdfInput() {
     if (!inv) return null
+    const justSent = inv.status === 'draft' && !!sentNumberRef.current
     return {
-      invoice_number: inv.invoice_number,
-      status: inv.status,
+      invoice_number: inv.invoice_number ?? sentNumberRef.current,
+      status: justSent ? 'sent' : inv.status,
       issue_date: inv.issue_date,
       due_date: inv.due_date,
       notes: inv.notes,
@@ -272,11 +273,19 @@ function MoneyInvoiceDetailInner() {
     const supabase = createClient()
     const now = new Date().toISOString()
     // The database gives the invoice its number as it is sent (no gaps, no duplicates).
-    const { error } = await supabase.from('finance_invoices').update({
+    const { data, error } = await supabase.from('finance_invoices').update({
       status: 'sent',
       sent_at: now,
-    }).eq('id', inv.id)
+    }).eq('id', inv.id).select('invoice_number').maybeSingle()
+    if (!error) sentNumberRef.current = (data as { invoice_number?: string | null } | null)?.invoice_number ?? null
     return !error
+  }
+
+  // A draft is only marked sent (and numbered) when its email actually goes; the PDF then carries that number.
+  const sentNumberRef = useRef<string | null>(null)
+  async function markSentBeforeEmail(): Promise<string | null> {
+    if (!inv || inv.status !== 'draft') return null
+    return (await markInvoiceSent()) ? null : 'Could not mark the invoice as sent, so the email was not sent.'
   }
 
   async function reviewProof(proofId: string, status: 'accepted' | 'rejected') {
@@ -347,17 +356,9 @@ function MoneyInvoiceDetailInner() {
   /** Mark the invoice sent (it gets its number), then open the email dialog. */
   async function handleSendByEmail() {
     if (!inv) return
-    setBusy(true)
     setErr(null)
-    const ok = await markInvoiceSent()
-    if (!ok) {
-      setErr('Failed to mark invoice as sent')
-      setBusy(false)
-      return
-    }
-    await load()
-    setBusy(false)
-    setSendFlow(true)
+    // Opening the email does not mark the invoice sent: that happens when the email goes (or with Mark Sent).
+    setSendFlow(false)
     setEmailKind('invoice')
   }
 
@@ -811,8 +812,12 @@ function MoneyInvoiceDetailInner() {
           defaultTo={clientEmail}
           clientId={inv.client_id ?? null}
           getPdf={emailKind === 'invoice' ? invoiceEmailPdf : undefined}
+          beforeSend={emailKind === 'invoice' ? markSentBeforeEmail : undefined}
           attachmentLabel={emailKind === 'invoice' ? `Invoice_${inv.invoice_number ?? 'draft'}.pdf` : undefined}
-          onSent={() => { void loadDocumentEmails(createClient(), id, ['invoice', 'receipt']).then(setEmailLog) }}
+          onSent={() => {
+            if (emailKind === 'invoice' && inv.status === 'draft') { setSendFlow(true); void load() }
+            void loadDocumentEmails(createClient(), id, ['invoice', 'receipt']).then(setEmailLog)
+          }}
         />
       )}
 

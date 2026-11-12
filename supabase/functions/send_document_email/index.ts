@@ -69,16 +69,17 @@ type Built = {
   fixedAfter?: string[]; // HTML shown after the message and never edited (e.g. the RFQ items table)
 } | { error: string; status: number };
 
-async function build(admin: SupabaseClient, kind: Kind, id: string): Promise<Built> {
+async function build(admin: SupabaseClient, kind: Kind, id: string, preview = false): Promise<Built> {
   if (kind === "invoice" || kind === "receipt") {
     const { data: inv } = await admin.from("finance_invoices")
       .select("id, company_id, invoice_number, status, currency, total_amount, amount_paid, balance_due, due_date, client:clients(name, contact_person, email)")
       .eq("id", id).maybeSingle();
     if (!inv) return { error: "Invoice not found.", status: 404 };
     const c = (inv.client ?? {}) as { name?: string; contact_person?: string; email?: string };
-    const num = String(inv.invoice_number ?? "");
+    const num = String(inv.invoice_number ?? "") || (preview ? "(number given when sent)" : "");
     if (kind === "invoice") {
-      if (["draft", "voided", "cancelled"].includes(String(inv.status))) return { error: "Only sent invoices can be emailed.", status: 409 };
+      // A draft can be previewed (the office opens the email first); it is marked sent and numbered just before sending.
+      if (["voided", "cancelled"].includes(String(inv.status)) || (inv.status === "draft" && !preview)) return { error: "Only sent invoices can be emailed.", status: 409 };
       const bal = Number(inv.balance_due ?? 0);
       return {
         companyId: inv.company_id, to: valid(c.email), greetName: c.contact_person || null,
@@ -235,7 +236,7 @@ Deno.serve(async (req: Request) => {
     if (NEEDS_PDF.includes(kind) && !pdf && !preview) return json({ error: "pdf_base64 required" }, 400);
 
     const admin = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, { auth: { persistSession: false } });
-    const built = await build(admin, kind, docId);
+    const built = await build(admin, kind, docId, preview);
     if ("error" in built) return json({ error: "not_ready", message: built.error }, built.status);
 
     // Permission: office staff of this document's company.

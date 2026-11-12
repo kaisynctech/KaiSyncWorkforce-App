@@ -16,7 +16,7 @@ import { draftEdits, type EmailDraft } from '@/lib/email-preview'
 export type EmailPdf = { base64: string; filename: string }
 
 export function EmailDocumentDialog({
-  open, onClose, kind, docId, companyId, title, description, defaultTo, clientId, getPdf, onSent, attachmentLabel,
+  open, onClose, kind, docId, companyId, title, description, defaultTo, clientId, getPdf, onSent, attachmentLabel, beforeSend,
 }: {
   open: boolean
   onClose: () => void
@@ -34,6 +34,8 @@ export function EmailDocumentDialog({
   onSent?: (recipient: string) => void
   /** Shown under the note, e.g. "INV0001.pdf". */
   attachmentLabel?: string
+  /** Runs just before sending (e.g. a draft invoice is marked sent and numbered). Return an error message to stop. */
+  beforeSend?: () => Promise<string | null>
 }) {
   // The dialog is mounted when it opens, so the address starts from defaultTo.
   const [rcpt, setRcpt] = useState<Recipients>(() => emptyRecipients(defaultTo))
@@ -53,6 +55,8 @@ export function EmailDocumentDialog({
   async function send() {
     setBusy(true); setResult(null)
     try {
+      const stop = beforeSend ? await beforeSend() : null
+      if (stop) throw new Error(stop)
       const pdf = getPdf ? await getPdf() : null
       if (getPdf && !pdf) throw new Error('Could not make the PDF.')
       const supabase = createClient()
