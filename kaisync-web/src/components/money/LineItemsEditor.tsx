@@ -303,7 +303,7 @@ export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly
 
       {/* Quotes: the items as a table: item, qty, cost price, selling price, discount, margin, line total; the totals are in their own card below. */}
       {showCost ? (lines.length === 0 ? null : (
-      <div className="overflow-x-auto border-t border-divider/70">
+      <div className="overflow-x-hidden sm:overflow-x-auto border-t border-divider/70">
         <table className="w-full table-fixed text-[12px] sm:text-[13px]">
           <QuoteCols readOnly={readOnly} />
           <thead>
@@ -443,8 +443,8 @@ export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly
                     {!readOnly && (
                       <td className="py-1.5 pr-0.5 sm:pr-3 text-center">
                         <button type="button" aria-label="Remove line" onClick={() => remove(l.key)}
-                          className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg inline-flex items-center justify-center text-text-secondary/60 hover:text-error hover:bg-error/10">
-                          <span className="material-icons text-[16px]">close</span>
+                          className="w-5 h-5 sm:w-7 sm:h-7 rounded-lg inline-flex items-center justify-center text-text-secondary/60 hover:text-error hover:bg-error/10">
+                          <span className="material-icons !text-[14px] sm:!text-[16px]">close</span>
                         </button>
                       </td>
                     )}
