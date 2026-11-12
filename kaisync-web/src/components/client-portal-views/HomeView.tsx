@@ -16,7 +16,8 @@ import { getInvoiceForPdf, getPartyComplianceDocuments, listDocumentRequests, li
 import { PortalQuotesTable, PortalQuotesWaiting } from '@/components/portal/PortalQuotes'
 import { getDealMessagesReadAt, type ClientPortalSession } from '@/lib/client-portal/session'
 import { fmtDate, fmtDateTime, projectStatusLabel } from '@/lib/client-portal/format'
-import { moneyZAR } from '@/lib/client-portal/quotation'
+import { moneyMixed, moneyZAR } from '@/lib/client-portal/quotation'
+import { formatCurrency } from '@/lib/currencies'
 import { isInvoiceOutstanding, type ClientDocumentRequest, type ClientPortalJob, type ClientPortalProject, type MessageInboxItem, type PortalInvoice } from '@/lib/client-portal/types'
 import { localISODate } from '@/lib/utils'
 import { ResponsiveDataView } from '@/components/ui/ResponsiveDataView'
@@ -488,7 +489,7 @@ function MessagesTab({ inbox }: { inbox: MessageInboxItem[] }) {
   )
 }
 
-function InvoicesTab({ invoices, outstanding, session }: { invoices: PortalInvoice[]; outstanding: number; session: ClientPortalSession }) {
+function InvoicesTab({ invoices, session }: { invoices: PortalInvoice[]; outstanding: number; session: ClientPortalSession }) {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [pdfError, setPdfError] = useState<string | null>(null)
   const [proofFor, setProofFor] = useState<string | null>(null)
@@ -540,7 +541,7 @@ function InvoicesTab({ invoices, outstanding, session }: { invoices: PortalInvoi
     <div className="space-y-3">
       <div className="bg-primary/10 border border-primary/25 rounded-xl px-4 py-3 flex items-center justify-between">
         <p className="text-[12px] font-semibold text-primary uppercase tracking-wide">Outstanding</p>
-        <p className="text-[18px] font-bold text-text-primary">{moneyZAR(outstanding)}</p>
+        <p className="text-[18px] font-bold text-text-primary">{moneyMixed(invoices.filter(i => isInvoiceOutstanding(i.status)).map(i => ({ amount: i.balance_due, currency: i.currency })))}</p>
       </div>
       {pdfError && <p className="text-[12px] text-error">{pdfError}</p>}
       <PortalListToolbar
@@ -593,9 +594,9 @@ function InvoicesTab({ invoices, outstanding, session }: { invoices: PortalInvoi
                   <tr key={inv.id} className="border-b border-divider last:border-0 hover:bg-surface-elevated">
                     <td className={`${MONEY_TD} text-text-primary font-medium`}>{inv.invoice_number || '—'}</td>
                     <td className={`${MONEY_TD} text-text-primary capitalize`}>{inv.status.replace(/_/g, ' ')}</td>
-                    <td className={`${MONEY_TD} text-right text-text-primary`}>{moneyZAR(inv.total_amount)}</td>
+                    <td className={`${MONEY_TD} text-right text-text-primary`}>{formatCurrency(inv.total_amount, inv.currency)}</td>
                     <td className={`${MONEY_TD} text-right font-semibold ${isInvoiceOutstanding(inv.status) ? 'text-warning' : 'text-text-secondary'}`}>
-                      {moneyZAR(inv.balance_due)}
+                      {formatCurrency(inv.balance_due, inv.currency)}
                     </td>
                     <td className={`${MONEY_TD} text-text-secondary`}>{fmtDate(inv.issue_date)}</td>
                     <td className={`${MONEY_TD} text-text-secondary`}>{fmtDate(inv.due_date)}</td>
@@ -660,7 +661,7 @@ const CLOSED_PROJECT = ['completed', 'closed', 'cancelled', 'lost', 'archived']
 const CLOSED_JOB = ['completed', 'closed', 'cancelled', 'invoiced']
 
 function HomeTab({
-  name, projects, jobs, invoices, outstanding, unreadCount, docRequests, quotes, session,
+  name, projects, jobs, invoices, unreadCount, docRequests, quotes, session,
 }: {
   quotes: PortalQuote[]
   name: string
@@ -730,7 +731,7 @@ function HomeTab({
                 {overdue.length === 1 ? '1 invoice is overdue' : `${overdue.length} invoices are overdue`}
               </p>
               <p className="text-[12px] text-text-secondary mt-0.5">
-                {moneyZAR(overdue.reduce((s, i) => s + i.balance_due, 0))} past the due date. Tap to view.
+                {moneyMixed(overdue.map(i => ({ amount: i.balance_due, currency: i.currency })))} past the due date. Tap to view.
               </p>
             </Link>
           )}
@@ -748,7 +749,7 @@ function HomeTab({
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
         <PortalKpi label="Open projects" value={String(openProjectsList.length)} icon="folder_open" href={ph('/home?tab=projects')} />
         <PortalKpi label="Open jobs" value={String(openJobsList.length)} icon="work" href={ph('/home?tab=jobs')} />
-        <PortalKpi label="Amount owing" value={moneyZAR(outstanding)} icon="payments" tone="money" href={ph('/home?tab=invoices')} />
+        <PortalKpi label="Amount owing" value={moneyMixed(invoices.filter(i => isInvoiceOutstanding(i.status)).map(i => ({ amount: i.balance_due, currency: i.currency })))} icon="payments" tone="money" href={ph('/home?tab=invoices')} />
         <PortalKpi label="Unread" value={String(unreadCount)} icon="chat" tone={unreadCount > 0 ? 'alert' : 'default'} href={ph('/home?tab=messages')} />
       </div>
 
@@ -854,7 +855,7 @@ function HomeTab({
                       <tr key={inv.id} className="border-b border-divider last:border-0 hover:bg-surface-elevated">
                         <td className={`${MONEY_TD} text-text-primary font-medium`}>{inv.invoice_number || '—'}</td>
                         <td className={`${MONEY_TD} text-text-secondary`}>{fmtDate(inv.due_date)}</td>
-                        <td className={`${MONEY_TD} text-right font-semibold text-warning`}>{moneyZAR(inv.balance_due)}</td>
+                        <td className={`${MONEY_TD} text-right font-semibold text-warning`}>{formatCurrency(inv.balance_due, inv.currency)}</td>
                       </tr>
                     ))}
                   </tbody>

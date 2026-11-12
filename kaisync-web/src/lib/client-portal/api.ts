@@ -869,6 +869,7 @@ export async function getInvoiceForPdf(
     subtotal: Number(r.subtotal ?? 0) || 0,
     vat: Number(r.vat_amount ?? 0) || 0,
     total: Number(r.total_amount ?? 0) || 0,
+    currency: strN(r.currency),
     amount_paid: Number(r.amount_paid ?? 0) || 0,
     balance_due: Number(r.balance_due ?? 0) || 0,
     letterhead: await getLetterhead(companyCode, clientCode, str(r.company_name)).catch(() => null),
