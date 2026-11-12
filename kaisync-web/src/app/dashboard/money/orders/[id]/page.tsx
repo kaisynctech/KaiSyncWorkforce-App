@@ -15,7 +15,7 @@ import { formatCurrency } from '@/lib/currencies'
 import { MONEY_TD, MONEY_TH } from '@/components/ui/StatusFilterTabs'
 import { ResponsiveDataView } from '@/components/ui/ResponsiveDataView'
 import { InvoicesList } from '@/components/money/InvoicesList'
-import { createInvoiceFromQuote } from '@/lib/money/quote-invoice'
+import { createInvoiceFromQuote, createPartInvoiceFromQuote } from '@/lib/money/quote-invoice'
 import { createSupplyRfqFromQuote } from '@/lib/supply-rfq'
 import { ORDER_STATE, orderMoney, type OrderInvoice } from '@/lib/money/orders'
 import { cn } from '@/lib/utils'
@@ -83,6 +83,10 @@ export default function OrderPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  // Create invoice: the rest of the order, or a deposit / progress invoice (a % of the order).
+  const [invoicePanel, setInvoicePanel] = useState(false)
+  const [partPct, setPartPct] = useState('50')
+  const [partLabel, setPartLabel] = useState('Deposit')
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [employeeId, setEmployeeId] = useState<string | null>(null)
   const [quote, setQuote] = useState<Quote | null>(null)
@@ -171,9 +175,25 @@ export default function OrderPage() {
     }
   }, [quote, invoices, bills, payouts, cur])
 
+  async function createPartInvoice() {
+    if (!companyId || !quote) return
+    setBusy('part')
+    const r = await createPartInvoiceFromQuote(createClient(), { companyId, quoteId: quote.id, employeeId, percent: Number(partPct.replace(',', '.')), label: partLabel })
+    setBusy(null)
+    if ('error' in r) { setError(r.error); return }
+    router.push(r.created ? `/dashboard/money/invoices/${r.id}/edit` : `/dashboard/money/invoices/${r.id}`)
+  }
+  /** "Create invoice": a draft is opened; otherwise choose the rest of the order or a deposit / progress %. */
+  function startInvoice() {
+    const draft = invoices.find(i => String(i.status) === 'draft')
+    if (draft) { router.push(`/dashboard/money/invoices/${draft.id}`); return }
+    if (money.toInvoice <= 0.01 && invoices.some(i => !['voided', 'cancelled'].includes(String(i.status)))) { setTab('invoices'); return }
+    setInvoicePanel(true)
+  }
   async function createInvoice() {
     if (!companyId || !quote) return
     setBusy('invoice')
+    setInvoicePanel(false)
     const r = await createInvoiceFromQuote(createClient(), { companyId, quoteId: quote.id, employeeId })
     setBusy(null)
     if ('error' in r) { setError(r.error); return }
@@ -233,9 +253,9 @@ export default function OrderPage() {
             <Link href={`/dashboard/money/quotes/${quote.id}`} className="btn-outlined h-8 px-3 text-[12px] inline-flex items-center gap-1">
               <span className="material-icons text-[16px]">request_quote</span>Quote
             </Link>
-            <button type="button" onClick={() => void createInvoice()} disabled={!!busy || notAccepted}
+            <button type="button" onClick={startInvoice} disabled={!!busy || notAccepted}
               className="btn-primary h-8 px-3 text-[12px] inline-flex items-center gap-1 disabled:opacity-50">
-              <span className="material-icons text-[16px]">receipt_long</span>{busy === 'invoice' ? 'Opening…' : money.hasDraft || invoices.some(i => !['voided', 'cancelled'].includes(String(i.status))) ? 'Open invoice' : 'Create invoice'}
+              <span className="material-icons text-[16px]">receipt_long</span>{busy === 'invoice' ? 'Opening…' : money.hasDraft ? 'Open draft invoice' : money.toInvoice > 0.01 ? 'Create invoice' : 'Invoices'}
             </button>
           </div>
         </div>
@@ -246,6 +266,49 @@ export default function OrderPage() {
           </p>
         )}
         {error && <p className="text-[12px] text-error bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</p>}
+
+        {invoicePanel && (() => {
+          const pct = Number(partPct.replace(',', '.')) || 0
+          const qSub = Number(quote.subtotal) || 0
+          const rate = qSub > 0 ? (Number(quote.vat_amount) || 0) / qSub : 0
+          const partTotal = Math.round(qSub * pct / 100 * (1 + rate) * 100) / 100
+          return (
+            <div className="rounded-xl border border-primary/30 bg-surface px-4 py-3 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-[13.5px] font-semibold text-text-primary">Create an invoice for this order</p>
+                <button type="button" onClick={() => setInvoicePanel(false)} aria-label="Close" className="text-text-secondary hover:text-text-primary"><span className="material-icons text-[18px]">close</span></button>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-3">
+                <div className="rounded-lg border border-divider p-3 space-y-2">
+                  <p className="text-[13px] font-medium text-text-primary">{money.invoiced > 0 ? 'Final invoice (the rest)' : 'Invoice the whole order'}</p>
+                  <p className="text-[12px] text-text-secondary">
+                    Every line of the quote{money.invoiced > 0 ? ', less what was already invoiced' : ''}: {formatCurrency(money.toInvoice, cur)} incl. VAT.
+                  </p>
+                  <button type="button" disabled={!!busy} onClick={() => void createInvoice()} className="btn-primary h-8 px-3 text-[12px] disabled:opacity-50">
+                    {busy === 'invoice' ? 'Creating…' : 'Create invoice'}
+                  </button>
+                </div>
+                <div className="rounded-lg border border-divider p-3 space-y-2">
+                  <p className="text-[13px] font-medium text-text-primary">Deposit or progress invoice</p>
+                  <div className="flex flex-wrap items-center gap-2 text-[12.5px]">
+                    <select value={partLabel} onChange={e => setPartLabel(e.target.value)} className="h-8 rounded-lg border border-divider bg-surface px-2 text-[12.5px]">
+                      <option>Deposit</option>
+                      <option>Progress payment</option>
+                    </select>
+                    <label className="inline-flex items-center gap-1 h-8 rounded-lg border border-divider px-2 bg-surface">
+                      <input value={partPct} onChange={e => setPartPct(e.target.value)} inputMode="decimal" aria-label="Percent of the order" className="w-12 text-right bg-transparent focus:outline-none" />%
+                    </label>
+                    <span className="text-text-secondary">of the order = <b className="text-text-primary">{formatCurrency(partTotal, cur)}</b> incl. VAT</span>
+                  </div>
+                  <button type="button" disabled={!!busy || !(pct > 0)} onClick={() => void createPartInvoice()} className="btn-outlined h-8 px-3 text-[12px] disabled:opacity-50">
+                    {busy === 'part' ? 'Creating…' : `Create ${partLabel.toLowerCase()} invoice`}
+                  </button>
+                </div>
+              </div>
+              <p className="text-[11.5px] text-text-secondary">The invoice opens as a draft so you can check it, then send it. The final invoice takes off what deposits and progress invoices already billed.</p>
+            </div>
+          )
+        })()}
 
         <div className="flex gap-1 border-b border-divider overflow-x-auto">
           {TABS.map(t => (
@@ -285,7 +348,7 @@ export default function OrderPage() {
             <div className="grid sm:grid-cols-2 gap-3">
               <Section title="Next steps">
                 <ul className="px-4 py-3 space-y-1.5 text-[12.5px] text-text-primary">
-                  {money.state === 'to_invoice' && <li>• Nothing invoiced yet. <button type="button" onClick={() => void createInvoice()} className="text-primary hover:underline">Create the invoice</button>.</li>}
+                  {money.state === 'to_invoice' && <li>• Nothing invoiced yet. <button type="button" onClick={startInvoice} className="text-primary hover:underline">Create the invoice</button>.</li>}
                   {money.hasDraft && <li>• A draft invoice is waiting to be sent. <button type="button" onClick={() => setTab('invoices')} className="text-primary hover:underline">Open invoices</button>.</li>}
                   {money.owing > 0.004 && <li>• {formatCurrency(money.owing, cur)} is still owing. <button type="button" onClick={() => setTab('invoices')} className="text-primary hover:underline">Record a payment</button> on the invoice when it comes in.</li>}
                   {money.toInvoice > 0.01 && money.invoiced > 0 && <li>• {formatCurrency(money.toInvoice, cur)} of the order still has to be invoiced.</li>}
@@ -348,8 +411,8 @@ export default function OrderPage() {
         )}
 
         {tab === 'invoices' && (
-          <InvoicesList embedded quoteId={quote.id} onNew={notAccepted ? undefined : () => void createInvoice()}
-            newLabel={invoices.some(i => !['voided', 'cancelled'].includes(String(i.status))) ? 'Open invoice' : 'Create invoice'} />
+          <InvoicesList embedded quoteId={quote.id} onNew={notAccepted || (money.toInvoice <= 0.01 && !money.hasDraft) ? undefined : () => { startInvoice(); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+            newLabel={money.hasDraft ? 'Open draft invoice' : 'Create invoice'} />
         )}
 
         {tab === 'payments' && (
