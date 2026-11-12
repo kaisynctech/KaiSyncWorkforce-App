@@ -11,7 +11,7 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ITEM_KIND, blankEditorLine, filterPicks, formatRand, lineFromPick, lineMarginPct, lineTotal, linesProfit, priceForMargin,
+  ITEM_KIND, blankEditorLine, filterPicks, formatRand, lineFromPick, lineMarginPct, lineTotal, priceForMargin,
   type EditorLine, type ItemType, type PickItem,
 } from '@/lib/line-items'
 import { currencySymbol, formatCurrency } from '@/lib/currencies'
@@ -29,8 +29,6 @@ type Props = {
   /** Quotes: the items as a table with cost price, discount and margin (office only: cost and margin are never
    * printed or shown to the client). */
   showCost?: boolean
-  /** Quotes: subtotal, VAT (with the on / off switch) and total as the last rows of the table. */
-  totals?: { vatOn: boolean; vatLabel: string; vat: number; total: number; onVat: (on: boolean) => void }
 }
 
 function parsePct(text: string): number {
@@ -79,7 +77,7 @@ function PickRow({ item, onPick, compact }: { item: PickItem; onPick: () => void
   )
 }
 
-export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly, startOpen, currency, showCost, totals }: Props) {
+export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly, startOpen, currency, showCost }: Props) {
   const [browseOpen, setBrowseOpen] = useState(false)
   const [tab, setTab] = useState<ItemType | null>(null)
   const [query, setQuery] = useState('')
@@ -172,7 +170,6 @@ export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly
     </label>
   )
 
-  const costSum = showCost ? linesProfit(lines) : null
 
 
   return (
@@ -182,7 +179,7 @@ export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly
         <span className="text-[12px] text-text-secondary">{total} {total === 1 ? 'item' : 'items'}</span>
       </div>
 
-      {/* Quotes: the items as a table: item, qty, cost price, selling price, discount, margin, line total; then subtotal, VAT and total. */}
+      {/* Quotes: the items as a table: item, qty, cost price, selling price, discount, margin, line total; the totals are in their own card below. */}
       {showCost ? (lines.length === 0 ? null : (
       <div className="overflow-x-auto border-t border-divider/70">
         <table className="w-full text-[13px]" style={{ minWidth: 840 }}>
@@ -327,42 +324,6 @@ export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly
             })}
           </tbody>
           <tfoot>
-            <tr className="border-b border-divider/60">
-              <td className="py-2 pl-5 pr-2 text-text-secondary">{totals?.vatOn === false ? 'Subtotal' : 'Subtotal (excl. VAT)'}</td>
-              <td />
-              <td className="py-2 px-2 text-right tabular-nums text-text-secondary" title="Total cost (only your team sees this)">{costSum!.costed ? formatCurrency(costSum!.cost, currency) : ''}</td>
-              <td />
-              <td />
-              <td className={`py-2 px-2 text-right tabular-nums font-medium ${costSum!.profit < 0 ? 'text-error' : 'text-text-secondary'}`} title="Margin on the whole quote (only your team sees this)">{costSum!.costed ? marginText(costSum!.marginPct) : ''}</td>
-              <td className="py-2 pl-2 pr-5 text-right tabular-nums font-medium text-text-primary whitespace-nowrap">{formatCurrency(costSum!.sell, currency)}</td>
-              {!readOnly && <td />}
-            </tr>
-            {totals && (
-              <tr className="border-b border-divider/60">
-                <td colSpan={6} className="py-2 pl-5 pr-2">
-                  <div className="flex items-center gap-3 text-text-secondary">
-                    <span>{totals.vatLabel}</span>
-                    {!readOnly && (
-                      <div className="flex rounded-lg border border-divider overflow-hidden">
-                        <button type="button" onClick={() => totals.onVat(true)}
-                          className={`h-7 px-2.5 text-[12px] font-medium ${totals.vatOn ? 'bg-primary text-white' : 'text-text-secondary hover:bg-surface-elevated'}`}>VAT on</button>
-                        <button type="button" onClick={() => totals.onVat(false)}
-                          className={`h-7 px-2.5 text-[12px] font-medium ${!totals.vatOn ? 'bg-primary text-white' : 'text-text-secondary hover:bg-surface-elevated'}`}>No VAT</button>
-                      </div>
-                    )}
-                  </div>
-                </td>
-                <td className="py-2 pl-2 pr-5 text-right tabular-nums text-text-primary whitespace-nowrap">{totals.vatOn ? formatCurrency(totals.vat, currency) : '—'}</td>
-                {!readOnly && <td />}
-              </tr>
-            )}
-            {totals && (
-              <tr className="bg-surface-elevated/60 border-b border-divider">
-                <td colSpan={6} className="py-3 pl-5 pr-2 text-[14px] font-semibold text-text-primary">{totals.vatOn ? 'Total (incl. VAT)' : 'Total'}</td>
-                <td className="py-3 pl-2 pr-5 text-right tabular-nums text-[15px] font-bold text-text-primary whitespace-nowrap">{formatCurrency(totals.total, currency)}</td>
-                {!readOnly && <td />}
-              </tr>
-            )}
             <tr>
               <td colSpan={readOnly ? 7 : 8} className="px-5 py-1.5 text-[11.5px] text-text-secondary">
                 <span className="inline-flex items-center gap-1"><span className="material-icons !text-[13px] !leading-none">lock</span>Cost price and margin are only for your team. They never show on the quote PDF or the client&apos;s page. Change the margin to set the selling price from the cost.</span>

@@ -27,7 +27,7 @@ import { escapeIlike } from '@/lib/list-pagination'
 import { LineItemsEditor } from '@/components/money/LineItemsEditor'
 import { CurrencyPicker } from '@/components/money/CurrencyPicker'
 import { formatCurrency } from '@/lib/currencies'
-import { asItemType, lineQty, lineTotal, loadPickItems, type EditorLine, type ItemType, type PickItem } from '@/lib/line-items'
+import { asItemType, lineQty, lineTotal, linesProfit, loadPickItems, type EditorLine, type ItemType, type PickItem } from '@/lib/line-items'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1474,8 +1474,47 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         </div>
 
         {/* ── Items ── */}
-        <LineItemsEditor lines={editorLines} onChange={handleEditorChange} items={pickItems} itemsLoading={pickLoading} startOpen={!initialQuoteId} currency={quoteCurrency} showCost
-          totals={{ vatOn, vatLabel: vatOn ? `VAT (${vatPercentLabel(vatRate)}%)` : 'VAT', vat, total, onVat: updateVatOn }} />
+        <LineItemsEditor lines={editorLines} onChange={handleEditorChange} items={pickItems} itemsLoading={pickLoading} startOpen={!initialQuoteId} currency={quoteCurrency} showCost />
+
+        {/* ── Totals ── */}
+        {(() => {
+          const pr = linesProfit(editorLines)
+          return (
+            <div className="flex justify-end">
+              <div className="w-full max-w-md rounded-xl border border-divider bg-surface overflow-hidden">
+                <div className="flex justify-between items-center px-5 py-3 border-b border-divider">
+                  <span className="text-[13px] text-text-secondary">{vatOn ? 'Subtotal (excl. VAT)' : 'Subtotal'}</span>
+                  <span className="text-[13px] text-text-primary font-medium tabular-nums">{formatCurrency(subtotal, quoteCurrency)}</span>
+                </div>
+                <div className="flex justify-between items-center gap-3 px-5 py-3 border-b border-divider">
+                  <span className="text-[13px] text-text-secondary">{vatOn ? `VAT (${vatPercentLabel(vatRate)}%)` : 'VAT'}</span>
+                  <div className="flex items-center gap-2">
+                    <div className="flex rounded-lg border border-divider overflow-hidden">
+                      <button type="button" onClick={() => updateVatOn(true)}
+                        className={cn('h-7 px-2.5 text-[12px] font-medium', vatOn ? 'bg-primary text-white' : 'text-text-secondary hover:bg-surface-elevated')}>VAT on</button>
+                      <button type="button" onClick={() => updateVatOn(false)}
+                        className={cn('h-7 px-2.5 text-[12px] font-medium', !vatOn ? 'bg-primary text-white' : 'text-text-secondary hover:bg-surface-elevated')}>No VAT</button>
+                    </div>
+                    <span className="text-[13px] text-text-primary tabular-nums w-24 text-right">{vatOn ? formatCurrency(vat, quoteCurrency) : '—'}</span>
+                  </div>
+                </div>
+                <div className="flex justify-between items-center px-5 py-4 bg-surface-elevated">
+                  <span className="text-[14px] text-text-primary font-semibold">{vatOn ? 'Total (incl. VAT)' : 'Total'}</span>
+                  <span className="text-[16px] text-text-primary font-bold tabular-nums">{formatCurrency(total, quoteCurrency)}</span>
+                </div>
+                {pr.costed && (
+                  <div className="flex justify-between items-center px-5 py-2.5 border-t border-divider text-[12px] text-text-secondary">
+                    <span className="inline-flex items-center gap-1"><span className="material-icons !text-[13px] !leading-none">lock</span>Only your team</span>
+                    <span className="tabular-nums">
+                      Cost {formatCurrency(pr.cost, quoteCurrency)} · Margin{' '}
+                      <b className={pr.profit < 0 ? 'text-error' : 'text-text-primary'}>{pr.marginPct.toLocaleString('en-ZA', { maximumFractionDigits: 1 })}%</b>
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })()}
 
         {/* ── Notes ── */}
         <div className="rounded-xl border border-divider overflow-hidden">
