@@ -21,6 +21,8 @@ export type EditorLine = {
   hint?: string | null
   /** What one unit costs the business (office only; never on the PDF or the client's page). */
   unitCost?: number | null
+  /** Discount on this line, in % (0–100). Quotes only for now. */
+  discountPct?: number | null
 }
 
 export type PickItem = {
@@ -50,11 +52,38 @@ export function lineQty(l: Pick<EditorLine, 'type' | 'qty'>): number {
   return l.type === 'service' ? 1 : Math.max(0, Number(l.qty) || 0)
 }
 
-export function lineTotal(l: Pick<EditorLine, 'type' | 'qty' | 'unitPrice'>): number {
-  return Math.round(lineQty(l) * (Number(l.unitPrice) || 0) * 100) / 100
+/** Discount as a fraction (0–1), from a line's discount %. */
+export function discountFraction(l: Pick<EditorLine, 'discountPct'>): number {
+  const d = Number(l.discountPct) || 0
+  return Math.min(100, Math.max(0, d)) / 100
 }
 
-export function linesSubtotal(lines: Pick<EditorLine, 'type' | 'qty' | 'unitPrice'>[]): number {
+/** Price of one unit after the line's discount. */
+export function netUnitPrice(l: Pick<EditorLine, 'unitPrice' | 'discountPct'>): number {
+  return (Number(l.unitPrice) || 0) * (1 - discountFraction(l))
+}
+
+export function lineTotal(l: Pick<EditorLine, 'type' | 'qty' | 'unitPrice' | 'discountPct'>): number {
+  return Math.round(lineQty(l) * netUnitPrice(l) * 100) / 100
+}
+
+/** Margin (profit as a % of the selling price after discount); null when there is no cost or no price. */
+export function lineMarginPct(l: Pick<EditorLine, 'unitPrice' | 'discountPct' | 'unitCost'>): number | null {
+  const net = netUnitPrice(l)
+  const cost = Number(l.unitCost) || 0
+  if (!(cost > 0) || !(net > 0)) return null
+  return ((net - cost) / net) * 100
+}
+
+/** The selling price (before discount) that gives this margin on the cost. Null when it can't be done. */
+export function priceForMargin(cost: number, marginPct: number, discountPct: number | null | undefined): number | null {
+  const m = marginPct / 100
+  const d = Math.min(100, Math.max(0, Number(discountPct) || 0)) / 100
+  if (!(cost > 0) || m >= 1 || d >= 1) return null
+  return Math.round((cost / (1 - m) / (1 - d)) * 100) / 100
+}
+
+export function linesSubtotal(lines: Pick<EditorLine, 'type' | 'qty' | 'unitPrice' | 'discountPct'>[]): number {
   return Math.round(lines.reduce((s, l) => s + lineTotal(l), 0) * 100) / 100
 }
 
@@ -142,7 +171,7 @@ export function formatRand(n: number): string {
 }
 
 /** Cost, profit and margin of a set of lines (only lines with a cost count towards the cost). */
-export function linesProfit(lines: Pick<EditorLine, 'type' | 'qty' | 'unitPrice' | 'unitCost'>[]) {
+export function linesProfit(lines: Pick<EditorLine, 'type' | 'qty' | 'unitPrice' | 'unitCost' | 'discountPct'>[]) {
   const sell = linesSubtotal(lines)
   const cost = Math.round(lines.reduce((s, l) => s + lineQty(l) * (Number(l.unitCost) || 0), 0) * 100) / 100
   const costed = lines.some(l => (Number(l.unitCost) || 0) > 0)

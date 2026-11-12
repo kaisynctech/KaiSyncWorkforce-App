@@ -13,7 +13,10 @@ export type QuotePdfLine = {
   qty: number
   unit: string
   unit_price: number
+  /** Total for the line, after any discount. */
   total: number
+  /** Discount on the line in % (a "Disc." column is printed when any line has one). */
+  discount_pct?: number | null
 }
 
 export type QuotePdfInput = {
@@ -88,10 +91,14 @@ export function buildQuotePdf(input: QuotePdfInput): jsPDF {
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(8)
   doc.setTextColor(100, 116, 139)
+  const hasDisc = input.lines.some(l => (Number(l.discount_pct) || 0) > 0)
+  // With a discount column the other columns move left to make room.
+  const col = hasDisc ? { qty: 108, unit: 112, price: 146, disc: 163, desc: 78 } : { qty: 118, unit: 132, price: 158, disc: 0, desc: 90 }
   doc.text('Description', left + 1, y)
-  doc.text('Qty', 118, y, { align: 'right' })
-  doc.text('Unit', 132, y)
-  doc.text('Price', 158, y, { align: 'right' })
+  doc.text('Qty', col.qty, y, { align: 'right' })
+  doc.text('Unit', col.unit, y)
+  doc.text('Price', col.price, y, { align: 'right' })
+  if (hasDisc) doc.text('Disc.', col.disc, y, { align: 'right' })
   doc.text('Total', right - 1, y, { align: 'right' })
   y += 7
 
@@ -105,11 +112,13 @@ export function buildQuotePdf(input: QuotePdfInput): jsPDF {
       doc.addPage()
       y = 20
     }
-    const desc = doc.splitTextToSize(line.description.trim() || '—', 90)
+    const desc = doc.splitTextToSize(line.description.trim() || '—', col.desc)
     doc.text(desc, left + 1, y)
-    doc.text(String(line.qty), 118, y, { align: 'right' })
-    doc.text(line.unit || 'each', 132, y)
-    doc.text(money(line.unit_price, input.currency), 158, y, { align: 'right' })
+    doc.text(String(line.qty), col.qty, y, { align: 'right' })
+    doc.text(line.unit || 'each', col.unit, y)
+    doc.text(money(line.unit_price, input.currency), col.price, y, { align: 'right' })
+    const d = Number(line.discount_pct) || 0
+    if (hasDisc) doc.text(d > 0 ? `${Math.round(d * 100) / 100}%` : '', col.disc, y, { align: 'right' })
     doc.text(money(line.total, input.currency), right - 1, y, { align: 'right' })
     y += Math.max(6, desc.length * 4.5)
   }

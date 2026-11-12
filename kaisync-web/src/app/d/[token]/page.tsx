@@ -85,18 +85,32 @@ function Card({ children, className = '' }: { children: React.ReactNode; classNa
   return <section className={`bg-white rounded-2xl border border-slate-200 p-5 ${className}`}>{children}</section>
 }
 
+/** A quote line's discount in %, worked out from its price and its total (the total is after the discount). */
+function lineDiscountPct(qty: number, price: number, total: number): number {
+  const gross = qty * price
+  if (!(gross > 0) || total >= gross - 0.005) return 0
+  return Math.round((1 - total / gross) * 10000) / 100
+}
+
 function Lines({ rows, currency }: { rows: { description: string; qty: number; price: number; total: number }[]; currency?: string | null }) {
   return (
     <div className="divide-y divide-slate-100">
-      {rows.map((r, i) => (
+      {rows.map((r, i) => {
+        const disc = lineDiscountPct(r.qty, r.price, r.total)
+        return (
         <div key={i} className="py-2.5 flex items-start justify-between gap-3 text-[13.5px]">
           <div className="min-w-0">
             <p className="text-slate-900 whitespace-pre-line">{r.description || '—'}</p>
-            {r.qty !== 1 && <p className="text-[12px] text-slate-500">{r.qty} × {randZA(r.price, currency)}</p>}
+            {(r.qty !== 1 || disc > 0) && (
+              <p className="text-[12px] text-slate-500">
+                {r.qty} × {randZA(r.price, currency)}{disc > 0 ? ` · less ${disc}% discount` : ''}
+              </p>
+            )}
           </div>
           <p className="font-medium shrink-0">{randZA(r.total, currency)}</p>
         </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
@@ -130,7 +144,7 @@ async function downloadPdf(v: PublicView) {
     const doc = buildQuotePdf({
       quote_number: v.doc.number, title: v.doc.title, status: v.doc.status, valid_until: v.doc.valid_until, notes: v.doc.notes,
       client_name: client.name ?? null, client_email: client.email ?? null, company_name: lh.name, letterhead: lh,
-      lines: v.lines.map(l => ({ description: l.description, qty: Number(l.quantity), unit: l.unit ?? 'each', unit_price: Number(l.unit_sell_price), total: Number(l.subtotal_sell) })),
+      lines: v.lines.map(l => ({ description: l.description, qty: Number(l.quantity), unit: l.unit ?? 'each', unit_price: Number(l.unit_sell_price), total: Number(l.subtotal_sell), discount_pct: lineDiscountPct(Number(l.quantity), Number(l.unit_sell_price), Number(l.subtotal_sell)) })),
       subtotal: Number(v.doc.subtotal), vat: Number(v.doc.vat), total: Number(v.doc.total),
       vatRate: Number(v.doc.subtotal) > 0 ? Number(v.doc.vat) / Number(v.doc.subtotal) : 0, currency: v.doc.currency,
     })

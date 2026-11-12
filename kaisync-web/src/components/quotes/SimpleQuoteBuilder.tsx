@@ -47,6 +47,8 @@ export interface SimpleQuoteLine {
   hint?:              string | null
   /** Cost of one unit to the business (office only). */
   unit_cost?:         number | null
+  /** Discount on the line, in %. total is after the discount. */
+  discount_pct?:      number | null
 }
 
 type ClientRow = {
@@ -77,9 +79,6 @@ function todayPlus(days: number): string {
   return d.toISOString().slice(0, 10)
 }
 
-function fmtR(n: number, currency?: string | null): string {
-  return formatCurrency(n, currency)
-}
 
 function blankLine(): SimpleQuoteLine {
   return {
@@ -403,7 +402,10 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
           item_type:         row.job_service_id ? 'service' : row.inventory_item_id ? 'inventory' : row.catalogue_item_id ? 'catalogue' : 'custom',
           source_id:         ((row.job_service_id ?? row.inventory_item_id ?? row.catalogue_item_id) as string | null) ?? null,
           unit_cost:         Number(row.cost_price ?? 0) > 0 ? Number(row.cost_price) : null,
+          discount_pct:      Number(row.discount_percent ?? 0) > 0 ? Number(row.discount_percent) : null,
         }))
+        // total is after the line's discount.
+        for (const m of mapped) m.total = lineTotal({ type: m.item_type, qty: m.qty, unitPrice: m.unit_price, discountPct: m.discount_pct })
         setLines(mapped)
         linesRef.current = mapped
       }
@@ -546,7 +548,8 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
             inventory_item_id: l.item_type === 'inventory' ? l.source_id : null,
             source_type:       l.item_type === 'inventory' ? 'inventory' : l.item_type === 'catalogue' ? 'catalogue' : 'manual',
             cost_price:        Number(l.unit_cost) || 0,
-            markup_percent:    Number(l.unit_cost) > 0 ? Math.round(((l.unit_price - Number(l.unit_cost)) / Number(l.unit_cost)) * 10000) / 100 : 0,
+            markup_percent:    Number(l.unit_cost) > 0 && l.qty > 0 ? Math.round(((l.total / l.qty - Number(l.unit_cost)) / Number(l.unit_cost)) * 10000) / 100 : 0,
+            discount_percent:  Math.min(100, Math.max(0, Number(l.discount_pct) || 0)),
             subtotal_cost:     Math.round(l.qty * (Number(l.unit_cost) || 0) * 100) / 100,
             subtotal_sell:     l.total,
             vat_rate:          rate,
@@ -679,6 +682,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
     unit: l.unit,
     hint: l.hint ?? null,
     unitCost: l.unit_cost ?? null,
+    discountPct: l.discount_pct ?? null,
   }))
 
   function handleEditorChange(next: EditorLine[]) {
@@ -699,6 +703,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         source_id:         e.sourceId,
         hint:              e.hint ?? null,
         unit_cost:         e.unitCost ?? null,
+        discount_pct:      e.discountPct ?? null,
       }
     })
     setLines(mapped)
@@ -756,6 +761,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         unit: l.unit,
         unit_price: l.unit_price,
         total: l.total,
+        discount_pct: Number(l.discount_pct) || 0,
       })),
       ...(() => {
         const money = quoteMoney(
@@ -1365,6 +1371,42 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
               className="w-full h-9 rounded-lg border border-divider bg-surface px-3 text-[13px] text-text-primary focus:outline-none focus:border-primary transition-colors"
             />
           </div>
+
+          {/* Currency and, for a foreign currency, the exchange rate (can be changed) */}
+          <div className="sm:col-span-2">
+            <CurrencyPicker
+              value={quoteCurrency}
+              allowDefault={false}
+              homeCurrency={homeCurrency}
+              label="Currency"
+              onChange={c => {
+                const next = c ?? homeCurrency
+                setQuoteCurrency(next)
+                quoteCurrencyRef.current = next
+                setCurrencyTouched(true)
+                scheduleAutoSave()
+              }}
+            />
+          </div>
+          {foreign && (
+            <div className="sm:col-span-2">
+              <label className="block text-[11px] text-text-secondary uppercase tracking-wide mb-1.5">
+                Exchange rate · 1 {quoteCurrency} = ? {homeCurrency}
+              </label>
+              <input
+                inputMode="decimal"
+                value={fxRate}
+                onChange={e => { setFxRate(e.target.value); scheduleAutoSave() }}
+                placeholder={dailyRate ? `Today's rate: ${dailyRate.toFixed(4)}` : "Leave empty to use today's rate"}
+                className="w-full h-9 rounded-lg border border-divider bg-surface px-3 text-[13px] text-text-primary focus:outline-none focus:border-primary transition-colors"
+              />
+              {bookRate && bookRate > 0 && (
+                <p className="mt-1 text-[11.5px] text-text-secondary">
+                  ≈ {formatCurrency(Math.round(total * bookRate * 100) / 100, homeCurrency)} in your books{fxNum > 0 ? '' : " (today's rate)"}
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         {/* ── Optional project / job link ── */}
@@ -1432,85 +1474,8 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         </div>
 
         {/* ── Items ── */}
-        <LineItemsEditor lines={editorLines} onChange={handleEditorChange} items={pickItems} itemsLoading={pickLoading} startOpen={!initialQuoteId} currency={quoteCurrency} showCost />
-
-        {/* ── Totals ── */}
-        <div className="flex justify-end">
-          <div className="w-full max-w-md rounded-xl border border-divider overflow-hidden">
-            <div className="px-5 py-3 border-b border-divider space-y-2">
-              <CurrencyPicker
-                value={quoteCurrency}
-                allowDefault={false}
-                homeCurrency={homeCurrency}
-                label="Currency"
-                onChange={c => {
-                  const next = c ?? homeCurrency
-                  setQuoteCurrency(next)
-                  quoteCurrencyRef.current = next
-                  setCurrencyTouched(true)
-                  scheduleAutoSave()
-                }}
-              />
-              {foreign && (
-                <label className="flex flex-col gap-1 text-[12px] text-text-secondary">
-                  <span>Exchange rate (optional): 1 {quoteCurrency} = ? {homeCurrency}</span>
-                  <input
-                    inputMode="decimal"
-                    value={fxRate}
-                    onChange={e => { setFxRate(e.target.value); scheduleAutoSave() }}
-                    placeholder={dailyRate ? `Leave empty to use today's rate (${dailyRate.toFixed(4)})` : "Leave empty to use today's rate"}
-                    className="h-9 rounded-lg border border-divider px-3 text-[13px] bg-background text-text-primary focus:outline-none focus:border-primary/60"
-                  />
-                  {bookRate && bookRate > 0 && (
-                    <span>≈ {formatCurrency(Math.round(total * bookRate * 100) / 100, homeCurrency)} in your books{fxNum > 0 ? '' : ' (daily rate)'}</span>
-                  )}
-                </label>
-              )}
-            </div>
-            <div className="flex justify-between items-center px-5 py-3 border-b border-divider">
-              <span className="text-[13px] text-text-secondary">{vatOn ? 'Subtotal (excl. VAT)' : 'Subtotal'}</span>
-              <span className="text-[13px] text-text-primary font-medium tabular-nums">{fmtR(subtotal, quoteCurrency)}</span>
-            </div>
-            <div className="flex justify-between items-center gap-3 px-5 py-3 border-b border-divider">
-              <span className="text-[13px] text-text-secondary">
-                {vatOn ? `VAT (${vatPercentLabel(vatRate)}%)` : 'VAT'}
-              </span>
-              <div className="flex items-center gap-2">
-                <div className="flex rounded-lg border border-divider overflow-hidden">
-                  <button
-                    type="button"
-                    onClick={() => updateVatOn(true)}
-                    className={cn(
-                      'h-7 px-2.5 text-[12px] font-medium',
-                      vatOn ? 'bg-primary text-white' : 'text-text-secondary hover:bg-surface-elevated',
-                    )}
-                  >
-                    VAT on
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => updateVatOn(false)}
-                    className={cn(
-                      'h-7 px-2.5 text-[12px] font-medium',
-                      !vatOn ? 'bg-primary text-white' : 'text-text-secondary hover:bg-surface-elevated',
-                    )}
-                  >
-                    No VAT
-                  </button>
-                </div>
-                <span className="text-[13px] text-text-primary tabular-nums w-24 text-right">
-                  {vatOn ? fmtR(vat, quoteCurrency) : '—'}
-                </span>
-              </div>
-            </div>
-            <div className="flex justify-between items-center px-5 py-4 bg-surface-elevated">
-              <span className="text-[14px] text-text-primary font-semibold">
-                {vatOn ? 'Total (incl. VAT)' : 'Total'}
-              </span>
-              <span className="text-[15px] text-text-primary font-bold tabular-nums">{fmtR(total, quoteCurrency)}</span>
-            </div>
-          </div>
-        </div>
+        <LineItemsEditor lines={editorLines} onChange={handleEditorChange} items={pickItems} itemsLoading={pickLoading} startOpen={!initialQuoteId} currency={quoteCurrency} showCost
+          totals={{ vatOn, vatLabel: vatOn ? `VAT (${vatPercentLabel(vatRate)}%)` : 'VAT', vat, total, onVat: updateVatOn }} />
 
         {/* ── Notes ── */}
         <div className="rounded-xl border border-divider overflow-hidden">

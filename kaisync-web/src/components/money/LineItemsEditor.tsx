@@ -11,7 +11,7 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ITEM_KIND, blankEditorLine, filterPicks, formatRand, lineFromPick, lineQty, lineTotal, linesProfit,
+  ITEM_KIND, blankEditorLine, filterPicks, formatRand, lineFromPick, lineMarginPct, lineTotal, linesProfit, priceForMargin,
   type EditorLine, type ItemType, type PickItem,
 } from '@/lib/line-items'
 import { currencySymbol, formatCurrency } from '@/lib/currencies'
@@ -26,8 +26,16 @@ type Props = {
   startOpen?: boolean
   /** The document's currency, for the line totals (catalogue prices stay in the company currency). */
   currency?: string
-  /** Office only: a cost per line and the profit and margin it leaves (never printed or shown to the client). */
+  /** Quotes: the items as a table with cost price, discount and margin (office only: cost and margin are never
+   * printed or shown to the client). */
   showCost?: boolean
+  /** Quotes: subtotal, VAT (with the on / off switch) and total as the last rows of the table. */
+  totals?: { vatOn: boolean; vatLabel: string; vat: number; total: number; onVat: (on: boolean) => void }
+}
+
+function parsePct(text: string): number {
+  const n = parseFloat(text.replace(/[\s%]/g, '').replace(',', '.'))
+  return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0
 }
 
 function marginText(pct: number): string {
@@ -71,12 +79,14 @@ function PickRow({ item, onPick, compact }: { item: PickItem; onPick: () => void
   )
 }
 
-export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly, startOpen, currency, showCost }: Props) {
+export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly, startOpen, currency, showCost, totals }: Props) {
   const [browseOpen, setBrowseOpen] = useState(false)
   const [tab, setTab] = useState<ItemType | null>(null)
   const [query, setQuery] = useState('')
   const [priceDraft, setPriceDraft] = useState<Record<string, string>>({})
   const [costDraft, setCostDraft] = useState<Record<string, string>>({})
+  const [discDraft, setDiscDraft] = useState<Record<string, string>>({})
+  const [marginDraft, setMarginDraft] = useState<Record<string, string>>({})
   const [focusKey, setFocusKey] = useState<string | null>(null)
   const [activeKey, setActiveKey] = useState<string | null>(null)
   const inputs = useRef<Map<string, HTMLInputElement>>(new Map())
@@ -153,6 +163,15 @@ export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly
     </label>
   )
 
+  const pctInput = (value: string, onText: (t: string) => void, onBlur: () => void, label: string, disabled: boolean, title?: string) => (
+    <label title={title} className={`inline-flex items-center gap-1 h-8 w-full rounded-lg border border-divider px-2 text-[12px] text-text-secondary bg-background focus-within:border-primary/60 ${disabled ? 'opacity-50' : ''}`}>
+      <input value={value} inputMode="decimal" placeholder={disabled ? '—' : '0'} aria-label={label} disabled={disabled}
+        onChange={e => onText(e.target.value)} onBlur={onBlur}
+        className="w-full min-w-0 text-right text-[13px] text-text-primary bg-transparent focus:outline-none disabled:cursor-not-allowed" />
+      %
+    </label>
+  )
+
   const costSum = showCost ? linesProfit(lines) : null
 
 
@@ -163,17 +182,17 @@ export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly
         <span className="text-[12px] text-text-secondary">{total} {total === 1 ? 'item' : 'items'}</span>
       </div>
 
-      {/* Quotes: the items as a table: item, qty, cost price, selling price, margin, profit, line total. */}
+      {/* Quotes: the items as a table: item, qty, cost price, selling price, discount, margin, line total; then subtotal, VAT and total. */}
       {showCost ? (lines.length === 0 ? null : (
       <div className="overflow-x-auto border-t border-divider/70">
-        <table className="w-full text-[13px]" style={{ minWidth: 820 }}>
+        <table className="w-full text-[13px]" style={{ minWidth: 840 }}>
           <colgroup>
             <col />
-            <col style={{ width: 118 }} />
-            <col style={{ width: 120 }} />
-            <col style={{ width: 120 }} />
-            <col style={{ width: 76 }} />
             <col style={{ width: 112 }} />
+            <col style={{ width: 118 }} />
+            <col style={{ width: 118 }} />
+            <col style={{ width: 82 }} />
+            <col style={{ width: 82 }} />
             <col style={{ width: 120 }} />
             {!readOnly && <col style={{ width: 40 }} />}
           </colgroup>
@@ -185,8 +204,10 @@ export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly
                 <span className="inline-flex items-center gap-1"><span className="material-icons !text-[12px] !leading-none">lock</span>Cost price</span>
               </th>
               <th className={`${TH} text-right`}>Selling price</th>
-              <th className={`${TH} text-right`} title="Only your team sees this">Margin</th>
-              <th className={`${TH} text-right`} title="Only your team sees this">Profit</th>
+              <th className={`${TH} text-right`}>Discount</th>
+              <th className={`${TH} text-right`} title="Only your team sees this. Change it to work out the selling price from the cost.">
+                <span className="inline-flex items-center gap-1"><span className="material-icons !text-[12px] !leading-none">lock</span>Margin</span>
+              </th>
               <th className={`${TH} text-right pr-5`}>Total</th>
               {!readOnly && <th className={TH} />}
             </tr>
@@ -196,9 +217,11 @@ export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly
               const kind = ITEM_KIND[l.type]
               const isService = l.type === 'service'
               const cost = Number(l.unitCost) || 0
+              const disc = Number(l.discountPct) || 0
               const sell = lineTotal(l)
-              const profit = Math.round((sell - lineQty(l) * cost) * 100) / 100
+              const margin = lineMarginPct(l)
               const showSuggest = !readOnly && l.key === activeKey && l.type === 'custom' && suggestions.length > 0
+              const clearDraft = (set: typeof setPriceDraft) => () => set(d => { const n = { ...d }; delete n[l.key]; return n })
               return (
                 <Fragment key={l.key}>
                   <tr className="border-b border-divider/60 align-middle">
@@ -234,7 +257,7 @@ export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly
                             className="w-7 h-8 bg-surface-elevated text-[14px] text-text-secondary hover:text-text-primary disabled:opacity-40">−</button>
                           <input value={String(l.qty)} disabled={readOnly} inputMode="decimal" aria-label="Quantity"
                             onChange={e => { const n = parseFloat(e.target.value.replace(',', '.')); update(l.key, { qty: Number.isFinite(n) && n >= 0 ? n : 0 }) }}
-                            className="w-10 h-8 text-center text-[13px] font-semibold text-text-primary bg-transparent focus:outline-none" />
+                            className="w-9 h-8 text-center text-[13px] font-semibold text-text-primary bg-transparent focus:outline-none" />
                           <button type="button" disabled={readOnly} aria-label="More" onClick={() => update(l.key, { qty: (Number(l.qty) || 0) + 1 })}
                             className="w-7 h-8 bg-surface-elevated text-[14px] text-text-secondary hover:text-text-primary disabled:opacity-40">+</button>
                         </div>
@@ -244,7 +267,7 @@ export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly
                       {readOnly ? (cost > 0 ? formatCurrency(cost, currency) : '—') : moneyInput(
                         costDraft[l.key] ?? (cost ? cost.toFixed(2) : ''),
                         t => { setCostDraft(d => ({ ...d, [l.key]: t })); update(l.key, { unitCost: parseMoney(t) || null }) },
-                        () => setCostDraft(d => { const n = { ...d }; delete n[l.key]; return n }),
+                        clearDraft(setCostDraft),
                         'Cost price',
                       )}
                     </td>
@@ -252,15 +275,32 @@ export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly
                       {readOnly ? formatCurrency(l.unitPrice, currency) : moneyInput(
                         priceDraft[l.key] ?? (l.unitPrice ? l.unitPrice.toFixed(2) : ''),
                         t => { setPriceDraft(d => ({ ...d, [l.key]: t })); update(l.key, { unitPrice: parseMoney(t) }) },
-                        () => setPriceDraft(d => { const n = { ...d }; delete n[l.key]; return n }),
+                        clearDraft(setPriceDraft),
                         'Selling price',
                       )}
                     </td>
-                    <td className="py-1.5 px-2 text-right tabular-nums text-text-secondary">
-                      {cost > 0 && sell > 0 ? marginText((profit / sell) * 100) : '—'}
+                    <td className="py-1.5 px-2 text-right tabular-nums">
+                      {readOnly ? (disc > 0 ? `${marginText(disc)}` : '—') : pctInput(
+                        discDraft[l.key] ?? (disc ? String(disc) : ''),
+                        t => { setDiscDraft(d => ({ ...d, [l.key]: t })); update(l.key, { discountPct: Math.min(100, Math.max(0, parsePct(t))) || null }) },
+                        clearDraft(setDiscDraft),
+                        'Discount',
+                        false,
+                      )}
                     </td>
-                    <td className={`py-1.5 px-2 text-right tabular-nums font-medium ${cost > 0 ? (profit < 0 ? 'text-error' : 'text-emerald-700') : 'text-text-secondary'}`}>
-                      {cost > 0 ? formatCurrency(profit, currency) : '—'}
+                    <td className={`py-1.5 px-2 text-right tabular-nums ${margin != null && margin < 0 ? 'text-error' : ''}`}>
+                      {readOnly ? (margin != null ? marginText(margin) : '—') : pctInput(
+                        marginDraft[l.key] ?? (margin != null ? String(Math.round(margin * 10) / 10) : ''),
+                        t => {
+                          setMarginDraft(d => ({ ...d, [l.key]: t }))
+                          const price = priceForMargin(cost, parsePct(t), l.discountPct)
+                          if (price != null) { clearDraft(setPriceDraft)(); update(l.key, { unitPrice: price }) }
+                        },
+                        clearDraft(setMarginDraft),
+                        'Margin',
+                        !(cost > 0),
+                        cost > 0 ? undefined : 'Add the cost price first',
+                      )}
                     </td>
                     <td className="py-1.5 pl-2 pr-5 text-right tabular-nums font-semibold text-text-primary whitespace-nowrap">{formatCurrency(sell, currency)}</td>
                     {!readOnly && (
@@ -286,25 +326,49 @@ export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly
               )
             })}
           </tbody>
-          {lines.length > 0 && (
-            <tfoot>
-              <tr className="bg-surface-elevated/60 border-b border-divider font-semibold">
-                <td className="py-2.5 pl-5 pr-2 text-text-primary">Total <span className="font-normal text-[11.5px] text-text-secondary">(excl. VAT)</span></td>
-                <td />
-                <td className="py-2.5 px-2 text-right tabular-nums text-text-primary">{costSum!.costed ? formatCurrency(costSum!.cost, currency) : '—'}</td>
-                <td />
-                <td className="py-2.5 px-2 text-right tabular-nums text-text-primary">{costSum!.costed ? marginText(costSum!.marginPct) : '—'}</td>
-                <td className={`py-2.5 px-2 text-right tabular-nums ${costSum!.costed ? (costSum!.profit < 0 ? 'text-error' : 'text-emerald-700') : 'text-text-secondary'}`}>{costSum!.costed ? formatCurrency(costSum!.profit, currency) : '—'}</td>
-                <td className="py-2.5 pl-2 pr-5 text-right tabular-nums text-text-primary whitespace-nowrap">{formatCurrency(costSum!.sell, currency)}</td>
+          <tfoot>
+            <tr className="border-b border-divider/60">
+              <td className="py-2 pl-5 pr-2 text-text-secondary">{totals?.vatOn === false ? 'Subtotal' : 'Subtotal (excl. VAT)'}</td>
+              <td />
+              <td className="py-2 px-2 text-right tabular-nums text-text-secondary" title="Total cost (only your team sees this)">{costSum!.costed ? formatCurrency(costSum!.cost, currency) : ''}</td>
+              <td />
+              <td />
+              <td className={`py-2 px-2 text-right tabular-nums font-medium ${costSum!.profit < 0 ? 'text-error' : 'text-text-secondary'}`} title="Margin on the whole quote (only your team sees this)">{costSum!.costed ? marginText(costSum!.marginPct) : ''}</td>
+              <td className="py-2 pl-2 pr-5 text-right tabular-nums font-medium text-text-primary whitespace-nowrap">{formatCurrency(costSum!.sell, currency)}</td>
+              {!readOnly && <td />}
+            </tr>
+            {totals && (
+              <tr className="border-b border-divider/60">
+                <td colSpan={6} className="py-2 pl-5 pr-2">
+                  <div className="flex items-center gap-3 text-text-secondary">
+                    <span>{totals.vatLabel}</span>
+                    {!readOnly && (
+                      <div className="flex rounded-lg border border-divider overflow-hidden">
+                        <button type="button" onClick={() => totals.onVat(true)}
+                          className={`h-7 px-2.5 text-[12px] font-medium ${totals.vatOn ? 'bg-primary text-white' : 'text-text-secondary hover:bg-surface-elevated'}`}>VAT on</button>
+                        <button type="button" onClick={() => totals.onVat(false)}
+                          className={`h-7 px-2.5 text-[12px] font-medium ${!totals.vatOn ? 'bg-primary text-white' : 'text-text-secondary hover:bg-surface-elevated'}`}>No VAT</button>
+                      </div>
+                    )}
+                  </div>
+                </td>
+                <td className="py-2 pl-2 pr-5 text-right tabular-nums text-text-primary whitespace-nowrap">{totals.vatOn ? formatCurrency(totals.vat, currency) : '—'}</td>
                 {!readOnly && <td />}
               </tr>
-              <tr>
-                <td colSpan={readOnly ? 7 : 8} className="px-5 py-1.5 text-[11.5px] text-text-secondary">
-                  <span className="inline-flex items-center gap-1"><span className="material-icons !text-[13px] !leading-none">lock</span>Cost price, margin and profit are only for your team. They never show on the quote PDF or the client&apos;s page.</span>
-                </td>
+            )}
+            {totals && (
+              <tr className="bg-surface-elevated/60 border-b border-divider">
+                <td colSpan={6} className="py-3 pl-5 pr-2 text-[14px] font-semibold text-text-primary">{totals.vatOn ? 'Total (incl. VAT)' : 'Total'}</td>
+                <td className="py-3 pl-2 pr-5 text-right tabular-nums text-[15px] font-bold text-text-primary whitespace-nowrap">{formatCurrency(totals.total, currency)}</td>
+                {!readOnly && <td />}
               </tr>
-            </tfoot>
-          )}
+            )}
+            <tr>
+              <td colSpan={readOnly ? 7 : 8} className="px-5 py-1.5 text-[11.5px] text-text-secondary">
+                <span className="inline-flex items-center gap-1"><span className="material-icons !text-[13px] !leading-none">lock</span>Cost price and margin are only for your team. They never show on the quote PDF or the client&apos;s page. Change the margin to set the selling price from the cost.</span>
+              </td>
+            </tr>
+          </tfoot>
         </table>
       </div>
       )) : (
