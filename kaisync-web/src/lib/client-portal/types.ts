@@ -108,6 +108,14 @@ export type ClientPortalProject = {
   updated_at: string
   job_count: number
   quotation_lines: QuotationLine[]
+  /** The quote the client is answering (a normal Money quote), when the project has one. */
+  quote_id: string | null
+  quote_number: string | null
+  quote_currency: string | null
+  quote_status: string | null
+  quote_subtotal: number | null
+  quote_vat: number | null
+  quote_total: number | null
   documents: ProjectDocument[]
   activity_updates: ActivityUpdate[]
   progress_photos: ProgressPhoto[]

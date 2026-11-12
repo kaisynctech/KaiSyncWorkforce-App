@@ -5,6 +5,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
+import { QuotesList } from '@/components/money/QuotesList'
+import { InvoicesList } from '@/components/money/InvoicesList'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { SectionCard, FormField, entryClass } from '@/components/SectionCard'
@@ -22,7 +24,6 @@ import {
 import {
   ensureMoneyQuoteForProject,
   findMoneyQuoteForProject,
-  sendProjectQuotationViaMoneyQuote,
   type MoneyQuoteLink,
 } from '@/lib/project-money-quote'
 import { logProjectEvent } from '@/lib/project-events'
@@ -49,12 +50,6 @@ const DOC_TYPE_OPTIONS = [
 const fmtDate = (d: string) =>
   new Intl.DateTimeFormat('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(d))
 
-const fmtCurrency = (n: number) =>
-  `R ${n.toLocaleString('en-ZA', { minimumFractionDigits: 2 })}`
-
-const lineAmount = (l: ProjectQuotationLine) =>
-  Number(l.quantity ?? 0) * Number(l.unit_price ?? 0)
-
 export default function ProjectDetailPage() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
@@ -78,24 +73,9 @@ export default function ProjectDetailPage() {
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [employeeId, setEmployeeId] = useState<string | null>(null)
   const [perms, setPerms] = useState<PermissionSet | null>(null)
-  const [sendBusy, setSendBusy] = useState(false)
   const [moneyQuote, setMoneyQuote] = useState<MoneyQuoteLink | null>(null)
   const [moneyQuoteBusy, setMoneyQuoteBusy] = useState(false)
   const [invoiceBusy, setInvoiceBusy] = useState(false)
-  const [moneyInvoices, setMoneyInvoices] = useState<Array<{
-    id: string
-    invoice_number: string | null
-    status: string
-    total_amount: number
-    balance_due: number
-  }>>([])
-  const [moneyQuotes, setMoneyQuotes] = useState<Array<{
-    id: string
-    quote_number: string | null
-    title: string
-    status: string
-    total_amount: number | null
-  }>>([])
 
   const canCreate = can(perms, PERM.projectsCreate)
   const canEdit = can(perms, PERM.projectsEdit)
@@ -121,9 +101,6 @@ export default function ProjectDetailPage() {
   const [useExpectedClose, setUseExpectedClose] = useState(false)
 
   // Quotation lines editing
-  const [newLineDesc, setNewLineDesc] = useState('')
-  const [newLineQty, setNewLineQty] = useState('1')
-  const [newLineUnitPrice, setNewLineUnitPrice] = useState('')
 
   useEffect(() => { load() }, [projectId])
 
@@ -178,22 +155,6 @@ export default function ProjectDetailPage() {
       companyId: member.companyId,
       projectId,
     }))
-    const [invRes, quoteListRes] = await Promise.all([
-      supabase
-        .from('finance_invoices')
-        .select('id, invoice_number, status, total_amount, balance_due')
-        .eq('company_id', member.companyId)
-        .or(`deal_id.eq.${projectId},project_id.eq.${projectId}`)
-        .order('created_at', { ascending: false }),
-      supabase
-        .from('commercial_quotes')
-        .select('id, quote_number, title, status, total_amount')
-        .eq('company_id', member.companyId)
-        .eq('deal_id', projectId)
-        .order('created_at', { ascending: false }),
-    ])
-    setMoneyInvoices((invRes.data ?? []) as typeof moneyInvoices)
-    setMoneyQuotes((quoteListRes.data ?? []) as typeof moneyQuotes)
     setProject(p)
     setTitle(p.title ?? '')
     setCode(p.project_code ?? '')
@@ -304,36 +265,6 @@ export default function ProjectDetailPage() {
     router.push(`/dashboard/money/invoices/${result.invoiceId}/edit`)
   }
 
-  async function handleSendQuotation() {
-    if (!companyId || !employeeId || !canEdit || lines.length === 0) return
-    setSendBusy(true)
-    setError(null)
-    const supabase = createClient()
-    const result = await sendProjectQuotationViaMoneyQuote(supabase, {
-      companyId,
-      projectId,
-      employeeId,
-      clientId: clientId || null,
-      title: title.trim() || project?.title || 'Project quotation',
-      scopeNotes: quotationNotes.trim() || null,
-      validUntil: useQuotationValidUntil ? (quotationValidUntil || null) : null,
-      previousStatus: project?.status ?? null,
-    })
-    setSendBusy(false)
-    if (!result.ok) { setError(result.message); return }
-    setStatus('sent')
-    setProject(prev => prev ? {
-      ...prev,
-      status: 'sent',
-      quotation_response: 'pending',
-      quotation_response_note: null,
-      quotation_response_at: null,
-      quotation_response_storage_path: null,
-    } : prev)
-    const linked = await findMoneyQuoteForProject(supabase, { companyId, projectId })
-    setMoneyQuote(linked)
-  }
-
   async function handleOpenOrCreateMoneyQuote() {
     if (!companyId || !employeeId || !canEdit) return
     setMoneyQuoteBusy(true)
@@ -353,66 +284,6 @@ export default function ProjectDetailPage() {
     if (!result.ok) { setError(result.message); return }
     setMoneyQuote(result.data)
     router.push(`/dashboard/money/quotes/${result.data.id}`)
-  }
-
-  async function syncOfferAmount(nextLines: ProjectQuotationLine[]) {
-    if (!companyId) return
-    const offer = nextLines.reduce((s, l) => s + lineAmount(l), 0)
-    const supabase = createClient()
-    await supabase.from('client_deals').update({ offer_amount: offer }).eq('id', projectId).eq('company_id', companyId)
-    setProject(prev => prev ? { ...prev, offer_amount: offer } : prev)
-  }
-
-  async function addLine() {
-    if (!canEdit || !newLineDesc.trim() || !project) return
-    const description = newLineDesc.trim()
-    const qty = parseFloat(newLineQty) || 1
-    const unitPrice = parseFloat(newLineUnitPrice) || 0
-    const supabase = createClient()
-    const { data, error: e } = await supabase.from('project_quotation_lines').insert({
-      company_id: project.company_id,
-      deal_id: projectId,
-      line_no: lines.length + 1,
-      description,
-      quantity: qty,
-      unit_price: unitPrice,
-    }).select().single()
-    if (e) { setError(e.message); return }
-    if (data) {
-      const next = [...lines, data as ProjectQuotationLine]
-      setLines(next)
-      setNewLineDesc('')
-      setNewLineQty('1')
-      setNewLineUnitPrice('')
-      await syncOfferAmount(next)
-      await logProjectEvent(supabase, {
-        companyId: project.company_id,
-        screen: 'HrProjectDetails',
-        action: 'quotation_line_added',
-        meta: { project_id: projectId, description },
-      })
-    }
-  }
-
-  async function deleteLine(id: string) {
-    if (!canEdit || !project) return
-    const supabase = createClient()
-    const { error: delErr } = await supabase
-      .from('project_quotation_lines')
-      .delete()
-      .eq('id', id)
-      .eq('deal_id', projectId)
-      .eq('company_id', project.company_id)
-    if (delErr) { setError(delErr.message); return }
-    const next = lines.filter(l => l.id !== id)
-    setLines(next)
-    await syncOfferAmount(next)
-    await logProjectEvent(supabase, {
-      companyId: project.company_id,
-      screen: 'HrProjectDetails',
-      action: 'quotation_line_removed',
-      meta: { project_id: projectId },
-    })
   }
 
   async function uploadDoc(file: File) {
@@ -493,9 +364,6 @@ export default function ProjectDetailPage() {
     })
   }
 
-  const subtotal = lines.reduce((s, l) => s + lineAmount(l), 0)
-  const vat      = subtotal * 0.15
-  const total    = subtotal + vat
 
   const JOB_STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
     open:        { bg: '#DBEAFE', fg: '#1E40AF' },
@@ -755,13 +623,11 @@ export default function ProjectDetailPage() {
         {/* ── QUOTATION TAB ── */}
         {!isNew && tab === 'quotation' && (
           <div className="space-y-4">
-            <SectionCard title="Quotation for client">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-[13px] text-text-primary">Status</span>
-                <span className="text-[13px] text-text-secondary">
-                  {project?.status === 'sent' || moneyQuote?.status === 'sent'
-                    ? 'Sent to client'
-                    : 'Not sent'}
+            <SectionCard title="Client's answer">
+              <div className="flex items-start justify-between gap-3">
+                <span className="text-[13px] text-text-primary">Latest quote</span>
+                <span className="text-[13px] text-text-secondary text-right">
+                  {moneyQuote ? `${moneyQuote.quote_number ?? 'Quote'} · ${moneyQuote.status.replace(/_/g, ' ')}` : 'No quote sent yet'}
                 </span>
               </div>
               <div className="flex items-start justify-between gap-3">
@@ -771,8 +637,8 @@ export default function ProjectDetailPage() {
                     {project?.quotation_response === 'accepted'
                       ? 'Accepted'
                       : project?.quotation_response === 'revision_requested'
-                        ? 'Asked for a revision'
-                        : 'Waiting'}
+                        ? 'Asked for changes'
+                        : moneyQuote && ['sent', 'viewed'].includes(moneyQuote.status) ? 'Waiting' : '—'}
                   </p>
                   {project?.quotation_response_note && (
                     <p className="text-[12px] text-text-primary mt-1 max-w-sm">{project.quotation_response_note}</p>
@@ -786,158 +652,36 @@ export default function ProjectDetailPage() {
                       Open their file
                     </button>
                   )}
-                  {canEdit && project?.quotation_response === 'accepted' && moneyQuote && clientId && (
+                  {canEdit && moneyQuote?.status === 'accepted' && clientId && (
                     <button
                       type="button"
                       disabled={invoiceBusy}
                       onClick={() => void turnAcceptedQuoteIntoInvoice()}
-                      className="text-[12px] font-medium text-primary hover:underline mt-2 disabled:opacity-50"
+                      className="block ml-auto text-[12px] font-medium text-primary hover:underline mt-2 disabled:opacity-50"
                     >
                       {invoiceBusy ? 'Creating invoice…' : 'Turn into invoice'}
                     </button>
                   )}
                 </div>
               </div>
-              <div className="flex items-center justify-between gap-3 flex-wrap">
-                <span className="text-[13px] text-text-primary">Money quote</span>
-                <div className="flex items-center gap-3 flex-wrap">
-                  {moneyQuote ? (
-                    <>
-                      <span className="text-[12px] text-text-primary font-medium">
-                        {moneyQuote.quote_number ?? 'Quote'} · {moneyQuote.status.replace('_', ' ')}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => router.push(`/dashboard/money/quotes/${moneyQuote.id}`)}
-                        className="text-[12px] text-primary hover:underline"
-                      >
-                        Open
-                      </button>
-                    </>
-                  ) : (
-                    <span className="text-[12px] text-text-secondary">Not linked yet</span>
-                  )}
-                  {canEdit && (
-                    <button
-                      type="button"
-                      disabled={moneyQuoteBusy || lines.length === 0}
-                      onClick={() => void handleOpenOrCreateMoneyQuote()}
-                      className="text-[12px] font-medium text-primary hover:underline disabled:opacity-40"
-                    >
-                      {moneyQuoteBusy
-                        ? 'Working…'
-                        : moneyQuote
-                          ? 'Sync & open Money quote'
-                          : 'Create Money quote'}
-                    </button>
-                  )}
-                </div>
-              </div>
-              <FormField label="Intro / terms">
-                <textarea value={quotationNotes} onChange={e => setQuotationNotes(e.target.value)}
-                  placeholder="For the client…"
-                  className={`${entryClass} min-h-[56px] py-3 resize-none`} />
-              </FormField>
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-[13px] text-text-primary">Valid until</span>
-                <Toggle checked={useQuotationValidUntil}
-                  onChange={v => { setUseQuotationValidUntil(v); if (!v) setQuotationValidUntil('') }} />
-              </div>
-              {useQuotationValidUntil && (
-                <input type="date" value={quotationValidUntil} onChange={e => setQuotationValidUntil(e.target.value)} className={entryClass} />
-              )}
+              <p className="text-[11.5px] text-text-secondary">
+                Project quotes are normal quotes: same builder, PDF and email. Sending one marks the project Sent; when the client accepts (by email link or in the portal) the project is Won.
+              </p>
             </SectionCard>
 
-            {/* Line items */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <p className="section-label">LINE ITEMS</p>
+            {canEdit && lines.length > 0 && !moneyQuote && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[12.5px] text-amber-900">
+                  This project has {lines.length} line{lines.length === 1 ? '' : 's'} from the old quotation screen. Move them into a quote to send it.
+                </p>
+                <button type="button" disabled={moneyQuoteBusy} onClick={() => void handleOpenOrCreateMoneyQuote()}
+                  className="h-8 px-3 rounded-lg bg-primary text-white text-[12px] font-semibold disabled:opacity-50">
+                  {moneyQuoteBusy ? 'Working…' : 'Move into a quote'}
+                </button>
               </div>
-              <div className="card overflow-hidden">
-                <table className="w-full">
-                  <thead>
-                    <tr className="bg-surface-elevated border-b border-divider">
-                      <th className="data-th">Description</th>
-                      <th style={{ width: 72 }} className="data-th text-right">Qty</th>
-                      <th style={{ width: 96 }} className="data-th text-right">Unit price</th>
-                      <th style={{ width: 96 }} className="data-th text-right">Amount</th>
-                      <th style={{ width: 40 }} className="data-th"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {lines.map(l => (
-                      <tr key={l.id} className="border-b border-divider">
-                        <td className="data-td text-text-primary text-[13px]">{l.description}</td>
-                        <td className="data-td text-text-secondary text-[12px] text-right">{l.quantity}</td>
-                        <td className="data-td text-text-secondary text-[12px] text-right">{fmtCurrency(l.unit_price)}</td>
-                        <td className="data-td text-right text-[12px] font-medium text-text-primary">{fmtCurrency(lineAmount(l))}</td>
-                        <td className="data-td text-center">
-                          {canEdit && (
-                            <button onClick={() => void deleteLine(l.id)} className="text-error text-[12px]">✕</button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                    {/* Add row */}
-                    <tr className="border-b border-divider bg-background">
-                      <td className="data-td">
-                        <input placeholder="Description…" value={newLineDesc} onChange={e => setNewLineDesc(e.target.value)}
-                          className="dark-entry text-[13px]" />
-                      </td>
-                      <td className="data-td">
-                        <input placeholder="1" value={newLineQty} onChange={e => setNewLineQty(e.target.value)}
-                          inputMode="decimal" className="dark-entry text-[12px] text-right" />
-                      </td>
-                      <td className="data-td">
-                        <input placeholder="0.00" value={newLineUnitPrice} onChange={e => setNewLineUnitPrice(e.target.value)}
-                          inputMode="decimal" className="dark-entry text-[12px] text-right" />
-                      </td>
-                      <td className="data-td text-right text-[12px] text-text-secondary">
-                        {fmtCurrency((parseFloat(newLineQty) || 0) * (parseFloat(newLineUnitPrice) || 0))}
-                      </td>
-                      <td className="data-td text-center">
-                        {canEdit && (
-                          <button onClick={() => void addLine()} className="text-primary text-[18px] font-light leading-none">+</button>
-                        )}
-                      </td>
-                    </tr>
-                    {/* Totals */}
-                    <tr className="border-b border-divider">
-                      <td colSpan={3} className="data-td text-text-secondary text-[12px]">Total (excl. VAT)</td>
-                      <td className="data-td text-right text-[12px] text-text-secondary">{fmtCurrency(subtotal)}</td>
-                      <td />
-                    </tr>
-                    <tr className="border-b border-divider">
-                      <td colSpan={3} className="data-td text-text-secondary text-[12px]">VAT (15%)</td>
-                      <td className="data-td text-right text-[12px] text-text-secondary">{fmtCurrency(vat)}</td>
-                      <td />
-                    </tr>
-                    <tr>
-                      <td colSpan={3} className="data-td text-text-primary text-[13px] font-semibold">Total (incl. VAT)</td>
-                      <td className="data-td text-right text-[14px] font-semibold text-primary">{fmtCurrency(total)}</td>
-                      <td />
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {canEdit && (
-              <button
-                onClick={() => void handleSendQuotation()}
-                disabled={lines.length === 0 || sendBusy || status === 'sent' || moneyQuote?.status === 'sent'}
-                className="btn-primary w-full disabled:opacity-40"
-              >
-                {sendBusy
-                  ? 'Sending…'
-                  : status === 'sent' || moneyQuote?.status === 'sent'
-                    ? 'Quotation sent'
-                    : 'Send quotation'}
-              </button>
             )}
-            <p className="text-[11px] text-text-secondary text-center">
-              Send creates or updates the linked Money quote, marks it sent, and updates this project.
-            </p>
+
+            <QuotesList embedded dealId={projectId} prefill={{ dealId: projectId, clientId: clientId || null }} />
           </div>
         )}
 
@@ -989,103 +733,8 @@ export default function ProjectDetailPage() {
         {/* ── FINANCIALS ── */}
         {!isNew && tab === 'financials' && companyId && (
           <div className="space-y-4">
-            <div className="card p-4 space-y-3">
-              <div className="flex items-center justify-between gap-2 flex-wrap">
-                <p className="section-label mb-0">MONEY</p>
-                <div className="flex gap-2">
-                  <Link
-                    href={`/dashboard/money/quotes/new?deal_id=${projectId}${clientId ? `&client_id=${clientId}` : ''}`}
-                    className="h-8 px-3 text-[12px] rounded-lg border border-border text-text-secondary hover:text-text-primary hover:border-primary transition-colors flex items-center"
-                  >
-                    + Quote
-                  </Link>
-                  <Link
-                    href={`/dashboard/money/invoices/new?deal_id=${projectId}&project_id=${projectId}${clientId ? `&client_id=${clientId}` : ''}`}
-                    className="h-8 px-3 text-[12px] rounded-lg border border-border text-text-secondary hover:text-text-primary hover:border-primary transition-colors flex items-center"
-                  >
-                    + Invoice
-                  </Link>
-                </div>
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <p className="text-[12px] font-medium text-text-primary">Quotes</p>
-                  <Link href={`/dashboard/money/quotes?deal_id=${projectId}`} className="text-[11px] text-primary hover:underline">
-                    View all →
-                  </Link>
-                </div>
-                {moneyQuotes.length === 0 ? (
-                  <p className="text-[12px] text-text-secondary">No Money quotes linked to this project.</p>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full" style={{ minWidth: 420 }}>
-                      <thead>
-                        <tr className="border-b border-divider">
-                          <th className="data-th text-left">#</th>
-                          <th className="data-th text-left">Title</th>
-                          <th className="data-th text-left">Status</th>
-                          <th className="data-th text-right">Total</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {moneyQuotes.map(q => (
-                          <tr
-                            key={q.id}
-                            className="border-b border-divider last:border-0 cursor-pointer hover:bg-surface-elevated"
-                            onClick={() => router.push(`/dashboard/money/quotes/${q.id}`)}
-                          >
-                            <td className="data-td text-[13px] text-primary">{q.quote_number ?? 'Draft'}</td>
-                            <td className="data-td text-[13px]">{q.title || '—'}</td>
-                            <td className="data-td text-[12px] capitalize">{q.status.replace(/_/g, ' ')}</td>
-                            <td className="data-td text-[13px] text-right">{fmtCurrency(Number(q.total_amount ?? 0))}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <p className="text-[12px] font-medium text-text-primary">Invoices</p>
-                  <Link href={`/dashboard/money/invoices?deal_id=${projectId}`} className="text-[11px] text-primary hover:underline">
-                    View all →
-                  </Link>
-                </div>
-                {moneyInvoices.length === 0 ? (
-                  <p className="text-[12px] text-text-secondary">No client invoices linked to this project.</p>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full" style={{ minWidth: 420 }}>
-                      <thead>
-                        <tr className="border-b border-divider">
-                          <th className="data-th text-left">#</th>
-                          <th className="data-th text-left">Status</th>
-                          <th className="data-th text-right">Total</th>
-                          <th className="data-th text-right">Balance</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {moneyInvoices.map(inv => (
-                          <tr
-                            key={inv.id}
-                            className="border-b border-divider last:border-0 cursor-pointer hover:bg-surface-elevated"
-                            onClick={() => router.push(`/dashboard/money/invoices/${inv.id}`)}
-                          >
-                            <td className="data-td text-[13px] text-primary">{inv.invoice_number ?? 'Draft'}</td>
-                            <td className="data-td text-[12px] capitalize">{inv.status.replace(/_/g, ' ')}</td>
-                            <td className="data-td text-[13px] text-right">{fmtCurrency(Number(inv.total_amount))}</td>
-                            <td className="data-td text-[13px] text-right">{fmtCurrency(Number(inv.balance_due))}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </div>
+            <InvoicesList embedded dealId={projectId}
+              prefill={{ dealId: projectId, clientId: clientId || null }} />
 
             <ProjectFinancialsTab
               projectId={projectId}

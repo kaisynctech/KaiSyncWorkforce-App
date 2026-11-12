@@ -1,5 +1,6 @@
 'use client'
 
+import { formatCurrency } from '@/lib/currencies'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -161,6 +162,8 @@ export function ClientPortalProjectView() {
     () => (project ? clientQuotationLines(project.quotation_lines) : []),
     [project],
   )
+  // The quote's own currency (rand shows as R); older projects without a Money quote stay in rand.
+  const quoteMoney = (n: number) => (project?.quote_currency ? formatCurrency(n, project.quote_currency) : moneyZAR(n))
   const quoteTotal = useMemo(
     () => (project ? clientQuotationTotal(project.offer_amount, project.quotation_lines) : 0),
     [project],
@@ -379,7 +382,7 @@ export function ClientPortalProjectView() {
               )}
             </Section>
 
-            <Section title="Quotation">
+            <Section title={project.quote_number ? `Quotation ${project.quote_number}` : 'Quotation'}>
               {project.quotation_notes && (
                 <p className="text-[13px] text-text-primary mb-3 leading-relaxed">{project.quotation_notes}</p>
               )}
@@ -396,14 +399,20 @@ export function ClientPortalProjectView() {
                             {l.description}
                             <span className="text-text-secondary text-[11px] ml-1">×{l.quantity}</span>
                           </p>
-                          <p className="text-text-primary whitespace-nowrap">{moneyZAR(lineTotal(l))}</p>
+                          <p className="text-text-primary whitespace-nowrap">{quoteMoney(lineTotal(l))}</p>
                         </div>
                       ))}
                     </div>
                   )}
+                  {project.quote_total != null && (project.quote_vat ?? 0) > 0 && (
+                    <div className="flex justify-between text-[12.5px] text-text-secondary pt-2 border-t border-divider">
+                      <span>Subtotal {quoteMoney(project.quote_subtotal ?? 0)}</span>
+                      <span>VAT {quoteMoney(project.quote_vat ?? 0)}</span>
+                    </div>
+                  )}
                   <div className="border-divider bg-surface flex justify-between items-center pt-2 border-t">
                     <p className="text-[12px] font-semibold text-text-secondary uppercase">Total</p>
-                    <p className="text-[16px] font-bold text-text-primary">{moneyZAR(quoteTotal)}</p>
+                    <p className="text-[16px] font-bold text-text-primary">{quoteMoney(project.quote_total ?? quoteTotal)}</p>
                   </div>
                   {isDateSet(project.quotation_valid_until) && (
                     <p className="text-[12px] text-text-secondary mt-2">Valid until {fmtDate(project.quotation_valid_until)}</p>
