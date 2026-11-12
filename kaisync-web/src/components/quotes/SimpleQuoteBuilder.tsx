@@ -1476,25 +1476,25 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         {/* ── Items ── */}
         <LineItemsEditor lines={editorLines} onChange={handleEditorChange} items={pickItems} itemsLoading={pickLoading} startOpen={!initialQuoteId} currency={quoteCurrency} showCost />
 
-        {/* ── Totals: rows in the same columns as the items ── */}
-        <QuoteTotalsRows lines={editorLines} currency={quoteCurrency} vatOn={vatOn}
-          vatLabel={vatOn ? `VAT (${vatPercentLabel(vatRate)}%)` : 'VAT'} vat={vat} total={total} onVat={updateVatOn} />
-
         {/* ── Notes ── */}
         <div className="rounded-xl border border-divider overflow-hidden">
-          <div className="px-4 py-2.5 border-b border-divider bg-surface-elevated">
+          <div className="px-4 py-1.5 border-b border-divider bg-surface-elevated">
             <span className="text-[11px] text-text-secondary uppercase tracking-wide">
               Notes
             </span>
           </div>
           <textarea
-            rows={4}
+            rows={2}
             value={notes}
             onChange={e => updateNotes(e.target.value)}
             placeholder="Payment terms, warranty, scope exclusions…"
-            className="w-full px-4 py-3 text-[13px] text-text-primary bg-surface resize-none focus:outline-none placeholder-text-secondary/40"
+            className="w-full px-4 py-2 text-[13px] text-text-primary bg-surface resize-y focus:outline-none placeholder-text-secondary/40"
           />
         </div>
+        {/* ── Totals: rows in the same columns as the items ── */}
+        <QuoteTotalsRows lines={editorLines} currency={quoteCurrency} vatOn={vatOn}
+          vatLabel={vatOn ? `VAT (${vatPercentLabel(vatRate)}%)` : 'VAT'} vat={vat} total={total} onVat={updateVatOn} />
+
         <p className="-mt-2 px-1 text-[11.5px] text-text-secondary flex items-start gap-1">
           <span className="material-icons !text-[13px] !leading-[1.4]">lock</span>
           Cost price and margin are only for your team. They never show on the quote PDF or the client&apos;s page. Change the margin to set the selling price from the cost.
