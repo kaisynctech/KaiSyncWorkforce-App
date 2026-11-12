@@ -8,7 +8,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { currencyOptions, currencyName } from '@/lib/currencies'
 
-export function CurrencyPicker({ value, onChange, homeCurrency = 'ZAR', allowDefault = true, disabled, label = 'Currency', className = '' }: {
+export function CurrencyPicker({ value, onChange, homeCurrency = 'ZAR', allowDefault = true, disabled, label = 'Currency', className = '', compact = false }: {
   value: string | null | undefined
   onChange: (code: string | null) => void
   homeCurrency?: string
@@ -17,6 +17,8 @@ export function CurrencyPicker({ value, onChange, homeCurrency = 'ZAR', allowDef
   disabled?: boolean
   label?: string
   className?: string
+  /** Smaller field and label, for compact forms (the quote header). */
+  compact?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
@@ -38,9 +40,9 @@ export function CurrencyPicker({ value, onChange, homeCurrency = 'ZAR', allowDef
   return (
     <div ref={box} className={`relative flex flex-col gap-1.5 ${className}`}
       onBlur={e => { if (!box.current?.contains(e.relatedTarget as Node)) setOpen(false) }}>
-      <span className="text-[12px] font-medium text-text-secondary">{label}</span>
+      <span className={compact ? 'text-[10.5px] text-text-secondary uppercase tracking-wide -mb-0.5' : 'text-[12px] font-medium text-text-secondary'}>{label}</span>
       <button type="button" disabled={disabled} onClick={() => setOpen(o => !o)}
-        className="h-10 rounded-lg border border-divider px-3 text-left text-[13.5px] bg-background text-text-primary flex items-center justify-between gap-2 disabled:opacity-60">
+        className={`${compact ? 'h-8 px-2.5 text-[12.5px]' : 'h-10 px-3 text-[13.5px]'} rounded-lg border border-divider text-left bg-background text-text-primary flex items-center justify-between gap-2 disabled:opacity-60`}>
         <span className="truncate">{shown}</span>
         <span className="material-icons text-[18px] text-text-secondary">expand_more</span>
       </button>

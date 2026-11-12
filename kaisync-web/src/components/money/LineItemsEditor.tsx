@@ -56,11 +56,11 @@ export function QuoteTotalsRows({ lines, currency, readOnly, vatOn, vatLabel, va
   vatOn: boolean; vatLabel: string; vat: number; total: number; onVat: (on: boolean) => void
 }) {
   const p = linesProfit(lines)
-  const TH = 'px-2 py-2 text-[11px] font-semibold uppercase tracking-wide text-text-secondary whitespace-nowrap'
+  const TH = 'px-2 py-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-text-secondary whitespace-nowrap'
   const span = readOnly ? 1 : 2
   return (
     <div className="bg-surface-card border border-divider rounded-2xl overflow-x-auto">
-      <table className="w-full text-[13px]" style={{ minWidth: 840 }}>
+      <table className="w-full text-[12.5px]" style={{ minWidth: 840 }}>
         <QuoteCols readOnly={readOnly} />
         <thead>
           <tr className="bg-surface-elevated/60 border-b border-divider">
@@ -79,33 +79,33 @@ export function QuoteTotalsRows({ lines, currency, readOnly, vatOn, vatLabel, va
         </thead>
         <tbody>
           <tr className="border-b border-divider/60">
-            <td className="py-2.5 pl-5 pr-2 text-text-secondary">{vatOn ? 'Subtotal (excl. VAT)' : 'Subtotal'}</td>
+            <td className="py-1.5 pl-5 pr-2 text-text-secondary">{vatOn ? 'Subtotal (excl. VAT)' : 'Subtotal'}</td>
             <td />
-            <td className="py-2.5 px-2 text-right tabular-nums text-text-secondary">{p.costed ? formatCurrency(p.cost, currency) : '—'}</td>
+            <td className="py-1.5 px-2 text-right tabular-nums text-text-secondary">{p.costed ? formatCurrency(p.cost, currency) : '—'}</td>
             <td />
             <td />
-            <td className={`py-2.5 px-2 text-right tabular-nums font-medium ${p.costed && p.profit < 0 ? 'text-error' : 'text-text-primary'}`}>{p.costed ? marginText(p.marginPct) : '—'}</td>
-            <td colSpan={span} className="py-2.5 pl-2 pr-5 text-right tabular-nums font-medium text-text-primary whitespace-nowrap">{formatCurrency(p.sell, currency)}</td>
+            <td className={`py-1.5 px-2 text-right tabular-nums font-medium ${p.costed && p.profit < 0 ? 'text-error' : 'text-text-primary'}`}>{p.costed ? marginText(p.marginPct) : '—'}</td>
+            <td colSpan={span} className="py-1.5 pl-2 pr-5 text-right tabular-nums font-medium text-text-primary whitespace-nowrap">{formatCurrency(p.sell, currency)}</td>
           </tr>
           <tr className="border-b border-divider/60">
-            <td colSpan={6} className="py-2 pl-5 pr-2">
+            <td colSpan={6} className="py-1 pl-5 pr-2">
               <div className="flex items-center gap-3 text-text-secondary">
                 <span>{vatLabel}</span>
                 {!readOnly && (
                   <div className="flex rounded-lg border border-divider overflow-hidden">
                     <button type="button" onClick={() => onVat(true)}
-                      className={`h-7 px-2.5 text-[12px] font-medium ${vatOn ? 'bg-primary text-white' : 'text-text-secondary hover:bg-surface-elevated'}`}>VAT on</button>
+                      className={`h-6 px-2 text-[11.5px] font-medium ${vatOn ? 'bg-primary text-white' : 'text-text-secondary hover:bg-surface-elevated'}`}>VAT on</button>
                     <button type="button" onClick={() => onVat(false)}
-                      className={`h-7 px-2.5 text-[12px] font-medium ${!vatOn ? 'bg-primary text-white' : 'text-text-secondary hover:bg-surface-elevated'}`}>No VAT</button>
+                      className={`h-6 px-2 text-[11.5px] font-medium ${!vatOn ? 'bg-primary text-white' : 'text-text-secondary hover:bg-surface-elevated'}`}>No VAT</button>
                   </div>
                 )}
               </div>
             </td>
-            <td colSpan={span} className="py-2 pl-2 pr-5 text-right tabular-nums text-text-primary whitespace-nowrap">{vatOn ? formatCurrency(vat, currency) : '—'}</td>
+            <td colSpan={span} className="py-1 pl-2 pr-5 text-right tabular-nums text-text-primary whitespace-nowrap">{vatOn ? formatCurrency(vat, currency) : '—'}</td>
           </tr>
           <tr className="bg-surface-elevated/60">
-            <td colSpan={6} className="py-3 pl-5 pr-2 text-[14px] font-semibold text-text-primary">{vatOn ? 'Total (incl. VAT)' : 'Total'}</td>
-            <td colSpan={span} className="py-3 pl-2 pr-5 text-right tabular-nums text-[15px] font-bold text-text-primary whitespace-nowrap">{formatCurrency(total, currency)}</td>
+            <td colSpan={6} className="py-2 pl-5 pr-2 text-[13.5px] font-semibold text-text-primary">{vatOn ? 'Total (incl. VAT)' : 'Total'}</td>
+            <td colSpan={span} className="py-2 pl-2 pr-5 text-right tabular-nums text-[14px] font-bold text-text-primary whitespace-nowrap">{formatCurrency(total, currency)}</td>
           </tr>
         </tbody>
       </table>

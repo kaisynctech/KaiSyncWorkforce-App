@@ -1253,11 +1253,11 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         )}
 
         {/* ── Quote meta ── */}
-        <div className="rounded-xl border border-divider bg-surface p-5 grid grid-cols-1 sm:grid-cols-4 gap-4">
+        <div className="rounded-xl border border-divider bg-surface px-4 py-3 grid grid-cols-2 sm:grid-cols-12 gap-x-3 gap-y-2.5">
 
           {/* Customer combobox */}
-          <div className="sm:col-span-2 relative">
-            <label className="block text-[11px] text-text-secondary uppercase tracking-wide mb-1.5">
+          <div className="col-span-2 sm:col-span-5 relative">
+            <label className="block text-[10.5px] text-text-secondary uppercase tracking-wide mb-1">
               Customer
             </label>
             <input
@@ -1267,7 +1267,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
               onChange={e => { setClientSearch(e.target.value); setClientDropOpen(true) }}
               onFocus={() => setClientDropOpen(true)}
               onBlur={() => setTimeout(() => setClientDropOpen(false), 160)}
-              className="w-full h-9 rounded-lg border border-divider bg-surface px-3 text-[13px] text-text-primary focus:outline-none focus:border-primary transition-colors"
+              className="w-full h-8 rounded-lg border border-divider bg-surface px-2.5 text-[12.5px] text-text-primary focus:outline-none focus:border-primary transition-colors"
             />
 
             {/* Client dropdown */}
@@ -1350,31 +1350,32 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
           </div>
 
           {/* Quote number */}
-          <div>
-            <label className="block text-[11px] text-text-secondary uppercase tracking-wide mb-1.5">
+          <div className="col-span-1 sm:col-span-2 sm:order-3">
+            <label className="block text-[10.5px] text-text-secondary uppercase tracking-wide mb-1">
               Quote #
             </label>
-            <div className="h-9 flex items-center text-[13px] text-text-secondary px-3 rounded-lg border border-divider bg-surface-elevated">
+            <div className="h-8 flex items-center text-[12.5px] text-text-secondary px-2.5 rounded-lg border border-divider bg-surface-elevated">
               {quoteNumber ?? '— (auto)'}
             </div>
           </div>
 
           {/* Valid until */}
-          <div>
-            <label className="block text-[11px] text-text-secondary uppercase tracking-wide mb-1.5">
+          <div className="col-span-1 sm:col-span-2 sm:order-4">
+            <label className="block text-[10.5px] text-text-secondary uppercase tracking-wide mb-1">
               Valid until
             </label>
             <input
               type="date"
               value={validUntil}
               onChange={e => updateValidUntil(e.target.value)}
-              className="w-full h-9 rounded-lg border border-divider bg-surface px-3 text-[13px] text-text-primary focus:outline-none focus:border-primary transition-colors"
+              className="w-full h-8 rounded-lg border border-divider bg-surface px-2.5 text-[12.5px] text-text-primary focus:outline-none focus:border-primary transition-colors"
             />
           </div>
 
           {/* Currency and, for a foreign currency, the exchange rate (can be changed) */}
-          <div className="sm:col-span-2">
+          <div className="col-span-2 sm:col-span-3 sm:order-2">
             <CurrencyPicker
+              compact
               value={quoteCurrency}
               allowDefault={false}
               homeCurrency={homeCurrency}
@@ -1389,21 +1390,20 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
             />
           </div>
           {foreign && (
-            <div className="sm:col-span-2">
-              <label className="block text-[11px] text-text-secondary uppercase tracking-wide mb-1.5">
-                Exchange rate · 1 {quoteCurrency} = ? {homeCurrency}
-              </label>
+            <div className="col-span-2 sm:col-span-12 sm:order-5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12px] text-text-secondary">
+              <span className="text-[10.5px] uppercase tracking-wide">Exchange rate</span>
+              <span>1 {quoteCurrency} =</span>
               <input
                 inputMode="decimal"
                 value={fxRate}
+                aria-label="Exchange rate"
                 onChange={e => { setFxRate(e.target.value); scheduleAutoSave() }}
-                placeholder={dailyRate ? `Today's rate: ${dailyRate.toFixed(4)}` : "Leave empty to use today's rate"}
-                className="w-full h-9 rounded-lg border border-divider bg-surface px-3 text-[13px] text-text-primary focus:outline-none focus:border-primary transition-colors"
+                placeholder={dailyRate ? dailyRate.toFixed(4) : 'today'}
+                className="w-24 h-7 rounded-md border border-divider bg-surface px-2 text-right text-[12.5px] text-text-primary focus:outline-none focus:border-primary transition-colors"
               />
+              <span>{homeCurrency}{fxNum > 0 ? '' : " (today's rate)"}</span>
               {bookRate && bookRate > 0 && (
-                <p className="mt-1 text-[11.5px] text-text-secondary">
-                  ≈ {formatCurrency(Math.round(total * bookRate * 100) / 100, homeCurrency)} in your books{fxNum > 0 ? '' : " (today's rate)"}
-                </p>
+                <span>· ≈ {formatCurrency(Math.round(total * bookRate * 100) / 100, homeCurrency)} in your books</span>
               )}
             </div>
           )}
