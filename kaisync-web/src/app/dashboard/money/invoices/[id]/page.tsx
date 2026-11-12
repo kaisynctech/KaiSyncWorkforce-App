@@ -38,7 +38,7 @@ type Transaction = {
   total_amount: number
   transaction_date: string
   payment_method: string | null
-  reference: string | null
+  reference_number: string | null
   receipt_number?: string | null
   notes: string | null
   created_at: string
@@ -317,6 +317,10 @@ function MoneyInvoiceDetailInner() {
         },
       )
       setShowPay(false)
+      // A fresh form next time (the next payment has its own reference and notes).
+      setPayRef('')
+      setPayNotes('')
+      setPayAmount('')
       await load()
       // Offer the client a receipt straight away.
       setJustPaid(true)
@@ -677,7 +681,7 @@ function MoneyInvoiceDetailInner() {
                       <td className="data-td text-[13px] text-text-secondary capitalize">
                         {(t.payment_method ?? '—').replace(/_/g, ' ')}
                       </td>
-                      <td className="data-td text-[13px] text-text-secondary">{t.reference ?? '—'}</td>
+                      <td className="data-td text-[13px] text-text-secondary">{t.reference_number || '—'}</td>
                       <td className="data-td text-[13px] text-right font-medium text-text-primary">
                         {fmtMoney(t.amount, inv.currency)}
                       </td>
