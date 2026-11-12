@@ -836,7 +836,7 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
                       </th>
                       <th className={`${TH} text-left`}>
                         <ColumnHeaderFilter
-                          label="Valid Until"
+                          label="Valid to"
                           active={!!(cols.validFrom || cols.validTo)}
                         >
                           <ColumnFilterDateRange
@@ -874,9 +874,9 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
                                   type="button"
                                   title={`${l.kind === 'job' ? 'Job' : 'Project'}: ${linkText(l)}`}
                                   onClick={e => { e.stopPropagation(); router.push(l.kind === 'job' ? `/dashboard/jobs/${l.id}` : `/dashboard/projects/${l.id}`) }}
-                                  className="max-w-full inline-flex items-center gap-1 text-left text-primary hover:underline"
+                                  className="max-w-full inline-flex items-center gap-1 text-left text-primary hover:underline leading-tight align-middle"
                                 >
-                                  <span className="material-icons text-[13px] shrink-0">{l.kind === 'job' ? 'construction' : 'folder'}</span>
+                                  <span className="material-icons !text-[13px] !leading-none shrink-0">{l.kind === 'job' ? 'construction' : 'folder'}</span>
                                   <span className="truncate">{linkText(l) || (l.kind === 'job' ? 'Job' : 'Project')}</span>
                                 </button>
                               ) : (
