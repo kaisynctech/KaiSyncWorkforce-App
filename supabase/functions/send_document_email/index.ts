@@ -61,12 +61,15 @@ const MODE: Record<Kind, SendMode> = {
   receipt: "company", remittance_supplier: "company", remittance_contractor: "company",
 };
 const NEEDS_PDF: Kind[] = ["invoice", "credit_note", "purchase_order"];
+// A draft invoice has no number until it is sent; the preview shows this instead.
+const NUMBER_LATER = "(number given when sent)";
 
 type Built = {
   companyId: string; to: string; greetName: string | null; subject: (company: string) => string;
   paras: string[]; // already HTML-escaped
   afterSent?: () => Promise<void>;
   fixedAfter?: string[]; // HTML shown after the message and never edited (e.g. the RFQ items table)
+  number?: string; // the document number, put in place of NUMBER_LATER in an edited message
 } | { error: string; status: number };
 
 async function build(admin: SupabaseClient, kind: Kind, id: string, preview = false): Promise<Built> {
@@ -76,13 +79,13 @@ async function build(admin: SupabaseClient, kind: Kind, id: string, preview = fa
       .eq("id", id).maybeSingle();
     if (!inv) return { error: "Invoice not found.", status: 404 };
     const c = (inv.client ?? {}) as { name?: string; contact_person?: string; email?: string };
-    const num = String(inv.invoice_number ?? "") || (preview ? "(number given when sent)" : "");
+    const num = String(inv.invoice_number ?? "") || (preview ? NUMBER_LATER : "");
     if (kind === "invoice") {
       // A draft can be previewed (the office opens the email first); it is marked sent and numbered just before sending.
       if (["voided", "cancelled"].includes(String(inv.status)) || (inv.status === "draft" && !preview)) return { error: "Only sent invoices can be emailed.", status: 409 };
       const bal = Number(inv.balance_due ?? 0);
       return {
-        companyId: inv.company_id, to: valid(c.email), greetName: c.contact_person || null,
+        companyId: inv.company_id, to: valid(c.email), greetName: c.contact_person || null, number: num,
         subject: (co) => `Invoice ${num} from ${co}`,
         paras: [
           `Please find attached invoice ${b(num)} for ${b(rand(inv.total_amount, inv.currency))}.`,
@@ -271,7 +274,9 @@ Deno.serve(async (req: Request) => {
       ...(note ? [esc(note).replace(/\n/g, "<br>")] : []),
       "If you have any questions, simply reply to this email.",
     ];
-    const edited = editedText(body.body_text);
+    // The office may have edited the message while the draft had no number yet: put the real number in.
+    const withNumber = (t: string | null) => (t && !preview && built.number ? t.split(NUMBER_LATER).join(built.number) : t);
+    const edited = withNumber(editedText(body.body_text));
     const paras = [
       built.greetName ? `Hello ${esc(built.greetName)},` : "Hello,",
       ...(edited ? textToParas(edited, esc) : standard),
@@ -297,7 +302,7 @@ ${co?.document_footer ? `<div style="margin-top:8px">${esc(co.document_footer)}<
 </td></tr></table></body></html>`;
     const text = paras.map(htmlToText).join("\n\n") + (onlineUrl ? `\n\nView and pay online: ${onlineUrl}` : "") + `\n\n${signOffText(sender, companyName)}`;
     const defaultSubject = built.subject(companyName);
-    const subject = editedSubject(body.subject) ?? defaultSubject;
+    const subject = withNumber(editedSubject(body.subject)) ?? defaultSubject;
     if (preview) {
       return json({
         ok: true, preview: true, from: sender.from, reply_to: sender.replyTo, to: recipient, cc,

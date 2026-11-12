@@ -815,7 +815,12 @@ function MoneyInvoiceDetailInner() {
           beforeSend={emailKind === 'invoice' ? markSentBeforeEmail : undefined}
           attachmentLabel={emailKind === 'invoice' ? `Invoice_${inv.invoice_number ?? 'draft'}.pdf` : undefined}
           onSent={() => {
-            if (emailKind === 'invoice' && inv.status === 'draft') { setSendFlow(true); void load() }
+            // A draft just became a sent invoice: close the email and show What's next once it has reloaded.
+            if (emailKind === 'invoice' && inv.status === 'draft') {
+              setEmailKind(null); setSendFlow(false)
+              if (openEmail) router.replace(`/dashboard/money/invoices/${id}`)
+              void load().then(() => { setWhatsNextMode('sent'); setShowWhatsNext(true) })
+            }
             void loadDocumentEmails(createClient(), id, ['invoice', 'receipt']).then(setEmailLog)
           }}
         />
@@ -828,7 +833,7 @@ function MoneyInvoiceDetailInner() {
             <h3 className="text-[15px] font-semibold text-text-primary mb-1">What&apos;s next?</h3>
             <p className="text-[13px] text-text-secondary mb-5">
               {whatsNextMode === 'draft' && 'Invoice saved as draft. Send it to the client, or continue later.'}
-              {whatsNextMode === 'sent' && 'Invoice marked as sent. Record a payment when funds arrive.'}
+              {whatsNextMode === 'sent' && 'The invoice is sent. Record a payment when the money comes in.'}
               {whatsNextMode === 'paid' && 'Payment recorded. Issue a credit note if needed, or continue.'}
             </p>
             <div className="flex flex-col gap-2">
