@@ -147,6 +147,11 @@ export function QuoteTotalsRows({ lines, currency, readOnly, vatOn, vatLabel, va
   )
 }
 
+/** An amount in an input: "1000" for whole amounts, "1000.50" otherwise (fits narrow columns). */
+function amountText(n: number): string {
+  return Number.isInteger(Math.round(n * 100) / 100) ? String(Math.round(n)) : n.toFixed(2)
+}
+
 function parsePct(text: string): number {
   const n = parseFloat(text.replace(/[\s%]/g, '').replace(',', '.'))
   return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0
@@ -397,7 +402,7 @@ export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly
                     </td>
                     <td className="py-1.5 px-1 sm:px-2 text-right tabular-nums">
                       {readOnly ? (cost > 0 ? formatCurrency(cost, currency) : '—') : moneyInput(
-                        costDraft[l.key] ?? (cost ? cost.toFixed(2) : ''),
+                        costDraft[l.key] ?? (cost ? amountText(cost) : ''),
                         t => { setCostDraft(d => ({ ...d, [l.key]: t })); update(l.key, { unitCost: parseMoney(t) || null }) },
                         clearDraft(setCostDraft),
                         'Cost price',
@@ -405,7 +410,7 @@ export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly
                     </td>
                     <td className="py-1.5 px-1 sm:px-2 text-right tabular-nums">
                       {readOnly ? formatCurrency(l.unitPrice, currency) : moneyInput(
-                        priceDraft[l.key] ?? (l.unitPrice ? l.unitPrice.toFixed(2) : ''),
+                        priceDraft[l.key] ?? (l.unitPrice ? amountText(l.unitPrice) : ''),
                         t => { setPriceDraft(d => ({ ...d, [l.key]: t })); update(l.key, { unitPrice: parseMoney(t) }) },
                         clearDraft(setPriceDraft),
                         'Selling price',
