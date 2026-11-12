@@ -11,7 +11,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ITEM_KIND, blankEditorLine, filterPicks, formatRand, lineFromPick, lineTotal,
+  ITEM_KIND, blankEditorLine, filterPicks, formatRand, lineFromPick, lineQty, lineTotal, linesProfit,
   type EditorLine, type ItemType, type PickItem,
 } from '@/lib/line-items'
 import { currencySymbol, formatCurrency } from '@/lib/currencies'
@@ -26,6 +26,12 @@ type Props = {
   startOpen?: boolean
   /** The document's currency, for the line totals (catalogue prices stay in the company currency). */
   currency?: string
+  /** Office only: a cost per line and the profit and margin it leaves (never printed or shown to the client). */
+  showCost?: boolean
+}
+
+function marginText(pct: number): string {
+  return `${pct.toLocaleString('en-ZA', { maximumFractionDigits: 1 })}%`
 }
 
 const TABS: { key: ItemType; label: string }[] = [
@@ -65,11 +71,12 @@ function PickRow({ item, onPick, compact }: { item: PickItem; onPick: () => void
   )
 }
 
-export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly, startOpen, currency }: Props) {
+export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly, startOpen, currency, showCost }: Props) {
   const [browseOpen, setBrowseOpen] = useState(false)
   const [tab, setTab] = useState<ItemType | null>(null)
   const [query, setQuery] = useState('')
   const [priceDraft, setPriceDraft] = useState<Record<string, string>>({})
+  const [costDraft, setCostDraft] = useState<Record<string, string>>({})
   const [focusKey, setFocusKey] = useState<string | null>(null)
   const [activeKey, setActiveKey] = useState<string | null>(null)
   const inputs = useRef<Map<string, HTMLInputElement>>(new Map())
@@ -119,7 +126,7 @@ export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly
   }
   function pickFor(key: string, item: PickItem) {
     const picked = lineFromPick(item)
-    onChange(lines.map(l => (l.key === key ? { ...picked, key, qty: l.qty || 1 } : l)))
+    onChange(lines.map(l => (l.key === key ? { ...picked, key, qty: l.qty || 1, unitCost: picked.unitCost ?? l.unitCost ?? null } : l)))
     setActiveKey(null)
     setTimeout(() => ghostRef.current?.focus(), 0)
   }
@@ -135,6 +142,7 @@ export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly
   }
 
   const total = lines.length
+  const sum = showCost ? linesProfit(lines) : null
 
   return (
     <div className="bg-surface-card border border-divider rounded-2xl">
@@ -224,6 +232,45 @@ export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly
               )}
             </div>
 
+            {showCost && (() => {
+              const cost = Number(l.unitCost) || 0
+              const sell = lineTotal(l)
+              const profit = Math.round((sell - lineQty(l) * cost) * 100) / 100
+              const cDraft = costDraft[l.key]
+              return (
+                <div className="flex flex-wrap items-center gap-2 px-5 pb-2 -mt-1 pl-[38px] text-[11.5px] text-text-secondary">
+                  <span className="material-icons text-[13px] opacity-70" title="Only your team sees this">lock</span>
+                  <span>{isService ? 'Cost' : 'Cost each'}</span>
+                  {readOnly ? (
+                    <span className="text-text-primary tabular-nums">{cost > 0 ? formatCurrency(cost, currency) : '—'}</span>
+                  ) : (
+                    <label className="flex items-center gap-1 h-7 rounded-md border border-divider px-1.5 bg-background focus-within:border-primary/60">
+                      {currencySymbol(currency)}
+                      <input
+                        value={cDraft ?? (cost ? cost.toFixed(2) : '')}
+                        inputMode="decimal"
+                        placeholder="0.00"
+                        aria-label="Cost price"
+                        onChange={e => {
+                          setCostDraft(d => ({ ...d, [l.key]: e.target.value }))
+                          update(l.key, { unitCost: parseMoney(e.target.value) || null })
+                        }}
+                        onBlur={() => setCostDraft(d => { const n = { ...d }; delete n[l.key]; return n })}
+                        className="w-[68px] text-right text-[12px] text-text-primary bg-transparent focus:outline-none"
+                      />
+                    </label>
+                  )}
+                  {cost > 0 ? (
+                    <span className={profit < 0 ? 'text-error font-medium' : 'text-emerald-700'}>
+                      Profit {formatCurrency(profit, currency)}{sell > 0 ? ` · ${marginText((profit / sell) * 100)}` : ''}
+                    </span>
+                  ) : (
+                    <span className="opacity-70">Add the cost to see your profit</span>
+                  )}
+                </div>
+              )
+            })()}
+
             {showSuggest && (
               <div className="mx-5 mb-2.5 -mt-0.5 rounded-xl border border-primary/25 bg-surface-card shadow-[0_8px_24px_rgba(30,58,138,0.08)] overflow-hidden">
                 <p className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-text-secondary">Use one of yours instead?</p>
@@ -233,6 +280,16 @@ export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly
           </div>
         )
       })}
+
+      {sum && lines.length > 0 && (
+        <div className="border-t border-divider/70 px-5 py-2.5 flex flex-wrap items-center gap-x-5 gap-y-1 text-[12.5px] bg-surface-elevated/40">
+          <span className="flex items-center gap-1 text-text-secondary"><span className="material-icons text-[14px]">lock</span>Only your team sees this</span>
+          <span className="text-text-secondary">Cost <b className="text-text-primary tabular-nums">{formatCurrency(sum.cost, currency)}</b></span>
+          <span className="text-text-secondary">Profit <b className={`tabular-nums ${sum.profit < 0 ? 'text-error' : 'text-emerald-700'}`}>{formatCurrency(sum.profit, currency)}</b></span>
+          <span className="text-text-secondary">Margin <b className="text-text-primary tabular-nums">{marginText(sum.marginPct)}</b></span>
+          {!sum.costed && <span className="text-text-secondary/80">Add costs to your lines to see the real profit.</span>}
+        </div>
+      )}
 
       {!readOnly && (
         <>

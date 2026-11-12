@@ -45,6 +45,8 @@ export interface SimpleQuoteLine {
   item_type:          ItemType
   source_id:          string | null
   hint?:              string | null
+  /** Cost of one unit to the business (office only). */
+  unit_cost?:         number | null
 }
 
 type ClientRow = {
@@ -400,6 +402,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
           sort_order:        Number(row.sort_order ?? 0),
           item_type:         row.job_service_id ? 'service' : row.inventory_item_id ? 'inventory' : row.catalogue_item_id ? 'catalogue' : 'custom',
           source_id:         ((row.job_service_id ?? row.inventory_item_id ?? row.catalogue_item_id) as string | null) ?? null,
+          unit_cost:         Number(row.cost_price ?? 0) > 0 ? Number(row.cost_price) : null,
         }))
         setLines(mapped)
         linesRef.current = mapped
@@ -460,6 +463,8 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
       const newStatus = overrideStatus ?? statusRef.current
       const ls = linesRef.current
       const lineSubtotal = ls.reduce((s, l) => s + l.total, 0)
+      // What the work costs the business (office only): kept on the quote so profit can be tracked.
+      const costTotal = Math.round(ls.reduce((s, l) => s + l.qty * (Number(l.unit_cost) || 0), 0) * 100) / 100
       const money = quoteMoney(lineSubtotal, vatOnRef.current, vatRateRef.current)
       const lineVat = money.vat
       const lineTotal = money.total
@@ -482,6 +487,9 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         subtotal:     lineSubtotal,
         vat_amount:   lineVat,
         total_amount: lineTotal,
+        cost_total:   costTotal,
+        gross_profit: Math.round((lineSubtotal - costTotal) * 100) / 100,
+        gross_margin_percent: lineSubtotal > 0 ? Math.round(((lineSubtotal - costTotal) / lineSubtotal) * 10000) / 100 : 0,
         currency:     curr,
         exchange_rate: isForeign && rateTyped > 0 ? rateTyped : null,
         rate_source:   isForeign && rateTyped > 0 ? 'manual' : null,
@@ -537,9 +545,9 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
             job_service_id:    l.item_type === 'service' ? l.source_id : null,
             inventory_item_id: l.item_type === 'inventory' ? l.source_id : null,
             source_type:       l.item_type === 'inventory' ? 'inventory' : l.item_type === 'catalogue' ? 'catalogue' : 'manual',
-            cost_price:        0,
-            markup_percent:    0,
-            subtotal_cost:     0,
+            cost_price:        Number(l.unit_cost) || 0,
+            markup_percent:    Number(l.unit_cost) > 0 ? Math.round(((l.unit_price - Number(l.unit_cost)) / Number(l.unit_cost)) * 10000) / 100 : 0,
+            subtotal_cost:     Math.round(l.qty * (Number(l.unit_cost) || 0) * 100) / 100,
             subtotal_sell:     l.total,
             vat_rate:          rate,
             vat_amount:        l.total * rate,
@@ -670,6 +678,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
     unitPrice: l.unit_price,
     unit: l.unit,
     hint: l.hint ?? null,
+    unitCost: l.unit_cost ?? null,
   }))
 
   function handleEditorChange(next: EditorLine[]) {
@@ -689,6 +698,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         item_type:         e.type,
         source_id:         e.sourceId,
         hint:              e.hint ?? null,
+        unit_cost:         e.unitCost ?? null,
       }
     })
     setLines(mapped)
@@ -1422,7 +1432,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         </div>
 
         {/* ── Items ── */}
-        <LineItemsEditor lines={editorLines} onChange={handleEditorChange} items={pickItems} itemsLoading={pickLoading} startOpen={!initialQuoteId} currency={quoteCurrency} />
+        <LineItemsEditor lines={editorLines} onChange={handleEditorChange} items={pickItems} itemsLoading={pickLoading} startOpen={!initialQuoteId} currency={quoteCurrency} showCost />
 
         {/* ── Totals ── */}
         <div className="flex justify-end">

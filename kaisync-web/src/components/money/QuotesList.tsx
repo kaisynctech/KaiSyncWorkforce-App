@@ -36,7 +36,21 @@ type HubTab = 'sales' | 'incoming'
 type SalesRow = Pick<
   CommercialQuote,
   'id' | 'quote_number' | 'title' | 'status' | 'currency' | 'total_amount' | 'valid_until' | 'created_at'
-> & { clients?: { name: string } | null }
+> & {
+  clients?: { name: string } | null
+  job_id?: string | null
+  deal_id?: string | null
+  jobs?: { job_code: string | null; title: string | null } | null
+  client_deals?: { project_code: string | null; title: string | null } | null
+}
+
+/** The job or project a quote belongs to, for the table ("Project PRJ-0004 · Office fit-out"). */
+function quoteLink(q: SalesRow): { kind: 'job' | 'project'; id: string; code: string; title: string } | null {
+  if (q.deal_id && q.client_deals) return { kind: 'project', id: q.deal_id, code: q.client_deals.project_code ?? '', title: q.client_deals.title ?? '' }
+  if (q.job_id && q.jobs) return { kind: 'job', id: q.job_id, code: q.jobs.job_code ?? '', title: q.jobs.title ?? '' }
+  return null
+}
+const linkText = (l: NonNullable<ReturnType<typeof quoteLink>>) => [l.code, l.title].filter(Boolean).join(' · ')
 
 /** A quote the business received: a contractor's quote, or a supplier's reply to an RFQ. */
 type IncomingRow = {
@@ -71,6 +85,7 @@ type StatusTab = 'all' | 'draft' | 'sent' | 'accepted' | 'declined' | 'submitted
 type TextCols = {
   number: string
   party: string
+  link: string
   title: string
   valueMin: string
   valueMax: string
@@ -84,6 +99,7 @@ type TextCols = {
 const EMPTY_COLS: TextCols = {
   number: '',
   party: '',
+  link: '',
   title: '',
   valueMin: '',
   valueMax: '',
@@ -221,6 +237,11 @@ function fmt(d: string | null | undefined) {
   if (!d) return '—'
   return new Date(d).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })
 }
+/** Compact date for narrow table columns ("12 Nov 26"). */
+function fmtShort(d: string | null | undefined) {
+  if (!d) return '—'
+  return new Date(d).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: '2-digit' })
+}
 
 function incomingBadgeClass(status: string): string {
   switch (status) {
@@ -246,6 +267,7 @@ function colsActive(c: TextCols): boolean {
   return !!(
     c.number ||
     c.party ||
+    c.link ||
     c.title ||
     c.valueMin ||
     c.valueMax ||
@@ -335,7 +357,7 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
 
       let salesQ = supabase
         .from('commercial_quotes')
-        .select('id, quote_number, title, status, currency, total_amount, valid_until, created_at, clients(name)')
+        .select('id, quote_number, title, status, currency, total_amount, valid_until, created_at, job_id, deal_id, clients(name), jobs!commercial_quotes_job_id_fkey(job_code, title), client_deals!commercial_quotes_deal_id_fkey(project_code, title)')
         .eq('company_id', member.companyId)
         .order('created_at', { ascending: false })
         .limit(300)
@@ -426,6 +448,10 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
       if (cols.number && !(row.quote_number ?? '').toLowerCase().includes(cols.number.toLowerCase())) return false
       if (cols.party && !(row.clients?.name ?? '').toLowerCase().includes(cols.party.toLowerCase())) return false
       if (cols.title && !(row.title ?? '').toLowerCase().includes(cols.title.toLowerCase())) return false
+      if (cols.link) {
+        const l = quoteLink(row)
+        if (!l || !linkText(l).toLowerCase().includes(cols.link.toLowerCase())) return false
+      }
       if (!matchMoney(row.total_amount, cols.valueMin, cols.valueMax)) return false
       if (cols.statuses.length && !cols.statuses.includes(row.status)) return false
       if (!inDateRange(row.created_at, cols.dateFrom, cols.dateTo)) return false
@@ -454,10 +480,12 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
       if (!matchSalesCols(row)) return false
       if (!q) return true
       const client = row.clients?.name ?? ''
+      const l = quoteLink(row)
       return (
         (row.quote_number ?? '').toLowerCase().includes(q) ||
         (row.title ?? '').toLowerCase().includes(q) ||
-        client.toLowerCase().includes(q)
+        client.toLowerCase().includes(q) ||
+        (!!l && linkText(l).toLowerCase().includes(q))
       )
     })
   }, [sales, searchD, matchSalesCols])
@@ -520,6 +548,7 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
             q.quote_number ?? '',
             q.clients?.name ?? '',
             q.title ?? '',
+            (() => { const l = quoteLink(q); return l ? `${l.kind === 'job' ? 'Job' : 'Project'}: ${linkText(l)}` : '' })(),
             String(q.total_amount ?? 0),
             q.status,
             q.created_at?.slice(0, 10) ?? '',
@@ -536,7 +565,7 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
           ])
     const header =
       tab === 'sales'
-        ? ['Number', 'Client', 'Title', 'Value', 'Status', 'Created', 'Valid Until']
+        ? ['Number', 'Client', 'Title', 'Job / Project', 'Value', 'Status', 'Created', 'Valid Until']
         : ['Number', 'Source', 'From', 'Title', 'Value', 'Status', 'Received']
     const csv = [header, ...rows]
       .map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))
@@ -690,7 +719,17 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
           ) : (
             <ResponsiveDataView
               table={
-                <table className="w-full" style={{ minWidth: 720 }}>
+                <table className="w-full table-fixed" style={{ minWidth: embedded ? 720 : 900 }}>
+                  <colgroup>
+                    <col style={{ width: 92 }} />
+                    <col style={{ width: '17%' }} />
+                    <col />
+                    {!embedded && <col style={{ width: '20%' }} />}
+                    <col style={{ width: 112 }} />
+                    <col style={{ width: 92 }} />
+                    <col style={{ width: 84 }} />
+                    <col style={{ width: 84 }} />
+                  </colgroup>
                   <thead className="sticky top-0 z-10">
                     <tr className="bg-surface-elevated border-b border-divider">
                       <th className={`${TH} text-left`}>
@@ -732,6 +771,21 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
                           />
                         </ColumnHeaderFilter>
                       </th>
+                      {!embedded && (
+                        <th className={`${TH} text-left`}>
+                          <ColumnHeaderFilter label="Job / Project" active={!!cols.link}>
+                            <ColumnFilterText
+                              value={cols.link}
+                              onChange={v => patchCols({ link: v })}
+                              placeholder="Job or project…"
+                            />
+                            <ColumnFilterClear
+                              disabled={!cols.link}
+                              onClear={() => patchCols({ link: '' })}
+                            />
+                          </ColumnHeaderFilter>
+                        </th>
+                      )}
                       <th className={`${TH} text-right`}>
                         <ColumnHeaderFilter
                           label="Value"
@@ -806,12 +860,32 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
                         onClick={() => router.push(`/dashboard/money/quotes/${q.id}`)}
                         className="bg-surface-card border-b border-divider last:border-0 cursor-pointer hover:bg-surface-elevated transition-colors"
                       >
-                        <td className={`${TD} font-mono text-text-secondary`}>{q.quote_number ?? '—'}</td>
-                        <td className={`${TD} text-text-primary`}>{q.clients?.name ?? '—'}</td>
-                        <td className={`${TD} text-text-primary max-w-[240px] truncate`}>
+                        <td className={`${TD} font-mono text-text-secondary whitespace-nowrap`}>{q.quote_number ?? '—'}</td>
+                        <td className={`${TD} text-text-primary truncate`} title={q.clients?.name ?? undefined}>{q.clients?.name ?? '—'}</td>
+                        <td className={`${TD} text-text-primary truncate`} title={q.title || undefined}>
                           {q.title || 'Untitled'}
                         </td>
-                        <td className={`${TD} text-right font-medium text-text-primary`}>
+                        {!embedded && (() => {
+                          const l = quoteLink(q)
+                          return (
+                            <td className={`${TD} truncate`}>
+                              {l ? (
+                                <button
+                                  type="button"
+                                  title={`${l.kind === 'job' ? 'Job' : 'Project'}: ${linkText(l)}`}
+                                  onClick={e => { e.stopPropagation(); router.push(l.kind === 'job' ? `/dashboard/jobs/${l.id}` : `/dashboard/projects/${l.id}`) }}
+                                  className="max-w-full inline-flex items-center gap-1 text-left text-primary hover:underline"
+                                >
+                                  <span className="material-icons text-[13px] shrink-0">{l.kind === 'job' ? 'construction' : 'folder'}</span>
+                                  <span className="truncate">{linkText(l) || (l.kind === 'job' ? 'Job' : 'Project')}</span>
+                                </button>
+                              ) : (
+                                <span className="text-text-secondary/60">—</span>
+                              )}
+                            </td>
+                          )
+                        })()}
+                        <td className={`${TD} text-right font-medium text-text-primary whitespace-nowrap tabular-nums`}>
                           {fmtMoney(q.total_amount, q.currency)}
                         </td>
                         <td className={TD}>
@@ -821,8 +895,8 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
                             {q.status.replace('_', ' ')}
                           </span>
                         </td>
-                        <td className={`${TD} text-text-secondary whitespace-nowrap`}>{fmt(q.created_at)}</td>
-                        <td className={`${TD} text-text-secondary whitespace-nowrap`}>{fmt(q.valid_until)}</td>
+                        <td className={`${TD} text-text-secondary whitespace-nowrap`}>{fmtShort(q.created_at)}</td>
+                        <td className={`${TD} text-text-secondary whitespace-nowrap`}>{fmtShort(q.valid_until)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -847,6 +921,7 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
                         </span>
                       </div>
                       <DataCardRow label="Client" value={q.clients?.name ?? '—'} />
+                      {(() => { const l = quoteLink(q); return l ? <DataCardRow label={l.kind === 'job' ? 'Job' : 'Project'} value={linkText(l)} /> : null })()}
                       <DataCardRow label="Value" value={fmtMoney(q.total_amount, q.currency)} />
                       <DataCardRow label="Valid" value={fmt(q.valid_until)} />
                     </DataCard>

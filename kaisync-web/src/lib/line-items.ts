@@ -19,6 +19,8 @@ export type EditorLine = {
   unit: string
   /** Small grey hint after the name, e.g. "Client price" or "12 in stock". */
   hint?: string | null
+  /** What one unit costs the business (office only; never on the PDF or the client's page). */
+  unitCost?: number | null
 }
 
 export type PickItem = {
@@ -32,6 +34,8 @@ export type PickItem = {
   detail: string
   /** Shown after the name once on the document. */
   hint: string | null
+  /** Cost price from the catalogue or stock item, when known. */
+  cost?: number | null
 }
 
 export const ITEM_KIND: Record<ItemType, { label: string; dot: string; fg: string; bg: string }> = {
@@ -64,7 +68,7 @@ export function newKey(): string {
 }
 
 export function lineFromPick(p: PickItem): EditorLine {
-  return { key: newKey(), type: p.type, sourceId: p.sourceId, description: p.name, qty: 1, unitPrice: p.price, unit: p.unit, hint: p.hint }
+  return { key: newKey(), type: p.type, sourceId: p.sourceId, description: p.name, qty: 1, unitPrice: p.price, unit: p.unit, hint: p.hint, unitCost: p.cost ?? null }
 }
 
 export function blankEditorLine(): EditorLine {
@@ -96,8 +100,8 @@ export async function loadPickItems(
     clientId
       ? supabase.from('client_job_services').select('service_id, agreed_price').eq('client_id', clientId)
       : Promise.resolve({ data: [] as { service_id: string; agreed_price: number | null }[] }),
-    supabase.from('quote_catalogue_items').select('id, name, unit, item_type, sell_price, code').eq('company_id', companyId).eq('is_active', true).order('name').limit(1000),
-    supabase.from('inventory_items').select('id, name, sku, unit_of_measure, selling_price, quantity_on_hand').eq('company_id', companyId).eq('is_active', true).order('name').limit(1000),
+    supabase.from('quote_catalogue_items').select('id, name, unit, item_type, sell_price, cost_price, code').eq('company_id', companyId).eq('is_active', true).order('name').limit(1000),
+    supabase.from('inventory_items').select('id, name, sku, unit_of_measure, selling_price, unit_cost, quantity_on_hand').eq('company_id', companyId).eq('is_active', true).order('name').limit(1000),
   ])
   const agreedBy = new Map<string, number>()
   for (const a of ((agreed as { data: unknown }).data ?? []) as { service_id: string; agreed_price: number | null }[]) {
@@ -113,17 +117,19 @@ export async function loadPickItems(
       hint: clientPrice != null ? 'Client price' : null,
     })
   }
-  for (const c of (catalogue.data ?? []) as { id: string; name: string; unit: string | null; item_type: string | null; sell_price: number | null; code: string | null }[]) {
+  for (const c of (catalogue.data ?? []) as { id: string; name: string; unit: string | null; item_type: string | null; sell_price: number | null; cost_price: number | null; code: string | null }[]) {
     out.push({
       key: `c:${c.id}`, type: 'catalogue', sourceId: c.id, name: c.name, unit: c.unit || 'each', price: num(c.sell_price),
+      cost: num(c.cost_price) > 0 ? num(c.cost_price) : null,
       detail: [c.code, c.unit ? `per ${c.unit}` : null].filter(Boolean).join(' · ') || 'Catalogue',
       hint: c.unit && c.unit !== 'each' ? `per ${c.unit}` : null,
     })
   }
-  for (const i of (stock.data ?? []) as { id: string; name: string; sku: string | null; unit_of_measure: string | null; selling_price: number | null; quantity_on_hand: number | null }[]) {
+  for (const i of (stock.data ?? []) as { id: string; name: string; sku: string | null; unit_of_measure: string | null; selling_price: number | null; unit_cost: number | null; quantity_on_hand: number | null }[]) {
     const onHand = num(i.quantity_on_hand)
     out.push({
       key: `i:${i.id}`, type: 'inventory', sourceId: i.id, name: i.name, unit: i.unit_of_measure || 'each', price: num(i.selling_price),
+      cost: num(i.unit_cost) > 0 ? num(i.unit_cost) : null,
       detail: [i.sku, `${onHand.toLocaleString('en-ZA')} in stock`].filter(Boolean).join(' · '),
       hint: `${onHand.toLocaleString('en-ZA')} in stock`,
     })
@@ -133,4 +139,13 @@ export async function loadPickItems(
 
 export function formatRand(n: number): string {
   return `R ${(Number(n) || 0).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+/** Cost, profit and margin of a set of lines (only lines with a cost count towards the cost). */
+export function linesProfit(lines: Pick<EditorLine, 'type' | 'qty' | 'unitPrice' | 'unitCost'>[]) {
+  const sell = linesSubtotal(lines)
+  const cost = Math.round(lines.reduce((s, l) => s + lineQty(l) * (Number(l.unitCost) || 0), 0) * 100) / 100
+  const costed = lines.some(l => (Number(l.unitCost) || 0) > 0)
+  const profit = Math.round((sell - cost) * 100) / 100
+  return { sell, cost, profit, costed, marginPct: sell > 0 ? (profit / sell) * 100 : 0 }
 }
