@@ -489,7 +489,7 @@ function RepliesView({ companyId, buyout, lines, currency, busy, setBusy, setMsg
                             <span className={cn('text-text-primary', isChosen && 'font-semibold')}>{r.name}</span>
                             {r.attachmentPath && <button type="button" onClick={() => void openAttachment(r.attachmentPath!)} className="block text-[11.5px] text-primary hover:underline">Their quote (PDF)</button>}
                           </td>
-                          <td className={cn(TD, 'text-right tabular-nums', isChosen && 'font-semibold')}>{rep ? formatCurrency(rep.unitPrice, currency) : '—'}</td>
+                          <td className={cn(TD, 'text-right tabular-nums whitespace-nowrap', isChosen && 'font-semibold')}>{rep ? formatCurrency(rep.unitPrice, currency) : '—'}</td>
                           <td className={TD}>{rep && r.pricesIncludeVat ? VAT_LABEL[r.pricesIncludeVat] : rep ? '—' : ''}</td>
                           <td className={cn(TD, 'text-right')}>{rep?.qty ?? (rep ? bl.qty : '')}</td>
                           <td className={TD}>{rep?.leadDays != null ? `${rep.leadDays} ${rep.leadDays === 1 ? 'day' : 'days'}` : ''}</td>
@@ -547,7 +547,7 @@ function RepliesView({ companyId, buyout, lines, currency, busy, setBusy, setMsg
                       <td className={TD}><span className="font-semibold">{p.r?.name ?? 'Supplier'}</span></td>
                       <td className={cn(TD, 'text-[12.5px]')}>{p.items.join(', ')}</td>
                       <td className={cn(TD, 'text-[12.5px] text-text-secondary')}>{p.r ? sendToOf(p.r) || '—' : '—'}</td>
-                      <td className={cn(TD, 'text-right tabular-nums')}>{formatCurrency(p.excl, currency)}</td>
+                      <td className={cn(TD, 'text-right tabular-nums whitespace-nowrap')}>{formatCurrency(p.excl, currency)}</td>
                       <td className={TD}>
                         <span className="inline-flex rounded-lg border border-divider overflow-hidden">
                           {[true, false].map(v => (
@@ -559,8 +559,8 @@ function RepliesView({ companyId, buyout, lines, currency, busy, setBusy, setMsg
                           ))}
                         </span>
                       </td>
-                      <td className={cn(TD, 'text-right tabular-nums')}>{formatCurrency(vat, currency)}</td>
-                      <td className={cn(TD, 'text-right tabular-nums font-semibold')}>{formatCurrency(p.excl + vat, currency)}</td>
+                      <td className={cn(TD, 'text-right tabular-nums whitespace-nowrap')}>{formatCurrency(vat, currency)}</td>
+                      <td className={cn(TD, 'text-right tabular-nums whitespace-nowrap font-semibold')}>{formatCurrency(p.excl + vat, currency)}</td>
                     </tr>
                   )
                 })}
@@ -584,10 +584,11 @@ export function SupplyPill({ line, buyout, currency, onOpenBuyout }: { line: Buy
   const chosen = line.chosenResponseLineId ? replies.find(x => x.id === line.chosenResponseLineId) : undefined
   const chosenR = chosen ? buyout!.recipients.find(r => r.id === chosen.recipientId) : undefined
 
+  const ownCost = !chosenR && (line.unitCost ?? 0) > 0
   const label = chosenR ? `${chosenR.name}${chosen?.leadDays != null ? ` · ${chosen.leadDays} days` : ''}`
-    : asked.length ? `Waiting · ${replies.length} of ${asked.length} replied`
-    : line.unitCost ? 'Own cost price' : 'No supplier yet'
-  const tone = chosenR ? 'bg-emerald-50 text-emerald-800' : asked.length ? 'bg-amber-50 text-amber-800' : 'bg-slate-100 text-slate-700'
+    : ownCost ? 'Own cost price'
+    : asked.length ? `Waiting · ${replies.length} of ${asked.length} replied` : 'No supplier yet'
+  const tone = chosenR ? 'bg-emerald-50 text-emerald-800' : ownCost ? 'bg-slate-100 text-slate-700' : asked.length ? 'bg-amber-50 text-amber-800' : 'bg-slate-100 text-slate-700'
 
   return (
     <span className="relative inline-block">
@@ -595,6 +596,7 @@ export function SupplyPill({ line, buyout, currency, onOpenBuyout }: { line: Buy
         className={cn('inline-flex items-center gap-1 h-6 px-2 rounded-full text-[11px] font-semibold', tone)}>
         <span className="material-icons !text-[13px]">local_shipping</span>{label}<span className="material-icons !text-[14px]">{open ? 'expand_less' : 'expand_more'}</span>
       </button>
+      {open && <button type="button" aria-label="Close" tabIndex={-1} onClick={() => setOpen(false)} className="fixed inset-0 z-20 cursor-default" />}
       {open && (
         <div className="absolute left-0 top-7 z-30 w-[300px] rounded-xl border border-divider bg-surface-card shadow-xl p-3">
           <p className="text-[12px] font-semibold text-text-primary mb-1.5">Everyone asked for this item</p>

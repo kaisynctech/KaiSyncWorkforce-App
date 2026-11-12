@@ -866,7 +866,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   const sourcing = (() => {
     const chosen = outsourcedLines.filter(l => l.chosenResponseLineId || (l.unitCost ?? 0) > 0).length
     const waiting = outsourcedLines.filter(l => {
-      if (l.chosenResponseLineId) return false
+      if (l.chosenResponseLineId || (l.unitCost ?? 0) > 0) return false
       const bl = buyout?.lines.find(b => b.quoteLineId === l.id)
       return !!bl && (buyout?.recipients ?? []).some(r => r.status !== 'pending' && (!r.lineIds || r.lineIds.includes(bl.rfqLineId)))
     }).length
