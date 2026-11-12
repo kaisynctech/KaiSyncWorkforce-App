@@ -191,7 +191,7 @@ export function parseClientPortalProject(row: Record<string, unknown>): ClientPo
  */
 const LINKED_FUNCTIONS = new Set([
   'list_jobs', 'get_job', 'list_job_reports', 'list_projects', 'get_project', 'get_quotation_response',
-  'list_message_inbox', 'list_invoices', 'get_invoice', 'get_statement', 'get_letterhead', 'get_profile',
+  'list_message_inbox', 'list_invoices', 'list_quotes', 'get_invoice', 'get_statement', 'get_letterhead', 'get_profile',
   'get_compliance', 'get_compliance_documents', 'get_compliance_pack', 'list_document_requests', 'grant_media_read',
   // Part B (supabase/migrations/20261031100000_linked_actions.sql)
   'accept_quotation', 'revise_quotation', 'send_message', 'add_document_link', 'register_document', 'prepare_upload',
@@ -404,6 +404,50 @@ export async function listJobReports(companyCode: string, clientCode: string, jo
     materials_used: strN(r.materials_used),
     marks_job_complete: r.marks_job_complete === true,
   })).filter(r => r.id && r.work_performed)
+}
+
+/** A quote sent to the client (waiting for an answer, or answered in the last 90 days). link_token opens /d/<token>. */
+export type PortalQuote = {
+  id: string
+  quote_number: string | null
+  title: string | null
+  status: string
+  currency: string | null
+  subtotal: number
+  vat_amount: number
+  total_amount: number
+  valid_until: string | null
+  sent_at: string | null
+  accepted_at: string | null
+  declined_at: string | null
+  deal_id: string | null
+  project_title: string | null
+  waiting: boolean
+  expired: boolean
+  link_token: string | null
+}
+
+export async function listQuotes(companyCode: string, clientCode: string): Promise<PortalQuote[]> {
+  const data = await rpc('client_portal_list_quotes', codes(companyCode, clientCode))
+  return asArray(data).map(r => ({
+    id: str(r.id),
+    quote_number: strN(r.quote_number),
+    title: strN(r.title),
+    status: str(r.status),
+    currency: strN(r.currency),
+    subtotal: num(r.subtotal),
+    vat_amount: num(r.vat_amount),
+    total_amount: num(r.total_amount),
+    valid_until: strN(r.valid_until),
+    sent_at: strN(r.sent_at),
+    accepted_at: strN(r.accepted_at),
+    declined_at: strN(r.declined_at),
+    deal_id: strN(r.deal_id),
+    project_title: strN(r.project_title),
+    waiting: r.waiting === true,
+    expired: r.expired === true,
+    link_token: strN(r.link_token),
+  })).filter(q => q.id)
 }
 
 export async function listProjects(companyCode: string, clientCode: string): Promise<ClientPortalProject[]> {

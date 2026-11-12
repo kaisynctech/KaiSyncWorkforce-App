@@ -7,7 +7,7 @@ export type PublicClient = { name?: string | null; legal_name?: string | null; a
 
 export type PublicInvoiceView = {
   ok: true; kind: 'invoice'; company: PublicCompany; client: PublicClient
-  doc: { number: string | null; status: string; issue_date: string | null; due_date: string | null; notes: string | null; subtotal: number; vat: number; total: number; paid: number; balance: number }
+  doc: { number: string | null; status: string; issue_date: string | null; due_date: string | null; notes: string | null; subtotal: number; vat: number; total: number; paid: number; balance: number; currency?: string | null }
   lines: { description: string; quantity: number; unit_price: number; vat_amount: number; total_amount: number }[]
   proofs: { status: string; amount: number | null; created_at: string }[]
   can_pay: boolean; closed: boolean; fully_paid: boolean
@@ -15,7 +15,7 @@ export type PublicInvoiceView = {
 
 export type PublicQuoteView = {
   ok: true; kind: 'quote'; company: PublicCompany; client: PublicClient
-  doc: { number: string | null; title: string; status: string; valid_until: string | null; notes: string | null; terms: string | null; subtotal: number; vat: number; total: number; accepted_at: string | null; declined_at: string | null; expired: boolean }
+  doc: { number: string | null; title: string; status: string; valid_until: string | null; notes: string | null; terms: string | null; subtotal: number; vat: number; total: number; accepted_at: string | null; declined_at: string | null; expired: boolean; currency?: string | null }
   lines: { description: string; quantity: number; unit: string | null; unit_sell_price: number; subtotal_sell: number; line_total: number }[]
   can_respond: boolean
 }

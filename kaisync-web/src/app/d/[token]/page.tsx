@@ -27,6 +27,14 @@ export default function PublicDocumentPage() {
 
   useEffect(() => { void load() }, [load])
 
+  // Opened from a portal's "Download PDF": download once the document has loaded.
+  const [autoPdf, setAutoPdf] = useState(() => typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('pdf') === '1')
+  useEffect(() => {
+    if (!autoPdf || !view) return
+    const t = setTimeout(() => { setAutoPdf(false); void downloadPdf(view) }, 0)
+    return () => clearTimeout(t)
+  }, [autoPdf, view])
+
   if (error) {
     return (
       <Shell>
@@ -77,16 +85,16 @@ function Card({ children, className = '' }: { children: React.ReactNode; classNa
   return <section className={`bg-white rounded-2xl border border-slate-200 p-5 ${className}`}>{children}</section>
 }
 
-function Lines({ rows }: { rows: { description: string; qty: number; price: number; total: number }[] }) {
+function Lines({ rows, currency }: { rows: { description: string; qty: number; price: number; total: number }[]; currency?: string | null }) {
   return (
     <div className="divide-y divide-slate-100">
       {rows.map((r, i) => (
         <div key={i} className="py-2.5 flex items-start justify-between gap-3 text-[13.5px]">
           <div className="min-w-0">
             <p className="text-slate-900 whitespace-pre-line">{r.description || '—'}</p>
-            {r.qty !== 1 && <p className="text-[12px] text-slate-500">{r.qty} × {randZA(r.price)}</p>}
+            {r.qty !== 1 && <p className="text-[12px] text-slate-500">{r.qty} × {randZA(r.price, currency)}</p>}
           </div>
-          <p className="font-medium shrink-0">{randZA(r.total)}</p>
+          <p className="font-medium shrink-0">{randZA(r.total, currency)}</p>
         </div>
       ))}
     </div>
@@ -114,7 +122,7 @@ async function downloadPdf(v: PublicView) {
       client_address: client.billing_address?.trim() || client.address?.trim() || null, client_vat_number: client.vat_number ?? null,
       company_name: lh.name, letterhead: lh,
       lines: v.lines.map(l => ({ description: l.description, qty: Number(l.quantity), unit_price: Number(l.unit_price), vat_amount: Number(l.vat_amount), total: Number(l.total_amount) })),
-      subtotal: Number(v.doc.subtotal), vat: Number(v.doc.vat), total: Number(v.doc.total), amount_paid: Number(v.doc.paid), balance_due: Number(v.doc.balance),
+      subtotal: Number(v.doc.subtotal), vat: Number(v.doc.vat), total: Number(v.doc.total), amount_paid: Number(v.doc.paid), balance_due: Number(v.doc.balance), currency: v.doc.currency,
     })
     doc.save(`Invoice_${(v.doc.number ?? 'invoice').replace(/[^\w.-]+/g, '_')}.pdf`)
   } else {
@@ -124,7 +132,7 @@ async function downloadPdf(v: PublicView) {
       client_name: client.name ?? null, client_email: client.email ?? null, company_name: lh.name, letterhead: lh,
       lines: v.lines.map(l => ({ description: l.description, qty: Number(l.quantity), unit: l.unit ?? 'each', unit_price: Number(l.unit_sell_price), total: Number(l.subtotal_sell) })),
       subtotal: Number(v.doc.subtotal), vat: Number(v.doc.vat), total: Number(v.doc.total),
-      vatRate: Number(v.doc.subtotal) > 0 ? Number(v.doc.vat) / Number(v.doc.subtotal) : 0,
+      vatRate: Number(v.doc.subtotal) > 0 ? Number(v.doc.vat) / Number(v.doc.subtotal) : 0, currency: v.doc.currency,
     })
     doc.save(`Quote_${(v.doc.number ?? 'quote').replace(/[^\w.-]+/g, '_')}.pdf`)
   }
@@ -157,7 +165,7 @@ function InvoiceView({ token, v, onChange }: { token: string; v: PublicInvoiceVi
           <p className="mt-1 text-[22px] font-semibold text-emerald-700 flex items-center gap-2"><span className="material-icons">check_circle</span>Paid in full — thank you</p>
         ) : (
           <>
-            <p className="mt-1 text-[28px] font-bold">{randZA(d.balance)}</p>
+            <p className="mt-1 text-[28px] font-bold">{randZA(d.balance, d.currency)}</p>
             <p className={`text-[13.5px] ${overdue ? 'text-red-600 font-medium' : 'text-slate-600'}`}>
               {overdue ? 'Overdue — was due ' : 'Due '}{dayZA(d.due_date)}
             </p>
@@ -181,11 +189,11 @@ function InvoiceView({ token, v, onChange }: { token: string; v: PublicInvoiceVi
 
       <Card>
         <p className="text-[14px] font-semibold mb-1">Details</p>
-        <Lines rows={v.lines.map(l => ({ description: l.description, qty: Number(l.quantity), price: Number(l.unit_price), total: Number(l.total_amount) }))} />
+        <Lines rows={v.lines.map(l => ({ description: l.description, qty: Number(l.quantity), price: Number(l.unit_price), total: Number(l.total_amount) }))} currency={d.currency} />
         <Totals rows={[
-          ...(vatShown ? [['Total excl. VAT', randZA(d.subtotal)], ['VAT', randZA(d.vat)]] as [string, string][] : []),
-          [vatShown ? 'Total incl. VAT' : 'Total', randZA(d.total), true],
-          ...(Number(d.paid) > 0 ? [['Paid', randZA(d.paid)], ['Balance due', randZA(d.balance), true]] as [string, string, boolean?][] : []),
+          ...(vatShown ? [['Total excl. VAT', randZA(d.subtotal, d.currency)], ['VAT', randZA(d.vat, d.currency)]] as [string, string][] : []),
+          [vatShown ? 'Total incl. VAT' : 'Total', randZA(d.total, d.currency), true],
+          ...(Number(d.paid) > 0 ? [['Paid', randZA(d.paid, d.currency)], ['Balance due', randZA(d.balance, d.currency), true]] as [string, string, boolean?][] : []),
         ]} />
         {d.notes && <p className="mt-3 text-[12.5px] text-slate-500 whitespace-pre-line">{d.notes}</p>}
       </Card>
@@ -286,7 +294,7 @@ function QuoteView({ token, v, onChange }: { token: string; v: PublicQuoteView; 
       <Card>
         <p className="text-[12px] uppercase tracking-wide text-slate-500">Quotation {d.number}</p>
         <p className="mt-1 text-[18px] font-semibold">{d.title}</p>
-        <p className="mt-1 text-[28px] font-bold">{randZA(d.total)}</p>
+        <p className="mt-1 text-[28px] font-bold">{randZA(d.total, d.currency)}</p>
         <p className="text-[13px] text-slate-600">
           For {v.client?.name ?? '—'}{d.valid_until ? ` · Valid until ${dayZA(d.valid_until)}` : ''}
         </p>
@@ -340,10 +348,10 @@ function QuoteView({ token, v, onChange }: { token: string; v: PublicQuoteView; 
 
       <Card>
         <p className="text-[14px] font-semibold mb-1">What&apos;s included</p>
-        <Lines rows={v.lines.map(l => ({ description: l.description, qty: Number(l.quantity), price: Number(l.unit_sell_price), total: Number(l.subtotal_sell) }))} />
+        <Lines rows={v.lines.map(l => ({ description: l.description, qty: Number(l.quantity), price: Number(l.unit_sell_price), total: Number(l.subtotal_sell) }))} currency={d.currency} />
         <Totals rows={[
-          ...(vatShown ? [['Total excl. VAT', randZA(d.subtotal)], ['VAT', randZA(d.vat)]] as [string, string][] : []),
-          [vatShown ? 'Total incl. VAT' : 'Total', randZA(d.total), true],
+          ...(vatShown ? [['Total excl. VAT', randZA(d.subtotal, d.currency)], ['VAT', randZA(d.vat, d.currency)]] as [string, string][] : []),
+          [vatShown ? 'Total incl. VAT' : 'Total', randZA(d.total, d.currency), true],
         ]} />
         {d.notes && <p className="mt-3 text-[12.5px] text-slate-600 whitespace-pre-line">{d.notes}</p>}
         {d.terms && <p className="mt-3 text-[12px] text-slate-500 whitespace-pre-line">{d.terms}</p>}

@@ -1,6 +1,7 @@
 'use client'
 
 import { formatCurrency } from '@/lib/currencies'
+import { PortalQuoteActions } from '@/components/portal/PortalQuotes'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
@@ -12,6 +13,8 @@ import {
   addDocumentLink,
   getProject,
   listJobs,
+  listQuotes,
+  type PortalQuote,
   reviseQuotation,
   sendMessage,
   signPortalMedia,
@@ -50,6 +53,7 @@ export function ClientPortalProjectView() {
 
   const [project, setProject] = useState<ClientPortalProject | null>(null)
   const [projectJobs, setProjectJobs] = useState<ClientPortalJob[]>([])
+  const [projectQuote, setProjectQuote] = useState<PortalQuote | null>(null)
   const [tab, setTab] = useState<ProjectTab>(openMessages ? 'messages' : 'details')
   const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
@@ -99,9 +103,10 @@ export function ClientPortalProjectView() {
     setLoading(true)
     setError(null)
     try {
-      const [deal, jobs] = await Promise.all([
+      const [deal, jobs, qs] = await Promise.all([
         getProject(session.company_code, session.client_code, dealId),
         listJobs(session.company_code, session.client_code),
+        listQuotes(session.company_code, session.client_code).catch(() => [] as PortalQuote[]),
       ])
       if (!deal) {
         setError('This project is not available or may be private.')
@@ -111,6 +116,7 @@ export function ClientPortalProjectView() {
         return
       }
       setProject(deal)
+      setProjectQuote(qs.find(q => q.id === deal.quote_id) ?? null)
       setProjectJobs(jobs.filter(job => job.deal_id === deal.id))
       const lastHr = [...deal.messages]
         .filter(m => m.author === 'hr')
@@ -416,6 +422,9 @@ export function ClientPortalProjectView() {
                   </div>
                   {isDateSet(project.quotation_valid_until) && (
                     <p className="text-[12px] text-text-secondary mt-2">Valid until {fmtDate(project.quotation_valid_until)}</p>
+                  )}
+                  {projectQuote && (
+                    <div className="mt-3"><PortalQuoteActions q={projectQuote} /></div>
                   )}
                   <div className="mt-4 space-y-2">
                     {project.quotation_response === 'accepted' && (

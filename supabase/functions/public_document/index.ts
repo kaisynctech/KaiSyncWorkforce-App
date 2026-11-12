@@ -21,7 +21,7 @@ const cors = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", ...cors } });
 const fail = (message: string, status = 400) => json({ ok: false, message }, status);
-const rand = (n: unknown) => "R " + Number(n ?? 0).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const rand = (n: unknown, cur?: string | null) => `${!cur || cur.toUpperCase() === "ZAR" ? "R" : cur.toUpperCase()} ` + Number(n ?? 0).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const COMPANY_COLUMNS =
   "name, legal_name, registration_number, is_vat_registered, vat_number, address, postal_address, contact_phone, contact_email, website, brand_logo_path, bank_account_holder, bank_name, bank_account_number, bank_branch_code, bank_account_type, bank_swift_code, show_bank_on_invoices, show_bank_on_quotes, document_footer";
@@ -56,7 +56,7 @@ Deno.serve(async (req: Request) => {
     // ── Invoice ──────────────────────────────────────────────────────────────
     if (link.kind === "invoice") {
       const { data: inv } = await admin.from("finance_invoices")
-        .select("id, company_id, client_id, invoice_number, status, issue_date, due_date, notes, subtotal, vat_amount, total_amount, amount_paid, balance_due, client:clients(name, legal_name, address, billing_address, vat_number, email)")
+        .select("id, company_id, client_id, invoice_number, status, currency, issue_date, due_date, notes, subtotal, vat_amount, total_amount, amount_paid, balance_due, client:clients(name, legal_name, address, billing_address, vat_number, email)")
         .eq("id", link.doc_id).eq("company_id", link.company_id).maybeSingle();
       if (!inv || inv.status === "draft") return fail("This invoice is not available.", 404);
       const closed = ["voided", "cancelled"].includes(String(inv.status));
@@ -92,7 +92,7 @@ Deno.serve(async (req: Request) => {
         await admin.rpc("_notify_office", {
           p_company_id: inv.company_id, p_type: "online_payment_proof",
           p_title: `Proof of payment from ${clientName}`,
-          p_body: `${clientName} sent proof of payment for invoice ${inv.invoice_number ?? ""}${amount ? ` (${rand(amount)})` : ""}. Check it on the invoice and record the payment.`,
+          p_body: `${clientName} sent proof of payment for invoice ${inv.invoice_number ?? ""}${amount ? ` (${rand(amount, inv.currency)})` : ""}. Check it on the invoice and record the payment.`,
           p_ref_type: "invoice", p_ref_id: inv.id, p_key: `online_proof:${proof.id}`,
           p_data: { invoice_id: inv.id, proof_id: proof.id },
         });
@@ -114,7 +114,7 @@ Deno.serve(async (req: Request) => {
         client: inv.client,
         doc: {
           number: inv.invoice_number, status: inv.status, issue_date: inv.issue_date, due_date: inv.due_date, notes: inv.notes,
-          subtotal: inv.subtotal, vat: inv.vat_amount, total: inv.total_amount, paid: inv.amount_paid, balance: inv.balance_due,
+          subtotal: inv.subtotal, vat: inv.vat_amount, total: inv.total_amount, paid: inv.amount_paid, balance: inv.balance_due, currency: inv.currency,
         },
         lines: lines ?? [],
         proofs: proofs ?? [],
@@ -125,7 +125,7 @@ Deno.serve(async (req: Request) => {
 
     // ── Quote ────────────────────────────────────────────────────────────────
     const { data: q } = await admin.from("commercial_quotes")
-      .select("id, company_id, client_id, quote_number, title, status, valid_until, scope_notes, terms_and_conditions, internal_notes, subtotal, vat_amount, total_amount, accepted_at, declined_at, declined_reason, viewed_at, client:clients(name, legal_name, address, billing_address, email)")
+      .select("id, company_id, client_id, quote_number, title, status, currency, valid_until, scope_notes, terms_and_conditions, internal_notes, subtotal, vat_amount, total_amount, accepted_at, declined_at, declined_reason, viewed_at, client:clients(name, legal_name, address, billing_address, email)")
       .eq("id", link.doc_id).eq("company_id", link.company_id).maybeSingle();
     if (!q || q.status === "draft") return fail("This quote is not available.", 404);
     const expired = !!q.valid_until && new Date(`${String(q.valid_until).slice(0, 10)}T23:59:59+02:00`).getTime() < Date.now();
@@ -151,7 +151,7 @@ Deno.serve(async (req: Request) => {
         await admin.rpc("_notify_office", {
           p_company_id: q.company_id, p_type: "quote_accepted_online",
           p_title: `${clientName} accepted quote ${q.quote_number ?? ""}`.trim(),
-          p_body: `${name} accepted ${q.quote_number ?? "the quote"} (${rand(q.total_amount)}) online.${cErr ? "" : " A draft invoice is ready for you to check and send."}`,
+          p_body: `${name} accepted ${q.quote_number ?? "the quote"} (${rand(q.total_amount, q.currency)}) online.${cErr ? "" : " A draft invoice is ready for you to check and send."}`,
           p_ref_type: cErr ? "quote" : "invoice", p_ref_id: cErr ? q.id : String(invId), p_key: `quote_accepted:${q.id}`,
           p_data: { quote_id: q.id, invoice_id: cErr ? null : invId, accepted_by: name },
         });
@@ -185,7 +185,7 @@ Deno.serve(async (req: Request) => {
       doc: {
         number: q.quote_number, title: q.title, status: q.status, valid_until: q.valid_until, notes: q.scope_notes,
         terms: q.terms_and_conditions, subtotal: q.subtotal, vat: q.vat_amount, total: q.total_amount,
-        accepted_at: q.accepted_at, declined_at: q.declined_at, expired,
+        accepted_at: q.accepted_at, declined_at: q.declined_at, expired, currency: q.currency,
       },
       lines: (lines ?? []).filter((l) => !l.is_excluded),
       can_respond: open,

@@ -12,7 +12,8 @@ import { ClientPortalCompliance } from '@/components/ClientPortalCompliance'
 import { PortalComplianceReminder } from '@/components/PortalComplianceReminder'
 import { LinkedPaymentProof } from '@/components/LinkedPaymentProof'
 import { usePortalCanAct, usePortalHref, usePortalMode, usePortalSession } from '@/lib/client-portal/portal-mode'
-import { getInvoiceForPdf, getPartyComplianceDocuments, listDocumentRequests, listInvoices, listJobs, listMessageInbox, listProjects } from '@/lib/client-portal/api'
+import { getInvoiceForPdf, getPartyComplianceDocuments, listDocumentRequests, listInvoices, listJobs, listMessageInbox, listProjects, listQuotes, type PortalQuote } from '@/lib/client-portal/api'
+import { PortalQuotesTable, PortalQuotesWaiting } from '@/components/portal/PortalQuotes'
 import { getDealMessagesReadAt, type ClientPortalSession } from '@/lib/client-portal/session'
 import { fmtDate, fmtDateTime, projectStatusLabel } from '@/lib/client-portal/format'
 import { moneyZAR } from '@/lib/client-portal/quotation'
@@ -105,6 +106,7 @@ function ClientPortalHomeInner() {
   const [inbox, setInbox] = useState<MessageInboxItem[]>([])
   const [invoices, setInvoices] = useState<PortalInvoice[]>([])
   const [docRequests, setDocRequests] = useState<ClientDocumentRequest[]>([])
+  const [quotes, setQuotes] = useState<PortalQuote[]>([])
 
   useEffect(() => {
     if (!session) return
@@ -117,12 +119,13 @@ function ClientPortalHomeInner() {
     setLoading(true)
     setError(null)
     try {
-      const [p, jobRows, m, inv, reqs] = await Promise.all([
+      const [p, jobRows, m, inv, reqs, qs] = await Promise.all([
         listProjects(session.company_code, session.client_code),
         listJobs(session.company_code, session.client_code),
         listMessageInbox(session.company_code, session.client_code),
         listInvoices(session.company_code, session.client_code),
         listDocumentRequests(session.company_code, session.client_code).catch(() => [] as ClientDocumentRequest[]),
+        listQuotes(session.company_code, session.client_code).catch(() => [] as PortalQuote[]),
       ])
       const withUnread = m.map(item => {
         if (!item.last_from_hr || !item.last_message_at) {
@@ -137,6 +140,7 @@ function ClientPortalHomeInner() {
       setInbox(withUnread)
       setInvoices(inv)
       setDocRequests(reqs)
+      setQuotes(qs)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load portal.')
     }
@@ -188,6 +192,7 @@ function ClientPortalHomeInner() {
             outstanding={outstanding}
             unreadCount={unreadCount}
             docRequests={docRequests}
+            quotes={quotes}
             session={session}
           />
         ) : tab === 'information' ? (
@@ -211,6 +216,7 @@ function ClientPortalHomeInner() {
           <QuotesInvoicesTab
             session={session}
             projects={projects}
+            quotes={quotes}
             invoices={invoices}
             outstanding={outstanding}
             initial={tab === 'invoices' || searchParams.get('section') === 'invoices' ? 'invoices' : 'quotes'}
@@ -651,8 +657,9 @@ const CLOSED_PROJECT = ['completed', 'closed', 'cancelled', 'lost', 'archived']
 const CLOSED_JOB = ['completed', 'closed', 'cancelled', 'invoiced']
 
 function HomeTab({
-  name, projects, jobs, invoices, outstanding, unreadCount, docRequests, session,
+  name, projects, jobs, invoices, outstanding, unreadCount, docRequests, quotes, session,
 }: {
+  quotes: PortalQuote[]
   name: string
   projects: ClientPortalProject[]
   jobs: ClientPortalJob[]
@@ -703,6 +710,8 @@ function HomeTab({
           </>
         }
       />
+
+      <PortalQuotesWaiting quotes={quotes} />
 
       <PortalComplianceReminder
         load={() => getPartyComplianceDocuments(session.company_code, session.client_code)}
@@ -970,10 +979,11 @@ function QuotesList({ projects }: { projects: ClientPortalProject[] }) {
 }
 
 function QuotesInvoicesTab({
-  session, projects, invoices, outstanding, initial,
+  session, projects, quotes, invoices, outstanding, initial,
 }: {
   session: ClientPortalSession
   projects: ClientPortalProject[]
+  quotes: PortalQuote[]
   invoices: PortalInvoice[]
   outstanding: number
   initial: 'quotes' | 'invoices'
@@ -996,7 +1006,16 @@ function QuotesInvoicesTab({
       {section === 'invoices' ? (
         <InvoicesTab invoices={invoices} outstanding={outstanding} session={session} />
       ) : (
-        <QuotesList projects={projects} />
+        <div className="space-y-4">
+          <PortalQuotesTable quotes={quotes} />
+          {/* Older project quotations that were never made into a quote */}
+          {projects.some(p => !quotes.some(q => q.deal_id === p.id) && QUOTE_WAITING.includes((p.status ?? '').toLowerCase())) && (
+            <div className="space-y-2">
+              <p className="text-[13px] font-semibold text-text-primary">Project quotations</p>
+              <QuotesList projects={projects.filter(p => !quotes.some(q => q.deal_id === p.id))} />
+            </div>
+          )}
+        </div>
       )}
     </div>
   )
