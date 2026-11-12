@@ -65,10 +65,13 @@ Deno.serve(async (req: Request) => {
           const lead = x.lead_time_days == null || x.lead_time_days === "" ? null : Math.min(3650, Math.max(0, Math.round(Number(x.lead_time_days))));
           const price = Math.round(Number(x.unit_price) * 10000) / 10000;
           const line = lines.find((l) => l.id === String(x.rfq_line_id))!;
+          const q = Number.isFinite(qty as number) && (qty as number) > 0 ? (qty as number) : Number(line.quantity ?? 1) || 1;
+          const subtotal = Math.round(price * q * 100) / 100;
+          const vatAmt = vat === "none" ? 0 : vat === "incl" ? Math.round((subtotal - subtotal / 1.15) * 100) / 100 : Math.round(subtotal * 0.15 * 100) / 100;
           return {
             company_id: r.company_id, rfq_id: rfq.id, recipient_id: r.id, rfq_line_id: line.id,
-            unit_price: price, quantity: Number.isFinite(qty as number) ? qty : null, lead_time_days: Number.isFinite(lead as number) ? lead : null,
-            subtotal: Math.round(price * Number(qty ?? line.quantity ?? 1) * 100) / 100,
+            unit_price: price, quantity: q, lead_time_days: Number.isFinite(lead as number) ? lead : null, subtotal,
+            vat_rate: vat === "none" ? 0 : 0.15, vat_amount: vatAmt, line_total: vat === "excl" ? Math.round((subtotal + vatAmt) * 100) / 100 : subtotal,
             availability_notes: String(x.notes ?? "").trim().slice(0, 300) || null,
           };
         });

@@ -399,7 +399,7 @@ function RepliesView({ companyId, buyout, lines, currency, busy, setBusy, setMsg
 
   function startEnter(r: BuyoutRecipient, rfqLineId: string, existing?: BuyoutReply) {
     setEntering(`${r.id}:${rfqLineId}`)
-    setForm({ price: existing ? String(existing.unitPrice) : '', vat: r.pricesIncludeVat ?? (r.isVatRegistered === false ? 'none' : 'excl'), qty: existing?.qty != null ? String(existing.qty) : '', lead: existing?.leadDays != null ? String(existing.leadDays) : '' })
+    setForm({ price: existing ? String(existing.unitPrice) : '', vat: r.pricesIncludeVat ?? 'excl', qty: existing?.qty != null ? String(existing.qty) : '', lead: existing?.leadDays != null ? String(existing.leadDays) : '' })
   }
 
   async function saveEntered(r: BuyoutRecipient, rfqLineId: string) {
@@ -408,7 +408,7 @@ function RepliesView({ companyId, buyout, lines, currency, busy, setBusy, setMsg
     setBusy(true)
     const res = await saveReply(supabase, {
       companyId, rfqId: buyout.rfqId, recipientId: r.id, vat: form.vat,
-      rows: [{ rfqLineId, unitPrice: price, qty: form.qty ? Number(form.qty) : null, leadDays: form.lead ? Math.round(Number(form.lead)) : null }],
+      rows: [{ rfqLineId, unitPrice: price, qty: form.qty ? Number(form.qty.replace(',', '.')) : null, askedQty: buyout.lines.find(l => l.rfqLineId === rfqLineId)?.qty ?? 1, leadDays: form.lead ? Math.round(Number(form.lead)) : null }],
     })
     if ('error' in res) setMsg({ ok: false, text: res.error }); else setEntering(null)
     await reload()

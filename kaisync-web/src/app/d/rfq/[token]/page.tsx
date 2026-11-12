@@ -66,7 +66,7 @@ export default function SupplierPricesPage() {
       next[l.id] = { price: m ? String(m.unit_price) : '', qty: m?.quantity != null ? String(m.quantity) : '', lead: m?.lead_time_days != null ? String(m.lead_time_days) : '' }
     }
     setRows(next)
-    setVat(v.reply.prices_include_vat ?? (v.supplier.is_vat_registered === false ? 'none' : ''))
+    setVat(v.reply.prices_include_vat ?? '')
     setValidUntil(v.reply.valid_until ?? '')
     setNotes(v.reply.notes ?? '')
   }, [token])

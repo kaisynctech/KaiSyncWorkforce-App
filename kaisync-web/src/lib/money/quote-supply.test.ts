@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { defaultSupplyMode, priceAfterChoice, supplyModeOf } from './quote-supply'
-import { chargesVat, costExVat, asks } from './buyout'
+import { chargesVat, costExVat, asks, replyAmounts } from './buyout'
 
 describe('supply mode', () => {
   it('takes stock items from stock when there is enough', () => {
@@ -37,10 +37,15 @@ describe('buyout helpers', () => {
     expect(costExVat(100, 'none')).toBe(100)
   })
   it('works out whether the supplier adds VAT', () => {
-    expect(chargesVat({ chargesVat: null, pricesIncludeVat: 'none', isVatRegistered: true })).toBe(false)
-    expect(chargesVat({ chargesVat: null, pricesIncludeVat: null, isVatRegistered: false })).toBe(false)
-    expect(chargesVat({ chargesVat: null, pricesIncludeVat: 'excl', isVatRegistered: null })).toBe(true)
-    expect(chargesVat({ chargesVat: false, pricesIncludeVat: 'excl', isVatRegistered: true })).toBe(false)
+    expect(chargesVat({ chargesVat: null, pricesIncludeVat: 'none' })).toBe(false)
+    expect(chargesVat({ chargesVat: null, pricesIncludeVat: null })).toBe(true)
+    expect(chargesVat({ chargesVat: null, pricesIncludeVat: 'excl' })).toBe(true)
+    expect(chargesVat({ chargesVat: false, pricesIncludeVat: 'excl' })).toBe(false)
+  })
+  it('works out VAT on a priced line', () => {
+    expect(replyAmounts(100, 'excl')).toEqual({ vat_rate: 0.15, vat_amount: 15, line_total: 115 })
+    expect(replyAmounts(115, 'incl')).toEqual({ vat_rate: 0.15, vat_amount: 15, line_total: 115 })
+    expect(replyAmounts(100, 'none')).toEqual({ vat_rate: 0, vat_amount: 0, line_total: 100 })
   })
   it('asks a supplier for all items unless some were ticked', () => {
     expect(asks({ lineIds: null }, 'a')).toBe(true)

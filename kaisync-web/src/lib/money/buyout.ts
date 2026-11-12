@@ -45,12 +45,20 @@ export function costExVat(unitPrice: number, pricesIncludeVat: PriceVat | null, 
   return pricesIncludeVat === 'incl' ? Math.round((p / (1 + vatRate)) * 100) / 100 : p
 }
 
-/** Does this supplier add VAT on the purchase order? Their own answer, else what they said about their prices, else their record. */
-export function chargesVat(r: Pick<BuyoutRecipient, 'chargesVat' | 'pricesIncludeVat' | 'isVatRegistered'>): boolean {
+/** Does this supplier add VAT on the purchase order? The office's switch, else what the supplier said about their prices.
+ *  (The supplier record's VAT flag is not used: it defaults to "no" for most suppliers, so it can't be trusted here.) */
+export function chargesVat(r: Pick<BuyoutRecipient, 'chargesVat' | 'pricesIncludeVat'>): boolean {
   if (r.chargesVat != null) return r.chargesVat
-  if (r.pricesIncludeVat === 'none') return false
-  if (r.pricesIncludeVat) return true
-  return r.isVatRegistered !== false
+  return r.pricesIncludeVat !== 'none'
+}
+
+/** VAT and total on a supplier's priced line, from how they price VAT (rates as fractions). */
+export function replyAmounts(subtotal: number, vat: PriceVat, rate = 0.15) {
+  const sub = Math.round(subtotal * 100) / 100
+  if (vat === 'none') return { vat_rate: 0, vat_amount: 0, line_total: sub }
+  if (vat === 'incl') { const v = Math.round((sub - sub / (1 + rate)) * 100) / 100; return { vat_rate: rate, vat_amount: v, line_total: sub } }
+  const v = Math.round(sub * rate * 100) / 100
+  return { vat_rate: rate, vat_amount: v, line_total: Math.round((sub + v) * 100) / 100 }
 }
 
 export async function loadBuyout(supabase: SupabaseClient, companyId: string, quoteId: string): Promise<Buyout | null> {
@@ -172,15 +180,18 @@ export async function removeRecipient(supabase: SupabaseClient, id: string) {
 /** A reply the office types in (the supplier answered by email or sent a PDF). */
 export async function saveReply(
   supabase: SupabaseClient,
-  opts: { companyId: string; rfqId: string; recipientId: string; vat: PriceVat; rows: { rfqLineId: string; unitPrice: number; qty: number | null; leadDays: number | null }[] },
+  opts: { companyId: string; rfqId: string; recipientId: string; vat: PriceVat; rows: { rfqLineId: string; unitPrice: number; qty: number | null; askedQty: number; leadDays: number | null }[] },
 ): Promise<{ error: string } | { ok: true }> {
   const rows = opts.rows.filter(r => r.unitPrice > 0)
   if (!rows.length) return { error: 'Enter at least one price.' }
-  const { error } = await supabase.from('rfq_response_lines').upsert(rows.map(r => ({
-    company_id: opts.companyId, rfq_id: opts.rfqId, recipient_id: opts.recipientId, rfq_line_id: r.rfqLineId,
-    unit_price: r.unitPrice, quantity: r.qty, lead_time_days: r.leadDays,
-    subtotal: Math.round(r.unitPrice * (r.qty ?? 1) * 100) / 100,
-  })), { onConflict: 'recipient_id,rfq_line_id' })
+  const { error } = await supabase.from('rfq_response_lines').upsert(rows.map(r => {
+    const qty = r.qty != null && r.qty > 0 ? r.qty : r.askedQty || 1
+    const subtotal = Math.round(r.unitPrice * qty * 100) / 100
+    return {
+      company_id: opts.companyId, rfq_id: opts.rfqId, recipient_id: opts.recipientId, rfq_line_id: r.rfqLineId,
+      unit_price: r.unitPrice, quantity: qty, lead_time_days: r.leadDays, subtotal, ...replyAmounts(subtotal, opts.vat),
+    }
+  }), { onConflict: 'recipient_id,rfq_line_id' })
   if (error) return { error: error.message }
   const now = new Date().toISOString()
   const { error: e2 } = await supabase.from('rfq_recipients').update({
