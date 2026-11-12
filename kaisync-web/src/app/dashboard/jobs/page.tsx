@@ -46,6 +46,9 @@ type JobKpis = {
   total: number
   open: number
   inProgress: number
+  scheduled: number
+  completed: number
+  cancelled: number
   unassigned: number
 }
 
@@ -126,6 +129,8 @@ const PRIORITY_BADGES: Record<string, { label: string; cls: string }> = {
   normal: { label: 'Normal', cls: 'bg-warning-dark text-[#92400E]' },
   low: { label: 'Low', cls: 'bg-surface-elevated text-text-secondary' },
   none: { label: 'None', cls: 'bg-surface-elevated text-text-secondary' },
+  urgent: { label: 'Urgent', cls: 'bg-error-dark text-error' },
+  critical: { label: 'Critical', cls: 'bg-error-dark text-error' },
 }
 
 const FALLBACK_BADGE = { label: '—', cls: 'bg-surface-elevated text-text-secondary' }
@@ -244,8 +249,9 @@ function statusBadgeOf(raw: string | null | undefined) {
 
 function priorityBadgeOf(raw: string | null | undefined) {
   if (!raw) return FALLBACK_BADGE
+  const words = raw.replace(/_/g, ' ')
   return PRIORITY_BADGES[raw] ?? PRIORITY_BADGES[raw.toLowerCase()] ?? {
-    label: raw.replace(/_/g, ' '),
+    label: words.charAt(0).toUpperCase() + words.slice(1),
     cls: FALLBACK_BADGE.cls,
   }
 }
@@ -272,7 +278,7 @@ export default function JobsPage() {
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [total, setTotal] = useState(0)
   const [perms, setPerms] = useState<PermissionSet | null>(null)
-  const [kpis, setKpis] = useState<JobKpis>({ total: 0, open: 0, inProgress: 0, unassigned: 0 })
+  const [kpis, setKpis] = useState<JobKpis>({ total: 0, open: 0, inProgress: 0, scheduled: 0, completed: 0, cancelled: 0, unassigned: 0 })
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [filterClients, setFilterClients] = useState<{ id: string; name: string }[]>([])
   const [filterServices, setFilterServices] = useState<{ id: string; name: string }[]>([])
@@ -429,7 +435,7 @@ export default function JobsPage() {
         scopeFilters,
       )
 
-    const [pageRes, scopeRes, openRes, inProgRes, unassignedRes] = await Promise.all([
+    const [pageRes, scopeRes, openRes, inProgRes, unassignedRes, schedRes, doneRes, cancRes] = await Promise.all([
       withJobFilters(
         supabase.from('jobs').select(JOB_LIST_SELECT, { count: 'exact' }),
         filters,
@@ -442,15 +448,19 @@ export default function JobsPage() {
         .or('assigned_employee_ids.is.null,assigned_employee_ids.eq.{}')
         .neq('status', 'completed')
         .neq('status', 'cancelled'),
+      scopeCount().eq('status', 'scheduled'),
+      scopeCount().eq('status', 'completed'),
+      scopeCount().eq('status', 'cancelled'),
     ])
 
     const kpiError = scopeRes.error ?? openRes.error ?? inProgRes.error ?? unassignedRes.error
+      ?? schedRes.error ?? doneRes.error ?? cancRes.error
     if (pageRes.error || kpiError) {
       setError(pageRes.error?.message ?? kpiError?.message ?? 'Could not load jobs.')
       if (pageRes.error) {
         setJobs([])
         setTotal(0)
-        setKpis({ total: 0, open: 0, inProgress: 0, unassigned: 0 })
+        setKpis({ total: 0, open: 0, inProgress: 0, scheduled: 0, completed: 0, cancelled: 0, unassigned: 0 })
       }
     }
     if (!pageRes.error) {
@@ -462,6 +472,9 @@ export default function JobsPage() {
           total: scopeRes.count ?? 0,
           open: openRes.count ?? 0,
           inProgress: inProgRes.count ?? 0,
+          scheduled: schedRes.count ?? 0,
+          completed: doneRes.count ?? 0,
+          cancelled: cancRes.count ?? 0,
           unassigned: unassignedRes.count ?? 0,
         })
       }
@@ -476,11 +489,14 @@ export default function JobsPage() {
   useEffect(() => { void loadJobs() }, [loadJobs])
 
   const filtered = jobs
-  /** Counts only where the existing KPI queries map to a tab (scheduled/completed/cancelled have no count query). */
+  /** Every status tab shows its count (same scope and filters as the list). */
   const statusCounts: Record<string, number> = {
     all: kpis.total,
     open: kpis.open,
+    scheduled: kpis.scheduled,
     in_progress: kpis.inProgress,
+    completed: kpis.completed,
+    cancelled: kpis.cancelled,
   }
   const pages = totalPages(total, pageSize)
 

@@ -780,7 +780,7 @@ function EmployeesPageInner() {
       <div className="flex items-center justify-between mb-5">
         <div>
           <h1 className="text-[22px] font-semibold text-text-primary">Employees</h1>
-          <p className="text-[13px] text-text-secondary mt-0.5">{directoryTotal} total</p>
+          <p className="text-[13px] text-text-secondary mt-0.5">{empLoading && directoryTotal === 0 ? 'Loading…' : `${directoryTotal} total`}</p>
         </div>
         <div className="flex items-center gap-2">
           <Link href="/dashboard/employees/import" className="btn-secondary">
@@ -794,9 +794,9 @@ function EmployeesPageInner() {
         </div>
       </div>
 
-      {/* Tab bar */}
-      <div className="flex gap-1 mb-5 border-b border-divider">
-        {TABS.map(t => (
+      {/* Tab bar — tabs appear once your role is known, so Leave doesn't pop in and shift the others */}
+      <div className="flex gap-1 mb-5 border-b border-divider min-h-8">
+        {(myAccessLevel !== null || error) && TABS.map(t => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
