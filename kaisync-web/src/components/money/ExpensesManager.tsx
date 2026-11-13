@@ -10,8 +10,9 @@ import { createClient } from '@/lib/supabase/client'
 import { formatRand } from '@/lib/line-items'
 import { EXPENSE_CATEGORIES, FREQUENCY_LABEL, PAYMENT_LABEL, monthlyEquivalent, type ExpenseItem } from '@/lib/money/overview'
 import { localISODate } from '@/lib/utils'
+import { signWorkforceMedia } from '@/lib/media-read'
 
-type Row = Omit<ExpenseItem, 'next_date' | 'in_period'>
+type Row = Omit<ExpenseItem, 'next_date' | 'in_period'> & { receipt_path?: string | null }
 
 const FREQS: ExpenseItem['frequency'][] = ['monthly', 'yearly', 'quarterly', 'weekly', 'once']
 
@@ -49,12 +50,17 @@ const day = (d: string | null) =>
 type Draft = {
   id: string | null; name: string; category: string; amount: string; includesVat: boolean
   frequency: ExpenseItem['frequency']; start_date: string; end_date: string; payment_method: string; notes: string
+  /** Receipt already saved, and a new photo / PDF chosen in this form. */
+  receipt_path: string | null; receiptFile: File | null
 }
 
 const blank = (): Draft => ({
   id: null, name: '', category: 'Software', amount: '', includesVat: true, frequency: 'monthly',
   start_date: localISODate(), end_date: '', payment_method: 'debit_order', notes: '',
+  receipt_path: null, receiptFile: null,
 })
+
+const MAX_RECEIPT_BYTES = 10 * 1024 * 1024
 
 export function ExpensesManager({ companyId, vatRegistered, onChanged }: { companyId: string; vatRegistered: boolean; onChanged?: () => void }) {
   const [rows, setRows] = useState<Row[] | null>(null)
@@ -65,7 +71,7 @@ export function ExpensesManager({ companyId, vatRegistered, onChanged }: { compa
 
   const load = useCallback(async () => {
     const { data, error: e } = await createClient().from('company_expenses')
-      .select('id, name, category, amount, vat_amount, frequency, start_date, end_date, payment_method, notes')
+      .select('id, name, category, amount, vat_amount, frequency, start_date, end_date, payment_method, notes, receipt_path')
       .eq('company_id', companyId).is('archived_at', null).order('name')
     if (e) { setError(e.message); setRows([]); return }
     setRows(((data ?? []) as Row[]).map(r => ({ ...r, amount: Number(r.amount), vat_amount: Number(r.vat_amount) })))
@@ -92,12 +98,23 @@ export function ExpensesManager({ companyId, vatRegistered, onChanged }: { compa
       frequency: draft.frequency, start_date: draft.start_date, end_date: draft.frequency === 'once' ? null : (draft.end_date || null),
       payment_method: draft.payment_method || null, notes: draft.notes.trim() || null, updated_at: new Date().toISOString(),
     }
+    if (draft.receiptFile && draft.receiptFile.size > MAX_RECEIPT_BYTES) { setBusy(false); setError('That file is bigger than 10 MB. Take a photo or choose a smaller file.'); return }
     const supabase = createClient()
-    const { error: e } = draft.id
-      ? await supabase.from('company_expenses').update(payload).eq('id', draft.id)
-      : await supabase.from('company_expenses').insert(payload)
+    const res = draft.id
+      ? await supabase.from('company_expenses').update(payload).eq('id', draft.id).select('id').maybeSingle()
+      : await supabase.from('company_expenses').insert(payload).select('id').maybeSingle()
+    if (res.error || !res.data) { setBusy(false); setError(res.error?.message ?? 'Could not save'); return }
+    // Receipt photo / PDF: private, office-only storage (expense_receipts/{company}/…).
+    if (draft.receiptFile) {
+      const id = (res.data as { id: string }).id
+      const ext = (draft.receiptFile.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 5) || 'jpg'
+      const path = `expense_receipts/${companyId}/${id}-${Date.now()}.${ext}`
+      const { error: upErr } = await supabase.storage.from('workforce-media').upload(path, draft.receiptFile, { contentType: draft.receiptFile.type || undefined })
+      if (upErr) { setBusy(false); setError(`Saved, but the receipt didn't upload: ${upErr.message}`); await load(); return }
+      const { error: pErr } = await supabase.from('company_expenses').update({ receipt_path: path }).eq('id', id)
+      if (pErr) { setBusy(false); setError(`Saved, but the receipt couldn't be linked: ${pErr.message}`); await load(); return }
+    }
     setBusy(false)
-    if (e) { setError(e.message); return }
     setDraft(null)
     await load()
     onChanged?.()
@@ -113,11 +130,18 @@ export function ExpensesManager({ companyId, vatRegistered, onChanged }: { compa
     onChanged?.()
   }
 
+  async function openReceipt(path: string) {
+    const url = await signWorkforceMedia(createClient(), path, 600)
+    if (url) window.open(url, '_blank', 'noopener')
+    else setError('Could not open the receipt.')
+  }
+
   function edit(r: Row) {
     setError(null)
     setDraft({
       id: r.id, name: r.name, category: r.category, amount: r.amount.toFixed(2), includesVat: r.vat_amount > 0 || !vatRegistered,
       frequency: r.frequency, start_date: r.start_date, end_date: r.end_date ?? '', payment_method: r.payment_method ?? '', notes: r.notes ?? '',
+      receipt_path: r.receipt_path ?? null, receiptFile: null,
     })
   }
 
@@ -155,7 +179,9 @@ export function ExpensesManager({ companyId, vatRegistered, onChanged }: { compa
             className={`w-full flex flex-wrap items-center gap-3 px-5 py-3 border-t border-divider/70 text-left hover:bg-surface-elevated/60 ${r.next ? '' : 'opacity-60'}`}>
             <span className="w-9 h-9 rounded-xl bg-surface-elevated text-text-primary font-bold text-[13px] flex items-center justify-center shrink-0">{r.name.trim()[0]?.toUpperCase()}</span>
             <span className="flex-1 basis-[200px] min-w-0 flex flex-col">
-              <span className="text-[13.5px] font-medium text-text-primary truncate">{r.name}</span>
+              <span className="text-[13.5px] font-medium text-text-primary truncate flex items-center gap-1.5">{r.name}
+                {r.receipt_path && <span className="material-icons text-[15px] text-emerald-600" title="Receipt attached" aria-label="Receipt attached">receipt</span>}
+              </span>
               <span className="text-[11.5px] text-text-secondary truncate">
                 {r.category} · {FREQUENCY_LABEL[r.frequency]}{r.payment_method ? ` · ${PAYMENT_LABEL[r.payment_method] ?? r.payment_method}` : ''}
               </span>
@@ -221,6 +247,21 @@ export function ExpensesManager({ companyId, vatRegistered, onChanged }: { compa
             <label className={label}>Notes (optional)
               <input className={input} value={draft.notes} placeholder="Account number, contract end, who looks after it…" onChange={e => setDraft({ ...draft, notes: e.target.value })} />
             </label>
+            <div className={label}>Receipt (optional)
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="h-11 px-4 rounded-xl border border-divider text-[13px] font-semibold text-text-primary flex items-center gap-1.5 cursor-pointer hover:bg-surface-elevated">
+                  <span className="material-icons text-[18px]">photo_camera</span>
+                  {draft.receiptFile ? 'Change' : draft.receipt_path ? 'Replace receipt' : 'Snap or attach receipt'}
+                  <input type="file" accept="image/*,application/pdf" className="hidden"
+                    onChange={e => { const f = e.target.files?.[0] ?? null; setDraft({ ...draft, receiptFile: f }); e.target.value = '' }} />
+                </label>
+                {draft.receiptFile && <span className="text-[12.5px] text-text-primary truncate max-w-[200px]">{draft.receiptFile.name}</span>}
+                {!draft.receiptFile && draft.receipt_path && (
+                  <button type="button" onClick={() => void openReceipt(draft.receipt_path!)} className="h-11 px-3 text-[13px] font-semibold text-primary">View receipt</button>
+                )}
+              </div>
+              <span className="text-[11.5px] text-text-secondary/80">On a phone this opens the camera. Only the owner, admins and HR can see receipts.</span>
+            </div>
             {error && <p className="text-[13px] text-error">{error}</p>}
             <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
               {draft.id ? (
