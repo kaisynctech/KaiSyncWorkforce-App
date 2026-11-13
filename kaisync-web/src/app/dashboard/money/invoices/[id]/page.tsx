@@ -142,6 +142,7 @@ function MoneyInvoiceDetailInner() {
   const [showPay, setShowPay]   = useState(false)
   // Set when Record payment was opened from a client's proof: saving accepts that proof too.
   const [confirmProofId, setConfirmProofId] = useState<string | null>(null)
+  const [creditNote, setCreditNote] = useState<string | null>(null)
   const [showVoid, setShowVoid] = useState(false)
   const [showCN, setShowCN]     = useState(false)
   const [showWhatsNext, setShowWhatsNext] = useState(openWhatsNext)
@@ -312,15 +313,16 @@ function MoneyInvoiceDetailInner() {
     const amount = Number(payAmount)
     if (!(amount > 0)) { setErr('Amount must be greater than 0'); return }
     const owed = Number(inv.balance_due ?? 0)
-    if (amount > owed + 0.005) {
-      setErr(`That's more than the ${fmtMoney(owed, inv.currency)} still owed. Record ${fmtMoney(owed, inv.currency)} here; keeping extra as client credit is coming next.`)
+    // Paid more than owed: the extra is kept as credit for the client (client invoices only).
+    if (amount > owed + 0.005 && !inv.client_id) {
+      setErr(`That's more than the ${fmtMoney(owed, inv.currency)} still owed.`)
       return
     }
     setBusy(true)
     setErr(null)
     const supabase = createClient()
     try {
-      await recordInvoicePayment(
+      const { credit } = await recordInvoicePayment(
         supabase,
         inv.id,
         amount,
@@ -331,17 +333,20 @@ function MoneyInvoiceDetailInner() {
           referenceNumber: payRef || inv.invoice_number,
           notes: payNotes || null,
           transactionDate: payDate || undefined,
+          proofId: confirmProofId,
         },
       )
-      if (confirmProofId) {
+      if (confirmProofId && !inv.client_id) {
+        // Invoices without a client (e.g. some rent invoices) still accept the proof here.
         const { error: pErr } = await supabase.from('finance_payment_proofs').update({
           status: 'accepted',
           reviewed_by: employeeId,
           reviewed_at: new Date().toISOString(),
         }).eq('id', confirmProofId).eq('company_id', companyId)
         if (pErr) console.error('proof accept after payment failed', pErr)
-        setConfirmProofId(null)
       }
+      setConfirmProofId(null)
+      if (credit > 0) setCreditNote(`${fmtMoney(credit, inv.currency)} more than owed was paid: it's kept as credit for the client.`)
       setShowPay(false)
       // A fresh form next time (the next payment has its own reference and notes).
       setPayRef('')
@@ -535,6 +540,9 @@ function MoneyInvoiceDetailInner() {
         </div>
 
         <DocumentChain current={{ kind: 'invoice', id: inv.id }} companyId={companyId} />
+        {creditNote && (
+          <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-[13px] text-emerald-800">{creditNote}</p>
+        )}
 
         {/* Header card */}
         <div className="bg-surface-card border border-divider rounded-xl p-4 space-y-1">
@@ -947,12 +955,12 @@ function MoneyInvoiceDetailInner() {
             <Field label="Payment Date">
               <input type="date" value={payDate} onChange={e => setPayDate(e.target.value)} className={inputCls} />
             </Field>
-            <Field label={`Amount (max ${fmtMoney(inv.balance_due, inv.currency)})`}>
+            <Field label={inv.client_id ? `Amount (owed ${fmtMoney(inv.balance_due, inv.currency)}; any extra is kept as credit)` : `Amount (max ${fmtMoney(inv.balance_due, inv.currency)})`}>
               <input
                 type="number"
                 step="0.01"
                 min="0.01"
-                max={inv.balance_due ?? undefined}
+                max={inv.client_id ? undefined : (inv.balance_due ?? undefined)}
                 value={payAmount}
                 onChange={e => setPayAmount(e.target.value)}
                 className={inputCls}
