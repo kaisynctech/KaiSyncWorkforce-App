@@ -1,3 +1,5 @@
+import { WithMoneySectionTabs } from '@/components/money/MoneySectionTabs'
+
 export default function MoneyLayout({ children }: { children: React.ReactNode }) {
-  return <>{children}</>
+  return <WithMoneySectionTabs>{children}</WithMoneySectionTabs>
 }

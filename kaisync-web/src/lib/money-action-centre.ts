@@ -351,6 +351,6 @@ export async function openMoneyActionItem(
   }
 
   if (item.domain === 'suppliers') {
-    router.push(`/dashboard/supply/suppliers/${item.entity_id}`)
+    router.push(`/dashboard/suppliers/${item.entity_id}`)
   }
 }

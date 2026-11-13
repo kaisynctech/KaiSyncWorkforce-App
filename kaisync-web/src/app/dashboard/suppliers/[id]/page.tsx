@@ -10,12 +10,13 @@ import { SectionCard, FormField, entryClass } from '@/components/SectionCard'
 import { FormSelect } from '@/components/FormSelect'
 import { Toggle } from '@/components/Toggle'
 import { ContractorActivityTab } from '@/components/ContractorActivityTab'
+import { SupplierPurchasingTab } from '@/components/SupplierPurchasingTab'
 import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
 import { isSupplierKind, PARTNER_KIND, type PartnerKind } from '@/lib/partner-kinds'
 import { updateSupplier } from '@/lib/suppliers'
 import type { ComplianceDocument, Contractor, InventoryItem } from '@/types/database'
 
-const TABS = ['Information', 'Payments', 'Inventory', 'Compliance', 'Activity'] as const
+const TABS = ['Information', 'Purchasing', 'Payments', 'Inventory', 'Compliance', 'Activity'] as const
 type Tab = (typeof TABS)[number]
 
 const ACCOUNT_TYPES = [
@@ -535,6 +536,12 @@ export default function SupplierDetailPage() {
                 </ul>
               )}
             </SectionCard>
+          </div>
+        )}
+
+        {tab === 'Purchasing' && supplier?.company_id && (
+          <div className="flex-1 overflow-y-auto p-4">
+            <SupplierPurchasingTab companyId={supplier.company_id} supplierId={supplierId} />
           </div>
         )}
 

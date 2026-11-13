@@ -145,7 +145,7 @@ export default function RfqListPage() {
     <div className="h-full flex flex-col">
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-divider shrink-0 bg-surface gap-3 flex-wrap">
         <div>
-          <h1 className="text-[18px] font-semibold text-text-primary leading-tight">Requests for Quotation</h1>
+          <h1 className="text-[18px] font-semibold text-text-primary leading-tight">Ask suppliers</h1>
           <p className="text-[11px] text-text-secondary mt-0.5">{filtered.length} RFQ{filtered.length !== 1 ? 's' : ''}</p>
         </div>
         <button onClick={() => router.push('/dashboard/supply/rfqs/new')}

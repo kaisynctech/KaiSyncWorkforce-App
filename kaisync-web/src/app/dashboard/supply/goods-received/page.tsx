@@ -122,7 +122,7 @@ export default function GoodsReceivedPage() {
     <div className="h-full flex flex-col">
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-divider shrink-0 bg-surface gap-3 flex-wrap">
         <div>
-          <h1 className="text-[18px] font-semibold text-text-primary leading-tight">Goods Received Notes</h1>
+          <h1 className="text-[18px] font-semibold text-text-primary leading-tight">Goods received</h1>
           <p className="text-[11px] text-text-secondary mt-0.5">{filtered.length} GRN{filtered.length !== 1 ? 's' : ''}</p>
         </div>
         <button onClick={() => router.push('/dashboard/supply/goods-received/new')}

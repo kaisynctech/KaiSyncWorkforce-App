@@ -595,7 +595,7 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
         <div>
           {embedded
             ? <h2 className="text-[14px] font-semibold text-text-primary leading-tight">Quotes</h2>
-            : <h1 className="text-[18px] font-semibold text-text-primary leading-tight">{tab === 'sales' ? 'Sales Quotes' : 'Incoming Quotes'}</h1>}
+            : <h1 className="text-[18px] font-semibold text-text-primary leading-tight">{tab === 'sales' ? 'Quotations' : 'Quotes received'}</h1>}
           {!embedded && (
             <p className="text-[11px] text-text-secondary mt-0.5">
               {tab === 'sales'

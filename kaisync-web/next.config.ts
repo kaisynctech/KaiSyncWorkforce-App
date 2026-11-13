@@ -29,6 +29,12 @@ const nextConfig: NextConfig = {
       { source: '/download', destination: '/install.html', permanent: true },
       { source: '/download.html', destination: '/install.html', permanent: true },
       { source: '/releases', destination: '/releases.html', permanent: false },
+      // Money menu (piece 1): each list has one home; old addresses keep working.
+      { source: '/dashboard/finance/invoices', destination: '/dashboard/money/invoices', permanent: false },
+      { source: '/dashboard/finance/invoices/:id((?!new$)[^/]+)', destination: '/dashboard/money/invoices/:id', permanent: false },
+      { source: '/dashboard/supply/suppliers', destination: '/dashboard/suppliers', permanent: false },
+      { source: '/dashboard/supply/suppliers/:id', destination: '/dashboard/suppliers/:id', permanent: false },
+      { source: '/dashboard/money/catalogue', destination: '/dashboard/inventory', permanent: false },
     ]
   },
 };

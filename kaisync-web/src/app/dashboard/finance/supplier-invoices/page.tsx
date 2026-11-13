@@ -325,7 +325,7 @@ function SupplierInvoicesPageInner() {
     <div className="h-full flex flex-col">
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-divider shrink-0 bg-surface gap-3 flex-wrap">
         <div>
-          <h1 className="text-[18px] font-semibold text-text-primary leading-tight">Supplier Invoices</h1>
+          <h1 className="text-[18px] font-semibold text-text-primary leading-tight">Supplier bills</h1>
           <p className="text-[11px] text-text-secondary mt-0.5">{filtered.length} invoice{filtered.length !== 1 ? 's' : ''}</p>
         </div>
         <button onClick={() => setShowAdd(true)} className="btn-primary h-8 px-3 text-[12px]">+ Invoice</button>

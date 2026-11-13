@@ -511,7 +511,7 @@ export default function RfqBuilder({ rfqId }: RfqBuilderProps) {
           {suppliers.length === 0 ? (
             <p className="text-[13px] text-text-secondary">
               No suppliers yet —{' '}
-              <a href="/dashboard/supply/suppliers" className="text-primary hover:underline">add one first</a>
+              <a href="/dashboard/suppliers/new" className="text-primary hover:underline">add one first</a>
             </p>
           ) : recipients.length === 0 ? (
             <p className="text-[13px] text-text-secondary">No suppliers invited yet.</p>

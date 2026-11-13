@@ -310,7 +310,7 @@ export async function openOpsActionItem(
 
   if (item.domain === 'projects') {
     if (item.action_type === 'invoice_overdue') {
-      router.push(`/dashboard/finance/invoices/${item.ref_id}`)
+      router.push(`/dashboard/money/invoices/${item.ref_id}`)
       return
     }
     if (item.action_type === 'quotation_pending') {
