@@ -116,7 +116,15 @@ export function PaymentsList({ direction }: { direction: 'incoming' | 'outgoing'
     })
   }, [rows, docs, search])
 
-  const total = filtered.reduce((s, t) => s + Number(t.amount ?? 0), 0)
+  // Totals per currency: a euro invoice's payment is in euros, so it isn't added to the rand total.
+  const totals = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const t of filtered) {
+      const cur = (t.source_id ? docs[t.source_id]?.currency : null) || 'ZAR'
+      m.set(cur, (m.get(cur) ?? 0) + Number(t.amount ?? 0))
+    }
+    return [...m.entries()].sort((a, b) => (a[0] === 'ZAR' ? -1 : b[0] === 'ZAR' ? 1 : a[0].localeCompare(b[0])))
+  }, [filtered, docs])
 
   return (
     <div className="h-full overflow-y-auto bg-background">
@@ -144,7 +152,12 @@ export function PaymentsList({ direction }: { direction: 'incoming' | 'outgoing'
         {rows && (
           <div className="bg-surface-card border border-divider rounded-2xl px-4 py-3 flex items-baseline justify-between gap-3">
             <span className="text-[13px] text-text-secondary">{filtered.length} {filtered.length === 1 ? 'payment' : 'payments'}</span>
-            <span className={cn('text-[20px] font-bold tabular-nums', incoming ? 'text-emerald-700' : 'text-amber-700')}>{fmtMoney(total)}</span>
+            <span className="flex flex-col items-end">
+              {totals.length === 0 && <span className={cn('text-[20px] font-bold tabular-nums', incoming ? 'text-emerald-700' : 'text-amber-700')}>{fmtMoney(0)}</span>}
+              {totals.map(([cur, sum]) => (
+                <span key={cur} className={cn('text-[20px] font-bold tabular-nums', incoming ? 'text-emerald-700' : 'text-amber-700')}>{fmtMoney(sum, cur)}</span>
+              ))}
+            </span>
           </div>
         )}
 

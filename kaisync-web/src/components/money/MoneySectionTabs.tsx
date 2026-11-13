@@ -46,7 +46,7 @@ export function MoneySectionTabs({ tabs }: { tabs: SectionTab[] }) {
   return (
     <nav
       aria-label="Lists in this section"
-      className="flex gap-1.5 overflow-x-auto border-b border-divider px-4 py-2 bg-surface shrink-0"
+      className="flex gap-1.5 overflow-x-auto border-b border-divider px-4 py-2 bg-surface shrink-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
     >
       {tabs.map(tab => {
         const active = pathname === tab.href
