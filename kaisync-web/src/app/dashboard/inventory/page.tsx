@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
@@ -253,13 +254,19 @@ export default function InventoryPage() {
       <div className="bg-surface border-b border-divider px-3 pt-2 pb-2 shrink-0 space-y-2">
         <div className="flex items-center gap-2 min-w-0">
           <div className="min-w-0 flex-1">
-            <h1 className="text-[15px] font-semibold text-text-primary leading-tight">Inventory &amp; Services</h1>
+            <h1 className="text-[15px] font-semibold text-text-primary leading-tight">Products &amp; stock</h1>
             <p className="text-[11px] text-text-secondary mt-0.5">Parts, services, materials and labour in one catalogue</p>
           </div>
-          <button type="button" onClick={openCreate} className="btn-primary shrink-0">
-            <span className="material-icons">add</span>
-            Add Item
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <Link href="/dashboard/inventory/import" prefetch={false} className="btn-outlined h-10 px-3 text-[13px] inline-flex items-center gap-1">
+              <span className="material-icons text-[18px]">upload_file</span>
+              <span className="hidden sm:inline">Import price list</span><span className="sm:hidden">Import</span>
+            </Link>
+            <button type="button" onClick={openCreate} className="btn-primary shrink-0">
+              <span className="material-icons">add</span>
+              Add Item
+            </button>
+          </div>
         </div>
         <EntityTabs
           tabs={INV_TABS.map(t => ({
