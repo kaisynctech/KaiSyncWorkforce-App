@@ -89,8 +89,7 @@ const NAV_SECTIONS: NavSection[] = [
     label: 'Money',
     icon: 'account_balance_wallet',
     items: [
-      { label: 'Home',              href: '/dashboard/money',                     icon: 'account_balance', flag: 'finance' },
-      { label: 'Action Centre',     href: '/dashboard/money/action-centre',       icon: 'bolt',            flag: 'commercial' },
+      { label: 'Home',              href: '/dashboard/money',                     icon: 'account_balance', flag: 'commercial' },
       { label: 'Quotations',        href: '/dashboard/money/quotes',              icon: 'request_quote',   flag: 'commercial', group: 'Money in' },
       { label: 'Orders',            href: '/dashboard/money/orders',              icon: 'assignment_turned_in', flag: 'commercial', group: 'Money in' },
       { label: 'Invoices',          href: '/dashboard/money/invoices',            icon: 'receipt_long',    flag: 'commercial', group: 'Money in',

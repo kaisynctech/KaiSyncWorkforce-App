@@ -1,9 +1,9 @@
 'use client'
 
 /**
- * Money: how the business is doing. Overview (charts), Totals (income and expenses), client, supplier and
+ * Money Home: what needs you today (every to-do, one tap each) and how the business is doing. Overview (charts), Totals (income and expenses), client, supplier and
  * contractor accounts, payroll, and subscriptions & expenses — all for one period.
- * Owner, HR and admins (the same people who can see payslips).
+ * The numbers: owner, HR and admins on a plan with Finance. The to-dos: everyone with Money, by permission.
  */
 
 import { Suspense, useCallback, useEffect, useState } from 'react'
@@ -20,6 +20,10 @@ import { ColumnChart } from '@/components/insights/viz'
 import { ExpensesManager } from '@/components/money/ExpensesManager'
 import { RemindButton, StatementButton } from '@/components/money/StatementActions'
 import { AutoRemindersCard } from '@/components/money/AutoReminders'
+import { MoneyTodoList, type MoneyTodoExtra } from '@/components/money/MoneyTodoList'
+import { canAccessFinance } from '@/lib/finance-gate'
+import { loadCompanyWorkspace } from '@/lib/employee-workspace'
+import { useDashboardCompany } from '@/components/DashboardCompanyContext'
 
 type Tab = 'overview' | 'totals' | 'clients' | 'suppliers' | 'contractors' | 'payroll' | 'expenses'
 const TABS: { key: Tab; label: string }[] = [
@@ -32,7 +36,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'expenses', label: 'Subscriptions & expenses' },
 ]
 const HEADINGS: Record<Tab, string> = {
-  overview: 'How the business is doing', totals: 'Everything in and out', clients: 'Client accounts', suppliers: 'Supplier accounts',
+  overview: 'Home', totals: 'Everything in and out', clients: 'Client accounts', suppliers: 'Supplier accounts',
   contractors: 'Contractor accounts', payroll: 'Payroll', expenses: 'Subscriptions & expenses',
 }
 const QUICK: { key: Exclude<PresetKey, 'custom'>; label: string }[] = [
@@ -68,13 +72,29 @@ function MoneyInner() {
   const [data, setData] = useState<MoneyOverview | null>(null)
   const [state, setState] = useState<'loading' | 'ready' | 'denied' | 'error'>('loading')
   const [error, setError] = useState<string | null>(null)
+  // The company's numbers come with Finance on the plan; without it Home shows the to-dos only.
+  const [finance, setFinance] = useState<boolean | null>(null)
+  const { company } = useDashboardCompany()
 
   useEffect(() => {
-    void resolveCurrentMember(createClient()).then(m => { if (m) setCompanyId(m.companyId) })
-  }, [])
+    void (async () => {
+      const supabase = createClient()
+      const m = await resolveCurrentMember(supabase)
+      if (!m) { setFinance(false); return }
+      setCompanyId(m.companyId)
+      try {
+        const ws = await loadCompanyWorkspace(supabase, m.companyId)
+        const modules = { ...(company?.enabled_modules ?? {}), ...((ws?.enabled_modules ?? {}) as Record<string, boolean>) }
+        setFinance(await canAccessFinance(supabase, m.companyId, modules))
+      } catch (e) {
+        console.error('money home: finance check failed', e)
+        setFinance(false)
+      }
+    })()
+  }, [company?.enabled_modules])
 
   const load = useCallback(async () => {
-    if (!companyId) return
+    if (!companyId || !finance) return
     try {
       const o = await loadMoneyOverview(createClient(), companyId, range.from, range.to)
       setData(o); setState('ready')
@@ -83,7 +103,7 @@ function MoneyInner() {
       if (msg === 'NOT_ALLOWED') setState('denied')
       else { setError(msg); setState('error') }
     }
-  }, [companyId, range])
+  }, [companyId, range, finance])
 
   useEffect(() => { void load() }, [load])
 
@@ -100,9 +120,9 @@ function MoneyInner() {
           <div>
             <p className="text-[11.5px] font-semibold uppercase tracking-wider text-text-secondary">Money</p>
             <h1 className="text-[22px] font-semibold text-text-primary tracking-tight">{HEADINGS[tab]}</h1>
-            <p className="text-[12.5px] text-text-secondary mt-0.5">{describeRange(range)}</p>
+            {finance && <p className="text-[12.5px] text-text-secondary mt-0.5">{describeRange(range)}</p>}
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          {finance && <div className="flex flex-wrap items-center gap-2">
             <div className="flex gap-1 bg-surface-card border border-divider rounded-xl p-1">
               {QUICK.map(q => (
                 <button key={q.key} type="button" onClick={() => { setPreset(q.key); setRange(presetRange(q.key)) }}
@@ -114,28 +134,32 @@ function MoneyInner() {
             <DateRangePicker preset={preset} range={range}
               onPreset={k => { setPreset(k); setRange(presetRange(k)) }}
               onCustom={r => { setPreset('custom'); setRange(r) }} />
-          </div>
+          </div>}
         </div>
 
-        <div className="flex gap-1 border-b border-divider overflow-x-auto">
+        {tab === 'overview' && finance !== null && (
+          <MoneyTodoList extra={state === 'ready' && data ? overviewExtras(data) : []} />
+        )}
+
+        {finance && <div className="flex gap-1 border-b border-divider overflow-x-auto">
           {TABS.map(t => (
             <button key={t.key} type="button" onClick={() => setTab(t.key)}
               className={`h-11 px-3.5 text-[13.5px] whitespace-nowrap border-b-2 -mb-px ${tab === t.key ? 'border-primary text-primary font-semibold' : 'border-transparent text-text-secondary hover:text-text-primary font-medium'}`}>
               {t.label}
             </button>
           ))}
-        </div>
+        </div>}
 
-        {state === 'denied' && (
+        {finance && state === 'denied' && (
           <Box className="p-8 text-center">
             <p className="text-[15px] font-semibold text-text-primary">Only the owner, HR and admins can see the company’s money</p>
             <p className="text-[13px] text-text-secondary mt-1">Quotes and invoices are still under Money in the menu.</p>
           </Box>
         )}
-        {state === 'error' && <Box className="p-5 text-[13px] text-error">Could not load the figures: {error}</Box>}
-        {state === 'loading' && <Box className="p-8 text-center text-[13px] text-text-secondary">Adding up the numbers…</Box>}
+        {finance && state === 'error' && <Box className="p-5 text-[13px] text-error">Could not load the figures: {error}</Box>}
+        {finance && state === 'loading' && <Box className="p-8 text-center text-[13px] text-text-secondary">Adding up the numbers…</Box>}
 
-        {state === 'ready' && data && companyId && (
+        {finance && state === 'ready' && data && companyId && (
           <>
             {tab === 'overview' && <Overview o={data} goto={setTab} />}
             {tab === 'totals' && <Totals o={data} />}
@@ -149,6 +173,14 @@ function MoneyInner() {
       </div>
     </div>
   )
+}
+
+/** Reminders the to-do list doesn't hold item by item: bills due to pay and subscriptions coming up. */
+function overviewExtras(o: MoneyOverview): MoneyTodoExtra[] {
+  return [
+    o.suppliers.due_soon > 0 && { tone: '#F59E0B', text: `${o.suppliers.due_soon} supplier ${o.suppliers.due_soon === 1 ? 'bill is' : 'bills are'} due this week or overdue`, href: '/dashboard/finance/supplier-invoices', action: 'Pay' },
+    o.expenses.due_soon > 0 && { tone: '#2563EB', text: `${o.expenses.due_soon} ${o.expenses.due_soon === 1 ? 'subscription is' : 'subscriptions are'} due in the next 14 days`, href: '/dashboard/money/subscriptions', action: 'View' },
+  ].filter(Boolean) as MoneyTodoExtra[]
 }
 
 /* ── Building blocks ─────────────────────────────────────────────────────────────────────────────── */
@@ -169,7 +201,7 @@ function Kpi({ label, value, note, tone }: { label: string; value: string; note?
 }
 
 function KpiRow({ children }: { children: React.ReactNode }) {
-  return <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}>{children}</div>
+  return <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}>{children}</div>
 }
 
 function H2({ children, right }: { children: React.ReactNode; right?: React.ReactNode }) {
@@ -238,12 +270,6 @@ function Overview({ o, goto }: { o: MoneyOverview; goto: (t: Tab) => void }) {
     { label: '60 days', value: o.clients.d60, color: '#F97316' },
     { label: '90+ days', value: o.clients.d90, color: '#DC2626' },
   ]
-  const attention = [
-    o.clients.late_60 > 0 && { tone: '#DC2626', text: `${o.clients.late_60} ${o.clients.late_60 === 1 ? 'invoice is' : 'invoices are'} more than 60 days late`, href: '/dashboard/money/invoices', action: 'See' },
-    o.suppliers.due_soon > 0 && { tone: '#F59E0B', text: `${o.suppliers.due_soon} supplier ${o.suppliers.due_soon === 1 ? 'bill is' : 'bills are'} due this week or overdue`, href: '/dashboard/finance/supplier-invoices', action: 'Pay' },
-    (o.suppliers.to_approve + o.contractors.waiting_count) > 0 && { tone: '#7C3AED', text: `${o.suppliers.to_approve + o.contractors.waiting_count} bills and payouts need approval`, href: '/dashboard/finance/approvals', action: 'Approve' },
-    o.expenses.due_soon > 0 && { tone: '#2563EB', text: `${o.expenses.due_soon} ${o.expenses.due_soon === 1 ? 'subscription is' : 'subscriptions are'} due in the next 14 days`, href: '/dashboard/money/subscriptions', action: 'View' },
-  ].filter(Boolean) as { tone: string; text: string; href: string; action: string }[]
 
   return (
     <div className="flex flex-col gap-5">
@@ -355,18 +381,6 @@ function Overview({ o, goto }: { o: MoneyOverview; goto: (t: Tab) => void }) {
                 </span>
                 <span className="text-[13px] font-semibold tabular-nums">{R(c.owed)}</span>
               </div>
-            ))}
-          </Box>
-
-          <Box className="p-5 flex flex-col gap-2.5">
-            <H2>Needs your attention</H2>
-            {attention.length === 0 && <p className="text-[13px] text-text-secondary">Nothing waiting on you.</p>}
-            {attention.map(a => (
-              <Link key={a.text} href={a.href} className="flex items-center gap-2.5 border border-divider/70 rounded-xl px-3 py-2.5 hover:bg-surface-elevated/60">
-                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: a.tone }} />
-                <span className="flex-1 text-[13px] text-text-primary">{a.text}</span>
-                <span className="text-[12.5px] font-semibold text-primary">{a.action}</span>
-              </Link>
             ))}
           </Box>
 

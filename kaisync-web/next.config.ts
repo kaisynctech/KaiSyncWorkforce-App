@@ -35,6 +35,8 @@ const nextConfig: NextConfig = {
       { source: '/dashboard/supply/suppliers', destination: '/dashboard/suppliers', permanent: false },
       { source: '/dashboard/supply/suppliers/:id', destination: '/dashboard/suppliers/:id', permanent: false },
       { source: '/dashboard/money/catalogue', destination: '/dashboard/inventory', permanent: false },
+      // Money Home (piece 2): the Action Centre's to-dos live on Home.
+      { source: '/dashboard/money/action-centre', destination: '/dashboard/money#needs-you', permanent: false },
     ]
   },
 };
