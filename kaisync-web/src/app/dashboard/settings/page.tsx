@@ -32,6 +32,7 @@ import {
 import { isHrOrAbove as accessIsHrOrAbove, isOwnerOrAdmin } from '@/lib/employee-taxonomy'
 import { getAnnualDays } from '@/lib/leave-policy'
 import { XeroSyncPanel } from '@/components/settings/XeroSyncPanel'
+import { MoneySettings } from '@/components/settings/MoneySettings'
 import {
   getCompanyAnnualDays,
   leaveEntitlementFields,
@@ -69,6 +70,7 @@ type HrEmployee = Pick<Employee, 'id' | 'name' | 'surname' | 'email' | 'access_l
 
 type SettingsTab =
   | 'general'
+  | 'money'
   | 'billing'
   | 'modules'
   | 'security'
@@ -79,6 +81,7 @@ type SettingsTab =
 
 const SETTINGS_TABS: { key: SettingsTab; label: string; hrOnly?: boolean }[] = [
   { key: 'general', label: 'General' },
+  { key: 'money', label: 'Money' },
   { key: 'billing', label: 'Billing', hrOnly: true },
   { key: 'modules', label: 'Modules' },
   { key: 'security', label: 'Security' },
@@ -912,6 +915,10 @@ export default function SettingsPage() {
         />
       )}
       {activeTab === 'general' && companyId && <EmailDomainSettings companyId={companyId} canEdit={isHrOrAbove} />}
+
+      {activeTab === 'money' && company && (
+        <MoneySettings company={company} xeroConnected={xeroConnected} onOpenTab={t => selectTab(t)} />
+      )}
 
       {activeTab === 'billing' && isHrOrAbove && (
         <Section title="Subscription" icon="payments">
