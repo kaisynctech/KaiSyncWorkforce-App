@@ -101,7 +101,7 @@ const NAV_SECTIONS: NavSection[] = [
       { label: 'Purchase orders',   href: '/dashboard/supply/purchase-orders',    icon: 'shopping_cart',   flag: 'commercial', group: 'Money out',
         also: ['/dashboard/supply/goods-received'] },
       { label: 'Bills & expenses',  href: '/dashboard/finance/supplier-invoices', icon: 'receipt',         flag: 'finance',    group: 'Money out',
-        also: ['/dashboard/money/subscriptions'] },
+        also: ['/dashboard/money/payments-made', '/dashboard/money/subscriptions'] },
       { label: 'Pay out',           href: '/dashboard/finance/contractor-payouts', icon: 'payments',       flag: 'finance',    group: 'Money out',
         also: ['/dashboard/finance/approvals'] },
       { label: 'Products & stock',  href: '/dashboard/inventory',                 icon: 'inventory_2',     flag: 'inventory', alsoFlags: ['commercial'], group: 'What you sell' },

@@ -57,7 +57,7 @@ export default function PoBuilder({ poId }: { poId?: string }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
-  const [tab, setTab] = useState<'details' | 'match'>('details')
+  const [tab, setTab] = useState<'details' | 'match'>(searchParams.get('tab') === 'match' ? 'match' : 'details')
   const [canApprove, setCanApprove] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
   const [showRejectModal, setShowRejectModal] = useState(false)

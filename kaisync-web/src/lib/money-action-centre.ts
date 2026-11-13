@@ -11,6 +11,7 @@ import type {
 } from '@/types/database'
 import { can, PERM, type PermissionSet } from '@/lib/permissions'
 import type { HrNavFlags } from '@/lib/company-modules'
+import { billCheck, type BillCheck } from '@/lib/money/bill-match'
 
 export type MoneyActionDomain = 'invoices' | 'quotes' | 'approvals' | 'suppliers'
 
@@ -190,7 +191,7 @@ export async function loadMoneyActionItems(
         const [siRes, poRes] = await Promise.all([
           supabase
             .from('supplier_invoices')
-            .select('id, invoice_number, approval_status, total_amount, created_at, contractors!supplier_invoices_supplier_id_fkey(name)')
+            .select('id, invoice_number, approval_status, total_amount, created_at, po_id, contractors!supplier_invoices_supplier_id_fkey(name)')
             .eq('company_id', companyId)
             .eq('approval_status', 'pending')
             .order('created_at', { ascending: false })
@@ -207,14 +208,26 @@ export async function loadMoneyActionItems(
         if (siRes.error) console.error('money AC supplier invoices', siRes.error.message)
         if (poRes.error) console.error('money AC contractor payouts', poRes.error.message)
 
+        // Bills that don't match their PO and deliveries say so (checked before they are approved).
+        const billPoIds = [...new Set((siRes.data ?? []).map(r => (r as { po_id?: string | null }).po_id).filter((x): x is string => Boolean(x)))]
+        const checkByPo: Record<string, BillCheck> = {}
+        if (billPoIds.length) {
+          const { data: m } = await supabase.from('po_three_way_match')
+            .select('po_id, value_ordered, value_received, value_invoiced').in('po_id', billPoIds)
+          const byPo: Record<string, { po_id: string; value_ordered: number; value_received: number; value_invoiced: number }[]> = {}
+          for (const l of (m ?? []) as { po_id: string; value_ordered: number; value_received: number; value_invoiced: number }[]) (byPo[l.po_id] ??= []).push(l)
+          for (const [k, v] of Object.entries(byPo)) checkByPo[k] = billCheck(v, n => `R ${n.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
+        }
+
         const bills: MoneyActionItem[] = (siRes.data ?? []).map(row => {
           const contractor = row.contractors as { name?: string } | null
+          const check = (row as { po_id?: string | null }).po_id ? checkByPo[String((row as { po_id?: string | null }).po_id)] : undefined
           return {
             key: `approvals:si:${row.id}`,
             domain: 'approvals',
             action_type: 'supplier_approval',
             title: contractor?.name || 'Supplier',
-            summary: `Supplier invoice ${row.invoice_number ?? String(row.id).slice(0, 8)} awaiting approval`,
+            summary: `Supplier invoice ${row.invoice_number ?? String(row.id).slice(0, 8)} awaiting approval${check?.state === 'over' ? ` · ${check.label}` : ''}`,
             created_at: (row.created_at as string | null) ?? null,
             ref_id: row.id as string,
             entity_id: row.id as string,

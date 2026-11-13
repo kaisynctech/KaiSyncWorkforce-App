@@ -8,6 +8,8 @@ import { calculateVatExclusive, fmtMoney, roundFinancial } from '@/lib/finance-c
 import { isSupplierKind } from '@/lib/partner-kinds'
 import { XeroMark, useXeroStatuses } from '@/components/xero/XeroMark'
 import type { SupplierInvoice } from '@/lib/finance-types'
+import { billCheck, type BillCheck } from '@/lib/money/bill-match'
+import type { ThreeWayMatchLine } from '@/types/commercial'
 import {
   StatusFilterTabs,
   TAB_ALL,
@@ -110,6 +112,10 @@ function SupplierInvoicesPageInner() {
   const [grnNumber, setGrnNumber] = useState('')
   const [number, setNumber] = useState('')
   const [amount, setAmount] = useState('')
+  // Most suppliers charge VAT; switch off for one who doesn't (no 15% added then).
+  const [chargesVat, setChargesVat] = useState(true)
+  // Check against the PO and deliveries, per PO (only for bills still to pay).
+  const [checks, setChecks] = useState<Record<string, BillCheck>>({})
   const [dueDate, setDueDate] = useState('')
   const [busy, setBusy] = useState(false)
   const [companyId, setCompanyId] = useState<string | null>(null)
@@ -163,7 +169,16 @@ function SupplierInvoicesPageInner() {
         .eq('company_id', member.companyId)
         .order('name'),
     ])
-    setRows((data ?? []) as SupplierInvoice[])
+    const bills = (data ?? []) as (SupplierInvoice & { po_id?: string | null })[]
+    setRows(bills)
+    const poIds = [...new Set(bills.filter(b => b.po_id && !['paid', 'cancelled'].includes(b.status)).map(b => String(b.po_id)))]
+    if (poIds.length) {
+      const { data: m } = await supabase.from('po_three_way_match')
+        .select('po_id, value_ordered, value_received, value_invoiced').in('po_id', poIds.slice(0, 300))
+      const byPo: Record<string, ThreeWayMatchLine[]> = {}
+      for (const l of (m ?? []) as ThreeWayMatchLine[]) (byPo[l.po_id] ??= []).push(l)
+      setChecks(Object.fromEntries(Object.entries(byPo).map(([k, v]) => [k, billCheck(v, n => fmtMoney(n))])))
+    } else setChecks({})
     setSuppliers(
       ((cons ?? []) as { id: string; name: string; partner_kind?: string | null }[])
         .filter(c => isSupplierKind(c.partner_kind))
@@ -196,7 +211,7 @@ function SupplierInvoicesPageInner() {
     if (!(Number(amount) > 0) && !grnId && !poId) return
     setBusy(true)
     const supabase = createClient()
-    const vatRate = 0.15
+    const vatRate = chargesVat ? 0.15 : 0
     const noteParts = [
       grnNumber ? `From GRN ${grnNumber}` : (grnId ? `From GRN ${grnId}` : null),
       poId ? `PO linked` : null,
@@ -317,7 +332,7 @@ function SupplierInvoicesPageInner() {
 
     setBusy(false)
     setShowAdd(false)
-    setNumber(''); setAmount(''); setDueDate(''); setSupplierId(''); setPoId(''); setGrnId(''); setGrnNumber('')
+    setNumber(''); setAmount(''); setChargesVat(true); setDueDate(''); setSupplierId(''); setPoId(''); setGrnId(''); setGrnNumber('')
     router.push(`/dashboard/finance/supplier-invoices/${invoiceId}`)
   }
 
@@ -404,6 +419,16 @@ function SupplierInvoicesPageInner() {
                 >
                   <td className={`${MONEY_TD} font-medium text-primary`}>
                     <span className="inline-flex items-center gap-1.5">{r.bill_number ?? '—'}
+                      {(() => {
+                        const po = (r as SupplierInvoice & { po_id?: string | null }).po_id
+                        const c = po && !['paid', 'cancelled'].includes(r.status) ? checks[po] : undefined
+                        if (!c || c.state === 'none' || c.state === 'matched') return null
+                        return (
+                          <span title={c.label} className={`px-1.5 py-0.5 rounded-full text-[10.5px] font-semibold ${c.state === 'over' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800'}`}>
+                            {c.state === 'over' ? 'Over-billed' : 'Not all delivered'}
+                          </span>
+                        )
+                      })()}
                       {(r.approval_status === 'approved' || xero.statuses?.[r.id]) && (
                         <XeroMark companyId={companyId} kind="supplier_invoice" id={r.id} state={xero.statuses?.[r.id]} connected={xero.connected}
                           canSend={r.approval_status === 'approved'} onChanged={() => void xero.reload()} />
@@ -451,7 +476,11 @@ function SupplierInvoicesPageInner() {
             </select>
             <input value={number} onChange={e => setNumber(e.target.value)} placeholder="Invoice number" className="w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
             <input type="number" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="Amount ex VAT" className="w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
-            <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className="w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+            <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} aria-label="Due date" className="w-full h-10 px-3 border border-border rounded-md text-[13px] bg-background" />
+            <label className="flex items-center gap-2.5 min-h-[44px] text-[13px] text-text-primary">
+              <input type="checkbox" checked={chargesVat} onChange={e => setChargesVat(e.target.checked)} className="w-5 h-5" />
+              Supplier charged VAT (15%)
+            </label>
             <div className="flex gap-2 justify-end">
               <button onClick={() => setShowAdd(false)} className="btn-outlined h-9 px-4 text-[13px]">Cancel</button>
               <button onClick={() => void create()} disabled={busy || !supplierId} className="btn-primary h-9 px-4 text-[13px] disabled:opacity-50">{busy ? '…' : 'Save'}</button>

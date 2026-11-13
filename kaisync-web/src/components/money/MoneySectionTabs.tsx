@@ -26,6 +26,7 @@ export const MONEY_SECTION_TABS: SectionTab[][] = [
   ],
   [
     { href: '/dashboard/finance/supplier-invoices', label: 'Supplier bills' },
+    { href: '/dashboard/money/payments-made', label: 'Payments made' },
     { href: '/dashboard/money/subscriptions', label: 'Subscriptions & expenses' },
   ],
   [

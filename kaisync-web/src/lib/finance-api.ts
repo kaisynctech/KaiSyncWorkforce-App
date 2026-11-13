@@ -152,6 +152,7 @@ export async function markSupplierPaid(
   method: string | null,
   actorId: string | null,
   actorName: string | null,
+  opts?: { transactionDate?: string | null; referenceNumber?: string | null; notes?: string | null },
 ) {
   const { data: inv } = await supabase.from('supplier_invoices').select('*').eq('id', invoiceId).maybeSingle()
   if (!inv) throw new Error('Supplier invoice not found')
@@ -171,9 +172,11 @@ export async function markSupplierPaid(
     direction: 'outgoing',
     sourceTable: 'supplier_invoices',
     sourceId: invoiceId,
-    referenceNumber: inv.invoice_number,
+    referenceNumber: opts?.referenceNumber || inv.invoice_number,
     amount,
     paymentMethod: method,
+    notes: opts?.notes ?? null,
+    transactionDate: opts?.transactionDate ?? undefined,
     createdBy: actorId,
   })
   await logFinanceAudit(supabase, {
