@@ -60,7 +60,7 @@ export default function SupplierInvoiceDetailPage() {
         const m = me as { name?: string | null; surname?: string | null } | null
         setActor({ id: member.employeeId, name: [m?.name, m?.surname].filter(Boolean).join(' ') || 'User' })
       })
-    void supabase.rpc('user_has_permission', { p_company_id: member.companyId, p_key: 'payments.approve' })
+    void supabase.rpc('user_has_permission', { p_company_id: member.companyId, p_permission_key: 'payments.approve' })
       .then(({ data }) => setCanApprove(Boolean(data)))
 
     const [{ data: inv, error: invErr }, { data: lineRows, error: lineErr }] = await Promise.all([

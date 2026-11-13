@@ -87,7 +87,7 @@ export function ProjectFinancialsTab({ projectId, companyId }: Props) {
 
     const { data: permData } = await supabase.rpc('user_has_permission', {
       p_company_id: companyId,
-      p_key: 'projects.financials',
+      p_permission_key: 'projects.financials',
     })
     const permitted = Boolean(permData)
     setHasPermission(permitted)

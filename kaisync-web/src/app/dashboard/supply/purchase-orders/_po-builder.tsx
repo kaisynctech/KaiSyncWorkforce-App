@@ -97,7 +97,7 @@ export default function PoBuilder({ poId }: { poId?: string }) {
       supabase.from('contractors').select('id, name, email, currency').eq('company_id', member.companyId).eq('partner_kind', 'supplier').eq('is_active', true).order('name'),
       supabase.from('client_deals').select('id, title').eq('company_id', member.companyId).order('title'),
       supabase.from('rfqs').select('id, rfq_number, title').eq('company_id', member.companyId).order('created_at', { ascending: false }),
-      supabase.rpc('user_has_permission', { p_company_id: member.companyId, p_key: 'purchase_orders.approve' }),
+      supabase.rpc('user_has_permission', { p_company_id: member.companyId, p_permission_key: 'purchase_orders.approve' }),
     ])
     setSuppliers((supps ?? []) as Supplier[])
     setDeals((dls ?? []) as Deal[])
