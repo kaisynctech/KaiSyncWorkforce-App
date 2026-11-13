@@ -14,6 +14,7 @@ import { emailedLabel, loadDocumentEmails, storeInvoicePdf, type DocumentEmailLo
 import { companyLetterhead, type Letterhead } from '@/lib/letterhead'
 import type { FinanceInvoice, FinanceInvoiceLine } from '@/lib/finance-types'
 import { localISODate } from '@/lib/utils'
+import { DocumentChain } from '@/components/money/DocumentChain'
 import { signWorkforceMediaMany } from '@/lib/media-read'
 
 // ─── Extended types ────────────────────────────────────────────────────────────
@@ -139,6 +140,8 @@ function MoneyInvoiceDetailInner() {
 
   // Modal states
   const [showPay, setShowPay]   = useState(false)
+  // Set when Record payment was opened from a client's proof: saving accepts that proof too.
+  const [confirmProofId, setConfirmProofId] = useState<string | null>(null)
   const [showVoid, setShowVoid] = useState(false)
   const [showCN, setShowCN]     = useState(false)
   const [showWhatsNext, setShowWhatsNext] = useState(openWhatsNext)
@@ -308,6 +311,11 @@ function MoneyInvoiceDetailInner() {
     if (!inv || !companyId) return
     const amount = Number(payAmount)
     if (!(amount > 0)) { setErr('Amount must be greater than 0'); return }
+    const owed = Number(inv.balance_due ?? 0)
+    if (amount > owed + 0.005) {
+      setErr(`That's more than the ${fmtMoney(owed, inv.currency)} still owed. Record ${fmtMoney(owed, inv.currency)} here; keeping extra as client credit is coming next.`)
+      return
+    }
     setBusy(true)
     setErr(null)
     const supabase = createClient()
@@ -325,6 +333,15 @@ function MoneyInvoiceDetailInner() {
           transactionDate: payDate || undefined,
         },
       )
+      if (confirmProofId) {
+        const { error: pErr } = await supabase.from('finance_payment_proofs').update({
+          status: 'accepted',
+          reviewed_by: employeeId,
+          reviewed_at: new Date().toISOString(),
+        }).eq('id', confirmProofId).eq('company_id', companyId)
+        if (pErr) console.error('proof accept after payment failed', pErr)
+        setConfirmProofId(null)
+      }
       setShowPay(false)
       // A fresh form next time (the next payment has its own reference and notes).
       setPayRef('')
@@ -517,6 +534,8 @@ function MoneyInvoiceDetailInner() {
           <StatusBadge status={inv.status} />
         </div>
 
+        <DocumentChain current={{ kind: 'invoice', id: inv.id }} companyId={companyId} />
+
         {/* Header card */}
         <div className="bg-surface-card border border-divider rounded-xl p-4 space-y-1">
           <h1 className="text-[20px] font-semibold text-text-primary">
@@ -645,10 +664,21 @@ function MoneyInvoiceDetailInner() {
                   </div>
                   {p.status === 'submitted' && (
                     <div className="flex gap-2">
-                      <button type="button" disabled={busy} onClick={() => void reviewProof(p.id, 'accepted')} className="btn-outlined h-8 px-3 text-[12px] disabled:opacity-50">
-                        Accept
+                      <button type="button" disabled={busy}
+                        onClick={() => {
+                          const owed = Number(inv.balance_due ?? 0)
+                          setErr(null)
+                          setPayAmount(String(p.amount != null ? Math.min(Number(p.amount), owed) : owed))
+                          setPayDate((p.submitted_at ?? '').slice(0, 10) || localISODate())
+                          setPayRef(p.reference ?? '')
+                          setPayNotes('Proof of payment from the client')
+                          setConfirmProofId(p.id)
+                          setShowPay(true)
+                        }}
+                        className="btn-primary h-10 px-4 text-[13px] disabled:opacity-50">
+                        Check &amp; confirm
                       </button>
-                      <button type="button" disabled={busy} onClick={() => void reviewProof(p.id, 'rejected')} className="btn-outlined h-8 px-3 text-[12px] disabled:opacity-50">
+                      <button type="button" disabled={busy} onClick={() => void reviewProof(p.id, 'rejected')} className="btn-outlined h-10 px-4 text-[13px] disabled:opacity-50">
                         Reject
                       </button>
                     </div>
@@ -657,7 +687,7 @@ function MoneyInvoiceDetailInner() {
               ))}
             </ul>
             <p className="px-4 py-2 text-[11px] text-text-secondary border-t border-divider">
-              Accepting a proof does not mark the invoice paid — use Record Payment after verifying.
+              Check the money is in your bank, then Check &amp; confirm: it records the payment and accepts the proof in one step.
             </p>
           </div>
         )}
@@ -912,7 +942,7 @@ function MoneyInvoiceDetailInner() {
 
       {/* ── Record Payment Modal ─────────────────────────────────────────────────── */}
       {showPay && (
-        <Modal title="Record Payment" onClose={() => setShowPay(false)}>
+        <Modal title={confirmProofId ? 'Confirm payment from proof' : 'Record Payment'} onClose={() => { setShowPay(false); setConfirmProofId(null) }}>
           <div className="space-y-3">
             <Field label="Payment Date">
               <input type="date" value={payDate} onChange={e => setPayDate(e.target.value)} className={inputCls} />
@@ -958,7 +988,7 @@ function MoneyInvoiceDetailInner() {
             </Field>
             {err && <p className="text-[12px] text-red-600">{err}</p>}
             <div className="flex gap-2 justify-end pt-1">
-              <button onClick={() => setShowPay(false)} className="btn-outlined h-9 px-4 text-[13px]">Cancel</button>
+              <button onClick={() => { setShowPay(false); setConfirmProofId(null) }} className="btn-outlined h-9 px-4 text-[13px]">Cancel</button>
               <button onClick={handleRecordPayment} disabled={busy} className="btn-primary h-9 px-4 text-[13px] disabled:opacity-50">
                 {busy ? 'Saving…' : 'Save Payment'}
               </button>

@@ -94,6 +94,8 @@ const NAV_SECTIONS: NavSection[] = [
       { label: 'Orders',            href: '/dashboard/money/orders',              icon: 'assignment_turned_in', flag: 'commercial', group: 'Money in' },
       { label: 'Invoices',          href: '/dashboard/money/invoices',            icon: 'receipt_long',    flag: 'commercial', group: 'Money in',
         also: ['/dashboard/money/recurring', '/dashboard/money/credit-notes'] },
+      { label: 'Payments received', href: '/dashboard/money/payments',            icon: 'savings',        flag: 'commercial', group: 'Money in' },
+      { label: 'Clients who owe',   href: '/dashboard/money?tab=clients',         icon: 'request_page',    flag: 'finance',    group: 'Money in' },
       { label: 'Ask suppliers',     href: '/dashboard/supply/rfqs',               icon: 'compare_arrows',  flag: 'commercial', group: 'Money out',
         also: ['/dashboard/money/incoming-quotes'] },
       { label: 'Purchase orders',   href: '/dashboard/supply/purchase-orders',    icon: 'shopping_cart',   flag: 'commercial', group: 'Money out',

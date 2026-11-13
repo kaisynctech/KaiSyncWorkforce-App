@@ -32,6 +32,7 @@ import { asItemType, lineQty, lineTotal, loadPickItems, type EditorLine, type It
 import { BuyoutPanel, SupplyPill, type BuyoutChoice, type BuyoutQuoteLine } from '@/components/quotes/BuyoutPanel'
 import { ensureBuyout, loadBuyout, type Buyout } from '@/lib/money/buyout'
 import { priceAfterChoice, supplyModeOf, type SupplyMode } from '@/lib/money/quote-supply'
+import { DocumentChain } from '@/components/money/DocumentChain'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1644,6 +1645,8 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
             </div>
           )}
         </div>
+
+        {quoteId && <DocumentChain current={{ kind: 'quote', id: quoteId }} companyId={companyId} />}
 
         {/* ── Items | Buyout ── */}
         <div className="flex items-center gap-5 border-b border-divider -mb-2" role="tablist" aria-label="Quote sections">
