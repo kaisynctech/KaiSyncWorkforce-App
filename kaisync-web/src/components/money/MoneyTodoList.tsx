@@ -42,6 +42,11 @@ const TYPE_LABEL: Record<string, string> = {
 
 const SHOW_FIRST = 6
 
+const PRIORITY: Record<string, number> = {
+  invoice_overdue: 0, supplier_approval: 1, payout_pending: 1, payout_approved: 2,
+  quotation_pending: 3, quote_pending: 3, compliance_hold: 4, payment_hold: 4, banking_pending: 5, invoice_outstanding: 6,
+}
+
 function fmtDate(d: string | null) {
   if (!d) return ''
   return new Intl.DateTimeFormat('en-ZA', { day: 'numeric', month: 'short' }).format(new Date(d))
@@ -102,7 +107,8 @@ export function MoneyTodoList({ extra = [] }: { extra?: MoneyTodoExtra[] }) {
   const all = useMemo(() => {
     if (!byDomain) return []
     return domains.flatMap(d => byDomain[d] ?? [])
-      .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
+      // Most urgent first (overdue, then approvals, then waiting quotes, then unpaid), newest first within each.
+      .sort((a, b) => (PRIORITY[a.action_type] ?? 9) - (PRIORITY[b.action_type] ?? 9) || (b.created_at ?? '').localeCompare(a.created_at ?? ''))
   }, [byDomain, domains])
 
   const shown = filter === 'all' ? all : all.filter(i => i.domain === filter)
@@ -123,7 +129,7 @@ export function MoneyTodoList({ extra = [] }: { extra?: MoneyTodoExtra[] }) {
       </div>
 
       {domains.length > 1 && all.length > 0 && (
-        <div className="flex gap-1.5 overflow-x-auto -mx-1 px-1 pb-0.5">
+        <div className="flex gap-1.5 overflow-x-auto -mx-1 px-1 pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {[{ id: 'all' as const, label: 'All', n: all.length },
             ...MONEY_ACTION_TABS.filter(t => domains.includes(t.id)).map(t => ({ id: t.id, label: t.label, n: byDomain?.[t.id]?.length ?? 0 }))]
             .map(t => (
