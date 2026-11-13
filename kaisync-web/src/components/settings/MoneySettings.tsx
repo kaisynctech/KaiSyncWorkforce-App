@@ -4,11 +4,12 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import type { Company } from '@/types/database'
+import { BusinessSettings } from '@/components/settings/BusinessSettings'
 
 /**
  * Settings → Money: every money setting in one list, each with where it stands and one tap to change it.
  * The controls stay where they already work (company details, Integrations, Client accounts); quotation
- * templates and "your business" join this page in piece 5b.
+ * templates and "your business" sit at the top (piece 5b).
  */
 
 type Row = {
@@ -20,9 +21,11 @@ type Row = {
   action: { label: string; tab?: string; href?: string }
 }
 
-export function MoneySettings({ company, xeroConnected, onOpenTab }: {
+export function MoneySettings({ company, xeroConnected, onOpenTab, canEdit, setup }: {
   company: Company
   xeroConnected: boolean
+  canEdit: boolean
+  setup?: boolean
   onOpenTab: (tab: 'general' | 'integrations') => void
 }) {
   const [reminders, setReminders] = useState<{ on: boolean; after: number | null; every: number | null } | null>(null)
@@ -78,6 +81,8 @@ export function MoneySettings({ company, xeroConnected, onOpenTab }: {
   ]
 
   return (
+    <div className="flex flex-col gap-6">
+    <BusinessSettings companyId={company.id} canEdit={canEdit} setup={setup} />
     <section className="flex flex-col gap-3">
       <div>
         <h2 className="text-[16px] font-semibold text-text-primary">Money settings</h2>
@@ -98,5 +103,6 @@ export function MoneySettings({ company, xeroConnected, onOpenTab }: {
         ))}
       </ul>
     </section>
+    </div>
   )
 }

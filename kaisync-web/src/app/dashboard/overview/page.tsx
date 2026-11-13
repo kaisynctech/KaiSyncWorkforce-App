@@ -9,6 +9,7 @@ import { timeGreeting, localISODate } from '@/lib/utils'
 import { EMPLOYEE_SAFE_SELECT } from '@/lib/employee-columns'
 import type { Employee } from '@/types/database'
 import { PwaInstallButton } from '@/components/PwaInstallButton'
+import { WorkspaceSetupBanner } from '@/components/WorkspaceSetupBanner'
 import {
   hiddenCommercial,
   initialCommercial,
@@ -485,6 +486,8 @@ export default function OverviewPage() {
             {formatDate(now)}
           </p>
         </div>
+
+        <WorkspaceSetupBanner />
 
         {/* ── Clock card ── */}
         <div

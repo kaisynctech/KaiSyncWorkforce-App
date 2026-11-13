@@ -917,7 +917,8 @@ export default function SettingsPage() {
       {activeTab === 'general' && companyId && <EmailDomainSettings companyId={companyId} canEdit={isHrOrAbove} />}
 
       {activeTab === 'money' && company && (
-        <MoneySettings company={company} xeroConnected={xeroConnected} onOpenTab={t => selectTab(t)} />
+        <MoneySettings company={company} xeroConnected={xeroConnected} onOpenTab={t => selectTab(t)} canEdit={isHrOrAbove}
+          setup={typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('setup') === '1'} />
       )}
 
       {activeTab === 'billing' && isHrOrAbove && (
