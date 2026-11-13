@@ -100,7 +100,7 @@ export async function loadMoneyActionItems(
     tasks.push((async () => {
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const rpc = supabase.rpc as any
+        const rpc = supabase.rpc.bind(supabase) as any
         const [clientRes, projectRes] = await Promise.all([
           rpc('hr_get_client_action_items', { p_company_id: companyId }),
           rpc('hr_get_project_action_items', { p_company_id: companyId }),
@@ -144,7 +144,7 @@ export async function loadMoneyActionItems(
     tasks.push((async () => {
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const rpc = supabase.rpc as any
+        const rpc = supabase.rpc.bind(supabase) as any
         const [contractorRes, projectRes] = await Promise.all([
           rpc('hr_get_contractor_action_items', { p_company_id: companyId }),
           rpc('hr_get_project_action_items', { p_company_id: companyId }),
