@@ -11,7 +11,10 @@ export type AdjustmentType =
   | 'sold'
   | 'other'
 
-export type ItemType = 'part' | 'service' | 'material' | 'labour'
+export type ItemType = 'part' | 'service' | 'material' | 'labour' | 'package' | 'fee' | 'hire'
+
+/** How a stocked item is used (board M): sold, used up on jobs, hired out, or made. */
+export type ItemUse = 'sell' | 'use_up' | 'hire' | 'make'
 
 export type AliasType =
   | 'part_number'
@@ -53,6 +56,9 @@ export interface CatalogueItem {
   markup: number | null
   gross_margin_percent: number | null
   is_stockable: boolean
+  /** Stocked items only. */
+  item_use?: ItemUse | null
+  /** The stock count everything moves (inventory_items.quantity_on_hand); qty_on_hand mirrors it. */
   qty_on_hand: number
   qty_on_order: number
   qty_reserved: number

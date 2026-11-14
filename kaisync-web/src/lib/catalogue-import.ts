@@ -56,7 +56,7 @@ export function guessMapping(headers: string[]): Partial<Record<ImportField, str
   return out
 }
 
-export type CatalogueKind = 'part' | 'service' | 'material' | 'labour'
+export type CatalogueKind = 'part' | 'service' | 'material' | 'labour' | 'package' | 'fee' | 'hire'
 
 export function readKind(raw: string, fallback: CatalogueKind): CatalogueKind | null {
   const v = norm(raw)
@@ -65,6 +65,9 @@ export function readKind(raw: string, fallback: CatalogueKind): CatalogueKind | 
   if (/^(service|services)$/.test(v)) return 'service'
   if (/^(material|materials|consumable|consumables)$/.test(v)) return 'material'
   if (/^(labour|labor|hours|hourly)$/.test(v)) return 'labour'
+  if (/^(package|packages|bundle|bundles|kit|kits)$/.test(v)) return 'package'
+  if (/^(fee|fees|charge|charges|call ?out)$/.test(v)) return 'fee'
+  if (/^(hire|rental|rentals|rent)$/.test(v)) return 'hire'
   return null
 }
 
