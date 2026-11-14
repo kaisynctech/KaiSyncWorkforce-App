@@ -191,7 +191,7 @@ export function drawLetterhead(
     const w = lh.logo.width * scale, h = lh.logo.height * scale
     try {
       const kind = lh.logo.dataUrl.includes('image/jpeg') || lh.logo.dataUrl.includes('image/jpg') ? 'JPEG' : 'PNG'
-      doc.addImage(lh.logo.dataUrl, kind, left, y, w, h)
+      doc.addImage(lh.logo.dataUrl, kind, left, y, w, h, undefined, 'FAST')
       textTop = y + h + 5
     } catch {
       textTop = y

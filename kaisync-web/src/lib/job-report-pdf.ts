@@ -95,7 +95,7 @@ export function buildJobReportPdf(v: JobReportPdfInput): jsPDF {
     for (const ph of v.photos) {
       const h = Math.min(60, (w * ph.height) / ph.width)
       need(h + 4)
-      try { doc.addImage(ph.dataUrl, ph.dataUrl.startsWith('data:image/png') ? 'PNG' : 'JPEG', x, y, w, h) } catch { /* a broken photo is left out */ }
+      try { doc.addImage(ph.dataUrl, ph.dataUrl.startsWith('data:image/png') ? 'PNG' : 'JPEG', x, y, w, h, undefined, 'FAST') } catch { /* a broken photo is left out */ }
       if (x === left) x = left + w + 6; else { x = left; y += h + 4 }
     }
     if (x !== left) y += 64
@@ -112,7 +112,12 @@ export function buildJobReportPdf(v: JobReportPdfInput): jsPDF {
   const boxW = (right - left - 10) / 2
   const sig = (x: string | null | undefined, at: number) => {
     if (!x) return
-    try { doc.addImage(x, 'PNG', at, y, boxW * 0.8, 20) } catch { /* left out */ }
+    try {
+      // Keep the signature's shape inside a 20 mm high box (a phone canvas is wider than it is tall).
+      const p = doc.getImageProperties(x)
+      const scale = Math.min((boxW * 0.8) / p.width, 20 / p.height)
+      doc.addImage(x, 'PNG', at, y + (20 - p.height * scale), p.width * scale, p.height * scale, undefined, 'FAST')
+    } catch { /* left out */ }
   }
   sig(v.technician?.signature, left)
   sig(v.client?.signature, left + boxW + 10)
