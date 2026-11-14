@@ -12,6 +12,7 @@ import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { letterheadFromRow, loadLetterheadLogo, bankLines } from '@/lib/letterhead'
 import { currencySymbol } from '@/lib/currencies'
+import { JobReportPublic, downloadJobReportPdf } from '@/components/public/JobReportPublic'
 import {
   callPublicDocument, dayZA, fileToBase64, publicLogoUrl, quoteWithChoices, randZA,
   type PublicInvoiceView, type PublicQuoteLine, type PublicQuoteView, type PublicResult, type PublicView,
@@ -69,7 +70,9 @@ export default function PublicDocumentPage() {
           {contacts.length > 0 && <p className="text-[12.5px] text-slate-500 truncate">{contacts.join(' · ')}</p>}
         </div>
       </header>
-      {view.kind === 'invoice' ? <InvoiceView token={token} v={view} onChange={load} /> : <QuoteView token={token} v={view} onChange={load} />}
+      {view.kind === 'invoice' ? <InvoiceView token={token} v={view} onChange={load} />
+        : view.kind === 'job_report' ? <JobReportPublic token={token} v={view} onChange={load} />
+        : <QuoteView token={token} v={view} onChange={load} />}
       <p className="text-center text-[11px] text-slate-400 mt-8">This page is private to you. Please don&apos;t share the link.</p>
     </Shell>
   )
@@ -128,6 +131,7 @@ function Totals({ rows }: { rows: [string, string, boolean?][] }) {
 }
 
 async function downloadPdf(v: PublicView, choices: Record<string, string> = {}) {
+  if (v.kind === 'job_report') { await downloadJobReportPdf(v); return }
   const lh = await loadLetterheadLogo(createClient(), letterheadFromRow(v.company))
   const client = v.client ?? {}
   if (v.kind === 'invoice') {

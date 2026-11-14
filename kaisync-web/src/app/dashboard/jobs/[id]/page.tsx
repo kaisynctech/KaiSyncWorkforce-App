@@ -18,6 +18,7 @@ import { EntityTabs } from '@/components/ui/EntityTabs'
 import { isContractorKind } from '@/lib/partner-kinds'
 import { appendJobPhoto, openJobTeamThread, setJobAssignments } from '@/lib/jobs'
 import { applyHousekeepingFromCompletedJob } from '@/lib/property-housekeeping'
+import { JobReportTab } from '@/components/jobs/JobReportTab'
 import { can, loadPermissions, PERM, type PermissionSet } from '@/lib/permissions'
 import type { Job, Employee, JobContractor, LaborEntry, JobInventoryItem, JobPhoto } from '@/types/database'
 
@@ -25,11 +26,12 @@ import type { Job, Employee, JobContractor, LaborEntry, JobInventoryItem, JobPho
 
 const STATUS_OPTIONS = ['open', 'scheduled', 'in_progress', 'completed', 'cancelled'] as const
 
-const JOB_TABS = ['details', 'reports', 'client', 'team', 'contractors', 'money', 'labor', 'inventory', 'photos'] as const
+const JOB_TABS = ['details', 'reports', 'jobreport', 'client', 'team', 'contractors', 'money', 'labor', 'inventory', 'photos'] as const
 type JobTab = typeof JOB_TABS[number]
 const JOB_TAB_LABELS: Record<JobTab, string> = {
   details: 'Details',
   reports: 'Reports',
+  jobreport: 'Job report',
   client: 'Client',
   team: 'Team',
   contractors: 'Contractors',
@@ -1365,6 +1367,12 @@ export default function JobDetailPage() {
 
       {tab === 'reports' && companyId && (
         <JobReportsTab companyId={companyId} jobId={job.id} people={employees} canEdit={canEdit} onChanged={() => void load()} />
+      )}
+
+      {tab === 'jobreport' && companyId && (
+        <JobReportTab companyId={companyId} jobId={job.id} canEdit={canEdit}
+          myName={(() => { const me = employees.find(e => e.id === myEmployeeId); return me ? [me.name, me.surname].filter(Boolean).join(' ') : '' })()}
+          client={(() => { const c = (job as unknown as { clients?: { name?: string | null; contact_person?: string | null; phone?: string | null; mobile?: string | null; email?: string | null } | null }).clients; return { name: c?.contact_person || c?.name || null, phone: c?.mobile || c?.phone || null, email: c?.email || null } })()} />
       )}
 
       {tab === 'photos' && (

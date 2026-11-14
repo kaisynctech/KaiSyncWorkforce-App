@@ -9,6 +9,8 @@
 //   decline → { reason? } decline a quote
 //   ask     → { name?, body } a question about a quote; the office answers on the quote, the answer shows here
 //   proof   (quote) → proof of payment for the quote's deposit invoice
+//   sign    (job report) → { name, signature (PNG data URL), comment?, outcome: signed | not_happy, rating? 1–5 }
+//           the client signs the job report (no prices) or says what is wrong; the office is notified by the database
 // The token is the only key. It expires after 180 days. Everything is read with the service role and
 // limited to that one document. The office is notified of proofs, acceptances and declines.
 // Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
@@ -53,12 +55,16 @@ Deno.serve(async (req: Request) => {
     if (!company) return fail("This link is not valid.", 404);
     const companyName = String(company.name ?? "").trim() || "The company";
     // Banking only when the company shows it on this kind of document.
-    const showBank = link.kind === "invoice" ? company.show_bank_on_invoices !== false : company.show_bank_on_quotes === true;
+    const showBank = link.kind === "invoice" ? company.show_bank_on_invoices !== false
+      : link.kind === "quote" ? company.show_bank_on_quotes === true : false;
     if (!showBank) {
       for (const k of ["bank_account_holder", "bank_name", "bank_account_number", "bank_branch_code", "bank_account_type", "bank_swift_code"]) {
         (company as Record<string, unknown>)[k] = null;
       }
     }
+
+    // ── Job report (no prices) ───────────────────────────────────────────────
+    if (link.kind === "job_report") return await jobReport(admin, link, company, body, action);
 
     // ── Invoice ──────────────────────────────────────────────────────────────
     if (link.kind === "invoice") {
@@ -324,4 +330,72 @@ async function saveProof(admin: Admin, body: Record<string, unknown>, inv: InvRo
     p_data: { invoice_id: inv.id, proof_id: proof.id },
   });
   return json({ ok: true, message: "Thank you! We've received your proof of payment and will confirm it shortly." });
+}
+
+type LinkRow = { company_id: string; doc_id: string; kind: string };
+
+/** The whole-job report: view it (photos as short-lived links), sign it or say what is wrong. */
+async function jobReport(admin: Admin, link: LinkRow, company: Record<string, unknown>, body: Record<string, unknown>, action: string): Promise<Response> {
+  const { data: s } = await admin.from("job_signoffs")
+    .select("id, company_id, job_id, scope, version, status, content, technician_name, technician_signature, technician_signed_at, client_name, client_signature, client_comment, client_signed_at, signed_via")
+    .eq("id", link.doc_id).eq("company_id", link.company_id).eq("scope", "job").maybeSingle();
+  if (!s || s.status === "draft") return fail("This report is not available.", 404);
+  const { data: job } = await admin.from("jobs").select("job_code, title").eq("id", s.job_id).maybeSingle();
+
+  if (action === "sign") {
+    if (s.status !== "awaiting_client") {
+      return fail(s.status === "signed" ? "This report is already signed." : "This report is being updated. Please wait for the new link.", 409);
+    }
+    const outcome = String(body.outcome ?? "");
+    if (outcome !== "signed" && outcome !== "not_happy") return fail("Please sign or tell us what is wrong.");
+    const name = String(body.name ?? "").trim().slice(0, 120);
+    if (name.length < 2) return fail("Please type your name.");
+    const comment = String(body.comment ?? "").trim().slice(0, 2000) || null;
+    const signature = outcome === "signed" ? String(body.signature ?? "") : null;
+    if (outcome === "signed" && (!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(signature ?? "") || (signature ?? "").length > 300000)) {
+      return fail("Please sign in the box.");
+    }
+    if (outcome === "not_happy" && !comment) return fail("Please tell us what is wrong.");
+    const { error } = await admin.from("job_signoffs").update({
+      status: outcome, client_name: name, client_signature: signature, client_comment: comment,
+      client_signed_at: new Date().toISOString(), signed_via: "link",
+    }).eq("id", s.id).eq("status", "awaiting_client");
+    if (error) return fail("It could not be saved. Please try again.", 500);
+    const rating = Number(body.rating ?? 0);
+    if (Number.isInteger(rating) && rating >= 1 && rating <= 5) {
+      await admin.from("job_feedback").insert({
+        company_id: s.company_id, job_id: s.job_id, employee_id: null, rating,
+        comments: comment, submitted_at: new Date().toISOString(),
+      });
+    }
+    return json({ ok: true, message: outcome === "signed" ? "Thank you! The report is signed." : "Thank you. We have been told and will be in touch." });
+  }
+
+  // View
+  const content = (s.content ?? {}) as Record<string, unknown>;
+  delete content.edits;
+  const paths = ((content.photos as string[] | undefined) ?? []).filter((p) => typeof p === "string" && p);
+  const photos: string[] = [];
+  const storagePaths = paths.map((p) => {
+    const m = p.match(/\/workforce-media\/(.+?)(\?|$)/);
+    return m ? decodeURIComponent(m[1]) : /^https?:/.test(p) ? null : p;
+  });
+  const toSign = storagePaths.filter((p): p is string => !!p);
+  const signed = toSign.length ? (await admin.storage.from("workforce-media").createSignedUrls(toSign, 3600)).data ?? [] : [];
+  paths.forEach((p, i) => {
+    const sp = storagePaths[i];
+    const url = sp ? signed.find((x: { path: string | null; signedUrl: string }) => x.path === sp)?.signedUrl : p;
+    if (url) photos.push(url);
+  });
+  return json({
+    ok: true,
+    kind: "job_report",
+    company,
+    report: {
+      job_code: job?.job_code ?? null, job_title: job?.title ?? null, version: s.version, status: s.status, content,
+      photos, technician_name: s.technician_name, technician_signature: s.technician_signature, technician_signed_at: s.technician_signed_at,
+      client_name: s.client_name, client_signature: s.client_signature, client_comment: s.client_comment, client_signed_at: s.client_signed_at,
+    },
+    can_respond: s.status === "awaiting_client",
+  });
 }

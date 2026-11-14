@@ -41,7 +41,19 @@ export type PublicQuoteView = {
   can_respond: boolean
 }
 
-export type PublicView = PublicInvoiceView | PublicQuoteView
+export type PublicJobReportView = {
+  ok: true; kind: 'job_report'; company: PublicCompany
+  report: {
+    job_code: string | null; job_title: string | null; version: number; status: 'awaiting_client' | 'signed' | 'not_happy'
+    content: import('@/lib/job-report').JobReportContent
+    /** Short-lived links for the chosen photos. */
+    photos: string[]
+    technician_name: string | null; technician_signature: string | null; technician_signed_at: string | null
+    client_name: string | null; client_signature: string | null; client_comment: string | null; client_signed_at: string | null
+  }
+  can_respond: boolean
+}
+export type PublicView = PublicInvoiceView | PublicQuoteView | PublicJobReportView
 export type PublicResult = { ok: true; message: string } | { ok: false; message: string }
 
 export async function callPublicDocument<T = PublicResult>(token: string, action: string, extra: Record<string, unknown> = {}): Promise<T | { ok: false; message: string }> {
