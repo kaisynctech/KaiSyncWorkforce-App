@@ -24,7 +24,11 @@ const cors = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", ...cors } });
 const fail = (message: string, status = 400) => json({ ok: false, message }, status);
-const rand = (n: unknown, cur?: string | null) => `${!cur || cur.toUpperCase() === "ZAR" ? "R" : cur.toUpperCase()} ` + Number(n ?? 0).toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// "R 24 391,50": the same way the app writes amounts (not left to the server's locale).
+const rand = (n: unknown, cur?: string | null) => {
+  const [int, dec] = Math.abs(Number(n ?? 0)).toFixed(2).split(".");
+  return `${!cur || cur.toUpperCase() === "ZAR" ? "R" : cur.toUpperCase()} ${Number(n) < 0 ? "-" : ""}${int.replace(/\B(?=(\d{3})+(?!\d))/g, " ")},${dec}`;
+};
 
 const COMPANY_COLUMNS =
   "name, legal_name, registration_number, is_vat_registered, vat_number, address, postal_address, contact_phone, contact_email, website, brand_logo_path, bank_account_holder, bank_name, bank_account_number, bank_branch_code, bank_account_type, bank_swift_code, show_bank_on_invoices, show_bank_on_quotes, document_footer";
@@ -236,7 +240,11 @@ Deno.serve(async (req: Request) => {
         extra, option_of: l.option_of, recurring_period: l.recurring_period, is_contingency: x.kind === "contingency",
       };
     };
-    const all = (lines ?? []) as Record<string, unknown>[];
+    // A chosen option takes its line's place in the order.
+    const sortOf = new Map(((lines ?? []) as Record<string, unknown>[]).map((l) => [String(l.id), Number(l.sort_order ?? 0)]));
+    const all = ((lines ?? []) as Record<string, unknown>[])
+      .map((l) => ({ l, k: l.option_of && !l.is_excluded ? (sortOf.get(String(l.option_of)) ?? Number(l.sort_order ?? 0)) : Number(l.sort_order ?? 0) }))
+      .sort((a, b) => a.k - b.k).map((x) => x.l);
     const hv = (q.header_values ?? {}) as Record<string, string>;
     const HEADER: Record<string, string> = { vehicle: "Vehicle / machine", client_order_no: "Client order no.", event_date: "Event date", site_address: "Site address", contract_term: "Contract term" };
     const depPct = Number(hv.__deposit_pct ?? 0) || (hasDeposit && Number(q.total_amount) > 0 ? Math.round(Number(q.deposit_required) / Number(q.total_amount) * 10000) / 100 : 0);

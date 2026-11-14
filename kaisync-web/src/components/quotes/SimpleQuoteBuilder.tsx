@@ -1121,7 +1121,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
       return
     }
     const client = chosenClient?.id === clientIdRef.current ? chosenClient : clients.find(c => c.id === clientIdRef.current)
-    const first = (client?.contact_person || client?.name || '').trim().split(/\s+/)[0]
+    const first = (client?.contact_person || '').trim().split(/\s+/)[0]
     const t = template ? quoteTotals(linesRef.current.map(engineOf), { vatOn: vatOnRef.current, vatRate: vatRateRef.current, depositPct: template.features.includes('deposit') ? depositPctRef.current : null }) : null
     const text = [
       `Hi${first ? ` ${first}` : ''}, here is quotation ${quoteNumberRef.current ?? ''} from ${companyName}${t ? ` (${formatCurrency(t.total, quoteCurrency)})` : ''}.`,
@@ -1633,6 +1633,13 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
           </p>
         )}
 
+        {/* The client's activity stays usable on an accepted (locked) quote: answering questions is not changing it. */}
+        {quoteId && companyId && status !== 'draft' && (
+          <QuoteClientActivity companyId={companyId} quoteId={quoteId} employeeId={employeeId} employeeName={employeeName}
+            quoteNumber={quoteNumber} readOnly={false}
+            clientPhone={((chosenClient?.id === clientId ? chosenClient : clients.find(c => c.id === clientId)) ?? null)?.mobile
+              || ((chosenClient?.id === clientId ? chosenClient : clients.find(c => c.id === clientId)) ?? null)?.phone || null} />
+        )}
         {/* An accepted quote is locked: everything in here is read-only until "Make changes". */}
         <fieldset disabled={locked} className="min-w-0 m-0 p-0 border-0 flex flex-col gap-6">
         {/* ── Quote meta ── */}
@@ -1871,12 +1878,6 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         {template && <QuoteHeaderFields template={template} values={headerValues} onChange={updateHeader} readOnly={locked} />}
 
         {quoteId && <DocumentChain current={{ kind: 'quote', id: quoteId }} companyId={companyId} />}
-        {quoteId && companyId && status !== 'draft' && (
-          <QuoteClientActivity companyId={companyId} quoteId={quoteId} employeeId={employeeId} employeeName={employeeName}
-            quoteNumber={quoteNumber} readOnly={false}
-            clientPhone={((chosenClient?.id === clientId ? chosenClient : clients.find(c => c.id === clientId)) ?? null)?.mobile
-              || ((chosenClient?.id === clientId ? chosenClient : clients.find(c => c.id === clientId)) ?? null)?.phone || null} />
-        )}
 
         {/* ── Items | Buyout ── */}
         {askSuppliers && (
@@ -1992,6 +1993,18 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
               {clientName || 'The client'} gets the quote PDF and a link to accept it online.
               {dealId ? ' Linked project clients will also see it in the portal.' : ''}
             </p>
+            <div className="flex flex-col gap-2 mb-4">
+                <button
+                type="button"
+                disabled={sendBusy}
+                onClick={() => void handleSendWhatsApp()}
+                className="h-11 px-4 rounded-lg bg-[#25D366] text-white text-left text-[14px] font-semibold hover:opacity-95 transition-opacity flex items-center gap-2 disabled:opacity-50"
+              >
+                <span className="material-icons text-[18px]">chat</span>
+                Send on WhatsApp & mark sent
+              </button>
+              <p className="text-[12px] text-text-secondary text-center">or send by email</p>
+            </div>
             <div className="flex flex-col gap-3 mb-4">
               {companyId && <SenderNote companyId={companyId} mode="personal" />}
               {companyId && (
@@ -2006,15 +2019,6 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
               {actionError && <p className="text-[12px] text-error">{actionError}</p>}
             </div>
             <div className="flex flex-col gap-2 mb-5">
-              <button
-                type="button"
-                disabled={sendBusy}
-                onClick={() => void handleSendWhatsApp()}
-                className="h-11 px-4 rounded-lg bg-[#25D366] text-white text-left text-[14px] font-semibold hover:opacity-95 transition-opacity flex items-center gap-2 disabled:opacity-50"
-              >
-                <span className="material-icons text-[18px]">chat</span>
-                Send on WhatsApp & mark sent
-              </button>
               <button
                 type="button"
                 disabled={sendBusy || !isEmail(sendRcpt.to)}
