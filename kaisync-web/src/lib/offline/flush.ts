@@ -99,6 +99,27 @@ async function replayJobAction(
     return
   }
 
+  if (action.type === 'visit_signoff') {
+    const p = action.payload
+    const { error } = await rpc('employee_save_visit_signoff', {
+      p_company_id: action.company_id,
+      p_employee_id: action.employee_id,
+      p_job_id: action.job_id,
+      p_report_id: p.report_id,
+      p_visit_date: p.visit_date,
+      p_content: p.content,
+      p_technician_signature: p.technician_signature,
+      p_client_name: p.client_name,
+      p_client_signature: p.client_signature,
+      p_client_comment: p.client_comment,
+      p_outcome: p.outcome,
+      p_session_token: sessionToken,
+    })
+    // Signed already (sent twice): nothing more to do.
+    if (error && !/VISIT_ALREADY_SIGNED/.test(error.message)) throw error
+    return
+  }
+
   if (action.type === 'job_photo') {
     const blob = await loadBlob(action.blob_key)
     if (!blob) throw new Error('Offline photo is missing on this device.')

@@ -47,6 +47,35 @@ export type JobQueuedAction =
       content_type: string
       queued_at: string
     }
+  | {
+      id: string
+      type: 'visit_signoff'
+      company_id: string
+      employee_id: string
+      job_id: string
+      payload: VisitSignoffPayload
+      queued_at: string
+    }
+
+export type VisitSignoffPayload = {
+  report_id: string | null
+  visit_date: string
+  content: Record<string, unknown>
+  technician_signature: string | null
+  client_name: string
+  client_signature: string | null
+  client_comment: string | null
+  outcome: 'signed' | 'not_happy'
+}
+
+export async function enqueueVisitSignoff(opts: { companyId: string; employeeId: string; jobId: string; payload: VisitSignoffPayload }): Promise<string> {
+  const id = crypto.randomUUID()
+  await enqueueJobAction({
+    id, type: 'visit_signoff', company_id: opts.companyId, employee_id: opts.employeeId, job_id: opts.jobId,
+    payload: opts.payload, queued_at: new Date().toISOString(),
+  })
+  return id
+}
 
 export async function listJobActions(): Promise<JobQueuedAction[]> {
   try {
