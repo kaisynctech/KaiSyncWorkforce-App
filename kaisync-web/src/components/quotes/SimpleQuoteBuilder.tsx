@@ -33,6 +33,10 @@ import { BuyoutPanel, SupplyPill, type BuyoutChoice, type BuyoutQuoteLine } from
 import { ensureBuyout, loadBuyout, type Buyout } from '@/lib/money/buyout'
 import { priceAfterChoice, supplyModeOf, type SupplyMode } from '@/lib/money/quote-supply'
 import { DocumentChain } from '@/components/money/DocumentChain'
+import { TemplateLines, engineOf } from '@/components/quotes/TemplateLines'
+import { QuoteHeaderFields } from '@/components/quotes/QuoteHeaderFields'
+import { HEADER_LABEL, loadTemplates, type QuoteTemplate } from '@/lib/quote-templates'
+import { PERIOD_LABEL, engineLineTotal, orderedForDisplay, quoteTotals, withContingency, type RecurringPeriod } from '@/lib/quote-engine'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -59,6 +63,14 @@ export interface SimpleQuoteLine {
   /** Buyout: the supplier chosen for it, and their reply. */
   supplier_id?:       string | null
   chosen_response_line_id?: string | null
+  /** Template quotations (piece 7): section / phase, industry fields, option for another line, repeats. */
+  section?:           string | null
+  extra?:             Record<string, string>
+  /** id of the line this one is an option for (shown to the client, not counted). */
+  option_of?:         string | null
+  recurring?:         RecurringPeriod | null
+  /** The contingency line the quotation keeps up to date. */
+  is_contingency?:    boolean
 }
 
 type ClientRow = {
@@ -140,6 +152,14 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   const [dealId,      setDealId]      = useState<string | null>(null)
   const [jobId,       setJobId]       = useState<string | null>(null)
   const [vatOn,       setVatOn]       = useState(true)
+  // Quotation template (piece 7). null: a quotation from before templates, which looks and works as before.
+  const [templates,   setTemplates]   = useState<QuoteTemplate[]>([])
+  const [templateId,  setTemplateId]  = useState<string | null>(null)
+  const [headerValues, setHeaderValues] = useState<Record<string, string>>({})
+  const [contingencyPct, setContingencyPct] = useState(0)
+  const [depositPct,  setDepositPct]  = useState<number | null>(null)
+  const [terms,       setTerms]       = useState('')
+  const [paymentDays, setPaymentDays] = useState<number | null>(null)
   const [vatRate,     setVatRate]     = useState(0.15)
 
   // ── Lines ─────────────────────────────────────────────────────────────────
@@ -224,6 +244,12 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   const vatOnRef      = useRef(true)
   const vatRateRef    = useRef(0.15)
   const companyVatRef = useRef<QuoteVatChoice>({ vatOn: true, vatRate: 0.15 })
+  const templateIdRef = useRef<string | null>(null)
+  const headerValuesRef = useRef<Record<string, string>>({})
+  const contingencyRef = useRef(0)
+  const depositPctRef = useRef<number | null>(null)
+  const termsRef      = useRef('')
+  const paymentDaysRef = useRef<number | null>(null)
 
   // Keep refs in sync with state on every render
   quoteIdRef.current     = quoteId
@@ -240,6 +266,8 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   quoteNumberRef.current = quoteNumber
   vatOnRef.current       = vatOn
   vatRateRef.current     = vatRate
+  // Template refs are set by their updaters (below), like the line refs.
+  const template = templates.find(t => t.id === templateId) ?? null
 
   // ── Resolve auth on mount ──────────────────────────────────────────────────
   useEffect(() => {
@@ -342,7 +370,29 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
     setClients((data ?? []) as ClientRow[])
   }
 
+  /** A new quotation takes its template's starting values (valid for, payment days, deposit, terms). */
+  function applyTemplateDefaults(t: QuoteTemplate) {
+    const d = t.defaults ?? { valid_days: 14, payment_terms_days: 30, deposit_pct: null, margin_pct: null }
+    const vu = todayPlus(Number(d.valid_days) || 14)
+    setValidUntil(vu); validUntilRef.current = vu
+    const dep = t.features.includes('deposit') ? (d.deposit_pct ?? null) : null
+    setDepositPct(dep); depositPctRef.current = dep
+    const tm = t.terms ?? ''
+    setTerms(tm); termsRef.current = tm
+    const pd = d.payment_terms_days ?? null
+    setPaymentDays(pd); paymentDaysRef.current = pd
+  }
+
   async function loadData(cid: string) {
+    const tpl = await loadTemplates(supabase, cid).catch(() => [] as QuoteTemplate[])
+    setTemplates(tpl)
+    if (!quoteIdRef.current) {
+      const def = tpl.find(t => t.is_default) ?? tpl[0] ?? null
+      if (def) {
+        setTemplateId(def.id); templateIdRef.current = def.id
+        applyTemplateDefaults(def)
+      }
+    }
     const [{ data: pData }, { data: jData }] = await Promise.all([
       supabase
         .from('client_deals')
@@ -409,6 +459,19 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         setValidUntil(vu);         validUntilRef.current = vu
         const n = (q.scope_notes as string | null) ?? ''
         setNotes(n);               notesRef.current = n
+        const tid = (q.template_id as string | null) ?? null
+        setTemplateId(tid);        templateIdRef.current = tid
+        const hv = { ...((q.header_values as Record<string, string> | null) ?? {}) }
+        const dp = hv.__deposit_pct != null && hv.__deposit_pct !== '' ? Number(hv.__deposit_pct) : null
+        delete hv.__deposit_pct
+        setHeaderValues(hv);       headerValuesRef.current = hv
+        setDepositPct(dp);         depositPctRef.current = dp
+        const cp = Number(q.contingency_percent ?? 0) || 0
+        setContingencyPct(cp);     contingencyRef.current = cp
+        const tc = (q.terms_and_conditions as string | null) ?? ''
+        setTerms(tc);              termsRef.current = tc
+        const pdays = q.payment_terms_days == null ? null : Number(q.payment_terms_days)
+        setPaymentDays(pdays);     paymentDaysRef.current = pdays
         const did = (q.deal_id as string | null) ?? null
         setDealId(did);            dealIdRef.current = did
         const jid = (q.job_id as string | null) ?? null
@@ -436,9 +499,18 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
           supply_mode:       (row.supply_mode as SupplyMode | null) ?? null,
           supplier_id:       (row.supplier_id as string | null) ?? null,
           chosen_response_line_id: (row.chosen_response_line_id as string | null) ?? null,
+          section:           (row.section_heading as string | null) ?? null,
+          extra:             Object.fromEntries(Object.entries((row.extra as Record<string, unknown> | null) ?? {}).filter(([k]) => k !== 'kind').map(([k, v]) => [k, String(v ?? '')])),
+          option_of:         (row.option_of as string | null) ?? null,
+          recurring:         (row.recurring_period as RecurringPeriod | null) ?? null,
+          is_contingency:    ((row.extra as Record<string, unknown> | null) ?? {}).kind === 'contingency',
         }))
         // total is after the line's discount.
-        for (const m of mapped) m.total = lineTotal({ type: m.item_type, qty: m.qty, unitPrice: m.unit_price, discountPct: m.discount_pct })
+        for (const m of mapped) {
+          m.total = templateIdRef.current
+            ? engineLineTotal({ qty: m.qty, unitPrice: m.unit_price, discountPct: m.discount_pct })
+            : lineTotal({ type: m.item_type, qty: m.qty, unitPrice: m.unit_price, discountPct: m.discount_pct })
+        }
         setLines(mapped)
         linesRef.current = mapped
       }
@@ -497,9 +569,11 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
 
       const newStatus = overrideStatus ?? statusRef.current
       const ls = linesRef.current
-      const lineSubtotal = ls.reduce((s, l) => s + l.total, 0)
+      // Options for the client are shown but never counted (piece 7).
+      const counted = ls.filter(l => !l.option_of)
+      const lineSubtotal = counted.reduce((s, l) => s + l.total, 0)
       // What the work costs the business (office only): kept on the quote so profit can be tracked.
-      const costTotal = Math.round(ls.reduce((s, l) => s + l.qty * (Number(l.unit_cost) || 0), 0) * 100) / 100
+      const costTotal = Math.round(counted.reduce((s, l) => s + l.qty * (Number(l.unit_cost) || 0), 0) * 100) / 100
       const money = quoteMoney(lineSubtotal, vatOnRef.current, vatRateRef.current)
       const lineVat = money.vat
       const lineTotal = money.total
@@ -529,6 +603,17 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         exchange_rate: isForeign && rateTyped > 0 ? rateTyped : null,
         rate_source:   isForeign && rateTyped > 0 ? 'manual' : null,
         updated_at:   new Date().toISOString(),
+      }
+      if (templateIdRef.current || quoteIdRef.current) {
+        const dp = depositPctRef.current
+        payload.template_id = templateIdRef.current
+        payload.header_values = { ...headerValuesRef.current, ...(dp != null ? { __deposit_pct: String(dp) } : {}) }
+        payload.contingency_percent = contingencyRef.current || 0
+        if (templateIdRef.current) {
+          payload.terms_and_conditions = termsRef.current.trim() || null
+          payload.deposit_required = dp ? Math.round(lineTotal * dp) / 100 : 0
+          if (paymentDaysRef.current != null) payload.payment_terms_days = paymentDaysRef.current
+        }
       }
       if (!qid) payload.created_by = eid
       if (qid)  payload.id = qid
@@ -593,8 +678,12 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
             vat_rate:          rate,
             vat_amount:        l.total * rate,
             line_total:        l.total * (1 + rate),
-            is_optional:       false,
-            is_excluded:       false,
+            is_optional:       !!l.option_of,
+            is_excluded:       !!l.option_of,
+            section_heading:   l.section?.trim() || null,
+            extra:             { ...(l.extra ?? {}), ...(l.is_contingency ? { kind: 'contingency' } : {}) },
+            option_of:         l.option_of ?? null,
+            recurring_period:  l.recurring ?? null,
             item_type:         l.item_type === 'service' ? 'labour' : 'material',
             supply_mode:       supplyModeOf(l.supply_mode, l.item_type, l.qty, onHandOf(l)),
             supplier_id:       l.supplier_id ?? null,
@@ -674,6 +763,66 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
     setVatOn(on)
     vatOnRef.current = on
     scheduleAutoSave()
+  }
+
+  // ── Template quotations (piece 7) ─────────────────────────────────────────
+  function updateHeader(key: string, v: string) {
+    const next = { ...headerValuesRef.current, [key]: v }
+    setHeaderValues(next); headerValuesRef.current = next; scheduleAutoSave()
+  }
+  function updateDepositPct(v: number | null) {
+    setDepositPct(v); depositPctRef.current = v; scheduleAutoSave()
+  }
+  function updateTerms(v: string) {
+    setTerms(v); termsRef.current = v; scheduleAutoSave()
+  }
+  /** Contingency is a normal line, kept in step with the counted lines. */
+  function withContingencyLine(ls: SimpleQuoteLine[], pct: number): SimpleQuoteLine[] {
+    const byKey = new Map(ls.map(l => [l.id ?? l.tempId, l]))
+    const eng = withContingency(ls.map(l => ({ ...engineOf(l), line: l })), pct, (amount, label) => {
+      const id = crypto.randomUUID()
+      const line: SimpleQuoteLine = { ...blankLine(), id, tempId: id, description: label, unit: 'sum', unit_price: amount, total: amount, is_contingency: true }
+      return { ...engineOf(line), line }
+    })
+    return eng.map(e => {
+      const base = byKey.get(e.key) ?? e.line
+      if (!e.isContingency) return base
+      return { ...base, description: e.description, qty: 1, unit_price: e.unitPrice, total: e.unitPrice, discount_pct: null, is_contingency: true }
+    })
+  }
+  function setTemplateLines(next: SimpleQuoteLine[]) {
+    const withC = withContingencyLine(next, contingencyRef.current)
+    setLines(withC); linesRef.current = withC; scheduleAutoSave()
+  }
+  function updateContingency(pct: number) {
+    setContingencyPct(pct); contingencyRef.current = pct
+    const withC = withContingencyLine(linesRef.current, pct)
+    setLines(withC); linesRef.current = withC; scheduleAutoSave()
+  }
+  function chooseTemplate(id: string | null) {
+    setTemplateId(id); templateIdRef.current = id
+    const t = templates.find(x => x.id === id)
+    // Starting values only fill a quotation that hasn't been sent; nothing already typed is lost.
+    if (t && statusRef.current === 'draft') {
+      if (depositPctRef.current == null && t.features.includes('deposit')) { setDepositPct(t.defaults?.deposit_pct ?? null); depositPctRef.current = t.defaults?.deposit_pct ?? null }
+      if (!termsRef.current.trim() && t.terms) { setTerms(t.terms); termsRef.current = t.terms }
+    }
+    if (t && !t.features.includes('contingency') && contingencyRef.current) updateContingency(0)
+    scheduleAutoSave()
+  }
+
+  function makeTemplateLine(pick: PickItem | null, qty: number): SimpleQuoteLine {
+    const id = crypto.randomUUID()
+    if (!pick) return { ...blankLine(), id, tempId: id, qty, total: 0 }
+    const extra: Record<string, string> = {}
+    if (pick.sku) extra.part_no = pick.sku
+    if (pick.brand) extra.brand = pick.brand
+    const q = pick.type === 'service' ? 1 : qty
+    return {
+      ...blankLine(), id, tempId: id, description: pick.name, qty: q, unit: pick.unit || 'each', unit_price: pick.price,
+      total: Math.round(q * pick.price * 100) / 100, catalogue_item_id: pick.type === 'catalogue' ? pick.sourceId : null,
+      item_type: pick.type, source_id: pick.sourceId, hint: pick.hint, unit_cost: pick.cost ?? null, extra,
+    }
   }
 
   // ── Line operations ────────────────────────────────────────────────────────
@@ -771,6 +920,11 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         supply_mode:       sameItem ? prev?.supply_mode ?? null : null,
         supplier_id:       sameItem ? prev?.supplier_id ?? null : null,
         chosen_response_line_id: sameItem ? prev?.chosen_response_line_id ?? null : null,
+        section:           prev?.section ?? null,
+        extra:             prev?.extra,
+        option_of:         prev?.option_of ?? null,
+        recurring:         prev?.recurring ?? null,
+        is_contingency:    prev?.is_contingency ?? false,
       }
     })
     setLines(mapped)
@@ -934,6 +1088,16 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
     setClientDropOpen(false)
   }
 
+  async function openSend() {
+    const email = (chosenClient?.id === clientId ? chosenClient.email : clients.find(c => c.id === clientId)?.email) ?? ''
+    setSendRcpt(emptyRecipients(email))
+    setSendDraft(null)
+    setActionError(null)
+    // The preview reads the saved quote, so save the latest changes first.
+    if (!(await doSave())) return
+    setShowSendModal(true)
+  }
+
   // ── Mark as sent ───────────────────────────────────────────────────────────
   async function handleMarkAsSent() {
     await doSave('sent')
@@ -941,6 +1105,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   }
 
   function buildPdfInput() {
+    const tpl = templates.find(t => t.id === templateIdRef.current) ?? null
     const client = chosenClient?.id === clientIdRef.current ? chosenClient : clients.find(c => c.id === clientIdRef.current)
     return {
       currency: quoteCurrency,
@@ -953,21 +1118,36 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
       client_email: client?.email ?? null,
       company_name: companyName,
       letterhead,
-      lines: linesRef.current.map(l => ({
+      lines: (tpl ? orderedForDisplay(linesRef.current.map(l => ({ ...engineOf(l), line: l }))).flatMap(g => g.lines.map(e => e.line)) : linesRef.current).map(l => ({
         description: l.description,
         qty: l.qty,
         unit: l.unit,
         unit_price: l.unit_price,
         total: l.total,
         discount_pct: Number(l.discount_pct) || 0,
+        section: l.section ?? null,
+        extra: l.extra,
+        is_option: !!l.option_of,
+        recurring: l.recurring ?? null,
       })),
       ...(() => {
         const money = quoteMoney(
-          linesRef.current.reduce((s, l) => s + l.total, 0),
+          linesRef.current.filter(l => !l.option_of).reduce((s, l) => s + l.total, 0),
           vatOnRef.current,
           vatRateRef.current,
         )
-        return { subtotal: money.subtotal, vat: money.vat, total: money.total, vatRate: money.vatRate }
+        const t = tpl ? quoteTotals(linesRef.current.map(engineOf), { vatOn: vatOnRef.current, vatRate: vatRateRef.current, depositPct: tpl.features.includes('deposit') ? depositPctRef.current : null }) : null
+        return {
+          subtotal: money.subtotal, vat: money.vat, total: money.total, vatRate: money.vatRate,
+          ...(tpl && t ? {
+            // The client never sees team-only columns (cost, margin).
+            columns: tpl.columns.filter(c => c.visible && !c.team_only).map(c => ({ key: c.key, label: c.label })),
+            header_fields: tpl.header_fields.map(h => ({ label: HEADER_LABEL[h] ?? h, value: headerValuesRef.current[h] ?? '' })),
+            deposit: depositPctRef.current ? { pct: depositPctRef.current, amount: t.deposit } : null,
+            recurring: (Object.entries(t.recurring) as [RecurringPeriod, number][]).map(([period, amount]) => ({ period, amount })),
+            terms: termsRef.current.trim() || null,
+          } : {}),
+        }
       })(),
     }
   }
@@ -1180,7 +1360,9 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   }
 
   // ── Computed totals ────────────────────────────────────────────────────────
-  const subtotal = lines.reduce((s, l) => s + l.total, 0)
+  const subtotal = lines.filter(l => !l.option_of).reduce((s, l) => s + l.total, 0)
+  const tTotals = template ? quoteTotals(lines.map(engineOf), { vatOn, vatRate, depositPct: template.features.includes('deposit') ? depositPct : null }) : null
+  const askSuppliers = !template || template.features.includes('ask_suppliers')
   const money = quoteMoney(subtotal, vatOn, vatRate)
   const vat = money.vat
   const total = money.total
@@ -1203,7 +1385,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="max-w-5xl mx-auto w-full px-6 py-6 flex flex-col gap-6">
+      <div className={cn('max-w-5xl mx-auto w-full px-4 sm:px-6 py-5 sm:py-6 flex flex-col gap-6', template && 'pb-28 md:pb-6')}>
 
         {/* ── Header ── */}
         <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -1237,7 +1419,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
                 onChange={e => updateTitle(e.target.value)}
                 disabled={locked}
                 placeholder="Quote title (optional)"
-                className="text-[13px] text-text-secondary bg-transparent border-none outline-none mt-0.5 w-72 placeholder-text-secondary/40"
+                className="text-[13px] text-text-secondary bg-transparent border-none outline-none mt-0.5 w-full max-w-72 placeholder-text-secondary/40"
               />
             </div>
           </div>
@@ -1299,15 +1481,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
               <>
                 <button
                   type="button"
-                  onClick={async () => {
-                    const email = (chosenClient?.id === clientId ? chosenClient.email : clients.find(c => c.id === clientId)?.email) ?? ''
-                    setSendRcpt(emptyRecipients(email))
-                    setSendDraft(null)
-                    setActionError(null)
-                    // The preview reads the saved quote, so save the latest changes first.
-                    if (!(await doSave())) return
-                    setShowSendModal(true)
-                  }}
+                  onClick={() => void openSend()}
                   disabled={saveState === 'saving'}
                   className="h-9 px-4 rounded-lg bg-primary text-white text-[13px] font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
                 >
@@ -1646,9 +1820,24 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
           )}
         </div>
 
+        {templates.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 -mt-2">
+            <label htmlFor="quote-template" className="text-[12px] text-text-secondary">Template</label>
+            <select id="quote-template" value={templateId ?? ''} disabled={locked}
+              onChange={e => chooseTemplate(e.target.value || null)}
+              className="h-10 sm:h-8 rounded-lg border border-divider bg-surface px-2 text-[13.5px] sm:text-[12.5px] text-text-primary max-w-full">
+              {templates.map(t => <option key={t.id} value={t.id}>{t.name}{t.is_default ? ' (default)' : ''}</option>)}
+              <option value="">Classic (no template)</option>
+            </select>
+            <Link href="/dashboard/settings?tab=money" prefetch={false} className="text-[12px] text-primary hover:underline">Change templates</Link>
+          </div>
+        )}
+        {template && <QuoteHeaderFields template={template} values={headerValues} onChange={updateHeader} readOnly={locked} />}
+
         {quoteId && <DocumentChain current={{ kind: 'quote', id: quoteId }} companyId={companyId} />}
 
         {/* ── Items | Buyout ── */}
+        {askSuppliers && (
         <div className="flex items-center gap-5 border-b border-divider -mb-2" role="tablist" aria-label="Quote sections">
           {([['items', 'Items'], ['buyout', 'Buyout']] as const).map(([k, label]) => (
             <button key={k} type="button" role="tab" aria-selected={quoteView === k}
@@ -1659,6 +1848,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
             </button>
           ))}
         </div>
+        )}
 
         {quoteView === 'buyout' && companyId ? (
           <BuyoutPanel companyId={companyId} buyout={buyout} lines={outsourcedLines} currency={quoteCurrency} readOnly={locked}
@@ -1666,7 +1856,14 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
             keep={keepMode} onKeep={rememberKeep} defaultMargin={defaultMargin} onDefaultMargin={rememberMargin} />
         ) : (
         <>
+        {template ? (
+          <TemplateLines template={template} lines={lines} items={pickItems} itemsLoading={pickLoading} currency={quoteCurrency}
+            readOnly={locked} onChange={next => setTemplateLines(next as SimpleQuoteLine[])} makeLine={makeTemplateLine}
+            lineExtra={askSuppliers ? (l => (l.option_of || l.is_contingency ? null : lineExtra({ key: l.tempId, description: l.description } as EditorLine))) : undefined}
+            contingencyPct={contingencyPct} onContingency={updateContingency} />
+        ) : (
         <LineItemsEditor lines={editorLines} onChange={handleEditorChange} items={pickItems} itemsLoading={pickLoading} startOpen={!initialQuoteId} currency={quoteCurrency} showCost readOnly={locked} lineExtra={lineExtra} />
+        )}
 
         {sourcing.count > 0 && (
           <div className="-mt-3 rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
@@ -1693,7 +1890,24 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
             className="w-full px-4 py-2 text-[13px] text-text-primary bg-surface resize-y focus:outline-none placeholder-text-secondary/40"
           />
         </div>
+        {template && (
+          <div className="rounded-xl border border-divider overflow-hidden">
+            <div className="px-4 py-1.5 border-b border-divider bg-surface-elevated">
+              <span className="text-[11px] text-text-secondary uppercase tracking-wide">Terms printed on the quotation</span>
+            </div>
+            <textarea rows={3} value={terms} onChange={e => updateTerms(e.target.value)} maxLength={4000}
+              placeholder="Deposit, cancellation, warranty…"
+              className="w-full px-4 py-2 text-[13px] text-text-primary bg-surface resize-y focus:outline-none placeholder-text-secondary/40" />
+          </div>
+        )}
+
         {/* ── Totals: rows in the same columns as the items ── */}
+        {template && tTotals ? (
+          <TemplateTotals totals={tTotals} currency={quoteCurrency} vatOn={vatOn} vatRate={vatRate} onVat={updateVatOn} readOnly={locked}
+            deposit={template.features.includes('deposit')} depositPct={depositPct} onDepositPct={updateDepositPct}
+            showProfit={template.features.includes('cost_margin')} />
+        ) : (
+        <>
         <QuoteTotalsRows lines={editorLines} currency={quoteCurrency} vatOn={vatOn} readOnly={locked}
           vatLabel={vatOn ? `VAT (${vatPercentLabel(vatRate)}%)` : 'VAT'} vat={vat} total={total} onVat={updateVatOn} />
 
@@ -1703,10 +1917,29 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         </p>
         </>
         )}
+        </>
+        )}
         </fieldset>
 
 
       </div>
+
+      {/* ── Phone: total, deposit and Send always in reach ── */}
+      {template && tTotals && (
+        <div className="md:hidden fixed inset-x-0 bottom-0 z-40 border-t border-divider bg-surface/95 backdrop-blur px-4 pt-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))] flex items-center gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-[12px] text-text-secondary leading-tight">Total{tTotals.deposit > 0 ? ` · deposit ${formatCurrency(tTotals.deposit, quoteCurrency)}` : ''}</p>
+            <p className="text-[18px] font-bold text-text-primary leading-tight">{formatCurrency(tTotals.total, quoteCurrency)}</p>
+          </div>
+          {status !== 'accepted' && status !== 'declined' ? (
+            <button type="button" disabled={saveState === 'saving'} onClick={() => void openSend()}
+              className="h-12 px-6 rounded-xl bg-primary text-white text-[15px] font-semibold disabled:opacity-50">Send</button>
+          ) : status === 'accepted' ? (
+            <button type="button" onClick={() => { setActionError(null); setShowWhatsNext(true) }}
+              className="h-12 px-5 rounded-xl bg-primary text-white text-[15px] font-semibold">What&apos;s next?</button>
+          ) : null}
+        </div>
+      )}
 
       {/* ── Send quote ── */}
       {showSendModal && (
@@ -1895,6 +2128,50 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
             </div>
           </div>
         </div>
+      )}
+    </div>
+  )
+}
+
+function TemplateTotals({ totals, currency, vatOn, vatRate, onVat, readOnly, deposit, depositPct, onDepositPct, showProfit }: {
+  totals: ReturnType<typeof quoteTotals>; currency: string; vatOn: boolean; vatRate: number; onVat: (on: boolean) => void
+  readOnly?: boolean; deposit: boolean; depositPct: number | null; onDepositPct: (v: number | null) => void; showProfit: boolean
+}) {
+  const row = 'flex items-center justify-between gap-3 px-4 py-2 text-[13.5px]'
+  const periods = Object.entries(totals.recurring) as [RecurringPeriod, number][]
+  return (
+    <div className="rounded-xl border border-divider bg-surface overflow-hidden divide-y divide-divider">
+      <div className={row}><span className="text-text-secondary">{vatOn ? 'Subtotal (excl. VAT)' : 'Subtotal'}</span><span>{formatCurrency(totals.subtotal, currency)}</span></div>
+      {showProfit && totals.cost > 0 && (
+        <div className={row}>
+          <span className="text-text-secondary"><span className="material-icons !text-[13px] align-[-2px]">lock</span> Gross profit (team only)</span>
+          <span className="text-text-secondary">{formatCurrency(totals.profit, currency)} · {totals.marginPct.toFixed(1)}%</span>
+        </div>
+      )}
+      <div className={row}>
+        <label className="flex items-center gap-2 text-text-secondary">
+          <input type="checkbox" className="w-5 h-5" checked={vatOn} disabled={readOnly} onChange={e => onVat(e.target.checked)} />
+          {vatOn ? `VAT (${vatPercentLabel(vatRate)}%)` : 'VAT'}
+        </label>
+        <span>{vatOn ? formatCurrency(totals.vat, currency) : 'No VAT'}</span>
+      </div>
+      <div className={cn(row, 'py-3')}><span className="font-semibold text-text-primary">{vatOn ? 'Total (incl. VAT)' : 'Total'}</span><span className="text-[17px] font-bold text-text-primary">{formatCurrency(totals.total, currency)}</span></div>
+      {deposit && (
+        <div className={row}>
+          <label className="flex items-center gap-2 text-text-secondary">
+            Deposit
+            <input type="number" inputMode="numeric" min={0} max={100} value={depositPct ?? ''} placeholder="0" disabled={readOnly}
+              onChange={e => onDepositPct(e.target.value === '' ? null : Math.min(100, Math.max(0, Number(e.target.value) || 0)))}
+              className="w-16 h-9 px-2 text-right bg-background border border-border rounded-lg text-[14px]" aria-label="Deposit %" />%
+          </label>
+          <span className="font-semibold">{formatCurrency(totals.deposit, currency)}</span>
+        </div>
+      )}
+      {periods.map(([p, amt]) => (
+        <div key={p} className={row}><span className="text-text-secondary">Every {PERIOD_LABEL[p]} (excl. VAT; the first is in the total)</span><span>{formatCurrency(amt, currency)}</span></div>
+      ))}
+      {totals.optionsCount > 0 && (
+        <p className="px-4 py-2 text-[12px] text-sky-800 bg-sky-50/60">{totals.optionsCount} option{totals.optionsCount === 1 ? '' : 's'} for the client, not in the total.</p>
       )}
     </div>
   )

@@ -40,6 +40,10 @@ export type PickItem = {
   cost?: number | null
   /** Stock items: how many are on hand. */
   onHand?: number | null
+  /** Products & stock kind (part, service, material, labour, package, fee, hire); job services are 'service'. */
+  kind?: string | null
+  sku?: string | null
+  brand?: string | null
 }
 
 export const ITEM_KIND: Record<ItemType, { label: string; dot: string; fg: string; bg: string }> = {
@@ -131,8 +135,8 @@ export async function loadPickItems(
     clientId
       ? supabase.from('client_job_services').select('service_id, agreed_price').eq('client_id', clientId)
       : Promise.resolve({ data: [] as { service_id: string; agreed_price: number | null }[] }),
-    supabase.from('quote_catalogue_items').select('id, name, unit, item_type, sell_price, cost_price, code').eq('company_id', companyId).eq('is_active', true).order('name').limit(1000),
-    supabase.from('inventory_items').select('id, name, sku, unit_of_measure, selling_price, unit_cost, quantity_on_hand').eq('company_id', companyId).eq('is_active', true).order('name').limit(1000),
+    supabase.from('quote_catalogue_items').select('id, name, unit, item_type, sell_price, cost_price, code, sku, brand').eq('company_id', companyId).eq('is_active', true).order('name').limit(1000),
+    supabase.from('inventory_items').select('id, name, sku, unit_of_measure, selling_price, unit_cost, quantity_on_hand, catalogue_item_id').eq('company_id', companyId).eq('is_active', true).order('name').limit(1000),
   ])
   const agreedBy = new Map<string, number>()
   for (const a of ((agreed as { data: unknown }).data ?? []) as { service_id: string; agreed_price: number | null }[]) {
@@ -146,24 +150,37 @@ export async function loadPickItems(
       price: clientPrice ?? num(s.default_price),
       detail: [clientPrice != null ? 'Client price' : 'Company price', s.category].filter(Boolean).join(' · '),
       hint: clientPrice != null ? 'Client price' : null,
+      kind: 'service',
     })
   }
-  for (const c of (catalogue.data ?? []) as { id: string; name: string; unit: string | null; item_type: string | null; sell_price: number | null; cost_price: number | null; code: string | null }[]) {
+  type CatRow = { id: string; name: string; unit: string | null; item_type: string | null; sell_price: number | null; cost_price: number | null; code: string | null; sku: string | null; brand: string | null }
+  const cats = (catalogue.data ?? []) as CatRow[]
+  const catById = new Map(cats.map(c => [c.id, c]))
+  // One item list (6b): a stocked product and its stock record are one item. It is offered once, as stock, so
+  // invoicing it still takes it out of stock; the product's kind, part no. and brand come with it.
+  const stocked = new Set(
+    ((stock.data ?? []) as { catalogue_item_id: string | null }[]).map(i => i.catalogue_item_id).filter((x): x is string => !!x),
+  )
+  for (const c of cats) {
+    if (stocked.has(c.id)) continue
     out.push({
       key: `c:${c.id}`, type: 'catalogue', sourceId: c.id, name: c.name, unit: c.unit || 'each', price: num(c.sell_price),
       cost: num(c.cost_price) > 0 ? num(c.cost_price) : null,
       detail: [c.code, c.unit ? `per ${c.unit}` : null].filter(Boolean).join(' · ') || 'Catalogue',
       hint: c.unit && c.unit !== 'each' ? `per ${c.unit}` : null,
+      kind: c.item_type, sku: c.sku ?? c.code, brand: c.brand,
     })
   }
-  for (const i of (stock.data ?? []) as { id: string; name: string; sku: string | null; unit_of_measure: string | null; selling_price: number | null; unit_cost: number | null; quantity_on_hand: number | null }[]) {
+  for (const i of (stock.data ?? []) as { id: string; name: string; sku: string | null; unit_of_measure: string | null; selling_price: number | null; unit_cost: number | null; quantity_on_hand: number | null; catalogue_item_id: string | null }[]) {
     const onHand = num(i.quantity_on_hand)
+    const cat = i.catalogue_item_id ? catById.get(i.catalogue_item_id) : undefined
     out.push({
       key: `i:${i.id}`, type: 'inventory', sourceId: i.id, name: i.name, unit: i.unit_of_measure || 'each', price: num(i.selling_price),
       cost: num(i.unit_cost) > 0 ? num(i.unit_cost) : null,
       detail: [i.sku, `${onHand.toLocaleString('en-ZA')} in stock`].filter(Boolean).join(' · '),
       hint: `${onHand.toLocaleString('en-ZA')} in stock`,
       onHand,
+      kind: cat?.item_type ?? 'part', sku: i.sku ?? cat?.sku ?? null, brand: cat?.brand ?? null,
     })
   }
   return out
