@@ -323,6 +323,8 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
   const [loading, setLoading] = useState(true)
   const [sales, setSales] = useState<SalesRow[]>([])
   const [incoming, setIncoming] = useState<IncomingRow[]>([])
+  // How often the client opened each quotation's link (piece 8).
+  const [seen, setSeen] = useState<Record<string, number>>({})
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE)
   const [filterLabels, setFilterLabels] = useState<{ client?: string; job?: string; deal?: string }>({})
@@ -372,7 +374,16 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
           console.error('commercial_quotes list failed', salesRes.error)
           setSales([])
         } else {
-          setSales((salesRes.data ?? []) as unknown as SalesRow[])
+          const rows = (salesRes.data ?? []) as unknown as SalesRow[]
+          setSales(rows)
+          const sent = rows.filter(r => r.status !== 'draft').map(r => r.id)
+          if (sent.length) {
+            void supabase.rpc('document_link_stats', { p_doc_ids: sent }).then(({ data }) => {
+              const m: Record<string, number> = {}
+              for (const r of (data ?? []) as { doc_id: string; views: number }[]) m[r.doc_id] = Number(r.views) || 0
+              setSeen(m)
+            })
+          }
         }
       } else {
         const [cqRes, rfqRes] = await Promise.all([
@@ -894,6 +905,7 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
                           >
                             {q.status.replace('_', ' ')}
                           </span>
+                          {seen[q.id] ? <span className="ml-1 text-[10.5px] text-purple-700 whitespace-nowrap" title="Times the client opened the link">· seen {seen[q.id]}×</span> : null}
                         </td>
                         <td className={`${TD} text-text-secondary whitespace-nowrap`}>{fmtShort(q.created_at)}</td>
                         <td className={`${TD} text-text-secondary whitespace-nowrap`}>{fmtShort(q.valid_until)}</td>
@@ -924,6 +936,7 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
                       {(() => { const l = quoteLink(q); return l ? <DataCardRow label={l.kind === 'job' ? 'Job' : 'Project'} value={linkText(l)} /> : null })()}
                       <DataCardRow label="Value" value={fmtMoney(q.total_amount, q.currency)} />
                       <DataCardRow label="Valid" value={fmt(q.valid_until)} />
+                      {q.status !== 'draft' && <DataCardRow label="Client opened" value={seen[q.id] ? `Seen ${seen[q.id]}×` : 'Not yet'} />}
                     </DataCard>
                   ))}
                 </>

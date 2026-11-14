@@ -33,6 +33,8 @@ import { BuyoutPanel, SupplyPill, type BuyoutChoice, type BuyoutQuoteLine } from
 import { ensureBuyout, loadBuyout, type Buyout } from '@/lib/money/buyout'
 import { priceAfterChoice, supplyModeOf, type SupplyMode } from '@/lib/money/quote-supply'
 import { DocumentChain } from '@/components/money/DocumentChain'
+import { QuoteClientActivity } from '@/components/quotes/QuoteClientActivity'
+import { whatsAppUrl } from '@/lib/whatsapp'
 import { TemplateLines, engineOf } from '@/components/quotes/TemplateLines'
 import { QuoteHeaderFields } from '@/components/quotes/QuoteHeaderFields'
 import { HEADER_LABEL, loadTemplates, type QuoteTemplate } from '@/lib/quote-templates'
@@ -81,9 +83,11 @@ type ClientRow = {
   client_code?: string | null
   contact_person?: string | null
   currency?: string | null
+  phone?: string | null
+  mobile?: string | null
 }
 
-const CLIENT_PICK_COLUMNS = 'id, name, email, legal_name, client_code, contact_person, currency'
+const CLIENT_PICK_COLUMNS = 'id, name, email, legal_name, client_code, contact_person, currency, phone, mobile'
 
 function clientPickDetail(row: ClientRow): string {
   return [row.legal_name && row.legal_name !== row.name ? row.legal_name : null, row.client_code, row.contact_person]
@@ -137,6 +141,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   // ── Auth ──────────────────────────────────────────────────────────────────
   const [companyId,  setCompanyId]  = useState<string | null>(null)
   const [companyName, setCompanyName] = useState('KaiSync')
+  const [employeeName, setEmployeeName] = useState('')
   const [letterhead, setLetterhead] = useState<Letterhead | null>(null)
   const [employeeId, setEmployeeId] = useState<string | null>(null)
   const [authReady,  setAuthReady]  = useState(false)
@@ -277,6 +282,8 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
       setEmployeeId(m.employeeId)
       companyIdRef.current  = m.companyId
       employeeIdRef.current = m.employeeId
+      void supabase.from('employees').select('name, surname').eq('id', m.employeeId).maybeSingle()
+        .then(({ data }) => { const e = data as { name?: string; surname?: string } | null; if (e) setEmployeeName([e.name, e.surname].filter(Boolean).join(' ')) })
       const [{ data: company }, { data: home }] = await Promise.all([
         supabase
           .from('companies')
@@ -1098,6 +1105,35 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
     setShowSendModal(true)
   }
 
+  /** Send on WhatsApp (piece 8): the quotation is marked sent and WhatsApp opens with the private link ready. */
+  async function handleSendWhatsApp() {
+    // Opened straight away so the phone doesn't block it as a pop-up; filled in once the link is ready.
+    const w = window.open('', '_blank')
+    setSendBusy(true)
+    setActionError(null)
+    const id = await doSave(statusRef.current === 'draft' ? 'sent' : undefined)
+    if (!id) { w?.close(); setSendBusy(false); setActionError('Save the quote first, then try again.'); return }
+    const { data: token, error } = await supabase.rpc('document_link_for', { p_kind: 'quote', p_doc_id: id })
+    setSendBusy(false)
+    if (error || !token) {
+      w?.close()
+      setActionError(/NOT_ALLOWED/.test(error?.message ?? '') ? 'You don’t have permission to send quotations.' : error?.message ?? 'The link could not be made.')
+      return
+    }
+    const client = chosenClient?.id === clientIdRef.current ? chosenClient : clients.find(c => c.id === clientIdRef.current)
+    const first = (client?.contact_person || client?.name || '').trim().split(/\s+/)[0]
+    const t = template ? quoteTotals(linesRef.current.map(engineOf), { vatOn: vatOnRef.current, vatRate: vatRateRef.current, depositPct: template.features.includes('deposit') ? depositPctRef.current : null }) : null
+    const text = [
+      `Hi${first ? ` ${first}` : ''}, here is quotation ${quoteNumberRef.current ?? ''} from ${companyName}${t ? ` (${formatCurrency(t.total, quoteCurrency)})` : ''}.`,
+      `You can see it, ${template?.features.includes('options') ? 'choose your options, ' : ''}accept it${t && t.deposit > 0 ? ' and pay the deposit' : ''} here:`,
+      `${window.location.origin}/d/${token}`,
+    ].join('\n')
+    const url = whatsAppUrl(client?.mobile || client?.phone, text)
+    if (w) w.location.href = url; else window.location.assign(url)
+    setShowSendModal(false)
+    setSentNote(`WhatsApp opened with the quotation link${client?.mobile || client?.phone ? ` for ${client?.name}` : ''}. Tap Send in WhatsApp.`)
+  }
+
   // ── Mark as sent ───────────────────────────────────────────────────────────
   async function handleMarkAsSent() {
     await doSave('sent')
@@ -1835,6 +1871,12 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         {template && <QuoteHeaderFields template={template} values={headerValues} onChange={updateHeader} readOnly={locked} />}
 
         {quoteId && <DocumentChain current={{ kind: 'quote', id: quoteId }} companyId={companyId} />}
+        {quoteId && companyId && status !== 'draft' && (
+          <QuoteClientActivity companyId={companyId} quoteId={quoteId} employeeId={employeeId} employeeName={employeeName}
+            quoteNumber={quoteNumber} readOnly={false}
+            clientPhone={((chosenClient?.id === clientId ? chosenClient : clients.find(c => c.id === clientId)) ?? null)?.mobile
+              || ((chosenClient?.id === clientId ? chosenClient : clients.find(c => c.id === clientId)) ?? null)?.phone || null} />
+        )}
 
         {/* ── Items | Buyout ── */}
         {askSuppliers && (
@@ -1964,6 +2006,15 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
               {actionError && <p className="text-[12px] text-error">{actionError}</p>}
             </div>
             <div className="flex flex-col gap-2 mb-5">
+              <button
+                type="button"
+                disabled={sendBusy}
+                onClick={() => void handleSendWhatsApp()}
+                className="h-11 px-4 rounded-lg bg-[#25D366] text-white text-left text-[14px] font-semibold hover:opacity-95 transition-opacity flex items-center gap-2 disabled:opacity-50"
+              >
+                <span className="material-icons text-[18px]">chat</span>
+                Send on WhatsApp & mark sent
+              </button>
               <button
                 type="button"
                 disabled={sendBusy || !isEmail(sendRcpt.to)}

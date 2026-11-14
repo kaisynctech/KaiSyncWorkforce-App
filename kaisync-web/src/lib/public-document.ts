@@ -13,10 +13,31 @@ export type PublicInvoiceView = {
   can_pay: boolean; closed: boolean; fully_paid: boolean
 }
 
+export type PublicQuoteLine = {
+  id?: string; description: string; quantity: number; unit: string | null; unit_sell_price: number; subtotal_sell: number; line_total: number
+  /** Template quotations (piece 8): what the client may see of the line. */
+  section?: string | null; extra?: Record<string, string>; option_of?: string | null; recurring_period?: 'week' | 'month' | 'year' | null
+  is_contingency?: boolean
+}
+
 export type PublicQuoteView = {
   ok: true; kind: 'quote'; company: PublicCompany; client: PublicClient
-  doc: { number: string | null; title: string; status: string; valid_until: string | null; notes: string | null; terms: string | null; subtotal: number; vat: number; total: number; accepted_at: string | null; declined_at: string | null; expired: boolean; currency?: string | null }
-  lines: { description: string; quantity: number; unit: string | null; unit_sell_price: number; subtotal_sell: number; line_total: number }[]
+  doc: {
+    number: string | null; title: string; status: string; valid_until: string | null; notes: string | null; terms: string | null
+    subtotal: number; vat: number; total: number; accepted_at: string | null; declined_at: string | null; expired: boolean; currency?: string | null
+    vat_rate?: number
+    header_fields?: { label: string; value: string }[]
+    deposit?: { pct: number; amount: number } | null
+    recurring?: { period: 'week' | 'month' | 'year'; amount: number }[]
+  }
+  /** The template's columns the client sees (never cost or margin). Empty: a quotation from before templates. */
+  columns?: { key: string; label: string }[]
+  lines: PublicQuoteLine[]
+  /** Options the client can choose instead of a line (while the quotation is open). */
+  options?: PublicQuoteLine[]
+  messages?: { from_client: boolean; author_name: string | null; body: string; created_at: string }[]
+  /** The deposit invoice issued when the quotation was accepted. */
+  deposit_invoice?: { number: string | null; due_date: string | null; total: number; paid: number; balance: number; status: string; proofs: { status: string; amount: number | null; created_at: string }[] } | null
   can_respond: boolean
 }
 
@@ -59,4 +80,36 @@ export function fileToBase64(file: File): Promise<string> {
     r.onerror = () => reject(new Error('The file could not be read.'))
     r.readAsDataURL(file)
   })
+}
+
+const r2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100
+
+/**
+ * The quotation as the client has chosen it: each chosen option replaces its line; contingency, VAT, deposit and
+ * monthly amounts follow. `choices` maps a line id to the option id picked for it.
+ */
+export function quoteWithChoices(v: Pick<PublicQuoteView, 'doc' | 'lines' | 'options'>, choices: Record<string, string>) {
+  const opts = new Map((v.options ?? []).map(o => [o.id ?? '', o]))
+  const base = v.lines.filter(l => !l.is_contingency)
+  const origBase = base.reduce((s, l) => s + Number(l.subtotal_sell || 0), 0)
+  const lines: PublicQuoteLine[] = []
+  for (const l of v.lines) {
+    if (l.is_contingency) continue
+    const pick = l.id ? opts.get(choices[l.id] ?? '') : undefined
+    lines.push(pick && pick.option_of === l.id ? pick : l)
+  }
+  const newBase = lines.reduce((s, l) => s + Number(l.subtotal_sell || 0), 0)
+  for (const c of v.lines.filter(l => l.is_contingency)) {
+    const ratio = origBase > 0 ? Number(c.subtotal_sell || 0) / origBase : 0
+    const amt = r2(newBase * ratio)
+    lines.push({ ...c, unit_sell_price: amt, subtotal_sell: amt })
+  }
+  const subtotal = r2(lines.reduce((s, l) => s + Number(l.subtotal_sell || 0), 0))
+  const rate = Number(v.doc.vat_rate ?? (Number(v.doc.subtotal) > 0 ? Number(v.doc.vat) / Number(v.doc.subtotal) : 0)) || 0
+  const vat = r2(subtotal * rate)
+  const total = r2(subtotal + vat)
+  const pct = Number(v.doc.deposit?.pct ?? 0)
+  const recurring: Partial<Record<'week' | 'month' | 'year', number>> = {}
+  for (const l of lines) if (l.recurring_period) recurring[l.recurring_period] = r2((recurring[l.recurring_period] ?? 0) + Number(l.subtotal_sell || 0))
+  return { lines, subtotal, vat, total, deposit: pct > 0 ? r2(total * pct / 100) : 0, recurring, changed: Object.keys(choices).length > 0 }
 }
