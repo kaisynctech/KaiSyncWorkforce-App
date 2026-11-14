@@ -298,7 +298,7 @@ export function buildPayslipTemplatePdf(input: PayslipTemplatePdfInput): { doc: 
       const scale = Math.min(40 / logo.width, 18 / logo.height)
       const w = logo.width * scale, h = logo.height * scale
       const kind = logo.dataUrl.includes('image/jpeg') || logo.dataUrl.includes('image/jpg') ? 'JPEG' : 'PNG'
-      doc.addImage(logo.dataUrl, kind, left, y - 2, w, h)
+      doc.addImage(logo.dataUrl, kind, left, y - 2, w, h, undefined, 'FAST')
       textX = left + w + 4
       headerBottom = Math.max(headerBottom, y - 2 + h)
     } catch {

@@ -46,7 +46,7 @@ export function buildSalarySchedulePdf(input: {
     const w = input.logo.width * scale, h = input.logo.height * scale
     try {
       const kind = /image\/jpe?g/.test(input.logo.dataUrl) ? 'JPEG' : 'PNG'
-      doc.addImage(input.logo.dataUrl, kind, left, y - 6, w, h)
+      doc.addImage(input.logo.dataUrl, kind, left, y - 6, w, h, undefined, 'FAST')
       nameX = left + w + 4
       y = y - 6 + Math.max(h, 8) - 2
     } catch { /* a broken logo is left out */ }
