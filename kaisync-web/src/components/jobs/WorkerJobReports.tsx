@@ -222,7 +222,7 @@ function VisitSignSheet({ target, companyId, employeeId, jobId, sessionToken, on
           <h2 className="flex-1 text-[16px] font-semibold">Client sign-off · this visit</h2>
           <button type="button" onClick={onClose} className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-black/5" aria-label="Close"><span className="material-icons">close</span></button>
         </header>
-        <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-3">
+        <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-3 [&>*]:shrink-0">
           {error && <p className="text-[13px] text-error bg-error/10 rounded-lg px-3 py-2" role="alert">{error}</p>}
           <div className="rounded-xl bg-surface border border-divider px-3 py-2">
             <p className="text-[11px] font-semibold text-text-secondary uppercase tracking-wider">Work done today</p>
