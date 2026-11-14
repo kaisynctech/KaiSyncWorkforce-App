@@ -38,6 +38,7 @@ import { whatsAppUrl } from '@/lib/whatsapp'
 import { TemplateLines, engineOf } from '@/components/quotes/TemplateLines'
 import { QuoteHeaderFields } from '@/components/quotes/QuoteHeaderFields'
 import { HEADER_LABEL, loadTemplates, type QuoteTemplate } from '@/lib/quote-templates'
+import { processOrder } from '@/lib/money/order-supply'
 import { PERIOD_LABEL, engineLineTotal, orderedForDisplay, quoteTotals, withContingency, type RecurringPeriod } from '@/lib/quote-engine'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -221,6 +222,8 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   const isLoaded       = useRef(false)
   // An accepted quote is an order: it is read-only until someone chooses "Make changes" (and confirms).
   const [unlocked, setUnlocked] = useState(false)
+  // "Process order": the purchase orders for the bought-in lines (piece 9).
+  const [processBusy, setProcessBusy] = useState(false)
   const [confirmUnlock, setConfirmUnlock] = useState(false)
   // A draft that was never sent can be deleted (after asking).
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -1557,6 +1560,23 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
+            {outsourcedLines.some(l => l.supplierId) && quoteId && (
+              <button
+                type="button"
+                disabled={actionBusy || processBusy}
+                onClick={async () => {
+                  setProcessBusy(true); setActionError(null)
+                  const r = await processOrder(createClient(), quoteId)
+                  setProcessBusy(false)
+                  if (!r.ok) { setActionError(r.message); return }
+                  router.push(`/dashboard/money/orders/${quoteId}?tab=pos`)
+                }}
+                className="h-11 px-5 rounded-xl bg-primary text-white text-[14px] font-semibold flex items-center gap-2 hover:bg-primary/90 disabled:opacity-60"
+              >
+                <span className="material-icons text-[18px]">local_shipping</span>
+                {processBusy ? 'Creating POs…' : 'Process order'}
+              </button>
+            )}
             <Link
               href={`/dashboard/money/orders/${quoteId}`}
               className="h-11 px-5 rounded-xl border border-emerald-300 bg-white text-emerald-800 text-[14px] font-semibold flex items-center gap-2 hover:bg-emerald-100"

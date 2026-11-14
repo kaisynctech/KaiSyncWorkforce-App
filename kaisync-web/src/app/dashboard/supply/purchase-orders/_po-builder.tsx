@@ -7,7 +7,8 @@ import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { fmtMoney, roundFinancial } from '@/lib/finance-calc'
 import type { PurchaseOrder, PurchaseOrderLine, ThreeWayMatchLine } from '@/types/commercial'
 import { companyLetterhead } from '@/lib/letterhead'
-import { buildDocumentPdf, money, pdfBase64, pdfDate } from '@/lib/document-pdf'
+import { pdfBase64 } from '@/lib/document-pdf'
+import { buildPoPdf as buildPoPdfDoc } from '@/lib/money/po-pdf'
 import { EmailDocumentDialog } from '@/components/money/EmailDocumentDialog'
 import { emailedLabel, loadDocumentEmails, type DocumentEmailLog } from '@/lib/money/document-email'
 
@@ -263,38 +264,7 @@ export default function PoBuilder({ poId }: { poId?: string }) {
     if (!po || !companyId) return null
     const lh = await companyLetterhead(createClient(), companyId)
     const supplier = suppliers.find(x => x.id === (po.supplier_id ?? supplierId))
-    const vat = Number(po.vat_amount ?? 0)
-    const doc = buildDocumentPdf({
-      currency: po.currency,
-      letterhead: lh,
-      title: 'Purchase order',
-      meta: [
-        ['PO no.', po.po_number ?? 'Draft'],
-        ['Date', pdfDate(po.approved_at ?? po.created_at)],
-        ...(po.required_delivery_date ? [['Deliver by', pdfDate(po.required_delivery_date)] as [string, string]] : []),
-      ],
-      toLabel: 'Supplier',
-      toName: supplier?.name ?? '—',
-      toLines: [supplier?.email ?? ''],
-      lines: lines.map(l => {
-        const qty = Number(l.quantity_ordered) || 0
-        const up = Number(l.unit_price) || 0
-        return { description: l.description, qty, unit: l.unit, unit_price: up, total: roundFinancial(qty * up) }
-      }),
-      totals: vat > 0.004
-        ? [['Total excl. VAT', money(Number(po.subtotal ?? 0), po.currency), false], ['VAT', money(vat, po.currency), false], ['Total incl. VAT', money(Number(po.total_amount ?? 0), po.currency), true]]
-        : [['Total', money(Number(po.total_amount ?? 0), po.currency), true]],
-      notesHeading: 'Delivery and terms',
-      notes: [
-        po.delivery_address ? `Deliver to: ${po.delivery_address}` : '',
-        po.notes ?? '',
-        po.terms_and_conditions ?? '',
-        `Please quote ${po.po_number ?? 'this PO number'} on your invoice.`,
-      ].filter(Boolean).join('\n\n'),
-      reference: po.po_number,
-    })
-    const safe = (po.po_number || 'draft').replace(/[^\w.-]+/g, '_')
-    return { doc, filename: `Purchase_order_${safe}.pdf` }
+    return buildPoPdfDoc({ letterhead: lh, po, supplier: supplier ?? null, lines })
   }
 
   async function downloadPoPdf() {

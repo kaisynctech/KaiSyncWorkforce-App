@@ -2,7 +2,8 @@
 
 /**
  * One order (an accepted quote) with everything done for it in one place:
- *  Overview · Items · Invoices · Payments · Credit notes · Purchasing.
+ *  Overview · Items · Purchase orders · Goods received · Invoices · Payments · Credit notes · RFQs & bills.
+ * A service-only order has no purchase orders or goods received tabs (board 8).
  * The id in the address is the quote's id.
  */
 
@@ -19,6 +20,8 @@ import { createInvoiceFromQuote, createPartInvoiceFromQuote } from '@/lib/money/
 import { createSupplyRfqFromQuote } from '@/lib/supply-rfq'
 import { ORDER_STATE, orderMoney, type OrderInvoice } from '@/lib/money/orders'
 import { cn } from '@/lib/utils'
+import { isServiceOnly, lineSupply, processOrder, type OrderPoLine, type SupplyMode } from '@/lib/money/order-supply'
+import { GoodsReceivedPanel, PurchaseOrdersPanel, type SupplyBill, type SupplyGrn, type SupplyGrnLine, type SupplyPo } from '@/components/money/OrderSupply'
 
 type Quote = {
   id: string; company_id: string; quote_number: string | null; title: string | null; status: string; currency: string | null
@@ -32,17 +35,18 @@ type Quote = {
 type Line = {
   id: string; description: string | null; quantity: number | null; unit: string | null; unit_sell_price: number | null
   discount_percent: number | null; subtotal_sell: number | null; cost_price: number | null; is_excluded: boolean | null
+  supply_mode: SupplyMode; supplier_id: string | null
 }
 type Payment = { id: string; source_id: string; amount: number | null; transaction_date: string | null; created_at: string; payment_method: string | null; reference_number: string | null; receipt_number: string | null }
 type CreditNote = { id: string; invoice_id: string | null; credit_note_number: string | null; status: string | null; currency: string | null; total_amount: number | null; issue_date: string | null }
 type Rfq = { id: string; rfq_number: string | null; title: string | null; status: string | null; created_at: string }
-type Po = { id: string; po_number: string | null; status: string | null; currency: string | null; subtotal: number | null; total_amount: number | null; required_delivery_date: string | null; created_at: string; supplier?: { name: string } | null }
-type PoLine = { po_id: string; quote_line_id: string | null; quantity_ordered: number | null; quantity_received: number | null }
-type Grn = { id: string; grn_number: string | null; po_id: string | null; status: string | null; received_date: string | null }
-type Bill = { id: string; invoice_number: string | null; bill_number: string | null; po_id: string | null; status: string | null; currency: string | null; subtotal: number | null; total_amount: number | null; amount_paid: number | null; balance_due: number | null; due_date: string | null }
+type Po = SupplyPo
+type PoLine = OrderPoLine
+type Grn = SupplyGrn
+type Bill = SupplyBill & { subtotal: number | null; amount_paid: number | null; balance_due: number | null; due_date: string | null }
 type Payout = { id: string; payout_status: string | null; total_amount: number | null; subtotal: number | null; payout_date: string | null; remittance_number: string | null; contractor?: { name: string } | null }
 
-type Tab = 'overview' | 'items' | 'invoices' | 'payments' | 'credits' | 'purchasing'
+type Tab = 'overview' | 'items' | 'pos' | 'received' | 'invoices' | 'payments' | 'credits' | 'purchasing'
 
 const fmtDay = (d: string | null | undefined) => (d ? new Date(d).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }) : '—')
 const label = (s: string | null | undefined) => String(s ?? '—').replace(/_/g, ' ')
@@ -98,7 +102,12 @@ export default function OrderPage() {
   const [pos, setPos] = useState<Po[]>([])
   const [poLines, setPoLines] = useState<PoLine[]>([])
   const [grns, setGrns] = useState<Grn[]>([])
+  const [grnLines, setGrnLines] = useState<SupplyGrnLine[]>([])
+  const [sendTo, setSendTo] = useState<Map<string, string>>(new Map())
+  const [processing, setProcessing] = useState(false)
+  const [note, setNote] = useState<string | null>(null)
   const [bills, setBills] = useState<Bill[]>([])
+  const [allBills, setAllBills] = useState<Bill[]>([])
   const [payouts, setPayouts] = useState<Payout[]>([])
 
   const load = useCallback(async () => {
@@ -116,10 +125,10 @@ export default function OrderPage() {
     setQuote(qq)
 
     const [lRes, iRes, rRes, pRes, payRes] = await Promise.all([
-      supabase.from('commercial_quote_lines').select('id, description, quantity, unit, unit_sell_price, discount_percent, subtotal_sell, cost_price, is_excluded').eq('quote_id', id).order('sort_order'),
+      supabase.from('commercial_quote_lines').select('id, description, quantity, unit, unit_sell_price, discount_percent, subtotal_sell, cost_price, is_excluded, supply_mode, supplier_id').eq('quote_id', id).order('sort_order'),
       supabase.from('finance_invoices').select('id, quote_id, invoice_number, status, currency, subtotal, total_amount, amount_paid, balance_due, issue_date, due_date').eq('company_id', cid).eq('quote_id', id).order('created_at'),
       supabase.from('rfqs').select('id, rfq_number, title, status, created_at').eq('company_id', cid).eq('quote_id', id).order('created_at'),
-      supabase.from('purchase_orders').select('id, po_number, status, currency, subtotal, total_amount, required_delivery_date, created_at, supplier:contractors!purchase_orders_supplier_id_fkey(name)').eq('company_id', cid).eq('quote_id', id).order('created_at'),
+      supabase.from('purchase_orders').select('id, po_number, status, currency, subtotal, vat_amount, total_amount, required_delivery_date, created_at, approved_at, sent_at, delivery_address, notes, terms_and_conditions, supplier_id, supplier:contractors!purchase_orders_supplier_id_fkey(name, email)').eq('company_id', cid).eq('quote_id', id).order('created_at'),
       qq.job_id
         ? supabase.from('contractor_payouts').select('id, payout_status, total_amount, subtotal, payout_date, remittance_number, contractor:contractors(name)').eq('company_id', cid).or(`quote_id.eq.${id},job_id.eq.${qq.job_id}`)
         : supabase.from('contractor_payouts').select('id, payout_status, total_amount, subtotal, payout_date, remittance_number, contractor:contractors(name)').eq('company_id', cid).eq('quote_id', id),
@@ -134,19 +143,27 @@ export default function OrderPage() {
 
     const invIds = invs.map(i => i.id)
     const poIds = poRows.map(p => p.id)
+    const rfqIds = ((rRes.data ?? []) as Rfq[]).map(r => r.id)
     const none = Promise.resolve({ data: [] as unknown[] })
-    const [txRes, cnRes, plRes, gRes, bRes] = await Promise.all([
+    const [txRes, cnRes, plRes, gRes, bRes, rcRes] = await Promise.all([
       invIds.length ? supabase.from('finance_transactions').select('id, source_id, amount, transaction_date, created_at, payment_method, reference_number, receipt_number').eq('source_table', 'finance_invoices').eq('direction', 'incoming').in('source_id', invIds).order('transaction_date') : none,
       invIds.length ? supabase.from('credit_notes').select('id, invoice_id, credit_note_number, status, currency, total_amount, issue_date').in('invoice_id', invIds).order('created_at') : none,
-      poIds.length ? supabase.from('purchase_order_lines').select('po_id, quote_line_id, quantity_ordered, quantity_received').in('po_id', poIds) : none,
-      poIds.length ? supabase.from('goods_received_notes').select('id, grn_number, po_id, status, received_date').in('po_id', poIds).order('received_date') : none,
-      poIds.length ? supabase.from('supplier_invoices').select('id, invoice_number, bill_number, po_id, status, currency, subtotal, total_amount, amount_paid, balance_due, due_date').eq('company_id', cid).in('po_id', poIds) : none,
+      poIds.length ? supabase.from('purchase_order_lines').select('id, po_id, quote_line_id, description, unit, quantity_ordered, quantity_received, unit_price, vat_rate').in('po_id', poIds).order('sort_order') : none,
+      poIds.length ? supabase.from('goods_received_notes').select('id, grn_number, po_id, status, received_date, created_at, delivery_note_number, notes').in('po_id', poIds).order('created_at', { ascending: false }) : none,
+      poIds.length ? supabase.from('supplier_invoices').select('id, invoice_number, bill_number, po_id, grn_id, status, approval_status, currency, subtotal, total_amount, amount_paid, balance_due, due_date').eq('company_id', cid).in('po_id', poIds) : none,
+      rfqIds.length ? supabase.from('rfq_recipients').select('supplier_id, send_to').in('rfq_id', rfqIds) : none,
     ])
     setPayments((txRes.data ?? []) as Payment[])
     setCredits((cnRes.data ?? []) as CreditNote[])
     setPoLines((plRes.data ?? []) as PoLine[])
-    setGrns((gRes.data ?? []) as Grn[])
-    setBills(((bRes.data ?? []) as Bill[]).filter(b => !['voided', 'cancelled', 'rejected'].includes(String(b.status))))
+    const grnRows = (gRes.data ?? []) as Grn[]
+    setGrns(grnRows)
+    const allBills = (bRes.data ?? []) as Bill[]
+    setAllBills(allBills)
+    setBills(allBills.filter(b => !['voided', 'cancelled', 'rejected'].includes(String(b.status))))
+    setSendTo(new Map(((rcRes.data ?? []) as { supplier_id: string; send_to: string | null }[]).filter(r => r.send_to).map(r => [r.supplier_id, r.send_to as string])))
+    const gl = grnRows.length ? await supabase.from('goods_received_lines').select('grn_id, description, quantity_received').in('grn_id', grnRows.map(g => g.id)) : { data: [] }
+    setGrnLines((gl.data ?? []) as SupplyGrnLine[])
     setLoading(false)
   }, [id])
 
@@ -199,6 +216,19 @@ export default function OrderPage() {
     if ('error' in r) { setError(r.error); return }
     router.push(r.created ? `/dashboard/money/invoices/${r.id}/edit` : `/dashboard/money/invoices/${r.id}`)
   }
+  /** Process order: one PO per chosen supplier, shown on the Purchase orders tab to send. */
+  async function runProcessOrder() {
+    if (!quote) return
+    setProcessing(true); setError(null); setNote(null)
+    const r = await processOrder(createClient(), quote.id)
+    setProcessing(false)
+    if (!r.ok) { setError(r.message); return }
+    setNote(r.created.length
+      ? `Made ${r.created.map(c => c.po_number).join(', ')}. Check them, then Send all.`
+      : 'Nothing new to put on a purchase order.')
+    setTab('pos')
+    await load()
+  }
   async function createRfq() {
     if (!companyId || !quote) return
     setBusy('rfq')
@@ -218,13 +248,24 @@ export default function OrderPage() {
       ? { href: `/dashboard/jobs/${quote.job_id}`, text: [quote.jobs.job_code, quote.jobs.title].filter(Boolean).join(' · '), icon: 'construction' }
       : null
   const notAccepted = quote.status !== 'accepted'
+  const counted = lines.filter(l => !l.is_excluded)
+  const supply = new Map(counted.map(l => [l.id, lineSupply(l, poLines, pos)]))
+  const canProcess = !notAccepted && [...supply.values()].some(x => x.key === 'ready')
+  const toSource = [...supply.values()].filter(x => x.key === 'to_source').length
+  const serviceOnly = isServiceOnly(lines, pos)
   const TABS: { id: Tab; label: string; count?: number }[] = [
     { id: 'overview', label: 'Overview' },
-    { id: 'items', label: 'Items', count: lines.filter(l => !l.is_excluded).length },
+    { id: 'items', label: 'Order items', count: counted.length },
+    ...(serviceOnly ? [] : [
+      { id: 'pos' as Tab, label: 'Purchase orders', count: pos.length },
+      { id: 'received' as Tab, label: 'Goods received', count: grns.filter(g => g.status !== 'cancelled').length },
+    ]),
     { id: 'invoices', label: 'Invoices', count: invoices.length },
     { id: 'payments', label: 'Payments', count: payments.length },
     { id: 'credits', label: 'Credit notes', count: credits.length },
-    { id: 'purchasing', label: 'Purchasing', count: rfqs.length + pos.length + grns.length + bills.length + payouts.length },
+    ...(serviceOnly && rfqs.length + bills.length + payouts.length === 0 ? [] : [
+      { id: 'purchasing' as Tab, label: 'RFQs & bills', count: rfqs.length + bills.length + payouts.length },
+    ]),
   ]
 
 
@@ -266,6 +307,13 @@ export default function OrderPage() {
           </p>
         )}
         {error && <p className="text-[12px] text-error bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</p>}
+        {note && !error && <p className="text-[12.5px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2" role="status">{note}</p>}
+        {canProcess && tab !== 'pos' && (
+          <div className="rounded-xl border border-primary/30 bg-surface px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-[13px] text-text-primary">The client accepted. Make the purchase orders for the items you buy in.</p>
+            <button type="button" onClick={() => void runProcessOrder()} disabled={processing} className="btn-primary h-10 px-4 text-[13px] disabled:opacity-50">{processing ? 'Creating…' : 'Process order'}</button>
+          </div>
+        )}
 
         {invoicePanel && (() => {
           const pct = Number(partPct.replace(',', '.')) || 0
@@ -352,7 +400,10 @@ export default function OrderPage() {
                   {money.hasDraft && <li>• A draft invoice is waiting to be sent. <button type="button" onClick={() => setTab('invoices')} className="text-primary hover:underline">Open invoices</button>.</li>}
                   {money.owing > 0.004 && <li>• {formatCurrency(money.owing, cur)} is still owing. <button type="button" onClick={() => setTab('invoices')} className="text-primary hover:underline">Record a payment</button> on the invoice when it comes in.</li>}
                   {money.toInvoice > 0.01 && money.invoiced > 0 && <li>• {formatCurrency(money.toInvoice, cur)} of the order still has to be invoiced.</li>}
-                  {pos.length === 0 && <li>• Need to buy anything for this order? <Link href={`/dashboard/supply/purchase-orders/new?quote_id=${quote.id}`} className="text-primary hover:underline">Create a purchase order</Link> from its lines.</li>}
+                  {canProcess && <li>• Items with a chosen supplier aren&apos;t ordered yet. <button type="button" onClick={() => void runProcessOrder()} className="text-primary hover:underline">Process order</button>.</li>}
+                  {toSource > 0 && <li>• {toSource} item{toSource === 1 ? ' needs' : 's need'} a supplier: choose on the quote&apos;s Buyout tab.</li>}
+                  {pos.some(p => p.status === 'approved' && !p.sent_at) && <li>• Purchase orders are ready to send. <button type="button" onClick={() => setTab('pos')} className="text-primary hover:underline">Send them</button>.</li>}
+                  {pos.length === 0 && !canProcess && !serviceOnly && <li>• Need to buy anything for this order? <Link href={`/dashboard/supply/purchase-orders/new?quote_id=${quote.id}`} className="text-primary hover:underline">Create a purchase order</Link> from its lines.</li>}
                   {money.state === 'paid' && <li>• Paid in full.</li>}
                 </ul>
               </Section>
@@ -375,39 +426,52 @@ export default function OrderPage() {
         )}
 
         {tab === 'items' && (
-          <Section title="What was ordered" action={<Link href={`/dashboard/supply/purchase-orders/new?quote_id=${quote.id}`} className="btn-outlined h-7 px-2.5 text-[11.5px]">Create PO from these lines</Link>}>
+          <Section title="Order items" action={!serviceOnly ? <Link href={`/dashboard/supply/purchase-orders/new?quote_id=${quote.id}`} className="text-[11.5px] text-primary hover:underline">Make a PO by hand</Link> : undefined}>
             <ResponsiveDataView table={
-              <table className="w-full" style={{ minWidth: 640 }}>
+              <table className="w-full" style={{ minWidth: 820 }}>
                 <thead><tr className="bg-surface-elevated border-b border-divider">
                   <th className={`${MONEY_TH} text-left`}>Item</th>
+                  {!serviceOnly && <th className={`${MONEY_TH} text-left`}>Source</th>}
+                  {!serviceOnly && <th className={`${MONEY_TH} text-left`}>Supplier · PO</th>}
                   <th className={`${MONEY_TH} text-right`}>Qty</th>
+                  {!serviceOnly && <th className={`${MONEY_TH} text-right`}>Received</th>}
                   <th className={`${MONEY_TH} text-right`}>Price</th>
-                  <th className={`${MONEY_TH} text-right`}>Disc.</th>
                   <th className={`${MONEY_TH} text-right`}>Total</th>
                   <th className={`${MONEY_TH} text-right`} title="Only your team sees this">Cost</th>
-                  <th className={`${MONEY_TH} text-right`} title="Quantity on purchase orders / received">On PO · received</th>
+                  <th className={`${MONEY_TH} text-left`}>Status</th>
                 </tr></thead>
                 <tbody>
-                  {lines.filter(l => !l.is_excluded).map(l => {
-                    const onPo = poLines.filter(p => p.quote_line_id === l.id)
-                    const ordered = onPo.reduce((s, p) => s + (Number(p.quantity_ordered) || 0), 0)
-                    const received = onPo.reduce((s, p) => s + (Number(p.quantity_received) || 0), 0)
+                  {counted.map(l => {
+                    const x = supply.get(l.id)!
+                    const supplierName = x.po ? pos.find(p => p.id === x.po!.id)?.supplier?.name : null
                     return (
                       <tr key={l.id} className="border-b border-divider last:border-0">
-                        <td className={`${MONEY_TD} text-text-primary whitespace-normal`}>{l.description || '—'}</td>
+                        <td className={`${MONEY_TD} text-text-primary whitespace-normal font-medium`}>{l.description || '—'}</td>
+                        {!serviceOnly && <td className={`${MONEY_TD} text-text-secondary`}>{x.source}</td>}
+                        {!serviceOnly && <td className={`${MONEY_TD} whitespace-normal`}>{x.po ? <Link className="text-primary hover:underline" href={`/dashboard/supply/purchase-orders/${x.po.id}`}>{[supplierName, x.po.po_number].filter(Boolean).join(' · ')}</Link> : <span className="text-text-secondary">—</span>}</td>}
                         <td className={`${MONEY_TD} text-right tabular-nums`}>{Number(l.quantity ?? 0)} {l.unit && l.unit !== 'each' ? l.unit : ''}</td>
+                        {!serviceOnly && <td className={`${MONEY_TD} text-right tabular-nums`}>{x.po ? x.received : '—'}</td>}
                         <td className={`${MONEY_TD} text-right tabular-nums`}>{formatCurrency(Number(l.unit_sell_price) || 0, cur)}</td>
-                        <td className={`${MONEY_TD} text-right tabular-nums`}>{Number(l.discount_percent) > 0 ? `${Number(l.discount_percent)}%` : '—'}</td>
                         <td className={`${MONEY_TD} text-right tabular-nums font-medium`}>{formatCurrency(Number(l.subtotal_sell) || 0, cur)}</td>
                         <td className={`${MONEY_TD} text-right tabular-nums text-text-secondary`}>{Number(l.cost_price) > 0 ? formatCurrency(Number(l.cost_price), cur) : '—'}</td>
-                        <td className={`${MONEY_TD} text-right tabular-nums text-text-secondary`}>{onPo.length ? `${ordered} · ${received}` : '—'}</td>
+                        <td className={MONEY_TD}><span className={cn('inline-block text-[11px] font-semibold rounded-full px-2 py-0.5 whitespace-nowrap', x.cls)}>{x.label}</span></td>
                       </tr>
                     )
                   })}
                 </tbody>
               </table>
             } />
+            {!serviceOnly && <p className="px-4 py-2 text-[11.5px] text-text-secondary border-t border-divider">Bought-in items go: To source → Ready for PO → On PO → Part received → Received.</p>}
           </Section>
+        )}
+
+        {tab === 'pos' && companyId && (
+          <PurchaseOrdersPanel companyId={companyId} quoteId={quote.id} pos={pos} poLines={poLines} sendTo={sendTo} toSource={toSource}
+            canProcess={canProcess} processing={processing} onProcess={() => void runProcessOrder()} onChanged={load} />
+        )}
+
+        {tab === 'received' && (
+          <GoodsReceivedPanel grns={grns} grnLines={grnLines} bills={allBills} pos={pos} onChanged={load} />
         )}
 
         {tab === 'invoices' && (
@@ -482,43 +546,6 @@ export default function OrderPage() {
                     <li key={r.id}><Link href={`/dashboard/supply/rfqs/${r.id}`} className="flex justify-between gap-2 px-4 py-2 text-[12.5px] hover:bg-surface-elevated">
                       <span><span className="font-mono text-text-secondary mr-2">{r.rfq_number}</span>{r.title}</span><span className={pill}>{label(r.status)}</span>
                     </Link></li>
-                  ))}
-                </ul>
-              )}
-            </Section>
-            <Section title="Purchase orders" action={<Link href={`/dashboard/supply/purchase-orders/new?quote_id=${quote.id}`} className="btn-outlined h-7 px-2.5 text-[11.5px]">Create PO</Link>}>
-              {pos.length === 0 ? <Empty text="No purchase orders. Create one from this order's lines (at their cost price)." /> : (
-                <ResponsiveDataView table={
-                  <table className="w-full" style={{ minWidth: 560 }}>
-                    <thead><tr className="bg-surface-elevated border-b border-divider">
-                      <th className={`${MONEY_TH} text-left`}>PO</th>
-                      <th className={`${MONEY_TH} text-left`}>Supplier</th>
-                      <th className={`${MONEY_TH} text-left`}>Needed by</th>
-                      <th className={`${MONEY_TH} text-left`}>Status</th>
-                      <th className={`${MONEY_TH} text-right`}>Total</th>
-                    </tr></thead>
-                    <tbody>
-                      {pos.map(p => (
-                        <tr key={p.id} onClick={() => router.push(`/dashboard/supply/purchase-orders/${p.id}`)} className="border-b border-divider last:border-0 cursor-pointer hover:bg-surface-elevated">
-                          <td className={`${MONEY_TD} font-mono`}>{p.po_number ?? '—'}</td>
-                          <td className={MONEY_TD}>{p.supplier?.name ?? '—'}</td>
-                          <td className={MONEY_TD}>{fmtDay(p.required_delivery_date)}</td>
-                          <td className={MONEY_TD}><span className={pill}>{label(p.status)}</span></td>
-                          <td className={`${MONEY_TD} text-right tabular-nums`}>{formatCurrency(Number(p.total_amount) || 0, p.currency ?? 'ZAR')}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                } />
-              )}
-            </Section>
-            <Section title="Goods received">
-              {grns.length === 0 ? <Empty text="Nothing received yet." /> : (
-                <ul className="divide-y divide-divider">
-                  {grns.map(g => (
-                    <li key={g.id} className="flex justify-between gap-2 px-4 py-2 text-[12.5px]">
-                      <span><span className="font-mono text-text-secondary mr-2">{g.grn_number}</span>for {g.po_id ? poNumber.get(g.po_id) : 'PO'} · {fmtDay(g.received_date)}</span><span className={pill}>{label(g.status)}</span>
-                    </li>
                   ))}
                 </ul>
               )}
