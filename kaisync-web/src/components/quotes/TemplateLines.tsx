@@ -88,7 +88,9 @@ export function TemplateLines({
   const [newSection, setNewSection] = useState<string | null>(null)
 
   const keyOf = (l: TLine) => l.id ?? l.tempId
-  const groups = useMemo(() => orderedForDisplay(lines.map(l => ({ ...engineOf(l), line: l }))), [lines])
+  // Without sections in the template, lines show as one list (any section names are kept for later).
+  const useSections = f.has('sections')
+  const groups = useMemo(() => orderedForDisplay(lines.map(l => ({ ...engineOf(l), section: useSections ? l.section ?? null : null, line: l }))), [lines, useSections])
   const sections = useMemo(() => [...new Set(lines.map(l => l.section?.trim()).filter((s): s is string => !!s))], [lines])
   const editLine = lines.find(l => keyOf(l) === editing) ?? null
 
@@ -107,6 +109,7 @@ export function TemplateLines({
   function add(pick: PickItem | null, qty: number, extra?: Partial<TLine>) {
     const l = { ...makeLine(pick, qty), ...extra }
     if (newSection) l.section = newSection
+    l.total = engineLineTotal({ qty: l.qty, unitPrice: l.unit_price, discountPct: l.discount_pct })
     // New lines go before the contingency line.
     const at = lines.findIndex(x => x.is_contingency)
     onChange(at < 0 ? [...lines, l] : [...lines.slice(0, at), l, ...lines.slice(at)])

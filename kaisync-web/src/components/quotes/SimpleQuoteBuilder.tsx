@@ -1118,14 +1118,14 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
       client_email: client?.email ?? null,
       company_name: companyName,
       letterhead,
-      lines: (tpl ? orderedForDisplay(linesRef.current.map(l => ({ ...engineOf(l), line: l }))).flatMap(g => g.lines.map(e => e.line)) : linesRef.current).map(l => ({
+      lines: (tpl ? orderedForDisplay(linesRef.current.map(l => ({ ...engineOf(l), section: tpl.features.includes('sections') ? l.section ?? null : null, line: l }))).flatMap(g => g.lines.map(e => e.line)) : linesRef.current).map(l => ({
         description: l.description,
         qty: l.qty,
         unit: l.unit,
         unit_price: l.unit_price,
         total: l.total,
         discount_pct: Number(l.discount_pct) || 0,
-        section: l.section ?? null,
+        section: tpl?.features.includes('sections') ? l.section ?? null : null,
         extra: l.extra,
         is_option: !!l.option_of,
         recurring: l.recurring ?? null,
@@ -1424,7 +1424,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap min-w-0 w-full sm:w-auto sm:shrink-0">
             {/* Save state indicator */}
             {saveState === 'saving' && (
               <span className="text-[12px] text-text-secondary flex items-center gap-1">
