@@ -71,7 +71,7 @@ export default function MyCommissionPage() {
                   <td className={`${MONEY_TD} text-right`}>{pct(r.paid_share)}</td>
                   <td className={`${MONEY_TD} text-right`}>{R(r.earned)}</td>
                   <td className={`${MONEY_TD} text-right`}>{R(r.paid_amount)}</td>
-                  <td className={`${MONEY_TD} text-right font-semibold ${r.to_pay > 0 ? 'text-emerald-700' : 'text-text-secondary'}`}>{R(r.to_pay)}</td>
+                  <td className={`${MONEY_TD} text-right font-semibold ${r.to_pay > 0 || r.on_payslip ? 'text-emerald-700' : 'text-text-secondary'}`}>{r.on_payslip ? `${R(Number(r.payslip_amount ?? 0))} on your payslip` : R(r.to_pay)}</td>
                 </tr>
               ))}
               {rows.length === 0 && (

@@ -9,8 +9,12 @@ import { StatusBadge } from '@/components/ui/StatusBadge'
 import { Toggle } from '@/components/Toggle'
 import { approvePaymentRun, releasePayslipToEmployee, savePayslipLines, type PayslipLineAmounts } from '@/lib/payroll'
 import {
+  isLinkedExtra,
+  isReimbursement,
+  mergeLinkedExtras,
   parseExtraLines,
   sumExtra,
+  taxableExtraSum,
   syncMeibcSickPay,
   WINTERSTECH_COMPANY_ID,
   winterstechMeibcLines,
@@ -19,6 +23,7 @@ import {
   type PayslipExtraLine,
 } from '@/lib/payslip-extra-lines'
 import { downloadPayslipTemplatePdf, imageUrlToDataUrl } from '@/lib/payslip-pdf'
+import { payslipExtras, removePayslipExtra } from '@/lib/pay-on-payslip'
 import { emailPayslip, payslipEmailSummary } from '@/lib/payroll/payslip-email'
 import { PayslipEmailNotice, type PayslipEmailSummary } from '@/components/payroll/PayslipEmailNotice'
 import { companyLetterhead } from '@/lib/letterhead'
@@ -360,6 +365,8 @@ export default function PayslipDetailPage() {
   const [overtimeLateOffsetDates, setOvertimeLateOffsetDates] = useState<string[]>([])
   const autoApplied = useRef<string | null>(null)
   const absenceExplicit = useRef(false)
+  /** Claim / commission lines changed on load: save once the page has settled. */
+  const extrasDirty = useRef(false)
   const [weekdayHours, setWeekdayHours] = useState<string | null>(null)
   const [saturdayHours, setSaturdayHours] = useState<string | null>(null)
   const [sundayHours, setSundayHours] = useState<string | null>(null)
@@ -781,6 +788,13 @@ export default function PayslipDetailPage() {
       unpaidLeave: picked(savedLines?.unpaidLeave, unpaidLine),
     }
     let nextEarnings = parseExtraLines(savedLines?.extraEarnings)
+    // Claims and commission paid on the payslip: linked in the database, shown here as lines.
+    const linked = await payslipExtras(supabase, paymentId)
+    if (linked.ok) {
+      const merged = mergeLinkedExtras(nextEarnings, linked.items)
+      nextEarnings = merged.lines
+      extrasDirty.current = merged.changed && p.status === 'pending'
+    }
     let nextDeductions = withEmployeeDeductions(
       parseExtraLines(savedLines?.extraDeductions),
       person as EmployeeDeductionFields | null,
@@ -1138,7 +1152,7 @@ export default function PayslipDetailPage() {
     const offsetKey = [...overtimeLateOffsetDates].sort().join(',')
     const syncKey = `${payment.id}|${otAmount}|${offsetKey}`
     const offsetChangedPay = Math.abs(hours - rawHours) >= 0.005
-    if (autoApplied.current === syncKey) return
+    if (autoApplied.current === syncKey && !extrasDirty.current) return
     const saved = (payment as EmployeePayment & { payslip_lines?: Partial<PayslipLineAmounts> | null }).payslip_lines
     let next = { ...lines }
     let changed = false
@@ -1155,7 +1169,8 @@ export default function PayslipDetailPage() {
       next = { ...next, overtime: moneyText(otAmount) }
       changed = true
     }
-    const gross = moneyValue(next.regular) + moneyValue(next.overtime) + moneyValue(next.bonus) + moneyValue(next.incentive) + moneyValue(next.refund) + sumExtra(extraRef.current.earnings)
+    // PAYE is on taxable pay: claims paid back on the payslip (reimbursements) are left out.
+    const gross = moneyValue(next.regular) + moneyValue(next.overtime) + moneyValue(next.bonus) + moneyValue(next.incentive) + moneyValue(next.refund) + taxableExtraSum(extraRef.current.earnings)
     const paye = calculateMonthlyPaye(gross, dateOfBirth, null, payeAllowances)
     const currentPaye = moneyValue(next.paye)
     const flatEighteen = Math.round(gross * 0.18 * 100) / 100
@@ -1174,7 +1189,9 @@ export default function PayslipDetailPage() {
     }
     const offsetPersisted = Boolean(autoApplied.current?.startsWith(`${payment.id}|`) && !autoApplied.current.endsWith(`|${offsetKey}`))
     autoApplied.current = syncKey
-    if (!changed && !offsetPersisted) return
+    const extrasChanged = extrasDirty.current
+    extrasDirty.current = false
+    if (!changed && !offsetPersisted && !extrasChanged) return
     setLines(next)
     void saveLines(next, { unpaidAbsenceDates: dates, overtimeLateOffsetDates, waive: dates.length === 0 })
   }, [loading, daysLoading, days, payment, lines, overtimeRateText, dateOfBirth, payeAllowances, unpaidAbsenceDates, overtimeLateOffsetDates, waivePenalties])
@@ -1404,7 +1421,12 @@ export default function PayslipDetailPage() {
     setMeibcApplied(true)
   }
 
-  function removeExtra(kind: 'income' | 'deduction', id: string) {
+  async function removeExtra(kind: 'income' | 'deduction', id: string) {
+    // A claim or commission line: take it off in the database too, so it waits for the next payslip.
+    if (kind === 'income' && isLinkedExtra({ id }) && payment) {
+      const r = await removePayslipExtra(createClient(), payment.id, id)
+      if (!r.ok) { setErrorMsg(r.message); return }
+    }
     const earnings = kind === 'income' ? extraEarnings.filter(line => line.id !== id) : extraEarnings
     const deductions = kind === 'deduction' ? extraDeductions.filter(line => line.id !== id) : extraDeductions
     setExtraEarnings(earnings)
@@ -1854,7 +1876,7 @@ export default function PayslipDetailPage() {
                         <>
                           <td className="px-3 border-b border-divider">
                             <span className="inline-flex items-center gap-1 w-full">
-                              {canEdit ? (
+                              {canEdit && !isLinkedExtra(income) ? (
                                 <input
                                   type="text"
                                   value={income.label}
@@ -1863,15 +1885,20 @@ export default function PayslipDetailPage() {
                                   className="h-8 min-w-0 flex-1 rounded-md border border-border/70 bg-transparent px-2 text-[12px] text-text-primary outline-none"
                                 />
                               ) : (
-                                <span className="text-[13px]">{income.label}</span>
+                                <span className="text-[13px]">{income.label}
+                                  {isReimbursement(income) && <span className="ml-1 text-[10.5px] text-text-secondary" data-noprint>(not taxed)</span>}
+                                </span>
                               )}
                               {canEdit && (
-                                <button type="button" onClick={() => removeExtra('income', income.id)} className="text-[11px] text-text-secondary hover:text-error" data-noprint>Remove</button>
+                                <button type="button" onClick={() => void removeExtra('income', income.id)} className="text-[11px] text-text-secondary hover:text-error" data-noprint
+                                  title={isLinkedExtra(income) ? 'Take it off this payslip; it goes on the next one' : undefined}>
+                                  {isLinkedExtra(income) ? 'Next payslip' : 'Remove'}
+                                </button>
                               )}
                             </span>
                           </td>
                           <td className="px-3 text-right whitespace-nowrap align-middle border-b border-divider">
-                            {canEdit ? (
+                            {canEdit && !isLinkedExtra(income) ? (
                               <span className="inline-flex items-center justify-end gap-1">
                                 <span className="text-[13px] text-text-secondary">R</span>
                                 <input
@@ -1911,7 +1938,7 @@ export default function PayslipDetailPage() {
                                 <span className="text-[13px]">{deduction.label}</span>
                               )}
                               {canEdit && (
-                                <button type="button" onClick={() => removeExtra('deduction', deduction.id)} className="text-[11px] text-text-secondary hover:text-error" data-noprint>Remove</button>
+                                <button type="button" onClick={() => void removeExtra('deduction', deduction.id)} className="text-[11px] text-text-secondary hover:text-error" data-noprint>Remove</button>
                               )}
                             </span>
                           </td>

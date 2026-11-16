@@ -14,6 +14,8 @@ export type CommissionRow = {
   employee_id?: string; rep_name?: string | null; basis: CommissionBasis; percent: number; base_amount: number
   commission_amount: number; paid_share: number; earned: number; paid_amount: number; to_pay: number
   status: 'open' | 'cancelled'; accepted_at: string | null
+  /** Sitting on an open payslip (company pays commission on the payslip), and how much. */
+  on_payslip?: boolean; payslip_amount?: number | null
 }
 
 export const BASIS_LABEL: Record<CommissionBasis, string> = { profit: 'profit', sale: 'sale value' }

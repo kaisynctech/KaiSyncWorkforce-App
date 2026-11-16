@@ -13,7 +13,7 @@ import { useEmployeeModuleGate } from '@/lib/employee-module-gate'
 import { signWorkforceMedia } from '@/lib/media-read'
 import { formatCurrency } from '@/lib/currencies'
 import {
-  KIND_ICON, KIND_LABEL, STATUS, cancelClaim, claimDay, listMyClaims, saveClaim, suggestTrips, todaySA, uploadReceipt,
+  KIND_ICON, KIND_LABEL, claimStatus, cancelClaim, claimDay, listMyClaims, saveClaim, suggestTrips, todaySA, uploadReceipt,
   type Claim, type ClaimInput, type ClaimKind, type TripSuggestion,
 } from '@/lib/claims'
 import { cn } from '@/lib/utils'
@@ -113,7 +113,7 @@ export default function MyClaimsPage() {
                     {c.manager_note && <span className="block text-red-800 whitespace-normal">“{c.manager_note}”</span>}
                   </td>
                   <td className={MONEY_TD}>{c.job_code ?? '—'}</td>
-                  <td className={MONEY_TD}><span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${STATUS[c.status].cls}`}>{STATUS[c.status].label}</span></td>
+                  <td className={MONEY_TD}><span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${claimStatus(c).cls}`}>{claimStatus(c).label === 'On payslip' ? 'On your payslip' : claimStatus(c).label}</span></td>
                   <td className={`${MONEY_TD} text-right font-medium`}>{c.kind === 'travel' && c.vehicle === 'company' ? '—' : formatCurrency(Number(c.amount), 'ZAR')}</td>
                   <td className={`${MONEY_TD} text-right`} onClick={e => e.stopPropagation()}>
                     {canChange(c) && (

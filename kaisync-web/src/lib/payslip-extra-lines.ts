@@ -92,3 +92,28 @@ export function withEmployeeDeductions(
   const have = new Set(lines.map(line => line.id))
   return [...lines, ...employeeDeductionLines(emp).filter(line => !have.has(line.id))]
 }
+
+/* ── Claims and commission paid on the payslip (piece 10) ─────────────────────────────────────────── */
+
+/** A claim or commission line put on the payslip by KaiSync (id "claim:<id>" / "commission:<id>"): not typed by hand. */
+export const isLinkedExtra = (line: Pick<PayslipExtraLine, 'id'>): boolean => /^(claim|commission):/.test(line.id)
+
+/** A claim paid back on the payslip: money the person spent for work, so not taxed. */
+export const isReimbursement = (line: Pick<PayslipExtraLine, 'id' | 'label'>): boolean =>
+  line.id.startsWith('claim:') || /^Reimbursement\b/i.test(line.label.trim())
+
+/** Extra earnings that count for PAYE (reimbursements left out). */
+export function taxableExtraSum(lines: PayslipExtraLine[]): number {
+  return sumExtra(lines.filter(line => !isReimbursement(line)))
+}
+
+export type PayslipExtraItem = { kind: 'claim' | 'commission'; id: string; label: string; amount: number; taxable: boolean }
+
+/** Hand-typed lines stay as they are; KaiSync's claim / commission lines are replaced by what's linked now. */
+export function mergeLinkedExtras(lines: PayslipExtraLine[], items: PayslipExtraItem[]): { lines: PayslipExtraLine[]; changed: boolean } {
+  const manual = lines.filter(line => !isLinkedExtra(line))
+  const linked = items.map(item => ({ id: `${item.kind}:${item.id}`, label: item.label, amount: moneyCents(Number(item.amount)) }))
+  const next = [...manual, ...linked]
+  const key = (ls: PayslipExtraLine[]) => ls.filter(isLinkedExtra).map(l => `${l.id}|${l.label}|${l.amount}`).sort().join(';')
+  return { lines: next, changed: key(lines) !== key(next) }
+}

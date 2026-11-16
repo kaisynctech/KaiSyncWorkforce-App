@@ -10,7 +10,8 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { signWorkforceMedia } from '@/lib/media-read'
 import { formatCurrency } from '@/lib/currencies'
-import { KIND_LABEL, STATUS, decideClaims, markClaimsPaid, setKmRate, todaySA, type Claim } from '@/lib/claims'
+import { KIND_LABEL, STATUS, claimStatus, decideClaims, markClaimsPaid, setKmRate, todaySA, type Claim } from '@/lib/claims'
+import { loadPayVia, savePayVia, type PayVia } from '@/lib/pay-on-payslip'
 import { StatusFilterTabs, TAB_ALL, MONEY_TH, MONEY_TD, countByStatusTab, filterByStatusTab } from '@/components/ui/StatusFilterTabs'
 import {
   TextHeaderFilter, MoneyHeaderFilter, DateHeaderFilter, StatusHeaderFilter, ResetFiltersButton, matchText, matchMoney, inDateRange, statusTab,
@@ -20,7 +21,7 @@ type Row = Claim & { who: string }
 const TABS = [
   TAB_ALL,
   statusTab('decide', 'To decide', ['submitted', 'queried'], 'amber'),
-  statusTab('topay', 'To pay', ['approved'], 'blue'),
+  statusTab('topay', 'Approved', ['approved'], 'blue'),
   statusTab('paid', 'Paid', ['paid'], 'green'),
   statusTab('rejected', 'Rejected', ['rejected'], 'gray'),
 ]
@@ -46,6 +47,7 @@ export default function StaffClaimsPage() {
   const [note, setNote] = useState<string | null>(null)
   const [sheet, setSheet] = useState<null | { kind: 'query' | 'reject' } | { kind: 'pay' } | { kind: 'rate' }>(null)
   const [busy, setBusy] = useState(false)
+  const [payVia, setPayVia] = useState<PayVia>('separately')
   const patch = (p: Partial<Cols>) => setCols(c => ({ ...c, ...p }))
 
   const load = useCallback(async () => {
@@ -64,6 +66,7 @@ export default function StaffClaimsPage() {
     const jobs = jobIds.length ? (await supabase.from('jobs').select('id, job_code').in('id', jobIds)).data ?? [] : []
     const codes = new Map(jobs.map(j => [j.id as string, j.job_code as string | null]))
     setRows((claims.data ?? []).map(c => ({ ...(c as Claim), job_code: c.job_id ? codes.get(c.job_id) ?? null : null, who: names.get(c.employee_id) || 'Someone' })))
+    setPayVia((await loadPayVia(supabase, member.companyId)).claims)
     const r = (co.data as { claim_km_rate: number | null } | null)?.claim_km_rate
     setRate(r == null ? null : Number(r))
     setError(null)
@@ -86,7 +89,7 @@ export default function StaffClaimsPage() {
   const selTotal = sel.reduce((s, c) => s + Number(c.amount), 0)
   const allDecide = sel.length > 0 && sel.every(c => c.status === 'submitted' || c.status === 'queried')
   const allPay = sel.length > 0 && sel.every(c => c.status === 'approved')
-  const pickable = (c: Row) => ['submitted', 'queried', 'approved'].includes(c.status)
+  const pickable = (c: Row) => c.status === 'submitted' || c.status === 'queried' || (c.status === 'approved' && !c.payment_approval_id && payVia === 'separately')
   const toggle = (id: string) => setPicked(p => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n })
   const anyFilter = search !== '' || JSON.stringify(cols) !== JSON.stringify(EMPTY)
 
@@ -112,9 +115,25 @@ export default function StaffClaimsPage() {
           <h1 className="text-[18px] font-semibold text-text-primary leading-tight">Staff claims</h1>
           <p className="text-[11px] text-text-secondary mt-0.5">{shown.length} claim{shown.length !== 1 ? 's' : ''} · travel and receipts your team paid for</p>
         </div>
+        <div className="flex items-center gap-2 flex-wrap">
+        <label className="text-[11.5px] text-text-secondary inline-flex items-center gap-1.5">Paid
+          <select value={payVia} aria-label="How claims are paid" className="form-input h-8 text-[12px] py-0"
+            onChange={async e => {
+              if (!companyId) return
+              const v = e.target.value as PayVia
+              const r = await savePayVia(createClient(), companyId, v, null)
+              if (!r.ok) { setError(r.message); return }
+              setPayVia(v); setPicked(new Set())
+              setNote(v === 'payslip' ? 'Approved claims now go on each person’s next payslip (not taxed) and count as paid when the payslip is approved.' : 'Approved claims are now paid separately: tick them under To pay and mark them paid.')
+            }}>
+            <option value="separately">separately</option>
+            <option value="payslip">on the payslip</option>
+          </select>
+        </label>
         <button type="button" onClick={() => setSheet({ kind: 'rate' })} className="btn-outlined h-8 px-3 text-[12px]">
           <span className="material-icons text-[16px] mr-1">directions_car</span>{rate == null ? 'Set km rate' : `${formatCurrency(rate, 'ZAR')}/km`}
         </button>
+        </div>
       </div>
 
       <div className="flex gap-2 px-4 py-2 border-b border-divider bg-surface shrink-0 flex-wrap items-center">
@@ -160,7 +179,7 @@ export default function StaffClaimsPage() {
                   <td className={MONEY_TD} onClick={e => e.stopPropagation()}>
                     {c.receipt_path ? <button type="button" className="text-primary font-medium" onClick={() => void openReceipt(c.receipt_path!)}>View</button> : '—'}
                   </td>
-                  <td className={MONEY_TD}><span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${STATUS[c.status].cls}`}>{STATUS[c.status].label}</span></td>
+                  <td className={MONEY_TD}><span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${claimStatus(c).cls}`}>{claimStatus(c).label}</span></td>
                   <td className={`${MONEY_TD} text-right font-medium`}>{formatCurrency(Number(c.amount), 'ZAR')}</td>
                 </tr>
               ))}

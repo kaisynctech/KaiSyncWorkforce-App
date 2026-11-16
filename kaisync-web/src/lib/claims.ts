@@ -14,6 +14,8 @@ export type Claim = {
   km: number | null; vehicle: 'own' | 'company' | null; rate_per_km: number | null; amount: number; receipt_path: string | null
   bill_to_client: boolean; status: ClaimStatus; manager_note: string | null; decided_at: string | null; paid_at: string | null
   payment_reference: string | null; created_at: string
+  /** Set while the claim sits on a payslip (company pays claims on the payslip). */
+  payment_approval_id?: string | null
 }
 export type ClaimInput = {
   id?: string; kind: ClaimKind; claim_date: string; job_id?: string | null; description?: string; from_place?: string; to_place?: string
@@ -82,6 +84,12 @@ const MESSAGES: Record<string, string> = {
   BAD_RATE: 'The rate must be between 0 and 100.',
   UNAUTHORIZED: 'Your session has expired. Sign in again.',
 }
+/** Status label and colour, with "On payslip" for an approved claim that's on a payslip. */
+export function claimStatus(c: Pick<Claim, 'status' | 'payment_approval_id'>): { label: string; cls: string } {
+  if (c.status === 'approved' && c.payment_approval_id) return { label: 'On payslip', cls: 'bg-violet-50 text-violet-800' }
+  return STATUS[c.status]
+}
+
 export function claimError(message: string | null | undefined): string {
   const m = String(message ?? '')
   for (const [k, v] of Object.entries(MESSAGES)) if (m.includes(k)) return v

@@ -10,6 +10,7 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { formatCurrency } from '@/lib/currencies'
 import { todaySA } from '@/lib/claims'
+import { loadPayVia, savePayVia, type PayVia } from '@/lib/pay-on-payslip'
 import {
   BASIS_LABEL, loadCommission, markCommissionPaid, parsePercent, saveCommissionSettings, setRep, totals,
   type CommissionBasis, type CommissionRep, type CommissionRow, type CommissionSettings, type EarnedOn,
@@ -19,16 +20,18 @@ import { TextHeaderFilter, MoneyHeaderFilter, StatusHeaderFilter, ResetFiltersBu
 import { cn } from '@/lib/utils'
 
 /** A commission's place in the flow: to pay (earned, unpaid), waiting (client still paying), paid, cancelled. */
-type State = 'topay' | 'waiting' | 'paid' | 'cancelled'
+type State = 'topay' | 'payslip' | 'waiting' | 'paid' | 'cancelled'
 const commissionState = (r: CommissionRow): State =>
   r.status === 'cancelled' && r.paid_amount <= 0 ? 'cancelled'
-    : r.to_pay > 0 ? 'topay'
+    : r.on_payslip ? 'payslip'
+      : r.to_pay > 0 ? 'topay'
       : r.paid_amount > 0 && r.paid_amount >= r.commission_amount ? 'paid' : 'waiting'
-const STATE_LABEL: Record<State, string> = { topay: 'To pay', waiting: 'Waiting for client', paid: 'Paid', cancelled: 'Cancelled' }
-const STATE_BADGE: Record<State, string> = { topay: 'bg-blue-100 text-blue-700', waiting: 'bg-amber-100 text-amber-700', paid: 'bg-green-100 text-green-700', cancelled: 'bg-gray-100 text-gray-500' }
+const STATE_LABEL: Record<State, string> = { topay: 'To pay', payslip: 'On payslip', waiting: 'Waiting for client', paid: 'Paid', cancelled: 'Cancelled' }
+const STATE_BADGE: Record<State, string> = { topay: 'bg-blue-100 text-blue-700', payslip: 'bg-violet-100 text-violet-700', waiting: 'bg-amber-100 text-amber-700', paid: 'bg-green-100 text-green-700', cancelled: 'bg-gray-100 text-gray-500' }
 const TABS = [
   TAB_ALL,
   statusTab('topay', 'To pay', ['topay'], 'blue'),
+  statusTab('payslip', 'On payslip', ['payslip'], 'purple'),
   statusTab('waiting', 'Waiting for client', ['waiting'], 'amber'),
   statusTab('paid', 'Paid', ['paid'], 'green'),
   statusTab('cancelled', 'Cancelled', ['cancelled'], 'gray'),
@@ -53,6 +56,7 @@ export default function CommissionPage() {
   const [error, setError] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
   const [sheet, setSheet] = useState<null | 'setup' | 'pay'>(null)
+  const [payVia, setPayVia] = useState<PayVia>('separately')
   const patch = (p: Partial<Cols>) => setCols(c => ({ ...c, ...p }))
 
   const load = useCallback(async () => {
@@ -66,6 +70,7 @@ export default function CommissionPage() {
     ])
     if (!r.ok) { setError(r.message); setRows([]); return }
     setError(null); setSettings(r.settings); setReps(r.reps)
+    setPayVia((await loadPayVia(supabase, member.companyId)).commission)
     setRows(r.rows.map((x): Row => { const st = commissionState(x); return { ...x, state: st, status: st } }))
     setStaff((emps.data ?? []).map(e => ({ id: e.id as string, name: [e.name, e.surname].filter(Boolean).join(' ') })))
   }, [])
@@ -82,7 +87,8 @@ export default function CommissionPage() {
     && (!search.trim() || [r.rep_name, r.quote_number, r.client_name, r.quote_title].some(v => matchText(v, search.trim())))), [rows, cols, search])
   const counts = useMemo(() => countByStatusTab(afterCols, TABS), [afterCols])
   const shown = useMemo(() => filterByStatusTab(afterCols, TABS, tab), [afterCols, tab])
-  const sel = shown.filter(r => picked.has(r.id) && r.to_pay > 0)
+  const canPay = (r: Row) => r.to_pay > 0 && payVia === 'separately'
+  const sel = shown.filter(r => picked.has(r.id) && canPay(r))
   const selTotal = sel.reduce((s, r) => s + r.to_pay, 0)
   const t = totals(shown.map(r => ({ ...r, status: r.state === 'cancelled' ? 'cancelled' as const : 'open' as const })))
   const setUp = settings?.percent != null || reps.some(r => r.percent != null)
@@ -96,7 +102,7 @@ export default function CommissionPage() {
         <div>
           <h1 className="text-[18px] font-semibold text-text-primary leading-tight">Commission</h1>
           <p className="text-[11px] text-text-secondary mt-0.5">
-            {settings ? <>On {BASIS_LABEL[settings.basis]} excl. VAT · {settings.percent != null ? `${settings.percent}% default` : 'no default %'} · earned {settings.earned_on === 'payment' ? 'as the client pays' : 'when paid in full'} · {activeReps} rep{activeReps === 1 ? '' : 's'}</> : ' '}
+            {settings ? <>Paid {payVia === 'payslip' ? 'on the payslip' : 'separately'} · on {BASIS_LABEL[settings.basis]} excl. VAT · {settings.percent != null ? `${settings.percent}% default` : 'no default %'} · earned {settings.earned_on === 'payment' ? 'as the client pays' : 'when paid in full'} · {activeReps} rep{activeReps === 1 ? '' : 's'}</> : ' '}
           </p>
         </div>
         <button type="button" onClick={() => setSheet('setup')} className="btn-outlined h-8 px-3 text-[12px]">
@@ -135,9 +141,9 @@ export default function CommissionPage() {
             <tbody>
               {shown.map(r => (
                 <tr key={r.id} className={`border-b border-divider transition-colors ${picked.has(r.id) ? 'bg-primary/5' : 'hover:bg-surface-elevated'} ${r.to_pay > 0 ? 'cursor-pointer' : ''}`}
-                  onClick={() => { if (r.to_pay > 0) toggle(r.id) }}>
+                  onClick={() => { if (canPay(r)) toggle(r.id) }}>
                   <td className={MONEY_TD} onClick={e => e.stopPropagation()}>
-                    {r.to_pay > 0 && <input type="checkbox" checked={picked.has(r.id)} onChange={() => toggle(r.id)} className="w-4 h-4" aria-label={`Pick ${r.quote_number}`} />}
+                    {canPay(r) && <input type="checkbox" checked={picked.has(r.id)} onChange={() => toggle(r.id)} className="w-4 h-4" aria-label={`Pick ${r.quote_number}`} />}
                   </td>
                   <td className={`${MONEY_TD} font-medium text-text-primary`}>{r.rep_name || '—'}</td>
                   <td className={`${MONEY_TD} text-primary`}>{r.quote_number ?? '—'}</td>
@@ -147,7 +153,7 @@ export default function CommissionPage() {
                   <td className={`${MONEY_TD} text-right`}>{pct(r.paid_share)}</td>
                   <td className={`${MONEY_TD} text-right`}>{R(r.earned)}</td>
                   <td className={`${MONEY_TD} text-right`}>{R(r.paid_amount)}</td>
-                  <td className={`${MONEY_TD} text-right font-semibold ${r.to_pay > 0 ? 'text-emerald-700' : 'text-text-secondary'}`}>{R(r.to_pay)}</td>
+                  <td className={`${MONEY_TD} text-right font-semibold ${r.to_pay > 0 ? 'text-emerald-700' : 'text-text-secondary'}`}>{r.on_payslip ? `${R(Number(r.payslip_amount ?? 0))} on payslip` : R(r.to_pay)}</td>
                   <td className={MONEY_TD}><span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${STATE_BADGE[r.state]}`}>{STATE_LABEL[r.state]}</span></td>
                 </tr>
               ))}
@@ -189,7 +195,7 @@ export default function CommissionPage() {
         }} />
       )}
       {sheet === 'setup' && settings && companyId && (
-        <SetupSheet companyId={companyId} settings={settings} reps={reps} staff={staff} onClose={() => setSheet(null)}
+        <SetupSheet companyId={companyId} settings={settings} reps={reps} staff={staff} payVia={payVia} onClose={() => setSheet(null)}
           onDone={async text => { setSheet(null); setNote(text); await load() }} />
       )}
     </div>
@@ -225,12 +231,13 @@ function Choice<T extends string>({ value, options, onChange, label }: { value: 
   )
 }
 
-function SetupSheet({ companyId, settings, reps, staff, onClose, onDone }: {
-  companyId: string; settings: CommissionSettings; reps: CommissionRep[]; staff: { id: string; name: string }[]
+function SetupSheet({ companyId, settings, reps, staff, payVia, onClose, onDone }: {
+  companyId: string; settings: CommissionSettings; reps: CommissionRep[]; staff: { id: string; name: string }[]; payVia: PayVia
   onClose: () => void; onDone: (text: string) => Promise<void>
 }) {
   const [basis, setBasis] = useState<CommissionBasis>(settings.basis)
   const [earnedOn, setEarnedOn] = useState<EarnedOn>(settings.earned_on)
+  const [via, setVia] = useState<PayVia>(payVia)
   const [def, setDef] = useState(settings.percent == null ? '' : String(settings.percent))
   const [list, setList] = useState(reps.map(r => ({ ...r, pctText: r.percent == null ? '' : String(r.percent) })))
   const [adding, setAdding] = useState('')
@@ -245,6 +252,10 @@ function SetupSheet({ companyId, settings, reps, staff, onClose, onDone }: {
     const s = createClient()
     const a = await saveCommissionSettings(s, companyId, { basis, percent: defN, earned_on: earnedOn })
     if (!a.ok) { setErr(a.message); setBusy(false); return }
+    if (via !== payVia) {
+      const v = await savePayVia(s, companyId, null, via)
+      if (!v.ok) { setErr(v.message); setBusy(false); return }
+    }
     for (const r of list) {
       const before = reps.find(x => x.employee_id === r.employee_id)
       const p = parsePercent(r.pctText)
@@ -271,6 +282,10 @@ function SetupSheet({ companyId, settings, reps, staff, onClose, onDone }: {
       <Choice label="Earned" value={earnedOn} onChange={setEarnedOn} options={[
         { v: 'payment', label: 'As the client pays', hint: 'Half paid = half the commission earned. Fair on deposits.' },
         { v: 'paid_in_full', label: 'Only when paid in full', hint: 'Nothing is earned until the client has paid everything.' },
+      ]} />
+      <Choice label="Pay it" value={via} onChange={setVia} options={[
+        { v: 'separately', label: 'Separately', hint: 'Mark earned commission paid here; it books as money out.' },
+        { v: 'payslip', label: 'On the payslip', hint: 'Earned commission goes on the rep’s next payslip (taxed) and counts as paid when the payslip is approved.' },
       ]} />
 
       <div className="flex flex-col gap-2">
