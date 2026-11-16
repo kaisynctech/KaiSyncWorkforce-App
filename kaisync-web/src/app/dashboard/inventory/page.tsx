@@ -257,12 +257,12 @@ export default function InventoryPage() {
     <div className="h-full flex flex-col overflow-hidden">
 
       <div className="bg-surface border-b border-divider px-3 pt-2 pb-2 shrink-0 space-y-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2 min-w-0">
+          <div className="min-w-0 w-full sm:w-auto sm:flex-1">
             <h1 className="text-[15px] font-semibold text-text-primary leading-tight">Products &amp; stock</h1>
             <p className="text-[11px] text-text-secondary mt-0.5">Parts, services, materials and labour in one catalogue</p>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
             <Link href="/dashboard/inventory/restock" prefetch={false} className="btn-outlined h-10 px-3 text-[13px] inline-flex items-center gap-1">
               <span className="material-icons text-[18px]">production_quantity_limits</span>Restock
             </Link>
