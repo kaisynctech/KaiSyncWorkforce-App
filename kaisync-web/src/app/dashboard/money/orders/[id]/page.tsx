@@ -360,7 +360,7 @@ export default function OrderPage() {
 
         <div className="flex gap-1 border-b border-divider overflow-x-auto">
           {TABS.map(t => (
-            <button key={t.id} type="button" onClick={() => setTab(t.id)}
+            <button key={t.id} type="button" onClick={() => { setTab(t.id); setNote(null) }}
               className={cn('px-3 py-1.5 text-[12.5px] font-medium border-b-2 -mb-px whitespace-nowrap',
                 tab === t.id ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary')}>
               {t.label}{t.count != null && <span className="ml-1 opacity-70">({t.count})</span>}
@@ -467,11 +467,11 @@ export default function OrderPage() {
 
         {tab === 'pos' && companyId && (
           <PurchaseOrdersPanel companyId={companyId} quoteId={quote.id} pos={pos} poLines={poLines} sendTo={sendTo} toSource={toSource}
-            canProcess={canProcess} processing={processing} onProcess={() => void runProcessOrder()} onChanged={load} />
+            canProcess={canProcess} processing={processing} onProcess={() => void runProcessOrder()} onChanged={async () => { setNote(null); await load() }} />
         )}
 
         {tab === 'received' && (
-          <GoodsReceivedPanel grns={grns} grnLines={grnLines} bills={allBills} pos={pos} onChanged={load} />
+          <GoodsReceivedPanel grns={grns} grnLines={grnLines} bills={allBills} pos={pos} onChanged={async () => { setNote(null); await load() }} />
         )}
 
         {tab === 'invoices' && (

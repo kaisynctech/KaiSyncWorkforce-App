@@ -141,7 +141,7 @@ export function PurchaseOrdersPanel({ companyId, pos, poLines, sendTo, toSource,
 
       {pos.length === 0 && !canProcess && <p className="text-[13px] text-text-secondary py-6 text-center">No purchase orders for this order.</p>}
 
-      {pos.map(p => {
+      {[...pos].sort((a, b) => Number(a.status === 'cancelled') - Number(b.status === 'cancelled')).map(p => {
         const ls = linesOf(p.id)
         const ordered = ls.reduce((s, l) => s + (Number(l.quantity_ordered) || 0), 0)
         const received = ls.reduce((s, l) => s + (Number(l.quantity_received) || 0), 0)
@@ -388,7 +388,6 @@ export function GoodsReceivedPanel({ grns, grnLines, bills, pos, onChanged }: {
                 <p className="text-[15px] font-semibold text-text-primary">{g.grn_number ?? 'Delivery'} <span className="text-[12.5px] font-normal text-text-secondary">· {poNo(g.po_id)}</span></p>
                 <p className="text-[12.5px] text-text-secondary">{g.received_date ? new Date(g.received_date).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}{g.delivery_note_number ? ` · delivery note ${g.delivery_note_number}` : ''}</p>
               </div>
-              {cancelled && <span className={cn(pill, 'bg-slate-100 text-slate-700')}>Cancelled</span>}
             </div>
             <p className="text-[13px] text-text-primary">{items || '—'}</p>
             {g.notes && <p className="text-[12.5px] text-text-secondary">{g.notes}</p>}
