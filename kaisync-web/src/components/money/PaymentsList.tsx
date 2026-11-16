@@ -108,7 +108,7 @@ export function PaymentsList({ direction }: { direction: 'incoming' | 'outgoing'
         docs[r.id] = { number: null, currency: null, party: r.contractors?.name ?? null, href: '/dashboard/finance/contractor-payouts' }
       }
       for (const r of await inChunks<{ id: string; employees: { name: string | null; surname: string | null } | null }>(
-        idsOf('staff_claims'), c => supabase.from('staff_claims').select('id, employees(name, surname)').eq('company_id', cid).in('id', c))) {
+        idsOf('staff_claims'), c => supabase.from('staff_claims').select('id, employees!staff_claims_employee_id_fkey(name, surname)').eq('company_id', cid).in('id', c))) {
         docs[r.id] = { number: null, currency: null, party: name(r.employees), href: '/dashboard/workforce/claims' }
       }
       for (const r of await inChunks<{ id: string; employees: { name: string | null; surname: string | null } | null; commissions: { commercial_quotes: { quote_number: string | null } | null } | null }>(
