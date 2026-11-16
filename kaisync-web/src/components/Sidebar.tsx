@@ -64,6 +64,8 @@ const NAV_SECTIONS: NavSection[] = [
       { label: 'Time Templates', href: '/dashboard/time-templates', icon: 'access_time',     flag: 'timeTemplates' },
       { label: 'Scheduling',     href: '/dashboard/scheduling',     icon: 'calendar_month',  flag: 'scheduling' },
       { label: 'Payroll',        href: '/dashboard/payroll',        icon: 'payments',        flag: 'payroll' },
+      { label: 'Claims',         href: '/dashboard/workforce/claims',     icon: 'receipt_long', flag: 'payroll' },
+      { label: 'Commission',     href: '/dashboard/workforce/commission', icon: 'trending_up',  flag: 'payroll' },
     ],
   },
   {
@@ -104,7 +106,7 @@ const NAV_SECTIONS: NavSection[] = [
       { label: 'Bills & expenses',  href: '/dashboard/finance/supplier-invoices', icon: 'receipt',         flag: 'finance',    group: 'Money out',
         also: ['/dashboard/money/payments-made', '/dashboard/money/subscriptions'] },
       { label: 'Pay out',           href: '/dashboard/finance/contractor-payouts', icon: 'payments',       flag: 'finance',    group: 'Money out',
-        also: ['/dashboard/finance/approvals', '/dashboard/money/claims', '/dashboard/money/commission'] },
+        also: ['/dashboard/finance/approvals'] },
       { label: 'Products & stock',  href: '/dashboard/inventory',                 icon: 'inventory_2',     flag: 'inventory', alsoFlags: ['commercial'], group: 'What you sell' },
       { label: 'Suppliers',         href: '/dashboard/suppliers',                 icon: 'storefront',      flag: 'suppliers', alsoFlags: ['commercial'], group: 'What you sell' },
     ],

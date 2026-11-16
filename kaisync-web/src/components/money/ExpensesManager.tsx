@@ -11,6 +11,8 @@ import { formatRand } from '@/lib/line-items'
 import { EXPENSE_CATEGORIES, FREQUENCY_LABEL, PAYMENT_LABEL, monthlyEquivalent, type ExpenseItem } from '@/lib/money/overview'
 import { localISODate } from '@/lib/utils'
 import { signWorkforceMedia } from '@/lib/media-read'
+import { StatusFilterTabs, TAB_ALL, MONEY_TH, MONEY_TD, countByStatusTab, filterByStatusTab } from '@/components/ui/StatusFilterTabs'
+import { TextHeaderFilter, MoneyHeaderFilter, StatusHeaderFilter, ResetFiltersButton, matchText, matchMoney, statusTab } from '@/components/ui/MoneyListFilters'
 
 type Row = Omit<ExpenseItem, 'next_date' | 'in_period'> & { receipt_path?: string | null }
 
@@ -62,6 +64,18 @@ const blank = (): Draft => ({
 
 const MAX_RECEIPT_BYTES = 10 * 1024 * 1024
 
+type ExpenseStatus = 'due' | 'active' | 'ended'
+const EXPENSE_STATUS_LABEL: Record<ExpenseStatus, string> = { due: 'Due soon', active: 'Active', ended: 'Ended' }
+const EXPENSE_BADGE: Record<ExpenseStatus, string> = { due: 'bg-amber-100 text-amber-700', active: 'bg-green-100 text-green-700', ended: 'bg-gray-100 text-gray-500' }
+const EXPENSE_TABS = [
+  TAB_ALL,
+  statusTab('due', 'Due in 14 days', ['due'], 'amber'),
+  statusTab('active', 'Active', ['due', 'active'], 'green'),
+  statusTab('ended', 'Ended', ['ended'], 'gray'),
+]
+type ExpenseCols = { name: string; categories: string[]; freqs: string[]; min: string; max: string }
+const EMPTY_COLS: ExpenseCols = { name: '', categories: [], freqs: [], min: '', max: '' }
+
 export function ExpensesManager({ companyId, vatRegistered, onChanged }: { companyId: string; vatRegistered: boolean; onChanged?: () => void }) {
   const [rows, setRows] = useState<Row[] | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -77,10 +91,20 @@ export function ExpensesManager({ companyId, vatRegistered, onChanged }: { compa
     setRows(((data ?? []) as Row[]).map(r => ({ ...r, amount: Number(r.amount), vat_amount: Number(r.vat_amount) })))
   }, [companyId])
 
-  useEffect(() => { void load() }, [load])
+  useEffect(() => {
+    let live = true
+    void Promise.resolve().then(() => { if (live) void load() })
+    return () => { live = false }
+  }, [load])
 
-  const list = useMemo(() => (rows ?? []).map(r => ({ ...r, next: nextPayment(r, today) }))
-    .sort((a, b) => (a.next ?? '9999').localeCompare(b.next ?? '9999')), [rows, today])
+  const list = useMemo(() => (rows ?? []).map(r => {
+    const next = nextPayment(r, today)
+    const status: ExpenseStatus = !next ? 'ended' : next <= addDaysIso(today, 14) ? 'due' : 'active'
+    return { ...r, next, status }
+  }).sort((a, b) => (a.next ?? '9999').localeCompare(b.next ?? '9999')), [rows, today])
+  const [search, setSearch] = useState('')
+  const [tab, setTab] = useState('all')
+  const [cols, setCols] = useState<ExpenseCols>(EMPTY_COLS)
   const active = list.filter(r => r.next)
   const monthly = active.reduce((s, r) => s + monthlyEquivalent(r), 0)
   const soon = active.filter(r => r.next && r.next <= addDaysIso(today, 14)).length
@@ -148,48 +172,71 @@ export function ExpensesManager({ companyId, vatRegistered, onChanged }: { compa
   const input = 'h-10 rounded-xl border border-divider px-3 text-[14px] bg-background text-text-primary focus:outline-none focus:border-primary/60'
   const label = 'flex flex-col gap-1.5 text-[12px] font-medium text-text-secondary'
 
+  const afterCols = list.filter(r => matchText(r.name, cols.name) && (cols.categories.length === 0 || cols.categories.includes(r.category))
+    && (cols.freqs.length === 0 || cols.freqs.includes(r.frequency)) && matchMoney(r.amount, cols.min, cols.max)
+    && (!search.trim() || [r.name, r.category, r.notes].some(v => matchText(v, search.trim()))))
+  const counts = countByStatusTab(afterCols, EXPENSE_TABS)
+  const shown = filterByStatusTab(afterCols, EXPENSE_TABS, tab)
+  const categories = [...new Set(list.map(r => r.category))].map(c => ({ id: c, label: c }))
+  const anyFilter = search !== '' || JSON.stringify(cols) !== JSON.stringify(EMPTY_COLS)
+
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap gap-3 items-stretch">
-        <Stat label="Regular costs a month" value={formatRand(monthly)} />
-        <Stat label="Paying for" value={`${active.length} ${active.length === 1 ? 'item' : 'items'}`} />
-        <Stat label="Due in the next 14 days" value={String(soon)} />
-        <button type="button" onClick={() => { setError(null); setDraft(blank()) }}
-          className="self-center h-11 px-5 rounded-xl bg-primary text-white text-[14px] font-semibold flex items-center gap-2 hover:bg-primary-dark">
-          <span className="material-icons text-[18px]">add</span>Add expense
-        </button>
+    <div className="flex flex-col border border-divider rounded-xl overflow-hidden bg-surface">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-divider bg-surface gap-3 flex-wrap">
+        <p className="text-[12px] text-text-secondary">
+          {formatRand(monthly)} a month · paying for {active.length} {active.length === 1 ? 'item' : 'items'} · {soon} due in the next 14 days
+        </p>
+        <button type="button" onClick={() => { setError(null); setDraft(blank()) }} className="btn-primary h-8 px-3 text-[12px]">+ Expense</button>
+      </div>
+      <div className="flex gap-2 px-4 py-2 border-b border-divider bg-surface flex-wrap items-center">
+        <input value={search} onChange={e => setSearch(e.target.value)} aria-label="Search expenses" placeholder="Search name, category or notes…"
+          className="form-input h-8 flex-1 min-w-[180px] text-[12px]" />
+        <ResetFiltersButton disabled={!anyFilter} onReset={() => { setCols(EMPTY_COLS); setSearch('') }} />
+        <StatusFilterTabs tabs={EXPENSE_TABS} value={tab} counts={counts} onChange={setTab} />
       </div>
 
-      {error && !draft && <p className="rounded-xl border border-error/30 bg-error/5 px-4 py-2.5 text-[13px] text-error">{error}</p>}
+      {error && !draft && <p className="px-4 py-2.5 text-[13px] text-error border-b border-divider">{error}</p>}
 
-      <div className="bg-surface-card border border-divider rounded-2xl overflow-hidden">
-        <div className="flex flex-wrap items-center justify-between gap-2 px-5 pt-4 pb-3">
-          <h2 className="text-[15px] font-semibold text-text-primary">Subscriptions and regular costs</h2>
-          <span className="text-[12px] text-text-secondary">Each payment counts as money out on its payment day</span>
-        </div>
-        {rows === null && <p className="px-5 py-6 text-[13px] text-text-secondary border-t border-divider/70">Loading…</p>}
-        {rows !== null && list.length === 0 && (
-          <div className="px-5 py-10 border-t border-divider/70 text-center">
-            <p className="text-[14px] font-medium text-text-primary">Nothing added yet</p>
-            <p className="text-[13px] text-text-secondary mt-1">Add what the business pays for: software, phone contracts, rent, insurance, vehicle tracking…</p>
-          </div>
+      <div className="overflow-auto">
+        {rows === null ? <p className="text-center text-[13px] text-text-secondary py-10">Loading…</p> : (
+          <table className="w-full" style={{ minWidth: 760 }}>
+            <thead className="sticky top-0 z-10">
+              <tr className="bg-surface-elevated border-b border-divider">
+                <th className={`${MONEY_TH} text-left`}><TextHeaderFilter label="Name" value={cols.name} onChange={v => setCols(c => ({ ...c, name: v }))} placeholder="Name…" /></th>
+                <th className={`${MONEY_TH} text-left`}><StatusHeaderFilter label="Category" options={categories} selected={cols.categories} onChange={v => setCols(c => ({ ...c, categories: v }))} /></th>
+                <th className={`${MONEY_TH} text-left`}><StatusHeaderFilter label="How often" options={FREQS.map(f => ({ id: f, label: FREQUENCY_LABEL[f] }))} selected={cols.freqs} onChange={v => setCols(c => ({ ...c, freqs: v }))} /></th>
+                <th className={`${MONEY_TH} text-left`}>Paid by</th>
+                <th className={`${MONEY_TH} text-left`}>Next payment</th>
+                <th className={`${MONEY_TH} text-left`}>Status</th>
+                <th className={`${MONEY_TH} text-right`}><MoneyHeaderFilter label="Amount" min={cols.min} max={cols.max} onChange={p => setCols(c => ({ ...c, min: p.min, max: p.max }))} /></th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map(r => (
+                <tr key={r.id} className="border-b border-divider cursor-pointer hover:bg-surface-elevated transition-colors" onClick={() => edit(r)}>
+                  <td className={`${MONEY_TD} font-medium text-primary`}>
+                    <span className="inline-flex items-center gap-1.5">{r.name}
+                      {r.receipt_path && <span className="material-icons text-[14px] text-emerald-600" title="Receipt attached" aria-label="Receipt attached">receipt</span>}
+                    </span>
+                  </td>
+                  <td className={MONEY_TD}>{r.category}</td>
+                  <td className={MONEY_TD}>{FREQUENCY_LABEL[r.frequency]}</td>
+                  <td className={MONEY_TD}>{r.payment_method ? (PAYMENT_LABEL[r.payment_method] ?? r.payment_method) : '—'}</td>
+                  <td className={`${MONEY_TD} text-text-secondary`}>{r.next ? day(r.next) : r.frequency === 'once' ? `Paid ${day(r.start_date)}` : '—'}</td>
+                  <td className={MONEY_TD}>
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${EXPENSE_BADGE[r.status]}`}>{EXPENSE_STATUS_LABEL[r.status]}</span>
+                  </td>
+                  <td className={`${MONEY_TD} text-right`}>{formatRand(r.amount)}</td>
+                </tr>
+              ))}
+              {shown.length === 0 && (
+                <tr><td colSpan={7} className="text-center text-[13px] text-text-secondary py-10">
+                  {list.length === 0 ? 'Nothing added yet. Add what the business pays for: software, phone contracts, rent, insurance, vehicle tracking…' : 'No expenses match these filters'}
+                </td></tr>
+              )}
+            </tbody>
+          </table>
         )}
-        {list.map(r => (
-          <button key={r.id} type="button" onClick={() => edit(r)}
-            className={`w-full flex flex-wrap items-center gap-3 px-5 py-3 border-t border-divider/70 text-left hover:bg-surface-elevated/60 ${r.next ? '' : 'opacity-60'}`}>
-            <span className="w-9 h-9 rounded-xl bg-surface-elevated text-text-primary font-bold text-[13px] flex items-center justify-center shrink-0">{r.name.trim()[0]?.toUpperCase()}</span>
-            <span className="flex-1 basis-[200px] min-w-0 flex flex-col">
-              <span className="text-[13.5px] font-medium text-text-primary truncate flex items-center gap-1.5">{r.name}
-                {r.receipt_path && <span className="material-icons text-[15px] text-emerald-600" title="Receipt attached" aria-label="Receipt attached">receipt</span>}
-              </span>
-              <span className="text-[11.5px] text-text-secondary truncate">
-                {r.category} · {FREQUENCY_LABEL[r.frequency]}{r.payment_method ? ` · ${PAYMENT_LABEL[r.payment_method] ?? r.payment_method}` : ''}
-              </span>
-            </span>
-            <span className="text-[12px] text-text-secondary w-[140px]">{r.next ? `Next: ${day(r.next)}` : r.frequency === 'once' ? `Paid ${day(r.start_date)}` : 'Ended'}</span>
-            <span className="text-[13.5px] font-semibold text-text-primary tabular-nums w-[120px] text-right">{formatRand(r.amount)}</span>
-          </button>
-        ))}
       </div>
 
       {draft && (
@@ -279,15 +326,6 @@ export function ExpensesManager({ companyId, vatRegistered, onChanged }: { compa
           </div>
         </div>
       )}
-    </div>
-  )
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex-1 basis-[180px] bg-surface-card border border-divider rounded-2xl px-4 py-3.5">
-      <p className="text-[12px] text-text-secondary">{label}</p>
-      <p className="text-[20px] font-bold text-text-primary mt-1 tabular-nums">{value}</p>
     </div>
   )
 }

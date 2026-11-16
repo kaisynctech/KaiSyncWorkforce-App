@@ -17,6 +17,17 @@ import {
   type Claim, type ClaimInput, type ClaimKind, type TripSuggestion,
 } from '@/lib/claims'
 import { cn } from '@/lib/utils'
+import { StatusFilterTabs, TAB_ALL, MONEY_TH, MONEY_TD, countByStatusTab, filterByStatusTab } from '@/components/ui/StatusFilterTabs'
+import { statusTab } from '@/components/ui/MoneyListFilters'
+
+const MY_TABS = [
+  TAB_ALL,
+  statusTab('waiting', 'Waiting', ['submitted'], 'amber'),
+  statusTab('queried', 'Queried', ['queried'], 'red'),
+  statusTab('approved', 'Approved', ['approved'], 'blue'),
+  statusTab('paid', 'Paid', ['paid'], 'green'),
+  statusTab('rejected', 'Rejected', ['rejected', 'cancelled'], 'gray'),
+]
 
 type Who = { companyId: string; employeeId: string; sessionToken: string | null }
 type Job = { id: string; job_code: string | null; title: string | null }
@@ -33,6 +44,7 @@ export default function MyClaimsPage() {
   const [error, setError] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
   const [editing, setEditing] = useState<Claim | 'new' | null>(null)
+  const [tab, setTab] = useState('all')
 
   const load = useCallback(async () => {
     const supabase = createClient()
@@ -52,64 +64,79 @@ export default function MyClaimsPage() {
     return () => { live = false }
   }, [allowed, load])
 
-  const waiting = (claims ?? []).filter(c => ['submitted', 'queried', 'approved'].includes(c.status))
-  const owed = waiting.filter(c => c.status === 'approved').reduce((s, c) => s + Number(c.amount), 0)
+  const owed = (claims ?? []).filter(c => c.status === 'approved').reduce((s, c) => s + Number(c.amount), 0)
+  const counts = countByStatusTab(claims ?? [], MY_TABS)
+  const shown = filterByStatusTab(claims ?? [], MY_TABS, tab)
+  const canChange = (c: Claim) => c.status === 'submitted' || c.status === 'queried'
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="max-w-2xl mx-auto px-4 py-4 flex flex-col gap-3">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h1 className="text-[18px] font-semibold text-text-primary">My claims</h1>
-            <p className="text-[12.5px] text-text-secondary">Travel in your own car, tolls, parking, meals away and parts you paid for.</p>
-          </div>
-          <button type="button" onClick={() => { setNote(null); setEditing('new') }} className="btn-primary h-11 px-4 text-[14px] shrink-0">
-            <span className="material-icons text-[18px] mr-1">add</span>New claim
-          </button>
+    <div className="h-full flex flex-col">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-divider shrink-0 bg-surface gap-3 flex-wrap">
+        <div>
+          <h1 className="text-[18px] font-semibold text-text-primary leading-tight">My claims</h1>
+          <p className="text-[11px] text-text-secondary mt-0.5">
+            Travel in your own car, tolls, parking, meals away and parts you paid for{owed > 0 ? ` · approved, still to be paid to you: ${formatCurrency(owed, 'ZAR')}` : ''}
+          </p>
         </div>
+        <button type="button" onClick={() => { setNote(null); setEditing('new') }} className="btn-primary h-9 px-3 text-[13px]">+ New claim</button>
+      </div>
+      <div className="flex gap-2 px-4 py-2 border-b border-divider bg-surface shrink-0 flex-wrap items-center">
+        <StatusFilterTabs tabs={MY_TABS} value={tab} counts={counts} onChange={setTab} />
+      </div>
+      {error && <p className="text-[12.5px] text-error bg-error/10 px-4 py-2 border-b border-divider" role="alert">{error}</p>}
+      {note && <p className="text-[12.5px] text-emerald-800 bg-emerald-50 px-4 py-2 border-b border-divider" role="status">{note}</p>}
 
-        {error && <p className="text-[13px] text-error bg-error/10 rounded-lg px-3 py-2" role="alert">{error}</p>}
-        {note && <p className="text-[13px] text-emerald-800 bg-emerald-50 rounded-lg px-3 py-2" role="status">{note}</p>}
-        {owed > 0 && <p className="text-[13px] bg-surface border border-divider rounded-xl px-3 py-2">Approved and still to be paid to you: <b>{formatCurrency(owed, 'ZAR')}</b></p>}
-
-        {claims === null ? <p className="py-10 text-center text-[13px] text-text-secondary">Loading…</p> : claims.length === 0 ? (
-          <div className="rounded-xl border border-divider bg-surface p-6 text-center">
-            <span className="material-icons text-[36px] text-text-secondary">receipt_long</span>
-            <p className="text-[14px] font-semibold mt-1">No claims yet</p>
-            <p className="text-[12.5px] text-text-secondary">Tap New claim after a trip or when you pay for something for work.</p>
-          </div>
-        ) : claims.map(c => {
-          const st = STATUS[c.status]
-          const canChange = c.status === 'submitted' || c.status === 'queried'
-          return (
-            <section key={c.id} className={cn('rounded-xl border bg-surface p-3 flex gap-3', c.status === 'queried' ? 'border-red-200' : 'border-divider')}>
-              <span className="material-icons text-[22px] text-primary mt-0.5">{KIND_ICON[c.kind]}</span>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-start justify-between gap-2">
-                  <p className="text-[14px] font-semibold text-text-primary">{KIND_LABEL[c.kind]}{c.kind === 'travel' && c.km ? ` · ${Number(c.km)} km` : ''}</p>
-                  <span className={cn('text-[11px] font-semibold rounded-full px-2 py-0.5 shrink-0', st.cls)}>{st.label}</span>
-                </div>
-                <p className="text-[12.5px] text-text-secondary">
-                  {[fmtDay(c.claim_date), c.kind === 'travel' && (c.from_place || c.to_place) ? `${c.from_place ?? '…'} → ${c.to_place ?? '…'}` : c.description, c.job_code].filter(Boolean).join(' · ')}
-                </p>
-                {c.manager_note && <p className="text-[12.5px] text-red-800 mt-1">“{c.manager_note}”</p>}
-                <div className="flex items-center justify-between gap-2 mt-1">
-                  <b className="text-[14px] tabular-nums">{c.kind === 'travel' && c.vehicle === 'company' ? 'Company vehicle' : formatCurrency(Number(c.amount), 'ZAR')}</b>
-                  {canChange && (
-                    <span className="flex gap-3">
-                      <button type="button" className="text-[13px] text-primary font-medium h-9" onClick={() => { setNote(null); setEditing(c) }}>{c.status === 'queried' ? 'Fix and resend' : 'Change'}</button>
-                      <button type="button" className="text-[13px] text-text-secondary h-9" onClick={async () => {
-                        if (!who) return
-                        const r = await cancelClaim(createClient(), who, c.id)
-                        if (!r.ok) setError(r.message); else { setNote('Claim cancelled.'); await load() }
-                      }}>Cancel</button>
-                    </span>
-                  )}
-                </div>
-              </div>
-            </section>
-          )
-        })}
+      <div className="flex-1 overflow-auto">
+        {claims === null ? <p className="text-center text-[13px] text-text-secondary py-10">Loading…</p> : (
+          <table className="w-full" style={{ minWidth: 640 }}>
+            <thead className="sticky top-0 z-10">
+              <tr className="bg-surface-elevated border-b border-divider">
+                <th className={`${MONEY_TH} text-left`}>Date</th>
+                <th className={`${MONEY_TH} text-left`}>Type</th>
+                <th className={`${MONEY_TH} text-left`}>Details</th>
+                <th className={`${MONEY_TH} text-left`}>Job</th>
+                <th className={`${MONEY_TH} text-left`}>Status</th>
+                <th className={`${MONEY_TH} text-right`}>Amount</th>
+                <th className={`${MONEY_TH} text-right`}><span className="sr-only">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map(c => (
+                <tr key={c.id} className={cn('border-b border-divider transition-colors', canChange(c) ? 'cursor-pointer hover:bg-surface-elevated' : '')}
+                  onClick={() => { if (canChange(c)) { setNote(null); setEditing(c) } }}>
+                  <td className={`${MONEY_TD} text-text-secondary`}>{fmtDay(c.claim_date)}</td>
+                  <td className={`${MONEY_TD} font-medium text-text-primary`}>{KIND_LABEL[c.kind]}</td>
+                  <td className={`${MONEY_TD} text-text-secondary max-w-[260px] truncate`}>
+                    {c.kind === 'travel'
+                      ? [`${Number(c.km ?? 0)} km`, c.vehicle === 'company' ? 'company car' : null, (c.from_place || c.to_place) ? `${c.from_place ?? '…'} → ${c.to_place ?? '…'}` : null].filter(Boolean).join(' · ')
+                      : c.description || '—'}
+                    {c.manager_note && <span className="block text-red-800 whitespace-normal">“{c.manager_note}”</span>}
+                  </td>
+                  <td className={MONEY_TD}>{c.job_code ?? '—'}</td>
+                  <td className={MONEY_TD}><span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${STATUS[c.status].cls}`}>{STATUS[c.status].label}</span></td>
+                  <td className={`${MONEY_TD} text-right font-medium`}>{c.kind === 'travel' && c.vehicle === 'company' ? '—' : formatCurrency(Number(c.amount), 'ZAR')}</td>
+                  <td className={`${MONEY_TD} text-right`} onClick={e => e.stopPropagation()}>
+                    {canChange(c) && (
+                      <span className="inline-flex gap-3">
+                        <button type="button" className="text-primary font-medium" onClick={() => { setNote(null); setEditing(c) }}>{c.status === 'queried' ? 'Fix' : 'Change'}</button>
+                        <button type="button" className="text-text-secondary" onClick={async () => {
+                          if (!who) return
+                          const r = await cancelClaim(createClient(), who, c.id)
+                          if (!r.ok) setError(r.message); else { setNote('Claim cancelled.'); await load() }
+                        }}>Cancel</button>
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {shown.length === 0 && (
+                <tr><td colSpan={7} className="text-center text-[13px] text-text-secondary py-10">
+                  {(claims ?? []).length === 0 ? 'No claims yet. Tap New claim after a trip or when you pay for something for work.' : 'No claims here'}
+                </td></tr>
+              )}
+            </tbody>
+          </table>
+        )}
       </div>
 
       {editing && who && (
