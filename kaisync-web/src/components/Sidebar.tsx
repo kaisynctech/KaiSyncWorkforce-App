@@ -525,6 +525,11 @@ export default function Sidebar({
     flags,
     isOwner,
   )
+  const showMyClaims = !platformOnly && itemVisible(
+    { label: 'My claims', href: '/dashboard/my-claims', icon: 'receipt_long', flag: 'payroll' },
+    flags,
+    isOwner,
+  )
   const showMessages = !platformOnly && itemVisible(
     { label: 'Messages', href: '/dashboard/messages', icon: 'chat', flag: 'messaging' },
     flags,
@@ -575,6 +580,14 @@ export default function Sidebar({
               icon="task_alt"
               label="My PA"
               active={isItemActive(pathname, '/dashboard/pa')}
+            />
+          )}
+          {showMyClaims && (
+            <NavTopBtn
+              href="/dashboard/my-claims"
+              icon="receipt_long"
+              label="My claims"
+              active={isItemActive(pathname, '/dashboard/my-claims')}
             />
           )}
           {showMessages && (
@@ -802,6 +815,27 @@ export default function Sidebar({
                         : 'bg-sky-500/15 text-sky-600',
                     )}>task_alt</span>
                     My PA
+                  </Link>
+                )}
+                {showMyClaims && (
+                  <Link
+                    href="/dashboard/my-claims"
+                    prefetch={false}
+                    onClick={onClose}
+                    className={cn(
+                      'flex items-center gap-2.5 rounded-xl px-2.5 h-10 text-[12px] font-medium transition-colors',
+                      isItemActive(pathname, '/dashboard/my-claims')
+                        ? 'bg-primary text-white shadow-sm shadow-primary/25'
+                        : 'text-text-primary/80 hover:bg-white/80',
+                    )}
+                  >
+                    <span className={cn(
+                      'material-icons text-[18px] w-7 h-7 rounded-lg flex items-center justify-center shrink-0',
+                      isItemActive(pathname, '/dashboard/my-claims')
+                        ? 'bg-white/20 text-white'
+                        : 'bg-emerald-500/15 text-emerald-600',
+                    )}>receipt_long</span>
+                    My claims
                   </Link>
                 )}
                 {showMessages && (
