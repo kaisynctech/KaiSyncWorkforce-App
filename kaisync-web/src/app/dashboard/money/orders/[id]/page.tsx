@@ -290,7 +290,7 @@ export default function OrderPage() {
               </Link>
             )}
           </div>
-          <div className="flex gap-2 flex-wrap">
+          <div className="flex gap-2 flex-wrap w-full sm:w-auto">
             <Link href={`/dashboard/money/quotes/${quote.id}`} className="btn-outlined h-8 px-3 text-[12px] inline-flex items-center gap-1">
               <span className="material-icons text-[16px]">request_quote</span>Quote
             </Link>
