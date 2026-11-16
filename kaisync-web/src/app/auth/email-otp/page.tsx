@@ -3,10 +3,8 @@
 import { Suspense, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import {
-  AUTH_ROUTES,
-  routeAfterCompanySelected,
-} from '@/lib/auth/employee-routing'
+import { AUTH_ROUTES } from '@/lib/auth/employee-routing'
+import { resolvePostAuthRoute } from '@/lib/auth/enter-membership'
 import { claimEmployeeInvite, getCurrentJwtEmployee } from '@/lib/auth/session'
 import {
   AuthBackButton,
@@ -85,20 +83,12 @@ function EmailOtpForm() {
         return
       }
 
-      if (employee.company_id) {
-        // Single known company company then picker
-        const { data: companies } = await supabase
-          .from('employees')
-          .select('company_id')
-          .eq('user_id', (await supabase.auth.getUser()).data.user?.id ?? '')
-
-        if (companies && companies.length === 1) {
-          router.push(routeAfterCompanySelected(employee.access_level))
-          return
-        }
-      }
-
-      router.push(AUTH_ROUTES.companyPicker)
+      const routed = await resolvePostAuthRoute(supabase)
+      router.push(
+        routed.kind === 'enter' || routed.kind === 'picker'
+          ? routed.path
+          : AUTH_ROUTES.companyPicker,
+      )
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Invalid or expired code.')
     } finally {

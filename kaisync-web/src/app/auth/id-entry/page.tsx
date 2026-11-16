@@ -7,13 +7,12 @@ import { createClient } from '@/lib/supabase/client'
 import {
   AUTH_ROUTES,
   routeAfterCompanySelected,
-  routeAfterEmailSignIn,
 } from '@/lib/auth/employee-routing'
+import { resolvePostAuthRoute } from '@/lib/auth/enter-membership'
 import { hasCodeSession } from '@/lib/auth/code-session'
 import {
   claimEmployeeInvite,
   getCurrentJwtEmployee,
-  getMyMemberships,
   markMyLoginPasswordReady,
   refreshCodeSession,
   signInWithCode,
@@ -65,22 +64,22 @@ export default function IdEntryPage() {
           if (claimed) jwtEmp = await getCurrentJwtEmployee(supabase)
         }
         if (cancelled) return
-        if (jwtEmp) {
-          router.replace(routeAfterEmailSignIn(jwtEmp.login_password_ready))
+        if (jwtEmp && !jwtEmp.login_password_ready) {
+          router.replace(AUTH_ROUTES.mandatoryPassword)
           return
         }
 
-        // Authenticated but no employee via direct lookup — prefer My Companies
-        // when memberships already exist (avoids Link-to-Company loop).
+        const routed = await resolvePostAuthRoute(supabase)
+        if (cancelled) return
+        if (routed.kind === 'enter' || routed.kind === 'picker') {
+          router.replace(routed.path)
+          return
+        }
+
+        // Authenticated but no memberships — link company when we have an email.
         const { data: { user } } = await supabase.auth.getUser()
         if (cancelled) return
         if (user?.email) {
-          const memberships = await getMyMemberships(supabase)
-          if (cancelled) return
-          if (memberships.length > 0) {
-            router.replace(AUTH_ROUTES.companyPicker)
-            return
-          }
           const params = new URLSearchParams({
             email: user.email.trim().toLowerCase(),
             firstName: '',
@@ -160,6 +159,12 @@ export default function IdEntryPage() {
           router.push(AUTH_ROUTES.mandatoryPassword)
           return
         }
+      }
+
+      const routed = await resolvePostAuthRoute(supabase)
+      if (routed.kind === 'enter' || routed.kind === 'picker') {
+        router.push(routed.path)
+        return
       }
       router.push(AUTH_ROUTES.companyPicker)
     } catch (err: unknown) {

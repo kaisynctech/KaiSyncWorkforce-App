@@ -44,7 +44,13 @@ export default function MandatoryPasswordPage() {
       const marked = await markMyLoginPasswordReady(supabase)
       if (!marked.ok) throw new Error(marked.message)
 
-      router.push(AUTH_ROUTES.companyPicker)
+      const { resolvePostAuthRoute } = await import('@/lib/auth/enter-membership')
+      const routed = await resolvePostAuthRoute(supabase)
+      router.push(
+        routed.kind === 'enter' || routed.kind === 'picker'
+          ? routed.path
+          : AUTH_ROUTES.companyPicker,
+      )
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Could not set password.')
     } finally {

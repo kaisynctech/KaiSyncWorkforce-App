@@ -72,6 +72,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         let { data: emp, error: empError } = await query.limit(1).maybeSingle()
         if (empError) {
           console.error('dashboard employee lookup failed', empError)
+          // Embed failures (companies(*)) must not look like "no employee".
+          let plainQ = supabase
+            .from('employees')
+            .select(EMPLOYEE_SAFE_SELECT)
+            .eq('user_id', user.id)
+            .eq('is_active', true)
+          if (ctx?.employee_id && ctx.company_id) {
+            plainQ = plainQ.eq('id', ctx.employee_id).eq('company_id', ctx.company_id)
+          }
+          const plain = await plainQ.limit(1).maybeSingle()
+          if (plain.error) {
+            console.error('dashboard employee plain lookup failed', plain.error)
+          } else {
+            emp = plain.data as typeof emp
+          }
         }
 
         // Stale kf_emp_ctx (wrong company / old employee id) must not treat a
@@ -80,8 +95,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           const fallback = await baseQuery().limit(1).maybeSingle()
           if (fallback.error) {
             console.error('dashboard employee fallback failed', fallback.error)
+            const plainFallback = await supabase
+              .from('employees')
+              .select(EMPLOYEE_SAFE_SELECT)
+              .eq('user_id', user.id)
+              .eq('is_active', true)
+              .limit(1)
+              .maybeSingle()
+            if (!plainFallback.error) emp = plainFallback.data as typeof emp
+          } else {
+            emp = fallback.data
           }
-          emp = fallback.data
           if (emp) {
             const co = (emp as unknown as { companies?: Company | Company[] | null }).companies
             const company = Array.isArray(co) ? co[0] : co
@@ -108,14 +132,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             return
           }
           // Share what was just read so the bootstrap, sidebar and pages don't read it again.
-          const row = emp as unknown as Employee & { companies: Company | null }
+          const row = emp as unknown as Employee & { companies?: Company | Company[] | null }
+          let companyRow = Array.isArray(row.companies) ? row.companies[0] : row.companies
+          if (!companyRow?.id && row.company_id) {
+            const { data: co } = await supabase
+              .from('companies')
+              .select('*')
+              .eq('id', row.company_id)
+              .maybeSingle()
+            companyRow = (co as Company | null) ?? null
+          }
           primeCurrentMember(user.id, { employeeId: row.id, companyId: row.company_id, sessionToken: null })
           primeEmployeeWorkspace(row as unknown as Record<string, unknown> & { id: string; company_id: string })
-          if (row.companies?.id) {
-            primeCompanyWorkspace(row.companies as unknown as { id: string; name?: string | null; enabled_modules?: unknown; custom_settings?: unknown })
+          if (companyRow?.id) {
+            primeCompanyWorkspace(companyRow as unknown as { id: string; name?: string | null; enabled_modules?: unknown; custom_settings?: unknown })
           }
           setEmployee(emp as unknown as Employee)
-          setCompany((emp as unknown as { companies: Company }).companies)
+          setCompany(companyRow ?? null)
           setPlatformOnly(false)
           setLoading(false)
           return

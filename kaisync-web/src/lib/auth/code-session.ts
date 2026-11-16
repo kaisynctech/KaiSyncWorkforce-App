@@ -161,6 +161,9 @@ export function updateCodeSessionToken(sessionToken: string, patch?: Partial<Cod
 export function saveEmpContext(ctx: EmpContext): void {
   if (!canUseStorage()) return
   localStorage.setItem(EMP_CONTEXT_KEY, JSON.stringify(ctx))
+  // Company switch changes the cache key inputs — drop stale member so the
+  // next resolveCurrentMember / dashboard boot cannot reuse the prior tenant.
+  void import('@/lib/supabase/resolve-company').then((m) => m.clearCurrentMemberCache())
 }
 
 export function getEmpContext(): EmpContext | null {

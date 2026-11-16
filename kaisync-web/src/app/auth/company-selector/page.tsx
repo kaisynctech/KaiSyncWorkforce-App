@@ -3,10 +3,17 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { saveEmpContext, clearAllAuthLocalState, hasCodeSession } from '@/lib/auth/code-session'
+import {
+  saveEmpContext,
+  clearAllAuthLocalState,
+  getEmpContext,
+  hasCodeSession,
+} from '@/lib/auth/code-session'
 import { AUTH_ROUTES, routeAfterCompanySelected } from '@/lib/auth/employee-routing'
+import { routeForMembership } from '@/lib/auth/enter-membership'
 import {
   getMyMemberships,
+  isMembershipApproved,
   isMembershipPending,
   isMembershipRejected,
   revokeCodeSession,
@@ -250,7 +257,26 @@ export default function CompanySelectorPage() {
           {canReturn && (
             <button
               type="button"
-              onClick={() => router.push(AUTH_ROUTES.employeeDashboard)}
+              onClick={() => {
+                const ctx = getEmpContext()
+                const fromList = memberships.find(
+                  (m) =>
+                    m.company_id === ctx?.company_id &&
+                    m.employee_id === ctx?.employee_id,
+                )
+                if (fromList) {
+                  router.push(routeForMembership(fromList))
+                  return
+                }
+                const approved = memberships.filter(isMembershipApproved)
+                if (approved.length === 1) {
+                  router.push(routeForMembership(approved[0]))
+                  return
+                }
+                router.push(
+                  routeAfterCompanySelected(ctx?.access_level ?? approved[0]?.access_level),
+                )
+              }}
               className="w-full h-11 rounded-xl text-[14px] font-medium text-slate-300"
               style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}
             >

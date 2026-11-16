@@ -7,8 +7,8 @@ import { createClient } from '@/lib/supabase/client'
 import {
   AUTH_ROUTES,
   routeAfterCompanySelected,
-  routeAfterEmailSignIn,
 } from '@/lib/auth/employee-routing'
+import { resolvePostAuthRoute } from '@/lib/auth/enter-membership'
 import { establishSessionFromUrl } from '@/lib/auth/establish-session-from-url'
 import { getCurrentJwtEmployee } from '@/lib/auth/session'
 import { saveEmpContext } from '@/lib/auth/code-session'
@@ -63,7 +63,17 @@ export default function InviteCompletePage() {
           const emp = await getCurrentJwtEmployee(supabase)
           if (!emp) throw new Error('Could not link your invite. Contact HR.')
           if (cancelled) return
-          router.replace(routeAfterEmailSignIn(emp.login_password_ready))
+          if (!emp.login_password_ready) {
+            router.replace(AUTH_ROUTES.mandatoryPassword)
+            return
+          }
+          const routed = await resolvePostAuthRoute(supabase)
+          if (cancelled) return
+          router.replace(
+            routed.kind === 'enter' || routed.kind === 'picker'
+              ? routed.path
+              : AUTH_ROUTES.companyPicker,
+          )
           return
         }
 

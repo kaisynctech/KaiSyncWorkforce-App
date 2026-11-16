@@ -32,7 +32,11 @@ export function routeAfterCompanySelected(accessLevel: string | null | undefined
     : AUTH_ROUTES.employeeDashboard
 }
 
-/** After email/OTP sign-in: mandatory password or company picker . */
+/**
+ * After email/OTP sign-in when password is not ready → mandatory password.
+ * When password is ready, prefer `resolvePostAuthRoute` (single membership
+ * enters the dashboard; several open the company picker).
+ */
 export function routeAfterEmailSignIn(loginPasswordReady: boolean): string {
   if (!loginPasswordReady) return AUTH_ROUTES.mandatoryPassword
   return AUTH_ROUTES.companyPicker

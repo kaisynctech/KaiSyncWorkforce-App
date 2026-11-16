@@ -4,9 +4,9 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
-import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
-import { AUTH_ROUTES, routeAfterEmailSignIn } from '@/lib/auth/employee-routing'
-import { getCurrentJwtEmployee, getMyMemberships, markMyLoginPasswordReady } from '@/lib/auth/session'
+import { AUTH_ROUTES } from '@/lib/auth/employee-routing'
+import { resolvePostAuthRoute } from '@/lib/auth/enter-membership'
+import { getCurrentJwtEmployee, markMyLoginPasswordReady } from '@/lib/auth/session'
 
 export default function HrSignInPage() {
   const router = useRouter()
@@ -40,8 +40,15 @@ export default function HrSignInPage() {
 
         const emp = await getCurrentJwtEmployee(supabase)
         if (cancelled) return
-        if (emp) {
-          router.replace(routeAfterEmailSignIn(emp.login_password_ready))
+        if (emp && !emp.login_password_ready) {
+          router.replace(AUTH_ROUTES.mandatoryPassword)
+          return
+        }
+
+        const routed = await resolvePostAuthRoute(supabase)
+        if (cancelled) return
+        if (routed.kind === 'enter' || routed.kind === 'picker') {
+          router.replace(routed.path)
           return
         }
 
@@ -70,42 +77,14 @@ export default function HrSignInPage() {
         await markMyLoginPasswordReady(supabase)
       }
 
-      // Authenticated but no resolved member — prefer existing memberships over register/link.
-      const member = await resolveCurrentMember(supabase)
-      if (!member) {
-        const memberships = await getMyMemberships(supabase)
-        if (memberships.length > 0) {
-          router.push(AUTH_ROUTES.companyPicker)
-          return
-        }
-        router.push('/auth/hr-register-company')
+      // One membership → enter dashboard; several → picker; none → register.
+      const routed = await resolvePostAuthRoute(supabase)
+      if (routed.kind === 'enter' || routed.kind === 'picker') {
+        router.push(routed.path)
+        router.refresh()
         return
       }
-      // Persist selected company context (parity with employee company picker)
-      const { data: emp } = await supabase
-        .from('employees')
-        .select('id, company_id, access_level, name, surname, companies(name, code)')
-        .eq('id', member.employeeId)
-        .maybeSingle()
-      if (emp) {
-        const { saveEmpContext } = await import('@/lib/auth/code-session')
-        const companies = emp.companies as
-          | { name?: string; code?: string }
-          | { name?: string; code?: string }[]
-          | null
-        const co = Array.isArray(companies) ? companies[0] : companies
-        saveEmpContext({
-          employee_id: emp.id,
-          company_id: emp.company_id,
-          access_level: emp.access_level ?? 'owner',
-          name: emp.name ?? undefined,
-          surname: emp.surname ?? undefined,
-          company_name: co?.name,
-          company_code: co?.code ?? undefined,
-        })
-      }
-      router.push('/dashboard/overview')
-      router.refresh()
+      router.push('/auth/hr-register-company')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Invalid email or password')
     } finally {
