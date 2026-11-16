@@ -13,6 +13,7 @@ import { hasCodeSession } from '@/lib/auth/code-session'
 import {
   claimEmployeeInvite,
   getCurrentJwtEmployee,
+  getMyMemberships,
   markMyLoginPasswordReady,
   refreshCodeSession,
   signInWithCode,
@@ -69,10 +70,17 @@ export default function IdEntryPage() {
           return
         }
 
-        // Authenticated but no employee — resume self-registration link company
+        // Authenticated but no employee via direct lookup — prefer My Companies
+        // when memberships already exist (avoids Link-to-Company loop).
         const { data: { user } } = await supabase.auth.getUser()
         if (cancelled) return
         if (user?.email) {
+          const memberships = await getMyMemberships(supabase)
+          if (cancelled) return
+          if (memberships.length > 0) {
+            router.replace(AUTH_ROUTES.companyPicker)
+            return
+          }
           const params = new URLSearchParams({
             email: user.email.trim().toLowerCase(),
             firstName: '',

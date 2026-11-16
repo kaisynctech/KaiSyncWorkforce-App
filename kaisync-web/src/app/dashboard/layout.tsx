@@ -10,9 +10,9 @@ import { DashboardCompanyProvider } from '@/components/DashboardCompanyContext'
 import { BillingLockBanner } from '@/components/BillingLockBanner'
 import { MODULES_UPDATED_EVENT, type ModulesUpdatedDetail } from '@/lib/module-events'
 import { DashboardBootstrapProvider } from '@/components/DashboardBootstrapContext'
-import { getCodeSession, getEmpContext, clearCodeSession } from '@/lib/auth/code-session'
+import { getCodeSession, getEmpContext, saveEmpContext, clearCodeSession } from '@/lib/auth/code-session'
 import { AUTH_ROUTES, usesCompanyDashboard } from '@/lib/auth/employee-routing'
-import { refreshCodeSession } from '@/lib/auth/session'
+import { getMyMemberships, refreshCodeSession } from '@/lib/auth/session'
 import { isPlatformAdmin } from '@/lib/platform-admin'
 import { EMPLOYEE_SAFE_SELECT } from '@/lib/employee-columns'
 import { primeCurrentMember } from '@/lib/supabase/resolve-company'
@@ -57,23 +57,52 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       if (user) {
         const ctx = getEmpContext()
 
-        let query = supabase
-          .from('employees')
-          .select(`${EMPLOYEE_SAFE_SELECT}, companies(*)`)
-          .eq('user_id', user.id)
-          .eq('is_active', true)
+        const baseQuery = () =>
+          supabase
+            .from('employees')
+            .select(`${EMPLOYEE_SAFE_SELECT}, companies(*)`)
+            .eq('user_id', user.id)
+            .eq('is_active', true)
 
+        let query = baseQuery()
         if (ctx?.employee_id && ctx.company_id) {
           query = query.eq('id', ctx.employee_id).eq('company_id', ctx.company_id)
         }
 
-        const { data: emp } = await query.limit(1).maybeSingle()
+        let { data: emp, error: empError } = await query.limit(1).maybeSingle()
+        if (empError) {
+          console.error('dashboard employee lookup failed', empError)
+        }
+
+        // Stale kf_emp_ctx (wrong company / old employee id) must not treat a
+        // linked account as unlinked — retry without the context filter.
+        if (!emp && ctx?.employee_id && ctx.company_id) {
+          const fallback = await baseQuery().limit(1).maybeSingle()
+          if (fallback.error) {
+            console.error('dashboard employee fallback failed', fallback.error)
+          }
+          emp = fallback.data
+          if (emp) {
+            const co = (emp as unknown as { companies?: Company | Company[] | null }).companies
+            const company = Array.isArray(co) ? co[0] : co
+            saveEmpContext({
+              employee_id: (emp as unknown as Employee).id,
+              company_id: (emp as unknown as Employee).company_id,
+              access_level: (emp as unknown as Employee).access_level ?? 'employee',
+              name: (emp as unknown as Employee).name ?? undefined,
+              surname: (emp as unknown as Employee).surname ?? undefined,
+              company_name: company?.name ?? undefined,
+              company_code: company?.code ?? undefined,
+            })
+          }
+        }
         if (cancelled) return
 
         if (emp) {
           const access = (emp as unknown as Employee).access_level
+          const liveCtx = getEmpContext()
           // Pure employees must pick a company when no ctx
-          if (!ctx && access === 'employee') {
+          if (!liveCtx && access === 'employee') {
             router.replace(AUTH_ROUTES.companyPicker)
             setLoading(false)
             return
@@ -107,6 +136,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         // sending an unlinked email session off to link a company.
         const codeSession = getCodeSession()
         if (!(codeSession?.employee?.id && codeSession.company?.id)) {
+          // Already linked somewhere → company picker, not "Link to Company".
+          try {
+            const memberships = await getMyMemberships(supabase)
+            if (cancelled) return
+            if (memberships.length > 0) {
+              router.replace(AUTH_ROUTES.companyPicker)
+              setLoading(false)
+              return
+            }
+          } catch (err) {
+            console.error('dashboard membership lookup failed', err)
+          }
           router.replace(
             `${AUTH_ROUTES.linkCompany}?email=${encodeURIComponent(user.email ?? '')}&firstName=&lastName=`,
           )

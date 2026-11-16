@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { AUTH_ROUTES, routeAfterEmailSignIn } from '@/lib/auth/employee-routing'
-import { getCurrentJwtEmployee, markMyLoginPasswordReady } from '@/lib/auth/session'
+import { getCurrentJwtEmployee, getMyMemberships, markMyLoginPasswordReady } from '@/lib/auth/session'
 
 export default function HrSignInPage() {
   const router = useRouter()
@@ -70,9 +70,14 @@ export default function HrSignInPage() {
         await markMyLoginPasswordReady(supabase)
       }
 
-      // Authenticated but no employee record = incomplete registration — resume company setup
+      // Authenticated but no resolved member — prefer existing memberships over register/link.
       const member = await resolveCurrentMember(supabase)
       if (!member) {
+        const memberships = await getMyMemberships(supabase)
+        if (memberships.length > 0) {
+          router.push(AUTH_ROUTES.companyPicker)
+          return
+        }
         router.push('/auth/hr-register-company')
         return
       }

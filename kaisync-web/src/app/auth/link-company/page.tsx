@@ -1,9 +1,10 @@
 'use client'
 
-import { Suspense, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { AUTH_ROUTES } from '@/lib/auth/employee-routing'
+import { getMyMemberships } from '@/lib/auth/session'
 import {
   AuthBackButton,
   AuthError,
@@ -23,8 +24,31 @@ function LinkCompanyForm() {
 
   const [companyCode, setCompanyCode] = useState('')
   const [loading, setLoading] = useState(false)
+  const [checking, setChecking] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+
+  // Already-linked accounts must not stay stuck on this recovery screen.
+  useEffect(() => {
+    let cancelled = false
+    async function redirectIfLinked() {
+      try {
+        const supabase = createClient()
+        const memberships = await getMyMemberships(supabase)
+        if (cancelled) return
+        if (memberships.length > 0) {
+          router.replace(AUTH_ROUTES.companyPicker)
+          return
+        }
+      } catch {
+        // stay on link form
+      } finally {
+        if (!cancelled) setChecking(false)
+      }
+    }
+    void redirectIfLinked()
+    return () => { cancelled = true }
+  }, [router])
 
   async function link(e: React.FormEvent) {
     e.preventDefault()
@@ -78,6 +102,15 @@ function LinkCompanyForm() {
     } finally {
       setLoading(false)
     }
+  }
+
+  if (checking) {
+    return (
+      <div className="flex items-center justify-center gap-2 text-slate-400 text-[14px] py-20">
+        <span className="material-icons animate-spin text-blue-400 text-[20px]">refresh</span>
+        Checking your companies…
+      </div>
+    )
   }
 
   return (
