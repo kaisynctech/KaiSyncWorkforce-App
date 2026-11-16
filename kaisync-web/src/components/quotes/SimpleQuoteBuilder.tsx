@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
+import { repOptions } from '@/lib/commission'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { createProject } from '@/lib/projects'
 import { createJob } from '@/lib/jobs'
@@ -158,6 +159,9 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   const [dealId,      setDealId]      = useState<string | null>(null)
   const [jobId,       setJobId]       = useState<string | null>(null)
   const [vatOn,       setVatOn]       = useState(true)
+  const [salesRep,    setSalesRep]    = useState<string | null>(null)
+  const [repList,     setRepList]     = useState<{ id: string; name: string | null }[]>([])
+  const [repNote,     setRepNote]     = useState<string | null>(null)
   // Quotation template (piece 7). null: a quotation from before templates, which looks and works as before.
   const [templates,   setTemplates]   = useState<QuoteTemplate[]>([])
   const [templateId,  setTemplateId]  = useState<string | null>(null)
@@ -246,6 +250,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   const statusRef     = useRef('draft')
   const dealIdRef     = useRef<string | null>(null)
   const jobIdRef      = useRef<string | null>(null)
+  const salesRepRef   = useRef<string | null>(null)
   const linesRef      = useRef<SimpleQuoteLine[]>([])
   const quoteNumberRef = useRef<string | null>(null)
   const clientSearchSeq = useRef(0)
@@ -326,6 +331,14 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   }, [authReady, companyId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const locked = status === 'accepted' && !unlocked
+
+  // Sales reps for the "Sales rep" field (names only).
+  useEffect(() => {
+    if (!companyId) return
+    let live = true
+    void repOptions(createClient(), companyId).then(list => { if (live) setRepList(list) })
+    return () => { live = false }
+  }, [companyId])
   useEffect(() => { lockedRef.current = locked }, [locked])
   useEffect(() => {
     if (status !== 'accepted' || !companyId || !quoteId) return
@@ -457,6 +470,8 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         setTitle((q.title as string) ?? '')
         const cid2 = (q.client_id as string | null) ?? null
         setClientId(cid2);         clientIdRef.current = cid2
+        const rep2 = (q.salesperson_id as string | null) ?? null
+        setSalesRep(rep2);         salesRepRef.current = rep2
         if (q.currency) {
           setQuoteCurrency(String(q.currency))
           setCurrencyTouched(true)
@@ -597,6 +612,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         company_id:   cid,
         quote_number: qNum,
         client_id:    clientIdRef.current,
+        salesperson_id: salesRepRef.current,
         deal_id:      dealIdRef.current,
         job_id:       jobIdRef.current,
         title:        titleRef.current.trim() || 'Untitled Quote',
@@ -756,6 +772,17 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
     setClientId(id); clientIdRef.current = id
     setChosenClient(row ?? null)
     setClientSearch(name); scheduleAutoSave()
+  }
+  async function updateSalesRep(v: string | null) {
+    setSalesRep(v); salesRepRef.current = v; setRepNote(null)
+    // An accepted quote is locked, so the rep is saved on its own (that's when commission is worked out).
+    if (locked && quoteIdRef.current && companyIdRef.current) {
+      const { error } = await createClient().from('commercial_quotes').update({ salesperson_id: v, updated_at: new Date().toISOString() })
+        .eq('id', quoteIdRef.current).eq('company_id', companyIdRef.current)
+      setRepNote(error ? 'The sales rep could not be saved. Try again.' : 'Sales rep saved. Their commission is worked out now.')
+      return
+    }
+    scheduleAutoSave()
   }
   function updateValidUntil(v: string) {
     setValidUntil(v); validUntilRef.current = v; scheduleAutoSave()
@@ -1781,6 +1808,26 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
               className="w-full h-8 rounded-lg border border-divider bg-surface px-2.5 text-[12.5px] text-text-primary focus:outline-none focus:border-primary transition-colors"
             />
           </div>
+
+          {/* Sales rep: who earns commission on this quote (10b). Shown once the company has reps. */}
+          {(repList.length > 0 || salesRep) && (
+            <div className="col-span-2 sm:col-span-3 sm:order-5">
+              <label htmlFor="quote-sales-rep" className="block text-[10.5px] text-text-secondary uppercase tracking-wide mb-1">
+                Sales rep
+              </label>
+              <select
+                id="quote-sales-rep"
+                value={salesRep ?? ''}
+                onChange={e => void updateSalesRep(e.target.value || null)}
+                className="w-full h-8 rounded-lg border border-divider bg-surface px-2.5 text-[12.5px] text-text-primary focus:outline-none focus:border-primary transition-colors"
+              >
+                <option value="">No commission</option>
+                {salesRep && !repList.some(r => r.id === salesRep) && <option value={salesRep}>Current rep (no longer a sales rep)</option>}
+                {repList.map(r => <option key={r.id} value={r.id}>{r.name ?? 'Staff member'}</option>)}
+              </select>
+              {repNote && <p className="text-[11.5px] text-text-secondary mt-1" role="status">{repNote}</p>}
+            </div>
+          )}
 
           {/* Currency and, for a foreign currency, the exchange rate (can be changed) */}
           <div className="col-span-2 sm:col-span-3 sm:order-2">
