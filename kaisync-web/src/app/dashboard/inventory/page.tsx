@@ -263,6 +263,9 @@ export default function InventoryPage() {
             <p className="text-[11px] text-text-secondary mt-0.5">Parts, services, materials and labour in one catalogue</p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            <Link href="/dashboard/inventory/restock" prefetch={false} className="btn-outlined h-10 px-3 text-[13px] inline-flex items-center gap-1">
+              <span className="material-icons text-[18px]">production_quantity_limits</span>Restock
+            </Link>
             <Link href="/dashboard/inventory/import" prefetch={false} className="btn-outlined h-10 px-3 text-[13px] inline-flex items-center gap-1">
               <span className="material-icons text-[18px]">upload_file</span>
               <span className="hidden sm:inline">Import price list</span><span className="sm:hidden">Import</span>

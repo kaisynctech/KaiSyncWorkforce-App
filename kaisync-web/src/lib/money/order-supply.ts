@@ -86,6 +86,9 @@ const MESSAGES: Record<string, string> = {
   LESS_THAN_RECEIVED: 'You can’t order fewer than have already arrived.',
   PO_HAS_DELIVERIES: 'Goods have already arrived on this PO, so it can’t be cancelled. Edit it instead.',
   INSUFFICIENT_STOCK: 'Some of this stock has already been used, so the delivery can’t be taken back.',
+  NOTHING_TO_ORDER: 'Tick at least one item with a supplier and a price.',
+  SUPPLIER_REQUIRED: 'Each ticked item needs a supplier. Use Ask suppliers for the ones without a price.',
+  ITEM_NOT_FOUND: 'One of the items no longer exists. Refresh and try again.',
 }
 
 export function supplyError(message: string | null | undefined): string {

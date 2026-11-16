@@ -27,6 +27,8 @@ interface DraftLine {
   rfq_line_id?: string | null
   rfq_response_line_id?: string | null
   quote_line_id?: string | null
+  /** The stock item (so receiving the goods adds them to stock). */
+  inventory_item_id?: string | null
 }
 
 interface GrnSummary { id: string; grn_number: string | null; received_date: string; status: string }
@@ -136,6 +138,7 @@ export default function PoBuilder({ poId }: { poId?: string }) {
         rfq_line_id: l.rfq_line_id ?? null,
         rfq_response_line_id: l.rfq_response_line_id ?? null,
         quote_line_id: l.quote_line_id ?? null,
+        inventory_item_id: l.inventory_item_id ?? null,
       })))
       setGrns((grnData ?? []) as GrnSummary[])
       setMatchLines((matchData ?? []) as ThreeWayMatchLine[])
@@ -171,7 +174,7 @@ export default function PoBuilder({ poId }: { poId?: string }) {
               .maybeSingle(),
             supabase
               .from('rfq_response_lines')
-              .select('*, rfq_line:rfq_lines(id, description, unit, quantity, quote_line_id)')
+              .select('*, rfq_line:rfq_lines(id, description, unit, quantity, quote_line_id, inventory_item_id)')
               .eq('recipient_id', preRecipientId),
           ])
           const supplierFromRecip = (recip as { supplier_id?: string } | null)?.supplier_id
@@ -189,6 +192,7 @@ export default function PoBuilder({ poId }: { poId?: string }) {
               unit: string
               quantity: number
               quote_line_id: string | null
+              inventory_item_id: string | null
             } | null
           }) => ({
             key: nk(),
@@ -200,6 +204,7 @@ export default function PoBuilder({ poId }: { poId?: string }) {
             rfq_line_id: rl.rfq_line_id ?? rl.rfq_line?.id ?? null,
             rfq_response_line_id: rl.id,
             quote_line_id: rl.rfq_line?.quote_line_id ?? null,
+            inventory_item_id: rl.rfq_line?.inventory_item_id ?? null,
           })))
         } else {
           setLines([{ key: nk(), description: '', unit: 'each', quantity_ordered: '1', unit_price: '0', vat_rate: '15' }])
@@ -209,12 +214,12 @@ export default function PoBuilder({ poId }: { poId?: string }) {
         setQuoteId(preQuoteId)
         const [{ data: q }, { data: qLines }] = await Promise.all([
           supabase.from('commercial_quotes').select('deal_id').eq('id', preQuoteId).eq('company_id', member.companyId).maybeSingle(),
-          supabase.from('commercial_quote_lines').select('id, description, unit, quantity, cost_price, is_excluded')
+          supabase.from('commercial_quote_lines').select('id, description, unit, quantity, cost_price, is_excluded, inventory_item_id')
             .eq('quote_id', preQuoteId).order('sort_order'),
         ])
         const dl = (q as { deal_id?: string | null } | null)?.deal_id
         if (dl) setDealId(dl)
-        const rows = ((qLines ?? []) as { id: string; description: string | null; unit: string | null; quantity: number | null; cost_price: number | null; is_excluded: boolean | null }[])
+        const rows = ((qLines ?? []) as { id: string; description: string | null; unit: string | null; quantity: number | null; cost_price: number | null; is_excluded: boolean | null; inventory_item_id: string | null }[])
           .filter(l => !l.is_excluded && (l.description ?? '').trim())
         setLines(rows.length ? rows.map(l => ({
           key: nk(),
@@ -224,6 +229,7 @@ export default function PoBuilder({ poId }: { poId?: string }) {
           unit_price: String(Number(l.cost_price) || 0),
           vat_rate: '15',
           quote_line_id: l.id,
+          inventory_item_id: l.inventory_item_id ?? null,
         })) : [{ key: nk(), description: '', unit: 'each', quantity_ordered: '1', unit_price: '0', vat_rate: '15' }])
         if (preSupplier) setSupplierId(preSupplier)
       } else {
@@ -339,6 +345,7 @@ export default function PoBuilder({ poId }: { poId?: string }) {
         rfq_line_id: l.rfq_line_id || null,
         rfq_response_line_id: l.rfq_response_line_id || null,
         quote_line_id: l.quote_line_id || null,
+        inventory_item_id: l.inventory_item_id || null,
       }
     })
 
