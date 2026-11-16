@@ -32,6 +32,7 @@ export const MONEY_SECTION_TABS: SectionTab[][] = [
   [
     { href: '/dashboard/finance/contractor-payouts', label: 'Contractor payouts' },
     { href: '/dashboard/finance/approvals', label: 'Approvals' },
+    { href: '/dashboard/money/claims', label: 'Staff claims' },
   ],
 ]
 

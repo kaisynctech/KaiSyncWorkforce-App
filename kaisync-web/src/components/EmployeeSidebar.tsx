@@ -32,6 +32,7 @@ const EMP_NAV_ITEMS: NavItem[] = [
   { label: 'My Incidents', href: '/dashboard/employee/incidents', icon: 'warning', module: 'incidents' },
   { label: 'Contractor Profile', href: '/dashboard/employee/contractor', icon: 'badge', module: 'contractors' },
   { label: 'My Payslips', href: '/dashboard/employee/payslips', icon: 'payments', module: 'payroll' },
+  { label: 'My Claims', href: '/dashboard/employee/claims', icon: 'receipt_long', module: 'payroll' },
   { label: 'My Documents', href: '/dashboard/employee/documents', icon: 'folder' },
   { label: 'Forms', href: '/dashboard/employee/forms', icon: 'description', module: 'paperless' },
   { label: 'Messages', href: '/dashboard/messages', icon: 'chat', module: 'messaging' },
