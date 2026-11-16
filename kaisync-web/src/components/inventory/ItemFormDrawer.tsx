@@ -12,6 +12,7 @@ import type {
   CatalogueItemAlias,
   CatalogueItemSupplier,
   ItemType,
+  ItemUse,
 } from '@/types/inventory'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -56,6 +57,16 @@ const ITEM_TYPES: { value: ItemType; label: string; icon: string }[] = [
   { value: 'service',  label: 'Service',  icon: 'miscellaneous_services' },
   { value: 'material', label: 'Material', icon: 'layers' },
   { value: 'labour',   label: 'Labour',   icon: 'person_pin_circle' },
+  { value: 'package',  label: 'Package',  icon: 'inventory_2' },
+  { value: 'fee',      label: 'Fee',      icon: 'receipt' },
+  { value: 'hire',     label: 'Hire',     icon: 'event_repeat' },
+]
+
+const ITEM_USES: { value: ItemUse; label: string; hint: string }[] = [
+  { value: 'sell',   label: 'Sell it',            hint: 'Goes out on quotations and invoices' },
+  { value: 'use_up', label: 'Use it up on jobs',  hint: 'Booked to jobs, not sold on its own' },
+  { value: 'hire',   label: 'Hire it out',        hint: 'Goes out and comes back' },
+  { value: 'make',   label: 'Make it',            hint: 'You build it from other items' },
 ]
 
 const ALIAS_TYPES: { value: AliasType; label: string }[] = [
@@ -123,6 +134,7 @@ export default function ItemFormDrawer({
   // ── Stock ──────────────────────────────────────────────────────────────────
   const [isStockable,    setIsStockable]    = useState(false)
   const [qtyOnHandStr,   setQtyOnHandStr]   = useState('0')
+  const [itemUse,        setItemUse]        = useState<ItemUse>('sell')
   const [reorderPointStr,setReorderPointStr]= useState('')
   const [reorderQtyStr,  setReorderQtyStr]  = useState('')
   const [binLocation,    setBinLocation]    = useState('')
@@ -161,7 +173,7 @@ export default function ItemFormDrawer({
       setItemType('part'); setName(''); setSku(''); setDescription('')
       setBrand(''); setConditionId(''); setVariantGroupId(''); setShowVariant(false)
       setUnitOfMeasure('each'); setCostStr(''); setSellStr(''); setMarkupStr('')
-      setIsStockable(false); setQtyOnHandStr('0'); setReorderPointStr('')
+      setIsStockable(false); setQtyOnHandStr('0'); setItemUse('sell'); setReorderPointStr('')
       setReorderQtyStr(''); setBinLocation(''); setInternalNotes('')
       setAliases([]); setSuppliers([])
       setShowAliases(false); setShowSuppliers(false)
@@ -184,6 +196,7 @@ export default function ItemFormDrawer({
     const mk = item.markup_percent ?? item.markup
     setMarkupStr(mk != null ? String(mk) : '')
     setIsStockable(item.is_stockable ?? false)
+    setItemUse(item.item_use ?? (item.item_type === 'hire' ? 'hire' : 'sell'))
     setQtyOnHandStr(mode === 'duplicate' ? '0' : String(item.qty_on_hand ?? 0))
     setReorderPointStr(item.reorder_point != null ? String(item.reorder_point) : '')
     setReorderQtyStr(item.reorder_qty != null ? String(item.reorder_qty) : '')
@@ -293,6 +306,7 @@ export default function ItemFormDrawer({
       sell_price:      parseFloat(sellStr)  || 0,
       markup_percent:  parseFloat(markupStr) || 0,
       is_stockable:    isStockable,
+      item_use:        isStockable ? itemUse : null,
       qty_on_hand:     parseFloat(qtyOnHandStr) || 0,
       reorder_point:   reorderPointStr ? parseFloat(reorderPointStr) : null,
       reorder_qty:     reorderQtyStr   ? parseFloat(reorderQtyStr)   : null,
@@ -412,7 +426,7 @@ export default function ItemFormDrawer({
   }
 
   const showPartFields = itemType === 'part' || itemType === 'material'
-  const showStockFields = showPartFields
+  const showStockFields = showPartFields || itemType === 'hire'
 
   // ── Render ─────────────────────────────────────────────────────────────────
   if (!open) return null
@@ -451,7 +465,7 @@ export default function ItemFormDrawer({
                 <button
                   key={t.value}
                   type="button"
-                  onClick={() => setItemType(t.value)}
+                  onClick={() => { setItemType(t.value); if (t.value === 'hire') setItemUse('hire') }}
                   className={cn(
                     'flex flex-col items-center gap-1 py-2.5 rounded-lg border text-[11px] font-medium transition-colors',
                     itemType === t.value
@@ -651,6 +665,29 @@ export default function ItemFormDrawer({
                 </div>
                 <span className="text-[13px] text-text-primary">Track stock for this item</span>
               </label>
+
+              {isStockable && (
+                <div>
+                  <p className="block text-[11px] text-text-secondary mb-1.5">How you use it</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {ITEM_USES.map(u => (
+                      <button
+                        key={u.value}
+                        type="button"
+                        aria-pressed={itemUse === u.value}
+                        onClick={() => setItemUse(u.value)}
+                        className={cn(
+                          'text-left rounded-lg border px-3 py-2 min-h-[52px] transition-colors',
+                          itemUse === u.value ? 'border-primary bg-primary/8' : 'border-divider hover:border-primary/40',
+                        )}
+                      >
+                        <span className={cn('block text-[13px] font-medium', itemUse === u.value ? 'text-primary' : 'text-text-primary')}>{u.label}</span>
+                        <span className="block text-[11px] text-text-secondary leading-snug">{u.hint}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {isStockable && (
                 <div className="grid grid-cols-2 gap-3">

@@ -170,6 +170,9 @@ export default function GrnForm({ grnId }: { grnId?: string }) {
 
     let currentId = savedId.current
     let savedGrnNumber = grnNumber
+    // Saving a delivery that was already received again must not add the quantities a second time.
+    const alreadyReceived = grn?.status === 'received'
+    const stockErrors: string[] = []
     if (!currentId) {
       const { data: numData } = await (supabase.rpc as unknown as (name: string, args: Record<string, unknown>) => Promise<{ data: string | null }>)('generate_grn_number', { p_company_id: companyId })
       const { data: inserted, error: insErr } = await supabase.from('goods_received_notes').insert({
@@ -225,7 +228,7 @@ export default function GrnForm({ grnId }: { grnId?: string }) {
       }, { onConflict: 'id' })
 
       // Update PO line quantity_received
-      if (l.po_line_id) {
+      if (l.po_line_id && !alreadyReceived) {
         const { data: poLine } = await supabase.from('purchase_order_lines').select('quantity_received').eq('id', l.po_line_id).maybeSingle()
         if (poLine) {
           const prevQty = (poLine as { quantity_received: number }).quantity_received
@@ -235,13 +238,22 @@ export default function GrnForm({ grnId }: { grnId?: string }) {
         }
       }
 
-      // Update inventory quantity_on_hand
-      if (l.inventory_item_id) {
-        const { data: item } = await supabase.from('inventory_items').select('quantity_on_hand').eq('id', l.inventory_item_id).maybeSingle()
-        if (item) {
-          const prev = (item as { quantity_on_hand: number }).quantity_on_hand ?? 0
-          await supabase.from('inventory_items').update({ quantity_on_hand: roundFinancial(prev + (Number(l.quantity_received) || 0)) }).eq('id', l.inventory_item_id)
-        }
+      // Stock in: through the stock-movement step (the database refuses direct stock changes), so the
+      // movement history shows the delivery too.
+      const qtyIn = Number(l.quantity_received) || 0
+      if (l.inventory_item_id && qtyIn > 0 && !alreadyReceived) {
+        const { error: stockErr } = await (supabase.rpc as unknown as (name: string, args: Record<string, unknown>) => Promise<{ error: { message: string } | null }>)(
+          'hr_inventory_stock_movement', {
+            p_company_id: companyId,
+            p_item_id: l.inventory_item_id,
+            p_type: 'receive',
+            p_quantity: qtyIn,
+            p_actor_employee_id: employeeId,
+            p_job_id: null,
+            p_note: `Goods received ${savedGrnNumber ?? ''}`.trim(),
+            p_unit_cost: Number(l.unit_cost) || null,
+          })
+        if (stockErr) stockErrors.push(`${l.description.trim() || 'Item'}: ${stockErr.message}`)
       }
     }
 
@@ -263,6 +275,7 @@ export default function GrnForm({ grnId }: { grnId?: string }) {
     await supabase.from('goods_received_notes').update({ status: 'received' }).eq('id', currentId!)
 
     setSaving(false)
+    if (stockErrors.length) setError(`Delivery saved, but stock wasn't added for: ${stockErrors.join('; ')}`)
     showToast('GRN saved!')
     setShowWhatsNext(true)
     // Persist URL to detail with whats_next so the modal survives remount after first save

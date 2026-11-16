@@ -10,6 +10,7 @@ import { companyLetterhead } from '@/lib/letterhead'
 import { buildDocumentPdf, money, pdfBase64, pdfDate } from '@/lib/document-pdf'
 import { EmailDocumentDialog } from '@/components/money/EmailDocumentDialog'
 import { emailedLabel, loadDocumentEmails, type DocumentEmailLog } from '@/lib/money/document-email'
+import { DocumentChain } from '@/components/money/DocumentChain'
 
 type CreditNoteDetail = {
   id: string
@@ -171,6 +172,8 @@ function CreditNoteDetailInner() {
             {cn.status === 'approved' ? 'issued' : cn.status.replace(/_/g, ' ')}
           </span>
         </div>
+
+        <DocumentChain current={{ kind: 'credit_note', id: cn.id }} companyId={companyId} />
 
         <div className="bg-surface-card border border-divider rounded-xl p-4 space-y-1">
           <h1 className="text-[20px] font-semibold text-text-primary">

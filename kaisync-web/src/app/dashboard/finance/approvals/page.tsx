@@ -86,7 +86,7 @@ export default function FinanceApprovalsPage() {
 
   return (
     <div className="h-full overflow-y-auto p-4 space-y-6">
-      <h1 className="text-[18px] font-semibold text-text-primary">Finance Approvals</h1>
+      <h1 className="text-[18px] font-semibold text-text-primary">Approvals</h1>
       <div className="-mx-4 -mt-3"><RemittanceBatchBanner key={justPaid.map(p => p.id).join()} payouts={justPaid} onDone={() => setJustPaid([])} /></div>
 
       {loading ? (

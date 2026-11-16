@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
@@ -20,7 +21,9 @@ import { EntityTabs } from '@/components/ui/EntityTabs'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
-type Tab = 'all' | 'parts' | 'services' | 'materials' | 'labour' | 'brands' | 'conditions'
+type Tab = 'all' | 'parts' | 'services' | 'materials' | 'labour' | 'other' | 'brands' | 'conditions'
+
+const OTHER_TYPES = new Set(['package', 'fee', 'hire'])
 
 const TYPE_BY_TAB: Partial<Record<Tab, ItemType>> = {
   parts: 'part',
@@ -35,6 +38,7 @@ const INV_TABS: { id: Tab; label: string }[] = [
   { id: 'services', label: 'Services' },
   { id: 'materials', label: 'Materials' },
   { id: 'labour', label: 'Labour' },
+  { id: 'other', label: 'Packages, fees & hire' },
   { id: 'brands', label: 'Brands' },
   { id: 'conditions', label: 'Conditions' },
 ]
@@ -160,6 +164,7 @@ export default function InventoryPage() {
     return items.filter(item => {
       if (!showInactive && !item.is_active) return false
       if (typeFilter && item.item_type !== typeFilter) return false
+      if (tab === 'other' && !OTHER_TYPES.has(item.item_type)) return false
       if (stockFilter === 'low' && !(item.is_stockable && (item.qty_on_hand ?? 0) <= (item.reorder_point ?? Infinity))) return false
       if (!matchText(item.name, cols.name)) return false
       if (!matchText(item.sku ?? item.code, cols.sku)) return false
@@ -186,6 +191,7 @@ export default function InventoryPage() {
       services:  base.filter(i => i.item_type === 'service').length,
       materials: base.filter(i => i.item_type === 'material').length,
       labour:    base.filter(i => i.item_type === 'labour').length,
+      other:     base.filter(i => OTHER_TYPES.has(i.item_type)).length,
     }
   }, [items, showInactive])
 
@@ -251,15 +257,24 @@ export default function InventoryPage() {
     <div className="h-full flex flex-col overflow-hidden">
 
       <div className="bg-surface border-b border-divider px-3 pt-2 pb-2 shrink-0 space-y-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="min-w-0 flex-1">
-            <h1 className="text-[15px] font-semibold text-text-primary leading-tight">Inventory &amp; Services</h1>
+        <div className="flex flex-wrap items-center gap-2 min-w-0">
+          <div className="min-w-0 w-full sm:w-auto sm:flex-1">
+            <h1 className="text-[15px] font-semibold text-text-primary leading-tight">Products &amp; stock</h1>
             <p className="text-[11px] text-text-secondary mt-0.5">Parts, services, materials and labour in one catalogue</p>
           </div>
-          <button type="button" onClick={openCreate} className="btn-primary shrink-0">
-            <span className="material-icons">add</span>
-            Add Item
-          </button>
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
+            <Link href="/dashboard/inventory/restock" prefetch={false} className="btn-outlined h-10 px-3 text-[13px] inline-flex items-center gap-1">
+              <span className="material-icons text-[18px]">production_quantity_limits</span>Restock
+            </Link>
+            <Link href="/dashboard/inventory/import" prefetch={false} className="btn-outlined h-10 px-3 text-[13px] inline-flex items-center gap-1">
+              <span className="material-icons text-[18px]">upload_file</span>
+              <span className="hidden sm:inline">Import price list</span><span className="sm:hidden">Import</span>
+            </Link>
+            <button type="button" onClick={openCreate} className="btn-primary shrink-0">
+              <span className="material-icons">add</span>
+              Add Item
+            </button>
+          </div>
         </div>
         <EntityTabs
           tabs={INV_TABS.map(t => ({
@@ -626,9 +641,13 @@ const TYPE_COLOURS: Record<string, string> = {
   service:  'bg-purple-50 text-purple-600',
   material: 'bg-green-50 text-green-600',
   labour:   'bg-amber-50 text-amber-600',
+  package:  'bg-sky-50 text-sky-700',
+  fee:      'bg-slate-100 text-slate-600',
+  hire:     'bg-teal-50 text-teal-700',
 }
 const TYPE_ICONS: Record<string, string> = {
   part: 'build', service: 'miscellaneous_services', material: 'layers', labour: 'person_pin_circle',
+  package: 'inventory_2', fee: 'receipt', hire: 'event_repeat',
 }
 
 function TypeBadge({ type }: { type: string }) {

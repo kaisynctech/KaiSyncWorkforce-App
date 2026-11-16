@@ -13,6 +13,7 @@ import {
 import { loadCompanyWorkspace, moduleFlagsForCompany } from '@/lib/employee-workspace'
 import { useDashboardBootstrap } from '@/components/DashboardBootstrapContext'
 import type { Company, Employee } from '@/types/database'
+import { useIsCommissionRep } from '@/lib/use-commission-rep'
 
 interface NavItem {
   label: string
@@ -20,6 +21,8 @@ interface NavItem {
   icon: string
   /** null = always visible */
   module?: keyof EmployeeModuleFlags
+  /** Only for people who sell on commission. */
+  repOnly?: boolean
 }
 
 const EMP_NAV_ITEMS: NavItem[] = [
@@ -32,6 +35,8 @@ const EMP_NAV_ITEMS: NavItem[] = [
   { label: 'My Incidents', href: '/dashboard/employee/incidents', icon: 'warning', module: 'incidents' },
   { label: 'Contractor Profile', href: '/dashboard/employee/contractor', icon: 'badge', module: 'contractors' },
   { label: 'My Payslips', href: '/dashboard/employee/payslips', icon: 'payments', module: 'payroll' },
+  { label: 'My Claims', href: '/dashboard/employee/claims', icon: 'receipt_long', module: 'payroll' },
+  { label: 'My Commission', href: '/dashboard/employee/commission', icon: 'trending_up', repOnly: true },
   { label: 'My Documents', href: '/dashboard/employee/documents', icon: 'folder' },
   { label: 'Forms', href: '/dashboard/employee/forms', icon: 'description', module: 'paperless' },
   { label: 'Messages', href: '/dashboard/messages', icon: 'chat', module: 'messaging' },
@@ -106,9 +111,10 @@ export default function EmployeeSidebar({ open, onToggle, onClose, company, empl
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname, isDesktop])
 
+  const isRep = useIsCommissionRep(company?.id, employee?.id)
   const items = useMemo(
-    () => EMP_NAV_ITEMS.filter((item) => !item.module || modules[item.module]),
-    [modules],
+    () => EMP_NAV_ITEMS.filter((item) => (!item.module || modules[item.module]) && (!item.repOnly || isRep)),
+    [modules, isRep],
   )
 
   async function handleSignOut() {

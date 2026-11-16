@@ -42,6 +42,13 @@ export async function sendDocumentEmail(
   return { ok: false, message }
 }
 
+/** An invoice marked sent without an email: keep its PDF so it can be attached in Xero. Best effort. */
+export async function storeInvoicePdf(supabase: SupabaseClient, invoiceId: string, pdfBase64: string): Promise<void> {
+  await supabase.functions.invoke('send_document_email', {
+    body: { kind: 'invoice_pdf', doc_id: invoiceId, pdf_base64: pdfBase64 },
+  }).catch(() => undefined)
+}
+
 /** The email as it will arrive, without sending it. */
 export function previewDocumentEmail(
   supabase: SupabaseClient,

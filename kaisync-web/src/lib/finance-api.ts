@@ -150,42 +150,34 @@ export async function markSupplierPaid(
   invoiceId: string,
   amount: number,
   method: string | null,
-  actorId: string | null,
-  actorName: string | null,
+  _actorId: string | null,
+  _actorName: string | null,
+  opts?: { transactionDate?: string | null; referenceNumber?: string | null; notes?: string | null },
 ) {
-  const { data: inv } = await supabase.from('supplier_invoices').select('*').eq('id', invoiceId).maybeSingle()
+  // One safe database step (record_supplier_payment): the bill, the payment entry and the history log together,
+  // bill locked while saving. Only approved bills can be paid; needs payments.approve.
+  const { data: inv } = await supabase.from('supplier_invoices').select('company_id').eq('id', invoiceId).maybeSingle()
   if (!inv) throw new Error('Supplier invoice not found')
-  const paid = roundFinancial(Number(inv.amount_paid ?? 0) + amount)
-  const due = balanceDue(Number(inv.total_amount), paid)
-  const state = resolvePaymentState(Number(inv.total_amount), paid, inv.due_date)
-  const status = state === 'paid' ? 'paid' : state === 'partially_paid' ? 'partially_paid' : inv.status
-  await supabase.from('supplier_invoices').update({
-    amount_paid: paid,
-    balance_due: due,
-    status,
-    paid_at: status === 'paid' ? new Date().toISOString() : inv.paid_at,
-  }).eq('id', invoiceId)
-  await addFinanceTransaction(supabase, {
-    companyId: inv.company_id,
-    transactionType: 'supplier_payment',
-    direction: 'outgoing',
-    sourceTable: 'supplier_invoices',
-    sourceId: invoiceId,
-    referenceNumber: inv.invoice_number,
-    amount,
-    paymentMethod: method,
-    createdBy: actorId,
-  })
-  await logFinanceAudit(supabase, {
-    companyId: inv.company_id,
-    entityType: 'supplier_invoice',
-    entityId: invoiceId,
-    action: 'paid',
-    amount,
-    actorId,
-    actorName,
-    note: method,
-  })
+  const { error } = await (supabase.rpc as unknown as (n: string, a: Record<string, unknown>) => Promise<{ error: { message: string } | null }>)(
+    'record_supplier_payment', {
+      p_company_id: (inv as { company_id: string }).company_id,
+      p_bill_id: invoiceId,
+      p_amount: roundFinancial(amount),
+      p_method: method,
+      p_date: opts?.transactionDate ?? localISODate(),
+      p_reference: opts?.referenceNumber ?? null,
+      p_notes: opts?.notes ?? null,
+    })
+  if (error) {
+    const map: Record<string, string> = {
+      NOT_ALLOWED: 'You don’t have permission to pay bills.',
+      NOT_APPROVED: 'This bill has to be approved before it can be paid.',
+      BAD_AMOUNT: 'That amount is more than is owed on this bill.',
+      BILL_CANCELLED: 'This bill is cancelled.',
+    }
+    const key = Object.keys(map).find(k => error.message.includes(k))
+    throw new Error(key ? map[key] : error.message)
+  }
 }
 
 export async function approveContractorPayout(
@@ -292,10 +284,42 @@ export async function recordInvoicePayment(
     referenceNumber?: string | null
     notes?: string | null
     transactionDate?: string | null
+    /** A client's proof of payment this payment came from (accepted and linked in the same step). */
+    proofId?: string | null
   },
-) {
+): Promise<{ credit: number }> {
   const { data: inv } = await supabase.from('finance_invoices').select('*').eq('id', invoiceId).maybeSingle()
   if (!inv) throw new Error('Invoice not found')
+
+  // Client invoices: one safe database step (record_client_payment) does the invoice, the payment entry, the client
+  // account line and the history log together; anything above what's owed is kept as client credit.
+  if (inv.client_id) {
+    const owed = Number(inv.balance_due ?? 0)
+    const allocated = roundFinancial(Math.min(amount, owed))
+    const { data, error } = await (supabase.rpc as unknown as (n: string, a: Record<string, unknown>) => Promise<{ data: { credit?: number } | null; error: { message: string } | null }>)(
+      'record_client_payment', {
+        p_company_id: inv.company_id,
+        p_client_id: inv.client_id,
+        p_allocations: allocated > 0 ? [{ invoice_id: invoiceId, amount: allocated }] : [],
+        p_total: roundFinancial(amount),
+        p_method: method,
+        p_date: opts?.transactionDate ?? localISODate(),
+        p_reference: opts?.referenceNumber ?? null,
+        p_notes: opts?.notes ?? null,
+        p_proof_id: opts?.proofId ?? null,
+      })
+    if (error) {
+      const map: Record<string, string> = {
+        NOT_ALLOWED: 'You don’t have permission to record payments.',
+        MORE_THAN_OWED: 'That is more than is owed on this invoice.',
+        INVOICE_NOT_OPEN: 'This invoice is a draft, cancelled or voided, so it can’t take a payment.',
+      }
+      const key = Object.keys(map).find(k => error.message.includes(k))
+      throw new Error(key ? map[key] : error.message)
+    }
+    return { credit: Number(data?.credit ?? 0) }
+  }
+
   const paid = roundFinancial(Number(inv.amount_paid ?? 0) + amount)
   const due = balanceDue(Number(inv.total_amount), paid)
   const state = resolvePaymentState(Number(inv.total_amount), paid, inv.due_date)
@@ -348,6 +372,7 @@ export async function recordInvoicePayment(
     actorName,
     note: method,
   })
+  return { credit: 0 }
 }
 
 export type ReorderLineInput = {

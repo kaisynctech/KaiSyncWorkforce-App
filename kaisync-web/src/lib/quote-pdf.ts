@@ -17,7 +17,16 @@ export type QuotePdfLine = {
   total: number
   /** Discount on the line in % (a "Disc." column is printed when any line has one). */
   discount_pct?: number | null
+  /** Template quotations (piece 7). */
+  section?: string | null
+  extra?: Record<string, string>
+  /** An option the client can choose instead of the line before it: printed, not counted. */
+  is_option?: boolean
+  recurring?: 'week' | 'month' | 'year' | null
 }
+
+/** A column the client sees (team-only columns are never passed in). */
+export type QuotePdfColumn = { key: string; label: string }
 
 export type QuotePdfInput = {
   quote_number: string | null
@@ -39,6 +48,13 @@ export type QuotePdfInput = {
   letterhead?: Letterhead | null
   /** The quote's currency (ISO code). Amounts print with the narrow symbol ("$500,00"). */
   currency?: string | null
+  /** Template quotations: the columns to print, in order (no team-only ones). Without it the classic table prints. */
+  columns?: QuotePdfColumn[] | null
+  /** Fields at the top (vehicle, event date, site address, …), already labelled. */
+  header_fields?: { label: string; value: string }[]
+  deposit?: { pct: number; amount: number } | null
+  recurring?: { period: 'week' | 'month' | 'year'; amount: number }[]
+  terms?: string | null
 }
 
 function money(n: number, currency?: string | null): string {
@@ -83,7 +99,16 @@ export function buildQuotePdf(input: QuotePdfInput): jsPDF {
     doc.text(`Email: ${input.client_email.trim()}`, left, y)
     y += 5
   }
+  for (const h of (input.header_fields ?? []).filter(x => x.value?.trim())) {
+    const t = doc.splitTextToSize(`${h.label}: ${h.value.trim()}`, right - left)
+    doc.text(t, left, y)
+    y += 5 * t.length
+  }
   y += 5
+
+  if (input.columns?.length) {
+    y = drawTemplateTable(doc, input, y, left, right)
+  } else {
 
   // Table header
   doc.setFillColor(241, 245, 249)
@@ -122,6 +147,7 @@ export function buildQuotePdf(input: QuotePdfInput): jsPDF {
     doc.text(money(line.total, input.currency), right - 1, y, { align: 'right' })
     y += Math.max(6, desc.length * 4.5)
   }
+  }
 
   y += 4
   doc.setDrawColor(226, 232, 240)
@@ -148,6 +174,17 @@ export function buildQuotePdf(input: QuotePdfInput): jsPDF {
     doc.text(value, right - 1, y, { align: 'right' })
     y += bold ? 7 : 6
   }
+  const extras: [string, string][] = []
+  if (input.deposit && input.deposit.amount > 0) extras.push([`Deposit to accept (${input.deposit.pct}%)`, money(input.deposit.amount, input.currency)])
+  for (const r of input.recurring ?? []) extras.push([`Then every ${r.period} (excl. VAT)`, money(r.amount, input.currency)])
+  for (const [label, value] of extras) {
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(9.5)
+    doc.setTextColor(15, 23, 42)
+    doc.text(label, 120, y)
+    doc.text(value, right - 1, y, { align: 'right' })
+    y += 6
+  }
 
   if (input.notes?.trim()) {
     y += 6
@@ -165,6 +202,24 @@ export function buildQuotePdf(input: QuotePdfInput): jsPDF {
     const noteLines = doc.splitTextToSize(input.notes.trim(), right - left)
     doc.text(noteLines, left, y)
     y += noteLines.length * 4.2
+  }
+
+  if (input.terms?.trim()) {
+    y += 6
+    if (y > 250) {
+      doc.addPage()
+      y = 20
+    }
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(9)
+    doc.setTextColor(100, 116, 139)
+    doc.text('Terms', left, y)
+    y += 5
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(51, 65, 85)
+    const termLines = doc.splitTextToSize(input.terms.trim(), right - left)
+    doc.text(termLines, left, y)
+    y += termLines.length * 4.2
   }
 
   finishDocument(doc, lh, { y: y + 8, bank: showsBank(lh, 'quote'), reference: input.quote_number })
@@ -207,4 +262,84 @@ export function openQuoteMailto(opts: {
     ? `mailto:${encodeURIComponent(to)}?subject=${subject}&body=${body}`
     : `mailto:?subject=${subject}&body=${body}`
   window.open(href, '_blank')
+}
+
+const COL_WIDTH: Record<string, number> = { qty: 12, days: 11, unit: 14, price: 24, rate: 24, total: 26, part_no: 24, brand: 20, condition: 22, warranty: 18 }
+const NUMERIC = new Set(['qty', 'days', 'price', 'rate', 'total'])
+
+/** The lines in the template's columns, by section, with options under their line. Returns the new y. */
+function drawTemplateTable(doc: jsPDF, input: QuotePdfInput, y0: number, left: number, right: number): number {
+  let y = y0
+  const cols = (input.columns ?? []).filter(c => c.key !== 'cost' && c.key !== 'margin')
+  const fixed = cols.filter(c => c.key !== 'item').reduce((s, c) => s + (COL_WIDTH[c.key] ?? 20), 0)
+  const descW = Math.max(40, right - left - fixed - 2)
+  // x position (left edge) of each column
+  const xs: Record<string, number> = {}
+  let x = left + 1
+  for (const c of cols) { xs[c.key] = x; x += c.key === 'item' ? descW : (COL_WIDTH[c.key] ?? 20) }
+  const w = (k: string) => (k === 'item' ? descW : (COL_WIDTH[k] ?? 20))
+  const header = () => {
+    doc.setFillColor(241, 245, 249)
+    doc.rect(left, y - 4, right - left, 8, 'F')
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(7.5)
+    doc.setTextColor(100, 116, 139)
+    for (const c of cols) {
+      if (NUMERIC.has(c.key)) doc.text(c.label, xs[c.key] + w(c.key) - 2, y, { align: 'right' })
+      else doc.text(c.label, xs[c.key], y)
+    }
+    y += 7
+  }
+  header()
+  const sections: (string | null)[] = []
+  for (const l of input.lines) { const sct = l.section?.trim() || null; if (!sections.includes(sct)) sections.push(sct) }
+  const usable = input.lines.filter(l => l.description.trim() || l.total > 0)
+  for (const sct of sections) {
+    const rows = usable.filter(l => (l.section?.trim() || null) === sct)
+    if (!rows.length) continue
+    if (sct) {
+      if (y > 255) { doc.addPage(); y = 20; header() }
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(9)
+      doc.setTextColor(15, 23, 42)
+      doc.text(sct, left + 1, y)
+      const st = rows.filter(r => !r.is_option).reduce((s, r) => s + r.total, 0)
+      doc.text(money(Math.round(st * 100) / 100, input.currency), right - 1, y, { align: 'right' })
+      y += 6
+    }
+    for (const l of rows) {
+      if (y > 262) { doc.addPage(); y = 20; header() }
+      doc.setFont('helvetica', l.is_option ? 'italic' : 'normal')
+      doc.setFontSize(8.5)
+      doc.setTextColor(l.is_option ? 71 : 15, l.is_option ? 85 : 23, l.is_option ? 105 : 42)
+      const days = Number(l.extra?.days) || 0
+      const units = days ? Math.round((l.qty / days) * 100) / 100 : l.qty
+      let h = 1
+      for (const c of cols) {
+        let text: string
+        switch (c.key) {
+          case 'item': text = `${l.is_option ? 'Option: ' : ''}${l.description.trim() || '—'}${l.recurring ? ` (every ${l.recurring})` : ''}`; break
+          case 'qty': text = String(units); break
+          case 'days': text = days ? String(days) : ''; break
+          case 'unit': text = l.unit || 'each'; break
+          case 'price': case 'rate': text = money(l.unit_price, input.currency) + (Number(l.discount_pct) > 0 ? ` -${Math.round(Number(l.discount_pct) * 100) / 100}%` : ''); break
+          case 'total': text = l.is_option ? `(${money(l.total, input.currency)})` : money(l.total, input.currency); break
+          default: text = l.extra?.[c.key] ?? ''
+        }
+        const lines = doc.splitTextToSize(text, w(c.key) - 2)
+        if (NUMERIC.has(c.key)) doc.text(lines, xs[c.key] + w(c.key) - 2, y, { align: 'right' })
+        else doc.text(lines, xs[c.key], y)
+        h = Math.max(h, lines.length)
+      }
+      y += Math.max(6, h * 4.2)
+    }
+  }
+  if (usable.some(l => l.is_option)) {
+    doc.setFont('helvetica', 'italic')
+    doc.setFontSize(8)
+    doc.setTextColor(100, 116, 139)
+    doc.text('Options are choices instead of the line above them; they are not in the total.', left + 1, y)
+    y += 5
+  }
+  return y
 }

@@ -54,7 +54,7 @@ export default function ProjectProfitabilityPage() {
 
     const { data: permData } = await supabase.rpc('user_has_permission', {
       p_company_id: member.companyId,
-      p_key: 'projects.financials',
+      p_permission_key: 'projects.financials',
     })
     const permitted = Boolean(permData)
     setHasPermission(permitted)

@@ -9,7 +9,7 @@
  * document only.
  */
 
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   ITEM_KIND, blankEditorLine, filterPicks, formatRand, lineFromPick, lineMarginPct, lineTotal, linesProfit, priceForMargin,
   type EditorLine, type ItemType, type PickItem,
@@ -29,6 +29,8 @@ type Props = {
   /** Quotes: the items as a table with cost price, discount and margin (office only: cost and margin are never
    * printed or shown to the client). */
   showCost?: boolean
+  /** Quotes: extra controls under a line's name (how it is supplied, the chosen supplier). */
+  lineExtra?: (line: EditorLine) => ReactNode
 }
 
 /** Column widths shared by the quote items table and the totals rows under it, so their columns line up. */
@@ -57,7 +59,6 @@ export function QuoteTotalsRows({ lines, currency, readOnly, vatOn, vatLabel, va
   vatOn: boolean; vatLabel: string; vat: number; total: number; onVat: (on: boolean) => void
 }) {
   const p = linesProfit(lines)
-  const TH = 'px-2 py-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-text-secondary whitespace-nowrap'
   const span = readOnly ? 1 : 2
   return (
     <div className="bg-surface-card border border-divider rounded-2xl overflow-hidden">
@@ -68,13 +69,14 @@ export function QuoteTotalsRows({ lines, currency, readOnly, vatOn, vatLabel, va
             <span className="text-text-secondary">{vatOn ? 'Subtotal (excl. VAT)' : 'Subtotal'}</span>
             <span className="tabular-nums font-medium text-text-primary">{formatCurrency(p.sell, currency)}</span>
           </div>
-          {p.costed && (
-            <div className="mt-0.5 flex justify-end items-center gap-1 text-[11px] text-text-secondary">
-              <span className="material-icons !text-[12px] !leading-none">lock</span>
-              Cost {formatCurrency(p.cost, currency)} · Margin <b className={p.profit < 0 ? 'text-error' : 'text-text-primary'}>{marginText(p.marginPct)}</b>
-            </div>
-          )}
         </div>
+        {p.costed && (
+          <div className="px-3 py-1.5 flex flex-col gap-1 text-[12px]">
+            <div className="flex justify-between gap-3"><span className="text-text-secondary"><Team>Cost price</Team></span><span className="tabular-nums text-text-primary">{formatCurrency(p.cost, currency)}</span></div>
+            <div className="flex justify-between gap-3"><span className="text-text-secondary"><Team>Gross profit</Team></span><span className={`tabular-nums ${p.profit < 0 ? 'text-error' : 'text-text-primary'}`}>{formatCurrency(p.profit, currency)}</span></div>
+            <div className="flex justify-between gap-3"><span className="text-text-secondary"><Team>Total margin</Team></span><span className={`tabular-nums font-medium ${p.profit < 0 ? 'text-error' : 'text-text-primary'}`}>{marginText(p.marginPct)}</span></div>
+          </div>
+        )}
         <div className="px-3 py-1.5 flex justify-between items-center gap-3">
           <div className="flex items-center gap-2 text-text-secondary">
             <span>{vatLabel}</span>
@@ -96,31 +98,27 @@ export function QuoteTotalsRows({ lines, currency, readOnly, vatOn, vatLabel, va
       </div>
       <table className="hidden sm:table w-full table-fixed text-[12.5px]">
         <QuoteCols readOnly={readOnly} />
-        <thead>
-          <tr className="bg-surface-elevated/60 border-b border-divider">
-            <th className={`${TH} text-left pl-5`}>Totals</th>
-            <th className={TH} />
-            <th className={`${TH} text-right`} title="Only your team sees this">
-              <span className="inline-flex items-center gap-1"><span className="material-icons !text-[12px] !leading-none">lock</span>Cost</span>
-            </th>
-            <th className={TH} />
-            <th className={TH} />
-            <th className={`${TH} text-right`} title="Only your team sees this">
-              <span className="inline-flex items-center gap-1"><span className="material-icons !text-[12px] !leading-none">lock</span>Margin</span>
-            </th>
-            <th className={`${TH} text-right pr-5`} colSpan={span}>Amount</th>
-          </tr>
-        </thead>
         <tbody>
           <tr className="border-b border-divider/60">
-            <td className="py-1.5 pl-5 pr-2 text-text-secondary">{vatOn ? 'Subtotal (excl. VAT)' : 'Subtotal'}</td>
-            <td />
-            <td className="py-1.5 px-2 text-right tabular-nums text-text-secondary">{p.costed ? formatCurrency(p.cost, currency) : '—'}</td>
-            <td />
-            <td />
-            <td className={`py-1.5 px-2 text-right tabular-nums font-medium ${p.costed && p.profit < 0 ? 'text-error' : 'text-text-primary'}`}>{p.costed ? marginText(p.marginPct) : '—'}</td>
+            <td colSpan={6} className="py-1.5 pl-5 pr-2 text-text-secondary">{vatOn ? 'Subtotal (excl. VAT)' : 'Subtotal'}</td>
             <td colSpan={span} className="py-1.5 pl-2 pr-5 text-right tabular-nums font-medium text-text-primary whitespace-nowrap">{formatCurrency(p.sell, currency)}</td>
           </tr>
+          {p.costed && (
+            <>
+              <tr className="border-b border-divider/60">
+                <td colSpan={6} className="py-1.5 pl-5 pr-2 text-text-secondary"><Team>Cost price</Team></td>
+                <td colSpan={span} className="py-1.5 pl-2 pr-5 text-right tabular-nums text-text-primary whitespace-nowrap">{formatCurrency(p.cost, currency)}</td>
+              </tr>
+              <tr className="border-b border-divider/60">
+                <td colSpan={6} className="py-1.5 pl-5 pr-2 text-text-secondary"><Team>Gross profit</Team></td>
+                <td colSpan={span} className={`py-1.5 pl-2 pr-5 text-right tabular-nums whitespace-nowrap ${p.profit < 0 ? 'text-error' : 'text-text-primary'}`}>{formatCurrency(p.profit, currency)}</td>
+              </tr>
+              <tr className="border-b border-divider/60">
+                <td colSpan={6} className="py-1.5 pl-5 pr-2 text-text-secondary"><Team>Total margin</Team></td>
+                <td colSpan={span} className={`py-1.5 pl-2 pr-5 text-right tabular-nums font-medium whitespace-nowrap ${p.profit < 0 ? 'text-error' : 'text-text-primary'}`}>{marginText(p.marginPct)}</td>
+              </tr>
+            </>
+          )}
           <tr className="border-b border-divider/60">
             <td colSpan={6} className="py-1 pl-5 pr-2">
               <div className="flex items-center gap-3 text-text-secondary">
@@ -144,6 +142,15 @@ export function QuoteTotalsRows({ lines, currency, readOnly, vatOn, vatLabel, va
         </tbody>
       </table>
     </div>
+  )
+}
+
+/** A label only the team sees (cost, profit, margin). */
+function Team({ children }: { children: ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-1" title="Only your team sees this">
+      <span className="material-icons !text-[12px] !leading-none">lock</span>{children}
+    </span>
   )
 }
 
@@ -198,7 +205,7 @@ function PickRow({ item, onPick, compact }: { item: PickItem; onPick: () => void
   )
 }
 
-export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly, startOpen, currency, showCost }: Props) {
+export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly, startOpen, currency, showCost, lineExtra }: Props) {
   const [browseOpen, setBrowseOpen] = useState(false)
   const [tab, setTab] = useState<ItemType | null>(null)
   const [query, setQuery] = useState('')
@@ -357,6 +364,7 @@ export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly
                           </span>
                         )}
                       </div>
+                      {lineExtra && <div className="mt-1 pl-4">{lineExtra(l)}</div>}
                     </td>
                   </tr>
                   <tr className="border-b border-divider/60 align-middle">
@@ -382,6 +390,7 @@ export function LineItemsEditor({ lines, onChange, items, itemsLoading, readOnly
                           </span>
                         )}
                       </div>
+                      {lineExtra && <div className="mt-1 pl-4">{lineExtra(l)}</div>}
                     </td>
                     <td className="py-1.5 px-1 sm:px-2">
                       {isService ? (

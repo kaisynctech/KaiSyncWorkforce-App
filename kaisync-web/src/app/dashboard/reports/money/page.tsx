@@ -145,7 +145,7 @@ export default function MoneyInsightsPage() {
             <StatTile label="Collected" icon="savings" value={moneyShort(k.collected)} delta={d(k, p, 'collected')} compare={compare}
               hint={`${count(k.invoices)} invoices issued`} />
             <StatTile label="Owed to you now" icon="account_balance" value={moneyShort(data.ageing.outstanding)}
-              hint={`${moneyShort(data.ageing.overdue)} of it overdue`} href="/dashboard/finance/invoices" />
+              hint={`${moneyShort(data.ageing.overdue)} of it overdue`} href="/dashboard/money/invoices" />
             <StatTile label="Average days to pay" icon="update" value={dec1(k.avg_days_to_pay)}
               delta={d(k, p, 'avg_days_to_pay')} goodWhenUp={false} compare={compare} />
           </div>
@@ -188,7 +188,7 @@ export default function MoneyInsightsPage() {
                 height={230}
               />
               <div className="mt-2">
-                <AttentionRow icon="warning_amber" tone="serious" label="Overdue" value={moneyShort(data.ageing.overdue)} href="/dashboard/finance/invoices" />
+                <AttentionRow icon="warning_amber" tone="serious" label="Overdue" value={moneyShort(data.ageing.overdue)} href="/dashboard/money/invoices" />
               </div>
             </ChartCard>
           </div>

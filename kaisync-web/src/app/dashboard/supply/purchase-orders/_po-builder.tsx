@@ -7,7 +7,8 @@ import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { fmtMoney, roundFinancial } from '@/lib/finance-calc'
 import type { PurchaseOrder, PurchaseOrderLine, ThreeWayMatchLine } from '@/types/commercial'
 import { companyLetterhead } from '@/lib/letterhead'
-import { buildDocumentPdf, money, pdfBase64, pdfDate } from '@/lib/document-pdf'
+import { pdfBase64 } from '@/lib/document-pdf'
+import { buildPoPdf as buildPoPdfDoc } from '@/lib/money/po-pdf'
 import { EmailDocumentDialog } from '@/components/money/EmailDocumentDialog'
 import { emailedLabel, loadDocumentEmails, type DocumentEmailLog } from '@/lib/money/document-email'
 
@@ -26,6 +27,8 @@ interface DraftLine {
   rfq_line_id?: string | null
   rfq_response_line_id?: string | null
   quote_line_id?: string | null
+  /** The stock item (so receiving the goods adds them to stock). */
+  inventory_item_id?: string | null
 }
 
 interface GrnSummary { id: string; grn_number: string | null; received_date: string; status: string }
@@ -57,7 +60,7 @@ export default function PoBuilder({ poId }: { poId?: string }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
-  const [tab, setTab] = useState<'details' | 'match'>('details')
+  const [tab, setTab] = useState<'details' | 'match'>(searchParams.get('tab') === 'match' ? 'match' : 'details')
   const [canApprove, setCanApprove] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
   const [showRejectModal, setShowRejectModal] = useState(false)
@@ -97,7 +100,7 @@ export default function PoBuilder({ poId }: { poId?: string }) {
       supabase.from('contractors').select('id, name, email, currency').eq('company_id', member.companyId).eq('partner_kind', 'supplier').eq('is_active', true).order('name'),
       supabase.from('client_deals').select('id, title').eq('company_id', member.companyId).order('title'),
       supabase.from('rfqs').select('id, rfq_number, title').eq('company_id', member.companyId).order('created_at', { ascending: false }),
-      supabase.rpc('user_has_permission', { p_company_id: member.companyId, p_key: 'purchase_orders.approve' }),
+      supabase.rpc('user_has_permission', { p_company_id: member.companyId, p_permission_key: 'purchase_orders.approve' }),
     ])
     setSuppliers((supps ?? []) as Supplier[])
     setDeals((dls ?? []) as Deal[])
@@ -135,6 +138,7 @@ export default function PoBuilder({ poId }: { poId?: string }) {
         rfq_line_id: l.rfq_line_id ?? null,
         rfq_response_line_id: l.rfq_response_line_id ?? null,
         quote_line_id: l.quote_line_id ?? null,
+        inventory_item_id: l.inventory_item_id ?? null,
       })))
       setGrns((grnData ?? []) as GrnSummary[])
       setMatchLines((matchData ?? []) as ThreeWayMatchLine[])
@@ -170,7 +174,7 @@ export default function PoBuilder({ poId }: { poId?: string }) {
               .maybeSingle(),
             supabase
               .from('rfq_response_lines')
-              .select('*, rfq_line:rfq_lines(id, description, unit, quantity, quote_line_id)')
+              .select('*, rfq_line:rfq_lines(id, description, unit, quantity, quote_line_id, inventory_item_id)')
               .eq('recipient_id', preRecipientId),
           ])
           const supplierFromRecip = (recip as { supplier_id?: string } | null)?.supplier_id
@@ -188,6 +192,7 @@ export default function PoBuilder({ poId }: { poId?: string }) {
               unit: string
               quantity: number
               quote_line_id: string | null
+              inventory_item_id: string | null
             } | null
           }) => ({
             key: nk(),
@@ -199,6 +204,7 @@ export default function PoBuilder({ poId }: { poId?: string }) {
             rfq_line_id: rl.rfq_line_id ?? rl.rfq_line?.id ?? null,
             rfq_response_line_id: rl.id,
             quote_line_id: rl.rfq_line?.quote_line_id ?? null,
+            inventory_item_id: rl.rfq_line?.inventory_item_id ?? null,
           })))
         } else {
           setLines([{ key: nk(), description: '', unit: 'each', quantity_ordered: '1', unit_price: '0', vat_rate: '15' }])
@@ -208,12 +214,12 @@ export default function PoBuilder({ poId }: { poId?: string }) {
         setQuoteId(preQuoteId)
         const [{ data: q }, { data: qLines }] = await Promise.all([
           supabase.from('commercial_quotes').select('deal_id').eq('id', preQuoteId).eq('company_id', member.companyId).maybeSingle(),
-          supabase.from('commercial_quote_lines').select('id, description, unit, quantity, cost_price, is_excluded')
+          supabase.from('commercial_quote_lines').select('id, description, unit, quantity, cost_price, is_excluded, inventory_item_id')
             .eq('quote_id', preQuoteId).order('sort_order'),
         ])
         const dl = (q as { deal_id?: string | null } | null)?.deal_id
         if (dl) setDealId(dl)
-        const rows = ((qLines ?? []) as { id: string; description: string | null; unit: string | null; quantity: number | null; cost_price: number | null; is_excluded: boolean | null }[])
+        const rows = ((qLines ?? []) as { id: string; description: string | null; unit: string | null; quantity: number | null; cost_price: number | null; is_excluded: boolean | null; inventory_item_id: string | null }[])
           .filter(l => !l.is_excluded && (l.description ?? '').trim())
         setLines(rows.length ? rows.map(l => ({
           key: nk(),
@@ -223,6 +229,7 @@ export default function PoBuilder({ poId }: { poId?: string }) {
           unit_price: String(Number(l.cost_price) || 0),
           vat_rate: '15',
           quote_line_id: l.id,
+          inventory_item_id: l.inventory_item_id ?? null,
         })) : [{ key: nk(), description: '', unit: 'each', quantity_ordered: '1', unit_price: '0', vat_rate: '15' }])
         if (preSupplier) setSupplierId(preSupplier)
       } else {
@@ -263,38 +270,7 @@ export default function PoBuilder({ poId }: { poId?: string }) {
     if (!po || !companyId) return null
     const lh = await companyLetterhead(createClient(), companyId)
     const supplier = suppliers.find(x => x.id === (po.supplier_id ?? supplierId))
-    const vat = Number(po.vat_amount ?? 0)
-    const doc = buildDocumentPdf({
-      currency: po.currency,
-      letterhead: lh,
-      title: 'Purchase order',
-      meta: [
-        ['PO no.', po.po_number ?? 'Draft'],
-        ['Date', pdfDate(po.approved_at ?? po.created_at)],
-        ...(po.required_delivery_date ? [['Deliver by', pdfDate(po.required_delivery_date)] as [string, string]] : []),
-      ],
-      toLabel: 'Supplier',
-      toName: supplier?.name ?? '—',
-      toLines: [supplier?.email ?? ''],
-      lines: lines.map(l => {
-        const qty = Number(l.quantity_ordered) || 0
-        const up = Number(l.unit_price) || 0
-        return { description: l.description, qty, unit: l.unit, unit_price: up, total: roundFinancial(qty * up) }
-      }),
-      totals: vat > 0.004
-        ? [['Total excl. VAT', money(Number(po.subtotal ?? 0), po.currency), false], ['VAT', money(vat, po.currency), false], ['Total incl. VAT', money(Number(po.total_amount ?? 0), po.currency), true]]
-        : [['Total', money(Number(po.total_amount ?? 0), po.currency), true]],
-      notesHeading: 'Delivery and terms',
-      notes: [
-        po.delivery_address ? `Deliver to: ${po.delivery_address}` : '',
-        po.notes ?? '',
-        po.terms_and_conditions ?? '',
-        `Please quote ${po.po_number ?? 'this PO number'} on your invoice.`,
-      ].filter(Boolean).join('\n\n'),
-      reference: po.po_number,
-    })
-    const safe = (po.po_number || 'draft').replace(/[^\w.-]+/g, '_')
-    return { doc, filename: `Purchase_order_${safe}.pdf` }
+    return buildPoPdfDoc({ letterhead: lh, po, supplier: supplier ?? null, lines })
   }
 
   async function downloadPoPdf() {
@@ -369,6 +345,7 @@ export default function PoBuilder({ poId }: { poId?: string }) {
         rfq_line_id: l.rfq_line_id || null,
         rfq_response_line_id: l.rfq_response_line_id || null,
         quote_line_id: l.quote_line_id || null,
+        inventory_item_id: l.inventory_item_id || null,
       }
     })
 

@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { BusinessTypePicker } from '@/components/settings/BusinessTypePicker'
+import { saveBusinessTypes } from '@/lib/quote-templates'
 
 type Step = 'form' | 'success'
 
@@ -13,6 +15,7 @@ export default function HrRegisterCompanyPage() {
   const [firstName, setFirstName]     = useState('')
   const [lastName, setLastName]       = useState('')
   const [role, setRole]               = useState<'owner' | 'hr_admin'>('owner')
+  const [businessTypes, setBusinessTypes] = useState<string[]>([])
   const [loading, setLoading]         = useState(false)
   const [error, setError]             = useState<string | null>(null)
 
@@ -60,6 +63,12 @@ export default function HrRegisterCompanyPage() {
       })
       if (rpcError) throw rpcError
       if (!data || !data[0]) throw new Error('Company creation failed — no data returned.')
+
+      // What the business does (optional): sets up its quotation templates. Never blocks sign-up;
+      // if it fails, the "Set up your workspace" banner asks again.
+      if (businessTypes.length && data[0].company_id) {
+        try { await saveBusinessTypes(supabase, data[0].company_id, businessTypes, { markSetup: true }) } catch { /* asked again later */ }
+      }
 
       setReturnedCompanyName(companyName.trim())
       setCompanyCode(data[0].company_code)
@@ -125,7 +134,7 @@ export default function HrRegisterCompanyPage() {
   // ── Form screen ──
   return (
     <div className="w-full max-w-sm">
-      <div className="bg-surface rounded-lg p-8 shadow-sm border border-divider">
+      <div className="bg-surface rounded-lg p-5 sm:p-8 shadow-sm border border-divider">
         <div className="flex flex-col items-center mb-6">
           <div className="w-16 h-16 rounded-xl bg-primary flex items-center justify-center mb-4">
             <span className="material-icons text-white text-3xl">domain_add</span>
@@ -206,6 +215,14 @@ export default function HrRegisterCompanyPage() {
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* What the business does */}
+          <div>
+            <label className="block text-[12px] font-medium text-text-secondary mb-2">
+              What does your business do? <span className="text-text-disabled">(optional)</span>
+            </label>
+            <BusinessTypePicker value={businessTypes} onChange={setBusinessTypes} disabled={loading} />
           </div>
 
           <button

@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { loadCompanyWorkspace } from '@/lib/employee-workspace'
 import { canAccessFinance } from '@/lib/finance-gate'
-import FinanceSubNav from '@/components/FinanceSubNav'
+import { WithMoneySectionTabs } from '@/components/money/MoneySectionTabs'
 
 export default function FinanceLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
@@ -57,9 +57,6 @@ export default function FinanceLayout({ children }: { children: React.ReactNode 
   }
 
   return (
-    <div className="h-full flex flex-col">
-      <FinanceSubNav />
-      <div className="flex-1 overflow-hidden">{children}</div>
-    </div>
+    <WithMoneySectionTabs>{children}</WithMoneySectionTabs>
   )
 }

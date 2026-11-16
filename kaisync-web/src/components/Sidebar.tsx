@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { useIsCommissionRep } from '@/lib/use-commission-rep'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { cn, getInitials } from '@/lib/utils'
@@ -30,6 +31,12 @@ interface NavItem {
   ownerOnly?: boolean
   /** Optional sub-section label within a module panel */
   group?: string
+  /** Every one of these flags must also be on */
+  alsoFlags?: (keyof HrNavFlags)[]
+  /** Hidden when this flag is on (the item lives in another menu then) */
+  hideIfFlag?: keyof HrNavFlags
+  /** Other pages that belong to this item (its tabs), so it stays highlighted there */
+  also?: string[]
 }
 
 interface NavSection {
@@ -57,6 +64,8 @@ const NAV_SECTIONS: NavSection[] = [
       { label: 'Time Templates', href: '/dashboard/time-templates', icon: 'access_time',     flag: 'timeTemplates' },
       { label: 'Scheduling',     href: '/dashboard/scheduling',     icon: 'calendar_month',  flag: 'scheduling' },
       { label: 'Payroll',        href: '/dashboard/payroll',        icon: 'payments',        flag: 'payroll' },
+      { label: 'Claims',         href: '/dashboard/workforce/claims',     icon: 'receipt_long', flag: 'payroll' },
+      { label: 'Commission',     href: '/dashboard/workforce/commission', icon: 'trending_up',  flag: 'payroll' },
     ],
   },
   {
@@ -73,7 +82,8 @@ const NAV_SECTIONS: NavSection[] = [
       { label: 'Linked companies', href: '/dashboard/linked-companies',  icon: 'link',        flag: 'clients' },
       { label: 'Incidents',        href: '/dashboard/incidents',         icon: 'warning',     flag: 'incidents' },
       { label: 'Compliance Packs', href: '/dashboard/compliance-packs', icon: 'verified',    flag: 'compliancePacks' },
-      { label: 'Inventory & Services', href: '/dashboard/inventory',       icon: 'inventory_2', flag: 'inventory' },
+      // Lives under Money when the company has Money; here otherwise.
+      { label: 'Products & stock', href: '/dashboard/inventory',       icon: 'inventory_2', flag: 'inventory', hideIfFlag: 'commercial' },
       { label: 'Assets',           href: '/dashboard/assets',            icon: 'category',    flag: 'assets' },
     ],
   },
@@ -82,21 +92,23 @@ const NAV_SECTIONS: NavSection[] = [
     label: 'Money',
     icon: 'account_balance_wallet',
     items: [
-      { label: 'Action Centre',     href: '/dashboard/money/action-centre',       icon: 'bolt',            flag: 'commercial', group: 'Finance' },
-      { label: 'Money overview',    href: '/dashboard/money',                     icon: 'account_balance', flag: 'finance',    group: 'Finance' },
-      { label: 'Sales Quotes',      href: '/dashboard/money/quotes',              icon: 'request_quote',   flag: 'commercial', group: 'Client' },
-      { label: 'Orders',            href: '/dashboard/money/orders',              icon: 'assignment_turned_in', flag: 'commercial', group: 'Client' },
-      { label: 'Invoices',          href: '/dashboard/money/invoices',            icon: 'receipt_long',    flag: 'commercial', group: 'Client' },
-      { label: 'Credit Notes',      href: '/dashboard/money/credit-notes',        icon: 'undo',            flag: 'commercial', group: 'Client' },
-      { label: 'Recurring invoices', href: '/dashboard/money/recurring',          icon: 'event_repeat',    flag: 'commercial', group: 'Client' },
-      { label: 'Inventory & Services', href: '/dashboard/inventory',               icon: 'inventory_2',     flag: 'commercial', group: 'Client' },
-      { label: 'Incoming Quotes',   href: '/dashboard/money/incoming-quotes',     icon: 'move_to_inbox',   flag: 'commercial', group: 'Procurement' },
-      { label: 'RFQs',              href: '/dashboard/supply/rfqs',               icon: 'compare_arrows',  flag: 'commercial', group: 'Procurement' },
-      { label: 'Purchase Orders',   href: '/dashboard/supply/purchase-orders',    icon: 'shopping_cart',   flag: 'commercial', group: 'Procurement' },
-      { label: 'Goods Received',    href: '/dashboard/supply/goods-received',     icon: 'local_shipping',  flag: 'commercial', group: 'Procurement' },
-      { label: 'Supplier Invoices', href: '/dashboard/finance/supplier-invoices', icon: 'receipt',         flag: 'commercial', group: 'Procurement' },
-      { label: 'Suppliers',         href: '/dashboard/supply/suppliers',          icon: 'storefront',      flag: 'commercial', group: 'Procurement' },
-      { label: 'Subscriptions',     href: '/dashboard/money/subscriptions',       icon: 'autorenew',       flag: 'finance',    group: 'Procurement' },
+      { label: 'Home',              href: '/dashboard/money',                     icon: 'account_balance', flag: 'commercial' },
+      { label: 'Quotations',        href: '/dashboard/money/quotes',              icon: 'request_quote',   flag: 'commercial', group: 'Money in' },
+      { label: 'Orders',            href: '/dashboard/money/orders',              icon: 'assignment_turned_in', flag: 'commercial', group: 'Money in' },
+      { label: 'Invoices',          href: '/dashboard/money/invoices',            icon: 'receipt_long',    flag: 'commercial', group: 'Money in',
+        also: ['/dashboard/money/recurring', '/dashboard/money/credit-notes'] },
+      { label: 'Payments received', href: '/dashboard/money/payments',            icon: 'savings',        flag: 'commercial', group: 'Money in' },
+      { label: 'Clients who owe',   href: '/dashboard/money?tab=clients',         icon: 'request_page',    flag: 'finance',    group: 'Money in' },
+      { label: 'Ask suppliers',     href: '/dashboard/supply/rfqs',               icon: 'compare_arrows',  flag: 'commercial', group: 'Money out',
+        also: ['/dashboard/money/incoming-quotes'] },
+      { label: 'Purchase orders',   href: '/dashboard/supply/purchase-orders',    icon: 'shopping_cart',   flag: 'commercial', group: 'Money out',
+        also: ['/dashboard/supply/goods-received'] },
+      { label: 'Bills & expenses',  href: '/dashboard/finance/supplier-invoices', icon: 'receipt',         flag: 'finance',    group: 'Money out',
+        also: ['/dashboard/money/payments-made', '/dashboard/money/subscriptions'] },
+      { label: 'Pay out',           href: '/dashboard/finance/contractor-payouts', icon: 'payments',       flag: 'finance',    group: 'Money out',
+        also: ['/dashboard/finance/approvals'] },
+      { label: 'Products & stock',  href: '/dashboard/inventory',                 icon: 'inventory_2',     flag: 'inventory', alsoFlags: ['commercial'], group: 'What you sell' },
+      { label: 'Suppliers',         href: '/dashboard/suppliers',                 icon: 'storefront',      flag: 'suppliers', alsoFlags: ['commercial'], group: 'What you sell' },
     ],
   },
   {
@@ -145,8 +157,14 @@ function flagsFromCompany(company: Company | null | undefined, finance = false):
 
 function itemVisible(item: NavItem, flags: HrNavFlags, isOwner: boolean): boolean {
   if (item.ownerOnly) return isOwner
+  if (item.hideIfFlag && flags[item.hideIfFlag]) return false
+  if (item.alsoFlags && !item.alsoFlags.every(f => flags[f])) return false
   if (!item.flag) return true
   return Boolean(flags[item.flag])
+}
+
+function navItemActive(pathname: string, item: NavItem): boolean {
+  return isItemActive(pathname, item.href) || (item.also ?? []).some(href => isItemActive(pathname, href))
 }
 
 function isItemActive(pathname: string, href: string): boolean {
@@ -272,7 +290,7 @@ function PanelItems({
             </p>
           )}
           {group.items.map(item => {
-            const active = isItemActive(pathname, item.href)
+            const active = navItemActive(pathname, item)
             return (
               <Link
                 key={item.href}
@@ -448,7 +466,7 @@ export default function Sidebar({
   // Which section is currently active (drives which top tab is highlighted and panel content)
   const activeSection = useMemo(() => {
     return sections.find(section =>
-      section.items.some(item => isItemActive(pathname, item.href))
+      section.items.some(item => navItemActive(pathname, item))
     ) ?? null
   }, [pathname, sections])
 
@@ -510,6 +528,13 @@ export default function Sidebar({
     flags,
     isOwner,
   )
+  const showMyClaims = !platformOnly && itemVisible(
+    { label: 'My claims', href: '/dashboard/my-claims', icon: 'receipt_long', flag: 'payroll' },
+    flags,
+    isOwner,
+  )
+  const isRep = useIsCommissionRep(company?.id, employee?.id)
+  const showMyCommission = !platformOnly && isRep
   const showMessages = !platformOnly && itemVisible(
     { label: 'Messages', href: '/dashboard/messages', icon: 'chat', flag: 'messaging' },
     flags,
@@ -560,6 +585,22 @@ export default function Sidebar({
               icon="task_alt"
               label="My PA"
               active={isItemActive(pathname, '/dashboard/pa')}
+            />
+          )}
+          {showMyClaims && (
+            <NavTopBtn
+              href="/dashboard/my-claims"
+              icon="receipt_long"
+              label="My claims"
+              active={isItemActive(pathname, '/dashboard/my-claims')}
+            />
+          )}
+          {showMyCommission && (
+            <NavTopBtn
+              href="/dashboard/my-commission"
+              icon="trending_up"
+              label="My commission"
+              active={isItemActive(pathname, '/dashboard/my-commission')}
             />
           )}
           {showMessages && (
@@ -787,6 +828,48 @@ export default function Sidebar({
                         : 'bg-sky-500/15 text-sky-600',
                     )}>task_alt</span>
                     My PA
+                  </Link>
+                )}
+                {showMyClaims && (
+                  <Link
+                    href="/dashboard/my-claims"
+                    prefetch={false}
+                    onClick={onClose}
+                    className={cn(
+                      'flex items-center gap-2.5 rounded-xl px-2.5 h-10 text-[12px] font-medium transition-colors',
+                      isItemActive(pathname, '/dashboard/my-claims')
+                        ? 'bg-primary text-white shadow-sm shadow-primary/25'
+                        : 'text-text-primary/80 hover:bg-white/80',
+                    )}
+                  >
+                    <span className={cn(
+                      'material-icons text-[18px] w-7 h-7 rounded-lg flex items-center justify-center shrink-0',
+                      isItemActive(pathname, '/dashboard/my-claims')
+                        ? 'bg-white/20 text-white'
+                        : 'bg-emerald-500/15 text-emerald-600',
+                    )}>receipt_long</span>
+                    My claims
+                  </Link>
+                )}
+                {showMyCommission && (
+                  <Link
+                    href="/dashboard/my-commission"
+                    prefetch={false}
+                    onClick={onClose}
+                    className={cn(
+                      'flex items-center gap-2.5 rounded-xl px-2.5 h-10 text-[12px] font-medium transition-colors',
+                      isItemActive(pathname, '/dashboard/my-commission')
+                        ? 'bg-primary text-white shadow-sm shadow-primary/25'
+                        : 'text-text-primary/80 hover:bg-white/80',
+                    )}
+                  >
+                    <span className={cn(
+                      'material-icons text-[18px] w-7 h-7 rounded-lg flex items-center justify-center shrink-0',
+                      isItemActive(pathname, '/dashboard/my-commission')
+                        ? 'bg-white/20 text-white'
+                        : 'bg-violet-500/15 text-violet-600',
+                    )}>trending_up</span>
+                    My commission
                   </Link>
                 )}
                 {showMessages && (
