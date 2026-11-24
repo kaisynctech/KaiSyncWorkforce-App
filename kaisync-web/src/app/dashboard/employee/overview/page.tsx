@@ -227,6 +227,9 @@ function asRpcArray<T>(data: unknown): T[] {
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
+/** How long a phone position stays good enough for a clock-in or clock-out. */
+const LOCATION_FRESH_MS = 5 * 60_000
+
 export default function EmployeeOverviewPage() {
   const router = useRouter()
   const bootstrap = useDashboardBootstrap()
@@ -265,6 +268,8 @@ export default function EmployeeOverviewPage() {
   const [locationProblem, setLocationProblem] = useState<string | null>(null)
   /** Before any place is known: has the phone allowed location (read on opening), is it off, or not found? */
   const [locationState, setLocationState] = useState<'unknown' | 'needs_tap' | 'off' | 'not_found'>('unknown')
+  /** Latest warmLocation for the "back on the screen" listener. */
+  const warmLocationRef = useRef<() => Promise<void>>(async () => {})
 
   // Branch geofence
   const [branchStatus, setBranchStatus] = useState<BranchGeofenceStatus | null>(null)
@@ -325,8 +330,14 @@ export default function EmployeeOverviewPage() {
   useEffect(() => {
     setPendingPunches(getQueue())
     const handleOnline = () => { syncQueue(); void syncClockTrail() }
+    // Back on the screen after a while: refresh the position (only when the phone already allows it).
+    const handleVisible = () => { if (document.visibilityState === 'visible') void warmLocationRef.current() }
     window.addEventListener('online', handleOnline)
-    return () => window.removeEventListener('online', handleOnline)
+    document.addEventListener('visibilitychange', handleVisible)
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      document.removeEventListener('visibilitychange', handleVisible)
+    }
   }, [])
 
   useEffect(() => {
@@ -574,6 +585,15 @@ export default function EmployeeOverviewPage() {
     }
   }
 
+  /**
+   * A position read in the last 5 minutes. Older ones are not reused for a clock: someone who clocked in at the yard
+   * and kept the app open must not have their clock-out stamped with the yard's position.
+   */
+  function freshCoords() {
+    const c = coordsRef.current
+    return c && Date.now() - c.at < LOCATION_FRESH_MS ? c : null
+  }
+
   /** Start from a tap. A second call shares the in-flight read so one failure cannot wipe a fix. */
   function beginLocationRead() {
     const cached = coordsRef.current
@@ -618,7 +638,7 @@ export default function EmployeeOverviewPage() {
    * the place before Clock In. Otherwise say plainly that it is shared on Clock In, or that it is off.
    */
   async function warmLocation() {
-    if (coordsRef.current) return
+    if (freshCoords()) return
     const permission = await locationPermission()
     if (permission === 'denied') { setLocationState('off'); return }
     if (permission !== 'granted') { setLocationState('needs_tap'); return }
@@ -627,6 +647,8 @@ export default function EmployeeOverviewPage() {
     setLocationSearching(false)
     if (!result.ok) setLocationState(result.reason === 'denied' || result.reason === 'unsupported' ? 'off' : 'not_found')
   }
+  warmLocationRef.current = warmLocation
+
 
   /** Card / sheet words when no place name is known yet. Never "No signal" for location. */
   function locationLine(lat: number | null, lng: number | null): string {
@@ -882,7 +904,7 @@ export default function EmployeeOverviewPage() {
     setLocationProblem(null)
     setClockNote('')
     setClockJobId(null)
-    if (!coordsRef.current) {
+    if (!freshCoords()) {
       setGeoLat(null)
       setGeoLng(null)
       setGeoAddress(null)
@@ -890,7 +912,7 @@ export default function EmployeeOverviewPage() {
     setGeofenceData(null)
     setShowClockModal(true)
 
-    if (!coordsRef.current) {
+    if (!freshCoords()) {
       setLocationSearching(true)
       setBranchStatus(null)
       const read = beginLocationRead()
@@ -952,7 +974,8 @@ export default function EmployeeOverviewPage() {
   }
 
   async function submitClock() {
-    const locationRead = !coordsRef.current ? beginLocationRead() : null
+    const startFix = freshCoords()
+    const locationRead = !startFix ? beginLocationRead() : null
     const empId  = empIdRef.current
     const compId = companyIdRef.current
     if (!empId || !compId) return
@@ -968,7 +991,7 @@ export default function EmployeeOverviewPage() {
     const attemptType: 'in' | 'out' = isClockedIn ? 'out' : 'in'
     const trail = (step: ClockStep, meta: Record<string, unknown> = {}, err: string | null = null) =>
       void logClockStep(trailSupabase, trailWho, step, { attempt: attemptId, type: attemptType, ...meta }, err)
-    trail('tap', { has_location: coordsRef.current != null || (geoLat != null && geoLng != null) })
+    trail('tap', { has_location: startFix != null, location_age_s: coordsRef.current ? Math.round((Date.now() - coordsRef.current.at) / 1000) : null })
 
     // Leave / absence hard-block on clock-IN submit (defence in depth)
     if (!isClockedIn && isOnLeave) {
@@ -987,8 +1010,9 @@ export default function EmployeeOverviewPage() {
     }
 
     // Branch geofence hard-block on clock-IN
-    let punchLat = coordsRef.current?.latitude ?? geoLat
-    let punchLng = coordsRef.current?.longitude ?? geoLng
+    // Only a fresh position (or one read now) goes on the clock; never one from hours ago.
+    let punchLat: number | null = startFix?.latitude ?? null
+    let punchLng: number | null = startFix?.longitude ?? null
     if ((punchLat == null || punchLng == null) && locationRead) {
       const located = await locationRead
       if (located.ok) {
