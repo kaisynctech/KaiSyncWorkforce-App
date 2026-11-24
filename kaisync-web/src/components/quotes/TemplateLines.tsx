@@ -13,9 +13,9 @@ import { cn } from '@/lib/utils'
 import { formatCurrency } from '@/lib/currencies'
 import { priceForMargin, type PickItem } from '@/lib/line-items'
 import {
-  engineLineTotal, orderedForDisplay, PERIOD_LABEL, sectionTotal, type EngineLine, type RecurringPeriod,
+  engineLineTotal, orderedForDisplay, type EngineLine, type RecurringPeriod,
 } from '@/lib/quote-engine'
-import type { QuoteTemplate, TemplateColumn } from '@/lib/quote-templates'
+import type { QuoteTemplate } from '@/lib/quote-templates'
 
 /** The line fields this component works with (a SimpleQuoteLine has all of these). */
 export type TLine = {
@@ -86,7 +86,6 @@ export function TemplateLines({
   const f = new Set(template.features)
   const showCost = team && (f.has('cost_margin') || template.columns.some(c => c.key === 'cost' && c.visible))
   const hasDays = template.columns.some(c => c.key === 'days' && c.visible)
-  const cols = template.columns.filter(c => c.visible && (team || !c.team_only))
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<string | null>(null)
   const [newSection, setNewSection] = useState<string | null>(null)
