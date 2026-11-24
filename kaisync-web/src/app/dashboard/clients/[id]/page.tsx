@@ -67,6 +67,7 @@ type ExtraPersonDraft = {
   id: string | null
   name: string
   email: string
+  phone: string
   includeInEmails: boolean
 }
 
@@ -584,7 +585,7 @@ function ClientDetailInner() {
 
     const { data: people, error: peopleError } = await supabase
       .from('client_contacts')
-      .select('id, name, email, include_in_emails, sort_order')
+      .select('id, name, email, phone, include_in_emails, sort_order')
       .eq('company_id', c.company_id)
       .eq('client_id', clientId)
       .order('sort_order')
@@ -594,6 +595,7 @@ function ClientDetailInner() {
       id: person.id as string,
       name: (person.name as string) ?? '',
       email: (person.email as string | null) ?? '',
+      phone: (person.phone as string | null) ?? '',
       includeInEmails: Boolean(person.include_in_emails),
     })))
 
@@ -678,7 +680,7 @@ function ClientDetailInner() {
   async function save() {
     if (!canEdit) { setError('You do not have permission to edit clients.'); return }
     if (!name.trim()) { setError('Client name is required.'); return }
-    if (extraPeople.some(person => !person.name.trim() && (person.email.trim() || person.includeInEmails))) {
+    if (extraPeople.some(person => !person.name.trim() && (person.email.trim() || person.phone.trim() || person.includeInEmails))) {
       setError('Each extra person needs a name.')
       return
     }
@@ -794,7 +796,7 @@ function ClientDetailInner() {
           }
           const { data: savedPeople } = await supabase
             .from('client_contacts')
-            .select('id, name, email, include_in_emails, sort_order')
+            .select('id, name, email, phone, include_in_emails, sort_order')
             .eq('company_id', client.company_id)
             .eq('client_id', clientId)
             .order('sort_order')
@@ -803,6 +805,7 @@ function ClientDetailInner() {
             id: person.id as string,
             name: (person.name as string) ?? '',
             email: (person.email as string | null) ?? '',
+            phone: (person.phone as string | null) ?? '',
             includeInEmails: Boolean(person.include_in_emails),
           })))
           if (bankDirty) {
@@ -1370,6 +1373,7 @@ function ClientDetailInner() {
                       id: null,
                       name: '',
                       email: '',
+                      phone: '',
                       includeInEmails: false,
                     }])}
                     className="text-primary text-[13px] px-2 hover:opacity-70 transition-opacity"
@@ -1386,7 +1390,7 @@ function ClientDetailInner() {
               ) : (
                 <div className="space-y-3">
                   {extraPeople.map(person => (
-                    <div key={person.key} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto_auto] gap-2 items-center">
+                    <div key={person.key} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_0.8fr_auto_auto] gap-2 items-center">
                       <input
                         placeholder="Name"
                         value={person.name}
@@ -1400,6 +1404,15 @@ function ClientDetailInner() {
                         value={person.email}
                         disabled={!canEdit}
                         onChange={e => setExtraPeople(prev => prev.map(row => row.key === person.key ? { ...row, email: e.target.value } : row))}
+                        className="dark-entry"
+                      />
+                      <input
+                        type="tel"
+                        placeholder="Phone"
+                        autoComplete="off"
+                        value={person.phone}
+                        disabled={!canEdit}
+                        onChange={e => setExtraPeople(prev => prev.map(row => row.key === person.key ? { ...row, phone: e.target.value } : row))}
                         className="dark-entry"
                       />
                       <label className="flex items-center gap-2 text-[12px] text-text-secondary whitespace-nowrap">

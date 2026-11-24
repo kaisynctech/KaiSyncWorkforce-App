@@ -29,6 +29,10 @@ export type PublicQuoteView = {
     header_fields?: { label: string; value: string }[]
     deposit?: { pct: number; amount: number } | null
     recurring?: { period: 'week' | 'month' | 'year'; amount: number }[]
+    accepted_by_name?: string | null; accepted_signature?: string | null
+    issue_date?: string | null
+    contact?: { name: string | null; email: string | null; phone: string | null } | null
+    client_vat?: string | null; delivery?: string | null; site_address?: string | null; client_order_no?: string | null
   }
   /** The template's columns the client sees (never cost or margin). Empty: a quotation from before templates. */
   columns?: { key: string; label: string }[]

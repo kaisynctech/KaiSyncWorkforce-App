@@ -6,10 +6,13 @@ import { useEffect, useRef, useState } from 'react'
  * Sign with a finger (or mouse). Gives a small PNG (data URL) through onChange, or null when cleared / empty.
  * Phone first: a wide box, thick line, no scrolling while signing.
  */
-export function SignaturePad({ onChange, label = 'Sign here', height = 160 }: {
+export function SignaturePad({ onChange, label = 'Sign here', height = 160, title, accent }: {
   onChange: (png: string | null) => void
   label?: string
   height?: number
+  /** Shows a heading row ("Sign here … Clear") above the box instead of the Clear button below it. */
+  title?: string
+  accent?: string
 }) {
   const canvas = useRef<HTMLCanvasElement | null>(null)
   const drawing = useRef(false)
@@ -60,13 +63,20 @@ export function SignaturePad({ onChange, label = 'Sign here', height = 160 }: {
 
   return (
     <div className="flex flex-col gap-1.5">
+      {title && (
+        <span className="flex items-center justify-between text-[12.5px] font-semibold text-slate-500">
+          {title}
+          <button type="button" onClick={clear} disabled={empty} className="h-8 px-1 text-[12.5px] font-semibold disabled:opacity-40" style={{ color: accent ?? '#475569' }}>Clear</button>
+        </span>
+      )}
       <div className="relative rounded-xl border-2 border-dashed border-slate-300 bg-white">
         <canvas ref={canvas} aria-label={label} role="img"
           className="block w-full touch-none rounded-xl" style={{ height }}
           onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onPointerLeave={up} />
-        {empty && <span className="pointer-events-none absolute left-3 bottom-2 text-[12px] text-slate-500">{label}</span>}
+        {title && <span className="pointer-events-none absolute left-3.5 right-3.5 bottom-6 border-b border-slate-200" />}
+        {empty && <span className="pointer-events-none absolute left-3 bottom-1 text-[12px] text-slate-500">{label}</span>}
       </div>
-      <button type="button" onClick={clear} disabled={empty} className="self-end h-9 px-3 text-[13px] text-slate-600 disabled:opacity-40">Clear</button>
+      {!title && <button type="button" onClick={clear} disabled={empty} className="self-end h-9 px-3 text-[13px] text-slate-600 disabled:opacity-40">Clear</button>}
     </div>
   )
 }

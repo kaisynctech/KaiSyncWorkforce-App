@@ -107,7 +107,7 @@ Deno.serve(async (req: Request) => {
 
     // ── Quote ────────────────────────────────────────────────────────────────
     const { data: q } = await admin.from("commercial_quotes")
-      .select("id, company_id, client_id, quote_number, title, status, currency, valid_until, scope_notes, terms_and_conditions, internal_notes, subtotal, vat_amount, total_amount, deposit_required, header_values, template_id, accepted_at, declined_at, declined_reason, viewed_at, client:clients(name, legal_name, address, billing_address, email)")
+      .select("id, company_id, client_id, quote_number, title, status, currency, valid_until, scope_notes, terms_and_conditions, internal_notes, subtotal, vat_amount, total_amount, deposit_required, header_values, template_id, accepted_at, accepted_by_name, accepted_signature, declined_at, declined_reason, viewed_at, created_at, client:clients(name, legal_name, address, billing_address, email, vat_number)")
       .eq("id", link.doc_id).eq("company_id", link.company_id).maybeSingle();
     if (!q || q.status === "draft") return fail("This quote is not available.", 404);
     const expired = !!q.valid_until && new Date(`${String(q.valid_until).slice(0, 10)}T23:59:59+02:00`).getTime() < Date.now();
@@ -169,6 +169,11 @@ Deno.serve(async (req: Request) => {
       if (action === "accept") {
         const name = String(body.name ?? "").trim().slice(0, 120);
         if (name.length < 2) return fail("Please type your name to accept.");
+        // The drawn signature (optional for older pages; the current page always sends one).
+        const sigRaw = body.signature == null || body.signature === "" ? null : String(body.signature);
+        if (sigRaw != null && (!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(sigRaw) || sigRaw.length > 300000)) {
+          return fail("Please sign in the box.");
+        }
         // The client's choices between a line and its options (only this quote's option lines count).
         const choices = (Array.isArray(body.choices) ? body.choices : []).map(String).filter((x) => /^[0-9a-f-]{36}$/i.test(x)).slice(0, 200);
         let chosen = 0;
@@ -179,7 +184,7 @@ Deno.serve(async (req: Request) => {
         }
         const { data: fresh } = await admin.from("commercial_quotes").select("total_amount, deposit_required").eq("id", q.id).maybeSingle();
         const { error } = await admin.from("commercial_quotes").update({
-          status: "accepted", accepted_at: now, updated_at: now,
+          status: "accepted", accepted_at: now, updated_at: now, accepted_by_name: name, accepted_signature: sigRaw,
           internal_notes: [q.internal_notes, `Accepted online by ${name} on ${now.slice(0, 10)}${chosen ? ` (chose ${chosen} option${chosen === 1 ? "" : "s"})` : ""}.`].filter(Boolean).join("\n"),
         }).eq("id", q.id).eq("status", q.status);
         if (error) return fail("Something went wrong. Please try again.", 500);
@@ -272,6 +277,14 @@ Deno.serve(async (req: Request) => {
         number: q.quote_number, title: q.title, status: q.status, valid_until: q.valid_until, notes: q.scope_notes,
         terms: q.terms_and_conditions, subtotal: q.subtotal, vat: q.vat_amount, total: q.total_amount,
         accepted_at: q.accepted_at, declined_at: q.declined_at, expired, currency: q.currency,
+        accepted_by_name: q.accepted_by_name ?? null, accepted_signature: q.accepted_signature ?? null,
+        issue_date: String(q.created_at ?? "").slice(0, 10) || null,
+        // What the office filled in on the quote, for the client's copy of the PDF.
+        contact: { name: String(hv.__contact_name ?? "").trim() || null, email: String(hv.__contact_email ?? "").trim() || null, phone: String(hv.__contact_phone ?? "").trim() || null },
+        client_vat: String(hv.__client_vat ?? "").trim() || null,
+        delivery: String(hv.__delivery ?? "").trim() || null,
+        site_address: String(hv.site_address ?? "").trim() || null,
+        client_order_no: String(hv.client_order_no ?? "").trim() || null,
         vat_rate: Number(q.subtotal) > 0 ? Math.round(Number(q.vat_amount ?? 0) / Number(q.subtotal) * 10000) / 10000 : 0,
         header_fields: ((tpl?.header_fields ?? []) as string[]).filter((h) => (hv[h] ?? "").trim()).map((h) => ({ label: HEADER[h] ?? h, value: hv[h] })),
         deposit: hasDeposit ? { pct: depPct, amount: Number(q.deposit_required) } : null,

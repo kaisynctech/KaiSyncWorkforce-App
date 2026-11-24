@@ -114,8 +114,11 @@ const BOTTOM = 276
 const COL_WIDTH: Record<string, number> = { qty: 13, days: 11, unit: 14, price: 26, rate: 26, total: 28, part_no: 24, brand: 20, condition: 22, warranty: 18 }
 const NUMERIC = new Set(['qty', 'days', 'price', 'rate', 'total'])
 
-export function buildQuotePdf(input: QuotePdfInput): jsPDF {
-  const doc = new jsPDF({ unit: 'mm', format: 'a4' })
+/** Draws the quote (or pro forma). With `into`, it goes on new pages at the end of that document (quote + pro forma in one file). */
+export function buildQuotePdf(input: QuotePdfInput, into?: jsPDF): jsPDF {
+  const doc = into ?? new jsPDF({ unit: 'mm', format: 'a4' })
+  if (into) doc.addPage()
+  const first = doc.getNumberOfPages()
   const lh = input.letterhead ?? letterheadFromRow({ name: input.company_name }, input.company_name)
   const brand: BrandColours = lh.colours ?? DEFAULT_BRAND
   const accent = rgbOf(brand.accent)
@@ -291,9 +294,11 @@ export function buildQuotePdf(input: QuotePdfInput): jsPDF {
   }
 
   // ── Footer on every page ──
-  const pages = doc.getNumberOfPages()
-  for (let p = 1; p <= pages; p++) {
-    doc.setPage(p)
+  const last = doc.getNumberOfPages()
+  const pages = last - first + 1
+  for (let pg = first; pg <= last; pg++) {
+    const p = pg - first + 1
+    doc.setPage(pg)
     fill(PANEL); doc.rect(0, 287, PAGE_W, 10, 'F')
     font('normal', 7); ink(SLATE_500)
     doc.text([lh.legalName || lh.name, lh.registrationNumber ? `Reg. ${lh.registrationNumber}` : null, lh.vatNumber ? `VAT ${lh.vatNumber}` : null].filter(Boolean).join(' · '), L, 292.5)
@@ -396,9 +401,10 @@ export function downloadQuotePdf(input: QuotePdfInput): void {
   doc.save(`Quote_${safe}.pdf`)
 }
 
-/** Raw base64 (no data: prefix) for Resend attachments. */
-export function quotePdfBase64(input: QuotePdfInput): string {
-  const doc = buildQuotePdf(input)
+/** Raw base64 (no data: prefix) for Resend attachments. withProforma: the pro forma invoice follows the quote in the same file. */
+export function quotePdfBase64(input: QuotePdfInput, opts: { withProforma?: boolean } = {}): string {
+  const doc = buildQuotePdf(opts.withProforma ? { ...input, kind: 'quote' } : input)
+  if (opts.withProforma) buildQuotePdf({ ...input, kind: 'proforma' }, doc)
   return doc.output('datauristring').replace(/^data:application\/pdf;base64,/, '')
 }
 

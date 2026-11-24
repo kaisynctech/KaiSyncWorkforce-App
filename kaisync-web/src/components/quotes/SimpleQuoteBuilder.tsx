@@ -161,6 +161,8 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   const [quoteId,     setQuoteId]     = useState<string | null>(initialQuoteId)
   const [quoteNumber, setQuoteNumber] = useState<string | null>(null)
   const [status,      setStatus]      = useState('draft')
+  /** The client's name and signature when they accepted online (printed on the quote). */
+  const [acceptedSig, setAcceptedSig] = useState<{ name: string; at: string | null; signature: string | null } | null>(null)
   const [title,       setTitle]       = useState('')
   const [clientId,    setClientId]    = useState<string | null>(null)
   const [validUntil,  setValidUntil]  = useState(todayPlus(14))
@@ -260,6 +262,9 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   useEffect(() => { stepRef.current = step }, [step])
   const [docKind, setDocKind] = useState<'quote' | 'proforma'>('quote')
   const docKindRef = useRef<'quote' | 'proforma'>('quote')
+  /** Email the pro forma invoice in the same PDF, after the quotation. */
+  const [attachProforma, setAttachProforma] = useState(false)
+  const attachProformaRef = useRef(false)
   const [browseSignal, setBrowseSignal] = useState(0)
   const [menuOpen, setMenuOpen] = useState(false)
   const [contacts, setContacts] = useState<Contact[]>([])
@@ -378,15 +383,15 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
       if (!companyId || !clientId) { if (live) setContacts([]); return }
       const [{ data: c }, { data: more }] = await Promise.all([
         supabase.from('clients').select('contact_person, email, phone, mobile').eq('id', clientId).eq('company_id', companyId).maybeSingle(),
-        supabase.from('client_contacts').select('name, email').eq('client_id', clientId).eq('company_id', companyId).order('sort_order').limit(50),
+        supabase.from('client_contacts').select('name, email, phone').eq('client_id', clientId).eq('company_id', companyId).order('sort_order').limit(50),
       ])
       if (!live) return
       const list: Contact[] = []
       const main = c as { contact_person?: string | null; email?: string | null; phone?: string | null; mobile?: string | null } | null
       if (main?.contact_person?.trim()) list.push({ name: main.contact_person.trim(), email: main.email ?? null, phone: main.mobile || main.phone || null, note: 'main contact' })
-      for (const r of (more ?? []) as { name: string | null; email: string | null }[]) {
+      for (const r of (more ?? []) as { name: string | null; email: string | null; phone: string | null }[]) {
         const nm = (r.name ?? '').trim() || (r.email ?? '').trim()
-        if (nm && !list.some(x => x.name === nm && x.email === r.email)) list.push({ name: nm, email: r.email, phone: null, note: null })
+        if (nm && !list.some(x => x.name === nm && x.email === r.email)) list.push({ name: nm, email: r.email, phone: (r.phone ?? '').trim() || null, note: null })
       }
       setContacts(list)
     })()
@@ -532,6 +537,8 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         const qNum = (q.quote_number as string | null) ?? null
         setQuoteNumber(qNum);      quoteNumberRef.current = qNum
         setStatus((q.status as string) ?? 'draft')
+        setAcceptedSig(q.accepted_by_name ? { name: String(q.accepted_by_name), at: (q.accepted_at as string | null) ?? null, signature: (q.accepted_signature as string | null) ?? null } : null)
+        setAcceptedSig(q.accepted_by_name ? { name: String(q.accepted_by_name), at: (q.accepted_at as string | null) ?? null, signature: (q.accepted_signature as string | null) ?? null } : null)
         { const tt = (q.title as string) ?? ''; const clean = /^untitled quote$/i.test(tt.trim()) ? '' : tt; setTitle(clean); titleRef.current = clean }
         const cid2 = (q.client_id as string | null) ?? null
         setClientId(cid2);         clientIdRef.current = cid2
@@ -1291,6 +1298,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
       client_address: headerValuesRef.current.site_address?.trim() || null,
       client_vat: headerValuesRef.current[HV.clientVat]?.trim() || null,
       delivery: headerValuesRef.current[HV.delivery]?.trim() || null,
+      accepted: statusRef.current === 'accepted' ? acceptedSig : null,
       rate_note: (() => {
         const c = quoteCurrencyRef.current
         const r = Number(fxRate.replace(',', '.')) > 0 ? Number(fxRate.replace(',', '.')) : dailyRate
@@ -1353,11 +1361,11 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
     const to = sendRcpt.to.trim() || pdf.client_email || ''
     const resend = await sendQuoteEmailViaResend(supabase, {
       quoteId: qid,
-      pdfBase64: quotePdfBase64(pdf),
+      pdfBase64: quotePdfBase64(pdf, { withProforma: pdf.kind !== 'proforma' && attachProformaRef.current }),
       recipientEmail: to,
       cc: sendRcpt.cc,
       bodyText: draftEdits(sendDraft).body_text,
-      filename: pdf.kind === 'proforma' ? `ProForma_${(pdf.quote_number || 'draft').replace(/^QU/i, 'PF').replace(/[^\w.-]+/g, '_')}.pdf` : `Quote_${(pdf.quote_number || 'draft').replace(/[^\w.-]+/g, '_')}.pdf`,
+      filename: pdf.kind !== 'proforma' && attachProformaRef.current ? `Quote_and_ProForma_${(pdf.quote_number || 'draft').replace(/[^\w.-]+/g, '_')}.pdf` : pdf.kind === 'proforma' ? `ProForma_${(pdf.quote_number || 'draft').replace(/^QU/i, 'PF').replace(/[^\w.-]+/g, '_')}.pdf` : `Quote_${(pdf.quote_number || 'draft').replace(/[^\w.-]+/g, '_')}.pdf`,
       subject: draftEdits(sendDraft).subject ?? `Quote ${pdf.quote_number ?? ''} – ${pdf.title || 'Quotation'}`.trim(),
     })
 
@@ -2158,9 +2166,16 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
             </div>
             <aside className="flex-[1_1_260px] lg:max-w-[300px] w-full bg-surface border border-divider rounded-2xl p-[18px] flex flex-col gap-3 lg:sticky lg:top-4">
               <span className="text-[16px] font-semibold">Looks right? Send it.</span>
-              <span className="text-[12.5px] text-text-secondary -mt-1.5">Sending the {docKind === 'quote' ? 'quotation' : 'pro forma invoice'}{contactName ? ` to ${contactName}` : clientName ? ` to ${clientName}` : ''}</span>
+              <span className="text-[12.5px] text-text-secondary -mt-1.5">Sending the {docKind === 'quote' ? (attachProforma ? 'quotation and pro forma invoice' : 'quotation') : 'pro forma invoice'}{contactName ? ` to ${contactName}` : clientName ? ` to ${clientName}` : ''}</span>
               {status !== 'accepted' && status !== 'declined' || docKind === 'proforma' ? (
                 <>
+                  {docKind === 'quote' && (
+                    <label className="flex items-start gap-2.5 text-[13px] text-text-primary cursor-pointer">
+                      <input type="checkbox" className="mt-0.5 w-4 h-4 accent-[#2563EB]" checked={attachProforma}
+                        onChange={e => { setAttachProforma(e.target.checked); attachProformaRef.current = e.target.checked }} />
+                      <span>Add the pro forma invoice to the email<span className="block text-[12px] text-text-secondary">One PDF: the quotation, then the pro forma with your banking details.</span></span>
+                    </label>
+                  )}
                   <button type="button" disabled={saveState === 'saving'} onClick={() => void openSend()} className="h-12 rounded-xl bg-[#2563EB] text-white text-[14.5px] font-semibold hover:bg-[#1D4ED8] disabled:opacity-50">Send by email</button>
                   {docKind === 'quote' && <button type="button" disabled={sendBusy} onClick={() => void handleSendWhatsApp()} className="h-12 rounded-xl border border-divider bg-surface text-text-primary text-[14.5px] font-medium hover:bg-surface-elevated disabled:opacity-50">Send on WhatsApp</button>}
                 </>

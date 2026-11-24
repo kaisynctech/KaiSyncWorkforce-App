@@ -3,7 +3,7 @@
 /**
  * The client's online invoice or quote, opened from the private link in the email. No login.
  * Invoice: see it, download the PDF, banking details, send proof of payment.
- * Quote: see it (choosing between options), download the PDF, accept (type your name) or decline, pay the deposit
+ * Quote: see it (choosing between options), download the PDF, accept (name and signature) or decline, pay the deposit
  * and send proof, ask a question and see the answer.
  */
 
@@ -13,6 +13,7 @@ import { createClient } from '@/lib/supabase/client'
 import { letterheadFromRow, loadLetterheadLogo, bankLines } from '@/lib/letterhead'
 import { currencySymbol } from '@/lib/currencies'
 import { JobReportPublic, downloadJobReportPdf } from '@/components/public/JobReportPublic'
+import { SignaturePad } from '@/components/SignaturePad'
 import {
   callPublicDocument, dayZA, fileToBase64, publicLogoUrl, quoteWithChoices, randZA,
   type PublicInvoiceView, type PublicQuoteLine, type PublicQuoteView, type PublicResult, type PublicView,
@@ -151,6 +152,11 @@ async function downloadPdf(v: PublicView, choices: Record<string, string> = {}) 
     const doc = buildQuotePdf({
       quote_number: v.doc.number, title: v.doc.title, status: v.doc.status, valid_until: v.doc.valid_until, notes: v.doc.notes,
       client_name: client.name ?? null, client_email: client.email ?? null, company_name: lh.name, letterhead: lh,
+      issue_date: v.doc.issue_date ?? null, reference: v.doc.client_order_no ?? null,
+      contact: v.doc.contact ?? null, client_vat: v.doc.client_vat ?? client.vat_number ?? null, delivery: v.doc.delivery ?? null,
+      client_address: v.doc.site_address ?? client.billing_address?.trim() ?? client.address?.trim() ?? null,
+      accepted: v.doc.status === 'accepted' && v.doc.accepted_by_name
+        ? { name: v.doc.accepted_by_name, at: v.doc.accepted_at, signature: v.doc.accepted_signature ?? null } : null,
       lines: q.lines.map(l => ({ description: l.description, qty: Number(l.quantity), unit: l.unit ?? 'each', unit_price: Number(l.unit_sell_price), total: Number(l.subtotal_sell), discount_pct: lineDiscountPct(Number(l.quantity), Number(l.unit_sell_price), Number(l.subtotal_sell)), section: l.section ?? null, extra: l.extra, recurring: l.recurring_period ?? null })),
       subtotal: q.subtotal, vat: q.vat, total: q.total,
       vatRate: q.subtotal > 0 ? q.vat / q.subtotal : 0, currency: v.doc.currency,
@@ -304,6 +310,8 @@ function QuoteView({ token, v, onChange }: { token: string; v: PublicQuoteView; 
   const cur = d.currency
   const [choices, setChoices] = useState<Record<string, string>>({})
   const [name, setName] = useState('')
+  const [signature, setSignature] = useState<string | null>(null)
+  const [accent, setAccent] = useState('#C2410C')
   const [reason, setReason] = useState('')
   const [declining, setDeclining] = useState(false)
   const [busy, setBusy] = useState<'accept' | 'decline' | null>(null)
@@ -318,11 +326,20 @@ function QuoteView({ token, v, onChange }: { token: string; v: PublicQuoteView; 
 
   async function respond(action: 'accept' | 'decline') {
     setBusy(action); setResult(null)
-    const r = await callPublicDocument(token, action, action === 'accept' ? { name, choices: Object.values(choices) } : { reason })
+    const r = await callPublicDocument(token, action, action === 'accept' ? { name, signature, choices: Object.values(choices) } : { reason })
     setResult(r)
     setBusy(null)
     if (r.ok) await onChange()
   }
+
+  // The company's own colour (from its logo) for the accept button, as on the quote PDF.
+  useEffect(() => {
+    let live = true
+    void loadLetterheadLogo(createClient(), letterheadFromRow(v.company)).then(lh => {
+      if (live && lh.colours?.accent) setAccent(lh.colours.accent)
+    }).catch(() => {})
+    return () => { live = false }
+  }, [v.company])
 
   // Lines by section (template quotations with phases), in order.
   const groups: { section: string | null; lines: PublicQuoteLine[] }[] = []
@@ -349,6 +366,15 @@ function QuoteView({ token, v, onChange }: { token: string; v: PublicQuoteView; 
           </dl>
         )}
         {d.status === 'accepted' && <p className="mt-3 text-[14px] font-semibold text-emerald-700 flex items-center gap-2"><span className="material-icons">check_circle</span>Accepted{d.accepted_at ? ` on ${dayZA(d.accepted_at)}` : ''} — thank you</p>}
+        {d.status === 'accepted' && d.accepted_by_name && (
+          <div className="mt-2 flex items-center gap-3 text-[13px] text-slate-600">
+            {d.accepted_signature && /^data:image\/png;base64,/.test(d.accepted_signature) && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={d.accepted_signature} alt={`Signature of ${d.accepted_by_name}`} className="h-12 w-auto rounded border border-slate-200 bg-white" />
+            )}
+            <span>Signed by <b className="text-slate-900">{d.accepted_by_name}</b>{d.accepted_at ? `, ${new Date(d.accepted_at).toLocaleString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}` : ''}</span>
+          </div>
+        )}
         {d.status === 'declined' && <p className="mt-3 text-[14px] font-semibold text-slate-600">Declined{d.declined_at ? ` on ${dayZA(d.declined_at)}` : ''}</p>}
         {d.expired && d.status !== 'accepted' && d.status !== 'declined' && <p className="mt-3 text-[13.5px] font-medium text-amber-700">This quote has expired. Please contact us for an updated one.</p>}
         <div className="mt-4 flex flex-wrap gap-2"><PdfButton v={v} choices={choices} /></div>
@@ -431,26 +457,33 @@ function QuoteView({ token, v, onChange }: { token: string; v: PublicQuoteView; 
         <Card>
           {!declining ? (
             <>
-              <p className="text-[14px] font-semibold">Happy with the quote?</p>
+              <p className="text-[16px] font-bold">Accept this quote</p>
               {q.changed && <p className="mt-1 text-[12.5px] text-emerald-700">With your choices: {randZA(q.total, cur)}</p>}
-              <label className="block mt-3">
-                <span className="text-[12.5px] font-medium text-slate-600">Your full name</span>
+              <label className="flex flex-col gap-1.5 mt-3 text-[12.5px] font-semibold text-slate-500">Your full name
                 <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Thandi Mokoena" autoComplete="name"
-                  className="mt-1 w-full h-12 rounded-xl border border-slate-300 px-3 text-[15px] bg-white" />
+                  className="h-[46px] rounded-[10px] border border-slate-200 bg-slate-50 px-3 text-[15px] font-medium text-slate-900" />
               </label>
-              <p className="mt-2 text-[12px] text-slate-500">By accepting, you agree to the quote{q.deposit > 0 ? `, its terms and paying the ${randZA(q.deposit, cur)} deposit` : ' and its terms'}.</p>
+              <div className="mt-3">
+                <SignaturePad title="Sign here" accent={accent} label="" height={130} onChange={setSignature} />
+                <p className="mt-1 text-[11.5px] text-slate-500">Sign with your finger or mouse.</p>
+              </div>
+              <p className="mt-3 text-[12px] leading-relaxed text-slate-500">By accepting you agree to the quote{q.deposit > 0 ? `, its terms and paying the ${randZA(q.deposit, cur)} deposit` : ' and its terms'}.</p>
               {result && <p className={`mt-2 text-[13px] ${result.ok ? 'text-emerald-700' : 'text-red-600'}`}>{result.message}</p>}
-              <button type="button" disabled={busy !== null || name.trim().length < 2} onClick={() => void respond('accept')}
-                className="mt-3 w-full h-12 rounded-xl bg-emerald-600 text-white text-[15px] font-semibold hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-2">
-                <span className="material-icons text-[19px]">check</span>{busy === 'accept' ? 'Accepting…' : q.deposit > 0 ? 'Accept and pay deposit' : 'Accept quote'}
+              {!result && name.trim().length >= 2 && !signature && <p className="mt-2 text-[12.5px] text-slate-500">Please sign in the box to accept.</p>}
+              <button type="button" disabled={busy !== null || name.trim().length < 2 || !signature} onClick={() => void respond('accept')}
+                className="mt-3 w-full h-[52px] rounded-xl text-white text-[15px] font-bold disabled:opacity-50 flex items-center justify-center gap-2"
+                style={{ background: accent }}>
+                {busy === 'accept' ? 'Accepting…' : q.deposit > 0 ? 'Accept and pay deposit' : 'Accept quote'}
               </button>
-              <button type="button" onClick={() => { setDeclining(true); setResult(null) }} className="mt-2 w-full h-10 text-[13.5px] text-slate-600 hover:text-slate-900">
-                Decline this quote
+              <button type="button" onClick={() => { setDeclining(true); setResult(null) }}
+                className="mt-2 w-full h-11 rounded-xl border border-slate-200 text-[14px] font-medium text-slate-900 hover:bg-slate-50">
+                Decline or ask a question
               </button>
             </>
           ) : (
             <>
               <p className="text-[14px] font-semibold">Decline the quote</p>
+              <p className="mt-1 text-[12.5px] text-slate-500">Only have a question? Go back and ask it at the bottom of this page.</p>
               <label className="block mt-3">
                 <span className="text-[12.5px] font-medium text-slate-600">Tell us why (optional)</span>
                 <textarea rows={3} value={reason} onChange={e => setReason(e.target.value)}
@@ -468,6 +501,7 @@ function QuoteView({ token, v, onChange }: { token: string; v: PublicQuoteView; 
           )}
         </Card>
       )}
+      {v.can_respond && !declining && <p className="text-center text-[11.5px] leading-relaxed text-slate-500">The signed copy, with your name, date and time, is saved on the quote. You can download it from this page.</p>}
       {!v.can_respond && result?.ok && <Card><p className="text-[14px] text-emerald-700">{result.message}</p></Card>}
 
       <QuestionsCard token={token} messages={v.messages ?? []} clientName={v.client?.name ?? ''} onSent={onChange} />

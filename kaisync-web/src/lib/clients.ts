@@ -100,6 +100,7 @@ export type ClientContactDraft = {
   id?: string | null
   name: string
   email?: string | null
+  phone?: string | null
   includeInEmails?: boolean
 }
 
@@ -117,9 +118,10 @@ export async function replaceClientContacts(
       id: contact.id?.trim() || null,
       name: contact.name.trim(),
       email: contact.email?.trim() || null,
+      phone: contact.phone?.trim() || null,
       includeInEmails: Boolean(contact.includeInEmails),
     }))
-    .filter(contact => contact.name || contact.email || contact.includeInEmails)
+    .filter(contact => contact.name || contact.email || contact.phone || contact.includeInEmails)
 
   if (prepared.some(contact => !contact.name)) {
     return { ok: false, message: 'Each extra person needs a name.' }
@@ -153,6 +155,7 @@ export async function replaceClientContacts(
     const payload = {
       name: contact.name,
       email: contact.email,
+      phone: contact.phone,
       include_in_emails: contact.includeInEmails,
       sort_order: index,
     }
