@@ -142,10 +142,10 @@ export function QuoteDocumentPreview({ input }: { input: QuotePdfInput }) {
           {usable.some(l => l.is_option) && <p className="mt-1.5 text-[11px] italic text-[#64748B]">Options are choices instead of the line above them; they are not in the total.</p>}
         </div>
 
-        {/* Totals, terms and signature at the foot of the page, as on the PDF. */}
-        <div className="mt-auto flex flex-col gap-6">
+        {/* Totals with the bank details (or note) beside them after the lines; terms and signature at the foot, as on the PDF. */}
+        <div className="flex-1 flex flex-col gap-6">
         <div className="flex flex-wrap justify-between gap-6 items-start">
-          <div className="flex-[1_1_280px] min-w-0">
+          <div className="flex-[1_1_220px] min-w-0">
             {isPf ? (
               <div className="border border-[#E2E8F0] rounded-lg px-3.5 py-3">
                 <div className={`${small} mb-1.5`} style={{ color: b.accentText }}>BANK DETAILS</div>
@@ -160,7 +160,7 @@ export function QuoteDocumentPreview({ input }: { input: QuotePdfInput }) {
               <div className="text-[#475569] whitespace-pre-line"><b className="text-[#1E293B]">Note:</b> {input.notes.trim()}</div>
             ) : null}
           </div>
-          <div className="flex-[0_1_260px] flex flex-col gap-1.5 text-[12px]">
+          <div className="flex-[0_1_250px] min-w-[220px] flex flex-col gap-1.5 text-[12px]">
             <div className="flex justify-between"><span className="text-[#64748B]">{vatOn ? 'Subtotal (excl. VAT)' : 'Subtotal'}</span><span>{m(input.subtotal)}</span></div>
             {vatOn && <div className="flex justify-between"><span className="text-[#64748B]">VAT {vatPercentLabel(rate)}%</span><span>{m(input.vat)}</span></div>}
             <div className="flex justify-between rounded-md px-2.5 py-2 mt-1 text-white text-[15px] font-bold" style={{ background: b.dark }}><span>{vatOn ? 'Total (incl. VAT)' : 'Total'}</span><span>{m(input.total)}</span></div>
@@ -174,7 +174,7 @@ export function QuoteDocumentPreview({ input }: { input: QuotePdfInput }) {
           </div>
         </div>
 
-        <div className="grid sm:grid-cols-[1.4fr_1fr] gap-5 border-t border-[#E2E8F0] pt-4">
+        <div className="mt-auto grid sm:grid-cols-[1.4fr_1fr] gap-5 border-t border-[#E2E8F0] pt-4">
           <div className="text-[11px] text-[#475569]">
             {terms && <><div className={`${small} text-[#1E293B] mb-1`}>TERMS</div>{terms}</>}
           </div>
