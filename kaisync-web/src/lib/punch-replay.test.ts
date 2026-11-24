@@ -26,7 +26,9 @@ function punch(key: string, employee: string, type: 'in' | 'out' = 'in'): Queued
 /** Fake server: a token may only punch for its own worker. */
 function fakeSupabase(tokens: Record<string, string>, opts?: { failKey?: string }) {
   const calls: Array<{ key: string; employee: string }> = []
-  const rpc = vi.fn(async (_fn: string, args: Record<string, unknown>) => {
+  const rpc = vi.fn(async (fn: string, args: Record<string, unknown>) => {
+    // The clock-in trail also writes to the server; only clock-ins are counted here.
+    if (fn === 'employee_log_app_event') return { data: null, error: null }
     calls.push({ key: String(args.p_idempotency_key), employee: String(args.p_employee_id) })
     if (opts?.failKey === args.p_idempotency_key) return { data: null, error: { message: 'Failed to fetch' } }
     if (tokens[String(args.p_session_token)] !== args.p_employee_id) {

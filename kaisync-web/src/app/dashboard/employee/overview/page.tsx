@@ -8,6 +8,7 @@ import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { useDashboardBootstrap } from '@/components/DashboardBootstrapContext'
 import { type QueuedPunch, getQueue, enqueue, shouldQueuePunchFailure, isSessionAuthError, SESSION_ENDED_MESSAGE } from '@/lib/punch-queue'
 import { flushQueuedPunchesFor } from '@/lib/punch-replay'
+import { flushClockTrail, logClockStep, type ClockStep } from '@/lib/clock-trail'
 import {
   loadCompanyWorkspace,
   loadEmployeeWorkspace,
@@ -319,7 +320,7 @@ export default function EmployeeOverviewPage() {
 
   useEffect(() => {
     setPendingPunches(getQueue())
-    const handleOnline = () => { syncQueue() }
+    const handleOnline = () => { syncQueue(); void syncClockTrail() }
     window.addEventListener('online', handleOnline)
     return () => window.removeEventListener('online', handleOnline)
   }, [])
@@ -816,6 +817,7 @@ export default function EmployeeOverviewPage() {
     } finally {
       setLoading(false)
       syncQueue()
+      void syncClockTrail()
     }
   }
 
@@ -912,6 +914,13 @@ export default function EmployeeOverviewPage() {
     setPendingPunches(getQueue())
   }
 
+  /** Clock-in trail steps kept on this phone (no signal at the time) go up with the next sync. */
+  async function syncClockTrail() {
+    const empId = empIdRef.current
+    if (!empId) return
+    await flushClockTrail(createClient(), empId, tokRef.current)
+  }
+
   async function submitClock() {
     const locationRead = !coordsRef.current ? beginLocationRead() : null
     const empId  = empIdRef.current
@@ -922,15 +931,26 @@ export default function EmployeeOverviewPage() {
     setClockLoading(true)
     setClockError(null)
 
+    // Clock-in trail (never blocks): record the tap first, so even an attempt that never finishes is visible.
+    const trailSupabase = createClient()
+    const trailWho = { companyId: compId, employeeId: empId, sessionToken: tokRef.current }
+    const attemptId = crypto.randomUUID()
+    const attemptType: 'in' | 'out' = isClockedIn ? 'out' : 'in'
+    const trail = (step: ClockStep, meta: Record<string, unknown> = {}, err: string | null = null) =>
+      void logClockStep(trailSupabase, trailWho, step, { attempt: attemptId, type: attemptType, ...meta }, err)
+    trail('tap', { has_location: coordsRef.current != null || (geoLat != null && geoLng != null) })
+
     // Leave / absence hard-block on clock-IN submit (defence in depth)
     if (!isClockedIn && isOnLeave) {
       setClockError('You are on approved leave today and cannot clock in.')
+      trail('blocked_leave')
       setClockLoading(false)
       clockInFlightRef.current = false
       return
     }
     if (!isClockedIn && isAbsentToday) {
       setClockError('You are marked absent today and cannot clock in.')
+      trail('blocked_absent')
       setClockLoading(false)
       clockInFlightRef.current = false
       return
@@ -948,6 +968,7 @@ export default function EmployeeOverviewPage() {
         setLocationSearching(false)
         punchLat = null
         punchLng = null
+        trail('location_failed')
       }
     }
     if (!isClockedIn && punchLat != null && punchLng != null) {
@@ -965,6 +986,7 @@ export default function EmployeeOverviewPage() {
       })
       if (!branchResult.allowed) {
         setClockError(branchResult.message || 'Cannot Clock In')
+        trail('blocked_location', {}, branchResult.message || null)
         setClockLoading(false)
         clockInFlightRef.current = false
         refreshBranchStatus(punchLat, punchLng)
@@ -985,7 +1007,8 @@ export default function EmployeeOverviewPage() {
     const punchDateTime  = new Date().toISOString()
     const punchType: 'in' | 'out' = isClockedIn ? 'out' : 'in'
 
-    const queueAndOptimistic = () => {
+    const queueAndOptimistic = (reason: string) => {
+      trail('saved_on_phone', { reason, punch_key: idempotencyKey, punch_time: punchDateTime })
       enqueue({
         idempotency_key: idempotencyKey,
         company_id:      compId,
@@ -1008,7 +1031,7 @@ export default function EmployeeOverviewPage() {
     }
 
     if (!navigator.onLine) {
-      queueAndOptimistic()
+      queueAndOptimistic('offline')
       return
     }
 
@@ -1029,13 +1052,21 @@ export default function EmployeeOverviewPage() {
 
     if (error) {
       if (shouldQueuePunchFailure(error.message)) {
-        queueAndOptimistic()
+        queueAndOptimistic(`network: ${error.message}`.slice(0, 200))
         return
       }
+      trail('failed', {}, error.message)
       setClockError(isSessionAuthError(error.message) ? SESSION_ENDED_MESSAGE : error.message)
       setClockLoading(false)
       clockInFlightRef.current = false
       return
+    }
+
+    // The server keeps an earlier open clock-in instead of adding a second one: say which happened.
+    {
+      const row = (punchRow && typeof punchRow === 'object' ? punchRow : {}) as { id?: string; idempotency_key?: string | null }
+      const reused = !!row.id && row.idempotency_key !== idempotencyKey
+      trail(reused ? 'already_clocked_in' : 'sent', { punch_id: row.id ?? null })
     }
 
     // Apply UI state immediately so a second tap cannot create another 'in'

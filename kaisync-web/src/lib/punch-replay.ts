@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { needsPlaceName, reverseGeocodeRequired } from '@/lib/geo-location'
 import { dequeue, isSessionAuthError, queuedPunchesFor, SESSION_ENDED_MESSAGE, type QueuedPunch } from '@/lib/punch-queue'
+import { flushClockTrail, logClockStep } from '@/lib/clock-trail'
 
 type PunchJson = { id?: string; address?: string | null }
 
@@ -67,6 +68,10 @@ export async function flushQueuedPunchesFor(
   let flushed = 0
   for (const punch of queuedPunchesFor(employeeId)) {
     const result = await insertQueuedPunch(supabase, punch, sessionToken)
+    const who = { companyId: punch.company_id, employeeId: punch.employee_id, sessionToken }
+    void logClockStep(supabase, who, result.ok ? 'replay_sent' : 'replay_failed',
+      { punch_key: punch.idempotency_key, type: punch.type, punch_time: punch.date_time, saved_at: punch.queued_at },
+      result.ok ? null : result.message)
     if (!result.ok) {
       return {
         flushed,
@@ -76,5 +81,7 @@ export async function flushQueuedPunchesFor(
     dequeue(punch.idempotency_key)
     flushed += 1
   }
+  // Steps of the clock-in trail kept on this phone go up with the clock-ins.
+  await flushClockTrail(supabase, employeeId, sessionToken)
   return { flushed, error: null }
 }
