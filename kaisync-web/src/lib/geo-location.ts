@@ -283,11 +283,12 @@ export async function locationPermission(): Promise<LocationPermission> {
   }
 }
 
-/** Short words for the clock card and sheet when there is no place yet. */
-export function locationProblemText(reason: DeviceLocationFailure): string {
-  if (reason === 'denied') return `Location is off for KaiSync. ${deviceLocationFailureMessage(reason)} You can still clock in without it.`
-  if (reason === 'unsupported') return `${deviceLocationFailureMessage(reason)} You can still clock in without it.`
-  return 'Location not found yet. Step outside or near a window and tap Try again. You can still clock in without it.'
+/** Short words for the clock card and sheet when there is no place yet. `action` is what the worker is doing now. */
+export function locationProblemText(reason: DeviceLocationFailure, action: 'in' | 'out' = 'in'): string {
+  const carryOn = `You can still clock ${action} without it.`
+  if (reason === 'denied') return `Location is off for KaiSync. ${deviceLocationFailureMessage(reason)} ${carryOn}`
+  if (reason === 'unsupported') return `${deviceLocationFailureMessage(reason)} ${carryOn}`
+  return `Location not found yet. Step outside or near a window and tap Try again. ${carryOn}`
 }
 
 export function deviceLocationFailureMessage(reason: DeviceLocationFailure): string {

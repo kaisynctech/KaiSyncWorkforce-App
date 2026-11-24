@@ -631,7 +631,7 @@ export default function EmployeeOverviewPage() {
         return
       }
       setLocationState(result.reason === 'denied' || result.reason === 'unsupported' ? 'off' : 'not_found')
-      setLocationProblem(locationProblemText(result.reason))
+      setLocationProblem(locationProblemText(result.reason, isClockedIn ? 'out' : 'in'))
     })
   }
 
@@ -922,7 +922,7 @@ export default function EmployeeOverviewPage() {
         setLocationSearching(false)
         if (!result.ok) {
           setLocationState(result.reason === 'denied' || result.reason === 'unsupported' ? 'off' : 'not_found')
-          setLocationProblem(locationProblemText(result.reason))
+          setLocationProblem(locationProblemText(result.reason, isClockedIn ? 'out' : 'in'))
           return
         }
         setLocationProblem(null)

@@ -30,5 +30,7 @@ describe('location permission on opening', () => {
     }
     expect(locationProblemText('denied')).toMatch(/Location is off/)
     expect(locationProblemText('timeout')).toMatch(/not found yet/)
+    expect(locationProblemText('denied', 'out')).toMatch(/clock out without it/)
+    expect(locationProblemText('denied', 'out')).not.toMatch(/clock in/)
   })
 })
