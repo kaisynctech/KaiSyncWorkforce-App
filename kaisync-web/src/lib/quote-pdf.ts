@@ -219,7 +219,19 @@ export function buildQuotePdf(input: QuotePdfInput, into?: jsPDF): jsPDF {
   const vatOn = rate > 0.0001
   const bank = bankLines(lh.bank)
   const leftBlockH = isPf ? 13 + 5.4 * Math.max(3, bank.length + 1) : 0
-  if (y + Math.max(56, leftBlockH) > BOTTOM) { doc.addPage(); band(); y = 20 }
+  // The totals, terms and signature sit at the foot of the last page (like a printed invoice), with the
+  // lines filling the page from the top. Their heights are worked out first.
+  const hasDue = (input.deposit && input.deposit.amount > 0) || isPf
+  const totalsH = 6.5 * (vatOn ? 2 : 1) + 14 + (hasDue ? 12 : 0) + 6.5 * (input.recurring ?? []).length
+  font('normal', 9.5)
+  const noteH = !isPf && input.notes?.trim() ? 5.2 + 4.6 * (doc.splitTextToSize(input.notes.trim(), R - 80 - L - 12) as string[]).length : 0
+  const terms = [input.terms?.trim(), input.rate_note?.trim()].filter(Boolean).join(' ')
+  font('normal', 9)
+  const termLines = terms ? (doc.splitTextToSize(terms, 100) as string[]) : []
+  const blockH = Math.max(34, 12 + termLines.length * 4.4)
+  const footH = 7 + Math.max(totalsH, leftBlockH - 4, noteH) + 12 + 8 + blockH
+  if (y + footH > BOTTOM) { doc.addPage(); band(); y = 20 }
+  y = Math.max(y, BOTTOM - footH)
   y += 7
   const tx = R - 80
   let ty = y
@@ -268,11 +280,6 @@ export function buildQuotePdf(input: QuotePdfInput, into?: jsPDF): jsPDF {
   y = Math.max(ty, ly) + 12
 
   // ── Terms + sign-off / pro forma note ──
-  const terms = [input.terms?.trim(), input.rate_note?.trim()].filter(Boolean).join(' ')
-  font('normal', 9)
-  const termLines = terms ? (doc.splitTextToSize(terms, 100) as string[]) : []
-  const blockH = Math.max(34, 12 + termLines.length * 4.4)
-  if (y + blockH > BOTTOM) { doc.addPage(); band(); y = 20 }
   doc.setDrawColor(LINE[0], LINE[1], LINE[2]); doc.line(L, y, R, y)
   y += 8
   if (termLines.length) {

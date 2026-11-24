@@ -64,9 +64,9 @@ export function QuoteDocumentPreview({ input }: { input: QuotePdfInput }) {
   const title = input.title?.trim()
 
   return (
-    <div className="w-full max-w-[760px] bg-white text-[#1E293B] rounded-[4px] shadow-[0_18px_40px_rgba(15,23,42,0.18)] overflow-hidden text-[12px] leading-[1.5]" style={{ fontFamily: 'Inter, system-ui, sans-serif', colorScheme: 'light' }}>
+    <div className="w-full max-w-[760px] bg-white text-[#1E293B] rounded-[4px] shadow-[0_18px_40px_rgba(15,23,42,0.18)] overflow-hidden text-[12px] leading-[1.5] flex flex-col" style={{ aspectRatio: '210 / 297', fontFamily: 'Inter, system-ui, sans-serif', colorScheme: 'light' }}>
       <div className="h-[6px]" style={{ background: `linear-gradient(90deg, ${b.accent} 0 30%, ${b.dark} 30% 100%)` }} />
-      <div className="px-6 sm:px-10 pt-8 pb-7 flex flex-col gap-6">
+      <div className="flex-1 px-6 sm:px-10 pt-8 pb-7 flex flex-col gap-6">
         <div className="flex flex-wrap justify-between gap-6 items-start">
           <div className="flex flex-col gap-2.5 min-w-0">
             {lh.logo
@@ -142,6 +142,8 @@ export function QuoteDocumentPreview({ input }: { input: QuotePdfInput }) {
           {usable.some(l => l.is_option) && <p className="mt-1.5 text-[11px] italic text-[#64748B]">Options are choices instead of the line above them; they are not in the total.</p>}
         </div>
 
+        {/* Totals, terms and signature at the foot of the page, as on the PDF. */}
+        <div className="mt-auto flex flex-col gap-6">
         <div className="flex flex-wrap justify-between gap-6 items-start">
           <div className="flex-[1_1_280px] min-w-0">
             {isPf ? (
@@ -188,6 +190,7 @@ export function QuoteDocumentPreview({ input }: { input: QuotePdfInput }) {
               {!input.accepted && <div className="mt-1.5" style={{ color: b.accentText }}>Signed online? The name, signature, date and time print here.</div>}
             </div>
           )}
+        </div>
         </div>
       </div>
       <div className="bg-[#F8FAFC] text-[#64748B] text-[10px] px-6 sm:px-10 py-2.5 flex justify-between gap-3">
