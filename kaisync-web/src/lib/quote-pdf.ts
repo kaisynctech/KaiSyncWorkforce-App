@@ -405,7 +405,7 @@ export function downloadQuotePdf(input: QuotePdfInput): void {
 export function quotePdfBase64(input: QuotePdfInput, opts: { withProforma?: boolean } = {}): string {
   const doc = buildQuotePdf(opts.withProforma ? { ...input, kind: 'quote' } : input)
   if (opts.withProforma) buildQuotePdf({ ...input, kind: 'proforma' }, doc)
-  return doc.output('datauristring').replace(/^data:application\/pdf;base64,/, '')
+  return doc.output('datauristring').replace(/^data:[^,]*,/, '')  // jsPDF adds ';filename=…' before ';base64,'
 }
 
 export function openQuoteMailto(opts: {
