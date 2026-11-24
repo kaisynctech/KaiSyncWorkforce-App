@@ -1657,12 +1657,12 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   return (
     <div className="h-full overflow-y-auto bg-[#F5F7FB]">
       {/* ── Top bar: quote, status, template, saved ── */}
-      <div id="quote-top" className="bg-surface border-b border-divider px-4 sm:px-7 py-3.5 flex items-center gap-4 flex-wrap">
+      <div id="quote-top" className="bg-surface border-b border-divider px-4 sm:px-7 py-3.5 flex items-center gap-3 sm:gap-4">
         <button type="button" aria-label="Back to quotes" onClick={() => router.push('/dashboard/money/quotes')}
           className="w-10 h-10 rounded-[10px] border border-divider text-text-primary flex items-center justify-center shrink-0 hover:bg-surface-elevated">
           <span className="material-icons !text-[20px]">chevron_left</span>
         </button>
-        <div className="flex flex-col gap-0.5 flex-[1_1_240px] min-w-0">
+        <div className="flex flex-col gap-0.5 flex-[1_1_0%] min-w-0">
           <div className="flex items-center gap-2.5 flex-wrap">
             <span className="text-[20px] font-semibold text-text-primary">{quoteNumber ? `Quote ${quoteNumber}` : 'New quote'}</span>
             <span className={cn('text-[12px] font-semibold px-2.5 py-[3px] rounded-full capitalize',
