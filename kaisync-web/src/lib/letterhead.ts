@@ -9,6 +9,7 @@
 import type { jsPDF } from 'jspdf'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { brandByCode, brandLogoUrl } from '@/lib/company-brand'
+import { brandFromLogo, type BrandColours } from '@/lib/brand-colours'
 
 export type LetterheadBank = {
   holder: string | null
@@ -34,6 +35,8 @@ export type Letterhead = {
   logoPath: string | null
   /** Filled by loadLetterheadLogo; the PDF needs the picture itself, not a link. */
   logo: { dataUrl: string; width: number; height: number } | null
+  /** Document colours picked from the logo (quotation and pro forma). Filled by loadLetterheadLogo. */
+  colours?: BrandColours | null
   bank: LetterheadBank | null
   showBankOnInvoices: boolean
   showBankOnQuotes: boolean
@@ -104,7 +107,7 @@ export async function loadLetterheadLogo(supabase: SupabaseClient, lh: Letterhea
       img.src = dataUrl
     })
     if (!size || !size.width || !size.height) return lh
-    return { ...lh, logo: { dataUrl, ...size } }
+    return { ...lh, logo: { dataUrl, ...size }, colours: await brandFromLogo(dataUrl) }
   } catch {
     return lh
   }

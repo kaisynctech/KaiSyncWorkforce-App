@@ -17,7 +17,7 @@ describe('template quotation PDF', () => {
       deposit: { pct: 50, amount: 3392.5 }, recurring: [{ period: 'month', amount: 900 }], terms: '50% deposit secures the order.',
     })
     const text = (doc.internal.pages as unknown as string[][]).flat().join('\n').replace(/\\([()])/g, '$1')
-    expect(text).toContain('Part no.')
+    expect(text).toContain('PART NO.')
     expect(text).toContain('0 124 525 045')
     expect(text).toContain('Vehicle / machine: Mercedes Actros 2645')
     expect(text).toContain('Option: Alternator, remanufactured')

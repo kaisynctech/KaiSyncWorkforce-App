@@ -25,7 +25,7 @@ import {
   type QuoteVatChoice,
 } from '@/lib/quote-vat'
 import { escapeIlike } from '@/lib/list-pagination'
-import { LineItemsEditor, QuoteTotalsRows } from '@/components/money/LineItemsEditor'
+import { LineItemsEditor } from '@/components/money/LineItemsEditor'
 import { createInvoiceFromQuote, openInvoiceForQuote } from '@/lib/money/quote-invoice'
 import { CurrencyPicker } from '@/components/money/CurrencyPicker'
 import { formatCurrency } from '@/lib/currencies'
@@ -37,7 +37,7 @@ import { DocumentChain } from '@/components/money/DocumentChain'
 import { QuoteClientActivity } from '@/components/quotes/QuoteClientActivity'
 import { whatsAppUrl } from '@/lib/whatsapp'
 import { TemplateLines, engineOf } from '@/components/quotes/TemplateLines'
-import { QuoteHeaderFields } from '@/components/quotes/QuoteHeaderFields'
+import { QuoteDocumentPreview } from '@/components/quotes/QuoteDocumentPreview'
 import { HEADER_LABEL, loadTemplates, type QuoteTemplate } from '@/lib/quote-templates'
 import { processOrder } from '@/lib/money/order-supply'
 import { PERIOD_LABEL, engineLineTotal, orderedForDisplay, quoteTotals, withContingency, type RecurringPeriod } from '@/lib/quote-engine'
@@ -87,9 +87,18 @@ type ClientRow = {
   currency?: string | null
   phone?: string | null
   mobile?: string | null
+  address?: string | null
+  billing_address?: string | null
+  vat_number?: string | null
 }
 
-const CLIENT_PICK_COLUMNS = 'id, name, email, legal_name, client_code, contact_person, currency, phone, mobile'
+const CLIENT_PICK_COLUMNS = 'id, name, email, legal_name, client_code, contact_person, currency, phone, mobile, address, billing_address, vat_number'
+
+/** Per-quote details kept in header_values (no own columns): who it goes to, the client's VAT number, delivery. */
+const HV = { contactName: '__contact_name', contactEmail: '__contact_email', contactPhone: '__contact_phone', clientVat: '__client_vat', delivery: '__delivery' } as const
+/** Template header fields shown in "Details" under their own names (not with the other template fields). */
+const OWN_HEADER = new Set(['site_address', 'client_order_no'])
+type Contact = { name: string; email: string | null; phone: string | null; note: string | null }
 
 function clientPickDetail(row: ClientRow): string {
   return [row.legal_name && row.legal_name !== row.name ? row.legal_name : null, row.client_code, row.contact_person]
@@ -241,6 +250,19 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   const [openInvoiceId, setOpenInvoiceId] = useState<string | null>(null)
   // An existing quote shows "Loading…" until it has loaded, so nothing is typed into an empty form first.
   const [dataLoaded, setDataLoaded] = useState(!initialQuoteId)
+
+  // ── The four steps (who · what · extras · check and send) ──
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(initialQuoteId ? 2 : 1)
+  const [docKind, setDocKind] = useState<'quote' | 'proforma'>('quote')
+  const docKindRef = useRef<'quote' | 'proforma'>('quote')
+  const [browseSignal, setBrowseSignal] = useState(0)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [contacts, setContacts] = useState<Contact[]>([])
+  const [contactOpen, setContactOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
+  const [importRows, setImportRows] = useState<ImportRow[] | null>(null)
+  const [importText, setImportText] = useState('')
+  const [importNote, setImportNote] = useState<string | null>(null)
   const autoSaveTimer  = useRef<ReturnType<typeof setTimeout> | null>(null)
   const savedFadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -344,6 +366,28 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
     return () => { live = false }
   }, [companyId])
   useEffect(() => { lockedRef.current = locked }, [locked])
+  // The chosen customer's people: the main contact and any others saved under the customer.
+  useEffect(() => {
+    let live = true
+    void (async () => {
+      if (!companyId || !clientId) { if (live) setContacts([]); return }
+      const [{ data: c }, { data: more }] = await Promise.all([
+        supabase.from('clients').select('contact_person, email, phone, mobile').eq('id', clientId).eq('company_id', companyId).maybeSingle(),
+        supabase.from('client_contacts').select('name, email').eq('client_id', clientId).eq('company_id', companyId).order('sort_order').limit(50),
+      ])
+      if (!live) return
+      const list: Contact[] = []
+      const main = c as { contact_person?: string | null; email?: string | null; phone?: string | null; mobile?: string | null } | null
+      if (main?.contact_person?.trim()) list.push({ name: main.contact_person.trim(), email: main.email ?? null, phone: main.mobile || main.phone || null, note: 'main contact' })
+      for (const r of (more ?? []) as { name: string | null; email: string | null }[]) {
+        const nm = (r.name ?? '').trim() || (r.email ?? '').trim()
+        if (nm && !list.some(x => x.name === nm && x.email === r.email)) list.push({ name: nm, email: r.email, phone: null, note: null })
+      }
+      setContacts(list)
+    })()
+    return () => { live = false }
+  }, [companyId, clientId]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Has commission been paid out on this quote? (Readable by HR and above; others are stopped by the database.)
   useEffect(() => {
     if (!companyId || !quoteId) return
@@ -646,10 +690,10 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         rate_source:   isForeign && rateTyped > 0 ? 'manual' : null,
         updated_at:   new Date().toISOString(),
       }
+      payload.header_values = { ...headerValuesRef.current, ...(depositPctRef.current != null ? { __deposit_pct: String(depositPctRef.current) } : {}) }
       if (templateIdRef.current || quoteIdRef.current) {
         const dp = depositPctRef.current
         payload.template_id = templateIdRef.current
-        payload.header_values = { ...headerValuesRef.current, ...(dp != null ? { __deposit_pct: String(dp) } : {}) }
         payload.contingency_percent = contingencyRef.current || 0
         if (templateIdRef.current) {
           payload.terms_and_conditions = termsRef.current.trim() || null
@@ -791,9 +835,28 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
     setTitle(v); titleRef.current = v; scheduleAutoSave()
   }
   function selectClient(id: string | null, name: string, row?: ClientRow | null) {
+    const changed = id !== clientIdRef.current
     setClientId(id); clientIdRef.current = id
     setChosenClient(row ?? null)
-    setClientSearch(name); scheduleAutoSave()
+    setClientSearch(name)
+    // A newly picked customer fills in who it goes to, the address and VAT number (only empty ones; typed ones stay).
+    if (row && changed) {
+      const hv = { ...headerValuesRef.current }
+      const fill = (k: string, v: string | null | undefined) => { if (v?.trim()) hv[k] = v.trim(); else delete hv[k] }
+      fill(HV.contactName, row.contact_person)
+      fill(HV.contactEmail, row.email)
+      fill(HV.contactPhone, row.mobile || row.phone)
+      fill('site_address', row.address || row.billing_address)
+      fill(HV.clientVat, row.vat_number)
+      setHeaderValues(hv); headerValuesRef.current = hv
+    }
+    scheduleAutoSave()
+  }
+  function pickContact(c: Contact) {
+    const hv: Record<string, string> = { ...headerValuesRef.current, [HV.contactName]: c.name }
+    if (c.email) hv[HV.contactEmail] = c.email; else delete hv[HV.contactEmail]
+    if (c.phone) hv[HV.contactPhone] = c.phone; else delete hv[HV.contactPhone]
+    setHeaderValues(hv); headerValuesRef.current = hv; setContactOpen(false); scheduleAutoSave()
   }
   async function updateSalesRep(v: string | null) {
     const prevRep = salesRepRef.current
@@ -1154,7 +1217,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   }
 
   async function openSend() {
-    const email = (chosenClient?.id === clientId ? chosenClient.email : clients.find(c => c.id === clientId)?.email) ?? ''
+    const email = headerValuesRef.current[HV.contactEmail]?.trim() || ((chosenClient?.id === clientId ? chosenClient.email : clients.find(c => c.id === clientId)?.email) ?? '')
     setSendRcpt(emptyRecipients(email))
     setSendDraft(null)
     setActionError(null)
@@ -1179,14 +1242,14 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
       return
     }
     const client = chosenClient?.id === clientIdRef.current ? chosenClient : clients.find(c => c.id === clientIdRef.current)
-    const first = (client?.contact_person || '').trim().split(/\s+/)[0]
+    const first = (headerValuesRef.current[HV.contactName] || client?.contact_person || '').trim().split(/\s+/)[0]
     const t = template ? quoteTotals(linesRef.current.map(engineOf), { vatOn: vatOnRef.current, vatRate: vatRateRef.current, depositPct: template.features.includes('deposit') ? depositPctRef.current : null }) : null
     const text = [
       `Hi${first ? ` ${first}` : ''}, here is quotation ${quoteNumberRef.current ?? ''} from ${companyName}${t ? ` (${formatCurrency(t.total, quoteCurrency)})` : ''}.`,
       `You can see it, ${template?.features.includes('options') ? 'choose your options, ' : ''}accept it${t && t.deposit > 0 ? ' and pay the deposit' : ''} here:`,
       `${window.location.origin}/d/${token}`,
     ].join('\n')
-    const url = whatsAppUrl(client?.mobile || client?.phone, text)
+    const url = whatsAppUrl(headerValuesRef.current[HV.contactPhone] || client?.mobile || client?.phone, text)
     if (w) w.location.href = url; else window.location.assign(url)
     setShowSendModal(false)
     setSentNote(`WhatsApp opened with the quotation link${client?.mobile || client?.phone ? ` for ${client?.name}` : ''}. Tap Send in WhatsApp.`)
@@ -1212,6 +1275,15 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
       client_email: client?.email ?? null,
       company_name: companyName,
       letterhead,
+      kind: docKindRef.current,
+      reference: headerValuesRef.current.client_order_no?.trim() || null,
+      sales_rep: repList.find(r => r.id === salesRepRef.current)?.name ?? null,
+      contact: { name: headerValuesRef.current[HV.contactName] ?? null, email: headerValuesRef.current[HV.contactEmail] ?? null, phone: headerValuesRef.current[HV.contactPhone] ?? null },
+      client_address: headerValuesRef.current.site_address?.trim() || null,
+      client_vat: headerValuesRef.current[HV.clientVat]?.trim() || null,
+      delivery: headerValuesRef.current[HV.delivery]?.trim() || null,
+      rate_note: quoteCurrencyRef.current && quoteCurrencyRef.current !== homeCurrency && Number(fxRate.replace(',', '.')) > 0
+        ? `Amounts in ${quoteCurrencyRef.current}; ${formatCurrency(Number(fxRate.replace(',', '.')), homeCurrency)} per ${quoteCurrencyRef.current} used.` : null,
       lines: (tpl ? orderedForDisplay(linesRef.current.map(l => ({ ...engineOf(l), section: tpl.features.includes('sections') ? l.section ?? null : null, line: l }))).flatMap(g => g.lines.map(e => e.line)) : linesRef.current).map(l => ({
         description: l.description,
         qty: l.qty,
@@ -1236,7 +1308,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
           ...(tpl && t ? {
             // The client never sees team-only columns (cost, margin).
             columns: tpl.columns.filter(c => c.visible && !c.team_only).map(c => ({ key: c.key, label: c.label })),
-            header_fields: tpl.header_fields.map(h => ({ label: HEADER_LABEL[h] ?? h, value: headerValuesRef.current[h] ?? '' })),
+            header_fields: tpl.header_fields.filter(h => !OWN_HEADER.has(h)).map(h => ({ label: HEADER_LABEL[h] ?? h, value: headerValuesRef.current[h] ?? '' })),
             deposit: depositPctRef.current ? { pct: depositPctRef.current, amount: t.deposit } : null,
             recurring: (Object.entries(t.recurring) as [RecurringPeriod, number][]).map(([period, amount]) => ({ period, amount })),
             terms: termsRef.current.trim() || null,
@@ -1247,7 +1319,13 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   }
 
   function handleDownloadPdf() {
-    downloadQuotePdf(buildPdfInput())
+    const input = buildPdfInput()
+    if (input.kind === 'proforma') {
+      void import('@/lib/quote-pdf').then(({ buildQuotePdf, proformaNumber }) =>
+        buildQuotePdf(input).save(`ProForma_${proformaNumber(input.quote_number).replace(/[^\w.-]+/g, '_')}.pdf`))
+      return
+    }
+    downloadQuotePdf(input)
   }
 
   /** Prefer Resend Edge send when configured; otherwise mailto + PDF download. */
@@ -1267,7 +1345,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
       recipientEmail: to,
       cc: sendRcpt.cc,
       bodyText: draftEdits(sendDraft).body_text,
-      filename: `Quote_${(pdf.quote_number || 'draft').replace(/[^\w.-]+/g, '_')}.pdf`,
+      filename: pdf.kind === 'proforma' ? `ProForma_${(pdf.quote_number || 'draft').replace(/^QU/i, 'PF').replace(/[^\w.-]+/g, '_')}.pdf` : `Quote_${(pdf.quote_number || 'draft').replace(/[^\w.-]+/g, '_')}.pdf`,
       subject: draftEdits(sendDraft).subject ?? `Quote ${pdf.quote_number ?? ''} – ${pdf.title || 'Quotation'}`.trim(),
     })
 
@@ -1477,177 +1555,166 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
     )
   }
 
+  // ── Import a list ──
+  async function importFile(file: File) {
+    setImportNote(null)
+    try {
+      const XLSX = await import('xlsx')
+      const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' })
+      const sheet = wb.Sheets[wb.SheetNames[0]]
+      const table = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false, raw: true }) as unknown[][]
+      const rows = rowsFromSheet(table, pickItems)
+      if (!rows.length) { setImportNote('No lines found in that file. The first row should name the columns, e.g. Item, Qty, Price.'); return }
+      setImportRows(rows)
+    } catch {
+      setImportNote(/\.pdf$/i.test(file.name) ? 'Reading PDFs is coming soon. For now, use Excel or CSV, or paste the list.' : 'That file could not be read. Use an Excel (.xlsx) or CSV file.')
+    }
+  }
+  function importPasted() {
+    const rows = rowsFromText(importText, pickItems)
+    if (!rows.length) { setImportNote('Nothing to add. Put each item on its own line, e.g. “20 bags cement”.'); return }
+    setImportNote(null); setImportRows(rows)
+  }
+  function addImported() {
+    const rows = (importRows ?? []).filter(r => r.keep)
+    const made = rows.map(r => {
+      const l = makeTemplateLine(r.pick, r.qty)
+      const price = r.price ?? r.pick?.price ?? 0
+      const qty = r.pick?.type === 'service' ? 1 : r.qty
+      return { ...l, description: r.description, qty, unit: r.unit || l.unit, unit_price: price, unit_cost: r.cost ?? l.unit_cost ?? null, total: Math.round(qty * price * 100) / 100 }
+    })
+    const at = linesRef.current.findIndex(x => x.is_contingency)
+    const next = at < 0 ? [...linesRef.current, ...made] : [...linesRef.current.slice(0, at), ...made, ...linesRef.current.slice(at)]
+    setTemplateLines(next)
+    setImportRows(null); setImportText(''); setImportOpen(false)
+    setImportNote(`${made.length} line${made.length === 1 ? '' : 's'} added. Check the prices.`)
+  }
+
+  const goStep = (n: 1 | 2 | 3 | 4) => { setStep(n); setMenuOpen(false); if (typeof window !== 'undefined') document.getElementById('quote-top')?.scrollIntoView({ block: 'start' }) }
+  const contactName = headerValues[HV.contactName] ?? ''
+  const shownTotal = template && tTotals ? tTotals.total : total
+  const shownSubtotal = template && tTotals ? tTotals.subtotal : Math.round(subtotal * 100) / 100
+  const shownVat = template && tTotals ? tTotals.vat : vat
+  const STEPS: [1 | 2 | 3 | 4, string][] = [[1, 'Who it’s for'], [2, 'What you’re quoting'], [3, 'Extras'], [4, 'Check and send']]
+  const label = 'flex flex-col gap-1.5'
+  const labText = 'text-[12.5px] font-semibold text-text-secondary h-[18px] flex items-center justify-between gap-2'
+  const field = 'h-11 w-full box-border rounded-[10px] border border-divider bg-surface-elevated px-3 text-[14px] font-medium text-text-primary focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/15 disabled:opacity-60'
+  const optionalTag = <span className="text-[11px] font-medium text-text-secondary bg-[#EEF1F6] px-[7px] rounded-full leading-[18px]">Optional</span>
+  const groupHead = (title: string, text: string) => (
+    <div className="flex flex-col gap-1"><span className="text-[14px] font-semibold text-text-primary">{title}</span><span className="text-[12.5px] text-text-secondary leading-[1.5]">{text}</span></div>
+  )
+  const otherHeaders = (template?.header_fields ?? []).filter(h => !OWN_HEADER.has(h))
+  const showDeposit = !!template?.features.includes('deposit')
+  const showContingency = !!template?.features.includes('contingency')
+  const showProfit = !template || template.features.includes('cost_margin')
+  const cost = lines.filter(l => !l.option_of && !l.is_contingency).reduce((s, l) => s + (Number(l.unit_cost) || 0) * l.qty, 0)
+  const profitPct = shownSubtotal > 0 && cost > 0 ? ((shownSubtotal - cost) / shownSubtotal) * 100 : null
+
+  const totalsPanel = (next: string | null, onNext: () => void) => (
+    <aside className="flex-[1_1_240px] lg:max-w-[260px] w-full lg:w-auto bg-surface border border-divider rounded-[14px] p-3.5 flex flex-col gap-[9px] text-[13px] lg:sticky lg:top-4">
+      <div className="flex justify-between"><span className="text-text-secondary">{vatOn ? 'Subtotal' : 'Subtotal'}</span><span>{formatCurrency(shownSubtotal, quoteCurrency)}</span></div>
+      <div className="flex justify-between items-center">
+        <label className="flex items-center gap-1.5 text-text-secondary"><input type="checkbox" checked={vatOn} disabled={locked} onChange={e => updateVatOn(e.target.checked)} className="w-4 h-4 accent-[#2563EB]" />VAT {vatPercentLabel(vatRate)}%</label>
+        <span>{vatOn ? formatCurrency(shownVat, quoteCurrency) : 'No VAT'}</span>
+      </div>
+      <div className="h-px bg-divider" />
+      <div className="flex justify-between items-baseline"><span className="font-semibold">Total</span><span className="text-[20px] font-bold">{formatCurrency(shownTotal, quoteCurrency)}</span></div>
+      {foreign && bookRate && bookRate > 0 && <span className="text-[11.5px] text-text-secondary text-right -mt-1.5">= {formatCurrency(Math.round(shownTotal * bookRate * 100) / 100, homeCurrency)} in your books</span>}
+      {showDeposit && tTotals && tTotals.deposit > 0 && (
+        <div className="flex justify-between text-text-secondary"><span>Deposit {depositPct}%</span><span className="text-text-primary">{formatCurrency(tTotals.deposit, quoteCurrency)}</span></div>
+      )}
+      {template && tTotals && Object.entries(tTotals.recurring).map(([pr, amt]) => (
+        <div key={pr} className="flex justify-between text-text-secondary"><span>Every {PERIOD_LABEL[pr as RecurringPeriod]}</span><span>{formatCurrency(amt as number, quoteCurrency)}</span></div>
+      ))}
+      {showProfit && profitPct != null && (
+        <div className="flex justify-between rounded-lg px-[9px] py-[7px] text-[12px] bg-[#FFF6E0] text-[#7A4F00]"><span>Profit (team only)</span><span className="font-semibold">{profitPct.toFixed(1)}%</span></div>
+      )}
+      {next && <button type="button" onClick={onNext} className="h-11 mt-1 rounded-[10px] bg-[#2563EB] text-white text-[13.5px] font-semibold hover:bg-[#1D4ED8]">{next}</button>}
+      <button type="button" onClick={() => goStep((step - 1) as 1 | 2 | 3)} className="h-9 rounded-[10px] text-[#2563EB] text-[13px] font-medium">Back</button>
+    </aside>
+  )
+
   return (
-    <div className="h-full overflow-y-auto">
-      <div className={cn('max-w-5xl mx-auto w-full px-4 sm:px-6 py-5 sm:py-6 flex flex-col gap-6', template && 'pb-28 md:pb-6')}>
-
-        {/* ── Header ── */}
-        <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-3 min-w-0">
-            <button
-              type="button"
-              onClick={() => router.push('/dashboard/money/quotes')}
-              className="shrink-0 text-text-secondary hover:text-text-primary transition-colors"
-            >
-              <span className="material-icons">arrow_back</span>
-            </button>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-[18px] font-semibold text-text-primary">
-                  {quoteNumber ?? 'New quote'}
-                </h1>
-                {status !== 'draft' && (
-                  <span className={cn(
-                    'text-[10px] px-2 py-0.5 rounded-full font-medium capitalize',
-                    status === 'sent'     ? 'bg-amber-50 text-amber-700' :
-                    status === 'accepted' ? 'bg-green-50 text-green-600' :
-                    status === 'declined' ? 'bg-red-50 text-red-600' :
-                    'bg-surface-elevated text-text-secondary',
-                  )}>
-                    {status.replace('_', ' ')}
-                  </span>
-                )}
-              </div>
-              <input
-                value={title}
-                onChange={e => updateTitle(e.target.value)}
-                disabled={locked}
-                placeholder="Quote title (optional)"
-                className="text-[13px] text-text-secondary bg-transparent border-none outline-none mt-0.5 w-full max-w-72 placeholder-text-secondary/40"
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap min-w-0 w-full sm:w-auto sm:shrink-0">
-            {/* Save state indicator */}
-            {saveState === 'saving' && (
-              <span className="text-[12px] text-text-secondary flex items-center gap-1">
-                <span className="material-icons text-[14px] animate-spin">refresh</span>
-                Saving…
-              </span>
-            )}
-            {saveState === 'saved' && (
-              <span className="text-[12px] text-green-600 flex items-center gap-1">
-                <span className="material-icons text-[14px]">check_circle</span>
-                Saved
-              </span>
-            )}
-            {saveState === 'error' && (
-              <button
-                type="button"
-                onClick={() => void doSave()}
-                className="text-[12px] text-red-500 flex items-center gap-1 hover:text-red-600"
-              >
-                <span className="material-icons text-[14px]">error_outline</span>
-                Save failed — retry
-              </button>
-            )}
-
-            {!locked && (
-            <button
-              type="button"
-              onClick={() => void doSave()}
-              disabled={saveState === 'saving'}
-              className="h-9 px-4 rounded-lg border border-divider text-[13px] text-text-secondary font-medium hover:bg-surface-elevated transition-colors disabled:opacity-50"
-            >
-              {status === 'draft' ? 'Save draft' : 'Save'}
-            </button>
-            )}
-            {status === 'draft' && quoteId && (
-              <button
-                type="button"
-                onClick={() => setConfirmDelete(true)}
-                className="h-9 px-3 rounded-lg border border-divider text-[13px] text-text-secondary font-medium hover:bg-red-50 hover:text-error transition-colors flex items-center gap-1"
-              >
-                <span className="material-icons text-[15px]">delete</span>
-                Delete
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={handleDownloadPdf}
-              className="h-9 px-4 rounded-lg border border-divider text-[13px] text-text-secondary font-medium hover:bg-surface-elevated transition-colors flex items-center gap-1"
-            >
-              <span className="material-icons text-[15px]">picture_as_pdf</span>
-              PDF
-            </button>
-            {status !== 'accepted' && status !== 'declined' && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => void openSend()}
-                  disabled={saveState === 'saving'}
-                  className="h-9 px-4 rounded-lg bg-primary text-white text-[13px] font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
-                >
-                  Send quote
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowAcceptModal(true)}
-                  disabled={saveState === 'saving'}
-                  className="h-9 px-4 rounded-lg border border-divider text-[13px] text-text-secondary font-medium hover:bg-surface-elevated transition-colors disabled:opacity-50"
-                >
-                  Mark accepted
-                </button>
-              </>
-            )}
-            {status === 'accepted' && (
-              <button
-                type="button"
-                onClick={() => { setActionError(null); setShowWhatsNext(true) }}
-                className="h-9 px-5 rounded-lg bg-primary text-white text-[13px] font-medium hover:bg-primary/90 transition-colors"
-              >
-                What&apos;s next?
-              </button>
+    <div className="h-full overflow-y-auto bg-[#F5F7FB]">
+      {/* ── Top bar: quote, status, template, saved ── */}
+      <div id="quote-top" className="bg-surface border-b border-divider px-4 sm:px-7 py-3.5 flex items-center gap-4 flex-wrap">
+        <button type="button" aria-label="Back to quotes" onClick={() => router.push('/dashboard/money/quotes')}
+          className="w-10 h-10 rounded-[10px] border border-divider text-text-primary flex items-center justify-center shrink-0 hover:bg-surface-elevated">
+          <span className="material-icons !text-[20px]">chevron_left</span>
+        </button>
+        <div className="flex flex-col gap-0.5 flex-[1_1_240px] min-w-0">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <span className="text-[20px] font-semibold text-text-primary">{quoteNumber ? `Quote ${quoteNumber}` : 'New quote'}</span>
+            <span className={cn('text-[12px] font-semibold px-2.5 py-[3px] rounded-full capitalize',
+              status === 'sent' ? 'bg-amber-50 text-amber-700' : status === 'accepted' ? 'bg-emerald-50 text-emerald-700' : status === 'declined' ? 'bg-red-50 text-red-600' : 'bg-[#EEF1F6] text-text-secondary')}>
+              {status === 'draft' ? 'Draft' : status.replace('_', ' ')}
+            </span>
+            {templates.length > 0 && (
+              <label className="flex items-center gap-2 text-[13px] text-text-secondary">Template
+                <select value={templateId ?? ''} disabled={locked} onChange={e => chooseTemplate(e.target.value || null)} aria-label="Template"
+                  className="h-8 rounded-lg border border-divider bg-surface px-2 text-[13px] font-medium text-text-primary max-w-[220px]">
+                  {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  <option value="">Classic (no template)</option>
+                </select>
+              </label>
             )}
           </div>
+          <span className="text-[13px] text-text-secondary flex items-center gap-1.5">
+            {saveState === 'saving' ? 'Saving…'
+              : saveState === 'error' ? <button type="button" onClick={() => void doSave()} className="text-red-600 font-medium">Save failed. Tap to try again</button>
+              : quoteId ? <>Saved{saveState === 'saved' ? ' just now' : ''} · saves by itself</> : 'Saves by itself once there’s a customer or a line'}
+          </span>
         </div>
+        {status === 'accepted' && (
+          <button type="button" onClick={() => { setActionError(null); setShowWhatsNext(true) }}
+            className="h-11 px-5 rounded-xl bg-[#2563EB] text-white text-[14px] font-semibold hover:bg-[#1D4ED8]">What&apos;s next?</button>
+        )}
+        <div className="relative">
+          <button type="button" aria-label="More: preview, mark accepted, delete" aria-expanded={menuOpen} onClick={() => setMenuOpen(o => !o)}
+            className="w-11 h-11 rounded-xl border border-divider bg-surface text-text-primary flex items-center justify-center hover:bg-surface-elevated">
+            <span className="material-icons">more_horiz</span>
+          </button>
+          {menuOpen && (
+            <div className="absolute right-0 top-full mt-2 z-40 w-60 rounded-xl border border-divider bg-surface shadow-[0_14px_30px_rgba(15,23,42,0.16)] py-1.5 text-[13.5px]" onMouseLeave={() => setMenuOpen(false)}>
+              <button type="button" onClick={() => { setMenuOpen(false); handleDownloadPdf() }} className="w-full text-left px-3.5 py-2.5 hover:bg-surface-elevated flex items-center gap-2.5"><span className="material-icons !text-[18px] text-text-secondary">picture_as_pdf</span>Download PDF</button>
+              <button type="button" onClick={() => goStep(4)} className="w-full text-left px-3.5 py-2.5 hover:bg-surface-elevated flex items-center gap-2.5"><span className="material-icons !text-[18px] text-text-secondary">visibility</span>Preview</button>
+              {status !== 'accepted' && status !== 'declined' && (
+                <button type="button" onClick={() => { setMenuOpen(false); setShowAcceptModal(true) }} className="w-full text-left px-3.5 py-2.5 hover:bg-surface-elevated flex items-center gap-2.5"><span className="material-icons !text-[18px] text-text-secondary">task_alt</span>Mark accepted</button>
+              )}
+              {status === 'draft' && quoteId && (
+                <button type="button" onClick={() => { setMenuOpen(false); setConfirmDelete(true) }} className="w-full text-left px-3.5 py-2.5 hover:bg-red-50 text-red-700 flex items-center gap-2.5"><span className="material-icons !text-[18px]">delete_outline</span>Delete draft</button>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className={cn('max-w-[1320px] mx-auto px-4 sm:px-7 pt-5 pb-28 md:pb-12 flex flex-col gap-[18px]')}>
 
         {status === 'accepted' && (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4">
             <div className="flex items-center gap-3">
-              <span className="w-10 h-10 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0">
-                <span className="material-icons text-[20px]">check</span>
-              </span>
+              <span className="w-10 h-10 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0"><span className="material-icons text-[20px]">check</span></span>
               <div>
                 <p className="text-[14.5px] font-semibold text-emerald-900">Quote accepted{clientName ? ` by ${clientName}` : ''}</p>
                 <p className="text-[12.5px] text-emerald-800">It&apos;s now an order. See everything for it in one place: invoices, payments, purchasing and credit notes.</p>
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-            {outsourcedLines.some(l => l.supplierId) && quoteId && (
-              <button
-                type="button"
-                disabled={actionBusy || processBusy}
-                onClick={async () => {
-                  setProcessBusy(true); setActionError(null)
-                  const r = await processOrder(createClient(), quoteId)
-                  setProcessBusy(false)
-                  if (!r.ok) { setActionError(r.message); return }
-                  router.push(`/dashboard/money/orders/${quoteId}?tab=pos`)
-                }}
-                className="h-11 px-5 rounded-xl bg-primary text-white text-[14px] font-semibold flex items-center gap-2 hover:bg-primary/90 disabled:opacity-60"
-              >
-                <span className="material-icons text-[18px]">local_shipping</span>
-                {processBusy ? 'Creating POs…' : 'Process order'}
+              {outsourcedLines.some(l => l.supplierId) && quoteId && (
+                <button type="button" disabled={actionBusy || processBusy}
+                  onClick={async () => { setProcessBusy(true); setActionError(null); const r = await processOrder(createClient(), quoteId); setProcessBusy(false); if (!r.ok) { setActionError(r.message); return }; router.push(`/dashboard/money/orders/${quoteId}?tab=pos`) }}
+                  className="h-11 px-5 rounded-xl bg-[#2563EB] text-white text-[14px] font-semibold flex items-center gap-2 hover:bg-[#1D4ED8] disabled:opacity-60">
+                  <span className="material-icons text-[18px]">local_shipping</span>{processBusy ? 'Creating POs…' : 'Process order'}
+                </button>
+              )}
+              <Link href={`/dashboard/money/orders/${quoteId}`} className="h-11 px-5 rounded-xl border border-emerald-300 bg-white text-emerald-800 text-[14px] font-semibold flex items-center gap-2 hover:bg-emerald-100">
+                <span className="material-icons text-[18px]">assignment_turned_in</span>Open order
+              </Link>
+              <button type="button" disabled={actionBusy} onClick={() => void handleCreateInvoiceFromQuote()}
+                className="h-11 px-5 rounded-xl bg-emerald-600 text-white text-[14px] font-semibold flex items-center gap-2 hover:bg-emerald-700 disabled:opacity-60">
+                <span className="material-icons text-[18px]">receipt_long</span>{actionBusy ? 'Opening…' : openInvoiceId ? 'Open invoice' : 'Create invoice'}
               </button>
-            )}
-            <Link
-              href={`/dashboard/money/orders/${quoteId}`}
-              className="h-11 px-5 rounded-xl border border-emerald-300 bg-white text-emerald-800 text-[14px] font-semibold flex items-center gap-2 hover:bg-emerald-100"
-            >
-              <span className="material-icons text-[18px]">assignment_turned_in</span>
-              Open order
-            </Link>
-            <button
-              type="button"
-              disabled={actionBusy}
-              onClick={() => void handleCreateInvoiceFromQuote()}
-              className="h-11 px-5 rounded-xl bg-emerald-600 text-white text-[14px] font-semibold flex items-center gap-2 hover:bg-emerald-700 disabled:opacity-60"
-            >
-              <span className="material-icons text-[18px]">receipt_long</span>
-              {actionBusy ? 'Opening…' : openInvoiceId ? 'Open invoice' : 'Create invoice'}
-            </button>
             </div>
           </div>
         )}
@@ -1656,41 +1723,31 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
           confirmUnlock ? (
             <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 space-y-2">
               <p className="text-[13px] font-semibold text-amber-900">Change an accepted quote?</p>
-              <p className="text-[12.5px] text-amber-900">
-                The client accepted this quote as it is. Changes are saved on the quote only: {openInvoiceId ? 'its invoice is not changed, so check the invoice too' : 'the invoice made from it later will use the changes'}, and the client isn&apos;t told.
-              </p>
+              <p className="text-[12.5px] text-amber-900">The client accepted this quote as it is. Changes are saved on the quote only: {openInvoiceId ? 'its invoice is not changed, so check the invoice too' : 'the invoice made from it later will use the changes'}, and the client isn&apos;t told.</p>
               <div className="flex gap-2">
                 <button type="button" onClick={() => setConfirmUnlock(false)} className="h-8 px-3 rounded-lg border border-amber-300 bg-white text-[12.5px] text-amber-900 font-medium">Keep it locked</button>
                 <button type="button" onClick={() => { setUnlocked(true); setConfirmUnlock(false) }} className="h-8 px-3 rounded-lg bg-amber-600 text-white text-[12.5px] font-semibold">Make changes</button>
               </div>
             </div>
           ) : (
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-divider bg-surface-elevated px-4 py-2">
-              <p className="text-[12.5px] text-text-secondary flex items-center gap-1.5">
-                <span className="material-icons !text-[15px] !leading-none">lock</span>
-                Locked: this quote is an order now, so its lines, prices and client can&apos;t be changed by accident.
-              </p>
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-divider bg-surface px-4 py-2">
+              <p className="text-[12.5px] text-text-secondary flex items-center gap-1.5"><span className="material-icons !text-[15px] !leading-none">lock</span>Locked: this quote is an order now, so its lines, prices and client can&apos;t be changed by accident.</p>
               <button type="button" onClick={() => setConfirmUnlock(true)} className="h-7 px-3 rounded-lg border border-divider bg-surface text-[12px] font-medium text-text-primary hover:bg-surface-elevated">Make changes</button>
             </div>
           )
         ) : (
           <p className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-[12.5px] text-amber-900 flex items-center gap-1.5">
-            <span className="material-icons !text-[15px] !leading-none">edit</span>
-            You&apos;re changing an accepted quote. {openInvoiceId ? 'Its invoice is not changed: check it too.' : ''}
+            <span className="material-icons !text-[15px] !leading-none">edit</span>You&apos;re changing an accepted quote. {openInvoiceId ? 'Its invoice is not changed: check it too.' : ''}
             <button type="button" onClick={() => setUnlocked(false)} className="ml-auto h-7 px-3 rounded-lg border border-amber-300 bg-white text-[12px] font-medium">Lock again</button>
           </p>
         ))}
 
         {sentNote && !actionError && (
-          <p className="text-[12px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 flex items-start gap-2">
-            <span className="material-icons text-[15px]">mark_email_read</span>
-            <span className="flex-1">{sentNote}</span>
-            <button type="button" aria-label="Dismiss" onClick={() => setSentNote(null)} className="text-emerald-700 hover:text-emerald-900">
-              <span className="material-icons text-[15px]">close</span>
-            </button>
+          <p className="text-[12.5px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 flex items-start gap-2">
+            <span className="material-icons text-[15px]">mark_email_read</span><span className="flex-1">{sentNote}</span>
+            <button type="button" aria-label="Dismiss" onClick={() => setSentNote(null)} className="text-emerald-700 hover:text-emerald-900"><span className="material-icons text-[15px]">close</span></button>
           </p>
         )}
-
         {confirmDelete && (
           <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 space-y-2">
             <p className="text-[13px] font-semibold text-red-900">Delete draft {quoteNumber ?? ''}?</p>
@@ -1701,388 +1758,414 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
             </div>
           </div>
         )}
-
         {actionError && !showWhatsNext && !showAcceptModal && (
-          <p className="text-[12px] text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
-            {actionError}
-          </p>
+          <p className="text-[12.5px] text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{actionError}</p>
         )}
-
-        {/* The client's activity stays usable on an accepted (locked) quote: answering questions is not changing it. */}
         {quoteId && companyId && status !== 'draft' && (
           <QuoteClientActivity companyId={companyId} quoteId={quoteId} employeeId={employeeId} employeeName={employeeName}
             quoteNumber={quoteNumber} readOnly={false}
-            clientPhone={((chosenClient?.id === clientId ? chosenClient : clients.find(c => c.id === clientId)) ?? null)?.mobile
+            clientPhone={headerValues[HV.contactPhone] || ((chosenClient?.id === clientId ? chosenClient : clients.find(c => c.id === clientId)) ?? null)?.mobile
               || ((chosenClient?.id === clientId ? chosenClient : clients.find(c => c.id === clientId)) ?? null)?.phone || null} />
         )}
-        {/* An accepted quote is locked: everything in here is read-only until "Make changes". */}
-        <fieldset disabled={locked} className="min-w-0 m-0 p-0 border-0 flex flex-col gap-6">
-        {/* ── Quote meta ── */}
-        <div className="rounded-xl border border-divider bg-surface px-4 py-3 grid grid-cols-2 sm:grid-cols-12 gap-x-3 gap-y-2.5">
-
-          {/* Customer combobox */}
-          <div className="col-span-2 sm:col-span-5 relative">
-            <label className="block text-[10.5px] text-text-secondary uppercase tracking-wide mb-1">
-              Customer
-            </label>
-            <input
-              type="text"
-              placeholder="Search or select client…"
-              value={clientSearch}
-              onChange={e => { setClientSearch(e.target.value); setClientDropOpen(true) }}
-              onFocus={() => setClientDropOpen(true)}
-              onBlur={() => setTimeout(() => setClientDropOpen(false), 160)}
-              className="w-full h-8 rounded-lg border border-divider bg-surface px-2.5 text-[12.5px] text-text-primary focus:outline-none focus:border-primary transition-colors"
-            />
-
-            {/* Client dropdown */}
-            {clientDropOpen && !addingClient && (
-              <div className="absolute left-0 top-full mt-1 z-50 w-full bg-surface border border-divider rounded-xl shadow-xl py-1 max-h-48 overflow-y-auto">
-                {clients.map(c => {
-                  const detail = clientPickDetail(c)
-                  return (
-                    <button
-                      key={c.id}
-                      type="button"
-                      onMouseDown={() => { selectClient(c.id, c.name, c); setClientDropOpen(false) }}
-                      className={cn(
-                        'w-full text-left px-3 py-2 text-[13px] hover:bg-surface-elevated transition-colors',
-                        c.id === clientId ? 'text-primary font-medium' : 'text-text-primary',
-                      )}
-                    >
-                      <span className="block">{c.name}</span>
-                      {detail && <span className="block text-[11px] text-text-secondary">{detail}</span>}
-                    </button>
-                  )
-                })}
-                {clients.length === 0 && (
-                  <p className="px-3 py-2 text-[12px] text-text-secondary">
-                    {clientListError ?? (clientSearch.trim() ? 'No clients found' : 'No clients yet')}
-                  </p>
-                )}
-                <div className="border-t border-divider mt-1 pt-1">
-                  <button
-                    type="button"
-                    onMouseDown={() => { setAddingClient(true); setClientDropOpen(false) }}
-                    className="w-full text-left px-3 py-2 text-[12px] text-primary hover:bg-surface-elevated transition-colors flex items-center gap-1"
-                  >
-                    <span className="material-icons text-[14px]">add</span>
-                    Add new client
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Add new client inline form */}
-            {addingClient && (
-              <div className="mt-2 p-3 rounded-lg border border-divider bg-surface-elevated space-y-2">
-                <input
-                  autoFocus
-                  type="text"
-                  placeholder="Client name *"
-                  value={newClientName}
-                  onChange={e => setNewClientName(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && void handleCreateClient()}
-                  className="w-full h-8 rounded-md border border-divider bg-surface px-2.5 text-[12px] focus:outline-none focus:border-primary transition-colors"
-                />
-                <input
-                  type="email"
-                  placeholder="Email (optional)"
-                  value={newClientEmail}
-                  onChange={e => setNewClientEmail(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && void handleCreateClient()}
-                  className="w-full h-8 rounded-md border border-divider bg-surface px-2.5 text-[12px] focus:outline-none focus:border-primary transition-colors"
-                />
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => { setAddingClient(false); setNewClientName(''); setNewClientEmail('') }}
-                    className="h-7 px-3 text-[11px] text-text-secondary border border-divider rounded-md hover:bg-surface transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleCreateClient()}
-                    disabled={!newClientName.trim() || creatingClient}
-                    className="h-7 px-3 text-[11px] text-white bg-primary rounded-md hover:bg-primary/90 disabled:opacity-50 transition-colors"
-                  >
-                    {creatingClient ? 'Creating…' : 'Create client'}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Quote number */}
-          <div className="col-span-1 sm:col-span-2 sm:order-3">
-            <label className="block text-[10.5px] text-text-secondary uppercase tracking-wide mb-1">
-              Quote #
-            </label>
-            <div className="h-8 flex items-center text-[12.5px] text-text-secondary px-2.5 rounded-lg border border-divider bg-surface-elevated">
-              {quoteNumber ?? '— (auto)'}
-            </div>
-          </div>
-
-          {/* Valid until */}
-          <div className="col-span-1 sm:col-span-2 sm:order-4">
-            <label className="block text-[10.5px] text-text-secondary uppercase tracking-wide mb-1">
-              Valid until
-            </label>
-            <input
-              type="date"
-              value={validUntil}
-              onChange={e => updateValidUntil(e.target.value)}
-              className="w-full h-8 rounded-lg border border-divider bg-surface px-2.5 text-[12.5px] text-text-primary focus:outline-none focus:border-primary transition-colors"
-            />
-          </div>
-
-          {/* Sales rep: who earns commission on this quote (10b). Shown once the company has reps. */}
-          {(repList.length > 0 || salesRep) && (
-            <div className="col-span-2 sm:col-span-3 sm:order-5">
-              <label htmlFor="quote-sales-rep" className="block text-[10.5px] text-text-secondary uppercase tracking-wide mb-1">
-                Sales rep
-              </label>
-              <select
-                id="quote-sales-rep"
-                value={salesRep ?? ''}
-                onChange={e => void updateSalesRep(e.target.value || null)}
-                disabled={!!paidRepId && paidRepId === salesRep}
-                aria-describedby={paidRepId && paidRepId === salesRep ? 'quote-sales-rep-paid' : undefined}
-                className="w-full h-8 rounded-lg border border-divider bg-surface px-2.5 text-[12.5px] text-text-primary focus:outline-none focus:border-primary transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                <option value="">No commission</option>
-                {salesRep && !repList.some(r => r.id === salesRep) && <option value={salesRep}>Current rep (no longer a sales rep)</option>}
-                {repList.map(r => <option key={r.id} value={r.id}>{r.name ?? 'Staff member'}</option>)}
-              </select>
-              {paidRepId && paidRepId === salesRep && !repNote && (
-                <p id="quote-sales-rep-paid" className="text-[11.5px] text-text-secondary mt-1">Commission has been paid out on this quote, so the rep can’t change.</p>
-              )}
-              {repNote && <p className="text-[11.5px] text-text-secondary mt-1" role="status">{repNote}</p>}
-            </div>
-          )}
-
-          {/* Currency and, for a foreign currency, the exchange rate (can be changed) */}
-          <div className="col-span-2 sm:col-span-3 sm:order-2">
-            <CurrencyPicker
-              compact
-              value={quoteCurrency}
-              allowDefault={false}
-              homeCurrency={homeCurrency}
-              label="Currency"
-              onChange={c => {
-                const next = c ?? homeCurrency
-                setQuoteCurrency(next)
-                quoteCurrencyRef.current = next
-                setCurrencyTouched(true)
-                scheduleAutoSave()
-              }}
-            />
-          </div>
-          {foreign && (
-            <div className="col-span-2 sm:col-span-12 sm:order-5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12px] text-text-secondary">
-              <span className="text-[10.5px] uppercase tracking-wide">Exchange rate</span>
-              <span>1 {quoteCurrency} =</span>
-              <input
-                inputMode="decimal"
-                value={fxRate}
-                aria-label="Exchange rate"
-                onChange={e => { setFxRate(e.target.value); scheduleAutoSave() }}
-                placeholder={dailyRate ? dailyRate.toFixed(4) : 'today'}
-                className="w-24 h-7 rounded-md border border-divider bg-surface px-2 text-right text-[12.5px] text-text-primary focus:outline-none focus:border-primary transition-colors"
-              />
-              <span>{homeCurrency}{fxNum > 0 ? '' : " (today's rate)"}</span>
-              {bookRate && bookRate > 0 && (
-                <span>· ≈ {formatCurrency(Math.round(total * bookRate * 100) / 100, homeCurrency)} in your books</span>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* ── Optional project / job link ── */}
-        <div>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]">
-            <button
-              type="button"
-              onClick={() => setLinkOpen(v => !v)}
-              className="text-primary font-medium hover:underline"
-            >
-              {linkOpen ? 'Hide project and job' : 'Link a project or job'}
-            </button>
-            {!linkOpen && (linkedProject || linkedJob) && (
-              <span className="text-text-secondary">
-                {[linkedProject?.title, linkedJob?.title].filter(Boolean).join(' · ')}
-              </span>
-            )}
-          </div>
-          {linkOpen && (
-            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-[11px] text-text-secondary uppercase tracking-wide mb-1.5">
-                  Project
-                </label>
-                <select
-                  value={dealId ?? ''}
-                  onChange={e => updateDeal(e.target.value || null)}
-                  className="w-full h-9 rounded-lg border border-divider bg-surface px-3 text-[13px] text-text-primary focus:outline-none focus:border-primary transition-colors"
-                >
-                  <option value="">— None —</option>
-                  {projects.map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.label ? `${p.label} · ${p.title}` : p.title}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-[11px] text-text-secondary uppercase tracking-wide mb-1.5">
-                  Job
-                </label>
-                <select
-                  value={jobId ?? ''}
-                  onChange={e => updateJob(e.target.value || null)}
-                  className="w-full h-9 rounded-lg border border-divider bg-surface px-3 text-[13px] text-text-primary focus:outline-none focus:border-primary transition-colors"
-                >
-                  <option value="">— None —</option>
-                  {jobs.map(j => (
-                    <option key={j.id} value={j.id}>
-                      {j.label ? `${j.label} · ${j.title}` : j.title}
-                    </option>
-                  ))}
-                </select>
-                {jobId && (
-                  <Link
-                    href={`/dashboard/jobs/${jobId}`}
-                    className="inline-block mt-1.5 text-[12px] text-primary hover:underline"
-                  >
-                    Open job
-                  </Link>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {templates.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2 -mt-2">
-            <label htmlFor="quote-template" className="text-[12px] text-text-secondary">Template</label>
-            <select id="quote-template" value={templateId ?? ''} disabled={locked}
-              onChange={e => chooseTemplate(e.target.value || null)}
-              className="h-10 sm:h-8 rounded-lg border border-divider bg-surface px-2 text-[13.5px] sm:text-[12.5px] text-text-primary max-w-full">
-              {templates.map(t => <option key={t.id} value={t.id}>{t.name}{t.is_default ? ' (default)' : ''}</option>)}
-              <option value="">Classic (no template)</option>
-            </select>
-            <Link href="/dashboard/settings?tab=money" prefetch={false} className="text-[12px] text-primary hover:underline">Change templates</Link>
-          </div>
-        )}
-        {template && <QuoteHeaderFields template={template} values={headerValues} onChange={updateHeader} readOnly={locked} />}
-
         {quoteId && <DocumentChain current={{ kind: 'quote', id: quoteId }} companyId={companyId} />}
 
-        {/* ── Items | Buyout ── */}
-        {askSuppliers && (
-        <div className="flex items-center gap-5 border-b border-divider -mb-2" role="tablist" aria-label="Quote sections">
-          {([['items', 'Items'], ['buyout', 'Buyout']] as const).map(([k, label]) => (
-            <button key={k} type="button" role="tab" aria-selected={quoteView === k}
-              onClick={() => (k === 'buyout' ? void openBuyout() : setQuoteView('items'))}
-              className={cn('pb-2 -mb-px text-[13.5px] font-semibold border-b-2 flex items-center gap-1.5', quoteView === k ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary')}>
-              {label}
-              {k === 'buyout' && sourcing.waiting > 0 && <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10.5px]">{sourcing.waiting} waiting</span>}
-            </button>
-          ))}
-        </div>
-        )}
+        {/* ── Steps: tap any to jump ── */}
+        <nav aria-label="Quote steps" className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          {STEPS.map(([n, lab]) => {
+            const now = step === n, done = n < step
+            return (
+              <button key={n} type="button" aria-current={now ? 'step' : undefined} onClick={() => goStep(n)}
+                className={cn('text-left rounded-xl px-3.5 py-2.5 min-h-[48px] flex items-center gap-2.5 border text-[14px] text-text-primary',
+                  now ? 'border-[#2563EB] bg-[#EEF4FF] font-semibold' : 'border-divider bg-surface font-medium hover:bg-surface-elevated')}>
+                <span className={cn('w-[26px] h-[26px] rounded-full text-[12px] font-bold flex items-center justify-center shrink-0',
+                  now ? 'bg-[#2563EB] text-white' : done ? 'bg-[#15803D] text-white' : 'bg-[#EEF1F6] text-text-secondary')}>{done ? '✓' : n}</span>
+                <span className="leading-tight">{lab}</span>
+              </button>
+            )
+          })}
+        </nav>
 
-        {quoteView === 'buyout' && companyId ? (
-          <BuyoutPanel companyId={companyId} buyout={buyout} lines={outsourcedLines} currency={quoteCurrency} readOnly={locked}
-            ensure={ensureQuoteBuyout} reload={reloadBuyout} onChoose={chooseForLine}
-            keep={keepMode} onKeep={rememberKeep} defaultMargin={defaultMargin} onDefaultMargin={rememberMargin} />
-        ) : (
-        <>
-        {template ? (
-          <TemplateLines template={template} lines={lines} items={pickItems} itemsLoading={pickLoading} currency={quoteCurrency}
-            readOnly={locked} onChange={next => setTemplateLines(next as SimpleQuoteLine[])} makeLine={makeTemplateLine}
-            lineExtra={askSuppliers ? (l => (l.option_of || l.is_contingency ? null : lineExtra({ key: l.tempId, description: l.description } as EditorLine))) : undefined}
-            contingencyPct={contingencyPct} onContingency={updateContingency} />
-        ) : (
-        <LineItemsEditor lines={editorLines} onChange={handleEditorChange} items={pickItems} itemsLoading={pickLoading} startOpen={!initialQuoteId} currency={quoteCurrency} showCost readOnly={locked} lineExtra={lineExtra} />
-        )}
+        <fieldset disabled={locked} className="min-w-0 m-0 p-0 border-0">
 
-        {sourcing.count > 0 && (
-          <div className="-mt-3 rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
-            <p className="text-[12.5px] text-text-primary">
-              <b>Sourcing</b> <span className="text-text-secondary">· {sourcing.count} outsourced {sourcing.count === 1 ? 'item' : 'items'} · {sourcing.chosen} with a cost price{sourcing.waiting ? ` · ${sourcing.waiting} waiting for replies` : ''}</span>
-              <span className="block text-[11.5px] text-text-secondary">Buyout is optional: you can always type a cost price yourself. Click a supplier pill to see everyone asked.</span>
-            </p>
-            <button type="button" onClick={() => void openBuyout()} className="h-9 px-4 rounded-lg bg-primary text-white text-[13px] font-semibold hover:bg-primary/90">Buyout</button>
-          </div>
-        )}
-
-        {/* ── Notes ── */}
-        <div className="rounded-xl border border-divider overflow-hidden">
-          <div className="px-4 py-1.5 border-b border-divider bg-surface-elevated">
-            <span className="text-[11px] text-text-secondary uppercase tracking-wide">
-              Notes
-            </span>
-          </div>
-          <textarea
-            rows={2}
-            value={notes}
-            onChange={e => updateNotes(e.target.value)}
-            placeholder="Payment terms, warranty, scope exclusions…"
-            className="w-full px-4 py-2 text-[13px] text-text-primary bg-surface resize-y focus:outline-none placeholder-text-secondary/40"
-          />
-        </div>
-        {template && (
-          <div className="rounded-xl border border-divider overflow-hidden">
-            <div className="px-4 py-1.5 border-b border-divider bg-surface-elevated">
-              <span className="text-[11px] text-text-secondary uppercase tracking-wide">Terms printed on the quotation</span>
+        {/* ── STEP 1 · Who it's for ── */}
+        {step === 1 && (
+          <section className="bg-surface border border-divider rounded-2xl p-5 sm:p-6 flex flex-col gap-[22px]">
+            <div className="flex items-baseline justify-between gap-3 flex-wrap">
+              <h2 className="text-[20px] font-semibold text-text-primary">Who is this quote for?</h2>
+              <span className="text-[13px] text-text-secondary">Fills in from the customer’s profile. Changes here are for this quote only.</span>
             </div>
-            <textarea rows={3} value={terms} onChange={e => updateTerms(e.target.value)} maxLength={4000}
-              placeholder="Deposit, cancellation, warranty…"
-              className="w-full px-4 py-2 text-[13px] text-text-primary bg-surface resize-y focus:outline-none placeholder-text-secondary/40" />
+
+            <div className="grid md:grid-cols-[220px_minmax(0,1fr)] gap-3 md:gap-6 pt-1">
+              {groupHead('Customer', 'Pick one of your customers, or type a new name to add them.')}
+              <div className="grid sm:grid-cols-3 gap-4 items-end">
+                <div className="sm:col-span-2 relative">
+                  <label className={label}>
+                    <span className={labText}>Customer name</span>
+                    <span className={cn('h-11 rounded-[10px] border bg-surface flex items-center gap-2.5 px-3', clientDropOpen ? 'border-[#2563EB] ring-2 ring-[#2563EB]/15' : 'border-divider')}>
+                      <span className="material-icons !text-[18px] text-text-secondary">search</span>
+                      <input type="text" placeholder="Search or type a customer name" value={clientSearch}
+                        onChange={e => { setClientSearch(e.target.value); setClientDropOpen(true) }}
+                        onFocus={() => setClientDropOpen(true)} onBlur={() => setTimeout(() => setClientDropOpen(false), 160)}
+                        className="flex-1 min-w-0 bg-transparent outline-none text-[14px] font-medium text-text-primary" />
+                      <span className="material-icons !text-[18px] text-text-secondary">expand_more</span>
+                    </span>
+                  </label>
+                  {clientDropOpen && !addingClient && (
+                    <div className="absolute left-0 top-full mt-1 z-40 w-full bg-surface border border-divider rounded-xl shadow-[0_14px_30px_rgba(15,23,42,0.16)] py-1 max-h-64 overflow-y-auto">
+                      {clients.map(c => {
+                        const detail = clientPickDetail(c)
+                        return (
+                          <button key={c.id} type="button" onMouseDown={() => { selectClient(c.id, c.name, c); setClientDropOpen(false) }}
+                            className={cn('w-full text-left px-3 py-2 text-[13.5px] hover:bg-surface-elevated', c.id === clientId ? 'text-[#2563EB] font-medium' : 'text-text-primary')}>
+                            <span className="block">{c.name}</span>{detail && <span className="block text-[12px] text-text-secondary">{detail}</span>}
+                          </button>
+                        )
+                      })}
+                      {clients.length === 0 && <p className="px-3 py-2 text-[12.5px] text-text-secondary">{clientListError ?? (clientSearch.trim() ? 'No customers found' : 'No customers yet')}</p>}
+                      <div className="border-t border-divider mt-1 pt-1">
+                        <button type="button" onMouseDown={() => { setNewClientName(clientSearch.trim()); setAddingClient(true); setClientDropOpen(false) }}
+                          className="w-full text-left px-3 py-2 text-[13px] text-[#2563EB] font-medium hover:bg-surface-elevated">+ Add {clientSearch.trim() ? `“${clientSearch.trim()}”` : 'a new customer'}</button>
+                      </div>
+                    </div>
+                  )}
+                  {addingClient && (
+                    <div className="mt-2 p-3 rounded-xl border border-divider bg-surface-elevated grid sm:grid-cols-[1fr_1fr_auto] gap-2 items-end">
+                      <input autoFocus type="text" placeholder="Customer name *" value={newClientName} onChange={e => setNewClientName(e.target.value)} onKeyDown={e => e.key === 'Enter' && void handleCreateClient()} className={field} />
+                      <input type="email" placeholder="Email (optional)" value={newClientEmail} onChange={e => setNewClientEmail(e.target.value)} onKeyDown={e => e.key === 'Enter' && void handleCreateClient()} className={field} />
+                      <span className="flex gap-2">
+                        <button type="button" onClick={() => { setAddingClient(false); setNewClientName(''); setNewClientEmail('') }} className="h-11 px-3 rounded-[10px] border border-divider text-[13px] text-text-secondary bg-surface">Cancel</button>
+                        <button type="button" onClick={() => void handleCreateClient()} disabled={!newClientName.trim() || creatingClient} className="h-11 px-4 rounded-[10px] bg-[#2563EB] text-white text-[13px] font-semibold disabled:opacity-50">{creatingClient ? 'Adding…' : 'Add customer'}</button>
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <label className={label}>
+                  <span className={labText}>Valid until</span>
+                  <input type="date" value={validUntil} onChange={e => updateValidUntil(e.target.value)} className={field} />
+                </label>
+              </div>
+            </div>
+
+            <div className="h-px bg-divider" />
+
+            <div className="grid md:grid-cols-[220px_minmax(0,1fr)] gap-3 md:gap-6">
+              {groupHead('Send it to', 'Pick one of this customer’s contacts; their email and number fill in. No contacts yet? Just type a name.')}
+              <div className="grid sm:grid-cols-3 gap-4 items-end">
+                <div className="relative">
+                  <label className={label}>
+                    <span className={labText}>Contact person{contacts.length > 0 && <span className="font-medium text-[11px]">{contacts.length} at {clientName.split(' (')[0] || 'this customer'}</span>}</span>
+                    <span className="relative">
+                      <input type="text" value={contactName} placeholder={clientId ? 'Pick or type a name' : 'Type a name'} autoComplete="off"
+                        onChange={e => updateHeader(HV.contactName, e.target.value)} onFocus={() => setContactOpen(true)} onBlur={() => setTimeout(() => setContactOpen(false), 160)}
+                        className={cn(field, contacts.length > 0 && 'pr-9')} />
+                      {contacts.length > 0 && <span className="material-icons !text-[18px] text-text-secondary absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">expand_more</span>}
+                    </span>
+                  </label>
+                  {contactOpen && contacts.length > 0 && (
+                    <div role="listbox" aria-label="Contacts" className="absolute left-0 top-full mt-1 z-40 w-[min(320px,90vw)] bg-surface border border-divider rounded-xl shadow-[0_14px_30px_rgba(15,23,42,0.16)] overflow-hidden text-[13px]">
+                      {contacts.map(c => (
+                        <button key={`${c.name}-${c.email}`} type="button" role="option" aria-selected={c.name === contactName} onMouseDown={() => pickContact(c)}
+                          className={cn('w-full text-left px-3 py-2.5 border-b border-divider hover:bg-surface-elevated', c.name === contactName && 'bg-[#EEF4FF]')}>
+                          <b>{c.name}</b>{c.note && <span className="text-text-secondary"> · {c.note}</span>}
+                          <span className="block text-[12px] text-text-secondary">{[c.email, c.phone].filter(Boolean).join(' · ') || 'No email or number saved'}</span>
+                        </button>
+                      ))}
+                      <span className="block px-3 py-2.5 text-[#2563EB] font-medium">+ Someone else: just type their name</span>
+                    </div>
+                  )}
+                </div>
+                <label className={label}>
+                  <span className={labText}>Email</span>
+                  <input type="email" value={headerValues[HV.contactEmail] ?? ''} placeholder="name@company.co.za" onChange={e => updateHeader(HV.contactEmail, e.target.value)} className={field} />
+                </label>
+                <label className={label}>
+                  <span className={labText}>Phone / WhatsApp</span>
+                  <input type="tel" value={headerValues[HV.contactPhone] ?? ''} placeholder="082 000 0000" onChange={e => updateHeader(HV.contactPhone, e.target.value)} className={field} />
+                </label>
+              </div>
+            </div>
+
+            <div className="h-px bg-divider" />
+
+            <div className="grid md:grid-cols-[220px_minmax(0,1fr)] gap-3 md:gap-6">
+              {groupHead('Details', 'Address and numbers printed on the quote, the sales rep, and the money it’s in.')}
+              <div className="grid sm:grid-cols-3 gap-4 items-end">
+                <label className={cn(label, 'sm:col-span-2')}>
+                  <span className={labText}>Address</span>
+                  <input type="text" value={headerValues.site_address ?? ''} maxLength={200} placeholder="Street, suburb, city" onChange={e => updateHeader('site_address', e.target.value)} className={field} />
+                </label>
+                <label className={label}>
+                  <span className={labText}>Customer VAT no.{optionalTag}</span>
+                  <input type="text" value={headerValues[HV.clientVat] ?? ''} maxLength={30} placeholder="If they have one" onChange={e => updateHeader(HV.clientVat, e.target.value)} className={field} />
+                </label>
+                <label className={label}>
+                  <span className={labText}>Client order no.{optionalTag}</span>
+                  <input type="text" value={headerValues.client_order_no ?? ''} maxLength={60} placeholder="Their PO, if they gave one" onChange={e => updateHeader('client_order_no', e.target.value)} className={field} />
+                </label>
+                <div className={label}>
+                  <label htmlFor="quote-sales-rep" className={labText}>Sales rep</label>
+                  <span className="relative">
+                    <select id="quote-sales-rep" value={salesRep ?? ''} onChange={e => void updateSalesRep(e.target.value || null)}
+                      disabled={(!!paidRepId && paidRepId === salesRep) || (repList.length === 0 && !salesRep)}
+                      aria-describedby={paidRepId && paidRepId === salesRep ? 'quote-sales-rep-paid' : undefined}
+                      className={cn(field, 'appearance-none pr-9 cursor-pointer disabled:cursor-not-allowed')}>
+                      <option value="">{repList.length ? 'No commission' : 'No sales reps set up'}</option>
+                      {salesRep && !repList.some(r => r.id === salesRep) && <option value={salesRep}>Current rep (no longer a sales rep)</option>}
+                      {repList.map(r => <option key={r.id} value={r.id}>{r.name ?? 'Staff member'}</option>)}
+                    </select>
+                    <span className="material-icons !text-[18px] text-text-secondary absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">expand_more</span>
+                  </span>
+                </div>
+                <div className={label}>
+                  <span className={labText}>Currency{foreign ? ' and rate' : ''}</span>
+                  <span className="h-11 rounded-[10px] border border-divider bg-surface-elevated flex items-stretch">
+                    <CurrencyPicker bare value={quoteCurrency} allowDefault={false} homeCurrency={homeCurrency} label="Currency" disabled={locked}
+                      className={cn(foreign && 'border-r border-divider')}
+                      onChange={c => { const nx = c ?? homeCurrency; setQuoteCurrency(nx); quoteCurrencyRef.current = nx; setCurrencyTouched(true); scheduleAutoSave() }} />
+                    {foreign && (
+                      <span className="flex-1 flex items-center gap-1 px-2.5 text-[14px] text-text-secondary min-w-0">
+                        1 = <input inputMode="decimal" value={fxRate} aria-label="Exchange rate" placeholder={dailyRate ? dailyRate.toFixed(2) : 'today'}
+                          onChange={e => { setFxRate(e.target.value); scheduleAutoSave() }} className="flex-1 min-w-0 bg-transparent outline-none font-medium text-text-primary" />
+                        <span className="text-[12px]">{homeCurrency}</span>
+                      </span>
+                    )}
+                  </span>
+                </div>
+                {otherHeaders.map(h => (
+                  <label key={h} className={label}>
+                    <span className={labText}>{HEADER_LABEL[h] ?? h}</span>
+                    <input type={h === 'event_date' ? 'date' : 'text'} value={headerValues[h] ?? ''} maxLength={200} onChange={e => updateHeader(h, e.target.value)} className={field} />
+                  </label>
+                ))}
+                <label className={cn(label, 'sm:col-span-2')}>
+                  <span className={labText}>Quote title{optionalTag}</span>
+                  <input type="text" value={title} maxLength={120} placeholder="e.g. Ceiling repairs, Harbour Rd" onChange={e => updateTitle(e.target.value)} className={field} />
+                </label>
+                <div className={label}>
+                  <span className={labText}>Project or job{optionalTag}</span>
+                  <button type="button" onClick={() => setLinkOpen(v => !v)} className={cn(field, 'text-left flex items-center justify-between font-normal')}>
+                    <span className="truncate">{[linkedProject?.title, linkedJob?.title].filter(Boolean).join(' · ') || 'Not linked'}</span>
+                    <span className="material-icons !text-[18px] text-text-secondary">{linkOpen ? 'expand_less' : 'expand_more'}</span>
+                  </button>
+                </div>
+                {linkOpen && (
+                  <div className="sm:col-span-3 grid sm:grid-cols-2 gap-4">
+                    <label className={label}><span className={labText}>Project</span>
+                      <select value={dealId ?? ''} onChange={e => updateDeal(e.target.value || null)} className={field}>
+                        <option value="">None</option>{projects.map(p => <option key={p.id} value={p.id}>{p.label ? `${p.label} · ${p.title}` : p.title}</option>)}
+                      </select>
+                    </label>
+                    <label className={label}><span className={labText}>Job{jobId && <Link href={`/dashboard/jobs/${jobId}`} className="text-[#2563EB] font-medium">Open job</Link>}</span>
+                      <select value={jobId ?? ''} onChange={e => updateJob(e.target.value || null)} className={field}>
+                        <option value="">None</option>{jobs.map(j => <option key={j.id} value={j.id}>{j.label ? `${j.label} · ${j.title}` : j.title}</option>)}
+                      </select>
+                    </label>
+                  </div>
+                )}
+              </div>
+            </div>
+            {(paidRepId && paidRepId === salesRep && !repNote) ? <p id="quote-sales-rep-paid" className="md:pl-[244px] text-[12.5px] text-text-secondary">Commission has been paid out on this quote, so the rep can’t change.</p> : null}
+            {repNote && <p className="md:pl-[244px] text-[12.5px] text-text-secondary" role="status">{repNote}</p>}
+            <p className="md:pl-[244px] text-[12.5px] text-text-secondary leading-[1.5]">
+              {foreign ? 'The rate is today’s and you can change it. ' : 'Rand customers don’t see an exchange rate. '}If there’s no client order no., the quote uses {quoteNumber ?? 'its own number'} as the reference.
+            </p>
+            <div className="flex justify-end">
+              <button type="button" onClick={() => goStep(2)} className="h-12 px-7 rounded-xl bg-[#2563EB] text-white text-[14px] font-semibold hover:bg-[#1D4ED8]">Next: what you’re quoting</button>
+            </div>
+          </section>
+        )}
+
+        {/* ── STEPS 2 & 3 · wide content, slim totals ── */}
+        {(step === 2 || step === 3) && (
+          <div className="flex gap-4 flex-wrap items-start">
+            <div className="flex-[999_1_760px] min-w-0 flex flex-col gap-3">
+              {step === 2 && (
+                <>
+                  <div className="bg-surface border border-divider rounded-[14px] px-3.5 py-2.5 flex items-center gap-2.5 flex-wrap text-[13px] text-text-secondary">
+                    <span>For <b className="text-text-primary font-semibold">{clientName || 'no customer yet'}</b>{foreign ? ` · ${quoteCurrency}${fxNum > 0 ? ` at ${formatCurrency(fxNum, homeCurrency)}` : ''}` : ''}</span>
+                    <button type="button" onClick={() => goStep(1)} className="text-[#2563EB] font-medium">Edit</button>
+                    {askSuppliers && (
+                      <span role="tablist" aria-label="Quote sections" className="flex gap-1 ml-2">
+                        {([['items', 'Items'], ['buyout', 'Buyout']] as const).map(([k, lab]) => (
+                          <button key={k} type="button" role="tab" aria-selected={quoteView === k} onClick={() => (k === 'buyout' ? void openBuyout() : setQuoteView('items'))}
+                            className={cn('h-8 px-3 rounded-lg text-[13px] font-semibold flex items-center gap-1.5', quoteView === k ? 'bg-[#EEF4FF] text-[#2563EB]' : 'text-text-secondary hover:text-text-primary')}>
+                            {lab}{k === 'buyout' && sourcing.waiting > 0 && <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10.5px]">{sourcing.waiting} waiting</span>}
+                          </button>
+                        ))}
+                      </span>
+                    )}
+                    {!locked && quoteView === 'items' && (
+                      <span className="ml-auto flex gap-2">
+                        <span className="qtip-wrap relative inline-flex">
+                          <button type="button" aria-describedby="import-tip" onClick={() => { setImportOpen(o => !o); setImportNote(null) }}
+                            className="h-[34px] px-3 rounded-lg border border-divider bg-surface text-text-primary text-[13px] font-medium flex items-center gap-1.5 hover:bg-surface-elevated">
+                            <span className="material-icons !text-[16px]">download</span>Import a list
+                          </button>
+                          <span id="import-tip" role="tooltip" className="qtip absolute top-11 right-[-8px] w-[290px] bg-[#0F172A] text-[#F8FAFC] rounded-xl px-3.5 py-3 text-[12.5px] leading-[1.5] shadow-[0_14px_30px_rgba(15,23,42,0.28)] z-30 text-left">
+                            <span className="absolute -top-1.5 right-[52px] w-3 h-3 bg-[#0F172A] rotate-45" />
+                            <span className="block font-semibold text-[13px] mb-1">Got a list from the client?</span>
+                            Drop an Excel or CSV file, or paste a list or WhatsApp message like “20 bags cement, 5 × 6 m IBR sheets”. We match it to your catalogue and you check every line before it’s added. (PDFs are coming soon.)
+                          </span>
+                        </span>
+                        <button type="button" onClick={() => setBrowseSignal(n => n + 1)}
+                          className="h-[34px] px-3 rounded-lg border border-divider bg-surface text-text-primary text-[13px] font-medium hover:bg-surface-elevated">Browse catalogue</button>
+                      </span>
+                    )}
+                  </div>
+
+                  {importOpen && !importRows && (
+                    <div className="bg-surface border border-divider rounded-[14px] p-4 flex flex-col gap-3">
+                      <div className="flex items-center justify-between gap-3"><span className="text-[15px] font-semibold">Import a list</span>
+                        <button type="button" onClick={() => setImportOpen(false)} aria-label="Close" className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-surface-elevated"><span className="material-icons !text-[18px]">close</span></button></div>
+                      <div className="grid md:grid-cols-2 gap-3">
+                        <label className="rounded-xl border-2 border-dashed border-divider hover:border-[#2563EB] px-4 py-6 text-center cursor-pointer flex flex-col items-center gap-1.5"
+                          onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) void importFile(f) }}>
+                          <span className="material-icons text-[#2563EB]">upload_file</span>
+                          <span className="text-[14px] font-medium">Drop an Excel or CSV file here</span>
+                          <span className="text-[12px] text-text-secondary">or click to choose one · columns like Item, Qty, Price</span>
+                          <input type="file" accept=".xlsx,.xls,.csv,text/csv" className="sr-only" onChange={e => { const f = e.target.files?.[0]; if (f) void importFile(f); e.target.value = '' }} />
+                        </label>
+                        <div className="flex flex-col gap-2">
+                          <textarea rows={4} value={importText} onChange={e => setImportText(e.target.value)} placeholder={'Paste a list or WhatsApp message, e.g.\n20 bags cement\n5 x 6m IBR sheets'}
+                            className="w-full rounded-xl border border-divider bg-surface-elevated px-3 py-2 text-[13.5px] resize-y focus:outline-none focus:border-[#2563EB]" />
+                          <button type="button" disabled={!importText.trim()} onClick={importPasted} className="self-end h-9 px-4 rounded-lg bg-[#2563EB] text-white text-[13px] font-semibold disabled:opacity-50">Read the list</button>
+                        </div>
+                      </div>
+                      {importNote && <p className="text-[12.5px] text-amber-800">{importNote}</p>}
+                    </div>
+                  )}
+                  {importRows && (
+                    <div className="bg-surface border border-divider rounded-[14px] overflow-hidden">
+                      <div className="px-4 py-3 flex items-center justify-between gap-3 border-b border-divider">
+                        <span className="text-[15px] font-semibold">Check the {importRows.length} line{importRows.length === 1 ? '' : 's'} before adding</span>
+                        <span className="flex gap-2">
+                          <button type="button" onClick={() => setImportRows(null)} className="h-9 px-3 rounded-lg border border-divider text-[13px]">Back</button>
+                          <button type="button" onClick={addImported} disabled={!importRows.some(r => r.keep)} className="h-9 px-4 rounded-lg bg-[#2563EB] text-white text-[13px] font-semibold disabled:opacity-50">Add {importRows.filter(r => r.keep).length} lines</button>
+                        </span>
+                      </div>
+                      <ul className="divide-y divide-divider max-h-[360px] overflow-y-auto text-[13px]">
+                        {importRows.map((r, i) => (
+                          <li key={i} className="px-4 py-2 flex items-center gap-3">
+                            <input type="checkbox" checked={r.keep} aria-label={`Add ${r.description}`} onChange={e => setImportRows(rows => rows!.map((x, j) => j === i ? { ...x, keep: e.target.checked } : x))} className="w-4 h-4 accent-[#2563EB]" />
+                            <span className="w-14 text-right">{r.qty}</span>
+                            <span className="flex-1 min-w-0 truncate">{r.description}</span>
+                            <span className={cn('text-[11.5px] px-2 py-0.5 rounded-full', r.pick ? 'bg-emerald-50 text-emerald-700' : 'bg-[#EEF1F6] text-text-secondary')}>{r.pick ? 'From your catalogue' : 'Your own line'}</span>
+                            <span className="w-24 text-right">{r.price != null || r.pick ? formatCurrency(r.price ?? r.pick!.price, quoteCurrency) : 'No price'}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {!importOpen && importNote && <p className="text-[12.5px] text-emerald-800 px-1">{importNote}</p>}
+
+                  {quoteView === 'buyout' && companyId ? (
+                    <BuyoutPanel companyId={companyId} buyout={buyout} lines={outsourcedLines} currency={quoteCurrency} readOnly={locked}
+                      ensure={ensureQuoteBuyout} reload={reloadBuyout} onChoose={chooseForLine}
+                      keep={keepMode} onKeep={rememberKeep} defaultMargin={defaultMargin} onDefaultMargin={rememberMargin} />
+                  ) : template ? (
+                    <TemplateLines template={template} lines={lines} items={pickItems} itemsLoading={pickLoading} currency={quoteCurrency}
+                      readOnly={locked} onChange={next => setTemplateLines(next as SimpleQuoteLine[])} makeLine={makeTemplateLine}
+                      lineExtra={askSuppliers ? (l => (l.option_of || l.is_contingency ? null : lineExtra({ key: l.tempId, description: l.description } as EditorLine))) : undefined}
+                      contingencyPct={contingencyPct} onContingency={updateContingency} hideContingency browseSignal={browseSignal} />
+                  ) : (
+                    <div className="bg-surface border border-divider rounded-[14px] p-3">
+                      <LineItemsEditor lines={editorLines} onChange={handleEditorChange} items={pickItems} itemsLoading={pickLoading} startOpen={!initialQuoteId} currency={quoteCurrency} showCost readOnly={locked} lineExtra={lineExtra} />
+                    </div>
+                  )}
+
+                  {quoteView === 'items' && sourcing.count > 0 && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
+                      <p className="text-[12.5px] text-text-primary"><b>Sourcing</b> <span className="text-text-secondary">· {sourcing.count} outsourced {sourcing.count === 1 ? 'item' : 'items'} · {sourcing.chosen} with a cost price{sourcing.waiting ? ` · ${sourcing.waiting} waiting for replies` : ''}</span></p>
+                      <button type="button" onClick={() => void openBuyout()} className="h-9 px-4 rounded-lg bg-[#2563EB] text-white text-[13px] font-semibold">Buyout</button>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {step === 3 && (
+                <section className="bg-surface border border-divider rounded-[14px] p-5 sm:p-[22px] flex flex-col gap-[18px]">
+                  <h2 className="text-[20px] font-semibold text-text-primary">Extras <span className="text-[14px] font-normal text-text-secondary">(all optional)</span></h2>
+                  {(showDeposit || showContingency) && (
+                    <div className="grid sm:grid-cols-2 gap-3.5">
+                      {showDeposit && (
+                        <label className={label}><span className={labText}>Deposit %</span>
+                          <input type="number" inputMode="numeric" min={0} max={100} value={depositPct ?? ''} placeholder="0"
+                            onChange={e => updateDepositPct(e.target.value === '' ? null : Math.min(100, Math.max(0, Number(e.target.value) || 0)))} className={field} />
+                        </label>
+                      )}
+                      {showContingency && (
+                        <label className={label}><span className={labText}>Contingency %</span>
+                          <input type="number" inputMode="decimal" min={0} max={100} value={contingencyPct || ''} placeholder="0"
+                            onChange={e => updateContingency(Math.min(100, Math.max(0, Number(e.target.value.replace(',', '.')) || 0)))} className={field} />
+                        </label>
+                      )}
+                    </div>
+                  )}
+                  <label className={label}><span className={labText}>Delivery instructions</span>
+                    <textarea rows={2} maxLength={600} value={headerValues[HV.delivery] ?? ''} onChange={e => updateHeader(HV.delivery, e.target.value)}
+                      placeholder="e.g. Deliver to the back gate. Site open 07:00–16:00. Call on arrival."
+                      className="rounded-[10px] border border-divider bg-surface-elevated px-3 py-2.5 text-[14px] resize-y focus:outline-none focus:border-[#2563EB]" />
+                  </label>
+                  <label className={label}><span className={labText}>Note to the client</span>
+                    <textarea rows={2} value={notes} onChange={e => updateNotes(e.target.value)} placeholder="e.g. Thank you for the opportunity. We can start on 5 January."
+                      className="rounded-[10px] border border-divider bg-surface-elevated px-3 py-2.5 text-[14px] resize-y focus:outline-none focus:border-[#2563EB]" />
+                  </label>
+                  {template && (
+                    <label className={label}><span className={labText}>Terms</span>
+                      <textarea rows={3} maxLength={4000} value={terms} onChange={e => updateTerms(e.target.value)} placeholder="Deposit, cancellation, warranty…"
+                        className="rounded-[10px] border border-divider bg-surface-elevated px-3 py-2.5 text-[14px] resize-y focus:outline-none focus:border-[#2563EB]" />
+                    </label>
+                  )}
+                </section>
+              )}
+            </div>
+            {totalsPanel(step === 2 ? 'Next: extras' : 'Next: check and send', () => goStep((step + 1) as 3 | 4))}
           </div>
-        )}
-
-        {/* ── Totals: rows in the same columns as the items ── */}
-        {template && tTotals ? (
-          <TemplateTotals totals={tTotals} currency={quoteCurrency} vatOn={vatOn} vatRate={vatRate} onVat={updateVatOn} readOnly={locked}
-            deposit={template.features.includes('deposit')} depositPct={depositPct} onDepositPct={updateDepositPct}
-            showProfit={template.features.includes('cost_margin')} />
-        ) : (
-        <>
-        <QuoteTotalsRows lines={editorLines} currency={quoteCurrency} vatOn={vatOn} readOnly={locked}
-          vatLabel={vatOn ? `VAT (${vatPercentLabel(vatRate)}%)` : 'VAT'} vat={vat} total={total} onVat={updateVatOn} />
-
-        <p className="-mt-2 px-1 text-[11.5px] text-text-secondary flex items-start gap-1">
-          <span className="material-icons !text-[13px] !leading-[1.4]">lock</span>
-          Cost price and margin are only for your team. They never show on the quote PDF or the client&apos;s page. Change the margin to set the selling price from the cost.
-        </p>
-        </>
-        )}
-        </>
         )}
         </fieldset>
 
-
+        {/* ── STEP 4 · the real document left, send options right ── */}
+        {step === 4 && (
+          <div className="flex gap-5 flex-wrap items-start">
+            <div className="flex-[999_1_720px] min-w-0 bg-[#E6EAF1] rounded-2xl px-3 sm:px-6 pt-[18px] pb-7 flex flex-col gap-4 items-center">
+              <div role="tablist" aria-label="Which document" className="flex gap-1 p-1 rounded-xl bg-surface border border-divider">
+                {([['quote', 'Quotation'], ['proforma', 'Pro forma invoice']] as const).map(([k, lab]) => (
+                  <button key={k} type="button" role="tab" aria-selected={docKind === k} onClick={() => { setDocKind(k); docKindRef.current = k }}
+                    className={cn('h-[38px] px-[18px] rounded-[9px] text-[13.5px] font-semibold', docKind === k ? 'bg-[#2563EB] text-white' : 'text-text-primary hover:bg-surface-elevated')}>{lab}</button>
+                ))}
+              </div>
+              <QuoteDocumentPreview input={buildPdfInput()} />
+            </div>
+            <aside className="flex-[1_1_280px] lg:max-w-[320px] w-full bg-surface border border-divider rounded-2xl p-[18px] flex flex-col gap-3 lg:sticky lg:top-4">
+              <span className="text-[16px] font-semibold">Looks right? Send it.</span>
+              <span className="text-[12.5px] text-text-secondary -mt-1.5">Sending the {docKind === 'quote' ? 'quotation' : 'pro forma invoice'}{contactName ? ` to ${contactName}` : clientName ? ` to ${clientName}` : ''}</span>
+              {status !== 'accepted' && status !== 'declined' || docKind === 'proforma' ? (
+                <>
+                  <button type="button" disabled={saveState === 'saving'} onClick={() => void openSend()} className="h-12 rounded-xl bg-[#2563EB] text-white text-[14.5px] font-semibold hover:bg-[#1D4ED8] disabled:opacity-50">Send by email</button>
+                  {docKind === 'quote' && <button type="button" disabled={sendBusy} onClick={() => void handleSendWhatsApp()} className="h-12 rounded-xl border border-divider bg-surface text-text-primary text-[14.5px] font-medium hover:bg-surface-elevated disabled:opacity-50">Send on WhatsApp</button>}
+                </>
+              ) : null}
+              <button type="button" onClick={handleDownloadPdf} className="h-12 rounded-xl border border-divider bg-surface text-text-primary text-[14.5px] font-medium hover:bg-surface-elevated">Download PDF</button>
+              <div className="h-px bg-divider my-0.5" />
+              <button type="button" onClick={() => goStep(3)} className="h-10 rounded-xl text-[#2563EB] text-[14px] font-medium">Back to extras</button>
+              {status !== 'accepted' && status !== 'declined' && <span className="text-[12px] text-text-secondary">Client said yes on the phone? Use ⋯ › Mark accepted.</span>}
+            </aside>
+          </div>
+        )}
       </div>
 
-      {/* ── Phone: total, deposit and Send always in reach ── */}
-      {template && tTotals && (
-        <div className="md:hidden fixed inset-x-0 bottom-0 z-40 border-t border-divider bg-surface/95 backdrop-blur px-4 pt-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))] flex items-center gap-3">
-          <div className="flex-1 min-w-0">
-            <p className="text-[12px] text-text-secondary leading-tight">Total{tTotals.deposit > 0 ? ` · deposit ${formatCurrency(tTotals.deposit, quoteCurrency)}` : ''}</p>
-            <p className="text-[18px] font-bold text-text-primary leading-tight">{formatCurrency(tTotals.total, quoteCurrency)}</p>
-          </div>
-          {status !== 'accepted' && status !== 'declined' ? (
-            <button type="button" disabled={saveState === 'saving'} onClick={() => void openSend()}
-              className="h-12 px-6 rounded-xl bg-primary text-white text-[15px] font-semibold disabled:opacity-50">Send</button>
-          ) : status === 'accepted' ? (
-            <button type="button" onClick={() => { setActionError(null); setShowWhatsNext(true) }}
-              className="h-12 px-5 rounded-xl bg-primary text-white text-[15px] font-semibold">What&apos;s next?</button>
-          ) : null}
+      {/* ── Phone: total and the next step always in reach ── */}
+      <div className="md:hidden fixed inset-x-0 bottom-0 z-40 border-t border-divider bg-surface/95 backdrop-blur px-4 pt-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))] flex items-center gap-3">
+        <div className="flex-1 min-w-0">
+          <p className="text-[12px] text-text-secondary leading-tight">Total{showDeposit && tTotals && tTotals.deposit > 0 ? ` · deposit ${formatCurrency(tTotals.deposit, quoteCurrency)}` : ''}</p>
+          <p className="text-[19px] font-bold text-text-primary leading-tight">{formatCurrency(shownTotal, quoteCurrency)}</p>
         </div>
-      )}
+        {step < 4 ? (
+          <button type="button" onClick={() => goStep((step + 1) as 2 | 3 | 4)} className="h-12 px-5 rounded-xl bg-[#2563EB] text-white text-[15px] font-semibold">Next</button>
+        ) : status !== 'accepted' && status !== 'declined' ? (
+          <button type="button" disabled={saveState === 'saving'} onClick={() => void openSend()} className="h-12 px-6 rounded-xl bg-[#2563EB] text-white text-[15px] font-semibold disabled:opacity-50">Send quote</button>
+        ) : null}
+      </div>
 
       {/* ── Send quote ── */}
       {showSendModal && (
@@ -2288,46 +2371,62 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   )
 }
 
-function TemplateTotals({ totals, currency, vatOn, vatRate, onVat, readOnly, deposit, depositPct, onDepositPct, showProfit }: {
-  totals: ReturnType<typeof quoteTotals>; currency: string; vatOn: boolean; vatRate: number; onVat: (on: boolean) => void
-  readOnly?: boolean; deposit: boolean; depositPct: number | null; onDepositPct: (v: number | null) => void; showProfit: boolean
-}) {
-  const row = 'flex items-center justify-between gap-3 px-4 py-2 text-[13.5px]'
-  const periods = Object.entries(totals.recurring) as [RecurringPeriod, number][]
-  return (
-    <div className="rounded-xl border border-divider bg-surface overflow-hidden divide-y divide-divider">
-      <div className={row}><span className="text-text-secondary">{vatOn ? 'Subtotal (excl. VAT)' : 'Subtotal'}</span><span>{formatCurrency(totals.subtotal, currency)}</span></div>
-      {showProfit && totals.cost > 0 && (
-        <div className={row}>
-          <span className="text-text-secondary"><span className="material-icons !text-[13px] align-[-2px]">lock</span> Gross profit (team only)</span>
-          <span className="text-text-secondary">{formatCurrency(totals.profit, currency)} · {totals.marginPct.toFixed(1)}%</span>
-        </div>
-      )}
-      <div className={row}>
-        <label className="flex items-center gap-2 text-text-secondary">
-          <input type="checkbox" className="w-5 h-5" checked={vatOn} disabled={readOnly} onChange={e => onVat(e.target.checked)} />
-          {vatOn ? `VAT (${vatPercentLabel(vatRate)}%)` : 'VAT'}
-        </label>
-        <span>{vatOn ? formatCurrency(totals.vat, currency) : 'No VAT'}</span>
-      </div>
-      <div className={cn(row, 'py-3')}><span className="font-semibold text-text-primary">{vatOn ? 'Total (incl. VAT)' : 'Total'}</span><span className="text-[17px] font-bold text-text-primary">{formatCurrency(totals.total, currency)}</span></div>
-      {deposit && (
-        <div className={row}>
-          <label className="flex items-center gap-2 text-text-secondary">
-            Deposit
-            <input type="number" inputMode="numeric" min={0} max={100} value={depositPct ?? ''} placeholder="0" disabled={readOnly}
-              onChange={e => onDepositPct(e.target.value === '' ? null : Math.min(100, Math.max(0, Number(e.target.value) || 0)))}
-              className="w-16 h-9 px-2 text-right bg-background border border-border rounded-lg text-[14px]" aria-label="Deposit %" />%
-          </label>
-          <span className="font-semibold">{formatCurrency(totals.deposit, currency)}</span>
-        </div>
-      )}
-      {periods.map(([p, amt]) => (
-        <div key={p} className={row}><span className="text-text-secondary">Every {PERIOD_LABEL[p]} (excl. VAT; the first is in the total)</span><span>{formatCurrency(amt, currency)}</span></div>
-      ))}
-      {totals.optionsCount > 0 && (
-        <p className="px-4 py-2 text-[12px] text-sky-800 bg-sky-50/60">{totals.optionsCount} option{totals.optionsCount === 1 ? '' : 's'} for the client, not in the total.</p>
-      )}
-    </div>
-  )
+// ── Importing a list (Excel, CSV or pasted text) ─────────────────────────────
+
+type ImportRow = { description: string; qty: number; unit: string | null; price: number | null; cost: number | null; pick: PickItem | null; keep: boolean }
+
+const num = (v: unknown): number | null => {
+  if (v == null || v === '') return null
+  const x = Number(String(v).replace(/[^\d,.-]/g, '').replace(/,(?=\d{1,2}$)/, '.').replace(/,/g, ''))
+  return Number.isFinite(x) ? x : null
+}
+
+/** Finds the item in your products & stock: same part number, then same name, then a name that contains it. */
+export function matchPick(items: PickItem[], text: string): PickItem | null {
+  const t = text.trim().toLowerCase()
+  if (!t) return null
+  return items.find(i => (i.sku ?? '').toLowerCase() === t)
+    ?? items.find(i => i.name.toLowerCase() === t)
+    ?? items.find(i => t.length >= 4 && (i.name.toLowerCase().includes(t) || t.includes(i.name.toLowerCase())))
+    ?? null
+}
+
+/** Rows from a sheet: the header row tells which column is what (item/description, qty, unit, price/rate, cost). */
+export function rowsFromSheet(table: unknown[][], items: PickItem[]): ImportRow[] {
+  const isHead = (r: unknown[]) => r.some(c => /desc|item|product|name|qty|quantity|price|rate/i.test(String(c ?? '')))
+  const hi = table.findIndex(isHead)
+  const head = hi >= 0 ? table[hi].map(c => String(c ?? '').toLowerCase()) : []
+  const col = (re: RegExp) => head.findIndex(h => re.test(h))
+  const cDesc = hi >= 0 ? Math.max(0, col(/desc|item|product|name|service/)) : 0
+  const cQty = hi >= 0 ? col(/qty|quantity|units?$|^no\.?$|count/) : 1
+  const cUnit = hi >= 0 ? col(/^unit$|uom|measure/) : -1
+  const cPrice = hi >= 0 ? col(/price|rate|selling|amount each|unit cost price/) : 2
+  const cCost = hi >= 0 ? col(/^cost|cost price|buy/) : -1
+  const out: ImportRow[] = []
+  for (const r of table.slice(hi + 1)) {
+    const d = String(r[cDesc] ?? '').trim()
+    if (!d) continue
+    const pick = matchPick(items, d)
+    out.push({ description: pick?.name ?? d, qty: num(r[cQty]) ?? 1, unit: cUnit >= 0 ? String(r[cUnit] ?? '').trim() || null : null,
+      price: cPrice >= 0 ? num(r[cPrice]) : null, cost: cCost >= 0 ? num(r[cCost]) : null, pick, keep: true })
+  }
+  return out
+}
+
+/** Rows from a pasted list or WhatsApp message: "20 bags cement", "5 x 6m IBR sheets", "Cement x 20". */
+export function rowsFromText(text: string, items: PickItem[]): ImportRow[] {
+  const out: ImportRow[] = []
+  for (const raw of text.split(/\n|;|,(?!\d)/)) {
+    const line = raw.replace(/^[\s•*\-–\d]+[.)]\s+/, '').trim()
+    if (!line) continue
+    let qty = 1, desc = line
+    const m1 = line.match(/^(\d+(?:[.,]\d+)?)\s*(?:x|×|\*)?\s+(.+)$/i)
+    const m2 = line.match(/^(.+?)\s*(?:x|×|\*)\s*(\d+(?:[.,]\d+)?)$/i)
+    if (m1) { qty = Number(m1[1].replace(',', '.')); desc = m1[2] } else if (m2) { qty = Number(m2[2].replace(',', '.')); desc = m2[1] }
+    desc = desc.trim()
+    if (!desc) continue
+    const pick = matchPick(items, desc)
+    out.push({ description: pick?.name ?? desc, qty, unit: null, price: null, cost: null, pick, keep: true })
+  }
+  return out
 }

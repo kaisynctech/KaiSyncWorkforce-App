@@ -416,3 +416,32 @@ body {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
+
+/* ── Quotation lines table (components/quotes/QuoteLinesTable.tsx) ──
+   Cells look like plain text until the row is hovered or the box is focused. */
+.ql-cell {
+  height: 26px; min-width: 0; width: 100%; box-sizing: border-box;
+  padding: 0 6px; border-radius: 6px; border: 1px solid transparent;
+  background: transparent; color: inherit; font: inherit; outline: none;
+}
+.ql-row:hover .ql-cell:not(:disabled) { border-color: #CBD5E1; background: var(--color-surface); }
+.ql-cell:focus { border-color: #2563EB !important; background: var(--color-surface) !important; box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15); }
+.ql-cell:disabled { color: var(--color-text-secondary); }
+.ql-add {
+  height: 28px; min-width: 0; box-sizing: border-box; padding: 0 8px; border-radius: 6px;
+  border: 1px solid var(--color-divider); background: var(--color-surface); color: var(--color-text-primary);
+  font: inherit; font-size: 13px; outline: none;
+}
+.ql-add:focus { border-color: #2563EB; box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15); }
+.ql-add::placeholder, .ql-cell::placeholder { color: #8A94A6; }
+.ql-team { background: #FFF6E0; color: #7A4F00; }
+.ql-team-cell { color: #7A4F00 !important; }
+.ql-add.ql-team-cell { background: #FFF6E0; }
+.ql-team-text { color: #7A4F00; }
+.ql-act { opacity: 0.35; }
+.ql-row:hover .ql-act, .ql-act:focus-visible, .ql-act.ql-on { opacity: 1; }
+@media (hover: none) { .ql-act { opacity: 1; } }
+
+/* Hover / focus bubbles (quotation toolbar) */
+.qtip { display: none; }
+.qtip-wrap:hover .qtip, .qtip-wrap:focus-within .qtip { display: block; }

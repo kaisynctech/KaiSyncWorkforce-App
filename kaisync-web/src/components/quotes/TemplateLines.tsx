@@ -8,7 +8,8 @@
  * Cost and margin are for the team only: shown here with a lock, never printed or shown to the client.
  */
 
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { QuoteLinesTable } from '@/components/quotes/QuoteLinesTable'
 import { cn } from '@/lib/utils'
 import { formatCurrency } from '@/lib/currencies'
 import { priceForMargin, type PickItem } from '@/lib/line-items'
@@ -62,7 +63,7 @@ const n2 = (v: string) => { const x = Number(String(v).replace(',', '.')); retur
 
 export function TemplateLines({
   template, lines, items, itemsLoading, currency, readOnly, team = true, onChange, makeLine, lineExtra,
-  contingencyPct, onContingency,
+  contingencyPct, onContingency, hideContingency, browseSignal,
 }: {
   template: QuoteTemplate
   lines: TLine[]
@@ -78,6 +79,10 @@ export function TemplateLines({
   lineExtra?: (l: TLine) => ReactNode
   contingencyPct: number
   onContingency: (pct: number) => void
+  /** The contingency % is set elsewhere (the Extras step). */
+  hideContingency?: boolean
+  /** Changes to this number open the catalogue (the "Browse catalogue" button above the lines). */
+  browseSignal?: number
 }) {
   const f = new Set(template.features)
   const showCost = team && (f.has('cost_margin') || template.columns.some(c => c.key === 'cost' && c.visible))
@@ -88,6 +93,12 @@ export function TemplateLines({
   const [newSection, setNewSection] = useState<string | null>(null)
 
   const keyOf = (l: TLine) => l.id ?? l.tempId
+  const firstSignal = useRef(browseSignal)
+  useEffect(() => {
+    if (browseSignal === undefined || browseSignal === firstSignal.current) return
+    firstSignal.current = browseSignal
+    setAdding(true)
+  }, [browseSignal])
   // Without sections in the template, lines show as one list (any section names are kept for later).
   const useSections = f.has('sections')
   const groups = useMemo(() => orderedForDisplay(lines.map(l => ({ ...engineOf(l), section: useSections ? l.section ?? null : null, line: l }))), [lines, useSections])
@@ -126,14 +137,28 @@ export function TemplateLines({
   return (
     <div className="flex flex-col gap-3">
       {lines.length === 0 && (
-        <div className="rounded-xl border border-dashed border-divider px-4 py-6 text-center">
+        <div className="md:hidden rounded-xl border border-dashed border-divider px-4 py-6 text-center">
           <p className="text-[14px] text-text-primary font-medium">Nothing on this quotation yet</p>
           <p className="text-[12.5px] text-text-secondary mt-0.5">Add from your products & stock, or write your own line.</p>
         </div>
       )}
 
+      {/* Bigger screens: one slim, editable table */}
+      <div className="hidden md:block">
+        <QuoteLinesTable template={template} lines={lines} groups={groups.map(g => ({ section: g.section, lines: g.lines.map(el => ({ key: el.key, line: el.line })) }))}
+          items={items} itemsLoading={itemsLoading} currency={currency} showCost={showCost} hasDays={hasDays} sections={sections} newSection={newSection}
+          onPatch={patch} onRemove={remove} onAdd={add} onAddOption={f.has('options') ? addOption : undefined} lineExtra={lineExtra} />
+        {!readOnly && (
+          <div className="flex flex-wrap items-center gap-4 pt-2 px-1 text-[12.5px]">
+            {f.has('sections') && <SectionButton sections={sections} current={newSection} onPick={setNewSection} compact />}
+            <span className="ml-auto text-text-secondary">Click any value to change it · ⋯ for discount and more · Enter adds the line</span>
+          </div>
+        )}
+      </div>
+
+      {/* Phone: cards */}
       {groups.map(g => (
-        <section key={g.section ?? '__none'} className="flex flex-col gap-2">
+        <section key={g.section ?? '__none'} className="flex flex-col gap-2 md:hidden">
           {g.section && (
             <div className="flex items-center justify-between gap-2 px-1 pt-1">
               <h3 className="text-[13px] font-semibold text-text-primary uppercase tracking-wide truncate">{g.section}</h3>
@@ -154,65 +179,26 @@ export function TemplateLines({
             })}
           </ul>
 
-          {/* Bigger screens: the template's columns */}
-          <div className="hidden md:block rounded-xl border border-divider overflow-x-auto">
-            <table className="w-full text-[13px]">
-              <thead className="bg-surface-elevated text-[11px] uppercase tracking-wide text-text-secondary">
-                <tr>
-                  {cols.map(c => (
-                    <th key={c.key} className={cn('px-3 py-2 font-medium whitespace-nowrap', c.key === 'item' ? 'text-left' : isNumCol(c.key) ? 'text-right' : 'text-left')}>
-                      {c.label}{c.team_only && <span className="material-icons !text-[12px] align-[-2px] ml-0.5" title="Team only">lock</span>}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {g.lines.map(el => {
-                  const l = el.line
-                  const isOpt = !!l.option_of
-                  return (
-                    <tr key={el.key} onClick={readOnly || l.is_contingency ? undefined : () => setEditing(el.key)}
-                      className={cn('border-t border-divider', !readOnly && !l.is_contingency && 'cursor-pointer hover:bg-surface-elevated', isOpt && 'bg-sky-50/40')}>
-                      {cols.map(c => (
-                        <td key={c.key} className={cn('px-3 py-2 align-top', isNumCol(c.key) ? 'text-right whitespace-nowrap' : '', c.team_only && 'text-text-secondary')}>
-                          {c.key === 'item' ? (
-                            <div className={cn('min-w-[180px]', isOpt && 'pl-4')}>
-                              {isOpt && <span className="text-[10.5px] font-semibold text-sky-700 uppercase tracking-wide block">Option for the client · not in total</span>}
-                              <span className="text-text-primary">{l.description || <i className="text-text-secondary">No description</i>}</span>
-                              {l.recurring && <span className="ml-1 text-[11px] text-emerald-700">/ {PERIOD_LABEL[l.recurring]}</span>}
-                              {l.hint && <span className="ml-1 text-[11px] text-text-secondary">{l.hint}</span>}
-                              {lineExtra?.(l) && <div className="mt-1" onClick={e => e.stopPropagation()}>{lineExtra(l)}</div>}
-                            </div>
-                          ) : cellText(c, l, currency, hasDays)}
-                        </td>
-                      ))}
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
         </section>
       ))}
 
       {!readOnly && (
-        <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => setAdding(true)} className="btn-primary h-11 px-4 text-[14px] flex-1 sm:flex-none">
-            <span className="material-icons text-[18px] mr-1">add</span>Add a line
+        <div className="md:hidden flex flex-col gap-2">
+          <button type="button" onClick={() => setAdding(true)}
+            className="h-[52px] rounded-xl border-2 border-dashed border-[#2563EB] bg-surface px-3.5 flex items-center gap-2.5 text-[15px] text-text-secondary text-left">
+            <span className="material-icons text-[#2563EB] !text-[20px]">add</span>Type to add an item
           </button>
-          <button type="button" onClick={() => { const l = add(null, 1); setEditing(keyOf(l)) }} className="btn-outlined h-11 px-4 text-[14px]">
-            Own line
-          </button>
-          {f.has('sections') && (
-            <SectionButton sections={sections} current={newSection} onPick={setNewSection} />
-          )}
+          <div className="flex flex-wrap gap-4 px-0.5 text-[13px]">
+            {f.has('sections') && <SectionButton sections={sections} current={newSection} onPick={setNewSection} compact />}
+            <button type="button" onClick={() => { const l = add(null, 1); setEditing(keyOf(l)) }} className="text-[#2563EB] font-medium">+ Own line</button>
+          </div>
         </div>
       )}
       {f.has('sections') && newSection && !readOnly && (
         <p className="text-[12px] text-text-secondary -mt-1">New lines go into <b>{newSection}</b>. <button type="button" className="text-primary" onClick={() => setNewSection(null)}>Stop</button></p>
       )}
 
-      {f.has('contingency') && !readOnly && (
+      {f.has('contingency') && !readOnly && !hideContingency && (
         <label className="flex items-center justify-between gap-3 rounded-xl border border-divider px-3 py-2 min-h-[48px]">
           <span className="text-[13.5px] text-text-primary">Contingency %</span>
           <input type="number" inputMode="decimal" min={0} max={100} value={contingencyPct || ''} placeholder="0"
@@ -240,31 +226,9 @@ export function TemplateLines({
   )
 }
 
-function isNumCol(k: string) { return ['qty', 'days', 'price', 'rate', 'total', 'cost', 'margin'].includes(k) }
-
 function unitsAndDays(l: TLine, hasDays: boolean): { units: number; days: number | null } {
   const days = hasDays ? Number(l.extra?.days) || null : null
   return { units: days ? Math.round((l.qty / days) * 100) / 100 : l.qty, days }
-}
-
-function cellText(c: TemplateColumn, l: TLine, currency: string | undefined, hasDays: boolean): ReactNode {
-  const { units, days } = unitsAndDays(l, hasDays)
-  switch (c.key) {
-    case 'qty': return units.toLocaleString('en-ZA')
-    case 'days': return days ?? '—'
-    case 'unit': return l.unit || 'each'
-    case 'price': case 'rate': return (
-      <>{money(l.unit_price, currency)}{Number(l.discount_pct) > 0 && <span className="block text-[11px] text-emerald-700">−{l.discount_pct}%</span>}</>
-    )
-    case 'total': return <b className={cn(l.option_of && 'font-normal text-text-secondary')}>{money(l.total, currency)}</b>
-    case 'cost': return Number(l.unit_cost) > 0 ? money(Number(l.unit_cost), currency) : '—'
-    case 'margin': {
-      const net = l.qty > 0 ? l.total / l.qty : 0
-      const cost = Number(l.unit_cost) || 0
-      return cost > 0 && net > 0 ? `${(((net - cost) / net) * 100).toFixed(1)}%` : '—'
-    }
-    default: return l.extra?.[c.key] || '—'
-  }
 }
 
 function LineCard({ l, cols, currency, showCost, hasDays, onOpen, extra }: {
@@ -302,14 +266,18 @@ function LineCard({ l, cols, currency, showCost, hasDays, onOpen, extra }: {
   )
 }
 
-function SectionButton({ sections, current, onPick }: { sections: string[]; current: string | null; onPick: (s: string | null) => void }) {
+function SectionButton({ sections, current, onPick, compact }: { sections: string[]; current: string | null; onPick: (s: string | null) => void; compact?: boolean }) {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
   return (
     <div className="relative">
-      <button type="button" onClick={() => setOpen(o => !o)} className="btn-outlined h-11 px-4 text-[14px]">
-        <span className="material-icons text-[18px] mr-1">segment</span>Section
-      </button>
+      {compact ? (
+        <button type="button" onClick={() => setOpen(o => !o)} className="text-[#2563EB] font-medium">{current ? `Section: ${current}` : '+ Section'}</button>
+      ) : (
+        <button type="button" onClick={() => setOpen(o => !o)} className="btn-outlined h-11 px-4 text-[14px]">
+          <span className="material-icons text-[18px] mr-1">segment</span>Section
+        </button>
+      )}
       {open && (
         <div className="absolute z-30 bottom-full mb-2 left-0 w-72 max-w-[85vw] rounded-xl border border-divider bg-surface shadow-xl p-3 flex flex-col gap-2">
           <p className="text-[12px] text-text-secondary">New lines go into the section you pick.</p>

@@ -8,7 +8,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { currencyOptions, currencyName } from '@/lib/currencies'
 
-export function CurrencyPicker({ value, onChange, homeCurrency = 'ZAR', allowDefault = true, disabled, label = 'Currency', className = '', compact = false }: {
+export function CurrencyPicker({ value, onChange, homeCurrency = 'ZAR', allowDefault = true, disabled, label = 'Currency', className = '', compact = false, bare = false }: {
   value: string | null | undefined
   onChange: (code: string | null) => void
   homeCurrency?: string
@@ -19,6 +19,8 @@ export function CurrencyPicker({ value, onChange, homeCurrency = 'ZAR', allowDef
   className?: string
   /** Smaller field and label, for compact forms (the quote header). */
   compact?: boolean
+  /** No label and no border: sits inside another box (the quotation's "Currency and rate"). */
+  bare?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
@@ -40,14 +42,15 @@ export function CurrencyPicker({ value, onChange, homeCurrency = 'ZAR', allowDef
   return (
     <div ref={box} className={`relative flex flex-col gap-1.5 ${className}`}
       onBlur={e => { if (!box.current?.contains(e.relatedTarget as Node)) setOpen(false) }}>
-      <span className={compact ? 'text-[10.5px] text-text-secondary uppercase tracking-wide -mb-0.5' : 'text-[12px] font-medium text-text-secondary'}>{label}</span>
-      <button type="button" disabled={disabled} onClick={() => setOpen(o => !o)}
-        className={`${compact ? 'h-8 px-2.5 text-[12.5px]' : 'h-10 px-3 text-[13.5px]'} rounded-lg border border-divider text-left bg-background text-text-primary flex items-center justify-between gap-2 disabled:opacity-60`}>
-        <span className="truncate">{shown}</span>
+      {!bare && <span className={compact ? 'text-[10.5px] text-text-secondary uppercase tracking-wide -mb-0.5' : 'text-[12px] font-medium text-text-secondary'}>{label}</span>}
+      <button type="button" disabled={disabled} onClick={() => setOpen(o => !o)} aria-label={bare ? label : undefined}
+        className={bare ? 'h-full px-2.5 text-[14px] font-medium text-left text-text-primary flex items-center gap-1.5 disabled:opacity-60'
+          : `${compact ? 'h-8 px-2.5 text-[12.5px]' : 'h-10 px-3 text-[13.5px]'} rounded-lg border border-divider text-left bg-background text-text-primary flex items-center justify-between gap-2 disabled:opacity-60`}>
+        <span className="truncate">{bare ? `${value ?? homeCurrency} ${currencySymbolOf(value ?? homeCurrency)}` : shown}</span>
         <span className="material-icons text-[18px] text-text-secondary">expand_more</span>
       </button>
       {open && !disabled && (
-        <div className="absolute z-30 top-full mt-1 left-0 right-0 rounded-xl border border-divider bg-surface-card shadow-xl p-2 flex flex-col gap-1.5">
+        <div className="absolute z-30 top-full mt-1 left-0 min-w-[260px] right-0 rounded-xl border border-divider bg-surface-card shadow-xl p-2 flex flex-col gap-1.5">
           <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Search: USD, euro, botswana…"
             className="h-9 rounded-lg border border-divider px-2.5 text-[13px] bg-background text-text-primary focus:outline-none focus:border-primary/60" />
           <div className="max-h-60 overflow-y-auto flex flex-col">
@@ -76,4 +79,11 @@ export function CurrencyPicker({ value, onChange, homeCurrency = 'ZAR', allowDef
       )}
     </div>
   )
+}
+
+/** The narrow symbol for a currency code ("€", "R", "$"). */
+function currencySymbolOf(code: string): string {
+  try {
+    return new Intl.NumberFormat('en-ZA', { style: 'currency', currency: code, currencyDisplay: 'narrowSymbol' }).formatToParts(0).find(p => p.type === 'currency')?.value ?? ''
+  } catch { return '' }
 }
