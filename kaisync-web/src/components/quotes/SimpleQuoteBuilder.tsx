@@ -532,7 +532,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         const qNum = (q.quote_number as string | null) ?? null
         setQuoteNumber(qNum);      quoteNumberRef.current = qNum
         setStatus((q.status as string) ?? 'draft')
-        setTitle((q.title as string) ?? '')
+        { const tt = (q.title as string) ?? ''; const clean = /^untitled quote$/i.test(tt.trim()) ? '' : tt; setTitle(clean); titleRef.current = clean }
         const cid2 = (q.client_id as string | null) ?? null
         setClientId(cid2);         clientIdRef.current = cid2
         const rep2 = (q.salesperson_id as string | null) ?? null
@@ -986,6 +986,10 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   // ── Items editor (shared with invoices) ─────────────────────────────────────
   const [pickItems, setPickItems] = useState<PickItem[]>([])
   const [pickLoading, setPickLoading] = useState(true)
+  /** Your products & stock are priced in your own currency: a quote in another currency gets them at its rate. */
+  const quoteItems: PickItem[] = foreign && bookRate && bookRate > 0
+    ? pickItems.map(i => ({ ...i, price: Math.round((i.price / bookRate) * 100) / 100, cost: i.cost ? Math.round((i.cost / bookRate) * 100) / 100 : i.cost }))
+    : pickItems
 
   // Services (with this client's agreed prices), catalogue and inventory for the picker.
   useEffect(() => {
@@ -1571,7 +1575,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
       const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' })
       const sheet = wb.Sheets[wb.SheetNames[0]]
       const table = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false, raw: true }) as unknown[][]
-      const rows = rowsFromSheet(table, pickItems)
+      const rows = rowsFromSheet(table, quoteItems)
       if (!rows.length) { setImportNote('No lines found in that file. The first row should name the columns, e.g. Item, Qty, Price.'); return }
       setImportRows(rows)
     } catch {
@@ -1579,7 +1583,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
     }
   }
   function importPasted() {
-    const rows = rowsFromText(importText, pickItems)
+    const rows = rowsFromText(importText, quoteItems)
     if (!rows.length) { setImportNote('Nothing to add. Put each item on its own line, e.g. “20 bags cement”.'); return }
     setImportNote(null); setImportRows(rows)
   }
@@ -2079,13 +2083,13 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
                       ensure={ensureQuoteBuyout} reload={reloadBuyout} onChoose={chooseForLine}
                       keep={keepMode} onKeep={rememberKeep} defaultMargin={defaultMargin} onDefaultMargin={rememberMargin} />
                   ) : template ? (
-                    <TemplateLines template={template} lines={lines} items={pickItems} itemsLoading={pickLoading} currency={quoteCurrency}
+                    <TemplateLines template={template} lines={lines} items={quoteItems} itemsLoading={pickLoading} currency={quoteCurrency}
                       readOnly={locked} onChange={next => setTemplateLines(next as SimpleQuoteLine[])} makeLine={makeTemplateLine}
                       lineExtra={askSuppliers ? (l => (l.option_of || l.is_contingency ? null : lineExtra({ key: l.tempId, description: l.description } as EditorLine))) : undefined}
                       contingencyPct={contingencyPct} onContingency={updateContingency} hideContingency browseSignal={browseSignal} />
                   ) : (
                     <div className="bg-surface border border-divider rounded-[14px] p-3">
-                      <LineItemsEditor lines={editorLines} onChange={handleEditorChange} items={pickItems} itemsLoading={pickLoading} startOpen={!initialQuoteId} currency={quoteCurrency} showCost readOnly={locked} lineExtra={lineExtra} />
+                      <LineItemsEditor lines={editorLines} onChange={handleEditorChange} items={quoteItems} itemsLoading={pickLoading} startOpen={!initialQuoteId} currency={quoteCurrency} showCost readOnly={locked} lineExtra={lineExtra} />
                     </div>
                   )}
 
