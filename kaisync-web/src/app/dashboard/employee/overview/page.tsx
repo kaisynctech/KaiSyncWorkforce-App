@@ -229,6 +229,8 @@ function asRpcArray<T>(data: unknown): T[] {
 // ── Component ──────────────────────────────────────────────────────────────
 /** How long a phone position stays good enough for a clock-in or clock-out. */
 const LOCATION_FRESH_MS = 5 * 60_000
+/** On Clock In/Out after location was already not found: wait this long, then clock without it. */
+const LOCATION_RETRY_WAIT_MS = 8_000
 
 export default function EmployeeOverviewPage() {
   const router = useRouter()
@@ -974,6 +976,10 @@ export default function EmployeeOverviewPage() {
   }
 
   async function submitClock() {
+    // The clock time is when the worker tapped, not when the phone finished looking for a location.
+    const tappedAt = new Date().toISOString()
+    // Already looked and found nothing this visit: do not make them wait the full search again.
+    const alreadyNotFound = locationState === 'not_found'
     const startFix = freshCoords()
     const locationRead = !startFix ? beginLocationRead() : null
     const empId  = empIdRef.current
@@ -1014,7 +1020,13 @@ export default function EmployeeOverviewPage() {
     let punchLat: number | null = startFix?.latitude ?? null
     let punchLng: number | null = startFix?.longitude ?? null
     if ((punchLat == null || punchLng == null) && locationRead) {
-      const located = await locationRead
+      const located: DeviceLocationResult = alreadyNotFound
+        ? await Promise.race([
+            locationRead,
+            new Promise<DeviceLocationResult>(resolve =>
+              setTimeout(() => resolve({ ok: false, reason: 'timeout' }), LOCATION_RETRY_WAIT_MS)),
+          ])
+        : await locationRead
       if (located.ok) {
         punchLat = located.latitude
         punchLng = located.longitude
@@ -1058,7 +1070,7 @@ export default function EmployeeOverviewPage() {
     const rpc = (fn: string, args: Record<string, unknown>, opts?: Record<string, unknown>) => (supabase.rpc as any)(fn, args, opts)
 
     const idempotencyKey = crypto.randomUUID()
-    const punchDateTime  = new Date().toISOString()
+    const punchDateTime  = tappedAt
     const punchType: 'in' | 'out' = isClockedIn ? 'out' : 'in'
 
     const queueAndOptimistic = (reason: string) => {
