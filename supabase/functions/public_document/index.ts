@@ -4,7 +4,8 @@
 // Body { token, action }:
 //   view    → company letterhead, client, the document, its lines, and what the client can do
 //   proof   → { file_base64, filename, mime, amount?, reference?, notes? } proof of payment for an invoice
-//   accept  → { name, choices? } accept a quote (choices: the option lines the client picked). With a deposit it
+//   accept  → { name, signature?, choices? } accept a quote (signature: PNG data URL, saved with the name;
+//             choices: the option lines the client picked). With a deposit it
 //             issues the deposit invoice, paid from the same page; otherwise a draft invoice for the office to send
 //   decline → { reason? } decline a quote
 //   ask     → { name?, body } a question about a quote; the office answers on the quote, the answer shows here
