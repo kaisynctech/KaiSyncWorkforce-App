@@ -180,7 +180,7 @@ export function buildQuotePdf(input: QuotePdfInput, into?: jsPDF): jsPDF {
 
   let y = Math.max(yL, yR) + 9
 
-  // ── Prepared for / Deliver to ──
+  // ── Client / Delivery ──
   const contact = input.contact ?? null
   const forLines = [
     contact?.name?.trim() ? `Attn: ${contact.name.trim()}` : null,
@@ -203,8 +203,8 @@ export function buildQuotePdf(input: QuotePdfInput, into?: jsPDF): jsPDF {
     font('normal', 9.5); ink(SLATE_700)
     for (const r of rows) { doc.text(r, x + 5, yy); yy += 5 }
   }
-  box(L, 'PREPARED FOR', input.client_name?.trim() || '—', forWrapped)
-  if (delivery) box(L + boxW + 6, 'DELIVER TO', null, delWrapped)
+  box(L, 'CLIENT', input.client_name?.trim() || '—', forWrapped)
+  if (delivery) box(L + boxW + 6, 'DELIVERY', null, delWrapped)
   y += boxH + 10
 
   if (input.title?.trim() && input.title.trim() !== 'Untitled quote' && input.title.trim() !== 'Untitled Quote') {
@@ -262,7 +262,7 @@ export function buildQuotePdf(input: QuotePdfInput, into?: jsPDF): jsPDF {
   let ly = y
   if (isPf) {
     doc.setDrawColor(LINE[0], LINE[1], LINE[2]); doc.roundedRect(L, ly - 4, lw, leftBlockH, 2.5, 2.5, 'S')
-    font('bold', 8); ink(accentText); doc.setCharSpace(0.6); doc.text('PAY INTO', L + 5, ly + 3); doc.setCharSpace(0)
+    font('bold', 8); ink(accentText); doc.setCharSpace(0.6); doc.text('BANK DETAILS', L + 5, ly + 3); doc.setCharSpace(0)
     ly += 9.5
     const rows: [string, string][] = bank.length ? bank : [['Banking details', 'Add them in Settings › Company']]
     rows.push(['Reference', proformaNumber(input.quote_number)])

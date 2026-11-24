@@ -89,13 +89,13 @@ export function QuoteDocumentPreview({ input }: { input: QuotePdfInput }) {
 
         <div className={`grid gap-4 ${input.delivery?.trim() ? 'sm:grid-cols-2' : ''}`}>
           <div className="bg-[#F8FAFC] rounded-lg px-3.5 py-3">
-            <div className={`${small} mb-1`} style={{ color: b.accentText }}>PREPARED FOR</div>
+            <div className={`${small} mb-1`} style={{ color: b.accentText }}>CLIENT</div>
             <b>{input.client_name?.trim() || '—'}</b>
             {forLines.map((t, i) => <div key={i}>{t}</div>)}
           </div>
           {input.delivery?.trim() && (
             <div className="bg-[#F8FAFC] rounded-lg px-3.5 py-3">
-              <div className={`${small} mb-1`} style={{ color: b.accentText }}>DELIVER TO</div>
+              <div className={`${small} mb-1`} style={{ color: b.accentText }}>DELIVERY</div>
               <div className="whitespace-pre-line">{input.delivery.trim()}</div>
             </div>
           )}
@@ -148,7 +148,7 @@ export function QuoteDocumentPreview({ input }: { input: QuotePdfInput }) {
           <div className="flex-[1_1_280px] min-w-0">
             {isPf ? (
               <div className="border border-[#E2E8F0] rounded-lg px-3.5 py-3">
-                <div className={`${small} mb-1.5`} style={{ color: b.accentText }}>PAY INTO</div>
+                <div className={`${small} mb-1.5`} style={{ color: b.accentText }}>BANK DETAILS</div>
                 <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
                   {(bank.length ? bank : [['Banking details', 'Add them in Settings › Company'] as [string, string]]).map(([k, v]) => (
                     <div key={k} className="contents"><dt className="text-[#64748B]">{k}</dt><dd>{v}</dd></div>
