@@ -27,8 +27,19 @@ export function isPlanLimit(message: string | null | undefined): boolean {
   return Boolean(message && (/the Starter limit/.test(message) || /PLAN_EMPLOYEE_LIMIT/.test(message)))
 }
 
+/**
+ * Reads never come from the browser's HTTP cache. A cached answer keeps the address it was first asked from
+ * (Access-Control-Allow-Origin), so the same read from another address (the desktop app, www vs no-www, a preview)
+ * was refused by the browser: the overview then showed no one (0 of 0) and pages hung on "Loading…".
+ */
+function noStore(init?: RequestInit): RequestInit | undefined {
+  const method = (init?.method ?? 'GET').toUpperCase()
+  if ((method !== 'GET' && method !== 'HEAD') || init?.cache) return init
+  return { ...init, cache: 'no-store' }
+}
+
 export async function readOnlyFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  const res = await fetch(input, init)
+  const res = await fetch(input, noStore(init))
   if (res.ok || res.status < 400 || res.status >= 500) return res
   const text = await res.clone().text().catch(() => '')
   const friendly = (res.status === 401 || res.status === 403 ? friendlyReadOnly(text) : null) ?? friendlyPlanLimit(text)
