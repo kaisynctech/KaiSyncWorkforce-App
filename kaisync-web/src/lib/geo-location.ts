@@ -266,6 +266,30 @@ function browserLocationSteps(): string {
   return 'KaiSync does not appear in the phone Location list. Open Settings, Apps, Chrome, Permissions, Location, and choose Allow. If Samsung Internet installed KaiSync, allow Location for Samsung Internet instead. Then reopen KaiSync and tap Try again.'
 }
 
+export type LocationPermission = 'granted' | 'prompt' | 'denied' | 'unknown'
+
+/**
+ * Has this phone already allowed location for KaiSync? Reading it does not show a prompt, so the app can
+ * fetch the place on opening when it is already allowed (and only ask from a tap when it is not).
+ */
+export async function locationPermission(): Promise<LocationPermission> {
+  try {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) return 'denied'
+    if (!navigator.permissions?.query) return 'unknown'
+    const status = await navigator.permissions.query({ name: 'geolocation' as PermissionName })
+    return status.state === 'granted' || status.state === 'prompt' || status.state === 'denied' ? status.state : 'unknown'
+  } catch {
+    return 'unknown'
+  }
+}
+
+/** Short words for the clock card and sheet when there is no place yet. */
+export function locationProblemText(reason: DeviceLocationFailure): string {
+  if (reason === 'denied') return `Location is off for KaiSync. ${deviceLocationFailureMessage(reason)} You can still clock in without it.`
+  if (reason === 'unsupported') return `${deviceLocationFailureMessage(reason)} You can still clock in without it.`
+  return 'Location not found yet. Step outside or near a window and tap Try again. You can still clock in without it.'
+}
+
 export function deviceLocationFailureMessage(reason: DeviceLocationFailure): string {
   if (reason === 'unsupported') {
     return 'This device cannot share location with KaiSync.'

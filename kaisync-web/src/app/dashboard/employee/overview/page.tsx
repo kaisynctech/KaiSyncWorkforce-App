@@ -34,6 +34,8 @@ import {
   reverseGeocodeRequired,
   looksLikeCoordinates,
   requestDeviceCoordinatesFromGesture,
+  locationPermission,
+  locationProblemText,
   type DeviceLocationResult,
 } from '@/lib/geo-location'
 import { PwaInstallButton } from '@/components/PwaInstallButton'
@@ -41,7 +43,7 @@ import { ManualTimesheetForm } from '@/components/attendance/ManualTimesheetForm
 import { loadClockPack, saveClockPack } from '@/lib/offline/clock-pack'
 import { networkLooksDown } from '@/lib/offline/meta'
 import { localISODate } from '@/lib/utils'
-import { locationDisplay, toLocalDateStr } from '@/lib/punch-session'
+import { toLocalDateStr } from '@/lib/punch-session'
 
 // ── Interfaces ─────────────────────────────────────────────────────────────
 interface LastPunch {
@@ -261,6 +263,8 @@ export default function EmployeeOverviewPage() {
   const [clockError,     setClockError]     = useState<string | null>(null)
   const [locationSearching, setLocationSearching] = useState(false)
   const [locationProblem, setLocationProblem] = useState<string | null>(null)
+  /** Before any place is known: has the phone allowed location (read on opening), is it off, or not found? */
+  const [locationState, setLocationState] = useState<'unknown' | 'needs_tap' | 'off' | 'not_found'>('unknown')
 
   // Branch geofence
   const [branchStatus, setBranchStatus] = useState<BranchGeofenceStatus | null>(null)
@@ -604,8 +608,32 @@ export default function EmployeeOverviewPage() {
         setLocationProblem(null)
         return
       }
-      setLocationProblem('No signal')
+      setLocationState(result.reason === 'denied' || result.reason === 'unsupported' ? 'off' : 'not_found')
+      setLocationProblem(locationProblemText(result.reason))
     })
+  }
+
+  /**
+   * On opening: if the phone already allows location for KaiSync, read it now (no prompt), so the card shows
+   * the place before Clock In. Otherwise say plainly that it is shared on Clock In, or that it is off.
+   */
+  async function warmLocation() {
+    if (coordsRef.current) return
+    const permission = await locationPermission()
+    if (permission === 'denied') { setLocationState('off'); return }
+    if (permission !== 'granted') { setLocationState('needs_tap'); return }
+    setLocationSearching(true)
+    const result = await beginLocationRead()
+    setLocationSearching(false)
+    if (!result.ok) setLocationState(result.reason === 'denied' || result.reason === 'unsupported' ? 'off' : 'not_found')
+  }
+
+  /** Card / sheet words when no place name is known yet. Never "No signal" for location. */
+  function locationLine(lat: number | null, lng: number | null): string {
+    if (lat != null && lng != null) return `${lat.toFixed(5)}, ${lng.toFixed(5)}`
+    if (locationState === 'off') return 'Location is off for KaiSync'
+    if (locationState === 'not_found') return 'Location not found yet'
+    return 'Location is shared when you clock in'
   }
 
   // ── Init ─────────────────────────────────────────────────────────────────
@@ -818,6 +846,7 @@ export default function EmployeeOverviewPage() {
       setLoading(false)
       syncQueue()
       void syncClockTrail()
+      void warmLocation()
     }
   }
 
@@ -868,7 +897,8 @@ export default function EmployeeOverviewPage() {
       void read.then(async result => {
         setLocationSearching(false)
         if (!result.ok) {
-          setLocationProblem('No signal')
+          setLocationState(result.reason === 'denied' || result.reason === 'unsupported' ? 'off' : 'not_found')
+          setLocationProblem(locationProblemText(result.reason))
           return
         }
         setLocationProblem(null)
@@ -968,7 +998,7 @@ export default function EmployeeOverviewPage() {
         setLocationSearching(false)
         punchLat = null
         punchLng = null
-        trail('location_failed')
+        trail('location_failed', { reason: located.reason })
       }
     }
     if (!isClockedIn && punchLat != null && punchLng != null) {
@@ -1359,7 +1389,7 @@ export default function EmployeeOverviewPage() {
                       ? 'Finding location…'
                       : (geoAddress && !looksLikeCoordinates(geoAddress)
                         ? geoAddress
-                        : locationDisplay(null, liveLat, liveLng))}
+                        : locationLine(liveLat, liveLng))}
                   </span>
                 </p>
               </div>
@@ -1611,7 +1641,7 @@ export default function EmployeeOverviewPage() {
                   <span className={`material-icons text-[14px] ${geoLat != null && geoAddress && !looksLikeCoordinates(geoAddress) ? 'text-success' : 'text-text-secondary'}`}>location_on</span>
                   {geoAddress && !looksLikeCoordinates(geoAddress)
                     ? geoAddress
-                    : locationDisplay(null, geoLat, geoLng)}
+                    : (locationProblem && geoLat == null ? locationProblem : locationLine(geoLat, geoLng))}
                 </p>
               )}
               {locationProblem && !locationSearching && (
