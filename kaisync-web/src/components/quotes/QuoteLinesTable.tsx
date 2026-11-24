@@ -7,7 +7,7 @@
  * Enter adds it. Cost and margin are shaded: only the team sees them.
  */
 
-import { Fragment, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { formatCurrency } from '@/lib/currencies'
 import { priceForMargin, type PickItem } from '@/lib/line-items'
@@ -75,12 +75,25 @@ export function QuoteLinesTable(p: LinesTableProps) {
     qty: true, days: hasDays, unit: has('unit') || !has('days'), price: true,
     cost: showCost, margin: showCost,
   }
+  // The table fits its box: on a narrow screen (a phone) the columns tighten and it scrolls sideways.
+  const boxRef = useRef<HTMLDivElement>(null)
+  const [narrow, setNarrow] = useState(false)
+  useEffect(() => {
+    const el = boxRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(([e]) => setNarrow(e.contentRect.width < 760))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  const W = narrow
+    ? { n: 24, item: 150, extra: 80, qty: 50, days: 46, unit: 58, rate: 82, cost: 74, margin: 54, total: 92, act: 50 }
+    : { n: 30, item: 180, extra: 96, qty: 62, days: 56, unit: 74, rate: 96, cost: 86, margin: 64, total: 108, act: 52 }
   // # · item · extras · qty · days · unit · rate · cost · margin · total · actions
   const grid = [
-    '30px', 'minmax(180px,1fr)', ...extras.map(() => '96px'), '62px', ...(cols.days ? ['56px'] : []), ...(cols.unit ? ['74px'] : []),
-    '96px', ...(cols.cost ? ['86px'] : []), ...(cols.margin ? ['64px'] : []), '108px', '52px',
+    `${W.n}px`, `minmax(${W.item}px,1fr)`, ...extras.map(() => `${W.extra}px`), `${W.qty}px`, ...(cols.days ? [`${W.days}px`] : []), ...(cols.unit ? [`${W.unit}px`] : []),
+    `${W.rate}px`, ...(cols.cost ? [`${W.cost}px`] : []), ...(cols.margin ? [`${W.margin}px`] : []), `${W.total}px`, `${W.act}px`,
   ].join(' ')
-  const minW = 30 + 180 + extras.length * 96 + 62 + (cols.days ? 56 : 0) + (cols.unit ? 74 : 0) + 96 + (cols.cost ? 86 : 0) + (cols.margin ? 64 : 0) + 108 + 52 + 40
+  const minW = W.n + W.item + extras.length * W.extra + W.qty + (cols.days ? W.days : 0) + (cols.unit ? W.unit : 0) + W.rate + (cols.cost ? W.cost : 0) + (cols.margin ? W.margin : 0) + W.total + W.act + 28
   const [open, setOpen] = useState<string | null>(null)
   const [undo, setUndo] = useState<{ line: TLine; at: number } | null>(null)
   let n = 0
@@ -109,11 +122,11 @@ export function QuoteLinesTable(p: LinesTableProps) {
   }
 
   return (
-    <div className="rounded-[14px] border border-divider bg-surface overflow-hidden">
+    <div ref={boxRef} className="rounded-[14px] border border-divider bg-surface overflow-hidden">
       <div className="overflow-x-auto">
-        <div style={{ minWidth: minW }} className="text-[13px]">
+        <div style={{ minWidth: minW }} className={cn(narrow ? 'text-[12.5px]' : 'text-[13px]', narrow && 'ql-narrow')}>
           {/* Header */}
-          <div className="grid items-center h-8 px-3.5 bg-surface-elevated border-b border-divider text-[11px] font-semibold uppercase tracking-[0.04em] text-text-secondary" style={{ gridTemplateColumns: grid }}>
+          <div className="ql-row ql-head grid items-center h-8 px-3.5 bg-surface-elevated border-b border-divider text-[11px] font-semibold uppercase tracking-[0.04em] text-text-secondary" style={{ gridTemplateColumns: grid }}>
             <span>#</span><span>{vis.find(c => c.key === 'item')?.label ?? 'Item'}</span>
             {extras.map(c => <span key={c.key} className="pl-1.5">{c.label}</span>)}
             <span className="text-right">{vis.find(c => c.key === 'qty')?.label ?? 'Qty'}</span>
@@ -295,7 +308,7 @@ function AddRow({ grid, extras, cols, items, loading, currency, newSection, onAd
 
   return (
     <div className="px-3.5 py-1.5 bg-primary/[0.03] border-b border-divider">
-      <div className="grid items-center" style={{ gridTemplateColumns: grid }}>
+      <div className="ql-row ql-addrow grid items-center" style={{ gridTemplateColumns: grid }}>
         <button type="button" aria-label="Add this line" onClick={commit}
           className="w-[22px] h-[22px] rounded-md bg-primary text-white flex items-center justify-center hover:bg-primary/90">
           <span className="material-icons !text-[15px]">add</span>

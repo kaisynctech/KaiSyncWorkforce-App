@@ -2,9 +2,8 @@
 
 /**
  * The lines of a quotation made from a template (piece 7, boards C–F and the phone board).
- * Phone first: each line is a card; "Add a line" opens a sheet to search your products & stock and set the
- * quantity with big + / − buttons; tapping a line opens it with only the fields its template uses ("+ more" adds
- * one for that line). On a bigger screen the same lines show as a table in the template's columns.
+ * One slim, editable table (QuoteLinesTable) on every screen size: on a narrow phone the columns tighten and the
+ * table scrolls sideways with the item column kept in view. "Browse catalogue" opens a sheet of your products & stock.
  * Cost and margin are for the team only: shown here with a lock, never printed or shown to the client.
  */
 
@@ -131,20 +130,14 @@ export function TemplateLines({
       description: `${main.description} (option)`, unit: main.unit, unit_price: main.unit_price, section: main.section ?? null,
       option_of: keyOf(main), extra: { ...(main.extra ?? {}) },
     })
-    setEditing(keyOf(l))
+    return l
   }
 
   return (
     <div className="flex flex-col gap-3">
-      {lines.length === 0 && (
-        <div className="md:hidden rounded-xl border border-dashed border-divider px-4 py-6 text-center">
-          <p className="text-[14px] text-text-primary font-medium">Nothing on this quotation yet</p>
-          <p className="text-[12.5px] text-text-secondary mt-0.5">Add from your products & stock, or write your own line.</p>
-        </div>
-      )}
 
-      {/* Bigger screens: one slim, editable table */}
-      <div className="hidden md:block">
+      {/* One slim, editable table on every screen size (it scrolls sideways on a narrow phone) */}
+      <div>
         <QuoteLinesTable template={template} lines={lines} groups={groups.map(g => ({ section: g.section, lines: g.lines.map(el => ({ key: el.key, line: el.line })) }))}
           items={items} itemsLoading={itemsLoading} currency={currency} showCost={showCost} hasDays={hasDays} sections={sections} newSection={newSection}
           onPatch={patch} onRemove={remove} onAdd={add} onAddOption={f.has('options') ? addOption : undefined} lineExtra={lineExtra} />
@@ -156,44 +149,7 @@ export function TemplateLines({
         )}
       </div>
 
-      {/* Phone: cards */}
-      {groups.map(g => (
-        <section key={g.section ?? '__none'} className="flex flex-col gap-2 md:hidden">
-          {g.section && (
-            <div className="flex items-center justify-between gap-2 px-1 pt-1">
-              <h3 className="text-[13px] font-semibold text-text-primary uppercase tracking-wide truncate">{g.section}</h3>
-              <span className="text-[13px] font-semibold text-text-primary shrink-0">{money(sectionTotal(g.lines), currency)}</span>
-            </div>
-          )}
 
-          {/* Phone: cards */}
-          <ul className="flex flex-col gap-2 md:hidden">
-            {g.lines.map(el => {
-              const l = el.line
-              return (
-                <li key={el.key}>
-                  <LineCard l={l} cols={cols} currency={currency} showCost={showCost} hasDays={hasDays}
-                    onOpen={readOnly || l.is_contingency ? undefined : () => setEditing(el.key)} extra={lineExtra?.(l)} />
-                </li>
-              )
-            })}
-          </ul>
-
-        </section>
-      ))}
-
-      {!readOnly && (
-        <div className="md:hidden flex flex-col gap-2">
-          <button type="button" onClick={() => setAdding(true)}
-            className="h-[52px] rounded-xl border-2 border-dashed border-[#2563EB] bg-surface px-3.5 flex items-center gap-2.5 text-[15px] text-text-secondary text-left">
-            <span className="material-icons text-[#2563EB] !text-[20px]">add</span>Type to add an item
-          </button>
-          <div className="flex flex-wrap gap-4 px-0.5 text-[13px]">
-            {f.has('sections') && <SectionButton sections={sections} current={newSection} onPick={setNewSection} compact />}
-            <button type="button" onClick={() => { const l = add(null, 1); setEditing(keyOf(l)) }} className="text-[#2563EB] font-medium">+ Own line</button>
-          </div>
-        </div>
-      )}
       {f.has('sections') && newSection && !readOnly && (
         <p className="text-[12px] text-text-secondary -mt-1">New lines go into <b>{newSection}</b>. <button type="button" className="text-primary" onClick={() => setNewSection(null)}>Stop</button></p>
       )}
@@ -229,41 +185,6 @@ export function TemplateLines({
 function unitsAndDays(l: TLine, hasDays: boolean): { units: number; days: number | null } {
   const days = hasDays ? Number(l.extra?.days) || null : null
   return { units: days ? Math.round((l.qty / days) * 100) / 100 : l.qty, days }
-}
-
-function LineCard({ l, cols, currency, showCost, hasDays, onOpen, extra }: {
-  l: TLine; cols: TemplateColumn[]; currency?: string; showCost: boolean; hasDays: boolean; onOpen?: () => void; extra?: ReactNode
-}) {
-  const { units, days } = unitsAndDays(l, hasDays)
-  const details = cols.filter(c => !CORE.has(c.key) && l.extra?.[c.key]).map(c => l.extra![c.key])
-  const cost = Number(l.unit_cost) || 0
-  const net = l.qty > 0 ? l.total / l.qty : 0
-  const Tag = onOpen ? 'button' : 'div'
-  return (
-    <div className={cn('rounded-xl border bg-surface-card', l.option_of ? 'border-sky-200 bg-sky-50/40 ml-4' : 'border-divider')}>
-      <Tag type={onOpen ? 'button' : undefined} onClick={onOpen} className="w-full text-left px-3.5 py-3 flex items-start gap-3 min-h-[56px]">
-        <span className="flex-1 min-w-0">
-          {l.option_of && <span className="block text-[10.5px] font-semibold text-sky-700 uppercase tracking-wide">Option for the client · not in total</span>}
-          <span className="block text-[14.5px] font-medium text-text-primary">{l.description || <i className="text-text-secondary">Tap to describe</i>}</span>
-          {details.length > 0 && <span className="block text-[12px] text-text-secondary truncate">{details.join(' · ')}</span>}
-          <span className="block text-[12.5px] text-text-secondary">
-            {units.toLocaleString('en-ZA')}{days ? ` × ${days} days` : ''} × {money(l.unit_price, currency)}
-            {Number(l.discount_pct) > 0 && <span className="text-emerald-700"> · −{l.discount_pct}%</span>}
-            {l.recurring && <span className="text-emerald-700"> · every {PERIOD_LABEL[l.recurring]}</span>}
-            {l.hint && <span> · {l.hint}</span>}
-          </span>
-          {showCost && cost > 0 && (
-            <span className="block text-[11.5px] text-text-secondary">
-              <span className="material-icons !text-[12px] align-[-2px]">lock</span> Cost {money(cost, currency)}
-              {net > 0 && ` · margin ${(((net - cost) / net) * 100).toFixed(1)}%`}
-            </span>
-          )}
-        </span>
-        <span className={cn('text-[15px] font-semibold shrink-0', l.option_of ? 'text-text-secondary' : 'text-text-primary')}>{money(l.total, currency)}</span>
-      </Tag>
-      {extra && <div className="px-3.5 pb-2.5 -mt-1">{extra}</div>}
-    </div>
-  )
 }
 
 function SectionButton({ sections, current, onPick, compact }: { sections: string[]; current: string | null; onPick: (s: string | null) => void; compact?: boolean }) {

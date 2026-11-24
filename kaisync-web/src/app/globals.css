@@ -445,3 +445,9 @@ body {
 /* Hover / focus bubbles (quotation toolbar) */
 .qtip { display: none; }
 .qtip-wrap:hover .qtip, .qtip-wrap:focus-within .qtip { display: block; }
+/* Narrow (phone): keep the # and item columns in view while the rest scrolls sideways */
+.ql-narrow .ql-row > :nth-child(1), .ql-narrow .ql-row > :nth-child(2) { position: sticky; z-index: 1; background: var(--color-surface); }
+.ql-narrow .ql-row > :nth-child(1) { left: 0; }
+.ql-narrow .ql-row > :nth-child(2) { left: 24px; box-shadow: 6px 0 6px -6px rgba(15, 23, 42, 0.18); }
+.ql-narrow .ql-head > :nth-child(1), .ql-narrow .ql-head > :nth-child(2) { background: var(--color-surface-elevated); }
+.ql-narrow .ql-addrow > :nth-child(1), .ql-narrow .ql-addrow > :nth-child(2) { background: #F8FAFF; }
