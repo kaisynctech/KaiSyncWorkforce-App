@@ -1237,8 +1237,8 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
     setSendRcpt(emptyRecipients(email))
     setSendDraft(null)
     setActionError(null)
-    // The preview reads the saved quote, so save the latest changes first.
-    if (!(await doSave())) return
+    // The preview reads the saved quote, so save the latest changes first (an accepted, locked quote has none).
+    if (!(locked ? quoteIdRef.current : await doSave())) return
     setShowSendModal(true)
   }
 
@@ -1352,7 +1352,9 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   async function handleSendWithMailto() {
     setSendBusy(true)
     setActionError(null)
-    const qid = await doSave()
+    // An accepted quote (sending its pro forma) stays accepted and is not re-saved.
+    const wasAccepted = statusRef.current === 'accepted'
+    const qid = locked ? quoteIdRef.current : await doSave()
     if (!qid) {
       setSendBusy(false)
       return
@@ -1370,8 +1372,10 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
     })
 
     if (resend.ok) {
-      setStatus('sent')
-      statusRef.current = 'sent'
+      if (!wasAccepted) {
+        setStatus('sent')
+        statusRef.current = 'sent'
+      }
       setShowSendModal(false)
       setSendBusy(false)
       const cid = clientIdRef.current

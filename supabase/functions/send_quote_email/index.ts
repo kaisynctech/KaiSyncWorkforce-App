@@ -177,7 +177,7 @@ Deno.serve(async (req: Request) => {
     const filename = (body.filename ?? `Quote_${quote.quote_number ?? "draft"}.pdf`)
       .replace(/[^\w.\-]+/g, "_");
 
-    const pdfBase64 = (body.pdf_base64 ?? "").replace(/^data:application\/pdf;base64,/, "");
+    const pdfBase64 = (body.pdf_base64 ?? "").replace(/^data:[^,]*,/, "");  // also strips jsPDF's ;filename=…
 
     const { data: company } = await admin
       .from("companies")
@@ -285,7 +285,9 @@ Deno.serve(async (req: Request) => {
       .from("commercial_quotes")
       .update({ status: "sent", sent_at: now, updated_at: now })
       .eq("id", quoteId)
-      .eq("company_id", emp.company_id);
+      .eq("company_id", emp.company_id)
+      // Emailing the pro forma of an accepted quote must not undo the acceptance.
+      .neq("status", "accepted");
 
     return json({
       ok: true,
