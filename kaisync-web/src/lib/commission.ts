@@ -25,6 +25,7 @@ const MESSAGES: Record<string, string> = {
   BAD_SETTING: 'Choose how commission is worked out and when it’s earned.',
   EMPLOYEE_NOT_FOUND: 'That person isn’t in this company.',
   UNAUTHORIZED: 'Your session has expired. Sign in again.',
+  COMMISSION_REP_LOCKED: 'Commission has been paid out on this quote, so the sales rep can’t change.',
 }
 export function commissionError(message: string | null | undefined): string {
   const m = String(message ?? '')

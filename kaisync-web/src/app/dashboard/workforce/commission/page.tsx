@@ -37,6 +37,10 @@ type Row = Omit<CommissionRow, 'status'> & { state: State; status: State }
 const R = (n: number) => formatCurrency(n, 'ZAR')
 const pct = (n: number) => `${Math.round(n * 100)}%`
 const field = 'mt-1 w-full h-12 px-3 bg-background border border-border rounded-xl text-[15px]'
+/** Someone who could be added as a rep; position and employee number tell people with the same name apart. */
+type Staff = { id: string; name: string; detail: string }
+/** Paid out more than earned so far (the quote's price or the client's payments went down after a payout). */
+const overpaid = (r: Pick<CommissionRow, 'paid_amount' | 'earned'>) => Math.max(0, Math.round((r.paid_amount - r.earned) * 100) / 100)
 type Cols = { rep: string; quote: string; client: string; bases: string[]; min: string; max: string }
 const EMPTY: Cols = { rep: '', quote: '', client: '', bases: [], min: '', max: '' }
 
@@ -45,7 +49,7 @@ export default function CommissionPage() {
   const [settings, setSettings] = useState<CommissionSettings | null>(null)
   const [reps, setReps] = useState<CommissionRep[]>([])
   const [rows, setRows] = useState<Row[] | null>(null)
-  const [staff, setStaff] = useState<{ id: string; name: string }[]>([])
+  const [staff, setStaff] = useState<Staff[]>([])
   const [tab, setTab] = useState('topay')
   const [cols, setCols] = useState<Cols>(EMPTY)
   const [search, setSearch] = useState('')
@@ -62,12 +66,15 @@ export default function CommissionPage() {
     setCompanyId(member.companyId)
     const [r, emps] = await Promise.all([
       loadCommission(supabase, member.companyId),
-      supabase.from('employees').select('id, name, surname').eq('company_id', member.companyId).eq('is_active', true).order('name').limit(5000),
+      supabase.from('employees').select('id, name, surname, position, employee_number').eq('company_id', member.companyId).eq('is_active', true).order('name').limit(5000),
     ])
     if (!r.ok) { setError(r.message); setRows([]); return }
     setError(null); setSettings(r.settings); setReps(r.reps)
     setRows(r.rows.map((x): Row => { const st = commissionState(x); return { ...x, state: st, status: st } }))
-    setStaff((emps.data ?? []).map(e => ({ id: e.id as string, name: [e.name, e.surname].filter(Boolean).join(' ') })))
+    setStaff((emps.data ?? []).map(e => ({
+      id: e.id as string, name: [e.name, e.surname].filter(Boolean).join(' ') || 'Staff member',
+      detail: [e.position, e.employee_number ? `#${e.employee_number}` : null].filter(Boolean).join(' · '),
+    })))
   }, [])
 
   useEffect(() => {
@@ -89,6 +96,7 @@ export default function CommissionPage() {
   const anyFilter = search !== '' || JSON.stringify(cols) !== JSON.stringify(EMPTY)
   const toggle = (id: string) => setPicked(p => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n })
   const activeReps = reps.filter(r => r.active).length
+  const overpaidRows = (rows ?? []).filter(r => overpaid(r) > 0)
 
   return (
     <div className="h-full flex flex-col">
@@ -113,6 +121,11 @@ export default function CommissionPage() {
       {settings && !setUp && <p className="text-[12.5px] text-amber-900 bg-amber-50 px-4 py-2 border-b border-divider">Tap Set up to choose how commission works and who your sales reps are. Then pick the sales rep on each quote.</p>}
       {error && <p className="text-[12.5px] text-error bg-error/10 px-4 py-2 border-b border-divider" role="alert">{error}</p>}
       {note && <p className="text-[12.5px] text-emerald-800 bg-emerald-50 px-4 py-2 border-b border-divider" role="status">{note}</p>}
+      {overpaidRows.length > 0 && (
+        <p className="text-[12.5px] text-amber-900 bg-amber-50 px-4 py-2 border-b border-divider" role="status">
+          {overpaidRows.length === 1 ? '1 rep has' : `${overpaidRows.length} reps have`} been paid {R(overpaidRows.reduce((s, r) => s + overpaid(r), 0))} more than they’ve earned, because a quote’s price or the client’s payments went down after a payout. Agree with the rep how it’s paid back; it isn’t taken off automatically.
+        </p>
+      )}
 
       <div className="flex-1 overflow-auto">
         {rows === null ? <p className="text-center text-[13px] text-text-secondary py-10">Loading…</p> : (
@@ -147,7 +160,10 @@ export default function CommissionPage() {
                   <td className={`${MONEY_TD} text-right`}>{pct(r.paid_share)}</td>
                   <td className={`${MONEY_TD} text-right`}>{R(r.earned)}</td>
                   <td className={`${MONEY_TD} text-right`}>{R(r.paid_amount)}</td>
-                  <td className={`${MONEY_TD} text-right font-semibold ${r.to_pay > 0 ? 'text-emerald-700' : 'text-text-secondary'}`}>{R(r.to_pay)}</td>
+                  <td className={`${MONEY_TD} text-right font-semibold ${r.to_pay > 0 ? 'text-emerald-700' : 'text-text-secondary'}`}>
+                    {R(r.to_pay)}
+                    {overpaid(r) > 0 && <span className="block text-[11px] font-semibold text-amber-700">Overpaid {R(overpaid(r))}</span>}
+                  </td>
                   <td className={MONEY_TD}><span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${STATE_BADGE[r.state]}`}>{STATE_LABEL[r.state]}</span></td>
                 </tr>
               ))}
@@ -226,19 +242,22 @@ function Choice<T extends string>({ value, options, onChange, label }: { value: 
 }
 
 function SetupSheet({ companyId, settings, reps, staff, onClose, onDone }: {
-  companyId: string; settings: CommissionSettings; reps: CommissionRep[]; staff: { id: string; name: string }[]
+  companyId: string; settings: CommissionSettings; reps: CommissionRep[]; staff: Staff[]
   onClose: () => void; onDone: (text: string) => Promise<void>
 }) {
   const [basis, setBasis] = useState<CommissionBasis>(settings.basis)
   const [earnedOn, setEarnedOn] = useState<EarnedOn>(settings.earned_on)
   const [def, setDef] = useState(settings.percent == null ? '' : String(settings.percent))
   const [list, setList] = useState(reps.map(r => ({ ...r, pctText: r.percent == null ? '' : String(r.percent) })))
-  const [adding, setAdding] = useState('')
+  const [find, setFind] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const defN = parsePercent(def)
   const bad = (defN != null && Number.isNaN(defN)) || list.some(r => { const n = parsePercent(r.pctText); return n != null && Number.isNaN(n) })
   const free = staff.filter(s => !list.some(r => r.employee_id === s.id))
+  const q = find.trim().toLowerCase()
+  const matches = q ? free.filter(s => `${s.name} ${s.detail}`.toLowerCase().includes(q)).slice(0, 8) : []
+  const addRep = (s: Staff) => { setList(l => [...l, { employee_id: s.id, name: s.name, percent: null, active: true, pctText: '' }]); setFind('') }
 
   async function save() {
     setBusy(true); setErr(null)
@@ -278,7 +297,10 @@ function SetupSheet({ companyId, settings, reps, staff, onClose, onDone }: {
         {list.length === 0 && <p className="text-[12.5px] text-text-secondary">No reps yet. Add the people who sell.</p>}
         {list.map((r, i) => (
           <div key={r.employee_id} className={cn('flex items-center gap-2 rounded-xl border border-divider px-3 py-2', !r.active && 'opacity-60')}>
-            <span className="flex-1 min-w-0 text-[14px] font-medium truncate">{r.name || 'Staff member'}</span>
+            <span className="flex-1 min-w-0">
+              <span className="block text-[14px] font-medium truncate">{r.name || 'Staff member'}</span>
+              {staff.find(x => x.id === r.employee_id)?.detail && <span className="block text-[12px] text-text-secondary truncate">{staff.find(x => x.id === r.employee_id)?.detail}</span>}
+            </span>
             <input value={r.pctText} inputMode="decimal" aria-label={`${r.name} %`} placeholder={def ? `${def}` : '%'}
               onChange={e => setList(l => l.map((x, j) => j === i ? { ...x, pctText: e.target.value } : x))}
               className="w-16 h-10 px-2 bg-background border border-border rounded-lg text-[14px] text-right" />
@@ -287,15 +309,25 @@ function SetupSheet({ companyId, settings, reps, staff, onClose, onDone }: {
               className="text-[12.5px] text-primary font-medium h-10 px-1 w-14 text-right">{r.active ? 'Remove' : 'Add back'}</button>
           </div>
         ))}
-        <div className="flex gap-2">
-          <select value={adding} onChange={e => setAdding(e.target.value)} className="flex-1 h-12 px-3 bg-background border border-border rounded-xl text-[15px]" aria-label="Add a sales rep">
-            <option value="">Add a sales rep…</option>
-            {free.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-          <button type="button" disabled={!adding} className="btn-outlined h-12 px-4 text-[14px] disabled:opacity-50" onClick={() => {
-            const s = staff.find(x => x.id === adding); if (!s) return
-            setList(l => [...l, { employee_id: s.id, name: s.name, percent: null, active: true, pctText: '' }]); setAdding('')
-          }}>Add</button>
+        <div className="flex flex-col gap-1">
+          <input value={find} onChange={e => setFind(e.target.value)} aria-label="Find someone to add as a sales rep"
+            placeholder="Add a sales rep: type a name, position or number…" className={field.replace('mt-1 ', '')} />
+          {q && (
+            <ul className="rounded-xl border border-divider divide-y divide-divider overflow-hidden" aria-label="Matching staff">
+              {matches.map(s => (
+                <li key={s.id}>
+                  <button type="button" onClick={() => addRep(s)} className="w-full text-left px-3 py-2 hover:bg-surface-elevated flex items-center gap-2">
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-[14px] font-medium text-text-primary truncate">{s.name}</span>
+                      {s.detail && <span className="block text-[12px] text-text-secondary truncate">{s.detail}</span>}
+                    </span>
+                    <span className="text-[12.5px] text-primary font-medium shrink-0">Add</span>
+                  </button>
+                </li>
+              ))}
+              {matches.length === 0 && <li className="px-3 py-2 text-[12.5px] text-text-secondary">No one matches “{find.trim()}”.</li>}
+            </ul>
+          )}
         </div>
         <p className="text-[12px] text-text-secondary">Leave a rep’s % empty to use the default. Removing a rep keeps what they’ve already earned.</p>
       </div>

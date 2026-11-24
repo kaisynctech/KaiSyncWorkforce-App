@@ -47,8 +47,26 @@ export default function MyCommissionPage() {
       {error && <p className="text-[12.5px] text-error bg-error/10 px-4 py-2 border-b border-divider" role="alert">{error}</p>}
 
       <div className="flex-1 overflow-auto">
-        {rows === null ? <p className="text-center text-[13px] text-text-secondary py-10">Loading…</p> : (
-          <table className="w-full" style={{ minWidth: 720 }}>
+        {rows === null ? <p className="text-center text-[13px] text-text-secondary py-10">Loading…</p> : (<>
+          {/* Phones: one card per quote, so nothing is cut off. */}
+          <ul className="sm:hidden divide-y divide-divider">
+            {rows.map(r => (
+              <li key={r.id} className="px-4 py-3">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-[14px] font-semibold text-text-primary">{r.quote_number ?? '—'}</span>
+                  <span className="text-[13px] text-text-secondary truncate flex-1 min-w-0">{r.client_name || r.quote_title || '—'}</span>
+                </div>
+                <p className="text-[12px] text-text-secondary mt-0.5">{howWorkedOut(r, R)} = {R(r.commission_amount)} · client paid {pct(r.paid_share)}</p>
+                <dl className="grid grid-cols-3 gap-2 mt-2 text-[12px]">
+                  <div><dt className="text-text-secondary">Earned</dt><dd className="font-medium text-text-primary">{R(r.earned)}</dd></div>
+                  <div><dt className="text-text-secondary">Paid to you</dt><dd className="font-medium text-text-primary">{R(r.paid_amount)}</dd></div>
+                  <div><dt className="text-text-secondary">Due</dt><dd className={`font-semibold ${r.to_pay > 0 ? 'text-emerald-700' : 'text-text-secondary'}`}>{R(r.to_pay)}</dd></div>
+                </dl>
+              </li>
+            ))}
+            {rows.length === 0 && <li className="text-center text-[13px] text-text-secondary py-10 px-4">No commission yet. When a quote with you as the sales rep is accepted, it shows here.</li>}
+          </ul>
+          <table className="w-full hidden sm:table" style={{ minWidth: 720 }}>
             <thead className="sticky top-0 z-10">
               <tr className="bg-surface-elevated border-b border-divider">
                 <th className={`${MONEY_TH} text-left`}>Quote</th>
@@ -79,12 +97,12 @@ export default function MyCommissionPage() {
               )}
             </tbody>
           </table>
-        )}
+        </>)}
 
         {payments.length > 0 && (
           <>
             <p className="px-4 pt-4 pb-1 text-[12px] font-semibold text-text-primary">Payments to you</p>
-            <table className="w-full" style={{ minWidth: 420 }}>
+            <table className="w-full">
               <thead>
                 <tr className="bg-surface-elevated border-y border-divider">
                   <th className={`${MONEY_TH} text-left`}>Date</th>

@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
-import { repOptions } from '@/lib/commission'
+import { repOptions, commissionError } from '@/lib/commission'
 import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { createProject } from '@/lib/projects'
 import { createJob } from '@/lib/jobs'
@@ -162,6 +162,10 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   const [salesRep,    setSalesRep]    = useState<string | null>(null)
   const [repList,     setRepList]     = useState<{ id: string; name: string | null }[]>([])
   const [repNote,     setRepNote]     = useState<string | null>(null)
+  // Rep whose commission on this quote has been (partly) paid out: the rep can't change any more.
+  const [paidRepId,   setPaidRepId]   = useState<string | null>(null)
+  const paidRepRef = useRef<string | null>(null)
+  useEffect(() => { paidRepRef.current = paidRepId }, [paidRepId])
   // Quotation template (piece 7). null: a quotation from before templates, which looks and works as before.
   const [templates,   setTemplates]   = useState<QuoteTemplate[]>([])
   const [templateId,  setTemplateId]  = useState<string | null>(null)
@@ -340,6 +344,18 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
     return () => { live = false }
   }, [companyId])
   useEffect(() => { lockedRef.current = locked }, [locked])
+  // Has commission been paid out on this quote? (Readable by HR and above; others are stopped by the database.)
+  useEffect(() => {
+    if (!companyId || !quoteId) return
+    let live = true
+    void supabase.from('commissions').select('employee_id, paid_amount').eq('quote_id', quoteId).eq('company_id', companyId).maybeSingle()
+      .then(({ data }) => {
+        if (!live) return
+        const r = data as { employee_id: string; paid_amount: number | string } | null
+        setPaidRepId(r && Number(r.paid_amount) > 0 ? r.employee_id : null)
+      })
+    return () => { live = false }
+  }, [companyId, quoteId, status]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (status !== 'accepted' || !companyId || !quoteId) return
     let live = true
@@ -726,6 +742,12 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
 
     } catch (err) {
       console.error('Quote save failed', err)
+      // The rep was changed after commission was paid out: put the paid rep back and say why.
+      const msg = String((err as { message?: string } | null)?.message ?? '')
+      if (msg.includes('COMMISSION_REP_LOCKED')) {
+        setSalesRep(paidRepRef.current); salesRepRef.current = paidRepRef.current
+        setRepNote(commissionError(msg))
+      }
       setSaveState('error')
       return null
     }
@@ -774,11 +796,17 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
     setClientSearch(name); scheduleAutoSave()
   }
   async function updateSalesRep(v: string | null) {
+    const prevRep = salesRepRef.current
     setSalesRep(v); salesRepRef.current = v; setRepNote(null)
     // An accepted quote is locked, so the rep is saved on its own (that's when commission is worked out).
     if (locked && quoteIdRef.current && companyIdRef.current) {
       const { error } = await createClient().from('commercial_quotes').update({ salesperson_id: v, updated_at: new Date().toISOString() })
         .eq('id', quoteIdRef.current).eq('company_id', companyIdRef.current)
+      if (error && error.message.includes('COMMISSION_REP_LOCKED')) {
+        setSalesRep(prevRep); salesRepRef.current = prevRep
+        setRepNote(commissionError(error.message))
+        return
+      }
       setRepNote(error ? 'The sales rep could not be saved. Try again.' : 'Sales rep saved. Their commission is worked out now.')
       return
     }
@@ -1819,12 +1847,17 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
                 id="quote-sales-rep"
                 value={salesRep ?? ''}
                 onChange={e => void updateSalesRep(e.target.value || null)}
-                className="w-full h-8 rounded-lg border border-divider bg-surface px-2.5 text-[12.5px] text-text-primary focus:outline-none focus:border-primary transition-colors"
+                disabled={!!paidRepId && paidRepId === salesRep}
+                aria-describedby={paidRepId && paidRepId === salesRep ? 'quote-sales-rep-paid' : undefined}
+                className="w-full h-8 rounded-lg border border-divider bg-surface px-2.5 text-[12.5px] text-text-primary focus:outline-none focus:border-primary transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <option value="">No commission</option>
                 {salesRep && !repList.some(r => r.id === salesRep) && <option value={salesRep}>Current rep (no longer a sales rep)</option>}
                 {repList.map(r => <option key={r.id} value={r.id}>{r.name ?? 'Staff member'}</option>)}
               </select>
+              {paidRepId && paidRepId === salesRep && !repNote && (
+                <p id="quote-sales-rep-paid" className="text-[11.5px] text-text-secondary mt-1">Commission has been paid out on this quote, so the rep can’t change.</p>
+              )}
               {repNote && <p className="text-[11.5px] text-text-secondary mt-1" role="status">{repNote}</p>}
             </div>
           )}
