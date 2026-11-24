@@ -25,11 +25,16 @@ const EXTRA_KNOWN: { key: string; label: string }[] = [
 const UNITS = ['each', 'job', 'hour', 'day', 'm', 'm²', 'm³', 'kg', 'litre', 'set', 'lot', 'box', 'bag', 'pack', 'trip', 'person']
 
 /** A number box that keeps what you type until you leave it (so "1," doesn't jump to "1"). */
-function NumBox({ value, onCommit, label, className, placeholder, disabled }: {
+function NumBox({ value, onCommit, label, className, placeholder, disabled, money }: {
   value: number | null; onCommit: (n: number | null) => void; label: string; className?: string; placeholder?: string; disabled?: boolean
+  /** Show as an amount: 1 800,00. */
+  money?: boolean
 }) {
   const [text, setText] = useState<string | null>(null)
-  const shown = text ?? (value == null || Number.isNaN(value) ? '' : String(value))
+  const plain = value == null || Number.isNaN(value) ? '' : money
+    ? value.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : value.toLocaleString('en-ZA', { maximumFractionDigits: 2 })
+  const shown = text ?? plain
   return (
     <input inputMode="decimal" aria-label={label} value={shown} placeholder={placeholder} disabled={disabled}
       onFocus={e => { setText(shown); e.currentTarget.select() }}
@@ -157,7 +162,6 @@ export function QuoteLinesTable(p: LinesTableProps) {
                             {[l.recurring ? `every ${PERIOD_LABEL[l.recurring]}` : null, Number(l.discount_pct) > 0 ? `−${l.discount_pct}% discount` : null, l.hint].filter(Boolean).join(' · ')}
                           </span>
                         )}
-                        {extraNode && <div className="mt-1 pl-1.5">{extraNode}</div>}
                       </span>
                       {extras.map(c => (
                         <span key={c.key} className="pr-1.5">
@@ -174,10 +178,10 @@ export function QuoteLinesTable(p: LinesTableProps) {
                             className="ql-cell w-full text-text-secondary" />
                         </span>
                       )}
-                      <span className="pl-1.5"><NumBox label={priceCol?.label ?? 'Rate'} value={l.unit_price} disabled={contingency} onCommit={v => p.onPatch(el.key, { unit_price: Math.max(0, v ?? 0) })} /></span>
+                      <span className="pl-1.5"><NumBox money label={priceCol?.label ?? 'Rate'} value={l.unit_price} disabled={contingency} onCommit={v => p.onPatch(el.key, { unit_price: Math.max(0, v ?? 0) })} /></span>
                       {cols.cost && (
                         <span className="ql-team h-full flex items-center px-1">
-                          <NumBox label="Cost (team only)" value={l.unit_cost ?? null} disabled={contingency} placeholder="—"
+                          <NumBox money label="Cost (team only)" value={l.unit_cost ?? null} disabled={contingency} placeholder="—"
                             onCommit={v => p.onPatch(el.key, { unit_cost: v && v > 0 ? v : null })} className="ql-team-cell" />
                         </span>
                       )}
@@ -189,7 +193,7 @@ export function QuoteLinesTable(p: LinesTableProps) {
                         </span>
                       )}
                       <span className="pl-1.5">
-                        <NumBox label="Total" value={Math.round(l.total * 100) / 100} disabled={contingency} onCommit={v => { if (v != null) setTotal(l, v) }}
+                        <NumBox money label="Total" value={Math.round(l.total * 100) / 100} disabled={contingency} onCommit={v => { if (v != null) setTotal(l, v) }}
                           className={cn('font-semibold', opt && 'font-normal text-text-secondary')} />
                       </span>
                       <span className="flex items-center justify-end gap-0.5">
@@ -208,7 +212,7 @@ export function QuoteLinesTable(p: LinesTableProps) {
                       </span>
                     </div>
                     {isOpen && (
-                      <LineMore line={l} template={template} sections={p.sections} hasDays={hasDays}
+                      <LineMore line={l} template={template} sections={p.sections} hasDays={hasDays} supply={extraNode}
                         onPatch={x => p.onPatch(el.key, x)} onAddOption={p.onAddOption && !opt && f.has('options') ? () => { p.onAddOption!(l); setOpen(null) } : undefined}
                         onClose={() => setOpen(null)} />
                     )}
@@ -249,7 +253,9 @@ function AddRow({ grid, extras, cols, items, loading, currency, newSection, onAd
   const [ex, setEx] = useState<Record<string, string>>({})
   const [drop, setDrop] = useState(false)
   const [hi, setHi] = useState(0)
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
   const itemRef = useRef<HTMLInputElement>(null)
+  const place = () => { const r = itemRef.current?.getBoundingClientRect(); if (r) setPos({ top: r.bottom + 4, left: r.left }) }
   const list = useMemo(() => {
     const t = text.trim().toLowerCase()
     if (!t || pick) return []
@@ -296,8 +302,8 @@ function AddRow({ grid, extras, cols, items, loading, currency, newSection, onAd
         </button>
         <span className="relative pr-2">
           <input ref={itemRef} aria-label="Item: type or search" value={text} placeholder={loading ? 'Loading your items…' : 'Type or search an item'}
-            onChange={e => { setText(e.target.value); setPick(null); setDrop(true); setHi(0) }}
-            onFocus={() => setDrop(true)} onBlur={() => window.setTimeout(() => setDrop(false), 150)}
+            onChange={e => { setText(e.target.value); setPick(null); setDrop(true); setHi(0); place() }}
+            onFocus={() => { setDrop(true); place() }} onBlur={() => window.setTimeout(() => setDrop(false), 150)}
             onKeyDown={e => {
               if (drop && list.length && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) { e.preventDefault(); setHi(h => (h + (e.key === 'ArrowDown' ? 1 : list.length - 1)) % list.length); return }
               if (e.key === 'Enter' && drop && list.length) { e.preventDefault(); choose(list[hi]); return }
@@ -305,8 +311,8 @@ function AddRow({ grid, extras, cols, items, loading, currency, newSection, onAd
               onKey(e)
             }}
             className="ql-add w-full" />
-          {drop && text.trim() && !pick && (
-            <div className="absolute left-0 top-full mt-1 z-30 w-[min(420px,80vw)] rounded-[10px] border border-divider bg-surface shadow-[0_12px_28px_rgba(15,23,42,0.16)] overflow-hidden">
+          {drop && text.trim() && !pick && pos && (
+            <div style={{ position: 'fixed', top: pos.top, left: pos.left }} className="z-50 w-[min(420px,80vw)] max-h-[320px] overflow-y-auto rounded-[10px] border border-divider bg-surface shadow-[0_12px_28px_rgba(15,23,42,0.16)] overflow-hidden">
               {list.map((i, ix) => (
                 <button key={i.key} type="button" onMouseDown={e => { e.preventDefault(); choose(i) }}
                   className={cn('w-full text-left flex items-center gap-3 px-3 py-2 border-b border-divider', ix === hi && 'bg-primary/5')}>
@@ -342,8 +348,8 @@ function AddRow({ grid, extras, cols, items, loading, currency, newSection, onAd
 }
 
 /** The line's extras, in a row under it: discount, repeats, section, other fields, an option for the client. */
-function LineMore({ line, template, sections, onPatch, onAddOption, onClose }: {
-  line: TLine; template: QuoteTemplate; sections: string[]; hasDays: boolean
+function LineMore({ line, template, sections, supply, onPatch, onAddOption, onClose }: {
+  line: TLine; template: QuoteTemplate; sections: string[]; hasDays: boolean; supply?: ReactNode
   onPatch: (p: Partial<TLine>) => void; onAddOption?: () => void; onClose: () => void
 }) {
   const f = new Set(template.features)
@@ -354,6 +360,7 @@ function LineMore({ line, template, sections, onPatch, onAddOption, onClose }: {
   const box = 'h-9 px-2.5 rounded-lg border border-divider bg-surface text-[13px] text-text-primary'
   return (
     <div className="px-3.5 py-3 border-b border-divider bg-surface-elevated/60 flex flex-wrap items-end gap-3 text-[12px] text-text-secondary">
+      {supply && <div className="flex flex-col gap-1">How it’s supplied<div className="min-h-9 flex items-center">{supply}</div></div>}
       <label className="flex flex-col gap-1">Discount %
         <input type="number" inputMode="decimal" min={0} max={100} value={line.discount_pct || ''} placeholder="0" className={cn(box, 'w-24 text-right')}
           onChange={e => onPatch({ discount_pct: Math.min(100, Math.max(0, n2(e.target.value))) || null })} />

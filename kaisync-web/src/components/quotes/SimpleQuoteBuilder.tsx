@@ -252,7 +252,12 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   const [dataLoaded, setDataLoaded] = useState(!initialQuoteId)
 
   // ── The four steps (who · what · extras · check and send) ──
-  const [step, setStep] = useState<1 | 2 | 3 | 4>(initialQuoteId ? 2 : 1)
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(() => {
+    const s = Number(searchParams.get('step'))
+    return s >= 1 && s <= 4 ? (s as 1 | 2 | 3 | 4) : initialQuoteId ? 2 : 1
+  })
+  const stepRef = useRef(step)
+  useEffect(() => { stepRef.current = step }, [step])
   const [docKind, setDocKind] = useState<'quote' | 'proforma'>('quote')
   const docKindRef = useRef<'quote' | 'proforma'>('quote')
   const [browseSignal, setBrowseSignal] = useState(0)
@@ -727,7 +732,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         // New quote — update state + URL
         setQuoteId(savedId)
         quoteIdRef.current = savedId
-        router.replace(`/dashboard/money/quotes/${savedId}`)
+        router.replace(`/dashboard/money/quotes/${savedId}?step=${stepRef.current}`)
       }
 
       if (overrideStatus) {
@@ -1282,8 +1287,11 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
       client_address: headerValuesRef.current.site_address?.trim() || null,
       client_vat: headerValuesRef.current[HV.clientVat]?.trim() || null,
       delivery: headerValuesRef.current[HV.delivery]?.trim() || null,
-      rate_note: quoteCurrencyRef.current && quoteCurrencyRef.current !== homeCurrency && Number(fxRate.replace(',', '.')) > 0
-        ? `Amounts in ${quoteCurrencyRef.current}; ${formatCurrency(Number(fxRate.replace(',', '.')), homeCurrency)} per ${quoteCurrencyRef.current} used.` : null,
+      rate_note: (() => {
+        const c = quoteCurrencyRef.current
+        const r = Number(fxRate.replace(',', '.')) > 0 ? Number(fxRate.replace(',', '.')) : dailyRate
+        return c && c !== homeCurrency && r && r > 0 ? `Amounts in ${c}; ${formatCurrency(r, homeCurrency)} per ${c} used.` : null
+      })(),
       lines: (tpl ? orderedForDisplay(linesRef.current.map(l => ({ ...engineOf(l), section: tpl.features.includes('sections') ? l.section ?? null : null, line: l }))).flatMap(g => g.lines.map(e => e.line)) : linesRef.current).map(l => ({
         description: l.description,
         qty: l.qty,
@@ -1597,7 +1605,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   const shownVat = template && tTotals ? tTotals.vat : vat
   const STEPS: [1 | 2 | 3 | 4, string][] = [[1, 'Who it’s for'], [2, 'What you’re quoting'], [3, 'Extras'], [4, 'Check and send']]
   const label = 'flex flex-col gap-1.5'
-  const labText = 'text-[12.5px] font-semibold text-text-secondary h-[18px] flex items-center justify-between gap-2'
+  const labText = 'text-[12.5px] font-semibold text-text-secondary h-[18px] whitespace-nowrap flex items-center justify-between gap-2'
   const field = 'h-11 w-full box-border rounded-[10px] border border-divider bg-surface-elevated px-3 text-[14px] font-medium text-text-primary focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/15 disabled:opacity-60'
   const optionalTag = <span className="text-[11px] font-medium text-text-secondary bg-[#EEF1F6] px-[7px] rounded-full leading-[18px]">Optional</span>
   const groupHead = (title: string, text: string) => (
@@ -1607,8 +1615,13 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   const showDeposit = !!template?.features.includes('deposit')
   const showContingency = !!template?.features.includes('contingency')
   const showProfit = !template || template.features.includes('cost_margin')
-  const cost = lines.filter(l => !l.option_of && !l.is_contingency).reduce((s, l) => s + (Number(l.unit_cost) || 0) * l.qty, 0)
-  const profitPct = shownSubtotal > 0 && cost > 0 ? ((shownSubtotal - cost) / shownSubtotal) * 100 : null
+  // Profit only over lines that have a cost (a line without one would look like 100% profit).
+  const counted = lines.filter(l => !l.option_of && !l.is_contingency)
+  const costed = counted.filter(l => Number(l.unit_cost) > 0)
+  const costedSell = costed.reduce((s, l) => s + l.total, 0)
+  const costedCost = costed.reduce((s, l) => s + (Number(l.unit_cost) || 0) * l.qty, 0)
+  const profitPct = costedSell > 0 ? ((costedSell - costedCost) / costedSell) * 100 : null
+  const noCost = counted.length - costed.length
 
   const totalsPanel = (next: string | null, onNext: () => void) => (
     <aside className="flex-[1_1_240px] lg:max-w-[260px] w-full lg:w-auto bg-surface border border-divider rounded-[14px] p-3.5 flex flex-col gap-[9px] text-[13px] lg:sticky lg:top-4">
@@ -1627,7 +1640,10 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         <div key={pr} className="flex justify-between text-text-secondary"><span>Every {PERIOD_LABEL[pr as RecurringPeriod]}</span><span>{formatCurrency(amt as number, quoteCurrency)}</span></div>
       ))}
       {showProfit && profitPct != null && (
-        <div className="flex justify-between rounded-lg px-[9px] py-[7px] text-[12px] bg-[#FFF6E0] text-[#7A4F00]"><span>Profit (team only)</span><span className="font-semibold">{profitPct.toFixed(1)}%</span></div>
+        <div className="rounded-lg px-[9px] py-[7px] text-[12px] bg-[#FFF6E0] text-[#7A4F00]">
+          <div className="flex justify-between"><span>Profit (team only)</span><span className="font-semibold">{profitPct.toFixed(1)}%</span></div>
+          {noCost > 0 && <div className="text-[11px] opacity-80">{noCost} line{noCost === 1 ? '' : 's'} without a cost not counted</div>}
+        </div>
       )}
       {next && <button type="button" onClick={onNext} className="h-11 mt-1 rounded-[10px] bg-[#2563EB] text-white text-[13.5px] font-semibold hover:bg-[#1D4ED8]">{next}</button>}
       <button type="button" onClick={() => goStep((step - 1) as 1 | 2 | 3)} className="h-9 rounded-[10px] text-[#2563EB] text-[13px] font-medium">Back</button>
@@ -1853,7 +1869,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
               <div className="grid sm:grid-cols-3 gap-4 items-end">
                 <div className="relative">
                   <label className={label}>
-                    <span className={labText}>Contact person{contacts.length > 0 && <span className="font-medium text-[11px]">{contacts.length} at {clientName.split(' (')[0] || 'this customer'}</span>}</span>
+                    <span className={labText}>Contact person{contacts.length > 0 && <span className="font-medium text-[11px] whitespace-nowrap">{contacts.length} saved</span>}</span>
                     <span className="relative">
                       <input type="text" value={contactName} placeholder={clientId ? 'Pick or type a name' : 'Type a name'} autoComplete="off"
                         onChange={e => updateHeader(HV.contactName, e.target.value)} onFocus={() => setContactOpen(true)} onBlur={() => setTimeout(() => setContactOpen(false), 160)}
@@ -1978,7 +1994,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         {/* ── STEPS 2 & 3 · wide content, slim totals ── */}
         {(step === 2 || step === 3) && (
           <div className="flex gap-4 flex-wrap items-start">
-            <div className="flex-[999_1_760px] min-w-0 flex flex-col gap-3">
+            <div className="flex-[999_1_600px] min-w-0 flex flex-col gap-3">
               {step === 2 && (
                 <>
                   <div className="bg-surface border border-divider rounded-[14px] px-3.5 py-2.5 flex items-center gap-2.5 flex-wrap text-[13px] text-text-secondary">
@@ -2127,7 +2143,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         {/* ── STEP 4 · the real document left, send options right ── */}
         {step === 4 && (
           <div className="flex gap-5 flex-wrap items-start">
-            <div className="flex-[999_1_720px] min-w-0 bg-[#E6EAF1] rounded-2xl px-3 sm:px-6 pt-[18px] pb-7 flex flex-col gap-4 items-center">
+            <div className="flex-[999_1_560px] min-w-0 bg-[#E6EAF1] rounded-2xl px-3 sm:px-6 pt-[18px] pb-7 flex flex-col gap-4 items-center">
               <div role="tablist" aria-label="Which document" className="flex gap-1 p-1 rounded-xl bg-surface border border-divider">
                 {([['quote', 'Quotation'], ['proforma', 'Pro forma invoice']] as const).map(([k, lab]) => (
                   <button key={k} type="button" role="tab" aria-selected={docKind === k} onClick={() => { setDocKind(k); docKindRef.current = k }}
@@ -2136,7 +2152,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
               </div>
               <QuoteDocumentPreview input={buildPdfInput()} />
             </div>
-            <aside className="flex-[1_1_280px] lg:max-w-[320px] w-full bg-surface border border-divider rounded-2xl p-[18px] flex flex-col gap-3 lg:sticky lg:top-4">
+            <aside className="flex-[1_1_260px] lg:max-w-[300px] w-full bg-surface border border-divider rounded-2xl p-[18px] flex flex-col gap-3 lg:sticky lg:top-4">
               <span className="text-[16px] font-semibold">Looks right? Send it.</span>
               <span className="text-[12.5px] text-text-secondary -mt-1.5">Sending the {docKind === 'quote' ? 'quotation' : 'pro forma invoice'}{contactName ? ` to ${contactName}` : clientName ? ` to ${clientName}` : ''}</span>
               {status !== 'accepted' && status !== 'declined' || docKind === 'proforma' ? (
