@@ -60,7 +60,23 @@ export async function insertQueuedPunch(
  * They upload when their own worker signs in on this phone.
  * Stops at the first failure so this worker's clock-ins stay in order.
  */
-export async function flushQueuedPunchesFor(
+export function flushQueuedPunchesFor(
+  supabase: SupabaseClient,
+  employeeId: string,
+  sessionToken: string | null,
+): Promise<{ flushed: number; error: string | null }> {
+  // The overview, the offline banner and the "back online" event can all start a sync at once:
+  // share one run per worker so each saved clock-in is sent (and logged) once.
+  const running = punchFlights.get(employeeId)
+  if (running) return running
+  const run = flushQueuedPunchesNow(supabase, employeeId, sessionToken).finally(() => punchFlights.delete(employeeId))
+  punchFlights.set(employeeId, run)
+  return run
+}
+
+const punchFlights = new Map<string, Promise<{ flushed: number; error: string | null }>>()
+
+async function flushQueuedPunchesNow(
   supabase: SupabaseClient,
   employeeId: string,
   sessionToken: string | null,

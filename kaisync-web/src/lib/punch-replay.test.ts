@@ -99,4 +99,12 @@ describe('isSessionAuthError', () => {
     expect(isSessionAuthError('You are on approved leave today')).toBe(false)
     expect(isSessionAuthError(null)).toBe(false)
   })
+
+  it('sends each saved clock-in once when several syncs start together', async () => {
+    enqueue(punch('b1', 'B'))
+    const { client, calls } = fakeSupabase({ tokB: 'B' })
+    await Promise.all([flushQueuedPunchesFor(client, 'B', 'tokB'), flushQueuedPunchesFor(client, 'B', 'tokB')])
+    expect(calls.map(c => c.key)).toEqual(['b1'])
+    expect(getQueue()).toEqual([])
+  })
 })

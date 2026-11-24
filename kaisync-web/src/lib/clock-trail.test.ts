@@ -52,4 +52,15 @@ describe('clock-in trail', () => {
     await expect(logClockStep(client, who, 'failed', {}, 'boom')).resolves.toBeUndefined()
     expect(pendingClockTrail()).toBe(1)
   })
+
+  it('sends kept steps once even when several syncs start together', async () => {
+    setOnline(false)
+    const { client, calls } = fakeClient()
+    await logClockStep(client, who, 'tap')
+    await logClockStep(client, who, 'saved_on_phone')
+    setOnline(true)
+    await Promise.all([flushClockTrail(client, 'e1', 't'), flushClockTrail(client, 'e1', 't'), flushClockTrail(client, 'e1', 't')])
+    expect(calls.map(c => c.p_action)).toEqual(['tap', 'saved_on_phone'])
+    expect(pendingClockTrail()).toBe(0)
+  })
 })

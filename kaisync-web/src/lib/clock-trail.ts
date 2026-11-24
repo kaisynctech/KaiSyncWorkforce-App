@@ -120,7 +120,18 @@ export async function logClockStep(
  * Send this worker's kept steps (oldest first). Other workers' steps on a shared phone stay until they sign in.
  * Stops at the first failure so the order is kept.
  */
-export async function flushClockTrail(s: SupabaseClient, employeeId: string, sessionToken: string | null): Promise<number> {
+export function flushClockTrail(s: SupabaseClient, employeeId: string, sessionToken: string | null): Promise<number> {
+  // Several parts of the app sync when the signal returns: one send at a time, or the same steps go up twice.
+  const running = trailFlights.get(employeeId)
+  if (running) return running
+  const run = flushClockTrailNow(s, employeeId, sessionToken).finally(() => trailFlights.delete(employeeId))
+  trailFlights.set(employeeId, run)
+  return run
+}
+
+const trailFlights = new Map<string, Promise<number>>()
+
+async function flushClockTrailNow(s: SupabaseClient, employeeId: string, sessionToken: string | null): Promise<number> {
   const all = readTrail()
   const mine = all.filter(i => i.employee_id === employeeId)
   let sent = 0
