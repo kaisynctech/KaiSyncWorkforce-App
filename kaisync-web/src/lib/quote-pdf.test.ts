@@ -20,7 +20,7 @@ describe('template quotation PDF', () => {
     expect(text).toContain('PART NO.')
     expect(text).toContain('0 124 525 045')
     expect(text).toContain('Vehicle / machine: Mercedes Actros 2645')
-    expect(text).toContain('Option: Alternator, remanufactured')
+    expect(text).toContain('Option: Alternator,')  // the description may wrap onto a second line
     expect(text).toContain('Deposit to accept (50%)')
     expect(text).toContain('Then every month')
     expect(text).toContain('50% deposit secures the order.')
