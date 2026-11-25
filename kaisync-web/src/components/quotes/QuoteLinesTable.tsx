@@ -368,7 +368,8 @@ function LineMore({ line, template, sections, supply, onPatch, onAddOption, onCl
   const f = new Set(template.features)
   const templateExtra = template.columns.filter(c => c.visible && !CORE.has(c.key)).map(c => c.key)
   const own = Object.keys(line.extra ?? {}).filter(k => !['days', 'units'].includes(k) && !templateExtra.includes(k))
-  const more = EXTRA_KNOWN.filter(e => !templateExtra.includes(e.key) && !own.includes(e.key))
+  // Classic (no template) keeps it simple: only a note can be added to a line.
+  const more = EXTRA_KNOWN.filter(e => (template.id || e.key === 'note') && !templateExtra.includes(e.key) && !own.includes(e.key))
   const setExtra = (k: string, v: string) => onPatch({ extra: { ...(line.extra ?? {}), [k]: v } })
   const box = 'h-9 px-2.5 rounded-lg border border-divider bg-surface text-[13px] text-text-primary'
   return (

@@ -10,7 +10,7 @@ import { resolveCurrentMember } from '@/lib/supabase/resolve-company'
 import { createProject } from '@/lib/projects'
 import { createJob } from '@/lib/jobs'
 import { createSupplyRfqFromQuote } from '@/lib/supply-rfq'
-import { downloadQuotePdf, openQuoteMailto, quotePdfBase64 } from '@/lib/quote-pdf'
+import { downloadQuotePdf, openQuoteMailto, proformaNumber, quotePdfBase64 } from '@/lib/quote-pdf'
 import { previewQuoteEmail, sendQuoteEmailViaResend } from '@/lib/send-quote-email'
 import { EmailComposer } from '@/components/email/EmailComposer'
 import { draftEdits, type EmailDraft } from '@/lib/email-preview'
@@ -1244,6 +1244,15 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
     setShowSendModal(false)
   }
 
+  /** The pro forma email's own subject and message (the quote's wording doesn't fit it). */
+  function pfSubject() {
+    const t = titleRef.current.trim()
+    return `Pro forma invoice ${proformaNumber(quoteNumberRef.current)}${t && !/^untitled quote$/i.test(t) ? ` – ${t}` : ''}`
+  }
+  function pfBody() {
+    return `Please find attached our pro forma invoice ${proformaNumber(quoteNumberRef.current)} for quotation ${quoteNumberRef.current ?? ''}. Our banking details are on it; please use ${proformaNumber(quoteNumberRef.current)} as the payment reference.\n\nIf you have any questions, simply reply to this email.`
+  }
+
   function buildPdfInput() {
     const tpl = templates.find(t => t.id === templateIdRef.current) ?? null
     const client = chosenClient?.id === clientIdRef.current ? chosenClient : clients.find(c => c.id === clientIdRef.current)
@@ -1335,7 +1344,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
       cc: sendRcpt.cc,
       bodyText: draftEdits(sendDraft).body_text,
       filename: pdf.kind !== 'proforma' && attachProformaRef.current ? `Quote_and_ProForma_${(pdf.quote_number || 'draft').replace(/[^\w.-]+/g, '_')}.pdf` : pdf.kind === 'proforma' ? `ProForma_${(pdf.quote_number || 'draft').replace(/^QU/i, 'PF').replace(/[^\w.-]+/g, '_')}.pdf` : `Quote_${(pdf.quote_number || 'draft').replace(/[^\w.-]+/g, '_')}.pdf`,
-      subject: draftEdits(sendDraft).subject ?? `Quote ${pdf.quote_number ?? ''} – ${pdf.title || 'Quotation'}`.trim(),
+      subject: draftEdits(sendDraft).subject ?? (pdf.kind === 'proforma' ? pfSubject() : `Quote ${pdf.quote_number ?? ''} – ${pdf.title || 'Quotation'}`.trim()),
     })
 
     if (resend.ok) {
@@ -2181,12 +2190,14 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
       {showSendModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="relative bg-surface rounded-xl shadow-2xl w-full max-w-xl mx-4 p-6 max-h-[92vh] overflow-y-auto">
-            <h3 className="text-[15px] font-semibold text-text-primary mb-1">Send quote</h3>
+            <h3 className="text-[15px] font-semibold text-text-primary mb-1">{docKind === 'proforma' ? 'Send pro forma invoice' : attachProforma ? 'Send quote and pro forma' : 'Send quote'}</h3>
             <p className="text-[13px] text-text-secondary mb-3">
-              {clientName || 'The client'} gets the quote PDF and a link to accept it online.
+              {docKind === 'proforma'
+                ? `${clientName || 'The client'} gets the pro forma invoice PDF with your banking details.`
+                : `${clientName || 'The client'} gets the quote PDF${attachProforma ? ' (with the pro forma)' : ''} and a link to accept it online.`}
               {dealId ? ' Linked project clients will also see it in the portal.' : ''}
             </p>
-            <div className="flex flex-col gap-2 mb-4">
+            {docKind === 'quote' && <div className="flex flex-col gap-2 mb-4">
                 <button
                 type="button"
                 disabled={sendBusy}
@@ -2197,7 +2208,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
                 Send on WhatsApp & mark sent
               </button>
               <p className="text-[12px] text-text-secondary text-center">or send by email</p>
-            </div>
+            </div>}
             <div className="flex flex-col gap-3 mb-4">
               {companyId && <SenderNote companyId={companyId} mode="personal" />}
               {companyId && (
@@ -2207,7 +2218,9 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
               )}
               {quoteId && (
                 <EmailComposer draft={sendDraft} onDraft={setSendDraft} disabled={sendBusy}
-                  load={edits => previewQuoteEmail(supabase, { quoteId, recipientEmail: sendRcpt.to.trim(), cc: sendRcpt.cc, edits })} />
+                  load={edits => previewQuoteEmail(supabase, { quoteId, recipientEmail: sendRcpt.to.trim(), cc: sendRcpt.cc,
+                    // A pro forma has its own subject and wording; anything typed in the box still wins.
+                    edits: docKind === 'proforma' ? { subject: pfSubject(), body_text: pfBody(), ...(edits ?? {}) } : edits })} />
               )}
               {actionError && <p className="text-[12px] text-error">{actionError}</p>}
             </div>
@@ -2219,7 +2232,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
                 className="h-10 px-4 rounded-lg bg-primary text-white text-left text-[13px] font-medium hover:bg-primary/90 transition-colors flex items-center gap-2 disabled:opacity-50"
               >
                 <span className="material-icons text-[18px]">send</span>
-                {sendBusy ? 'Sending…' : 'Email quote & mark sent'}
+                {sendBusy ? 'Sending…' : docKind === 'proforma' ? 'Email pro forma invoice' : 'Email quote & mark sent'}
               </button>
               <button
                 type="button"
@@ -2230,14 +2243,14 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
                 <span className="material-icons text-[18px]">picture_as_pdf</span>
                 Download PDF only
               </button>
-              <button
+              {docKind === 'quote' && status !== 'accepted' && <button
                 type="button"
                 disabled={sendBusy}
                 onClick={() => void handleMarkAsSent()}
                 className="h-10 px-4 rounded-lg border border-divider text-left text-[13px] font-medium text-text-secondary hover:bg-surface-elevated transition-colors disabled:opacity-50"
               >
                 Mark as sent only
-              </button>
+              </button>}
             </div>
             <div className="flex justify-end">
               <button

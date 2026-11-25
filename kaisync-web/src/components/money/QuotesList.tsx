@@ -888,7 +888,7 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
                                   className="max-w-full inline-flex items-center gap-1 text-left text-primary hover:underline leading-tight align-middle"
                                 >
                                   <span className="material-icons !text-[13px] !leading-none shrink-0">{l.kind === 'job' ? 'construction' : 'folder'}</span>
-                                  <span className="truncate">{linkText(l) || (l.kind === 'job' ? 'Job' : 'Project')}</span>
+                                  <span className="truncate">{l.code || linkText(l) || (l.kind === 'job' ? 'Job' : 'Project')}</span>
                                 </button>
                               ) : (
                                 <span className="text-text-secondary/60">—</span>
@@ -905,7 +905,7 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
                           >
                             {q.status.replace('_', ' ')}
                           </span>
-                          {seen[q.id] ? <span className="ml-1 text-[10.5px] text-purple-700 whitespace-nowrap" title="Times the client opened the link">· seen {seen[q.id]}×</span> : null}
+                          {seen[q.id] ? <span className="block mt-0.5 text-[10.5px] leading-tight text-purple-700 whitespace-nowrap" title="Times the client opened the link">Seen {seen[q.id]}×</span> : null}
                         </td>
                         <td className={`${TD} text-text-secondary whitespace-nowrap`}>{fmtShort(q.created_at)}</td>
                         <td className={`${TD} text-text-secondary whitespace-nowrap`}>{fmtShort(q.valid_until)}</td>
@@ -933,7 +933,7 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
                         </span>
                       </div>
                       <DataCardRow label="Client" value={q.clients?.name ?? '—'} />
-                      {(() => { const l = quoteLink(q); return l ? <DataCardRow label={l.kind === 'job' ? 'Job' : 'Project'} value={linkText(l)} /> : null })()}
+                      {(() => { const l = quoteLink(q); return l ? <DataCardRow label={l.kind === 'job' ? 'Job' : 'Project'} value={l.code || linkText(l)} /> : null })()}
                       <DataCardRow label="Value" value={fmtMoney(q.total_amount, q.currency)} />
                       <DataCardRow label="Valid" value={fmt(q.valid_until)} />
                       {q.status !== 'draft' && <DataCardRow label="Client opened" value={seen[q.id] ? `Seen ${seen[q.id]}×` : 'Not yet'} />}
