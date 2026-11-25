@@ -279,7 +279,6 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   const [attachProforma, setAttachProforma] = useState(false)
   const attachProformaRef = useRef(false)
   const [browseSignal, setBrowseSignal] = useState(0)
-  const [menuOpen, setMenuOpen] = useState(false)
   const [contacts, setContacts] = useState<Contact[]>([])
   const [contactOpen, setContactOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
@@ -1573,7 +1572,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
     setImportNote(`${made.length} line${made.length === 1 ? '' : 's'} added. Check the prices.`)
   }
 
-  const goStep = (n: 1 | 2 | 3 | 4) => { setStep(n); setMenuOpen(false); if (typeof window !== 'undefined') document.getElementById('quote-top')?.scrollIntoView({ block: 'start' }) }
+  const goStep = (n: 1 | 2 | 3 | 4) => { setStep(n); if (typeof window !== 'undefined') document.getElementById('quote-top')?.scrollIntoView({ block: 'start' }) }
   const contactName = headerValues[HV.contactName] ?? ''
   const shownTotal = template && tTotals ? tTotals.total : total
   const shownSubtotal = template && tTotals ? tTotals.subtotal : Math.round(subtotal * 100) / 100
@@ -1660,19 +1659,18 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
           <button type="button" onClick={() => { setActionError(null); setShowWhatsNext(true) }}
             className="h-11 px-5 rounded-xl bg-[#2563EB] text-white text-[14px] font-semibold hover:bg-[#1D4ED8]">What&apos;s next?</button>
         )}
-        {status !== 'accepted' && status !== 'declined' && quoteId && (
-        <div className="relative">
-          <button type="button" aria-label="More: mark accepted or declined" aria-expanded={menuOpen} onClick={() => setMenuOpen(o => !o)}
-            className="w-11 h-11 rounded-xl border border-divider bg-surface text-text-primary flex items-center justify-center hover:bg-surface-elevated">
-            <span className="material-icons">more_horiz</span>
-          </button>
-          {menuOpen && (
-            <div className="absolute right-0 top-full mt-2 z-40 w-60 rounded-xl border border-divider bg-surface shadow-[0_14px_30px_rgba(15,23,42,0.16)] py-1.5 text-[13.5px]" onMouseLeave={() => setMenuOpen(false)}>
-              <button type="button" onClick={() => { setMenuOpen(false); setShowAcceptModal(true) }} className="w-full text-left px-3.5 py-2.5 hover:bg-surface-elevated flex items-center gap-2.5"><span className="material-icons !text-[18px] text-emerald-600">task_alt</span>Mark accepted</button>
-              <button type="button" onClick={() => { setMenuOpen(false); setDeclineReason(''); setConfirmDecline(true) }} className="w-full text-left px-3.5 py-2.5 hover:bg-surface-elevated flex items-center gap-2.5"><span className="material-icons !text-[18px] text-text-secondary">do_not_disturb_on</span>Mark declined</button>
-            </div>
-          )}
-        </div>
+        {/* Once it has gone to the client: say what they decided, in plain sight (no hidden menu). */}
+        {status === 'sent' && quoteId && (
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => setShowAcceptModal(true)}
+              className="h-10 px-3.5 rounded-xl border border-emerald-300 bg-emerald-50 text-emerald-800 text-[13.5px] font-semibold flex items-center gap-1.5 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300">
+              <span className="material-icons !text-[18px]">task_alt</span>Accepted
+            </button>
+            <button type="button" onClick={() => { setDeclineReason(''); setConfirmDecline(true) }}
+              className="h-10 px-3.5 rounded-xl border border-divider bg-surface text-text-primary text-[13.5px] font-semibold flex items-center gap-1.5 hover:bg-surface-elevated">
+              <span className="material-icons !text-[18px] text-text-secondary">do_not_disturb_on</span>Declined
+            </button>
+          </div>
         )}
       </div>
 
@@ -2143,7 +2141,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
               <button type="button" onClick={handleDownloadPdf} className="h-12 rounded-xl border border-divider bg-surface text-text-primary text-[14.5px] font-medium hover:bg-surface-elevated">Download PDF</button>
               <div className="h-px bg-divider my-0.5" />
               <button type="button" onClick={() => goStep(3)} className="h-10 rounded-xl text-[#2563EB] text-[14px] font-medium">Back to extras</button>
-              {status !== 'accepted' && status !== 'declined' && <span className="text-[12px] text-text-secondary">Client said yes on the phone? Use ⋯ › Mark accepted.</span>}
+              {status === 'draft' && quoteId && <span className="text-[12px] text-text-secondary">Client said yes on the phone? <button type="button" onClick={() => setShowAcceptModal(true)} className="text-[#2563EB] font-medium hover:underline">Mark it accepted</button></span>}
             </aside>
           </div>
         )}
