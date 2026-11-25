@@ -1674,14 +1674,14 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         )}
         {/* Once it has gone to the client: say what they decided, in plain sight (no hidden menu). */}
         {(status === 'sent' || status === 'draft') && quoteId && (
-          <div className="flex items-center gap-2 w-full sm:w-auto [&>button]:flex-1 sm:[&>button]:flex-none [&>button]:justify-center">
+          <div className="flex items-center gap-1.5 ml-auto">
             <button type="button" onClick={() => setShowAcceptModal(true)}
-              className="h-9 px-3 rounded-[10px] border border-emerald-300 bg-emerald-50 text-emerald-800 text-[13px] font-semibold flex items-center gap-1.5 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300">
-              <span className="material-icons !text-[18px]">task_alt</span>Accepted
+              className="h-8 px-2.5 rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-800 text-[12.5px] font-semibold flex items-center gap-1 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300">
+              <span className="material-icons !text-[16px]">task_alt</span>Accepted
             </button>
             <button type="button" onClick={() => { setDeclineReason(''); setConfirmDecline(true) }}
-              className="h-9 px-3 rounded-[10px] border border-divider bg-surface text-text-primary text-[13px] font-semibold flex items-center gap-1.5 hover:bg-surface-elevated">
-              <span className="material-icons !text-[18px] text-text-secondary">do_not_disturb_on</span>Declined
+              className="h-8 px-2.5 rounded-lg border border-divider bg-surface text-text-primary text-[12.5px] font-semibold flex items-center gap-1 hover:bg-surface-elevated">
+              <span className="material-icons !text-[16px] text-text-secondary">do_not_disturb_on</span>Declined
             </button>
           </div>
         )}
@@ -1978,25 +1978,25 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
             <div className="flex-[999_1_600px] min-w-0 flex flex-col gap-3">
               {step === 2 && (
                 <>
-                  <div className="bg-surface border border-divider rounded-[14px] px-3.5 py-2.5 flex items-center gap-2.5 flex-wrap text-[13px] text-text-secondary">
-                    <span>For <b className="text-text-primary font-semibold">{clientName || 'no customer yet'}</b>{foreign ? ` · ${quoteCurrency}${fxNum > 0 ? ` at ${formatCurrency(fxNum, homeCurrency)}` : ''}` : ''}</span>
-                    <button type="button" onClick={() => goStep(1)} className="text-[#2563EB] font-medium">Edit</button>
+                  <div className="bg-surface border border-divider rounded-[12px] px-2.5 sm:px-3.5 py-1.5 flex items-center gap-1.5 sm:gap-2.5 text-[12.5px] text-text-secondary min-w-0">
+                    <span className="min-w-0 truncate">For <b className="text-text-primary font-semibold">{clientName || 'no customer yet'}</b>{foreign ? ` · ${quoteCurrency}${fxNum > 0 ? ` at ${formatCurrency(fxNum, homeCurrency)}` : ''}` : ''}</span>
+                    <button type="button" onClick={() => goStep(1)} aria-label="Edit customer" className="text-[#2563EB] font-medium shrink-0 flex items-center"><span className="material-icons !text-[15px] sm:hidden">edit</span><span className="hidden sm:inline">Edit</span></button>
                     {askSuppliers && (
-                      <span role="tablist" aria-label="Quote sections" className="flex gap-1 ml-2">
+                      <span role="tablist" aria-label="Quote sections" className="flex gap-0.5 sm:ml-1 shrink-0">
                         {([['items', 'Items'], ['buyout', 'Buyout']] as const).map(([k, lab]) => (
                           <button key={k} type="button" role="tab" aria-selected={quoteView === k} onClick={() => (k === 'buyout' ? void openBuyout() : setQuoteView('items'))}
-                            className={cn('h-8 px-3 rounded-lg text-[13px] font-semibold flex items-center gap-1.5', quoteView === k ? 'bg-[#EEF4FF] text-[#2563EB]' : 'text-text-secondary hover:text-text-primary')}>
+                            className={cn('h-7 px-2 sm:px-2.5 rounded-md text-[12.5px] font-semibold flex items-center gap-1', quoteView === k ? 'bg-[#EEF4FF] text-[#2563EB]' : 'text-text-secondary hover:text-text-primary')}>
                             {lab}{k === 'buyout' && sourcing.waiting > 0 && <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10.5px]">{sourcing.waiting} waiting</span>}
                           </button>
                         ))}
                       </span>
                     )}
                     {!locked && quoteView === 'items' && (
-                      <span className="ml-auto flex gap-2">
+                      <span className="ml-auto flex gap-1.5 shrink-0">
                         <span className="qtip-wrap relative inline-flex">
                           <button type="button" aria-describedby="import-tip" onClick={() => { setImportOpen(o => !o); setImportNote(null) }}
-                            className="h-[34px] px-3 rounded-lg border border-divider bg-surface text-text-primary text-[13px] font-medium flex items-center gap-1.5 hover:bg-surface-elevated">
-                            <span className="material-icons !text-[16px]">download</span>Import a list
+                            aria-label="Import a list" className="h-7 px-2 sm:px-2.5 rounded-md border border-divider bg-surface text-text-primary text-[12.5px] font-medium flex items-center gap-1 hover:bg-surface-elevated">
+                            <span className="material-icons !text-[15px]">download</span><span className="hidden sm:inline">Import a list</span>
                           </button>
                           <span id="import-tip" role="tooltip" className="qtip absolute top-11 right-[-8px] w-[290px] bg-[#0F172A] text-[#F8FAFC] rounded-xl px-3.5 py-3 text-[12.5px] leading-[1.5] shadow-[0_14px_30px_rgba(15,23,42,0.28)] z-30 text-left">
                             <span className="absolute -top-1.5 right-[52px] w-3 h-3 bg-[#0F172A] rotate-45" />
@@ -2005,7 +2005,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
                           </span>
                         </span>
                         <button type="button" onClick={() => setBrowseSignal(n => n + 1)}
-                          className="h-[34px] px-3 rounded-lg border border-divider bg-surface text-text-primary text-[13px] font-medium hover:bg-surface-elevated">Browse catalogue</button>
+                          aria-label="Browse catalogue" className="h-7 px-2 sm:px-2.5 rounded-md border border-divider bg-surface text-text-primary text-[12.5px] font-medium flex items-center gap-1 hover:bg-surface-elevated"><span className="material-icons !text-[15px]">menu_book</span><span className="hidden sm:inline">Catalogue</span></button>
                       </span>
                     )}
                   </div>
