@@ -1627,12 +1627,12 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   return (
     <div className="h-full overflow-y-auto bg-[#F5F7FB]">
       {/* ── Top bar: quote, status, template, saved ── */}
-      <div id="quote-top" className="bg-surface border-b border-divider px-4 sm:px-7 py-3.5 flex items-center gap-3 sm:gap-4">
+      <div id="quote-top" className="bg-surface border-b border-divider px-4 sm:px-7 py-3.5 flex flex-wrap sm:flex-nowrap items-center gap-3 sm:gap-4">
         <button type="button" aria-label="Back to quotes" onClick={() => router.push('/dashboard/money/quotes')}
           className="w-10 h-10 rounded-[10px] border border-divider text-text-primary flex items-center justify-center shrink-0 hover:bg-surface-elevated">
           <span className="material-icons !text-[20px]">chevron_left</span>
         </button>
-        <div className="flex flex-col gap-0.5 flex-[1_1_0%] min-w-0">
+        <div className="flex flex-col gap-0.5 flex-[1_1_0%] min-w-[180px]">
           <div className="flex items-center gap-2.5 flex-wrap">
             <span className="text-[20px] font-semibold text-text-primary">{quoteNumber ? `Quote ${quoteNumber}` : 'New quote'}</span>
             <span className={cn('text-[12px] font-semibold px-2.5 py-[3px] rounded-full capitalize',
@@ -1661,7 +1661,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         )}
         {/* Once it has gone to the client: say what they decided, in plain sight (no hidden menu). */}
         {status === 'sent' && quoteId && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full sm:w-auto [&>button]:flex-1 sm:[&>button]:flex-none [&>button]:justify-center">
             <button type="button" onClick={() => setShowAcceptModal(true)}
               className="h-10 px-3.5 rounded-xl border border-emerald-300 bg-emerald-50 text-emerald-800 text-[13.5px] font-semibold flex items-center gap-1.5 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300">
               <span className="material-icons !text-[18px]">task_alt</span>Accepted
