@@ -207,6 +207,29 @@ function AskView({ companyId, buyout, busy, setBusy, setMsg, reload, readOnly, o
     await reload()
   }
 
+  const [ccOpen, setCcOpen] = useState<string | null>(null)
+  const [ccNew, setCcNew] = useState('')
+  async function saveCc(r: BuyoutRecipient, list: string[]) {
+    await updateRecipient(supabase, r.id, { cc: list })
+    setDrafts(x => { const n = { ...x }; if (n[r.id]) delete n[r.id].cc; return n })
+    await reload()
+  }
+  async function addCc(r: BuyoutRecipient, list: string[]) {
+    const v = ccNew.trim()
+    setCcOpen(null)
+    if (!v) return
+    if (!isEmailAddress(v)) { setMsg({ ok: false, text: `"${v}" isn’t an email address.` }); return }
+    if (!list.includes(v)) await saveCc(r, [...list, v])
+  }
+  /** Sent to the wrong address, or they lost it: the same request again, to the email shown. */
+  async function sendAgain(r: BuyoutRecipient) {
+    setBusy(true); setMsg(null)
+    const res = await sendDocumentEmail(supabase, { kind: 'rfq', docId: r.id, recipient: sendToOf(r), cc: r.cc })
+    await reload()
+    setBusy(false)
+    setMsg(res.ok ? { ok: true, text: `Sent again to ${sendToOf(r)}.` } : { ok: false, text: `${r.name}: ${res.message}` })
+  }
+
   const itemsFor = (r: BuyoutRecipient) => buyout.lines.filter(l => asks(r, l.rfqLineId))
   const ready = buyout.recipients.filter(r => r.status === 'pending' && isEmailAddress(sendToOf(r)) && itemsFor(r).length > 0)
 
@@ -314,18 +337,48 @@ function AskView({ companyId, buyout, busy, setBusy, setMsg, reload, readOnly, o
                     const ok = isEmailAddress(to)
                     const n = itemsFor(r).length
                     const done = r.status !== 'pending'
+                    const replied = r.status === 'responded'
+                    const ccList = drafts[r.id]?.cc != null ? drafts[r.id]!.cc!.split(/[,;\s]+/).filter(Boolean) : r.cc
                     return (
                       <td key={r.id} className={cn(TD, 'text-center align-top')}>
                         <div className="flex flex-col gap-1 items-center">
-                          <input type="email" value={to} disabled={readOnly || done} placeholder="type their email" aria-label={`Email for ${r.name}`}
-                            onChange={e => setDrafts(x => ({ ...x, [r.id]: { ...x[r.id], sendTo: e.target.value } }))} onBlur={() => void saveContact(r)}
-                            className={cn(inp, 'h-7 text-[12px] text-center', !ok && !done && 'border-red-400')} />
-                          {!done && (
-                            <input value={drafts[r.id]?.cc ?? r.cc.join(', ')} disabled={readOnly} placeholder="cc (optional)" aria-label={`CC for ${r.name}`}
-                              onChange={e => setDrafts(x => ({ ...x, [r.id]: { ...x[r.id], cc: e.target.value } }))} onBlur={() => void saveContact(r)} className={cn(inp, 'h-7 text-[11.5px] text-center')} />
+                          {/* Their email: change it any time until they reply (then send again) */}
+                          <span className="relative w-full max-w-[220px]">
+                            <span className="material-icons !text-[14px] text-text-secondary absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none">mail</span>
+                            <input id={`rfq-to-${r.id}`} type="email" value={to} disabled={readOnly || replied} placeholder="add their email" aria-label={`Email for ${r.name}`}
+                              onChange={e => setDrafts(x => ({ ...x, [r.id]: { ...x[r.id], sendTo: e.target.value } }))} onBlur={() => void saveContact(r)}
+                              className={cn(inp, 'h-7 text-[12px] pl-7 pr-7', !ok && !replied && 'border-red-400')} />
+                            {to && !readOnly && !replied && (
+                              <button type="button" aria-label={`Clear ${r.name}'s email to type another`} onClick={() => { setDrafts(x => ({ ...x, [r.id]: { ...x[r.id], sendTo: '' } })); window.setTimeout(() => document.getElementById(`rfq-to-${r.id}`)?.focus(), 0) }}
+                                className="absolute right-1.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded text-[11px] text-text-secondary hover:bg-surface-elevated">✕</button>
+                            )}
+                          </span>
+                          {/* Copies: each one can be removed; "+ cc" adds another */}
+                          {(ccList.length > 0 || ccOpen === r.id) && (
+                            <span className="flex flex-wrap justify-center gap-1 max-w-[220px]">
+                              {ccList.map(c => (
+                                <span key={c} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full bg-surface-elevated text-[11px] text-text-primary">
+                                  cc {c}
+                                  {!readOnly && !replied && <button type="button" aria-label={`Remove ${c}`} className="w-4 h-4 rounded-full hover:bg-divider text-[9px]"
+                                    onClick={() => void saveCc(r, ccList.filter(x => x !== c))}>✕</button>}
+                                </span>
+                              ))}
+                            </span>
                           )}
-                          {r.status === 'responded' ? <Pill tone="green">Replied {day(r.respondedAt)}</Pill>
-                            : done ? <Pill tone="blue">Sent {day(r.sentAt)}{r.viewedAt ? ' · opened' : ''}</Pill>
+                          {ccOpen === r.id ? (
+                            <input autoFocus type="email" value={ccNew} placeholder="cc email" aria-label={`Add a cc for ${r.name}`} onChange={e => setCcNew(e.target.value)}
+                              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void addCc(r, ccList) } if (e.key === 'Escape') setCcOpen(null) }}
+                              onBlur={() => void addCc(r, ccList)} className={cn(inp, 'h-7 text-[11.5px] max-w-[220px]')} />
+                          ) : !readOnly && !replied && (
+                            <button type="button" className="text-[11px] font-semibold text-[#2563EB]" onClick={() => { setCcNew(''); setCcOpen(r.id) }}>+ cc</button>
+                          )}
+                          {replied ? <Pill tone="green">Replied {day(r.respondedAt)}</Pill>
+                            : done ? (
+                              <span className="flex items-center gap-1.5">
+                                <Pill tone="blue">Sent {day(r.sentAt)}{r.viewedAt ? ' · opened' : ''}</Pill>
+                                {!readOnly && ok && <button type="button" disabled={busy} className="text-[11px] font-semibold text-[#2563EB]" onClick={() => void sendAgain(r)}>Send again</button>}
+                              </span>
+                            )
                             : n === 0 ? <Pill tone="amber">Tick an item</Pill>
                             : ok ? <Pill tone="green">Ready · {n} {n === 1 ? 'item' : 'items'}</Pill> : <Pill tone="red">Needs an email</Pill>}
                         </div>

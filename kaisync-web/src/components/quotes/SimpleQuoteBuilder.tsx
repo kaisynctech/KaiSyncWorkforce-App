@@ -2118,7 +2118,8 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
                 </section>
               )}
             </div>
-            {totalsPanel(step === 2 ? 'Next: extras' : 'Next: check and send', () => goStep((step + 1) as 3 | 4))}
+            {/* Buyout is about suppliers' prices: the quote's totals stay on the Items tab. */}
+            {!(step === 2 && quoteView === 'buyout') && totalsPanel(step === 2 ? 'Next: extras' : 'Next: check and send', () => goStep((step + 1) as 3 | 4))}
           </div>
         )}
         </fieldset>
@@ -2162,7 +2163,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
 
       {/* ── Phone: total and the next step always in reach ── */}
       <div className="md:hidden fixed inset-x-0 bottom-0 z-40 border-t border-divider bg-surface/95 backdrop-blur px-4 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] flex items-center gap-3">
-        <div className="flex-1 min-w-0">
+        <div className={cn('flex-1 min-w-0', step === 2 && quoteView === 'buyout' && 'invisible')}>
           <p className="text-[11px] text-text-secondary leading-tight">Total{showDeposit && tTotals && tTotals.deposit > 0 ? ` · deposit ${formatCurrency(tTotals.deposit, quoteCurrency)}` : ''}</p>
           <p className="text-[16px] font-bold text-text-primary leading-tight">{formatCurrency(shownTotal, quoteCurrency)}</p>
         </div>
