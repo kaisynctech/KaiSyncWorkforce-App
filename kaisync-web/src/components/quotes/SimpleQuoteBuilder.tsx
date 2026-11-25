@@ -1016,6 +1016,15 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId, clientId])
 
+  // Only a VAT-registered business (with its VAT number in Settings) may charge VAT: an open quote from a
+  // business that isn't registered has VAT switched off on a draft (a quote already sent keeps its total).
+  const canChargeVat = !!letterhead?.vatRegistered && !!letterhead?.vatNumber?.trim()
+  useEffect(() => {
+    if (!letterhead || canChargeVat || !dataLoaded) return
+    if (vatOnRef.current && statusRef.current === 'draft') updateVatOn(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [letterhead, canChargeVat, dataLoaded])
+
   // A new client brings their currency (unless the currency was chosen by hand).
   useEffect(() => {
     if (currencyTouched) return
@@ -1578,9 +1587,10 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   const shownSubtotal = template && tTotals ? tTotals.subtotal : Math.round(subtotal * 100) / 100
   const shownVat = template && tTotals ? tTotals.vat : vat
   const STEPS: [1 | 2 | 3 | 4, string][] = [[1, 'Who it’s for'], [2, 'What you’re quoting'], [3, 'Extras'], [4, 'Check and send']]
+  const SHORT_STEP: Record<1 | 2 | 3 | 4, string> = { 1: 'Customer', 2: 'Items', 3: 'Extras', 4: 'Send' }
   const label = 'flex flex-col gap-1.5'
-  const labText = 'text-[12.5px] font-semibold text-text-primary h-[18px] whitespace-nowrap flex items-center justify-between gap-2'
-  const field = 'h-11 w-full box-border rounded-[10px] border border-divider bg-surface-elevated px-3 text-[14px] font-medium text-text-primary focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/15 disabled:opacity-60'
+  const labText = 'text-[12px] font-semibold text-text-primary h-[18px] whitespace-nowrap flex items-center justify-between gap-2'
+  const field = 'h-10 w-full box-border rounded-[9px] border border-divider bg-surface-elevated px-3 text-[13.5px] font-medium text-text-primary focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/15 disabled:opacity-60'
   const optionalTag = <span className="text-[11px] font-medium text-text-secondary bg-[#EEF1F6] px-[7px] rounded-full leading-[18px]">Optional</span>
   const groupHead = (title: string) => (
     <span className="text-[11.5px] font-bold tracking-[0.08em] uppercase text-[#2563EB] dark:text-[#7AA7FF]">{title}</span>
@@ -1598,14 +1608,17 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   const noCost = counted.length - costed.length
 
   const totalsPanel = (next: string | null, onNext: () => void) => (
-    <aside className="flex-[1_1_240px] lg:max-w-[260px] w-full lg:w-auto bg-surface border border-divider rounded-[14px] p-3.5 flex flex-col gap-[9px] text-[13px] lg:sticky lg:top-4">
+    <aside className="flex-[0_1_230px] w-full max-w-[300px] ml-auto bg-surface border border-divider rounded-[12px] p-3 flex flex-col gap-[7px] text-[12.5px] lg:sticky lg:top-4">
       <div className="flex justify-between"><span className="text-text-secondary">{vatOn ? 'Subtotal' : 'Subtotal'}</span><span>{formatCurrency(shownSubtotal, quoteCurrency)}</span></div>
       <div className="flex justify-between items-center">
-        <label className="flex items-center gap-1.5 text-text-secondary"><input type="checkbox" checked={vatOn} disabled={locked} onChange={e => updateVatOn(e.target.checked)} className="w-4 h-4 accent-[#2563EB]" />VAT {vatPercentLabel(vatRate)}%</label>
+        <label className={cn('flex items-center gap-1.5 text-text-secondary', !canChargeVat && 'opacity-60')}><input type="checkbox" checked={vatOn} disabled={locked || (!canChargeVat && !vatOn)} onChange={e => updateVatOn(e.target.checked)} className="w-4 h-4 accent-[#2563EB]" />VAT {vatPercentLabel(vatRate)}%</label>
         <span>{vatOn ? formatCurrency(shownVat, quoteCurrency) : 'No VAT'}</span>
       </div>
+      {!canChargeVat && letterhead && (
+        <span className="text-[11px] leading-snug text-text-secondary -mt-1">Only VAT-registered businesses may charge VAT. <Link href="/dashboard/settings" className="text-[#2563EB] font-medium">Add your VAT number</Link> to switch it on.</span>
+      )}
       <div className="h-px bg-divider" />
-      <div className="flex justify-between items-baseline"><span className="font-semibold">Total</span><span className="text-[20px] font-bold">{formatCurrency(shownTotal, quoteCurrency)}</span></div>
+      <div className="flex justify-between items-baseline"><span className="font-semibold">Total</span><span className="text-[17px] font-bold">{formatCurrency(shownTotal, quoteCurrency)}</span></div>
       {foreign && bookRate && bookRate > 0 && <span className="text-[11.5px] text-text-secondary text-right -mt-1.5">= {formatCurrency(Math.round(shownTotal * bookRate * 100) / 100, homeCurrency)} in your books</span>}
       {showDeposit && tTotals && tTotals.deposit > 0 && (
         <div className="flex justify-between text-text-secondary"><span>Deposit {depositPct}%</span><span className="text-text-primary">{formatCurrency(tTotals.deposit, quoteCurrency)}</span></div>
@@ -1619,22 +1632,22 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
           {noCost > 0 && <div className="text-[11px] opacity-80">{noCost} line{noCost === 1 ? '' : 's'} without a cost not counted</div>}
         </div>
       )}
-      {next && <button type="button" onClick={onNext} className="h-11 mt-1 rounded-[10px] bg-[#2563EB] text-white text-[13.5px] font-semibold hover:bg-[#1D4ED8]">{next}</button>}
-      <button type="button" onClick={() => goStep((step - 1) as 1 | 2 | 3)} className="h-9 rounded-[10px] text-[#2563EB] text-[13px] font-medium">Back</button>
+      {next && <button type="button" onClick={onNext} className="hidden md:block h-9 mt-1 rounded-[9px] bg-[#2563EB] text-white text-[13px] font-semibold hover:bg-[#1D4ED8]">{next}</button>}
+      <button type="button" onClick={() => goStep((step - 1) as 1 | 2 | 3)} className="hidden md:block h-8 rounded-[9px] text-[#2563EB] text-[12.5px] font-medium">Back</button>
     </aside>
   )
 
   return (
     <div className="h-full overflow-y-auto bg-[#F5F7FB]">
       {/* ── Top bar: quote, status, template, saved ── */}
-      <div id="quote-top" className="bg-surface border-b border-divider px-4 sm:px-7 py-3.5 flex flex-wrap sm:flex-nowrap items-center gap-3 sm:gap-4">
+      <div id="quote-top" className="bg-surface border-b border-divider px-4 sm:px-7 py-2.5 sm:py-3 flex flex-wrap sm:flex-nowrap items-center gap-3 sm:gap-4">
         <button type="button" aria-label="Back to quotes" onClick={() => router.push('/dashboard/money/quotes')}
-          className="w-10 h-10 rounded-[10px] border border-divider text-text-primary flex items-center justify-center shrink-0 hover:bg-surface-elevated">
+          className="w-9 h-9 rounded-[9px] border border-divider text-text-primary flex items-center justify-center shrink-0 hover:bg-surface-elevated">
           <span className="material-icons !text-[20px]">chevron_left</span>
         </button>
         <div className="flex flex-col gap-0.5 flex-[1_1_0%] min-w-[180px]">
           <div className="flex items-center gap-2.5 flex-wrap">
-            <span className="text-[20px] font-semibold text-text-primary">{quoteNumber ? `Quote ${quoteNumber}` : 'New quote'}</span>
+            <span className="text-[17px] sm:text-[18px] font-semibold text-text-primary">{quoteNumber ? `Quote ${quoteNumber}` : 'New quote'}</span>
             <span className={cn('text-[12px] font-semibold px-2.5 py-[3px] rounded-full capitalize',
               status === 'sent' ? 'bg-amber-50 text-amber-700' : status === 'accepted' ? 'bg-emerald-50 text-emerald-700' : status === 'declined' ? 'bg-red-50 text-red-600' : 'bg-[#EEF1F6] text-text-secondary')}>
               {status === 'draft' ? 'Draft' : status.replace('_', ' ')}
@@ -1657,17 +1670,17 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         </div>
         {status === 'accepted' && (
           <button type="button" onClick={() => { setActionError(null); setShowWhatsNext(true) }}
-            className="h-11 px-5 rounded-xl bg-[#2563EB] text-white text-[14px] font-semibold hover:bg-[#1D4ED8]">What&apos;s next?</button>
+            className="h-9 px-4 rounded-[10px] bg-[#2563EB] text-white text-[13px] font-semibold hover:bg-[#1D4ED8]">What&apos;s next?</button>
         )}
         {/* Once it has gone to the client: say what they decided, in plain sight (no hidden menu). */}
-        {status === 'sent' && quoteId && (
+        {(status === 'sent' || status === 'draft') && quoteId && (
           <div className="flex items-center gap-2 w-full sm:w-auto [&>button]:flex-1 sm:[&>button]:flex-none [&>button]:justify-center">
             <button type="button" onClick={() => setShowAcceptModal(true)}
-              className="h-10 px-3.5 rounded-xl border border-emerald-300 bg-emerald-50 text-emerald-800 text-[13.5px] font-semibold flex items-center gap-1.5 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300">
+              className="h-9 px-3 rounded-[10px] border border-emerald-300 bg-emerald-50 text-emerald-800 text-[13px] font-semibold flex items-center gap-1.5 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:border-emerald-800 dark:text-emerald-300">
               <span className="material-icons !text-[18px]">task_alt</span>Accepted
             </button>
             <button type="button" onClick={() => { setDeclineReason(''); setConfirmDecline(true) }}
-              className="h-10 px-3.5 rounded-xl border border-divider bg-surface text-text-primary text-[13.5px] font-semibold flex items-center gap-1.5 hover:bg-surface-elevated">
+              className="h-9 px-3 rounded-[10px] border border-divider bg-surface text-text-primary text-[13px] font-semibold flex items-center gap-1.5 hover:bg-surface-elevated">
               <span className="material-icons !text-[18px] text-text-secondary">do_not_disturb_on</span>Declined
             </button>
           </div>
@@ -1757,16 +1770,16 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         {quoteId && <DocumentChain current={{ kind: 'quote', id: quoteId }} companyId={companyId} />}
 
         {/* ── Steps: tap any to jump ── */}
-        <nav aria-label="Quote steps" className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+        <nav aria-label="Quote steps" className="grid grid-cols-4 gap-1.5 sm:gap-2">
           {STEPS.map(([n, lab]) => {
             const now = step === n, done = n < step
             return (
               <button key={n} type="button" aria-current={now ? 'step' : undefined} onClick={() => goStep(n)}
-                className={cn('text-left rounded-xl px-3.5 py-2.5 min-h-[48px] flex items-center gap-2.5 border text-[14px] text-text-primary',
+                className={cn('rounded-[10px] px-1.5 sm:px-3 py-1.5 min-h-[38px] flex flex-col sm:flex-row items-center gap-1 sm:gap-2 border text-[11px] sm:text-[13px] text-center sm:text-left text-text-primary',
                   now ? 'border-[#2563EB] bg-[#EEF4FF] font-semibold' : 'border-divider bg-surface font-medium hover:bg-surface-elevated')}>
-                <span className={cn('w-[26px] h-[26px] rounded-full text-[12px] font-bold flex items-center justify-center shrink-0',
+                <span className={cn('w-5 h-5 sm:w-[22px] sm:h-[22px] rounded-full text-[11px] font-bold flex items-center justify-center shrink-0',
                   now ? 'bg-[#2563EB] text-white' : done ? 'bg-[#15803D] text-white' : 'bg-[#EEF1F6] text-text-secondary')}>{done ? '✓' : n}</span>
-                <span className="leading-tight">{lab}</span>
+                <span className="leading-tight"><span className="sm:hidden">{SHORT_STEP[n]}</span><span className="hidden sm:inline">{lab}</span></span>
               </button>
             )
           })}
@@ -1777,7 +1790,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         {/* ── STEP 1 · Who it's for ── */}
         {step === 1 && (
           <section className="bg-surface border border-divider rounded-2xl p-5 sm:p-6 flex flex-col gap-[22px]">
-            <h2 className="text-[20px] font-semibold text-text-primary">Who is this quote for?</h2>
+            <h2 className="text-[17px] font-semibold text-text-primary">Who is this quote for?</h2>
 
             <div className="flex flex-col gap-3">
               {groupHead('Customer')}
@@ -1785,7 +1798,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
                 <div className="sm:col-span-2 relative">
                   <label className={label}>
                     <span className={labText}>Customer name</span>
-                    <span className={cn('h-11 rounded-[10px] border bg-surface flex items-center gap-2.5 px-3', clientDropOpen ? 'border-[#2563EB] ring-2 ring-[#2563EB]/15' : 'border-divider')}>
+                    <span className={cn('h-10 rounded-[9px] border bg-surface flex items-center gap-2.5 px-3', clientDropOpen ? 'border-[#2563EB] ring-2 ring-[#2563EB]/15' : 'border-divider')}>
                       <span className="material-icons !text-[18px] text-text-secondary">search</span>
                       <input type="text" placeholder="Search or type a customer name" value={clientSearch}
                         onChange={e => { setClientSearch(e.target.value); setClientDropOpen(true) }}
@@ -1902,7 +1915,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
                 </div>
                 <div className={label}>
                   <span className={labText}>Currency{foreign ? ' and rate' : ''}</span>
-                  <span className="h-11 rounded-[10px] border border-divider bg-surface-elevated flex items-stretch">
+                  <span className="h-10 rounded-[9px] border border-divider bg-surface-elevated flex items-stretch">
                     <CurrencyPicker bare value={quoteCurrency} allowDefault={false} homeCurrency={homeCurrency} label="Currency" disabled={locked}
                       className={cn(foreign && 'border-r border-divider')}
                       onChange={c => { const nx = c ?? homeCurrency; setQuoteCurrency(nx); quoteCurrencyRef.current = nx; setCurrencyTouched(true); scheduleAutoSave() }} />
@@ -1954,7 +1967,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
               {foreign ? 'The rate is today’s and you can change it. ' : 'Rand customers don’t see an exchange rate. '}If there’s no client order no., the quote uses {quoteNumber ?? 'its own number'} as the reference.
             </p>
             <div className="flex justify-end">
-              <button type="button" onClick={() => goStep(2)} className="h-12 px-7 rounded-xl bg-[#2563EB] text-white text-[14px] font-semibold hover:bg-[#1D4ED8]">Next: what you’re quoting</button>
+              <button type="button" onClick={() => goStep(2)} className="hidden md:block h-10 px-5 rounded-[10px] bg-[#2563EB] text-white text-[13.5px] font-semibold hover:bg-[#1D4ED8]">Next: what you’re quoting</button>
             </div>
           </section>
         )}
@@ -2070,7 +2083,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
 
               {step === 3 && (
                 <section className="bg-surface border border-divider rounded-[14px] p-5 sm:p-[22px] flex flex-col gap-[18px]">
-                  <h2 className="text-[20px] font-semibold text-text-primary">Extras <span className="text-[14px] font-normal text-text-secondary">(all optional)</span></h2>
+                  <h2 className="text-[17px] font-semibold text-text-primary">Extras <span className="text-[13px] font-normal text-text-secondary">(all optional)</span></h2>
                   {(showDeposit || showContingency) && (
                     <div className="grid sm:grid-cols-2 gap-3.5">
                       {showDeposit && (
@@ -2117,13 +2130,13 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
               <div role="tablist" aria-label="Which document" className="flex gap-1 p-1 rounded-xl bg-surface border border-divider">
                 {([['quote', 'Quotation'], ['proforma', 'Pro forma invoice']] as const).map(([k, lab]) => (
                   <button key={k} type="button" role="tab" aria-selected={docKind === k} onClick={() => { setDocKind(k); docKindRef.current = k }}
-                    className={cn('h-[38px] px-[18px] rounded-[9px] text-[13.5px] font-semibold', docKind === k ? 'bg-[#2563EB] text-white' : 'text-text-primary hover:bg-surface-elevated')}>{lab}</button>
+                    className={cn('h-8 px-3.5 rounded-[8px] text-[12.5px] font-semibold', docKind === k ? 'bg-[#2563EB] text-white' : 'text-text-primary hover:bg-surface-elevated')}>{lab}</button>
                 ))}
               </div>
               <QuoteDocumentPreview input={buildPdfInput()} />
             </div>
-            <aside className="flex-[1_1_260px] lg:max-w-[300px] w-full bg-surface border border-divider rounded-2xl p-[18px] flex flex-col gap-3 lg:sticky lg:top-4">
-              <span className="text-[16px] font-semibold">Looks right? Send it.</span>
+            <aside className="flex-[1_1_220px] lg:max-w-[250px] w-full bg-surface border border-divider rounded-[14px] p-3.5 flex flex-col gap-2.5 lg:sticky lg:top-4">
+              <span className="text-[14.5px] font-semibold">Looks right? Send it.</span>
               <span className="text-[12.5px] text-text-secondary -mt-1.5">Sending the {docKind === 'quote' ? (attachProforma ? 'quotation and pro forma invoice' : 'quotation') : 'pro forma invoice'}{contactName ? ` to ${contactName}` : clientName ? ` to ${clientName}` : ''}</span>
               {status !== 'accepted' && status !== 'declined' || docKind === 'proforma' ? (
                 <>
@@ -2134,29 +2147,32 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
                       <span>Add the pro forma invoice to the email<span className="block text-[12px] text-text-secondary">One PDF: the quotation, then the pro forma with your banking details.</span></span>
                     </label>
                   )}
-                  <button type="button" disabled={saveState === 'saving'} onClick={() => void openSend()} className="h-12 rounded-xl bg-[#2563EB] text-white text-[14.5px] font-semibold hover:bg-[#1D4ED8] disabled:opacity-50">Send by email</button>
-                  {docKind === 'quote' && <button type="button" disabled={sendBusy} onClick={() => void handleSendWhatsApp()} className="h-12 rounded-xl border border-divider bg-surface text-text-primary text-[14.5px] font-medium hover:bg-surface-elevated disabled:opacity-50">Send on WhatsApp</button>}
+                  <button type="button" disabled={saveState === 'saving'} onClick={() => void openSend()} className="h-10 rounded-[10px] bg-[#2563EB] text-white text-[13.5px] font-semibold hover:bg-[#1D4ED8] disabled:opacity-50">Send by email</button>
+                  {docKind === 'quote' && <button type="button" disabled={sendBusy} onClick={() => void handleSendWhatsApp()} className="h-10 rounded-[10px] border border-divider bg-surface text-text-primary text-[13.5px] font-medium hover:bg-surface-elevated disabled:opacity-50">Send on WhatsApp</button>}
                 </>
               ) : null}
-              <button type="button" onClick={handleDownloadPdf} className="h-12 rounded-xl border border-divider bg-surface text-text-primary text-[14.5px] font-medium hover:bg-surface-elevated">Download PDF</button>
+              <button type="button" onClick={handleDownloadPdf} className="h-10 rounded-[10px] border border-divider bg-surface text-text-primary text-[13.5px] font-medium hover:bg-surface-elevated">Download PDF</button>
               <div className="h-px bg-divider my-0.5" />
-              <button type="button" onClick={() => goStep(3)} className="h-10 rounded-xl text-[#2563EB] text-[14px] font-medium">Back to extras</button>
-              {status === 'draft' && quoteId && <span className="text-[12px] text-text-secondary">Client said yes on the phone? <button type="button" onClick={() => setShowAcceptModal(true)} className="text-[#2563EB] font-medium hover:underline">Mark it accepted</button></span>}
+              <button type="button" onClick={() => goStep(3)} className="h-8 rounded-[10px] text-[#2563EB] text-[13px] font-medium">Back to extras</button>
+              {status === 'draft' && quoteId && <span className="text-[11.5px] text-text-secondary">Client said yes on the phone? Use Accepted at the top.</span>}
             </aside>
           </div>
         )}
       </div>
 
       {/* ── Phone: total and the next step always in reach ── */}
-      <div className="md:hidden fixed inset-x-0 bottom-0 z-40 border-t border-divider bg-surface/95 backdrop-blur px-4 pt-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))] flex items-center gap-3">
+      <div className="md:hidden fixed inset-x-0 bottom-0 z-40 border-t border-divider bg-surface/95 backdrop-blur px-4 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] flex items-center gap-3">
         <div className="flex-1 min-w-0">
-          <p className="text-[12px] text-text-secondary leading-tight">Total{showDeposit && tTotals && tTotals.deposit > 0 ? ` · deposit ${formatCurrency(tTotals.deposit, quoteCurrency)}` : ''}</p>
-          <p className="text-[19px] font-bold text-text-primary leading-tight">{formatCurrency(shownTotal, quoteCurrency)}</p>
+          <p className="text-[11px] text-text-secondary leading-tight">Total{showDeposit && tTotals && tTotals.deposit > 0 ? ` · deposit ${formatCurrency(tTotals.deposit, quoteCurrency)}` : ''}</p>
+          <p className="text-[16px] font-bold text-text-primary leading-tight">{formatCurrency(shownTotal, quoteCurrency)}</p>
         </div>
         {step < 4 ? (
-          <button type="button" onClick={() => goStep((step + 1) as 2 | 3 | 4)} className="h-12 px-5 rounded-xl bg-[#2563EB] text-white text-[15px] font-semibold">Next</button>
+          <span className="flex gap-2">
+            {step > 1 && <button type="button" onClick={() => goStep((step - 1) as 1 | 2 | 3)} className="h-10 px-3.5 rounded-[10px] border border-divider text-text-primary text-[13.5px] font-medium">Back</button>}
+            <button type="button" onClick={() => goStep((step + 1) as 2 | 3 | 4)} className="h-10 px-5 rounded-[10px] bg-[#2563EB] text-white text-[13.5px] font-semibold">Next</button>
+          </span>
         ) : status !== 'accepted' && status !== 'declined' ? (
-          <button type="button" disabled={saveState === 'saving'} onClick={() => void openSend()} className="h-12 px-6 rounded-xl bg-[#2563EB] text-white text-[15px] font-semibold disabled:opacity-50">Send quote</button>
+          <button type="button" disabled={saveState === 'saving'} onClick={() => void openSend()} className="h-10 px-5 rounded-[10px] bg-[#2563EB] text-white text-[13.5px] font-semibold disabled:opacity-50">Send quote</button>
         ) : null}
       </div>
 
