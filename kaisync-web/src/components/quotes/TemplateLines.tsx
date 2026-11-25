@@ -143,7 +143,7 @@ export function TemplateLines({
         {!readOnly && (
           <div className="flex flex-wrap items-center gap-4 pt-2 px-1 text-[12.5px]">
             {f.has('sections') && <SectionButton sections={sections} current={newSection} onPick={setNewSection} compact />}
-            <span className="ml-auto text-text-secondary">Click any value to change it · ⋯ for discount and more · Enter adds the line</span>
+            <span className="hidden sm:inline ml-auto text-text-secondary">Click any value to change it · ⋯ for discount and more · Enter adds the line</span>
           </div>
         )}
       </div>
