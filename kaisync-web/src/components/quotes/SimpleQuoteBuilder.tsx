@@ -1342,9 +1342,9 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
       pdfBase64: quotePdfBase64(pdf, { withProforma: pdf.kind !== 'proforma' && attachProformaRef.current }),
       recipientEmail: to,
       cc: sendRcpt.cc,
-      bodyText: draftEdits(sendDraft).body_text,
+      bodyText: pdf.kind === 'proforma' ? (sendDraft?.body.trim() || pfBody()) : draftEdits(sendDraft).body_text,
       filename: pdf.kind !== 'proforma' && attachProformaRef.current ? `Quote_and_ProForma_${(pdf.quote_number || 'draft').replace(/[^\w.-]+/g, '_')}.pdf` : pdf.kind === 'proforma' ? `ProForma_${(pdf.quote_number || 'draft').replace(/^QU/i, 'PF').replace(/[^\w.-]+/g, '_')}.pdf` : `Quote_${(pdf.quote_number || 'draft').replace(/[^\w.-]+/g, '_')}.pdf`,
-      subject: draftEdits(sendDraft).subject ?? (pdf.kind === 'proforma' ? pfSubject() : `Quote ${pdf.quote_number ?? ''} – ${pdf.title || 'Quotation'}`.trim()),
+      subject: pdf.kind === 'proforma' ? (sendDraft?.subject.trim() || pfSubject()) : draftEdits(sendDraft).subject ?? ( `Quote ${pdf.quote_number ?? ''} – ${pdf.title || 'Quotation'}`.trim()),
     })
 
     if (resend.ok) {
@@ -2218,9 +2218,13 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
               )}
               {quoteId && (
                 <EmailComposer draft={sendDraft} onDraft={setSendDraft} disabled={sendBusy}
-                  load={edits => previewQuoteEmail(supabase, { quoteId, recipientEmail: sendRcpt.to.trim(), cc: sendRcpt.cc,
+                  load={async edits => {
+                    if (docKind !== 'proforma') return previewQuoteEmail(supabase, { quoteId, recipientEmail: sendRcpt.to.trim(), cc: sendRcpt.cc, edits })
                     // A pro forma has its own subject and wording; anything typed in the box still wins.
-                    edits: docKind === 'proforma' ? { subject: pfSubject(), body_text: pfBody(), ...(edits ?? {}) } : edits })} />
+                    const r = await previewQuoteEmail(supabase, { quoteId, recipientEmail: sendRcpt.to.trim(), cc: sendRcpt.cc,
+                      edits: { subject: pfSubject(), body_text: pfBody(), ...(edits ?? {}) } })
+                    return 'error' in r ? r : { ...r, subject: edits?.subject ?? pfSubject(), defaultSubject: pfSubject(), bodyText: edits?.body_text ?? pfBody() }
+                  }} />
               )}
               {actionError && <p className="text-[12px] text-error">{actionError}</p>}
             </div>
