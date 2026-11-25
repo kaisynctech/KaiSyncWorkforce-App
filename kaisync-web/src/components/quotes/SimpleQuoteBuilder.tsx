@@ -25,11 +25,10 @@ import {
   type QuoteVatChoice,
 } from '@/lib/quote-vat'
 import { escapeIlike } from '@/lib/list-pagination'
-import { LineItemsEditor } from '@/components/money/LineItemsEditor'
 import { createInvoiceFromQuote, openInvoiceForQuote } from '@/lib/money/quote-invoice'
 import { CurrencyPicker } from '@/components/money/CurrencyPicker'
 import { formatCurrency } from '@/lib/currencies'
-import { asItemType, lineQty, lineTotal, loadPickItems, type EditorLine, type ItemType, type PickItem } from '@/lib/line-items'
+import { lineTotal, loadPickItems, type EditorLine, type ItemType, type PickItem } from '@/lib/line-items'
 import { BuyoutPanel, SupplyPill, type BuyoutChoice, type BuyoutQuoteLine } from '@/components/quotes/BuyoutPanel'
 import { ensureBuyout, loadBuyout, type Buyout } from '@/lib/money/buyout'
 import { priceAfterChoice, supplyModeOf, type SupplyMode } from '@/lib/money/quote-supply'
@@ -90,6 +89,18 @@ type ClientRow = {
   address?: string | null
   billing_address?: string | null
   vat_number?: string | null
+}
+
+/** "Classic" (no template) shows in the same table as the templates: item, qty, unit, rate, total, and cost/margin for the team. */
+const CLASSIC_TEMPLATE: QuoteTemplate = {
+  id: '', company_id: '', name: 'Classic', business_type: null, is_default: false, archived_at: null, terms: null,
+  features: ['products', 'services', 'cost_margin'], header_fields: [], defaults: { valid_days: 30, payment_terms_days: 30, deposit_pct: null, margin_pct: null },
+  columns: [
+    { key: 'item', label: 'Item', visible: true, team_only: false }, { key: 'qty', label: 'Qty', visible: true, team_only: false },
+    { key: 'unit', label: 'Unit', visible: true, team_only: false }, { key: 'rate', label: 'Rate', visible: true, team_only: false },
+    { key: 'total', label: 'Total', visible: true, team_only: false }, { key: 'cost', label: 'Cost', visible: true, team_only: true },
+    { key: 'margin', label: 'Margin', visible: true, team_only: true },
+  ],
 }
 
 const CLIENT_PICK_COLUMNS = 'id, name, email, legal_name, client_code, contact_person, currency, phone, mobile, address, billing_address, vat_number'
@@ -245,8 +256,10 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   const [processBusy, setProcessBusy] = useState(false)
   const [confirmUnlock, setConfirmUnlock] = useState(false)
   // A draft that was never sent can be deleted (after asking).
-  const [confirmDelete, setConfirmDelete] = useState(false)
-  const [deleting, setDeleting] = useState(false)
+  /** Mark declined (nothing is ever deleted: the quote and its number stay on record). */
+  const [confirmDecline, setConfirmDecline] = useState(false)
+  const [declineReason, setDeclineReason] = useState('')
+  const [declining, setDeclining] = useState(false)
   const lockedRef = useRef(false)
   // The order's open invoice, if it has one ("Open invoice" instead of "Create invoice").
   const [openInvoiceId, setOpenInvoiceId] = useState<string | null>(null)
@@ -809,25 +822,18 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
     }
   }
 
-  async function handleDeleteDraft() {
+  /** The client said no: the quote stays on record, marked declined, with the reason if one was given. */
+  async function handleMarkDeclined() {
     const cid = companyIdRef.current
-    const qid = quoteIdRef.current
-    if (!cid || !qid) return
-    setDeleting(true)
+    setDeclining(true)
     setActionError(null)
-    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
-    lockedRef.current = true // no autosave while it goes
-    // Only a draft that was never sent; its lines go with it.
-    const { data, error } = await supabase.from('commercial_quotes').delete()
-      .eq('id', qid).eq('company_id', cid).eq('status', 'draft').is('sent_at', null).select('id')
-    setDeleting(false)
-    if (error || !data?.length) {
-      lockedRef.current = false
-      setConfirmDelete(false)
-      setActionError(error?.message ?? 'Only a draft that was never sent can be deleted.')
-      return
-    }
-    router.push('/dashboard/money/quotes')
+    const id = await doSave('declined')
+    if (!id || !cid) { setDeclining(false); setActionError('Could not mark the quote as declined. Try again.'); return }
+    const reason = declineReason.trim().slice(0, 500) || null
+    if (reason) await supabase.from('commercial_quotes').update({ declined_reason: reason }).eq('id', id).eq('company_id', cid)
+    setStatus('declined'); statusRef.current = 'declined'
+    setDeclining(false)
+    setConfirmDecline(false)
   }
 
   // ── Auto-save scheduler ────────────────────────────────────────────────────
@@ -1028,53 +1034,6 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [foreign, quoteCurrency, homeCurrency])
 
-  const editorLines: EditorLine[] = lines.map(l => ({
-    key: l.tempId,
-    type: l.item_type,
-    sourceId: l.source_id,
-    description: l.description,
-    qty: l.qty,
-    unitPrice: l.unit_price,
-    unit: l.unit,
-    hint: l.hint ?? null,
-    unitCost: l.unit_cost ?? null,
-    discountPct: l.discount_pct ?? null,
-  }))
-
-  function handleEditorChange(next: EditorLine[]) {
-    const byKey = new Map(linesRef.current.map(l => [l.tempId, l]))
-    const mapped: SimpleQuoteLine[] = next.map((e, i) => {
-      const prev = byKey.get(e.key)
-      const sameItem = !!prev && prev.item_type === e.type && prev.source_id === e.sourceId
-      return {
-        id:                prev?.id ?? crypto.randomUUID(),
-        tempId:            e.key,
-        description:       e.description,
-        qty:               lineQty(e),
-        unit:              e.unit || prev?.unit || 'each',
-        unit_price:        e.unitPrice,
-        total:             lineTotal(e),
-        catalogue_item_id: e.type === 'catalogue' ? e.sourceId : prev?.catalogue_item_id ?? null,
-        sort_order:        i,
-        item_type:         e.type,
-        source_id:         e.sourceId,
-        hint:              e.hint ?? null,
-        unit_cost:         e.unitCost ?? null,
-        discount_pct:      e.discountPct ?? null,
-        supply_mode:       sameItem ? prev?.supply_mode ?? null : null,
-        supplier_id:       sameItem ? prev?.supplier_id ?? null : null,
-        chosen_response_line_id: sameItem ? prev?.chosen_response_line_id ?? null : null,
-        section:           prev?.section ?? null,
-        extra:             prev?.extra,
-        option_of:         prev?.option_of ?? null,
-        recurring:         prev?.recurring ?? null,
-        is_contingency:    prev?.is_contingency ?? false,
-      }
-    })
-    setLines(mapped)
-    linesRef.current = mapped
-    scheduleAutoSave()
-  }
 
   // ── How lines are supplied, and the Buyout tab ────────────────────────────
   function onHandOf(l: Pick<SimpleQuoteLine, 'item_type' | 'source_id'>): number | null {
@@ -1621,11 +1580,11 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
   const shownVat = template && tTotals ? tTotals.vat : vat
   const STEPS: [1 | 2 | 3 | 4, string][] = [[1, 'Who it’s for'], [2, 'What you’re quoting'], [3, 'Extras'], [4, 'Check and send']]
   const label = 'flex flex-col gap-1.5'
-  const labText = 'text-[12.5px] font-semibold text-text-secondary h-[18px] whitespace-nowrap flex items-center justify-between gap-2'
+  const labText = 'text-[12.5px] font-semibold text-text-primary h-[18px] whitespace-nowrap flex items-center justify-between gap-2'
   const field = 'h-11 w-full box-border rounded-[10px] border border-divider bg-surface-elevated px-3 text-[14px] font-medium text-text-primary focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/15 disabled:opacity-60'
   const optionalTag = <span className="text-[11px] font-medium text-text-secondary bg-[#EEF1F6] px-[7px] rounded-full leading-[18px]">Optional</span>
-  const groupHead = (title: string, text: string) => (
-    <div className="flex flex-col gap-1"><span className="text-[14px] font-semibold text-text-primary">{title}</span><span className="text-[12.5px] text-text-secondary leading-[1.5]">{text}</span></div>
+  const groupHead = (title: string) => (
+    <span className="text-[11.5px] font-bold tracking-[0.08em] uppercase text-[#2563EB] dark:text-[#7AA7FF]">{title}</span>
   )
   const otherHeaders = (template?.header_fields ?? []).filter(h => !OWN_HEADER.has(h))
   const showDeposit = !!template?.features.includes('deposit')
@@ -1701,24 +1660,20 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
           <button type="button" onClick={() => { setActionError(null); setShowWhatsNext(true) }}
             className="h-11 px-5 rounded-xl bg-[#2563EB] text-white text-[14px] font-semibold hover:bg-[#1D4ED8]">What&apos;s next?</button>
         )}
+        {status !== 'accepted' && status !== 'declined' && quoteId && (
         <div className="relative">
-          <button type="button" aria-label="More: preview, mark accepted, delete" aria-expanded={menuOpen} onClick={() => setMenuOpen(o => !o)}
+          <button type="button" aria-label="More: mark accepted or declined" aria-expanded={menuOpen} onClick={() => setMenuOpen(o => !o)}
             className="w-11 h-11 rounded-xl border border-divider bg-surface text-text-primary flex items-center justify-center hover:bg-surface-elevated">
             <span className="material-icons">more_horiz</span>
           </button>
           {menuOpen && (
             <div className="absolute right-0 top-full mt-2 z-40 w-60 rounded-xl border border-divider bg-surface shadow-[0_14px_30px_rgba(15,23,42,0.16)] py-1.5 text-[13.5px]" onMouseLeave={() => setMenuOpen(false)}>
-              <button type="button" onClick={() => { setMenuOpen(false); handleDownloadPdf() }} className="w-full text-left px-3.5 py-2.5 hover:bg-surface-elevated flex items-center gap-2.5"><span className="material-icons !text-[18px] text-text-secondary">picture_as_pdf</span>Download PDF</button>
-              <button type="button" onClick={() => goStep(4)} className="w-full text-left px-3.5 py-2.5 hover:bg-surface-elevated flex items-center gap-2.5"><span className="material-icons !text-[18px] text-text-secondary">visibility</span>Preview</button>
-              {status !== 'accepted' && status !== 'declined' && (
-                <button type="button" onClick={() => { setMenuOpen(false); setShowAcceptModal(true) }} className="w-full text-left px-3.5 py-2.5 hover:bg-surface-elevated flex items-center gap-2.5"><span className="material-icons !text-[18px] text-text-secondary">task_alt</span>Mark accepted</button>
-              )}
-              {status === 'draft' && quoteId && (
-                <button type="button" onClick={() => { setMenuOpen(false); setConfirmDelete(true) }} className="w-full text-left px-3.5 py-2.5 hover:bg-red-50 text-red-700 flex items-center gap-2.5"><span className="material-icons !text-[18px]">delete_outline</span>Delete draft</button>
-              )}
+              <button type="button" onClick={() => { setMenuOpen(false); setShowAcceptModal(true) }} className="w-full text-left px-3.5 py-2.5 hover:bg-surface-elevated flex items-center gap-2.5"><span className="material-icons !text-[18px] text-emerald-600">task_alt</span>Mark accepted</button>
+              <button type="button" onClick={() => { setMenuOpen(false); setDeclineReason(''); setConfirmDecline(true) }} className="w-full text-left px-3.5 py-2.5 hover:bg-surface-elevated flex items-center gap-2.5"><span className="material-icons !text-[18px] text-text-secondary">do_not_disturb_on</span>Mark declined</button>
             </div>
           )}
         </div>
+        )}
       </div>
 
       <div className={cn('max-w-[1320px] mx-auto px-4 sm:px-7 pt-5 pb-28 md:pb-12 flex flex-col gap-[18px]')}>
@@ -1780,13 +1735,15 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
             <button type="button" aria-label="Dismiss" onClick={() => setSentNote(null)} className="text-emerald-700 hover:text-emerald-900"><span className="material-icons text-[15px]">close</span></button>
           </p>
         )}
-        {confirmDelete && (
-          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 space-y-2">
-            <p className="text-[13px] font-semibold text-red-900">Delete draft {quoteNumber ?? ''}?</p>
-            <p className="text-[12.5px] text-red-900">The quote and its lines are removed for good. Only drafts that were never sent can be deleted.</p>
+        {confirmDecline && (
+          <div className="rounded-xl border border-divider bg-surface px-4 py-3 flex flex-col gap-2.5">
+            <p className="text-[14px] font-semibold text-text-primary">Mark {quoteNumber ?? 'this quote'} as declined?</p>
+            <p className="text-[12.5px] text-text-secondary">It stays in your quotes, with its number, marked Declined.</p>
+            <input type="text" value={declineReason} maxLength={500} onChange={e => setDeclineReason(e.target.value)} placeholder="Why? (optional) e.g. went with another supplier"
+              className="h-10 rounded-[10px] border border-divider bg-surface-elevated px-3 text-[13.5px] text-text-primary focus:outline-none focus:border-[#2563EB]" />
             <div className="flex gap-2">
-              <button type="button" onClick={() => setConfirmDelete(false)} className="h-8 px-3 rounded-lg border border-red-200 bg-white text-[12.5px] text-red-900 font-medium">Keep it</button>
-              <button type="button" disabled={deleting} onClick={() => void handleDeleteDraft()} className="h-8 px-3 rounded-lg bg-red-600 text-white text-[12.5px] font-semibold disabled:opacity-60">{deleting ? 'Deleting…' : 'Delete draft'}</button>
+              <button type="button" onClick={() => setConfirmDecline(false)} className="h-9 px-3.5 rounded-lg border border-divider bg-surface text-[13px] font-medium text-text-primary">Keep it open</button>
+              <button type="button" disabled={declining} onClick={() => void handleMarkDeclined()} className="h-9 px-3.5 rounded-lg bg-slate-800 text-white text-[13px] font-semibold disabled:opacity-60 dark:bg-slate-200 dark:text-slate-900">{declining ? 'Saving…' : 'Mark declined'}</button>
             </div>
           </div>
         )}
@@ -1822,13 +1779,10 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         {/* ── STEP 1 · Who it's for ── */}
         {step === 1 && (
           <section className="bg-surface border border-divider rounded-2xl p-5 sm:p-6 flex flex-col gap-[22px]">
-            <div className="flex items-baseline justify-between gap-3 flex-wrap">
-              <h2 className="text-[20px] font-semibold text-text-primary">Who is this quote for?</h2>
-              <span className="text-[13px] text-text-secondary">Fills in from the customer’s profile. Changes here are for this quote only.</span>
-            </div>
+            <h2 className="text-[20px] font-semibold text-text-primary">Who is this quote for?</h2>
 
-            <div className="grid md:grid-cols-[220px_minmax(0,1fr)] gap-3 md:gap-6 pt-1">
-              {groupHead('Customer', 'Pick one of your customers, or type a new name to add them.')}
+            <div className="flex flex-col gap-3">
+              {groupHead('Customer')}
               <div className="grid sm:grid-cols-3 gap-4 items-end">
                 <div className="sm:col-span-2 relative">
                   <label className={label}>
@@ -1880,8 +1834,8 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
 
             <div className="h-px bg-divider" />
 
-            <div className="grid md:grid-cols-[220px_minmax(0,1fr)] gap-3 md:gap-6">
-              {groupHead('Send it to', 'Pick one of this customer’s contacts; their email and number fill in. No contacts yet? Just type a name.')}
+            <div className="flex flex-col gap-3">
+              {groupHead('Send to')}
               <div className="grid sm:grid-cols-3 gap-4 items-end">
                 <div className="relative">
                   <label className={label}>
@@ -1919,8 +1873,8 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
 
             <div className="h-px bg-divider" />
 
-            <div className="grid md:grid-cols-[220px_minmax(0,1fr)] gap-3 md:gap-6">
-              {groupHead('Details', 'Address and numbers printed on the quote, the sales rep, and the money it’s in.')}
+            <div className="flex flex-col gap-3">
+              {groupHead('Details')}
               <div className="grid sm:grid-cols-3 gap-4 items-end">
                 <label className={cn(label, 'sm:col-span-2')}>
                   <span className={labText}>Address</span>
@@ -2095,14 +2049,16 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
                       ensure={ensureQuoteBuyout} reload={reloadBuyout} onChoose={chooseForLine}
                       keep={keepMode} onKeep={rememberKeep} defaultMargin={defaultMargin} onDefaultMargin={rememberMargin} />
                   ) : template ? (
-                    <TemplateLines template={template} lines={lines} items={quoteItems} itemsLoading={pickLoading} currency={quoteCurrency}
+                    <TemplateLines template={template} lines={lines} items={quoteItems} itemsLoading={pickLoading && pickItems.length === 0} currency={quoteCurrency}
                       readOnly={locked} onChange={next => setTemplateLines(next as SimpleQuoteLine[])} makeLine={makeTemplateLine}
                       lineExtra={askSuppliers ? (l => (l.option_of || l.is_contingency ? null : lineExtra({ key: l.tempId, description: l.description } as EditorLine))) : undefined}
                       contingencyPct={contingencyPct} onContingency={updateContingency} hideContingency browseSignal={browseSignal} />
                   ) : (
-                    <div className="bg-surface border border-divider rounded-[14px] p-3">
-                      <LineItemsEditor lines={editorLines} onChange={handleEditorChange} items={quoteItems} itemsLoading={pickLoading} startOpen={!initialQuoteId} currency={quoteCurrency} showCost readOnly={locked} lineExtra={lineExtra} />
-                    </div>
+                    // Classic (no template): the same slim table as every template; how a line is supplied sits in its ⋯.
+                    <TemplateLines template={CLASSIC_TEMPLATE} lines={lines} items={quoteItems} itemsLoading={pickLoading && pickItems.length === 0} currency={quoteCurrency}
+                      readOnly={locked} onChange={next => setTemplateLines(next as SimpleQuoteLine[])} makeLine={makeTemplateLine}
+                      lineExtra={l => (l.option_of || l.is_contingency ? null : lineExtra({ key: l.tempId, description: l.description } as EditorLine))}
+                      contingencyPct={0} onContingency={() => {}} hideContingency browseSignal={browseSignal} />
                   )}
 
                   {quoteView === 'items' && sourcing.count > 0 && (
