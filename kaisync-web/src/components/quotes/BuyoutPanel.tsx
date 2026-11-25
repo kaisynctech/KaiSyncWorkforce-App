@@ -467,7 +467,7 @@ function RepliesView({ companyId, buyout, lines, currency, busy, setBusy, setMsg
                       return (
                         <td key={r.id} className={cn(TD, 'text-center')}>
                           {r.status === 'pending' ? <Pill tone="slate">Not sent</Pill> : <Pill tone="amber">Waiting{r.viewedAt ? ' · opened' : ''}</Pill>}
-                          {!readOnly && r.status !== 'pending' && <button type="button" className="block mx-auto mt-0.5 text-[11px] text-[#2563EB] hover:underline" onClick={() => startEnter(r, bl.rfqLineId)}>type their price</button>}
+                          {!readOnly && <button type="button" className="block mx-auto mt-0.5 text-[11px] text-[#2563EB] hover:underline" onClick={() => startEnter(r, bl.rfqLineId)}>type their price</button>}
                         </td>
                       )
                     }
