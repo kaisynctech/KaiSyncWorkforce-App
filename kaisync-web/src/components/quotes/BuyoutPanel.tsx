@@ -402,6 +402,71 @@ function RepliesView({ companyId, buyout, lines, currency, busy, setBusy, setMsg
   }
 
   const recips = buyout.recipients
+  // One supplier's answer for one item: their price (tap to use), waiting, or the box to type a price they gave.
+  const priceNode = (bl: Buyout['lines'][number], ql: BuyoutQuoteLine | undefined, r: BuyoutRecipient, rep: BuyoutReply | undefined, best: number | null) => {
+                    const key = `${r.id}:${bl.rfqLineId}`
+                    if (entering === key) {
+                      return (
+                        <div className="rounded-md p-1 bg-amber-50/60 dark:bg-amber-950/20">
+                          <div className="flex flex-col gap-1 min-w-[130px]">
+                            <input className={cn(inp, 'h-7 text-right')} placeholder="Their price" aria-label="Their unit price" autoFocus value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} />
+                            <select className={cn(inp, 'h-7 text-[11.5px]')} aria-label="Does their price include VAT" value={form.vat} onChange={e => setForm(f => ({ ...f, vat: e.target.value as PriceVat }))}>
+                              {(Object.keys(VAT_LABEL) as PriceVat[]).map(k => <option key={k} value={k}>{VAT_LABEL[k]}</option>)}
+                            </select>
+                            <span className="flex gap-1.5 justify-center">
+                              <button type="button" className={cn(btn, 'h-7 px-2')} disabled={busy} onClick={() => void saveEntered(r, bl.rfqLineId)}>Save</button>
+                              <button type="button" className="text-[11.5px] text-text-secondary" onClick={() => setEntering(null)}>Cancel</button>
+                            </span>
+                          </div>
+                        </div>
+                      )
+                    }
+                    if (!asks(r, bl.rfqLineId)) return <span className="text-text-secondary text-[12px]">not asked</span>
+                    if (!rep) {
+                      return (
+                        <div>
+                          {r.status === 'pending' ? <Pill tone="slate">Not sent</Pill> : <Pill tone="amber">Waiting{r.viewedAt ? ' · opened' : ''}</Pill>}
+                          {!readOnly && <button type="button" className="block mx-auto mt-0.5 text-[11px] text-[#2563EB] hover:underline" onClick={() => startEnter(r, bl.rfqLineId)}>type their price</button>}
+                        </div>
+                      )
+                    }
+                    const cost = costExVat(rep.unitPrice, r.pricesIncludeVat)
+                    const isChosen = rep.id === ql?.chosenResponseLineId
+                    const tip = [rep.qty != null && rep.qty !== bl.qty ? `can supply ${rep.qty}` : null, rep.leadDays != null ? `${rep.leadDays} days` : null, rep.notes ?? r.notes].filter(Boolean).join(' · ')
+                    return (
+                      <div>
+                        <button type="button" disabled={busy || !ql || isChosen} title={tip || undefined}
+                          onClick={() => ql && onChoose(ql.id, { cost, supplierId: r.supplierId, responseLineId: rep.id })}
+                          className={cn('h-7 px-2.5 rounded-md border text-[12.5px] font-semibold tabular-nums whitespace-nowrap inline-flex items-center gap-1',
+                            isChosen ? 'border-[#2563EB] bg-[#EEF4FF] text-[#2563EB] dark:bg-[#16264A] dark:text-[#7AA7FF]'
+                              : best != null && cost === best ? 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-300'
+                              : 'border-divider bg-surface text-text-primary hover:bg-surface-elevated')}>
+                          {formatCurrency(cost, currency)}{isChosen && <span className="material-icons !text-[14px]">check</span>}
+                        </button>
+                        {tip && <span className="block text-[10.5px] text-text-secondary mt-0.5 max-w-[150px] mx-auto truncate">{tip}</span>}
+                        {!readOnly && <button type="button" className="block mx-auto text-[10.5px] text-text-secondary hover:text-[#2563EB]" onClick={() => startEnter(r, bl.rfqLineId, rep)}>edit</button>}
+                      </div>
+                    )
+  }
+  const ownNode = (ql: BuyoutQuoteLine | undefined) => {
+    const ownChosen = !!ql && !ql.chosenResponseLineId && (ql.unitCost ?? 0) > 0
+    return (
+      ownChosen ? (
+                      <span className="h-7 px-2.5 rounded-md border border-[#2563EB] bg-[#EEF4FF] text-[#2563EB] dark:bg-[#16264A] dark:text-[#7AA7FF] text-[12.5px] font-semibold inline-flex items-center gap-1">{formatCurrency(ql!.unitCost!, currency)}<span className="material-icons !text-[14px]">check</span></span>
+                    ) : ql && !readOnly ? (
+                      ownOpen === ql.id ? (
+                        <span className="inline-flex gap-1 items-center">
+                          <input value={ownCost[ql.id] ?? ''} autoFocus onChange={e => setOwnCost(x => ({ ...x, [ql.id]: e.target.value }))} placeholder="cost" aria-label="Your own cost price" className={cn(inp, 'w-[80px] h-7 text-right')} />
+                          <button type="button" className={cn(btn, 'h-7 px-2')} onClick={() => {
+                            const n = parseFloat((ownCost[ql.id] ?? '').replace(/\s/g, '').replace(',', '.'))
+                            if (!(n > 0)) { setMsg({ ok: false, text: 'Type a cost price.' }); return }
+                            onChoose(ql.id, { ownCost: n }); setOwnCost(x => ({ ...x, [ql.id]: '' })); setOwnOpen(null)
+                          }}>Use</button>
+                        </span>
+                      ) : <button type="button" className="text-[12.5px] font-semibold text-[#2563EB]" onClick={() => setOwnOpen(ql.id)}>+ add</button>
+                    ) : null
+    )
+  }
   return (
     <section className={cn(card, 'overflow-hidden')}>
       <fieldset className="px-3 py-2 border-b border-divider flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12px]" disabled={readOnly}>
@@ -418,7 +483,28 @@ function RepliesView({ companyId, buyout, lines, currency, busy, setBusy, setMsg
         </label>
         <span className="ml-auto text-text-secondary hidden sm:inline">Tap a price to use it · prices excl. VAT</span>
       </fieldset>
-      <div className="overflow-x-auto">
+      {/* Phone: one small card per item */}
+      <div className="md:hidden divide-y divide-divider">
+        {buyout.lines.map(bl => {
+          const ql = bl.quoteLineId ? byQuoteLine.get(bl.quoteLineId) : undefined
+          const reps = recips.map(r => ({ r, rep: buyout.replies.find(x => x.recipientId === r.id && x.rfqLineId === bl.rfqLineId) }))
+          const costs = reps.filter(x => x.rep).map(x => costExVat(x.rep!.unitPrice, x.r.pricesIncludeVat))
+          const best = costs.length > 1 ? Math.min(...costs) : null
+          return (
+            <div key={bl.rfqLineId} className="px-3 py-2.5 flex flex-col gap-1.5">
+              <span className="text-[13px] font-semibold text-text-primary">{bl.description} <span className="font-normal text-text-secondary">· {bl.qty}</span></span>
+              {reps.filter(({ r }) => asks(r, bl.rfqLineId)).map(({ r, rep }) => (
+                <div key={r.id} className="flex items-center justify-between gap-2 text-[12.5px]">
+                  <span className="min-w-0 truncate text-text-primary">{r.name}</span>
+                  <span className="shrink-0 text-right">{priceNode(bl, ql, r, rep, best)}</span>
+                </div>
+              ))}
+              <div className="flex items-center justify-between gap-2 text-[12.5px]"><span className="text-text-secondary">My own cost</span><span>{ownNode(ql)}</span></div>
+            </div>
+          )
+        })}
+      </div>
+      <div className="hidden md:block overflow-x-auto">
         <table className="w-full border-collapse" style={{ minWidth: 380 + recips.length * 150 }}>
           <thead><tr>
             <th className={TH}>Item</th><th className={cn(TH, 'text-right')}>Qty</th>
@@ -436,7 +522,6 @@ function RepliesView({ companyId, buyout, lines, currency, busy, setBusy, setMsg
               const reps = recips.map(r => ({ r, rep: buyout.replies.find(x => x.recipientId === r.id && x.rfqLineId === bl.rfqLineId) }))
               const costs = reps.filter(x => x.rep).map(x => costExVat(x.rep!.unitPrice, x.r.pricesIncludeVat))
               const best = costs.length > 1 ? Math.min(...costs) : null
-              const ownChosen = !!ql && !ql.chosenResponseLineId && (ql.unitCost ?? 0) > 0
               return (
                 <tr key={bl.rfqLineId}>
                   <td className={TD}>
@@ -444,67 +529,8 @@ function RepliesView({ companyId, buyout, lines, currency, busy, setBusy, setMsg
                     {!ql && <span className="block"><Pill tone="slate">No longer on the quote</Pill></span>}
                   </td>
                   <td className={cn(TD, 'text-right')}>{bl.qty}</td>
-                  {reps.map(({ r, rep }) => {
-                    const key = `${r.id}:${bl.rfqLineId}`
-                    if (entering === key) {
-                      return (
-                        <td key={r.id} className={cn(TD, 'bg-amber-50/60 dark:bg-amber-950/20')}>
-                          <div className="flex flex-col gap-1 min-w-[130px]">
-                            <input className={cn(inp, 'h-7 text-right')} placeholder="Their price" aria-label="Their unit price" autoFocus value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} />
-                            <select className={cn(inp, 'h-7 text-[11.5px]')} aria-label="Does their price include VAT" value={form.vat} onChange={e => setForm(f => ({ ...f, vat: e.target.value as PriceVat }))}>
-                              {(Object.keys(VAT_LABEL) as PriceVat[]).map(k => <option key={k} value={k}>{VAT_LABEL[k]}</option>)}
-                            </select>
-                            <span className="flex gap-1.5 justify-center">
-                              <button type="button" className={cn(btn, 'h-7 px-2')} disabled={busy} onClick={() => void saveEntered(r, bl.rfqLineId)}>Save</button>
-                              <button type="button" className="text-[11.5px] text-text-secondary" onClick={() => setEntering(null)}>Cancel</button>
-                            </span>
-                          </div>
-                        </td>
-                      )
-                    }
-                    if (!asks(r, bl.rfqLineId)) return <td key={r.id} className={cn(TD, 'text-center text-text-secondary text-[12px]')}>not asked</td>
-                    if (!rep) {
-                      return (
-                        <td key={r.id} className={cn(TD, 'text-center')}>
-                          {r.status === 'pending' ? <Pill tone="slate">Not sent</Pill> : <Pill tone="amber">Waiting{r.viewedAt ? ' · opened' : ''}</Pill>}
-                          {!readOnly && <button type="button" className="block mx-auto mt-0.5 text-[11px] text-[#2563EB] hover:underline" onClick={() => startEnter(r, bl.rfqLineId)}>type their price</button>}
-                        </td>
-                      )
-                    }
-                    const cost = costExVat(rep.unitPrice, r.pricesIncludeVat)
-                    const isChosen = rep.id === ql?.chosenResponseLineId
-                    const tip = [rep.qty != null && rep.qty !== bl.qty ? `can supply ${rep.qty}` : null, rep.leadDays != null ? `${rep.leadDays} days` : null, rep.notes ?? r.notes].filter(Boolean).join(' · ')
-                    return (
-                      <td key={r.id} className={cn(TD, 'text-center')}>
-                        <button type="button" disabled={busy || !ql || isChosen} title={tip || undefined}
-                          onClick={() => ql && onChoose(ql.id, { cost, supplierId: r.supplierId, responseLineId: rep.id })}
-                          className={cn('h-7 px-2.5 rounded-md border text-[12.5px] font-semibold tabular-nums whitespace-nowrap inline-flex items-center gap-1',
-                            isChosen ? 'border-[#2563EB] bg-[#EEF4FF] text-[#2563EB] dark:bg-[#16264A] dark:text-[#7AA7FF]'
-                              : best != null && cost === best ? 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-300'
-                              : 'border-divider bg-surface text-text-primary hover:bg-surface-elevated')}>
-                          {formatCurrency(cost, currency)}{isChosen && <span className="material-icons !text-[14px]">check</span>}
-                        </button>
-                        {tip && <span className="block text-[10.5px] text-text-secondary mt-0.5 max-w-[150px] mx-auto truncate">{tip}</span>}
-                        {!readOnly && <button type="button" className="block mx-auto text-[10.5px] text-text-secondary hover:text-[#2563EB]" onClick={() => startEnter(r, bl.rfqLineId, rep)}>edit</button>}
-                      </td>
-                    )
-                  })}
-                  <td className={cn(TD, 'text-center')}>
-                    {ownChosen ? (
-                      <span className="h-7 px-2.5 rounded-md border border-[#2563EB] bg-[#EEF4FF] text-[#2563EB] dark:bg-[#16264A] dark:text-[#7AA7FF] text-[12.5px] font-semibold inline-flex items-center gap-1">{formatCurrency(ql!.unitCost!, currency)}<span className="material-icons !text-[14px]">check</span></span>
-                    ) : ql && !readOnly ? (
-                      ownOpen === ql.id ? (
-                        <span className="inline-flex gap-1 items-center">
-                          <input value={ownCost[ql.id] ?? ''} autoFocus onChange={e => setOwnCost(x => ({ ...x, [ql.id]: e.target.value }))} placeholder="cost" aria-label="Your own cost price" className={cn(inp, 'w-[80px] h-7 text-right')} />
-                          <button type="button" className={cn(btn, 'h-7 px-2')} onClick={() => {
-                            const n = parseFloat((ownCost[ql.id] ?? '').replace(/\s/g, '').replace(',', '.'))
-                            if (!(n > 0)) { setMsg({ ok: false, text: 'Type a cost price.' }); return }
-                            onChoose(ql.id, { ownCost: n }); setOwnCost(x => ({ ...x, [ql.id]: '' })); setOwnOpen(null)
-                          }}>Use</button>
-                        </span>
-                      ) : <button type="button" className="text-[12.5px] font-semibold text-[#2563EB]" onClick={() => setOwnOpen(ql.id)}>+ add</button>
-                    ) : null}
-                  </td>
+                  {reps.map(({ r, rep }) => <td key={r.id} className={cn(TD, 'text-center')}>{priceNode(bl, ql, r, rep, best)}</td>)}
+                  <td className={cn(TD, 'text-center')}>{ownNode(ql)}</td>
                 </tr>
               )
             })}
