@@ -21,6 +21,7 @@ import { createInvoiceFromQuote, createPartInvoiceFromQuote } from '@/lib/money/
 import { createSupplyRfqFromQuote } from '@/lib/supply-rfq'
 import { ORDER_STATE, orderMoney, type OrderInvoice } from '@/lib/money/orders'
 import { cn } from '@/lib/utils'
+import { XeroMark, useXeroStatuses } from '@/components/xero/XeroMark'
 import { createJob } from '@/lib/jobs'
 import { createProject } from '@/lib/projects'
 import { isServiceOnly, lineSupply, processOrder, type OrderPoLine, type SupplyMode } from '@/lib/money/order-supply'
@@ -48,17 +49,19 @@ type Po = SupplyPo
 type PoLine = OrderPoLine
 type Grn = SupplyGrn
 type Bill = SupplyBill & { subtotal: number | null; amount_paid: number | null; balance_due: number | null; due_date: string | null }
+type LedgerPay = { id: string; source_id: string; credit: number | null; entry_date: string | null }
 type Payout = { id: string; payout_status: string | null; total_amount: number | null; subtotal: number | null; payout_date: string | null; remittance_number: string | null; contractor?: { name: string } | null }
 
 type Tab = 'sold' | 'invoices' | 'payments' | 'buying'
-type BuyTab = 'pos' | 'received' | 'other'
+type BuyTab = 'pos' | 'received' | 'bills' | 'rfqs'
 /** Old links (?tab=invoices, ?tab=pos …) still land on the right tab. */
 function tabFrom(v: string | null): { tab: Tab; buy: BuyTab } {
   if (v === 'invoices' || v === 'credits' || v === 'money') return { tab: 'invoices', buy: 'pos' }
   if (v === 'payments') return { tab: 'payments', buy: 'pos' }
   if (v === 'pos' || v === 'buying') return { tab: 'buying', buy: 'pos' }
   if (v === 'received') return { tab: 'buying', buy: 'received' }
-  if (v === 'purchasing') return { tab: 'buying', buy: 'other' }
+  if (v === 'purchasing' || v === 'bills') return { tab: 'buying', buy: 'bills' }
+  if (v === 'rfqs') return { tab: 'buying', buy: 'rfqs' }
   return { tab: 'sold', buy: 'pos' }
 }
 
@@ -124,6 +127,7 @@ export default function OrderPage() {
   const [bills, setBills] = useState<Bill[]>([])
   const [allBills, setAllBills] = useState<Bill[]>([])
   const [payouts, setPayouts] = useState<Payout[]>([])
+  const [ledgerPays, setLedgerPays] = useState<LedgerPay[]>([])
 
   const load = useCallback(async () => {
     const supabase = createClient()
@@ -160,15 +164,18 @@ export default function OrderPage() {
     const poIds = poRows.map(p => p.id)
     const rfqIds = ((rRes.data ?? []) as Rfq[]).map(r => r.id)
     const none = Promise.resolve({ data: [] as unknown[] })
-    const [txRes, cnRes, plRes, gRes, bRes, rcRes] = await Promise.all([
+    const [txRes, cnRes, plRes, gRes, bRes, rcRes, lgRes] = await Promise.all([
       invIds.length ? supabase.from('finance_transactions').select('id, source_id, amount, transaction_date, created_at, payment_method, reference_number, receipt_number').eq('source_table', 'finance_invoices').eq('direction', 'incoming').in('source_id', invIds).order('transaction_date') : none,
       invIds.length ? supabase.from('credit_notes').select('id, invoice_id, credit_note_number, status, currency, total_amount, issue_date').in('invoice_id', invIds).order('created_at') : none,
       poIds.length ? supabase.from('purchase_order_lines').select('id, po_id, quote_line_id, description, unit, quantity_ordered, quantity_received, unit_price, vat_rate').in('po_id', poIds).order('sort_order') : none,
       poIds.length ? supabase.from('goods_received_notes').select('id, grn_number, po_id, status, received_date, created_at, delivery_note_number, notes').in('po_id', poIds).order('created_at', { ascending: false }) : none,
       poIds.length ? supabase.from('supplier_invoices').select('id, invoice_number, bill_number, po_id, grn_id, status, approval_status, currency, subtotal, total_amount, amount_paid, balance_due, due_date').eq('company_id', cid).in('po_id', poIds) : none,
       rfqIds.length ? supabase.from('rfq_recipients').select('supplier_id, send_to').in('rfq_id', rfqIds) : none,
+      // The client-account line for each payment: that's what goes to Xero (and carries its Xero mark).
+      invIds.length ? supabase.from('customer_ledger_entries').select('id, source_id, credit, entry_date').eq('entry_type', 'payment').eq('source_table', 'finance_invoices').in('source_id', invIds).order('created_at') : none,
     ])
     setPayments((txRes.data ?? []) as Payment[])
+    setLedgerPays((lgRes.data ?? []) as LedgerPay[])
     setCredits((cnRes.data ?? []) as CreditNote[])
     setPoLines((plRes.data ?? []) as PoLine[])
     const grnRows = (gRes.data ?? []) as Grn[]
@@ -188,6 +195,20 @@ export default function OrderPage() {
   const money = useMemo(() => orderMoney(Number(quote?.total_amount) || 0, invoices), [quote, invoices])
   const invNumber = useMemo(() => new Map(invoices.map(i => [i.id, i.invoice_number ?? 'Draft'])), [invoices])
   const poNumber = useMemo(() => new Map(pos.map(p => [p.id, p.po_number ?? 'PO'])), [pos])
+
+  /** Each payment's client-account line (same invoice and amount; each line used once). */
+  const ledgerOf = useMemo(() => {
+    const used = new Set<string>()
+    const m = new Map<string, string>()
+    for (const p of payments) {
+      const day = (p.transaction_date ?? p.created_at ?? '').slice(0, 10)
+      const fits = ledgerPays.filter(l => !used.has(l.id) && l.source_id === p.source_id && Math.abs((Number(l.credit) || 0) - (Number(p.amount) || 0)) < 0.01)
+      const hit = fits.find(l => (l.entry_date ?? '').slice(0, 10) === day) ?? fits[0]
+      if (hit) { used.add(hit.id); m.set(p.id, hit.id) }
+    }
+    return m
+  }, [payments, ledgerPays])
+  const xeroPay = useXeroStatuses(companyId, 'payment', [...ledgerOf.values()])
 
   // Team only: estimated (from the quote's cost prices) and actual (supplier bills and contractor payouts, excl. VAT).
   const profit = useMemo(() => {
@@ -288,14 +309,15 @@ export default function OrderPage() {
   const posToSend = pos.filter(p => p.status === 'approved' && !p.sent_at)
   const TABS: { id: Tab; label: string; short: string; icon: string; count: number }[] = [
     { id: 'sold', label: 'What was sold', short: 'Sold', icon: 'inventory_2', count: counted.length },
+    ...(showBuying ? [{ id: 'buying' as Tab, label: 'Buying in', short: 'Buying', icon: 'local_shipping', count: pos.length + liveGrns.length + rfqs.length + bills.length + payouts.length }] : []),
     { id: 'invoices', label: 'Invoices', short: 'Invoices', icon: 'receipt_long', count: invoices.length + credits.length },
     { id: 'payments', label: 'Payments', short: 'Payments', icon: 'payments', count: payments.length },
-    ...(showBuying ? [{ id: 'buying' as Tab, label: 'Buying in', short: 'Buying', icon: 'local_shipping', count: pos.length + liveGrns.length + rfqs.length + bills.length + payouts.length }] : []),
   ]
   const BUY_TABS: { id: BuyTab; label: string; count: number }[] = [
     { id: 'pos', label: 'Purchase orders', count: pos.length },
     { id: 'received', label: 'Goods received', count: liveGrns.length },
-    { id: 'other', label: 'Supplier prices & bills', count: rfqs.length + bills.length + payouts.length },
+    { id: 'bills', label: 'Supplier bills', count: bills.length + payouts.length },
+    { id: 'rfqs', label: 'Price requests', count: rfqs.length },
   ]
 
   // ── What's next: one sentence, one button ──
@@ -323,6 +345,8 @@ export default function OrderPage() {
   const profitPct = hasActual ? profit.actualMargin : profit.quotedMargin
   const showProfit = hasActual || profit.quotedCost > 0
   const subtotal = Number(quote.subtotal) || 0
+  const draftTotal = invoices.filter(i => String(i.status) === 'draft').reduce((t, i) => t + (Number(i.total_amount) || 0), 0)
+  const notInvoiced = Math.max(0, Math.round((money.toInvoice - draftTotal) * 100) / 100)
   const anyCost = counted.some(l => Number(l.cost_price) > 0)
   const teamCol = anyCost ? 'hidden sm:table-cell' : 'hidden'
   const vat = Number(quote.vat_amount) || 0
@@ -434,16 +458,16 @@ export default function OrderPage() {
         })()}
 
         {/* ── Tabs: big and clear, so you know where you're going ── */}
-        <div role="tablist" className={cn('grid gap-1 p-1 rounded-2xl bg-[#E9EDF3] dark:bg-black/30 border border-divider', TABS.length === 4 ? 'grid-cols-4' : 'grid-cols-3')}>
+        <div role="tablist" className={cn('grid gap-1 p-1 rounded-2xl bg-surface border border-divider', TABS.length === 4 ? 'grid-cols-4' : 'grid-cols-3')}>
           {TABS.map(t => {
             const on = tab === t.id
             return (
               <button key={t.id} type="button" role="tab" aria-selected={on} onClick={() => { setTab(t.id); setNote(null) }}
                 className={cn('h-11 rounded-xl flex items-center justify-center gap-1.5 px-1.5 text-[12.5px] sm:text-[14px] font-semibold transition-all min-w-0',
-                  on ? 'bg-white text-slate-900 shadow-[0_1px_3px_rgba(15,23,42,.18),0_4px_12px_rgba(15,23,42,.10)] dark:bg-slate-600 dark:text-white' : 'text-text-secondary hover:text-text-primary')}>
+                  on ? 'relative bg-surface text-text-primary border border-divider shadow-[0_1px_3px_rgba(15,23,42,.16),0_6px_16px_rgba(15,23,42,.10)] after:absolute after:left-1/2 after:-translate-x-1/2 after:bottom-1 after:h-[3px] after:w-8 after:rounded-full after:bg-text-primary' : 'text-text-secondary hover:text-text-primary')}>
                 <span className={cn('material-icons !text-[18px] hidden sm:inline', on ? 'text-slate-700 dark:text-white' : '')}>{t.icon}</span>
                 <span className="truncate sm:hidden">{t.short}</span><span className="truncate hidden sm:inline">{t.label}</span>
-                {t.count > 0 && <span className={cn('hidden sm:inline-block min-w-[20px] h-5 px-1.5 rounded-full text-[11px] leading-5 text-center', on ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'bg-white/70 dark:bg-white/10 text-text-secondary')}>{t.count}</span>}
+                {t.count > 0 && <span className={cn('hidden sm:inline-block min-w-[20px] h-5 px-1.5 rounded-full text-[11px] leading-5 text-center', on ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'border border-divider text-text-secondary')}>{t.count}</span>}
               </button>
             )
           })}
@@ -455,14 +479,14 @@ export default function OrderPage() {
             <div className="rounded-xl border border-divider bg-surface overflow-hidden">
               <ResponsiveDataView table={
                 <table className="w-full">
-                  <thead><tr className="bg-surface-elevated border-b border-divider">
+                  <thead><tr className="border-b border-divider">
                     <th className={`${MONEY_TH} text-left w-full`}>Item</th>
                     <th className={`${MONEY_TH} !text-right`}>Qty</th>
                     <th className={`${MONEY_TH} !text-right`}>Price</th>
                     <th className={`${MONEY_TH} !text-right`}>Total</th>
                     <th className={`${MONEY_TH} !text-right ${teamCol} !text-amber-700 dark:!text-amber-300`} title="Only your team sees this">Cost</th>
                     <th className={`${MONEY_TH} !text-right ${teamCol} !text-amber-700 dark:!text-amber-300`} title="Only your team sees this">Margin</th>
-                    {!serviceOnly && <th className={`${MONEY_TH} text-left hidden md:table-cell`}>Supplier · PO</th>}
+                    {!serviceOnly && <th className={`${MONEY_TH} text-left hidden sm:table-cell`}>PO</th>}
                     {!serviceOnly && <th className={`${MONEY_TH} text-left hidden sm:table-cell`}>Status</th>}
                   </tr></thead>
                   <tbody>
@@ -485,7 +509,7 @@ export default function OrderPage() {
                           <td className={`${MONEY_TD} text-right tabular-nums font-semibold text-text-primary`}>{formatCurrency(sell, cur)}</td>
                           <td className={`${MONEY_TD} text-right tabular-nums text-text-secondary ${teamCol}`}>{costTotal > 0 ? formatCurrency(costTotal, cur) : '—'}</td>
                           <td className={`${MONEY_TD} text-right tabular-nums text-text-secondary ${teamCol}`}>{m != null ? `${Math.round(m)}%` : '—'}</td>
-                          {!serviceOnly && <td className={`${MONEY_TD} !whitespace-normal hidden md:table-cell`}>{x.po ? <Link className="text-primary hover:underline" href={`/dashboard/supply/purchase-orders/${x.po.id}`}>{[supplierName, x.po.po_number].filter(Boolean).join(' · ')}</Link> : <span className="text-text-secondary">—</span>}</td>}
+                          {!serviceOnly && <td className={`${MONEY_TD} hidden sm:table-cell`}>{x.po ? <Link className="text-primary font-semibold hover:underline" href={`/dashboard/supply/purchase-orders/${x.po.id}`} title={supplierName ?? undefined}>{x.po.po_number ?? 'PO'}</Link> : <span className="text-text-secondary">—</span>}</td>}
                           {!serviceOnly && <td className={`${MONEY_TD} hidden sm:table-cell`}><span className={cn('inline-block text-[11px] font-semibold rounded-full px-2 py-0.5 whitespace-nowrap', x.cls)}>{x.label}</span></td>}
                         </tr>
                       )
@@ -518,25 +542,25 @@ export default function OrderPage() {
         {/* ── Invoices ── */}
         {tab === 'invoices' && (
           <div className="space-y-3">
-            <div className="rounded-xl border border-divider bg-surface overflow-hidden">
-              <ResponsiveDataView table={
-                <table className="w-full">
-                  <thead><tr className="bg-surface-elevated border-b border-divider">
-                    <th className={`${MONEY_TH} !text-right`}>Order value</th>
-                    <th className={`${MONEY_TH} !text-right`}>Invoiced</th>
-                    <th className={`${MONEY_TH} !text-right`}>Paid</th>
-                    <th className={`${MONEY_TH} !text-right`}>Owing</th>
-                    <th className={`${MONEY_TH} !text-right`}>Still to invoice</th>
-                  </tr></thead>
-                  <tbody><tr>
-                    <td className={`${MONEY_TD} text-right tabular-nums font-semibold`}>{formatCurrency(money.value, cur)}</td>
-                    <td className={`${MONEY_TD} text-right tabular-nums`}>{formatCurrency(money.invoiced, cur)}</td>
-                    <td className={`${MONEY_TD} text-right tabular-nums text-emerald-700 dark:text-emerald-400`}>{formatCurrency(money.paid, cur)}</td>
-                    <td className={cn(MONEY_TD, 'text-right tabular-nums', money.owing > 0.004 ? 'text-error font-semibold' : '')}>{formatCurrency(money.owing, cur)}</td>
-                    <td className={`${MONEY_TD} text-right tabular-nums`}>{formatCurrency(money.toInvoice, cur)}</td>
-                  </tr></tbody>
-                </table>
-              } />
+            {/* Where the order's money is, in plain words: one line each. */}
+            <div className="rounded-xl border border-divider bg-surface overflow-hidden max-w-xl">
+              <table className="w-full">
+                <tbody>
+                  {([
+                    ['The order is worth', money.value, 'font-semibold text-text-primary', true],
+                    ['In a draft invoice (not sent yet)', draftTotal, 'text-text-primary', draftTotal > 0.004],
+                    ['Invoiced and sent to the client', money.invoiced, 'text-text-primary', true],
+                    ['Paid by the client', money.paid, 'text-emerald-700 dark:text-emerald-400 font-semibold', true],
+                    ['Client still owes', money.owing, money.owing > 0.004 ? 'text-error font-semibold' : 'text-text-primary', true],
+                    ['Not invoiced yet', notInvoiced, 'text-text-primary', true],
+                  ] as const).filter(r => r[3]).map(([t, v, cls]) => (
+                    <tr key={t} className="border-b border-divider last:border-0">
+                      <td className="px-3 py-2 text-[12.5px] text-text-secondary">{t}</td>
+                      <td className={cn('px-3 py-2 text-[13px] text-right tabular-nums whitespace-nowrap', cls)}>{formatCurrency(v, cur)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
             <InvoicesList embedded plain quoteId={quote.id} onNew={notAccepted || (money.toInvoice <= 0.01 && !money.hasDraft) ? undefined : () => { startInvoice(); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
               newLabel={money.hasDraft ? 'Open draft invoice' : 'Create invoice'} />
@@ -544,7 +568,7 @@ export default function OrderPage() {
               <Section title={`Credit notes (${credits.length})`}>
                 <ResponsiveDataView table={
                   <table className="w-full" style={{ minWidth: 520 }}>
-                    <thead><tr className="bg-surface-elevated border-b border-divider">
+                    <thead><tr className="border-b border-divider">
                       <th className={`${MONEY_TH} text-left`}>Credit note</th>
                       <th className={`${MONEY_TH} text-left`}>Invoice</th>
                       <th className={`${MONEY_TH} text-left`}>Date</th>
@@ -576,12 +600,13 @@ export default function OrderPage() {
               {payments.length === 0 ? <Empty text="No payments yet. When the client pays, press Record payment: it goes onto their invoice." /> : (
                 <ResponsiveDataView table={
                   <table className="w-full" style={{ minWidth: 520 }}>
-                    <thead><tr className="bg-surface-elevated border-b border-divider">
+                    <thead><tr className="border-b border-divider">
                       <th className={`${MONEY_TH} text-left`}>Date</th>
                       <th className={`${MONEY_TH} text-left`}>Invoice</th>
                       <th className={`${MONEY_TH} text-left`}>Receipt</th>
                       <th className={`${MONEY_TH} text-left`}>Method · reference</th>
                       <th className={`${MONEY_TH} !text-right`}>Amount</th>
+                      {xeroPay.connected && <th className={`${MONEY_TH} text-left`}>Xero</th>}
                     </tr></thead>
                     <tbody>
                       {payments.map(p => (
@@ -591,6 +616,10 @@ export default function OrderPage() {
                           <td className={`${MONEY_TD} text-text-secondary`}>{p.receipt_number ?? '—'}</td>
                           <td className={`${MONEY_TD} text-text-secondary`}>{[label(p.payment_method), p.reference_number].filter(v => v && v !== '—').join(' · ') || '—'}</td>
                           <td className={`${MONEY_TD} text-right tabular-nums font-medium text-emerald-700 dark:text-emerald-400`}>{formatCurrency(Number(p.amount) || 0, cur)}</td>
+                          {xeroPay.connected && <td className={MONEY_TD}>{ledgerOf.get(p.id)
+                            ? <span className="inline-flex items-center gap-1"><XeroMark companyId={companyId} kind="payment" id={ledgerOf.get(p.id)!} state={xeroPay.statuses?.[ledgerOf.get(p.id)!]} connected={xeroPay.connected} onChanged={() => void xeroPay.reload()} />
+                                <span className="text-[11.5px] text-text-secondary">{({ synced: 'In Xero', waiting: 'On its way', error: 'Refused: tap the mark', skipped: 'Not sent' } as Record<string, string>)[xeroPay.statuses?.[ledgerOf.get(p.id)!]?.s ?? ''] ?? 'Not sent yet'}</span></span>
+                            : <span className="text-text-secondary">—</span>}</td>}
                         </tr>
                       ))}
                     </tbody>
@@ -609,7 +638,7 @@ export default function OrderPage() {
               {BUY_TABS.map(b => (
                 <button key={b.id} type="button" onClick={() => setBuyTab(b.id)}
                   className={cn('h-8 px-3 rounded-full border text-[12.5px] font-semibold whitespace-nowrap',
-                    buyTab === b.id ? 'border-[#2563EB] bg-blue-50 text-[#2563EB] dark:bg-blue-950/40 dark:text-blue-300' : 'border-divider bg-surface text-text-secondary hover:text-text-primary')}>
+                    buyTab === b.id ? 'border-slate-900 bg-slate-900 text-white dark:bg-white dark:text-slate-900 dark:border-white' : 'border-divider bg-surface text-text-primary hover:border-slate-400')}>
                   {b.label}{b.count > 0 ? ` (${b.count})` : ''}
                 </button>
               ))}
@@ -621,13 +650,14 @@ export default function OrderPage() {
             {buyTab === 'received' && (
               <GoodsReceivedPanel grns={grns} grnLines={grnLines} bills={allBills} pos={pos} onChanged={async () => { setNote(null); await load() }} />
             )}
-            {buyTab === 'other' && (
+            {buyTab === 'rfqs' && (
               <>
-                <Section title="Prices asked from suppliers (RFQs)" action={<button type="button" onClick={() => void createRfq()} disabled={!!busy} className="btn-outlined h-7 px-2.5 text-[11.5px] disabled:opacity-50">{busy === 'rfq' ? 'Opening…' : 'Ask for prices'}</button>}>
+                <p className="text-[12px] text-text-secondary px-1">Before you buy, you can ask suppliers for their prices. Each request is listed here.</p>
+                <Section title="Price requests to suppliers" action={<button type="button" onClick={() => void createRfq()} disabled={!!busy} className="btn-outlined h-7 px-2.5 text-[11.5px] disabled:opacity-50">{busy === 'rfq' ? 'Opening…' : 'Ask for prices'}</button>}>
                   {rfqs.length === 0 ? <Empty text="None yet." /> : (
                     <ResponsiveDataView table={
                       <table className="w-full">
-                        <thead><tr className="bg-surface-elevated border-b border-divider">
+                        <thead><tr className="border-b border-divider">
                           <th className={`${MONEY_TH} text-left`}>RFQ</th><th className={`${MONEY_TH} text-left w-full`}>For</th><th className={`${MONEY_TH} text-left`}>Status</th>
                         </tr></thead>
                         <tbody>
@@ -641,11 +671,16 @@ export default function OrderPage() {
                     } />
                   )}
                 </Section>
+              </>
+            )}
+            {buyTab === 'bills' && (
+              <>
+                <p className="text-[12px] text-text-secondary px-1">What your suppliers charge you for this order. A bill is made when goods are received.</p>
                 <Section title="Supplier bills">
                   {bills.length === 0 ? <Empty text="No supplier bills for this order's purchase orders yet." /> : (
                     <ResponsiveDataView table={
                       <table className="w-full" style={{ minWidth: 520 }}>
-                        <thead><tr className="bg-surface-elevated border-b border-divider">
+                        <thead><tr className="border-b border-divider">
                           <th className={`${MONEY_TH} text-left`}>Bill</th>
                           <th className={`${MONEY_TH} text-left`}>For PO</th>
                           <th className={`${MONEY_TH} text-left`}>Status</th>
@@ -672,7 +707,7 @@ export default function OrderPage() {
                     {payouts.length === 0 ? <Empty text="No contractor payouts for this order's job." /> : (
                       <ResponsiveDataView table={
                         <table className="w-full" style={{ minWidth: 480 }}>
-                          <thead><tr className="bg-surface-elevated border-b border-divider">
+                          <thead><tr className="border-b border-divider">
                             <th className={`${MONEY_TH} text-left`}>Contractor</th><th className={`${MONEY_TH} text-left`}>Date</th><th className={`${MONEY_TH} text-left`}>Status</th><th className={`${MONEY_TH} !text-right`}>Amount</th>
                           </tr></thead>
                           <tbody>

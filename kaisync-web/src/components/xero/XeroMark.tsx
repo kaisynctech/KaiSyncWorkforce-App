@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
-export type XeroKind = 'invoice' | 'credit_note' | 'po' | 'supplier_invoice' | 'client' | 'supplier'
+export type XeroKind = 'invoice' | 'credit_note' | 'po' | 'supplier_invoice' | 'client' | 'supplier' | 'payment'
 export type XeroState = { s: 'synced' | 'waiting' | 'error' | 'skipped'; err?: string; job?: string; xid?: string; xst?: string; at?: string }
 type StatusMap = Record<string, XeroState>
 
@@ -21,6 +21,7 @@ const rpc = () => { const s = createClient(); return s.rpc.bind(s) as unknown as
 /** The queue entity "Send to Xero" uses for each kind of record. */
 const SEND_ENTITY: Record<XeroKind, string> = {
   invoice: 'invoice', credit_note: 'credit_note', po: 'po_bill', supplier_invoice: 'supplier_bill', client: 'client', supplier: 'supplier',
+  payment: 'payment',
 }
 
 /** Where "Open in Xero" goes (Xero opens it in the organisation that is currently selected there). */
@@ -28,6 +29,7 @@ export function xeroUrl(kind: XeroKind, xid: string): string {
   switch (kind) {
     case 'invoice': return `https://go.xero.com/AccountsReceivable/View.aspx?InvoiceID=${xid}`
     case 'credit_note': return `https://go.xero.com/AccountsReceivable/ViewCreditNote.aspx?creditNoteID=${xid}`
+    case 'payment': return ''   // a payment has no page of its own in Xero: it shows on its invoice there
     case 'po':
     case 'supplier_invoice': return `https://go.xero.com/AccountsPayable/View.aspx?InvoiceID=${xid}`
     default: return `https://go.xero.com/Contacts/View/${xid}`
@@ -129,7 +131,7 @@ export function XeroMark({ companyId, kind, id, state, connected, canSend = true
                 {busy ? 'Sending…' : s === 'error' ? 'Try again' : s === 'synced' ? 'Send again' : 'Send to Xero'}
               </button>
             )}
-            {state?.xid && (
+            {state?.xid && xeroUrl(kind, state.xid) && (
               <a href={xeroUrl(kind, state.xid)} target="_blank" rel="noopener noreferrer" className="text-[12px] text-primary hover:underline">Open in Xero</a>
             )}
           </span>
